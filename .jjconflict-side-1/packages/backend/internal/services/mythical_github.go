@@ -1,0 +1,1193 @@
+package services
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+)
+
+// mythicalGitHubRepo is a repository's GitHub destination with credentials
+// resolved for one run and never stored.
+type mythicalGitHubRepo struct {
+	Owner, Name string
+	Token       string
+	GitURL      string
+	// userID and orgID own the repository; the stack's API writes mint
+	// their own narrow installation tokens for it (Merge, the issue writes).
+	userID, orgID int64
+}
+
+// mythicalIssue is what admission reads of one GitHub issue.
+type mythicalIssue struct {
+	Context          json.RawMessage
+	Number           int64
+	Title, Body, URL string
+	State            string // open | closed
+	Author           gitHubActor
+	// ViaApp: a GitHub App created the issue for its author.
+	ViaApp bool
+	AppID  int64
+	// TextByMaintainer: the author and the last writers of the title and
+	// body are maintainer persons (issueTextByMaintainerField).
+	TextByMaintainer bool
+	Labels           []string
+	PullRequest      bool
+	CreatedAt        time.Time
+}
+
+// mythicalPull is one GitHub pull request as the stack follows it.
+type mythicalPull struct {
+	Author      gitHubActor
+	Draft       bool
+	NodeID      string
+	Number      int64
+	URL         string
+	State       string // open | closed
+	Merged      bool
+	MergeCommit string
+	HeadRef     string
+	HeadSHA     string
+	// Body is the pull request's description as GitHub holds it now.
+	Body string
+	// BaseRef is the branch GitHub would merge the pull request into.
+	BaseRef string
+	// BaseSHA is the immutable comparison base returned with the PR head.
+	BaseSHA string
+	// MergeableState is GitHub's word: clean, dirty (conflicts), behind
+	// (the base moved and the branch must be updated), blocked, unknown.
+	MergeableState string
+}
+
+// mythicalGitHub is the stack's GitHub surface: the destination and a token
+// (resolved as landing pull requests resolve them), the open issues, and the
+// item pull requests.
+type mythicalGitHub interface {
+	IssueText(ctx context.Context, gh mythicalGitHubRepo, number int64) (gitHubIssueText, error)
+	Resolve(ctx context.Context, repository db.Repository, owner string, actorUserID int64) (mythicalGitHubRepo, error)
+	OpenIssues(ctx context.Context, gh mythicalGitHubRepo) ([]mythicalIssue, error)
+	// Issue reads one issue as GitHub answers it now (Make TODO's read).
+	Issue(ctx context.Context, gh mythicalGitHubRepo, number int64) (mythicalIssue, error)
+	// IssueTextByMaintainer reads whether an open issue's author and the
+	// last writers of its title and body, still as listed, are maintainers.
+	IssueTextByMaintainer(ctx context.Context, gh mythicalGitHubRepo, issue mythicalIssue) (bool, error)
+	// Maintainer reads whether an account is a maintainer person; the
+	// answer may be up to gitHubMaintainerTTL old.
+	Maintainer(ctx context.Context, gh mythicalGitHubRepo, account gitHubActor) (bool, error)
+	// MaintainerNow is Maintainer read from GitHub now, never remembered:
+	// a merge acts on it, so it cannot trail a demotion.
+	MaintainerNow(ctx context.Context, gh mythicalGitHubRepo, account gitHubActor) (bool, error)
+	Pull(ctx context.Context, gh mythicalGitHubRepo, number int64) (mythicalPull, error)
+	FindPull(ctx context.Context, gh mythicalGitHubRepo, branch string) (*mythicalPull, error)
+	// ClosePull closes a pull request without merging it (Drop).
+	ClosePull(ctx context.Context, gh mythicalGitHubRepo, number int64) error
+	CreatePull(ctx context.Context, gh mythicalGitHubRepo, title, head, base, body string, draft bool) (mythicalPull, error)
+	// UpdatePullBody replaces a pull request's description.
+	UpdatePullBody(ctx context.Context, gh mythicalGitHubRepo, number int64, body string) error
+	// HeadChecks answers GitHub CI's verdict on one commit (mythicalCIGreen,
+	// mythicalCIPending or mythicalCIRed).
+	HeadChecks(ctx context.Context, gh mythicalGitHubRepo, sha string) (string, error)
+	// HeadCheckFacts names each check on one commit and whether main's
+	// protection requires it; a required check with no run yet is pending.
+	HeadCheckFacts(ctx context.Context, gh mythicalGitHubRepo, sha string) ([]mythicalHeadCheck, error)
+	// ReviewDecision is GitHub's verdict on main's required reviews for a
+	// pull request: APPROVED, REVIEW_REQUIRED or CHANGES_REQUESTED, and ""
+	// when main requires no review.
+	ReviewDecision(ctx context.Context, gh mythicalGitHubRepo, number int64) (string, error)
+	// MergeToken mints the token Merge sends with, before the merge is
+	// recorded as sent, and names the installation that minted it.
+	MergeToken(ctx context.Context, gh mythicalGitHubRepo) (GitHubInstallationToken, error)
+	// Merge squash-merges a pull request with token only while its head is
+	// head, with commit as the squash commit's title and message, and
+	// answers the merge commit.
+	Merge(ctx context.Context, gh mythicalGitHubRepo, token string, number int64, head string, commit mythicalMergeCommitText) (string, error)
+	// LabelApplier answers who last applied label to an issue, or removed
+	// it (Removed), as the issue's labels stand now: nil when none ever
+	// applied it. It errs while GitHub's history trails the labels.
+	LabelApplier(ctx context.Context, gh mythicalGitHubRepo, number int64, label string) (*mythicalLabelApplier, error)
+	// Comment posts body on an issue. With a key it says body once per key:
+	// the comment carrying key is edited when one exists, else one is
+	// posted, so a retry after a post that was not recorded never repeats
+	// it; without one, every call posts.
+	Comment(ctx context.Context, gh mythicalGitHubRepo, number int64, key, body string) error
+	// CloseIssue closes an issue as completed; a closed one stays closed.
+	CloseIssue(ctx context.Context, gh mythicalGitHubRepo, number int64) error
+	// UpdateIssue applies one issue edit as GitHub's single-issue PATCH: a
+	// new state (open or closed), a new title, a new body, or a
+	// combination. An edit that names nothing is the caller's error.
+	UpdateIssue(ctx context.Context, gh mythicalGitHubRepo, number int64, edit mythicalIssueEdit) error
+	// UpdateIssueComment replaces one comment's body. GitHub only lets the
+	// comment's own author edit it, so the App can edit the App's comments.
+	UpdateIssueComment(ctx context.Context, gh mythicalGitHubRepo, id int64, body string) error
+	// OnMain reports whether commit is reachable from the bookmark on
+	// GitHub.
+	OnMain(ctx context.Context, gh mythicalGitHubRepo, bookmark, commit string) (bool, error)
+	// AddLabel puts label on an issue.
+	AddLabel(ctx context.Context, gh mythicalGitHubRepo, number int64, label string) error
+	// RemoveLabel takes label off an issue; an absent label is removed.
+	RemoveLabel(ctx context.Context, gh mythicalGitHubRepo, number int64, label string) error
+	// Account reads the GitHub account with this numeric id as it stands
+	// now: its login follows a rename.
+	Account(ctx context.Context, gh mythicalGitHubRepo, id int64) (gitHubActor, error)
+	// CreateIssue opens an issue with this title and body.
+	CreateIssue(ctx context.Context, gh mythicalGitHubRepo, title, body string) (mythicalIssue, error)
+	// ResolveIssueWrite binds the repository's GitHub destination for ONE
+	// person's issue write, as the hosted composition needs it: the person's
+	// own GitHub credential must prove write access to that repository right
+	// now (GitHub's own rules, so a read-only collaborator is refused), and
+	// the destination carries no git push authority. It acquires none of the
+	// stack's publication authority and reads no install setting.
+	ResolveIssueWrite(ctx context.Context, repository db.Repository, owner string, actorUserID int64) (mythicalGitHubRepo, error)
+}
+
+// MythicalGitHubStore is what resolving a destination reads.
+type MythicalGitHubStore interface {
+	gitHubDestinationStore
+}
+
+// mythicalGitHubAPIPermissions covers the stack's API calls: reading issues
+// and opening or reading its pull requests.
+var mythicalGitHubAPIPermissions = map[string]string{"contents": "read", "issues": "read", "pull_requests": "write"}
+
+// ResolvePullRead uses the same repository binding and scoped token minter as
+// the stack, without acquiring its publication or git-push authority.
+func (g *mythicalGitHubAPI) ResolvePullRead(ctx context.Context, repository db.Repository, owner string, actorUserID int64) (mythicalGitHubRepo, error) {
+	if g == nil || g.store == nil || g.tokens == nil {
+		return mythicalGitHubRepo{}, errors.New("GitHub read authority is unavailable")
+	}
+	ghOwner, ghRepo, err := resolveGitHubDestination(ctx, g.store, g.connections, actorUserID, repository.ID, owner, repository.Name)
+	if err != nil {
+		return mythicalGitHubRepo{}, err
+	}
+	token, err := g.tokens.CreateGitHubInstallationTokenForRepositoryOwner(ctx, repository.UserID.Int64, repository.OrgID.Int64, ghOwner, ghRepo, map[string]string{"pull_requests": "read"})
+	if err != nil {
+		return mythicalGitHubRepo{}, err
+	}
+	if strings.TrimSpace(token.Token) == "" {
+		return mythicalGitHubRepo{}, errors.New("GitHub read authority is unavailable")
+	}
+	return mythicalGitHubRepo{Owner: ghOwner, Name: ghRepo, Token: token.Token, userID: repository.UserID.Int64, orgID: repository.OrgID.Int64}, nil
+}
+
+// mythicalGitHubIssueWritePermissions is the whole authority one issue act
+// needs: no contents, no pull requests, no workflows.
+var mythicalGitHubIssueWritePermissions = map[string]string{"issues": "write"}
+
+// GitHubIssueWriteUnavailable says, as a CLOSED reason, why this actor cannot
+// write this repository's GitHub issues. The reason is the whole diagnostic:
+// the caller records it and never the provider's sentence. A failure that is
+// NOT one of these is transient and is returned unwrapped, so a caller
+// retries instead of burning the request.
+type GitHubIssueWriteUnavailable struct {
+	// Reason is one of: app_not_connected, sign_in_required, write_required,
+	// unavailable.
+	Reason string
+	cause  error
+}
+
+func (e *GitHubIssueWriteUnavailable) Error() string { return e.cause.Error() }
+func (e *GitHubIssueWriteUnavailable) Unwrap() error { return e.cause }
+
+func issueWriteUnavailable(reason string, cause error) error {
+	return &GitHubIssueWriteUnavailable{Reason: reason, cause: cause}
+}
+
+// ResolveIssueWrite is the hosted composition's issue-write destination. It
+// is Resolve's credential policy MINUS the git push: the person's own GitHub
+// credential proves their write access, and the installation token minted for
+// the send carries issues:write alone. Each write below mints its own narrow
+// token again; this one serves the keyed comment's marker read.
+func (g *mythicalGitHubAPI) ResolveIssueWrite(ctx context.Context, repository db.Repository, owner string, actorUserID int64) (mythicalGitHubRepo, error) {
+	if g == nil || g.store == nil || g.tokens == nil {
+		return mythicalGitHubRepo{}, pkgerrors.Internal("GitHub issue writes are not configured")
+	}
+	ghOwner, ghRepo, err := resolveGitHubDestination(ctx, g.store, g.connections, actorUserID, repository.ID, owner, repository.Name)
+	if err != nil {
+		// No recorded GitHub destination is the App connection flow; any
+		// other failure here is the store's, and transient.
+		var destination *pkgerrors.APIError
+		if errors.As(err, &destination) && destination.Code == pkgerrors.CodeConflict {
+			return mythicalGitHubRepo{}, issueWriteUnavailable("app_not_connected", err)
+		}
+		return mythicalGitHubRepo{}, err
+	}
+	if g.prover == nil {
+		return mythicalGitHubRepo{}, issueWriteUnavailable("unavailable", pkgerrors.Forbidden("GitHub write access cannot be proven"))
+	}
+	if err := g.prover.GitHubRepoPushAuthorized(ctx, actorUserID, ghOwner, ghRepo); err != nil {
+		refusal := githubPushProofRefusal(err, "Your GitHub account", ghOwner, ghRepo)
+		var proof *GitHubPushProofError
+		reason := "unavailable"
+		if errors.As(err, &proof) {
+			switch proof.Reason {
+			case GitHubPushProofNoCredential:
+				reason = "sign_in_required"
+			case GitHubPushProofDenied:
+				reason = "write_required"
+			}
+		}
+		return mythicalGitHubRepo{}, issueWriteUnavailable(reason, refusal)
+	}
+	api, err := g.tokens.CreateGitHubInstallationTokenForRepositoryOwner(ctx, repository.UserID.Int64, repository.OrgID.Int64, ghOwner, ghRepo, mythicalGitHubIssueWritePermissions)
+	if err != nil {
+		return mythicalGitHubRepo{}, err
+	}
+	token := strings.TrimSpace(api.Token)
+	if token == "" {
+		return mythicalGitHubRepo{}, issueWriteUnavailable("app_not_connected",
+			pkgerrors.BadRequest("github app is not installed for this repository"))
+	}
+	return mythicalGitHubRepo{Owner: ghOwner, Name: ghRepo, Token: token, userID: repository.UserID.Int64, orgID: repository.OrgID.Int64}, nil
+}
+
+type mythicalGitHubAPI struct {
+	credentials GitHubAppCredentialReader
+	api         *landingGitHubAPI
+	text        *gitHubIssueTextAPI
+	store       MythicalGitHubStore
+	tokens      LandingGitHubPullTokens
+	prover      GitHubRepoPushProver
+	connections RepoSyncConnectionChecker
+	gitBase     func() string
+}
+
+// mythicalPushReader reads an authorized immutable installation source. It
+// never asks for push permission or uses a member credential for observation.
+type mythicalPushReader interface {
+	ReadPushSource(context.Context, db.GithubSyncedRepo) (mythicalGitHubRepo, error)
+	PushBranchHasPull(context.Context, db.GithubSyncedRepo, string) (bool, error)
+	PushActor(context.Context, mythicalGitHubRepo, string, string) (gitHubActor, error)
+}
+
+func (g *mythicalGitHubAPI) pushReadToken(ctx context.Context, source db.GithubSyncedRepo, permission string) (string, error) {
+	if g == nil || !source.InstallationID.Valid || source.InstallationID.Int64 <= 0 || !source.GithubRepositoryID.Valid || source.GithubRepositoryID.Int64 <= 0 {
+		return "", gitHubFetchUnavailable()
+	}
+	minter, ok := g.tokens.(GitHubInstallationTokenMinter)
+	if !ok {
+		return "", gitHubFetchUnavailable()
+	}
+	token, err := minter.CreateGitHubInstallationToken(ctx, source.InstallationID.Int64, GitHubTokenScope{RepositoryIDs: []int64{source.GithubRepositoryID.Int64}, Permissions: map[string]string{permission: "read"}})
+	if err != nil {
+		return "", err
+	}
+	if token.InstallationID != source.InstallationID.Int64 || strings.TrimSpace(token.Token) == "" {
+		return "", gitHubFetchUnavailable()
+	}
+	return token.Token, nil
+}
+
+func (g *mythicalGitHubAPI) ReadPushSource(ctx context.Context, source db.GithubSyncedRepo) (mythicalGitHubRepo, error) {
+	if g == nil || g.gitBase == nil {
+		return mythicalGitHubRepo{}, gitHubFetchUnavailable()
+	}
+	token, err := g.pushReadToken(ctx, source, "contents")
+	if err != nil {
+		return mythicalGitHubRepo{}, err
+	}
+	remote, err := gitMirrorURL(g.gitBase(), token, source.OwnerLogin, source.RepoName)
+	if err != nil {
+		return mythicalGitHubRepo{}, err
+	}
+	return mythicalGitHubRepo{Owner: source.OwnerLogin, Name: source.RepoName, Token: token, GitURL: remote}, nil
+}
+
+// A missing local PR number is not proof of remote absence. One matching PR
+// suffices to refuse a pre-PR lease; only a complete empty filtered response
+// proves absence. This consumes the existing transport, never another poller.
+func (g *mythicalGitHubAPI) PushBranchHasPull(ctx context.Context, source db.GithubSyncedRepo, branch string) (bool, error) {
+	if g == nil || g.api == nil || !mythicalTodoBranchValid(branch) {
+		return false, gitHubFetchUnavailable()
+	}
+	token, err := g.pushReadToken(ctx, source, "pull_requests")
+	if err != nil {
+		return false, err
+	}
+	query := url.Values{"head": {source.OwnerLogin + ":" + branch}, "state": {"all"}, "per_page": {"1"}}
+	var raw json.RawMessage
+	status, headers, err := g.api.requestHeaders(ctx, token, http.MethodGet, landingGitHubRepoPath(source.OwnerLogin, source.RepoName)+"/pulls?"+query.Encode(), "", nil, &raw)
+	if err != nil {
+		return false, err
+	}
+	if status != http.StatusOK {
+		return false, landingGitHubStatusError(status, source.OwnerLogin, source.RepoName, "read pull requests")
+	}
+	var pulls []landingGitHubPullRequest
+	if !strings.HasPrefix(strings.TrimSpace(string(raw)), "[") || json.Unmarshal(raw, &pulls) != nil {
+		return false, GitHubRequestFailure(ctx, "GitHub returned an unreadable pull request listing")
+	}
+	if len(pulls) == 0 {
+		if headers.Get("Link") != "" {
+			return false, GitHubRequestFailure(ctx, "GitHub returned an incomplete pull request listing")
+		}
+		return false, nil
+	}
+	for _, pull := range pulls {
+		if pull.Number <= 0 || pull.Head.Ref != branch || pull.Head.Repo == nil || !strings.EqualFold(pull.Head.Repo.FullName, source.OwnerLogin+"/"+source.RepoName) {
+			return false, GitHubRequestFailure(ctx, "GitHub returned an unbound pull request listing")
+		}
+	}
+	return true, nil
+}
+
+// NewMythicalGitHub resolves the repository owner's App installation token at
+// dispatch and proves the stack actor's own push access before any write, the
+// credential policy of landing pull requests.
+func NewMythicalGitHub(store MythicalGitHubStore, tokens LandingGitHubPullTokens, prover GitHubRepoPushProver, connections RepoSyncConnectionChecker) *mythicalGitHubAPI {
+	api := &landingGitHubAPI{client: gitHubProviderClient(tokens, 30*time.Second), baseURL: githubAPIBaseURL}
+	var credentials GitHubAppCredentialReader
+	if connections, ok := tokens.(*RepoConnectionService); ok {
+		credentials = connections.githubAppCredentials
+	}
+	return &mythicalGitHubAPI{
+		credentials: credentials, api: api, text: &gitHubIssueTextAPI{api: api},
+		store: store, tokens: tokens, prover: prover, connections: connections,
+		gitBase: githubGitBaseURL,
+	}
+}
+
+func (g *mythicalGitHubAPI) Resolve(ctx context.Context, repository db.Repository, owner string, actorUserID int64) (mythicalGitHubRepo, error) {
+	if g == nil || g.store == nil || g.tokens == nil {
+		return mythicalGitHubRepo{}, pkgerrors.Internal("GitHub is not configured for the mythical stack")
+	}
+	ghOwner, ghRepo, err := resolveGitHubDestination(ctx, g.store, g.connections, actorUserID, repository.ID, owner, repository.Name)
+	if err != nil {
+		return mythicalGitHubRepo{}, err
+	}
+	if g.prover == nil {
+		return mythicalGitHubRepo{}, pkgerrors.Forbidden("GitHub push access cannot be proven")
+	}
+	if err := g.prover.GitHubRepoPushAuthorized(ctx, actorUserID, ghOwner, ghRepo); err != nil {
+		return mythicalGitHubRepo{}, githubPushProofRefusal(err, "The stack's GitHub account", ghOwner, ghRepo)
+	}
+	// Like landings, neither token carries workflows: the git push holds
+	// contents:write only and the API token cannot push.
+	installation, err := g.tokens.CreateGitHubInstallationTokenForRepositoryOwner(ctx, repository.UserID.Int64, repository.OrgID.Int64, ghOwner, ghRepo, landingGitHubPushPermissions)
+	if err != nil {
+		return mythicalGitHubRepo{}, err
+	}
+	push := strings.TrimSpace(installation.Token)
+	if push == "" {
+		return mythicalGitHubRepo{}, pkgerrors.BadRequest("github app is not installed for this repository")
+	}
+	api, err := g.tokens.CreateGitHubInstallationTokenForRepositoryOwner(ctx, repository.UserID.Int64, repository.OrgID.Int64, ghOwner, ghRepo, mythicalGitHubAPIPermissions)
+	if err != nil {
+		return mythicalGitHubRepo{}, err
+	}
+	token := strings.TrimSpace(api.Token)
+	if token == "" {
+		return mythicalGitHubRepo{}, pkgerrors.BadRequest("github app is not installed for this repository")
+	}
+	gitURL, err := gitMirrorURL(g.gitBase(), push, ghOwner, ghRepo)
+	if err != nil {
+		return mythicalGitHubRepo{}, pkgerrors.Internal("build GitHub destination URL").WithCause(err)
+	}
+	return mythicalGitHubRepo{Owner: ghOwner, Name: ghRepo, Token: token, GitURL: gitURL,
+		userID: repository.UserID.Int64, orgID: repository.OrgID.Int64}, nil
+}
+
+type mythicalGitHubIssue struct {
+	Number           int64            `json:"number"`
+	Title            string           `json:"title"`
+	Body             *string          `json:"body"`
+	HTMLURL          string           `json:"html_url"`
+	State            string           `json:"state"`
+	User             gitHubActor      `json:"user"`
+	ViaApp           *json.RawMessage `json:"performed_via_github_app"`
+	TextByMaintainer bool             `json:"smithers_text_by_maintainer"`
+	Labels           []struct {
+		Name string `json:"name"`
+	} `json:"labels"`
+	PullRequest *struct{} `json:"pull_request"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// Missing or malformed App provenance has no trusted identity.
+func gitHubAppID(raw *json.RawMessage) int64 {
+	if raw == nil {
+		return 0
+	}
+	var app struct {
+		ID int64 `json:"id"`
+	}
+	if json.Unmarshal(*raw, &app) != nil {
+		return 0
+	}
+	return app.ID
+}
+
+func (i mythicalGitHubIssue) issue() mythicalIssue {
+	out := mythicalIssue{Number: i.Number, Title: i.Title, URL: i.HTMLURL, State: i.State,
+		Author: i.User, ViaApp: i.ViaApp != nil && string(*i.ViaApp) != "null",
+		TextByMaintainer: i.TextByMaintainer, PullRequest: i.PullRequest != nil, CreatedAt: i.CreatedAt}
+	out.AppID = gitHubAppID(i.ViaApp)
+	if i.Body != nil {
+		out.Body = *i.Body
+	}
+	for _, label := range i.Labels {
+		out.Labels = append(out.Labels, label.Name)
+	}
+	return out
+}
+
+func (g *mythicalGitHubAPI) IssueTextByMaintainer(ctx context.Context, gh mythicalGitHubRepo, issue mythicalIssue) (bool, error) {
+	return g.text.TextByMaintainer(ctx, gh.Token, gh.Owner, gh.Name,
+		gitHubIssueTextWrite{Number: issue.Number, Title: issue.Title, Body: issue.Body, Author: issue.Author, ViaApp: issue.ViaApp})
+}
+
+func (g *mythicalGitHubAPI) Maintainer(ctx context.Context, gh mythicalGitHubRepo, account gitHubActor) (bool, error) {
+	return g.text.personIsMaintainer(ctx, gh.Token, gh.Owner, gh.Name, &account)
+}
+
+func (g *mythicalGitHubAPI) MaintainerNow(ctx context.Context, gh mythicalGitHubRepo, account gitHubActor) (bool, error) {
+	if !gitHubPerson(&account) {
+		return false, nil
+	}
+	return g.text.MaintainerNow(ctx, gh.Token, gh.Owner, gh.Name, account.Login)
+}
+
+// OpenIssues lists open issues only when the bounded listing is complete.
+func (g *mythicalGitHubAPI) OpenIssues(ctx context.Context, gh mythicalGitHubRepo) ([]mythicalIssue, error) {
+	var out []mythicalIssue
+	for page := 1; page <= 20; page++ {
+		query := url.Values{"state": {"open"}, "per_page": {"100"}, "page": {strconv.Itoa(page)}, "sort": {"created"}, "direction": {"asc"}}
+		var issues []mythicalGitHubIssue
+		status, err := g.api.request(ctx, gh.Token, http.MethodGet, landingGitHubRepoPath(gh.Owner, gh.Name)+"/issues?"+query.Encode(), nil, &issues)
+		if err != nil {
+			return nil, err
+		}
+		if status != http.StatusOK {
+			return nil, landingGitHubStatusError(status, gh.Owner, gh.Name, "read issues")
+		}
+		for _, issue := range issues {
+			out = append(out, issue.issue())
+		}
+		if len(issues) < 100 {
+			return out, nil
+		}
+	}
+	// A full last page does not establish that there are no more issues.
+	// Never let backfill reconcile absent items against this partial list.
+	return nil, pkgerrors.New(pkgerrors.CodeBadGateway, "GitHub open issue listing exceeds 20 pages; backfill cannot reconcile incomplete issues")
+}
+
+type mythicalGitHubPull struct {
+	Author gitHubActor `json:"user"`
+	landingGitHubPullRequest
+	MergeableState string `json:"mergeable_state"`
+	// Body is null when the description is empty.
+	Body *string `json:"body"`
+}
+
+func (p mythicalGitHubPull) pull() mythicalPull {
+	out := mythicalPull{Author: p.Author, Draft: p.Draft, NodeID: p.NodeID, Number: p.Number, URL: p.HTMLURL, State: p.State, Merged: p.MergedAt != nil,
+		HeadRef: p.Head.Ref, HeadSHA: p.Head.SHA, BaseRef: p.Base.Ref, BaseSHA: p.Base.SHA, MergeableState: p.MergeableState}
+	if p.Body != nil {
+		out.Body = *p.Body
+	}
+	if out.Merged && p.MergeCommitSHA != nil {
+		out.MergeCommit = *p.MergeCommitSHA
+	}
+	return out
+}
+
+// Issue is one GET of the issue: OpenIssues pages through every open issue
+// and never answers a closed one.
+func (g *mythicalGitHubAPI) Issue(ctx context.Context, gh mythicalGitHubRepo, number int64) (mythicalIssue, error) {
+	var issue mythicalGitHubIssue
+	status, err := g.api.request(ctx, gh.Token, http.MethodGet, landingGitHubRepoPath(gh.Owner, gh.Name)+"/issues/"+strconv.FormatInt(number, 10), nil, &issue)
+	if err != nil {
+		return mythicalIssue{}, err
+	}
+	if status != http.StatusOK {
+		return mythicalIssue{}, landingGitHubStatusError(status, gh.Owner, gh.Name, "read issues")
+	}
+	return issue.issue(), nil
+}
+
+func (g *mythicalGitHubAPI) Pull(ctx context.Context, gh mythicalGitHubRepo, number int64) (mythicalPull, error) {
+	var pull mythicalGitHubPull
+	status, err := g.api.request(ctx, gh.Token, http.MethodGet, landingGitHubRepoPath(gh.Owner, gh.Name)+"/pulls/"+strconv.FormatInt(number, 10), nil, &pull)
+	if err != nil {
+		return mythicalPull{}, err
+	}
+	if status != http.StatusOK {
+		return mythicalPull{}, landingGitHubStatusError(status, gh.Owner, gh.Name, "read pull requests")
+	}
+	return pull.pull(), nil
+}
+
+// PushActor resolves attribution for an already-observed TODO branch head.
+// Activity is matched by both ref and resulting SHA, never by the most recent
+// actor alone. If activity has no pusher, the exact commit's GitHub author is
+// the fallback. This read does not classify a push as Smithers' own or grant
+// the actor permission to answer a wait.
+func (g *mythicalGitHubAPI) PushActor(ctx context.Context, gh mythicalGitHubRepo, branch, head string) (gitHubActor, error) {
+	if !mythicalTodoBranchValid(branch) || !mythicalSHA.MatchString(head) || strings.Trim(head, "0") == "" {
+		return gitHubActor{}, errors.New("invalid GitHub push attribution binding")
+	}
+	path := landingGitHubRepoPath(gh.Owner, gh.Name) + "/activity"
+	ref := "refs/heads/" + branch
+	query := url.Values{"ref": {ref}, "direction": {"desc"}, "per_page": {"100"}}
+	seen := map[string]bool{}
+	for {
+		if err := ctx.Err(); err != nil {
+			return gitHubActor{}, err
+		}
+		key := query.Encode()
+		if seen[key] {
+			return gitHubActor{}, errors.New("GitHub activity cursor repeated")
+		}
+		seen[key] = true
+		// GitHub names the person who pushed "actor" (List repository
+		// activities); a null actor falls through to the commit's author.
+		var activity []struct {
+			Ref   string      `json:"ref"`
+			After string      `json:"after"`
+			Actor gitHubActor `json:"actor"`
+		}
+		status, headers, err := g.api.requestHeaders(ctx, gh.Token, http.MethodGet, path+"?"+key, "", nil, &activity)
+		if err != nil {
+			return gitHubActor{}, err
+		}
+		if status != http.StatusOK {
+			return gitHubActor{}, landingGitHubStatusError(status, gh.Owner, gh.Name, "read push activity")
+		}
+		if activity == nil {
+			return gitHubActor{}, GitHubRequestFailure(ctx, "GitHub returned incomplete push activity")
+		}
+		matched := false
+		for _, event := range activity {
+			if event.Ref == ref && event.After == head {
+				if event.Actor.ID > 0 && strings.TrimSpace(event.Actor.Login) != "" {
+					return event.Actor, nil
+				}
+				// An older push of the same SHA is not the current pusher.
+				matched = true
+				break
+			}
+		}
+		next := parseGitHubNextLink(headers.Get("Link"))
+		if matched || next == "" {
+			break
+		}
+		base, baseErr := url.Parse(strings.TrimRight(g.api.baseURL(), "/") + path)
+		page, pageErr := url.Parse(next)
+		if baseErr != nil || pageErr != nil {
+			return gitHubActor{}, errors.New("invalid GitHub activity pagination")
+		}
+		page = base.ResolveReference(page)
+		if page.Scheme != base.Scheme || page.Host != base.Host || page.Path != base.Path || page.User != nil || page.Fragment != "" {
+			return gitHubActor{}, errors.New("GitHub activity pagination changed source")
+		}
+		cursor, err := url.ParseQuery(page.RawQuery)
+		if err != nil || (cursor.Get("after") == "") == (cursor.Get("before") == "") ||
+			(cursor.Get("ref") != "" && cursor.Get("ref") != ref) || (cursor.Get("direction") != "" && cursor.Get("direction") != "desc") {
+			return gitHubActor{}, errors.New("invalid GitHub activity cursor")
+		}
+		query.Del("after")
+		query.Del("before")
+		if after := cursor.Get("after"); after != "" {
+			query.Set("after", after)
+		} else {
+			query.Set("before", cursor.Get("before"))
+		}
+	}
+	var commit struct {
+		SHA    string      `json:"sha"`
+		Author gitHubActor `json:"author"`
+	}
+	status, err := g.api.request(ctx, gh.Token, http.MethodGet, landingGitHubRepoPath(gh.Owner, gh.Name)+"/commits/"+head, nil, &commit)
+	if err != nil {
+		return gitHubActor{}, err
+	}
+	if status != http.StatusOK {
+		return gitHubActor{}, landingGitHubStatusError(status, gh.Owner, gh.Name, "read pushed commit author")
+	}
+	if commit.SHA != head || commit.Author.ID <= 0 || strings.TrimSpace(commit.Author.Login) == "" {
+		return gitHubActor{}, GitHubRequestFailure(ctx, "GitHub push attribution is unavailable")
+	}
+	return commit.Author, nil
+}
+
+// ClosePull is the Drop write primitive. Its caller must first persist the
+// outbound intent and reconcile uncertain results through Pull (T-GH-09):
+// appSend sends it only for a dropped TODO's close pending_op, which Drop
+// records outside the merge fence; the stack releases the TODO's lane only
+// after the close settles.
+func (g *mythicalGitHubAPI) ClosePull(ctx context.Context, gh mythicalGitHubRepo, number int64) error {
+	token, err := g.installationToken(ctx, gh, map[string]string{"pull_requests": "write"})
+	if err != nil {
+		return err
+	}
+	status, err := g.api.request(ctx, token, http.MethodPatch,
+		landingGitHubRepoPath(gh.Owner, gh.Name)+"/pulls/"+strconv.FormatInt(number, 10), map[string]string{"state": "closed"}, nil)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK {
+		return landingGitHubStatusError(status, gh.Owner, gh.Name, "close pull requests")
+	}
+	return nil
+}
+
+func (g *mythicalGitHubAPI) FindPull(ctx context.Context, gh mythicalGitHubRepo, branch string) (*mythicalPull, error) {
+	found, err := g.api.Find(ctx, gh.Token, gh.Owner, gh.Name, branch)
+	if err != nil || found == nil {
+		return nil, err
+	}
+	pull, err := g.Pull(ctx, gh, found.Number)
+	if err != nil {
+		return nil, err
+	}
+	return &pull, nil
+}
+
+func (g *mythicalGitHubAPI) CreatePull(ctx context.Context, gh mythicalGitHubRepo, title, head, base, body string, draft bool) (mythicalPull, error) {
+	created, err := g.api.Create(ctx, gh.Token, gh.Owner, gh.Name, landingGitHubPullCreate{Title: title, Head: head, Base: base, Body: body,
+		MaintainerCanModify: true, Draft: draft})
+	if err != nil {
+		if err == errLandingGitHubPullExists {
+			found, findErr := g.FindPull(ctx, gh, head)
+			if findErr != nil {
+				return mythicalPull{}, findErr
+			}
+			if found != nil {
+				return *found, nil
+			}
+		}
+		return mythicalPull{}, err
+	}
+	return mythicalGitHubPull{landingGitHubPullRequest: *created}.pull(), nil
+}
+
+// installationToken mints an installation token holding only permissions.
+func (g *mythicalGitHubAPI) installationToken(ctx context.Context, gh mythicalGitHubRepo, permissions map[string]string) (string, error) {
+	installation, err := g.tokens.CreateGitHubInstallationTokenForRepositoryOwner(ctx, gh.userID, gh.orgID, gh.Owner, gh.Name, permissions)
+	if err != nil {
+		return "", err
+	}
+	if token := strings.TrimSpace(installation.Token); token != "" {
+		return token, nil
+	}
+	return "", pkgerrors.BadRequest("github app is not installed for this repository")
+}
+
+// mythicalMergeCommitText is a squash merge's commit title and message.
+type mythicalMergeCommitText struct{ Title, Message string }
+
+// MergeToken mints Merge's token: contents:write only, the one permission
+// GitHub's merge endpoint needs, for the installation serving gh.
+func (g *mythicalGitHubAPI) MergeToken(ctx context.Context, gh mythicalGitHubRepo) (GitHubInstallationToken, error) {
+	installation, err := g.tokens.CreateGitHubInstallationTokenForRepositoryOwner(ctx, gh.userID, gh.orgID, gh.Owner, gh.Name, map[string]string{"contents": "write"})
+	if err != nil {
+		return GitHubInstallationToken{}, err
+	}
+	if strings.TrimSpace(installation.Token) == "" {
+		return GitHubInstallationToken{}, pkgerrors.BadRequest("github app is not installed for this repository")
+	}
+	return installation, nil
+}
+
+// Merge is the stack's one write to GitHub main, sent with MergeToken's
+// token. The sha pins the merge to the reviewed head: GitHub refuses it
+// (409) once the branch moved. The squash commit's title and message are
+// the caller's, so none comes from the pull request as edited on GitHub.
+// GitHub refusing it (401, 403, 404, 405, 409, 422) is a *GitHubRefusal
+// with GitHub's words.
+func (g *mythicalGitHubAPI) Merge(ctx context.Context, gh mythicalGitHubRepo, token string, number int64, head string, commit mythicalMergeCommitText) (string, error) {
+	var merged struct {
+		SHA    string `json:"sha"`
+		Merged bool   `json:"merged"`
+	}
+	path := landingGitHubRepoPath(gh.Owner, gh.Name) + "/pulls/" + strconv.FormatInt(number, 10) + "/merge"
+	var refusal GitHubRefusal
+	status, err := g.api.request(ctx, token, http.MethodPut, path, map[string]string{"sha": head, "merge_method": "squash",
+		"commit_title": commit.Title, "commit_message": commit.Message}, &merged, &refusal)
+	if err != nil {
+		return "", err
+	}
+	if status != http.StatusOK || !merged.Merged {
+		switch status {
+		case 401, 403, 404, 405, 409, 422:
+			refusal.Status = status
+			if refusal.Message == "" {
+				refusal.Message = "GitHub refused the merge (HTTP " + strconv.Itoa(status) + ")"
+			}
+			return "", &refusal
+		}
+		return "", landingGitHubStatusError(status, gh.Owner, gh.Name, "merge pull requests")
+	}
+	return merged.SHA, nil
+}
+
+func (g *mythicalGitHubAPI) RemoveLabel(ctx context.Context, gh mythicalGitHubRepo, number int64, label string) error {
+	token, err := g.installationToken(ctx, gh, map[string]string{"issues": "write"})
+	if err != nil {
+		return err
+	}
+	path := landingGitHubRepoPath(gh.Owner, gh.Name) + "/issues/" + strconv.FormatInt(number, 10) + "/labels/" + url.PathEscape(label)
+	status, err := g.api.request(ctx, token, http.MethodDelete, path, nil, nil)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK && status != http.StatusNotFound {
+		return landingGitHubStatusError(status, gh.Owner, gh.Name, "edit issue labels")
+	}
+	return nil
+}
+
+// mythicalLabelApplier is who applied a label, and whether a GitHub App
+// did it on their behalf.
+type mythicalLabelApplier struct {
+	Actor  gitHubActor
+	ViaApp bool
+	// EventID is the labeled event's GitHub id: one per application, so a
+	// replayed delivery of it is told from a new application.
+	EventID int64
+	// Removed marks the label's last event as its removal, by Actor.
+	Removed bool
+}
+
+// present reports whether the label is on the issue now.
+func (a *mythicalLabelApplier) present() bool { return a != nil && !a.Removed }
+
+// LabelApplier reads who last applied or removed label (nil: never), from
+// the repository's complete event history. An interrupted history read is
+// refused rather than used as partial evidence.
+func (g *mythicalGitHubAPI) LabelApplier(ctx context.Context, gh mythicalGitHubRepo, number int64, label string) (*mythicalLabelApplier, error) {
+	// The issue's labels as they are now decide; the history only names who
+	// applied or removed one. When the two disagree the history trails the
+	// labels, and nothing is answered until it catches up.
+	var issue struct {
+		Labels []gitHubLabel `json:"labels"`
+	}
+	status, err := g.api.request(ctx, gh.Token, http.MethodGet, landingGitHubRepoPath(gh.Owner, gh.Name)+"/issues/"+strconv.FormatInt(number, 10), nil, &issue)
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, landingGitHubStatusError(status, gh.Owner, gh.Name, "read the issue")
+	}
+	present := false
+	for _, current := range issue.Labels {
+		present = present || strings.EqualFold(current.Name, label)
+	}
+	applier, err := g.labelHistory(ctx, gh, number, label)
+	if err != nil {
+		return nil, err
+	}
+	if present != applier.present() {
+		return nil, errors.New("GitHub's label history trails the issue's labels; read again later")
+	}
+	return applier, nil
+}
+
+// labelHistory answers the last application or removal of label in the
+// issue's event history, nil when there is none.
+func (g *mythicalGitHubAPI) labelHistory(ctx context.Context, gh mythicalGitHubRepo, number int64, label string) (*mythicalLabelApplier, error) {
+	events, _, err := g.IssueEvents(ctx, gh, 0)
+	if err != nil {
+		return nil, err
+	}
+	var applier *mythicalLabelApplier
+	for _, event := range events {
+		if event.Issue != number || !strings.EqualFold(event.Label, label) {
+			continue
+		}
+		switch event.Event {
+		case "labeled":
+			applier = &mythicalLabelApplier{Actor: event.Actor, ViaApp: event.ViaApp, EventID: event.ID}
+		case "unlabeled":
+			applier = &mythicalLabelApplier{Actor: event.Actor, EventID: event.ID, Removed: true}
+		}
+	}
+	return applier, nil
+}
+
+// AppliedClose proves this Drop's close using the canonical App's event.
+// A person's subsequent reopen must not authorize another close. Read every
+// page: a truncated history is not proof that an uncertain write was absent.
+func (g *mythicalGitHubAPI) AppliedClose(ctx context.Context, gh mythicalGitHubRepo, number int64, since time.Time) (bool, error) {
+	credentials, err := loadGitHubAppCredentials(ctx, g.credentials)
+	if err != nil {
+		return false, err
+	}
+	if credentials.ID <= 0 {
+		return false, ErrGitHubAppNotConfigured
+	}
+	if since.IsZero() {
+		return false, errors.New("close reconciliation has no Drop timestamp")
+	}
+	for page := 1; ; page++ {
+		var events []struct {
+			Event     string      `json:"event"`
+			CreatedAt time.Time   `json:"created_at"`
+			Actor     gitHubActor `json:"actor"`
+			App       *struct {
+				ID int64 `json:"id"`
+			} `json:"performed_via_github_app"`
+		}
+		path := landingGitHubRepoPath(gh.Owner, gh.Name) + "/issues/" + strconv.FormatInt(number, 10) + "/events?per_page=100&page=" + strconv.Itoa(page)
+		status, err := g.api.request(ctx, gh.Token, http.MethodGet, path, nil, &events)
+		if err != nil {
+			return false, err
+		}
+		if status != http.StatusOK {
+			return false, landingGitHubStatusError(status, gh.Owner, gh.Name, "read pull request close events")
+		}
+		if events == nil {
+			return false, errors.New("GitHub returned incomplete close history")
+		}
+		for _, event := range events {
+			// GitHub timestamps have second precision; compare at that precision.
+			if event.Event == "closed" && event.App != nil && event.App.ID == credentials.ID && event.Actor.Type == "Bot" && !event.CreatedAt.Before(since.Truncate(time.Second)) {
+				return true, nil
+			}
+		}
+		if len(events) < 100 {
+			return false, nil
+		}
+	}
+}
+
+// mythicalCommentMarker is the hidden mark a keyed comment carries, so a
+// retry finds it.
+func mythicalCommentMarker(key string) string {
+	return "<!-- smithers:" + strings.ReplaceAll(key, "--", "-") + " -->"
+}
+
+// mythicalCommentPages bounds how many pages of an issue's comments a keyed
+// comment reads for its earlier say.
+const mythicalCommentPages = 10
+
+// findComment answers the id of the comment an App posted carrying marker, 0
+// when none does. A person's comment quoting the marker is never taken for
+// the stack's, and past mythicalCommentPages pages the thread is taken to
+// hold none, so a very long thread gets a new comment rather than none.
+func (g *mythicalGitHubAPI) findComment(ctx context.Context, gh mythicalGitHubRepo, number int64, marker string) (int64, error) {
+	credentials, err := loadGitHubAppCredentials(ctx, g.credentials)
+	if err != nil {
+		return 0, err
+	}
+	if credentials.ID <= 0 {
+		return 0, ErrGitHubAppNotConfigured
+	}
+
+	for page := 1; page <= mythicalCommentPages; page++ {
+		var comments []struct {
+			ID   int64  `json:"id"`
+			Body string `json:"body"`
+			User struct {
+				Type string `json:"type"`
+			} `json:"user"`
+			App *struct {
+				ID int64 `json:"id"`
+			} `json:"performed_via_github_app"`
+		}
+		path := landingGitHubRepoPath(gh.Owner, gh.Name) + "/issues/" + strconv.FormatInt(number, 10) + "/comments?per_page=100&page=" + strconv.Itoa(page)
+		status, err := g.api.request(ctx, gh.Token, http.MethodGet, path, nil, &comments)
+		if err != nil {
+			return 0, err
+		}
+		if status != http.StatusOK {
+			return 0, landingGitHubStatusError(status, gh.Owner, gh.Name, "read issue comments")
+		}
+		for _, comment := range comments {
+			if comment.App != nil && comment.App.ID == credentials.ID && comment.User.Type == "Bot" && strings.Contains(comment.Body, marker) {
+				return comment.ID, nil
+			}
+		}
+		if len(comments) < 100 {
+			return 0, nil
+		}
+	}
+	return 0, nil
+}
+
+func (g *mythicalGitHubAPI) Comment(ctx context.Context, gh mythicalGitHubRepo, number int64, key, body string) error {
+	var existing int64
+	payload := map[string]string{"body": body}
+	if key != "" {
+		marker := mythicalCommentMarker(key)
+		found, err := g.findComment(ctx, gh, number, marker)
+		if err != nil {
+			return err
+		}
+		existing, payload["body"] = found, body+"\n\n"+marker
+	}
+	token, err := g.installationToken(ctx, gh, map[string]string{"issues": "write"})
+	if err != nil {
+		return err
+	}
+	return sendGitHubIssueWrite(ctx, func(ctx context.Context) error {
+		if existing != 0 {
+			path := landingGitHubRepoPath(gh.Owner, gh.Name) + "/issues/comments/" + strconv.FormatInt(existing, 10)
+			status, err := g.api.request(ctx, token, http.MethodPatch, path, payload, nil)
+			if err != nil {
+				return err
+			}
+			if status != http.StatusOK {
+				return landingGitHubStatusError(status, gh.Owner, gh.Name, "comment on issues")
+			}
+			return nil
+		}
+		path := landingGitHubRepoPath(gh.Owner, gh.Name) + "/issues/" + strconv.FormatInt(number, 10) + "/comments"
+		status, err := g.api.request(ctx, token, http.MethodPost, path, payload, nil)
+		if err != nil {
+			return err
+		}
+		if status != http.StatusCreated {
+			return landingGitHubStatusError(status, gh.Owner, gh.Name, "comment on issues")
+		}
+		return nil
+	})
+}
+
+// CloseIssueSince reconciles the committed completion intent before repeating
+// a close whose response was lost. A person's later reopen remains open.
+func (g *mythicalGitHubAPI) CloseIssueSince(ctx context.Context, gh mythicalGitHubRepo, number int64, since time.Time) error {
+	applied, err := g.AppliedClose(ctx, gh, number, since)
+	if err != nil {
+		return err
+	}
+	if applied {
+		return nil
+	}
+	token, err := g.installationToken(ctx, gh, map[string]string{"issues": "read"})
+	if err != nil {
+		return err
+	}
+	var issue struct {
+		State string `json:"state"`
+	}
+	status, err := g.api.request(ctx, token, http.MethodGet, landingGitHubRepoPath(gh.Owner, gh.Name)+"/issues/"+strconv.FormatInt(number, 10), nil, &issue)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK {
+		return landingGitHubStatusError(status, gh.Owner, gh.Name, "read issue before completion")
+	}
+	if issue.State == "closed" {
+		return nil
+	}
+	if issue.State != "open" {
+		return errors.New("GitHub did not confirm the issue state")
+	}
+	return g.CloseIssue(ctx, gh, number)
+}
+
+func (g *mythicalGitHubAPI) CloseIssue(ctx context.Context, gh mythicalGitHubRepo, number int64) error {
+	token, err := g.installationToken(ctx, gh, map[string]string{"issues": "write"})
+	if err != nil {
+		return err
+	}
+	path := landingGitHubRepoPath(gh.Owner, gh.Name) + "/issues/" + strconv.FormatInt(number, 10)
+	status, err := g.api.request(ctx, token, http.MethodPatch, path, map[string]string{"state": "closed", "state_reason": "completed"}, nil)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK {
+		return landingGitHubStatusError(status, gh.Owner, gh.Name, "close issues")
+	}
+	return nil
+}
+
+// mythicalIssueEdit is one issue edit: the state GitHub should hold the issue
+// in, and the title and body it should carry. A nil field is left alone, so a
+// state change never rewrites the text and an edit never reopens a closed
+// issue by accident.
+type mythicalIssueEdit struct {
+	// State is "open", "closed" or "" (leave the state alone).
+	State string
+	Title *string
+	Body  *string
+}
+
+// payload is the PATCH body GitHub reads, or nil when the edit names nothing.
+func (e mythicalIssueEdit) payload() map[string]any {
+	body := map[string]any{}
+	switch e.State {
+	case "closed":
+		// GitHub records WHY an issue closed; the stack's own close says
+		// completed, and so does a person's close through the app.
+		body["state"], body["state_reason"] = "closed", "completed"
+	case "open":
+		body["state"] = "open"
+	}
+	if e.Title != nil {
+		body["title"] = *e.Title
+	}
+	if e.Body != nil {
+		body["body"] = *e.Body
+	}
+	if len(body) == 0 {
+		return nil
+	}
+	return body
+}
+
+// UpdateIssue sends the edit through the caller's send fence, like every other
+// issue write on this provider: the token is minted and the marker read
+// outside it, and only the actual request runs inside.
+func (g *mythicalGitHubAPI) UpdateIssue(ctx context.Context, gh mythicalGitHubRepo, number int64, edit mythicalIssueEdit) error {
+	payload := edit.payload()
+	if payload == nil {
+		return errors.New("the issue edit names no change")
+	}
+	token, err := g.installationToken(ctx, gh, map[string]string{"issues": "write"})
+	if err != nil {
+		return err
+	}
+	path := landingGitHubRepoPath(gh.Owner, gh.Name) + "/issues/" + strconv.FormatInt(number, 10)
+	return sendGitHubIssueWrite(ctx, func(sendContext context.Context) error {
+		status, err := g.api.request(sendContext, token, http.MethodPatch, path, payload, nil)
+		if err != nil {
+			return err
+		}
+		if status != http.StatusOK {
+			return landingGitHubStatusError(status, gh.Owner, gh.Name, "edit issues")
+		}
+		return nil
+	})
+}
+
+func (g *mythicalGitHubAPI) UpdateIssueComment(ctx context.Context, gh mythicalGitHubRepo, id int64, body string) error {
+	token, err := g.installationToken(ctx, gh, map[string]string{"issues": "write"})
+	if err != nil {
+		return err
+	}
+	path := landingGitHubRepoPath(gh.Owner, gh.Name) + "/issues/comments/" + strconv.FormatInt(id, 10)
+	return sendGitHubIssueWrite(ctx, func(sendContext context.Context) error {
+		status, err := g.api.request(sendContext, token, http.MethodPatch, path, map[string]string{"body": body}, nil)
+		if err != nil {
+			return err
+		}
+		if status != http.StatusOK {
+			return landingGitHubStatusError(status, gh.Owner, gh.Name, "edit issue comments")
+		}
+		return nil
+	})
+}
+
+// OnMain compares the bookmark with the commit: a commit the bookmark is
+// not behind at all is reachable from it.
+func (g *mythicalGitHubAPI) OnMain(ctx context.Context, gh mythicalGitHubRepo, bookmark, commit string) (bool, error) {
+	ahead, err := g.api.AheadBy(ctx, gh.Token, gh.Owner, gh.Name, bookmark, commit)
+	if err != nil {
+		return false, err
+	}
+	return ahead == 0, nil
+}
+
+func (g *mythicalGitHubAPI) AddLabel(ctx context.Context, gh mythicalGitHubRepo, number int64, label string) error {
+	token, err := g.installationToken(ctx, gh, map[string]string{"issues": "write"})
+	if err != nil {
+		return err
+	}
+	path := landingGitHubRepoPath(gh.Owner, gh.Name) + "/issues/" + strconv.FormatInt(number, 10) + "/labels"
+	status, err := g.api.request(ctx, token, http.MethodPost, path, map[string][]string{"labels": {label}}, nil)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK {
+		return landingGitHubStatusError(status, gh.Owner, gh.Name, "edit issue labels")
+	}
+	return nil
+}
+
+// GitHub CI verdicts on one commit.
+const (
+	mythicalCIGreen   = "green"
+	mythicalCIPending = "pending"
+	mythicalCIRed     = "red"
+)
+
+// headSuites reads one page of the commit's check suites: red on a failed
+// suite, pending while one that is CI has not finished, and whether the
+// page was full.
+func (g *mythicalGitHubAPI) headSuites(ctx context.Context, token string, gh mythicalGitHubRepo, commit string, page int) (string, bool, error) {
+	var suites struct {
+		CheckSuites []struct {
+			Status     string  `json:"status"`
+			Conclusion *string `json:"conclusion"`
+			Runs       int     `json:"latest_check_runs_count"`
+			App        *struct {
+				Slug string `json:"slug"`
+			} `json:"app"`
+		} `json:"check_suites"`
+	}
+	status, err := g.api.request(ctx, token, http.MethodGet, commit+"/check-suites?per_page=100&page="+strconv.Itoa(page), nil, &suites)
+	if err != nil {
+		return "", false, err
+	}
+	if status != http.StatusOK {
+		return "", false, landingGitHubStatusError(status, gh.Owner, gh.Name, "read check suites")
+	}
+	verdict := mythicalCIGreen
+	for _, suite := range suites.CheckSuites {
+		actions := suite.App != nil && suite.App.Slug == "github-actions"
+		switch {
+		case suite.Runs == 0 && !actions && suite.Status != "completed":
+			// An App's placeholder suite: it never ran here.
+		case suite.Status != "completed" || suite.Conclusion == nil:
+			verdict = mythicalCIPending
+		case *suite.Conclusion != "success" && *suite.Conclusion != "neutral" && *suite.Conclusion != "skipped":
+			return mythicalCIRed, false, nil
+		}
+	}
+	return verdict, len(suites.CheckSuites) == 100, nil
+}
+
+// HeadChecks is green only when at least one check reported on the commit
+// and every check run and commit status on it finished successfully
+// (success, neutral or skipped). A failed one is red; one still running, or
+// no report at all yet, is pending. Required names absent from the head
+// remain pending; advisory failures retain the existing merge hold.
+// HeadChecks and projections read the same named facts.
+func (g *mythicalGitHubAPI) HeadChecks(ctx context.Context, gh mythicalGitHubRepo, sha string) (string, error) {
+	facts, err := g.HeadCheckFacts(ctx, gh, sha)
+	if err != nil {
+		return "", err
+	}
+	if len(facts) == 0 {
+		return mythicalCIPending, nil
+	}
+	pending := false
+	for _, f := range facts {
+		if f.State == mythicalCIRed {
+			return mythicalCIRed, nil
+		}
+		pending = pending || f.State == mythicalCIPending
+	}
+	token, err := g.installationToken(ctx, gh, map[string]string{"checks": "read", "statuses": "read"})
+	if err != nil {
+		return "", err
+	}
+	commit := landingGitHubRepoPath(gh.Owner, gh.Name) + "/commits/" + url.PathEscape(sha)
+	for page := 1; page <= 10; page++ {
+		verdict, full, err := g.headSuites(ctx, token, gh, commit, page)
+		if err != nil || verdict == mythicalCIRed {
+			return verdict, err
+		}
+		pending = pending || verdict == mythicalCIPending
+		if !full {
+			if pending {
+				return mythicalCIPending, nil
+			}
+			return mythicalCIGreen, nil
+		}
+	}
+	return mythicalCIPending, nil
+}
+
+func (g *mythicalGitHubAPI) IssueText(ctx context.Context, gh mythicalGitHubRepo, number int64) (gitHubIssueText, error) {
+	return g.text.IssueText(ctx, gh.Token, gh.Owner, gh.Name, number)
+}

@@ -1,0 +1,786 @@
+.app-shell {
+	position: relative;
+	display: flex;
+	/*
+	 * A flex item's default min-width is auto, so without this the shell grew
+	 * to its min-content width (the widest card) and pushed the page
+	 * sideways at narrow viewports instead of shrinking to the viewport.
+	 */
+	min-width: 0;
+	min-height: 0;
+	overflow: clip;
+	flex: 1;
+	flex-direction: row;
+	/* Keep repository controls clear of the conversation, including bubble tails. */
+	column-gap: 16px;
+}
+
+/*
+ * The chat-first shell: the transcript and composer live in .chat-column and
+ * are never unmounted. World and Connectors open as an embedded pane beside
+ * the conversation (stacked below it on narrow screens), never in place of it.
+ */
+.chat-frame {
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	flex: 1;
+}
+
+.chat-column {
+	position: relative;
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	flex: 1;
+	flex-direction: column;
+}
+
+
+.chat-frame[data-pane] .chat-column {
+	flex: 1 1 42%;
+}
+
+.chat-frame .embedded-pane {
+	flex: 1 1 58%;
+	border-left: 1px solid var(--border);
+}
+
+@media (max-width: 900px) {
+	.chat-frame[data-pane] {
+		flex-direction: column;
+	}
+
+	.chat-frame[data-pane] .chat-column {
+		flex: 1 1 50%;
+	}
+
+	.chat-frame[data-pane] .embedded-pane {
+		border-top: 1px solid var(--border);
+		border-left: 0;
+	}}
+
+.app-shell .smithers-transcript .sui-chat-messages {
+	width: min(100%, var(--chat-max-width));
+	/* 42px top clears the 44px title strip; the rest reads the spacing scale. */
+	padding: 42px var(--sp-6) var(--sp-6);
+	gap: var(--sp-2);
+}
+
+.app-shell .smithers-transcript .sui-chat-messages > :first-child {
+	margin-top: auto;
+}
+
+.smithers-transcript .smithers-chat-message .sui-chat-bubble,
+.smithers-transcript .sui-chat-message[data-role="assistant"] .sui-chat-bubble-pending {
+	position: relative;
+	max-width: min(78%, 720px);
+	padding: var(--sp-2) var(--sp-3);
+	border-radius: 12px;
+	background: var(--bubble-incoming);
+	box-shadow: var(--shadow-1);
+	color: var(--text);
+	font-size: var(--fs-body);
+	line-height: var(--lh-body);
+}
+
+.smithers-transcript .smithers-chat-message[data-role="user"] .sui-chat-bubble {
+	border-bottom-right-radius: 3px;
+	background: var(--bubble-outgoing);
+	color: var(--bubble-outgoing-text);
+}
+
+.smithers-transcript .smithers-chat-message[data-role="user"] .sui-chat-bubble::after {
+	position: absolute;
+	right: -6px;
+	bottom: 0;
+	width: 8px;
+	height: 10px;
+	background: var(--bubble-outgoing);
+	clip-path: polygon(0 0, 0 100%, 100% 100%);
+	content: "";
+}
+
+.smithers-transcript .smithers-chat-message[data-role="assistant"] .sui-chat-bubble,
+.smithers-transcript .sui-chat-message[data-role="assistant"] .sui-chat-bubble-pending {
+	border-bottom-left-radius: 3px;
+}
+
+.smithers-transcript .smithers-chat-message[data-role="assistant"] .sui-chat-bubble::before,
+.smithers-transcript .sui-chat-message[data-role="assistant"] .sui-chat-bubble-pending::before {
+	position: absolute;
+	bottom: 0;
+	left: -6px;
+	width: 8px;
+	height: 10px;
+	background: var(--bubble-incoming);
+	clip-path: polygon(100% 0, 0 100%, 100% 100%);
+	content: "";
+}
+
+.smithers-transcript .smithers-chat-message p {
+	margin: 0;
+}
+
+.smithers-transcript .smithers-chat-message .message-markdown {
+	color: inherit;
+	font-size: inherit;
+	line-height: inherit;
+}
+
+.smithers-transcript .smithers-chat-message .message-markdown .sui-md-p {
+	margin: 4px 0;
+}
+
+.smithers-transcript .smithers-chat-message .message-markdown .sui-md-heading {
+	margin: 10px 0 4px;
+	color: inherit;
+}
+
+.smithers-transcript .smithers-chat-message .message-markdown .sui-md-h1 {
+	font-size: 1.3em;
+}
+
+.smithers-transcript .smithers-chat-message .message-markdown .sui-md-h2 {
+	font-size: 1.2em;
+}
+
+.smithers-transcript .smithers-chat-message .message-markdown .sui-md-h3 {
+	font-size: 1.1em;
+}
+
+.smithers-transcript .smithers-chat-message .message-markdown .sui-md-list {
+	margin: 4px 0;
+	padding-left: 20px;
+}
+
+.smithers-transcript .smithers-chat-message .message-markdown .sui-md-inline-code {
+	background: color-mix(in srgb, currentColor 10%, transparent);
+	font-family: var(--font-mono);
+}
+
+.smithers-transcript .smithers-chat-message .message-markdown .sui-md-link {
+	color: var(--brand);
+}
+
+.smithers-transcript .smithers-chat-message[data-role="user"] .message-markdown .sui-md-link {
+	color: inherit;
+}
+
+.smithers-transcript .smithers-chat-message .message-markdown .sui-codeblock {
+	margin: 6px 0;
+	font-family: var(--font-mono);
+}
+
+.smithers-transcript .smithers-chat-message .message-reasoning {
+	margin: 0 0 4px;
+	border-color: var(--border);
+	background: var(--hover-subtle);
+	color: var(--text);
+}
+
+.smithers-transcript .smithers-chat-message .message-reasoning .sui-reasoning-trigger {
+	padding: var(--sp-2) var(--sp-3);
+	color: var(--text-muted);
+}
+
+.smithers-transcript .smithers-chat-message .message-reasoning .sui-reasoning-trigger:hover {
+	background: var(--hover-subtle);
+}
+
+.smithers-transcript .smithers-chat-message .message-reasoning .sui-reasoning-title {
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	font-weight: 600;
+}
+
+.smithers-transcript .smithers-chat-message .message-reasoning .sui-reasoning-body {
+	padding: 0 var(--sp-3) var(--sp-2);
+	color: var(--text-muted);
+	font-size: var(--fs-small);
+}
+
+.smithers-transcript .smithers-chat-message .message-reasoning-text {
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+}
+
+.app-shell .bubble-system-note {
+	margin-top: 3px;
+	min-width: 0;
+	justify-content: flex-start;
+	color: var(--confluence-text);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	/*
+	 * Tool-act lines carry unbroken mono payloads. The chat column is narrow
+	 * whenever a pane is open, so an unbreakable run has to wrap rather than
+	 * hand the whole transcript a horizontal scrollbar.
+	 */
+	overflow-wrap: anywhere;
+}
+
+.app-shell .bubble-system-note .sui-marker-label {
+	padding: 0;
+	border: 0;
+	background: transparent;
+	text-align: left;
+}
+
+.message-time {
+	float: right;
+	margin: 5px 0 -2px 10px;
+	color: var(--bubble-meta);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	line-height: 1;
+}
+
+.smithers-transcript .sui-chat-bubble-pending {
+	min-width: 58px;
+	min-height: 32px;
+	justify-content: center;
+}
+
+.smithers-transcript .sui-chat-typing {
+	gap: 3px;
+}
+
+.smithers-transcript .sui-chat-typing span {
+	width: 4px;
+	height: 4px;
+	background: var(--brand);
+}
+
+.composer-wrap {
+	position: relative;
+	z-index: 25;
+	width: min(100%, var(--chat-max-width));
+	margin: 0 auto;
+	padding: var(--sp-2) var(--sp-6) var(--sp-5);
+	background: linear-gradient(to top, var(--bg) 60%, transparent);
+}
+
+.composer-wrap > .slash-menu {
+	position: absolute;
+	right: 24px;
+	bottom: calc(100% + 6px);
+	left: 24px;
+	z-index: 50;
+	max-height: 40vh;
+	margin-bottom: 0;
+}
+
+/* The normal app summons one floating composer; the guide keeps its dock. */
+.composer-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 80;
+	display: flex;
+	align-items: flex-start;
+	padding-top: max(24px, env(safe-area-inset-top));
+}
+
+.composer-overlay[hidden] {
+	display: none;
+}
+
+/* Chat's mode controls stay reachable while its input is summoned. */
+.app-shell:has(.composer-overlay:not([hidden])) .app-chat-controls {
+	position: relative;
+	z-index: 81;
+}
+
+.composer-overlay .composer-wrap {
+	padding-top: 0;
+	padding-bottom: 0;
+	background: none;
+	animation: composer-summon 120ms ease-out;
+}
+
+.composer-overlay .composer-wrap > .slash-menu {
+	top: calc(100% + 6px);
+	bottom: auto;
+	max-height: min(60vh, calc(100dvh - 220px));
+}
+
+@keyframes composer-summon {
+	from { opacity: 0; transform: translateY(-6px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.composer-overlay .composer-wrap {
+		animation: none;
+	}}
+
+.app-shell .smithers-composer {
+	width: 100%;
+	padding: var(--sp-4) var(--sp-4) var(--sp-2);
+	gap: 6px;
+}
+
+/* The composer and the queued-prompt strip that floats with it share one surface. */
+.app-shell .smithers-composer,
+.app-shell .prompt-queue {
+	border: 1px solid var(--border-strong);
+	/* The guide palette's layer is --r-4; the app composer was a one-off 20px
+	   blob. One radius system. */
+	border-radius: var(--r-4);
+	background: var(--surface-glass-strong);
+	-webkit-backdrop-filter: blur(20px) saturate(180%);
+	backdrop-filter: blur(20px) saturate(180%);
+	box-shadow: var(--shadow-2);
+}
+
+.app-shell .smithers-composer .sui-chat-composer-input:focus-visible {
+	outline: 2px solid var(--ring-border);
+	outline-offset: -2px;
+}
+
+.app-shell .smithers-composer .sui-chat-composer-input {
+	padding: var(--sp-2) var(--sp-3);
+	color: var(--text);
+	font-family: var(--font-ui);
+	font-size: var(--fs-md);
+}
+
+.app-shell .smithers-composer .sui-chat-composer-toolbar {
+	min-height: var(--ctl-h-sm);
+}
+
+.app-shell .smithers-composer .sui-chat-composer-status {
+	color: var(--text-faint);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+}
+
+.app-shell .smithers-composer .sui-chat-composer-send {
+	border-radius: 50%;
+	background: var(--confluence);
+	color: var(--on-confluence);
+}
+
+.app-shell .smithers-composer .sui-chat-composer-send:hover,
+.app-shell .smithers-composer .sui-chat-composer-send:active:not(:disabled) {
+	background: var(--confluence-hover);
+	color: var(--on-confluence);
+}
+
+/*
+ * The signed-out shortcut: the first tab stop in the
+ * document, and invisible until it is focused.
+ *
+ * Out of flow, so the chat column lays out exactly as it did before this
+ * element existed. `clip-path: inset(50%)` paints nothing while it is not
+ * focused, which keeps the default render identical, and unlike `display:none`
+ * or `visibility:hidden` it leaves the button in the tab ring and in the
+ * accessibility tree, which is the point. Pointer events are off in that state,
+ * so no invisible target sits over the transcript.
+ */
+.app-shell .auth-shortcut {
+	position: absolute;
+	z-index: 60;
+	top: 12px;
+	left: 14px;
+	clip-path: inset(50%);
+	pointer-events: none;
+}
+
+.app-shell .auth-shortcut:focus,
+.app-shell .auth-shortcut:focus-visible {
+	clip-path: none;
+	pointer-events: auto;
+}
+
+.message-cta {
+	display: inline-flex;
+	margin-top: 8px;
+}
+
+.message-init {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+}
+
+.message-init-check {
+	flex: none;
+	margin-top: 2px;
+	color: var(--success, currentColor);
+}
+
+.message-init-body {
+	min-width: 0;
+}
+
+.message-init-details {
+	margin: 4px 0;
+}
+
+.message-init-details > summary {
+	cursor: pointer;
+}
+
+.world-surface {
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	flex: 1;
+	flex-direction: column;
+	background: var(--surface);
+	animation: view-in var(--dur-slow) var(--ease-current);
+}
+
+/* §11.6: the empty state's own next step sits under the sentence naming it. */
+
+.world-document-meta,
+.world-document-meta > div {
+	display: flex;
+	align-items: center;
+}
+
+.world-document-meta .world-delete-btn {
+	color: var(--text-muted);
+}
+
+.world-workspace {
+	display: grid;
+	min-width: 0;
+	min-height: 0;
+	flex: 1;
+	grid-template-columns: 220px minmax(0, 1fr);
+}
+
+/* Librarian L5: the link rail beside the open note, and the graph mode in the note's column. */
+.world-workspace:has(> .world-rail) {
+	grid-template-columns: 220px minmax(0, 1fr) 240px;
+}
+
+.world-rail {
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	flex-direction: column;
+	gap: 16px;
+	padding: 14px 12px;
+	overflow: auto;
+	border-left: 1px solid var(--border);
+	background: var(--surface-2);
+}
+
+.world-graph {
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	flex-direction: column;
+	background: var(--surface);
+}
+
+.world-graph > .world-document-meta {
+	flex: 0 0 auto;
+}
+
+.world-sidebar {
+	min-width: 0;
+	padding: 14px 8px;
+	overflow: auto;
+	border-right: 1px solid var(--border);
+	background: var(--surface-2);
+}
+
+.world-document {
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	flex-direction: column;
+	background: var(--surface);
+}
+
+.world-document-meta {
+	min-height: 42px;
+	padding: 6px 16px;
+	justify-content: space-between;
+	gap: 12px;
+	border-bottom: 1px solid var(--border);
+	color: var(--text-muted);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+}
+
+.world-document-meta > div {
+	gap: 6px;
+}
+
+/* The editor's tab-out region (§21.2) is layout-transparent: the editor still
+   takes the column's remaining height exactly as it did. */
+.world-editor-region {
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	flex: 1;
+	flex-direction: column;
+}
+
+.world-document .sui-markdown-editor {
+	flex: 1;
+}
+
+.world-document .sui-markdown-editor .milkdown .ProseMirror {
+	width: min(100%, 760px);
+	margin: 0 auto;
+	padding: 38px 48px 120px;
+}
+
+@media (max-width: 640px) {
+	.app-shell {
+		column-gap: 12px;
+	}
+
+	.app-shell .smithers-transcript .sui-chat-messages,
+	.composer-wrap {
+		padding-right: 14px;
+		padding-left: 14px;
+	}
+
+	.composer-wrap > .slash-menu {
+		right: 14px;
+		left: 14px;
+	}
+
+	.smithers-transcript .smithers-chat-message .sui-chat-bubble {
+		max-width: 86%;
+	}
+
+	.world-workspace {
+		grid-template-columns: 148px minmax(0, 1fr);
+	}
+
+	.world-document-meta {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.world-document .sui-markdown-editor .milkdown .ProseMirror {
+		padding: 24px 20px 80px;
+	}}
+
+/* Wave 10 — the admin dev-tools panel (§2b/§2d): chat-attached chrome. */
+.devtools-panel {
+	display: flex;
+	flex-direction: column;
+	width: 21rem;
+	border-left: 1px solid var(--border);
+	background: var(--card);
+	overflow: auto;
+}
+
+/*
+ * 21rem (336px) exceeds the 320px minimum shell width all by itself, so a
+ * nonshrinking panel pushed the composer off a narrow screen. Below the same
+ * 900px breakpoint the panes already use, the panel stacks under the chat
+ * column instead of fighting it for the row.
+ */
+@media (max-width: 900px) {
+	.chat-frame:has(> .devtools-panel) {
+		flex-direction: column;
+	}
+
+	.devtools-panel {
+		width: 100%;
+		border-top: 1px solid var(--border);
+		border-left: 0;
+	}
+}
+.devtools-sections {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+	padding: 0.75rem;
+}
+.devtools-section h3 {
+	margin: 0 0 0.375rem;
+	font-size: var(--fs-small);
+}
+.devtools-toolcalls {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+.devtools-toolcalls pre,
+.devtools-json {
+	margin: 0.125rem 0;
+	padding: 0.375rem;
+	border-radius: 6px;
+	background: var(--accent);
+	font-size: var(--fs-caption);
+	white-space: pre-wrap;
+	word-break: break-word;
+	max-height: 10rem;
+	overflow: auto;
+}
+.devtools-registry {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	font-size: var(--fs-small);
+	columns: 2;
+}
+.devtools-empty {
+	color: var(--muted-foreground);
+	font-size: var(--fs-small);
+}
+
+/* The unknown-repository arrival is a single opening notice. */
+.app-shell .smithers-transcript[data-repository-missing] .sui-chat-messages > :first-child { margin-top: 0; }
+/* The login screen owns the transcript: it sits in the middle of the page, not at the bottom of a chat log (cards/LoginScreen.tsx). */
+.app-shell .smithers-transcript[data-login] .sui-chat-messages { justify-content: center; }
+.app-shell .smithers-transcript[data-login] .sui-chat-messages > :first-child { margin-top: 0; }
+.prompt-queue { margin-top: 8px; padding: 8px 12px; max-height: 30vh; overflow: auto; }
+.prompt-queue-heading, .prompt-queue li { display: flex; align-items: baseline; gap: 8px; }
+.prompt-queue-heading { justify-content: space-between; }
+.prompt-queue ol { list-style: none; padding: 0; margin: 4px 0 0; }
+.prompt-queue-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prompt-queue button, .composer-queue-action { font: inherit; color: inherit; background: transparent; border: 0; cursor: pointer; }
+.prompt-queue button:focus-visible, .composer-queue-action:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+.composer-queue-action:disabled { opacity: .5; cursor: default; }
+
+
+/* ── The wiki spaces (#1922): the pane's switch, tree, page meta and attachment ── */
+.wiki-space-switch { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: var(--r-full); background: var(--surface-2); }
+.wiki-space-switch button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-1); }
+.wiki-tree { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.wiki-tree-search { width: 100%; min-width: 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; font-size: var(--fs-small); }
+.wiki-tree-search:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 1px; }
+.wiki-tree-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.wiki-tag { padding: 2px 8px; border: 1px solid var(--border); border-radius: var(--r-full); background: var(--surface); color: var(--text-muted); font: inherit; font-size: var(--fs-caption); }
+.wiki-tag[aria-pressed="true"] { border-color: var(--brand-border); background: var(--brand-soft); color: var(--text); }
+.wiki-tag:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 1px; }
+.wiki-tree-error { margin: 0; color: var(--danger); font-size: var(--fs-caption); }
+.world-document-notice { margin: 0; padding: 6px 16px; border-bottom: 1px solid var(--border); color: var(--warning); font-size: var(--fs-small); }
+.world-attachment { display: grid; place-items: center; flex: 1; min-height: 0; padding: 24px; overflow: auto; }
+.world-attachment img { max-width: 100%; max-height: 100%; border-radius: var(--r-sm); box-shadow: var(--shadow-1); }
+.world-reading-region { flex: 1; min-height: 0; overflow: auto; }
+.wiki-page { width: min(100%, 760px); margin: 0 auto; padding: 38px 48px 120px; }
+.wiki-page .sui-md { font-size: var(--fs-body); }
+/* Violet is Smithers' own choice (tokens.css --ai-*); a wiki link is an ordinary link, and the open page is an ordinary selection. */
+/* Color carries meaning in the app, so a link borrows none: the text, underlined; heavier under the pointer. */
+.wiki-page a.sui-md-link { color: var(--text); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--text) 45%, transparent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.wiki-page a.sui-md-link:hover, .wiki-page a.sui-md-link:focus-visible { text-decoration-color: var(--text); text-decoration-thickness: 2px; }
+.wiki-tree .sui-file-tree-file[data-active="true"] { background: var(--hover-subtle); color: var(--text); font-weight: 650; }
+/* The header keeps its doors: when the path and the chip with the buttons do not share a line, the buttons take the next; a long path truncates. */
+.world-document-meta { flex-wrap: wrap; row-gap: 4px; }
+.world-document-meta > span:first-child { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.world-document-meta > div { flex: none; margin-left: auto; }
+.wiki-page-freshness { margin-right: 4px; font-family: var(--font-sans); }
+/* A target the space has no page for: marked, never a door. */
+.wiki-page a.sui-md-link[href^="#unresolved/"] { color: var(--text-muted); text-decoration-style: dashed; text-decoration-color: currentColor; cursor: default; }
+.wiki-page a.sui-md-link[href^="#unresolved/"]:hover { text-decoration-thickness: 1px; }
+.wiki-embed { margin: 16px 0; }
+.wiki-embed img { display: block; max-width: 100%; border-radius: var(--r-sm); box-shadow: var(--shadow-1); }
+.wiki-outline { margin-top: 4px; }
+
+/* Beside the activity rail (1,180 px and wider) the transcript keeps the rail's 272 px clear and stays centered when the viewport allows. */
+@media (min-width: 1180px) {
+	.app-shell .chat-frame:has(> .rail) .smithers-transcript .sui-chat-messages {
+		width: min(var(--chat-max-width), calc(100% - 320px));
+		margin-left: max(296px, calc((100% - var(--chat-max-width)) / 2));
+		align-self: flex-start;
+	}
+}
+
+/* While the first-sight Chat hint floats over the bottom right, the transcript scrolls its last card clear of it. */
+.app-shell:has(#hint-chat) .smithers-transcript .sui-chat-messages { padding-bottom: 132px; }
+
+/* Conversation shell: branch navigation, entries, context and Earlier archives. */
+.tree { width: 360px; max-width: 100%; max-height: 60vh; overflow: auto; box-sizing: border-box; padding: 6px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); box-shadow: var(--shadow-3); }
+.tree ol { display: flex; flex-direction: column; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.tree li { padding-left: calc(var(--depth, 0) * 16px); min-width: 0; }
+.tree-row { display: flex; width: 100%; align-items: center; gap: 8px; padding: 5px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font: var(--fs-small) var(--font-ui); text-align: left; }
+.tree-row:hover { background: var(--hover-subtle); }
+.tree-row[aria-current] { background: var(--surface-2); font-weight: 600; }
+.tree li[data-kind="earlier"] .tree-row { color: var(--text-muted); }
+.tree-row .state { padding: 0; border: 0; background: transparent; font-size: 0; gap: 0; }
+/* The History card (cards.css) reuses the shell's tree rows; their timestamps read as captions. */
+.history-card .tree-row time { flex: none; color: var(--text-muted); font-size: var(--fs-caption); }
+.tree-name { min-width: 0; flex: 1; overflow: hidden; font: 12.5px var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.tree-presence { display: flex; gap: 2px; flex-wrap: wrap; }
+.crumbs { position: relative; }
+.crumb-path { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--text-faint); font-size: var(--fs-small); }
+.crumb { padding: 2px 6px; border: 0; background: transparent; border-radius: 6px; color: var(--text-muted); font: 12.5px var(--font-mono); overflow-wrap: anywhere; }
+.crumb:hover { background: var(--hover); color: var(--text); }
+.crumb-here { display: inline-flex; align-items: center; gap: 4px; color: var(--text); font-weight: 600; }
+.crumbs > .tree { margin-top: 6px; }
+.entry { position: relative; padding: 12px 0; min-width: 0; overflow-wrap: anywhere; }
+.entry header, .earlier header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.author { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 4px 2px; color: var(--text-muted); font-size: var(--fs-caption); font-weight: 500; }
+.locked { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); font-size: var(--fs-caption); font-weight: 500; }
+.entry-title { color: var(--text); font-size: var(--fs-body); line-height: 1.5; }
+.entry-summary { margin: 4px 0; color: var(--text-muted); font-size: var(--fs-small); }
+.entry[data-tone="attention"] { border-left: 2px solid var(--attention); padding-left: 10px; }
+.entry[data-tone="failed"] { border-left: 2px solid var(--danger); padding-left: 10px; }
+.entry[data-tone="live"] { border-left: 2px solid var(--brand); padding-left: 10px; }
+.tombstone { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: var(--fs-small); }
+.context { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 0 4px; color: var(--text-faint); font-size: var(--fs-caption); max-width: 100%; }
+.context-toggle { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border: 0; border-radius: var(--r-full); background: var(--surface-2); color: var(--text-muted); font: 500 var(--fs-caption) var(--font-ui); }
+.context[data-open] .context-toggle { background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--text); }
+.context-chip { padding: 1px 7px; border: 1px solid var(--border); border-radius: var(--r-full); color: var(--text-muted); font: 11.5px var(--font-mono); overflow-wrap: anywhere; }
+.entry-action { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.entry-action button, .earlier nav button { padding: 4px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--text); font: var(--fs-small) var(--font-ui); }
+.earlier { min-width: 0; overflow-wrap: anywhere; }
+.read-only { padding: 1px 7px; border: 1px solid var(--border); border-radius: var(--r-full); color: var(--text-muted); font-size: var(--fs-caption); }
+.earlier nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.earlier nav button[aria-current] { background: var(--surface-2); }
+:is(.tree, .crumbs, .entry, .context, .earlier) button:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; }
+
+/* Branch crumbs in the navigation strip. */
+.session-navigation .crumbs-host { position: absolute; top: 0; right: 196px; left: 148px; z-index: 40; display: flex; height: var(--session-strip, 44px); align-items: center; gap: 6px; color: var(--text-faint); font-size: var(--fs-small); white-space: nowrap; }
+.session-navigation .crumb-repo { overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; }
+.session-navigation .crumbs { min-width: 0; }
+.session-navigation .crumb-path { flex-wrap: nowrap; }
+.session-navigation .crumb { max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-navigation .crumb-here > svg { flex: none; color: var(--text-muted); }
+.session-navigation .crumbs > .tree { position: absolute; top: calc(100% + 2px); left: 0; width: 360px; max-width: calc(100vw - 24px); margin-top: 0; }
+/* A press outside an open header selector closes it. */
+.session-navigation .crumb-backdrop { position: fixed; inset: 0; }
+/* A long owner/repo or branch name keeps its chevron and ends in an ellipsis. The branch keeps its own width up to
+   under half the strip, so a short one is never cut; the repository takes what is left. */
+.session-navigation [data-header-select="repo.select"] { flex: 0 1 auto; min-width: 5ch; max-width: 48ch; }
+.session-navigation [data-header-select="branch"] { flex: 0 0 auto; max-width: min(48ch, 45%); }
+.session-navigation [data-header-select] .crumb-here { max-width: 100%; }
+.session-navigation .crumb-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 600px) {
+	.session-navigation .crumbs-host { right: 12px; left: 128px; }
+	.session-navigation .crumbs > .tree { position: fixed; top: calc(var(--session-strip, 44px) + 2px); left: 12px; }
+	.session-navigation .crumb-repo, .session-navigation .crumb-repo + span { display: none; }
+}
+
+/* ActLine (#3731): shared agent steps and output. */
+.tool-act-line:has(.act-line-steps[open]) { border-radius: var(--r-2); }
+.act-line-steps > summary { cursor: pointer; }
+.act-line-steps > ol { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 0; padding: 0; list-style: none; text-align: left; }
+.act-line-steps li { min-width: 0; overflow-wrap: anywhere; }
+.act-line-steps li[data-status="error"] > code { color: var(--danger); }
+.act-line-steps pre { max-height: 320px; overflow: auto; margin: 4px 0 0; padding: 8px; border-radius: var(--r-1); background: var(--surface-2); font: var(--fs-caption)/1.5 var(--font-mono); white-space: pre-wrap; }
+.act-line-steps code { font-family: var(--font-mono); font-size: var(--fs-caption); }
+
+/* ContextLine (T-UI-07): item actions and Inspect. */
+.context .context-item { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.context .context-text { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); font: 11.5px var(--font-mono); overflow-wrap: anywhere; }
+.context .context-chip { display: inline-flex; align-items: center; gap: 5px; background: transparent; }
+.context button.context-chip { cursor: pointer; }
+.context button:disabled { cursor: default; opacity: .5; }
+
+/* Shared turns: a reply quote names the prompt; working time, reasoning and
+ * code-mode activity read quieter than the answer they surround. */
+.turn-reply { display: flex; gap: var(--sp-2); margin: 0 0 4px; padding: 2px var(--sp-2); border-left: 2px solid var(--g-accent); color: var(--text-muted); font-size: var(--fs-small); }
+.turn-reply-author { flex: none; color: var(--text); font-weight: 600; }
+.turn-reply-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.turn-elapsed, .turn-activity { margin: 0 0 4px; color: var(--text-muted); font-size: var(--fs-small); }
+.turn-activity summary { cursor: pointer; }
+.turn-activity svg { display: inline; vertical-align: -2px; margin-right: 6px; }
+.turn-activity summary:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+.turn-reasoning { margin: 0 0 4px; color: var(--text-muted); overflow-wrap: anywhere; white-space: pre-wrap; }

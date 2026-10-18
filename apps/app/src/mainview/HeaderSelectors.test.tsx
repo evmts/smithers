@@ -245,3 +245,50 @@ describe("the header on other hosts", () => {
     expect(host.querySelector("[data-header-select]")).toBeNull()
   })
 })
+
+// The repository page projects only the authoritative head and complete branch list.
+import { CodeHome } from "./repository/CodeHome"
+import { RepoFrame } from "./repository/RepoFrame"
+import type { ChangeRow } from "./state/AppState"
+
+const repositoryCommit: ChangeRow = {
+  id: "maya/tinyhttp#change", repoId: "maya/tinyhttp", changeId: "change", commitId: "a".repeat(40),
+  description: "Fix parser\nPrivate body", authorName: "Maya", timestamp: "2026-10-18T10:00:00Z",
+  hasConflict: false, parentChangeIds: [], currentSeq: null, revisionCount: null, updatedAt: 1, revision: 1
+}
+
+describe("repository Code home metadata", () => {
+  test("only the exact repository head supplies latest-commit metadata", () => {
+    const host = mount(<CodeHome repo="maya/tinyhttp" branch="main" headCommit={repositoryCommit.commitId} latestCommit={repositoryCommit}/>)
+    expect(host.querySelector('[aria-label="Latest commit"]')?.textContent).toContain("Maya")
+    expect(host.textContent).toContain("Fix parser")
+    expect(host.textContent).not.toContain("Private body")
+    expect(host.querySelector("time")?.dateTime).toBe(repositoryCommit.timestamp!)
+    expect(host.querySelector('[aria-label="Latest commit"] code')?.textContent).toBe("a".repeat(40))
+  })
+  for (const [name, repo, head] of [["another repository", "other/repo", "a".repeat(40)], ["old head", "maya/tinyhttp", "b".repeat(40)], ["unloaded head", "maya/tinyhttp", null]] as const) {
+    test(`does not label ${name} as latest`, () => {
+      const host = mount(<CodeHome repo={repo} headCommit={head} latestCommit={repositoryCommit}/>)
+      expect(host.querySelector('[aria-label="Latest commit"] strong')).toBeNull()
+      expect(host.querySelector('[aria-label="Latest commit"] time')).toBeNull()
+      expect(host.textContent).not.toContain("Fix parser")
+      expect(host.querySelector('[aria-label="Latest commit"] code')?.textContent).toBe(head ?? undefined)
+    })
+  }
+  test("a complete bookmark read supplies names and branch count; failures stay visible", () => {
+    const host = mount(<CodeHome repo="maya/tinyhttp" branch="main" branches={{ id:"maya/tinyhttp", state:"ready", names:["main", "docs/ui"] }}/>)
+    expect(host.textContent).toContain("2 branches")
+    expect(host.querySelector('a[href="/maya/tinyhttp/tree/docs%2Fui"]')?.textContent).toBe("docs/ui")
+    const failed = mount(<CodeHome repo="maya/tinyhttp" branch="main" branches={{ id:"maya/tinyhttp", state:"failed", names:["stale"], error:"Permission denied" }}/>)
+    expect(failed.querySelector('[role="alert"]')?.textContent).toBe("Permission denied")
+    expect(failed.textContent).not.toContain("stale")
+    expect(failed.textContent).not.toContain("1 branch")
+  })
+  test("tab counts distinguish zero from an unavailable read and permit later tabs", () => {
+    const host = mount(<RepoFrame repo="maya/tinyhttp" ask={null} onAsk={() => {}} onSignIn={() => {}}
+      tabs={[{path:"",label:"Code"},{path:"issues",label:"Issues",count:0},{path:"pulls",label:"Pull requests"},{path:"flows",label:"Flows"}]}>{null}</RepoFrame>)
+    expect(host.querySelector('nav a[href="/maya/tinyhttp/issues"] .repo-ui-counter')?.textContent).toBe("0")
+    expect(host.querySelector('nav a[href="/maya/tinyhttp/pulls"] .repo-ui-counter')).toBeNull()
+    expect(host.querySelector('nav a[href="/maya/tinyhttp/flows"]')?.textContent).toBe("Flows")
+  })
+})

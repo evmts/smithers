@@ -1,0 +1,218 @@
+{
+  "app-agents.png": {
+    "source": "app",
+    "detail": "The app on a local offline host: the Agents door and its card of built-in agents.",
+    "revision": "7490338de8",
+    "captured": "2026-09-27"
+  },
+  "app-chat.gif": {
+    "source": "app",
+    "detail": "The app on a local offline host. The reply comes from a scripted test model, not a live model.",
+    "revision": "7490338de8",
+    "captured": "2026-09-27"
+  },
+  "app-connect.png": {
+    "source": "app",
+    "detail": "The Connect card's Slack channels and Linear team from the registered routes, driven by apps/app/e2e/playwright/finish-surfaces.spec.ts against fixture routes.",
+    "revision": "0a33ae7fa4",
+    "captured": "2026-09-27"
+  },
+  "app-conversation.png": {
+    "source": "app",
+    "detail": "A conversation read through the chat = issues contract (personas, reactions, the Slack thread), driven by apps/app/e2e/playwright/finish-surfaces.spec.ts against the contract's fixture routes.",
+    "revision": "0a33ae7fa4",
+    "captured": "2026-09-27"
+  },
+  "app-issues.png": {
+    "source": "app",
+    "detail": "The app's issue list with a conversation and a fixed issue, driven by apps/app/e2e/playwright/finish-surfaces.spec.ts against the contract's fixture routes.",
+    "revision": "0a33ae7fa4",
+    "captured": "2026-09-27"
+  },
+  "app-run-steps.png": {
+    "source": "app",
+    "detail": "A run's Steps view leading with its recorded triggers (a schedule, an approval decision), driven by apps/app/e2e/playwright/finish-surfaces.spec.ts against fixture routes.",
+    "revision": "0a33ae7fa4",
+    "captured": "2026-09-27"
+  },
+  "app-wiki-private.png": {
+    "source": "app",
+    "detail": "The app's Wiki pane, driven by apps/app/e2e/playwright/wiki-spaces.spec.ts against its fixture repository.",
+    "revision": "fd4e78ec6b",
+    "captured": "2026-09-27"
+  },
+  "app-wiki-public.png": {
+    "source": "app",
+    "detail": "The app's Wiki pane, driven by apps/app/e2e/playwright/wiki-spaces.spec.ts against its fixture repository.",
+    "revision": "fd4e78ec6b",
+    "captured": "2026-09-27"
+  },
+  "preview-inbox.png": {
+    "source": "preview",
+    "detail": "Design preview: apps/app ui-surfaces probe on main, fixture data (#2114).",
+    "revision": "7490338de8",
+    "captured": "2026-09-27"
+  },
+  "tui-background-worker.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording background-worker).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-composer.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording composer).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-custom-agent.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording custom-agent).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-custom-view.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording custom-view).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-deny-edit.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording deny-edit).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-estimates.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording estimates).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-fix-add.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY replaying the recorded fix-add model run (apps/tui/test/fixtures/fix-add.jsonl).",
+    "revision": "21986f0c15",
+    "captured": "2026-10-03"
+  },
+  "tui-flow-approval.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording flow-approval).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-flow-form.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording flow-form).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-fork-session.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording fork-session).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-instruction-context.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording instruction-context).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-model-picker.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording model-picker).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-monitor.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording monitor).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-print-mode.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording print-mode).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-provider-failure.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording provider-failure).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-queue.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording queue).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-repository-extension.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording repository-extension).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-resume-session.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording resume-session).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-review-diff.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording review-diff).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-run-flow.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording run-flow).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-shell-context.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording shell-context).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-text-search.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording text-search).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-timeline.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording timeline).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-transcript-filter.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY replaying the recorded fix-add model run (apps/tui/test/fixtures/fix-add.jsonl).",
+    "revision": "21986f0c15",
+    "captured": "2026-10-03"
+  },
+  "tui-undo-edit.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording undo-edit).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-worker-controls.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording worker-controls).",
+    "revision": "60f00de5dc",
+    "captured": "2026-09-27"
+  },
+  "tui-worker-tree.gif": {
+    "source": "tui",
+    "detail": "Production TUI in a PTY with deterministic fixture replies (apps/tui/docs recording worker-tree).",
+    "revision": "bd4f07e912",
+    "captured": "2026-09-29"
+  }
+}

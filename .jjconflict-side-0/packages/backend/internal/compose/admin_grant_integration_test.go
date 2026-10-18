@@ -1,0 +1,168 @@
+package compose
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/smithersai/smithers/packages/backend/credits"
+	"github.com/smithersai/smithers/packages/backend/internal/config"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/routes"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
+	"github.com/stretchr/testify/require"
+)
+
+func TestAdminGrantProductHTTPPostgres(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	ctx := context.Background()
+	q := db.New(pool)
+	user := func(name string, admin bool) db.User {
+		u, e := q.CreateUser(ctx, db.CreateUserParams{Username: name, LowerUsername: name})
+		require.NoError(t, e)
+		if admin {
+			require.NoError(t, q.SetUserAdmin(ctx, db.SetUserAdminParams{UserID: u.ID, IsAdmin: true}))
+			u, e = q.GetUserByID(ctx, u.ID)
+			require.NoError(t, e)
+		}
+		return u
+	}
+	admin, ordinary, recipient := user("http-grant-admin", true), user("http-grant-user", false), user("http-grant-recipient", false)
+	token := func(u db.User, scope string) string {
+		raw := fmt.Sprintf("smithers_%040x", u.ID*100+int64(len(scope)))
+		sum := sha256.Sum256([]byte(raw))
+		hash := hex.EncodeToString(sum[:])
+		_, e := q.CreateAccessToken(ctx, db.CreateAccessTokenParams{UserID: u.ID, Name: scope, TokenHash: hash, TokenLastEight: hash[len(hash)-8:], Scopes: scope, ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true}})
+		require.NoError(t, e)
+		return raw
+	}
+	writeAdmin, readAdmin, nonAdmin := token(admin, "write:admin"), token(admin, "read:admin"), token(ordinary, "write:admin")
+	fn := reflect.ValueOf(buildRouter)
+	args := make([]reflect.Value, fn.Type().NumIn())
+	for i := range args[:len(args)-1] {
+		args[i] = reflect.Zero(fn.Type().In(i))
+	}
+	cfg := testConfigAllFlagsOn()
+	cfg.Auth.Mode = config.AuthModeMultitenant
+	args[0] = reflect.ValueOf(cfg)
+	args[1] = reflect.ValueOf(q)
+	args[2] = reflect.ValueOf(pool)
+	args[len(args)-1] = reflect.ValueOf([]any{routerExtras{AdminGrant: &routes.AdminGrantHandler{Service: services.NewAdminGrantService(pool, credits.Ledger{DB: pool})}}})
+	server := httptest.NewServer(fn.CallSlice(args)[0].Interface().(http.Handler))
+	defer server.Close()
+	post := func(auth, body string) (int, []byte) {
+		r, e := http.NewRequest("POST", server.URL+"/api/admin/grant", strings.NewReader(body))
+		require.NoError(t, e)
+		r.Header.Set("content-type", "application/json")
+		if auth != "" {
+			r.Header.Set("Authorization", "Bearer "+auth)
+		}
+		res, e := http.DefaultClient.Do(r)
+		require.NoError(t, e)
+		defer res.Body.Close()
+		raw, e := io.ReadAll(res.Body)
+		require.NoError(t, e)
+		return res.StatusCode, raw
+	}
+	body := `{"login":" HTTP-GRANT-RECIPIENT ","amountUsd":25,"operationKey":"http-grant-once"}`
+	for _, tc := range []struct {
+		token  string
+		status int
+	}{{"", 401}, {"smithers_0000000000000000000000000000000000000000", 401}, {nonAdmin, 403}, {readAdmin, 403}} {
+		status, raw := post(tc.token, body)
+		require.Equal(t, tc.status, status, string(raw))
+	}
+	status, raw := post(writeAdmin, body)
+	require.Equal(t, 200, status, string(raw))
+	var result services.AdminGrantResult
+	require.NoError(t, json.Unmarshal(raw, &result))
+	require.True(t, result.Granted)
+	require.False(t, result.Duplicate)
+	require.Equal(t, recipient.Username, result.Login)
+	status, raw = post(writeAdmin, body)
+	require.Equal(t, 200, status, string(raw))
+	var duplicate services.AdminGrantResult
+	require.NoError(t, json.Unmarshal(raw, &duplicate))
+	require.True(t, duplicate.Duplicate)
+	require.Equal(t, result.GrantID, duplicate.GrantID)
+	status, raw = post(writeAdmin, strings.Replace(body, "25", "26", 1))
+	require.Equal(t, 409, status, string(raw))
+	status, raw = post(writeAdmin, `{"login":"http-grant-recipient","amountUsd":25,"operationKey":"bad","isAdmin":true}`)
+	require.Equal(t, 400, status, string(raw))
+	balance, e := (credits.Ledger{DB: pool}).OwnerBalance(ctx, "user", recipient.ID)
+	require.NoError(t, e)
+	require.Equal(t, int64(25_000_000_000), balance)
+	var count int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM audit_log WHERE event_type='admin.credit.grant'`).Scan(&count))
+	require.Equal(t, 1, count)
+	// Revoke the actual role; the same still-valid PAT cannot write another grant.
+	require.NoError(t, q.SetUserAdmin(ctx, db.SetUserAdminParams{UserID: admin.ID, IsAdmin: false}))
+	status, raw = post(writeAdmin, strings.Replace(body, "http-grant-once", "after-revoke", 1))
+	require.Equal(t, 403, status, string(raw))
+}
+
+// MVP Appendix B cuts admin.grant* from the app (75ad46c7e1, #3435).
+// Even a configured grant service must remain unreachable on a self-hosted install.
+func TestAdminGrantAppHTTPPostgres(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	ctx := context.Background()
+	q := db.New(pool)
+	admin, e := q.CreateUser(ctx, db.CreateUserParams{Username: "app-grant-admin", LowerUsername: "app-grant-admin"})
+	require.NoError(t, e)
+	require.NoError(t, q.SetUserAdmin(ctx, db.SetUserAdminParams{UserID: admin.ID, IsAdmin: true}))
+	recipient, e := q.CreateUser(ctx, db.CreateUserParams{Username: "app-grant-recipient", LowerUsername: "app-grant-recipient"})
+	require.NoError(t, e)
+	rawToken := "smithers_1234567890123456789012345678901234567890"
+	sum := sha256.Sum256([]byte(rawToken))
+	hash := hex.EncodeToString(sum[:])
+	_, e = q.CreateAccessToken(ctx, db.CreateAccessTokenParams{UserID: admin.ID, Name: "app-grant", TokenHash: hash, TokenLastEight: hash[len(hash)-8:], Scopes: "write:admin,read:user", ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true}})
+	require.NoError(t, e)
+	fn := reflect.ValueOf(buildRouter)
+	args := make([]reflect.Value, fn.Type().NumIn())
+	for i := range args[:len(args)-1] {
+		args[i] = reflect.Zero(fn.Type().In(i))
+	}
+	cfg := testConfigAllFlagsOn()
+	cfg.Auth.Mode = config.AuthModeSelfHosted
+	args[0] = reflect.ValueOf(cfg)
+	args[1] = reflect.ValueOf(q)
+	args[2] = reflect.ValueOf(pool)
+	for i := range args {
+		if fn.Type().In(i) == reflect.TypeOf((*routes.UserHandler)(nil)) {
+			args[i] = reflect.ValueOf(&routes.UserHandler{ProfileService: services.NewUserService(q)})
+		}
+	}
+	args[len(args)-1] = reflect.ValueOf([]any{routerExtras{AdminGrant: &routes.AdminGrantHandler{Service: services.NewAdminGrantService(pool, credits.Ledger{DB: pool})}}})
+	router := fn.CallSlice(args)[0].Interface().(http.Handler)
+	server := httptest.NewServer(router)
+	defer server.Close()
+	request, e := http.NewRequest(http.MethodPost, server.URL+"/api/admin/grant", strings.NewReader(`{"login":"app-grant-recipient","amount_usd":25,"idempotency_key":"cut-grant"}`))
+	require.NoError(t, e)
+	request.Header.Set("Authorization", "Bearer "+rawToken)
+	request.Header.Set("Content-Type", "application/json")
+	response, e := server.Client().Do(request)
+	require.NoError(t, e)
+	defer response.Body.Close()
+	raw, e := io.ReadAll(response.Body)
+	require.NoError(t, e)
+	require.Equal(t, http.StatusNotFound, response.StatusCode, string(raw))
+	balance, e := (credits.Ledger{DB: pool}).OwnerBalance(ctx, "user", recipient.ID)
+	require.NoError(t, e)
+	require.Zero(t, balance)
+	var grants, audits int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM credit_grants`).Scan(&grants))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM audit_log WHERE event_type='admin.credit.grant'`).Scan(&audits))
+	require.Zero(t, grants)
+	require.Zero(t, audits)
+}

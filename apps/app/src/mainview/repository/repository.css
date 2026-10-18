@@ -40,3 +40,9 @@
 @media (max-width:767px) {
   .repo-frame .repo-frame-ask-button { background:var(--surface); padding:0 12px; }
 }
+
+.repo-code-home-latest { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 16px; border-bottom:1px solid var(--border); font-size:var(--fs-1); background:var(--surface-2); }
+.repo-code-home-latest > span { flex:1; min-width:0; overflow-wrap:anywhere; }
+.repo-code-home-latest code { overflow-wrap:anywhere; min-width:0; }
+.repo-code-home-latest time { color:var(--text-muted); }
+.repo-ui-branch-menu { max-height: min(400px, 60dvh); overflow:auto; }
