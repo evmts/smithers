@@ -11,7 +11,7 @@ npm install -g smthrs@next
 smthrs --version
 ```
 
-The tested prerelease printed `1.0.0-rc.12`. That prerelease needs the generated-flow fixes tracked in [#4231](https://github.com/smithersai/smithers/issues/4231); use a newer prerelease containing those fixes before continuing.
+The tested prerelease printed `1.0.0-rc.13`.
 
 ## Create a project
 
@@ -85,6 +85,11 @@ status: completed
 ```
 
 Continue only after `status: completed`. If it failed or parked, inspect the diagnosis in `runs show` and follow [Diagnose a run](./diagnose-a-run.md).
+
+## If the run stops
+
+If the process running this generated flow dies during coding, `smthrs runs show <id>` still shows the run.
+Run `smthrs runs resume <id>` to continue the same run. See [Diagnose a run](./diagnose-a-run.md).
 
 ## Review and test
 
