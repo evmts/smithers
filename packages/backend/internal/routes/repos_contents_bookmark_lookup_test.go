@@ -35,7 +35,7 @@ func TestContentsDirectoryFallsBackAfterNativeStyleFileNotFound(t *testing.T) {
 				switch r.URL.Path {
 				case "/repos/alice:demo/bookmarks/main":
 					require.NoError(t, json.NewEncoder(w).Encode(repohost.Bookmark{Name: "main", TargetChangeID: "change-main", TargetCommitID: commit}))
-				case "/repos/alice:demo/file/change-main/" + tc.path:
+				case "/repos/alice:demo/file/" + commit + "/" + tc.path:
 					fileReads++
 					w.WriteHeader(http.StatusNotFound)
 					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"code": tc.code, "message": "file not found"}))
@@ -65,5 +65,49 @@ func TestContentsDirectoryFallsBackAfterNativeStyleFileNotFound(t *testing.T) {
 				require.Equal(t, []services.RepoContent{{Name: "main.go", Path: "src/main.go", Type: "file"}}, entries)
 			}
 		})
+	}
+}
+
+func TestContentsPageThroughStorageClient(t *testing.T) {
+	for _, size := range []int{300 * 1024, 600 * 1024} {
+		commit := strings.Repeat("b", 40)
+		host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/repos/alice:demo/bookmarks/main":
+				require.NoError(t, json.NewEncoder(w).Encode(repohost.Bookmark{Name: "main", TargetCommitID: commit}))
+			case "/repos/alice:demo/file/" + commit + "/x":
+				require.NoError(t, json.NewEncoder(w).Encode(repohost.FileContent{Path: "x", Content: strings.Repeat("x", size), Encoding: "utf8"}))
+			default:
+				t.Errorf("unexpected storage read %s", r.URL)
+				w.WriteHeader(500)
+			}
+		}))
+		client := repohost.NewClient(&repohost.StaticStorageSetResolver{URL: host.URL}, "token")
+		q := &notesIntegrationQueries{repository: db.Repository{ID: 1, Name: "demo", IsPublic: true, DefaultBookmark: "main"}}
+		handler := RepoHandler{Service: services.NewRepoService(q, client, "s1")}
+		router := chi.NewRouter()
+		router.With(middleware.RequireTokenScope(middleware.ScopeReadRepository)).Get("/api/repos/{owner}/{repo}/contents/*", handler.GetRepoContents)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest("GET", "/api/repos/alice/demo/contents/x", nil))
+		require.Equal(t, 200, response.Code, response.Body.String())
+		var body services.RepoContent
+		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
+		require.Equal(t, commit, body.CommitSHA)
+		require.Equal(t, int64(size), body.Size)
+		if size <= 512*1024 {
+			require.Len(t, body.Content, size)
+		} else {
+			require.Empty(t, body.Content)
+			require.True(t, body.TooLarge)
+		}
+		response = httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest("GET", body.RawURL, nil))
+		require.Equal(t, 200, response.Code)
+		require.Len(t, response.Body.Bytes(), size)
+		q.repository.IsPublic = false
+		response = httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest("GET", body.RawURL, nil))
+		require.Equal(t, 404, response.Code)
+		host.Close()
 	}
 }

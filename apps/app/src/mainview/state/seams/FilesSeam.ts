@@ -13,7 +13,7 @@ import { preparedView,type ViewAction,type ViewResult } from "../PreparedView"
  */
 import { FileCardSchema, FileWrittenSchema, branchFileRows, projectBranchFiles, type FileCard } from "@smthrs/rpc/FileCard"
 import { fileListCard, type FileListEntry } from "@smthrs/rpc/FileList"
-import { fileReadCard } from "@smthrs/rpc/FileRead"
+import { decodeFilePage, type FilePage, fileReadCard } from "@smthrs/rpc/FileRead"
 import { refusalOf } from "@smthrs/rpc/Refusal"
 import { refusalLine } from "@smthrs/rpc/RefusalCopy"
 import type { AppStore } from "../AppStore"
@@ -706,4 +706,17 @@ const branchFileOperations = (ctx: SeamContext, options?: BranchFileOptions): Br
     }
   }
   return operations
+}
+
+/** Read complete hosted file bytes for a repository page, without creating a chat card. */
+export const readFilePage = async (
+  ctx: Pick<SeamContext, "http" | "baseUrl">,
+  repo: string,
+  path: string,
+  ref?: string,
+): Promise<FilePage> => {
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || unsafePath(path) || !path) throw new Error("Invalid repository file path")
+  const response = await ctx.http(`${ctx.baseUrl}/api/repos/${repo.split("/").map(encodeURIComponent).join("/")}/contents/${encodeRepoPath(path)}${ref === undefined ? "" : `?ref=${encodeURIComponent(ref)}`}`)
+  if (!response.ok) throw new Error(`File read failed (${response.status})`)
+  return decodeFilePage(await response.json())
 }
