@@ -1,0 +1,648 @@
+package machined
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/smithersai/smithers/packages/backend/internal/machined/wire"
+	"github.com/smithersai/smithers/packages/backend/jobs"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
+	"github.com/stretchr/testify/require"
+)
+
+// This test-only object port isolates transactional failure cases. Native host
+// store verification and authenticated event consumption have separate composed
+// fixtures; neither fixture claims real VM qualification.
+type burstObjectFixture struct {
+	missing      []string
+	publishError error
+	publications int
+	empty        bool
+	prepare      func() error
+}
+
+func (f *burstObjectFixture) WithBurstObjects(_ context.Context, _ pgx.Tx, _ string, visit func(BurstObjects) error) error {
+	if f.prepare != nil {
+		if err := f.prepare(); err != nil {
+			return err
+		}
+	}
+	if f.empty {
+		return visit(nil)
+	}
+	return visit(f)
+}
+
+func (f *burstObjectFixture) VerifyBurst(context.Context, string, wire.Burst) ([]string, error) {
+	return f.missing, nil
+}
+func (f *burstObjectFixture) PublishBurst(context.Context, string, string, string) error {
+	f.publications++
+	return f.publishError
+}
+
+func burstPayload(id [16]byte, paths ...string) []byte {
+	list := wire.U16(uint16(len(paths)))
+	for _, p := range paths {
+		list = append(list, wire.Struct(wire.Field(1, wire.String(p)), wire.Field(2, []byte{2}), wire.Field(4, []byte(strings.Repeat("a", 20))), wire.Field(5, []byte(strings.Repeat("b", 20))), wire.Field(6, []byte(strings.Repeat("c", 32))))...)
+	}
+	return wire.Union(1, wire.Field(1, id[:]), wire.Field(2, wire.Union(2, wire.Field(1, wire.U32(1)))), wire.Field(3, list), wire.Field(4, []byte(strings.Repeat("v", 20))))
+}
+
+func TestBurstIngestProductionBoundary(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	ctx := t.Context()
+	var user, repo int64
+	var branch string
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(username,lower_username) VALUES('w6','w6') RETURNING id`).Scan(&user))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(user_id,name,lower_name) VALUES($1,'app','app') RETURNING id`, user).Scan(&repo))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO workspaces(repository_id,user_id,name) VALUES($1,$2,'watch') RETURNING id`, repo, user).Scan(&branch))
+	registry := &Registry{}
+	authority, err := registry.MintBoot(branch, "vm")
+	require.NoError(t, err)
+	link, daemon := connectTest(t, registry, branch, authority)
+	connection := link.Connection
+	objects := &burstObjectFixture{}
+	observations := 0
+	s := &BurstIngest{Pool: pool, Objects: objects, ObserveCommitted: func() { observations++ }, ResolveActor: func(_ context.Context, b string, a wire.Actor) (json.RawMessage, error) {
+		require.Equal(t, branch, b)
+		require.Equal(t, uint32(1), a.Session)
+		return json.RawMessage(`{"id":"member:1","kind":"person","member_id":"1","via":"ssh"}`), nil
+	}}
+	scope := jobs.Scope{TenantID: fmt.Sprint(repo), PrincipalID: "branch:" + branch}
+	event := Event{Seq: 1, EventID: [16]byte{2}, Payload: burstPayload([16]byte{3}, "a.ts", "b.ts")}
+	counts := func(events, files, receipts int) {
+		t.Helper()
+		require.Equal(t, events, observations, "only committed logical bursts are observed")
+		for table, want := range map[string]int{"product_job_events": events, "burst_files": files, "machine_event_receipts": receipts} {
+			var got int
+			require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM "+table).Scan(&got))
+			require.Equal(t, want, got, table)
+		}
+	}
+	objects.missing = []string{strings.Repeat("61", 20)}
+	// Session admission pins workspace identity while the native mutation
+	// waits for this durable burst. Projection must not conflict with that pin.
+	admission, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	_, err = admission.Exec(ctx, `SELECT id FROM workspaces WHERE id=$1 FOR KEY SHARE`, branch)
+	require.NoError(t, err)
+	burstCtx, cancelBurst := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelBurst()
+	ack, err := s.Apply(burstCtx, connection, scope, event)
+	require.NoError(t, err)
+	require.Equal(t, AckMissingObjects, ack.Outcome)
+	require.NoError(t, admission.Rollback(ctx))
+	counts(0, 0, 0)
+	mutation, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	defer mutation.Rollback(context.WithoutCancel(ctx))
+	_, err = mutation.Exec(ctx, `SELECT id FROM workspaces WHERE id=$1 FOR NO KEY UPDATE`, branch)
+	require.NoError(t, err)
+	blockedCtx, cancelBlocked := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelBlocked()
+	blocked := make(chan error, 1)
+	go func() { _, err := s.Apply(blockedCtx, connection, scope, event); blocked <- err }()
+	require.Eventually(t, func() bool {
+		var waiting bool
+		err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT repository_id FROM workspaces%')`).Scan(&waiting)
+		return err == nil && waiting
+	}, 2*time.Second, 10*time.Millisecond)
+	lookup := make(chan error, 1)
+	go func() { _, err := registry.Current(branch); lookup <- err }()
+	select {
+	case err := <-lookup:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("blocked database authority held the daemon registry fence")
+	}
+	require.NoError(t, mutation.Rollback(ctx))
+	require.NoError(t, <-blocked)
+	objects.missing = nil
+	// Force the per-file insert to fail after the canonical writer has appended.
+	_, err = pool.Exec(ctx, `ALTER TABLE burst_files ADD CONSTRAINT fixture_fail CHECK(path<>'b.ts')`)
+	require.NoError(t, err)
+	_, err = s.Apply(ctx, connection, scope, event)
+	require.Error(t, err)
+	counts(0, 0, 0)
+	_, err = pool.Exec(ctx, `ALTER TABLE burst_files DROP CONSTRAINT fixture_fail`)
+	require.NoError(t, err)
+	// The real W3 handshake and event demultiplexer deliver the Event union
+	// to the production dispatcher; the peer sees success only after commit.
+	peerDone := make(chan error, 1)
+	go func() {
+		frame := wire.Frame{Kind: wire.Events, Payload: wire.Union(1, wire.Field(1, wire.U64(event.Seq)), wire.Field(2, event.EventID[:]), wire.Field(3, event.Payload))}
+		if err := wire.Write(daemon, frame); err != nil {
+			peerDone <- err
+			return
+		}
+		frame, err := wire.Read(daemon)
+		if err != nil {
+			peerDone <- err
+			return
+		}
+		values, err := wire.Fields("ack", frame.Payload[1:])
+		if err != nil {
+			peerDone <- err
+			return
+		}
+		if frame.Kind != wire.Events || frame.Payload[0] != 3 || values[2][0] != byte(AckApplied) {
+			peerDone <- fmt.Errorf("unexpected acknowledgement")
+			return
+		}
+		peerDone <- nil
+	}()
+	// Native admission retains the workspace key until its outbox drains.
+	// The authenticated burst must commit without waiting for that admission.
+	wake, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = wake.Rollback(context.Background()) })
+	_, err = wake.Exec(ctx, `SELECT id FROM workspaces WHERE id=$1 FOR KEY SHARE`, branch)
+	require.NoError(t, err)
+	received, err := link.Receive(ctx)
+	require.NoError(t, err)
+	require.Equal(t, event, received)
+	require.NoError(t, s.DispatchBurst(ctx, link, scope, received))
+	require.NoError(t, <-peerDone)
+	require.NoError(t, wake.Rollback(ctx))
+	counts(1, 2, 1)
+	ack, err = s.Apply(ctx, connection, scope, event)
+	require.NoError(t, err)
+	require.Equal(t, AckDuplicate, ack.Outcome)
+	counts(1, 2, 1)
+	changed := event
+	changed.Payload = burstPayload([16]byte{3}, "different.ts")
+	_, err = s.Apply(ctx, connection, scope, changed)
+	require.ErrorIs(t, err, wire.BadValue)
+	counts(1, 2, 1)
+	var actor, before, after, digest string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT e.data->'actor'->>'id',f.before_blob,f.after_blob,f.post_digest FROM burst_files f JOIN product_job_events e ON e.event_id=f.event_id WHERE f.path='a.ts'`).Scan(&actor, &before, &after, &digest))
+	require.Equal(t, "member:1", actor)
+	require.Equal(t, strings.Repeat("61", 20), before)
+	require.Equal(t, strings.Repeat("62", 20), after)
+	require.Equal(t, strings.Repeat("63", 32), digest)
+	// Retention must succeed even on replay before any success acknowledgement.
+	objects.publishError = errors.New("ref unavailable")
+	_, err = s.Apply(ctx, connection, scope, event)
+	require.ErrorContains(t, err, "ref unavailable")
+	counts(1, 2, 1)
+	objects.publishError = nil
+	for _, p := range []string{"../escape", ".git/config", ".jj/repo/op_store", "/root/x"} {
+		bad := event
+		bad.Payload = burstPayload([16]byte{4}, p)
+		_, err = s.Apply(ctx, connection, scope, bad)
+		require.Error(t, err)
+		counts(1, 2, 1)
+	}
+	_, err = s.Apply(ctx, connection, jobs.Scope{TenantID: "999", PrincipalID: "branch:" + branch}, event)
+	require.ErrorIs(t, err, ErrUnauthorized)
+	counts(1, 2, 1)
+	for name, alter := range map[string]func(*BurstIngest){
+		"database": func(s *BurstIngest) { s.Pool = nil },
+		"objects":  func(s *BurstIngest) { s.Objects = nil },
+	} {
+		t.Run("unavailable_"+name, func(t *testing.T) {
+			copy := *s
+			alter(&copy)
+			ack, err := copy.Apply(ctx, connection, scope, event)
+			require.ErrorIs(t, err, ErrNotReady)
+			require.Zero(t, ack.Outcome)
+			counts(1, 2, 1)
+		})
+	}
+	// Once an exact legacy event is committed, retiring its old resolver must
+	// not strand replay of a lost ACK or fabricate another activity entry.
+	retired := *s
+	retired.ResolveActor = nil
+	ack, err = retired.Apply(ctx, connection, scope, event)
+	require.NoError(t, err)
+	require.Equal(t, AckDuplicate, ack.Outcome)
+	counts(1, 2, 1)
+	newBoot := uuid.New()
+	require.NoError(t, registry.BindBoot(branch, "vm2", newBoot, []byte("new-secret")))
+	_, err = s.Apply(ctx, connection, scope, event)
+	require.ErrorIs(t, err, ErrUnauthorized)
+	counts(1, 2, 1)
+}
+
+func TestBurstMultipartProductionBoundary(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	ctx := t.Context()
+	var user, repo int64
+	var branch string
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(username,lower_username) VALUES('multipart','multipart') RETURNING id`).Scan(&user))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(user_id,name,lower_name) VALUES($1,'app','app') RETURNING id`, user).Scan(&repo))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO workspaces(repository_id,user_id,name) VALUES($1,$2,'watch') RETURNING id`, repo, user).Scan(&branch))
+	registry := &Registry{}
+	authority, err := registry.MintBoot(branch, "vm")
+	require.NoError(t, err)
+	link, daemon := connectTest(t, registry, branch, authority)
+	objects := &burstObjectFixture{}
+	observations := 0
+	service := func() *BurstIngest {
+		return &BurstIngest{Pool: pool, Objects: objects, ObserveCommitted: func() { observations++ }, ResolveActor: func(context.Context, string, wire.Actor) (json.RawMessage, error) {
+			return json.RawMessage(`{"id":"member:1","kind":"person","member_id":"1","via":"terminal"}`), nil
+		}}
+	}
+	scope := jobs.Scope{TenantID: fmt.Sprint(repo), PrincipalID: "branch:" + branch}
+	payload := func(part uint16, paths ...string) []byte {
+		base := burstPayload([16]byte{88}, paths...)
+		fields, err := wire.Fields("burst", base[1:])
+		require.NoError(t, err)
+		return wire.Union(1, wire.Field(1, fields[1]), wire.Field(2, fields[2]), wire.Field(3, fields[3]), wire.Field(4, fields[4]), wire.Field(5, wire.U16(part)), wire.Field(6, wire.U16(2)))
+	}
+	first := Event{Seq: 1, EventID: [16]byte{89}, Payload: payload(1, "a.ts")}
+	second := Event{Seq: 2, EventID: [16]byte{90}, Payload: payload(2, "b.ts")}
+	counts := func(entries, files, receipts int) {
+		t.Helper()
+		require.Equal(t, entries, observations, "staging and replay must not inflate burst rate")
+		for table, want := range map[string]int{"product_job_events": entries, "burst_files": files, "machine_event_receipts": receipts} {
+			var n int
+			require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM "+table).Scan(&n))
+			require.Equal(t, want, n, table)
+		}
+	}
+	// Exercise the authenticated wire dispatcher, including acknowledgement of
+	// durable staging so the serial daemon outbox can send its next frame.
+	done := make(chan error, 1)
+	go func() {
+		if err := wire.Write(daemon, wire.Frame{Kind: wire.Events, Payload: wire.Union(1, wire.Field(1, wire.U64(1)), wire.Field(2, first.EventID[:]), wire.Field(3, first.Payload))}); err != nil {
+			done <- err
+			return
+		}
+		frame, err := wire.Read(daemon)
+		if err == nil {
+			fields, e := wire.Fields("ack", frame.Payload[1:])
+			err = e
+			if err == nil && fields[2][0] != byte(AckApplied) {
+				err = fmt.Errorf("staging not acknowledged")
+			}
+		}
+		done <- err
+	}()
+	received, err := link.Receive(ctx)
+	require.NoError(t, err)
+	require.NoError(t, service().DispatchBurst(ctx, link, scope, received))
+	require.NoError(t, <-done)
+	counts(0, 0, 1)
+	require.Zero(t, objects.publications)
+	_, err = service().Apply(ctx, link.Connection, jobs.Scope{TenantID: "wrong", PrincipalID: scope.PrincipalID}, second)
+	require.ErrorIs(t, err, ErrUnauthorized)
+	counts(0, 0, 1)
+	remapped := service()
+	remapped.ResolveActor = func(context.Context, string, wire.Actor) (json.RawMessage, error) {
+		return json.RawMessage(`{"id":"member:2","kind":"person","member_id":"2","via":"terminal"}`), nil
+	}
+	_, err = remapped.Apply(ctx, link.Connection, scope, second)
+	require.ErrorIs(t, err, ErrUnauthorized)
+	counts(0, 0, 1)
+	changed := first
+	changed.Payload = payload(1, "substituted.ts")
+	_, err = service().Apply(ctx, link.Connection, scope, changed)
+	require.ErrorIs(t, err, wire.BadValue)
+	counts(0, 0, 1)
+	duplicatePath := second
+	duplicatePath.Payload = payload(2, "a.ts")
+	_, err = service().Apply(ctx, link.Connection, scope, duplicatePath)
+	require.ErrorIs(t, err, wire.BadValue)
+	counts(0, 0, 1)
+	objects.missing = []string{strings.Repeat("61", 20)}
+	ack, err := service().Apply(ctx, link.Connection, scope, second)
+	require.NoError(t, err)
+	require.Equal(t, AckMissingObjects, ack.Outcome)
+	counts(0, 0, 1)
+	objects.missing = nil
+	_, err = pool.Exec(ctx, `ALTER TABLE burst_files ADD CONSTRAINT multipart_fail CHECK(path<>'b.ts')`)
+	require.NoError(t, err)
+	_, err = service().Apply(ctx, link.Connection, scope, second)
+	require.Error(t, err)
+	counts(0, 0, 1)
+	_, err = pool.Exec(ctx, `ALTER TABLE burst_files DROP CONSTRAINT multipart_fail`)
+	require.NoError(t, err)
+	// A new service and a new admitted boot recover from database staging.
+	authority, err = registry.MintBoot(branch, "restarted")
+	require.NoError(t, err)
+	recovered, _ := connectTest(t, registry, branch, authority)
+	ack, err = service().Apply(ctx, recovered.Connection, scope, second)
+	require.NoError(t, err)
+	require.Equal(t, AckApplied, ack.Outcome)
+	counts(1, 2, 2)
+	ack, err = service().Apply(ctx, recovered.Connection, scope, second)
+	require.NoError(t, err)
+	require.Equal(t, AckDuplicate, ack.Outcome)
+	counts(1, 2, 2)
+	_, err = service().Apply(ctx, recovered.Connection, scope, first)
+	require.NoError(t, err)
+	counts(1, 2, 2)
+}
+
+func TestChangeIntegrationLandsDark(t *testing.T) {
+	pool, branch, foreign := machineReceiptDatabase(t)
+	registry := new(Registry)
+	authority, err := registry.MintBoot(branch, "vm")
+	require.NoError(t, err)
+	link, _ := connectTest(t, registry, branch, authority)
+	service := func() *BurstIngest {
+		return &BurstIngest{Pool: pool, Objects: &burstObjectFixture{}, ResolveActor: func(context.Context, string, wire.Actor) (json.RawMessage, error) {
+			return json.RawMessage(`{"id":"outside","kind":"outside","via":"tool"}`), nil
+		}}
+	}
+	event := Event{Seq: 1, EventID: [16]byte{23}, Payload: burstPayload([16]byte{24}, "a.ts")}
+	for name, remove := range map[string]func(*Ingestor){
+		"database":       func(i *Ingestor) { i.Pool = nil },
+		"burst_provider": func(i *Ingestor) { i.Bursts = nil },
+		"objects":        func(i *Ingestor) { i.Bursts.Objects = nil },
+		"object_lease":   func(i *Ingestor) { i.Bursts.Objects = &burstObjectFixture{empty: true} },
+		"attribution":    func(i *Ingestor) { i.Bursts.ResolveActor = nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			pump := &Ingestor{Pool: pool, Bursts: service()}
+			remove(pump)
+			ack, err := pump.Commit(t.Context(), link.Connection, branch, event)
+			require.ErrorIs(t, err, ErrNotReady)
+			require.Zero(t, ack.Outcome)
+		})
+	}
+	pump := &Ingestor{Pool: pool, Bursts: service()}
+	for _, connection := range []*Connection{nil, {}, {registry: registry}} {
+		_, err := pump.Commit(t.Context(), connection, branch, event)
+		require.ErrorIs(t, err, ErrUnauthorized)
+	}
+	_, err = pump.Commit(t.Context(), link.Connection, foreign, event)
+	require.ErrorIs(t, err, ErrUnauthorized)
+	// Moved-off belongs to T-COL-05's transactional provider. Never silently
+	// acknowledge its event while that provider is unavailable.
+	moved := event
+	moved.Payload = wire.Union(4, wire.Field(1, wire.Union(4)), wire.Field(2, wire.U64(42)), wire.Field(3, []byte(strings.Repeat("a", 20))))
+	_, err = pump.Commit(t.Context(), link.Connection, branch, moved)
+	require.ErrorIs(t, err, ErrNotReady)
+	hint := Event{Payload: wire.Union(1, wire.Field(1, wire.String("a.ts")), wire.Field(2, wire.Union(2, wire.Field(1, wire.U32(1)))))}
+	require.ErrorIs(t, pump.Bursts.Hint(t.Context(), link.Connection, branch, hint), ErrNotReady)
+	require.NoError(t, link.Reconciled())
+	require.ErrorIs(t, pump.Bursts.Hint(t.Context(), link.Connection, foreign, hint), ErrUnauthorized)
+	bad := hint
+	bad.Seq = 1
+	require.ErrorIs(t, pump.Bursts.Hint(t.Context(), link.Connection, branch, bad), wire.BadValue)
+	bad = hint
+	bad.Payload = wire.Union(1, wire.Field(1, wire.String("../escape")), wire.Field(2, wire.Union(4)))
+	require.ErrorIs(t, pump.Bursts.Hint(t.Context(), link.Connection, branch, bad), wire.BadValue)
+	pump.Bursts.ResolveActor = func(context.Context, string, wire.Actor) (json.RawMessage, error) { return nil, ErrUnauthorized }
+	require.ErrorIs(t, pump.Bursts.Hint(t.Context(), link.Connection, branch, hint), ErrUnauthorized)
+	_, err = pump.Commit(t.Context(), link.Connection, branch, event)
+	require.ErrorIs(t, err, ErrUnauthorized)
+	// A resolver can rotate admission while it runs; no old-lease hint may
+	// publish after it returns, and resolving must not hold the registry lock.
+	pump.Bursts.ResolveActor = func(context.Context, string, wire.Actor) (json.RawMessage, error) {
+		_, err := registry.MintBoot(branch, "replacement")
+		return json.RawMessage(`{"kind":"outside"}`), err
+	}
+	require.ErrorIs(t, pump.Bursts.Hint(t.Context(), link.Connection, branch, hint), ErrUnauthorized)
+	for _, table := range []string{"product_job_events", "burst_files", "machine_event_receipts"} {
+		var count int
+		require.NoError(t, pool.QueryRow(t.Context(), "SELECT count(*) FROM "+table).Scan(&count))
+		require.Zero(t, count, table)
+	}
+}
+
+func TestBurstAttributionDoesNotHoldSpawnReceiptLock(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	registry := &Registry{}
+	boot, err := registry.MintBoot("a", "vm")
+	require.NoError(t, err)
+	link, _ := connectTest(t, registry, "a", boot)
+	ingest := &BurstIngest{Pool: pool, Objects: &burstObjectFixture{}, ResolveActor: func(ctx context.Context, _ string, _ wire.Actor) (json.RawMessage, error) {
+		acquired := make(chan struct{})
+		go func() { registry.mu.Lock(); registry.mu.Unlock(); close(acquired) }()
+		select {
+		case <-acquired:
+			return nil, ErrNotReady
+		case <-time.After(time.Second):
+			return nil, errors.New("spawn receipt lock held during attribution")
+		}
+	}}
+	_, err = ingest.Apply(t.Context(), link.Connection, jobs.Scope{}, Event{Seq: 1, EventID: [16]byte{1}, Payload: burstPayload([16]byte{2}, "file")})
+	require.ErrorIs(t, err, ErrNotReady)
+}
+
+// Initial watcher output must commit while native admission retains workspace
+// identity. The authentic link still verifies scope before publishing anything.
+func TestBurstAdmissionWorkspaceIdentityLock(t *testing.T) {
+	pool, branch, _ := machineReceiptDatabase(t)
+	ctx := t.Context()
+	var repository int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT repository_id FROM workspaces WHERE id=$1`, branch).Scan(&repository))
+	admission, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	defer admission.Rollback(ctx)
+	_, err = admission.Exec(ctx, `SELECT 1 FROM workspaces WHERE id=$1 FOR KEY SHARE`, branch)
+	require.NoError(t, err)
+	registry := new(Registry)
+	authority, err := registry.MintBoot(branch, "vm")
+	require.NoError(t, err)
+	link, _ := connectTest(t, registry, branch, authority)
+	objects := &burstObjectFixture{}
+	ingest := &BurstIngest{Pool: pool, Objects: objects, ResolveActor: func(context.Context, string, wire.Actor) (json.RawMessage, error) {
+		return json.RawMessage(`{"id":"outside","kind":"outside"}`), nil
+	}}
+	event := Event{Seq: 1, EventID: [16]byte{31}, Payload: burstPayload([16]byte{32}, "ready.ts")}
+	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	ack, err := ingest.Apply(bounded, link.Connection, jobs.Scope{TenantID: fmt.Sprint(repository), PrincipalID: "branch:" + branch}, event)
+	require.NoError(t, err, "publication must settle before the admission releases identity")
+	require.Equal(t, AckApplied, ack.Outcome)
+	require.Equal(t, 1, objects.publications)
+	var receipts int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM machine_event_receipts`).Scan(&receipts))
+	require.Equal(t, 1, receipts)
+}
+
+func TestBurstWaitingForWorkspaceLeavesRosterUsable(t *testing.T) {
+	pool, branch, _ := machineReceiptDatabase(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	var repository int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT repository_id FROM workspaces WHERE id=$1`, branch).Scan(&repository))
+	roster, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	defer roster.Rollback(t.Context())
+	_, err = roster.Exec(ctx, `SELECT 1 FROM workspaces WHERE id=$1 FOR SHARE`, branch)
+	require.NoError(t, err)
+	registry := new(Registry)
+	authority, err := registry.MintBoot(branch, "vm")
+	require.NoError(t, err)
+	link, peer := connectTest(t, registry, branch, authority)
+	ingest := &BurstIngest{Pool: pool, Objects: &burstObjectFixture{}, ResolveActor: func(context.Context, string, wire.Actor) (json.RawMessage, error) {
+		return json.RawMessage(`{"id":"outside","kind":"outside"}`), nil
+	}}
+	done := make(chan error, 1)
+	go func() {
+		ack, err := ingest.Apply(ctx, link.Connection, jobs.Scope{TenantID: fmt.Sprint(repository), PrincipalID: "branch:" + branch},
+			Event{Seq: 1, EventID: [16]byte{41}, Payload: burstPayload([16]byte{42}, "ready.ts")})
+		if err == nil && ack.Outcome != AckApplied {
+			err = fmt.Errorf("unexpected acknowledgement %d", ack.Outcome)
+		}
+		done <- err
+	}()
+	require.Eventually(t, func() bool {
+		var blocked bool
+		err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT repository_id FROM workspaces WHERE id=%')`).Scan(&blocked)
+		return err == nil && blocked
+	}, 3*time.Second, 10*time.Millisecond)
+	// The roster's control request must complete before its workspace lock is
+	// released, despite the pending burst's publication transaction.
+	rosterDone := make(chan error, 1)
+	go func() { rosterDone <- registry.SetRoster(ctx, branch, nil) }()
+	require.NoError(t, peer.SetReadDeadline(time.Now().Add(3*time.Second)))
+	answer(t, peer, wire.SetRoster)
+	require.NoError(t, <-rosterDone)
+	require.NoError(t, roster.Commit(ctx))
+	require.NoError(t, <-done)
+}
+
+func TestBurstPreparationAllowsBootReplacement(t *testing.T) {
+	pool, branch, _ := machineReceiptDatabase(t)
+	registry := new(Registry)
+	boot, err := registry.MintBoot(branch, "vm")
+	require.NoError(t, err)
+	link, _ := connectTest(t, registry, branch, boot)
+	var repo int64
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT repository_id FROM workspaces WHERE id=$1`, branch).Scan(&repo))
+	objects := &burstObjectFixture{prepare: func() error {
+		_, err := registry.MintBoot(branch, "replacement")
+		return err
+	}}
+	ingest := &BurstIngest{Pool: pool, Objects: objects, ResolveActor: func(context.Context, string, wire.Actor) (json.RawMessage, error) {
+		return json.RawMessage(`{"kind":"outside"}`), nil
+	}}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := ingest.Apply(ctx, link.Connection, jobs.Scope{TenantID: fmt.Sprint(repo), PrincipalID: "branch:" + branch}, Event{Seq: 1, EventID: [16]byte{75}, Payload: burstPayload([16]byte{76}, "a.ts")})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, ErrUnauthorized)
+	case <-ctx.Done():
+		t.Fatal("burst preparation blocked boot replacement")
+	}
+	require.Zero(t, objects.publications)
+	for _, table := range []string{"product_job_events", "burst_files", "machine_event_receipts"} {
+		var count int
+		require.NoError(t, pool.QueryRow(t.Context(), "SELECT count(*) FROM "+table).Scan(&count))
+		require.Zero(t, count, table)
+	}
+}
+
+// A session admission can hold the workspace while waiting for its RPC reply.
+// Burst authority waits outside the registry fence, then refuses a replaced boot.
+func TestBurstWorkspaceAuthorityDoesNotHoldRegistry(t *testing.T) {
+	pool, branch, repository := machineReceiptDatabase(t)
+	ctx := t.Context()
+	registry := new(Registry)
+	boot, err := registry.MintBoot(branch, "burst-lock")
+	require.NoError(t, err)
+	link, _ := connectTest(t, registry, branch, boot)
+	blocker, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	defer blocker.Rollback(context.WithoutCancel(ctx))
+	_, err = blocker.Exec(ctx, `SELECT id FROM workspaces WHERE id=$1 FOR UPDATE`, branch)
+	require.NoError(t, err)
+	objects := new(burstObjectFixture)
+	ingest := &BurstIngest{Pool: pool, Objects: objects, ResolveActor: func(context.Context, string, wire.Actor) (json.RawMessage, error) {
+		return json.RawMessage(`{"kind":"person","id":"retained"}`), nil
+	}}
+	done := make(chan error, 1)
+	go func() {
+		_, err := ingest.Apply(ctx, link.Connection, jobs.Scope{TenantID: fmt.Sprint(repository), PrincipalID: "branch:" + branch}, Event{Seq: 1, EventID: boot.ID, Payload: burstPayload(boot.ID, "a.txt")})
+		done <- err
+	}()
+	require.Eventually(t, func() bool {
+		var waiting bool
+		err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT repository_id FROM workspaces WHERE id=%FOR %UPDATE')`).Scan(&waiting)
+		return err == nil && waiting
+	}, 5*time.Second, 10*time.Millisecond)
+	replaced := make(chan error, 1)
+	go func() { _, err := registry.MintBoot(branch, "replacement"); replaced <- err }()
+	select {
+	case err := <-replaced:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("workspace wait blocked authenticated daemon replacement")
+	}
+	require.NoError(t, blocker.Rollback(ctx))
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, ErrUnauthorized)
+	case <-time.After(5 * time.Second):
+		t.Fatal("burst authority did not settle")
+	}
+	require.Zero(t, objects.publications)
+	var receipts int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM machine_event_receipts`).Scan(&receipts))
+	require.Zero(t, receipts)
+
+}
+
+// Admission holds a workspace authority transaction while calling the registry.
+// An event waiting for that row must not prevent admission or boot revocation.
+func TestBurstWorkspaceLockDoesNotBlockBootRevocation(t *testing.T) {
+	pool, branch, _ := machineReceiptDatabase(t)
+	var repository int64
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT repository_id FROM workspaces WHERE id=$1`, branch).Scan(&repository))
+	registry := &Registry{}
+	boot, err := registry.MintBoot(branch, "vm")
+	require.NoError(t, err)
+	link, _ := connectTest(t, registry, branch, boot)
+	objects := &burstObjectFixture{}
+	ingest := &BurstIngest{Pool: pool, Objects: objects, ResolveActor: func(context.Context, string, wire.Actor) (json.RawMessage, error) {
+		return json.RawMessage(`{"id":"outside","kind":"outside","via":"tool"}`), nil
+	}}
+	tx, err := pool.Begin(t.Context())
+	require.NoError(t, err)
+	defer tx.Rollback(context.Background())
+	var blocker int
+	require.NoError(t, tx.QueryRow(t.Context(), `SELECT pg_backend_pid()`).Scan(&blocker))
+	_, err = tx.Exec(t.Context(), `SELECT id FROM workspaces WHERE id=$1 FOR UPDATE`, branch)
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	applied := make(chan error, 1)
+	go func() {
+		_, err := ingest.Apply(ctx, link.Connection, jobs.Scope{TenantID: fmt.Sprint(repository), PrincipalID: "branch:" + branch}, Event{Seq: 1, EventID: [16]byte{53}, Payload: burstPayload([16]byte{54}, "locked.ts")})
+		applied <- err
+	}()
+	require.Eventually(t, func() bool {
+		var waiting bool
+		err := pool.QueryRow(t.Context(), `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)))`, blocker).Scan(&waiting)
+		return err == nil && waiting
+	}, 3*time.Second, 10*time.Millisecond)
+	revoked := make(chan error, 1)
+	go func() { _, err := registry.MintBoot(branch, "replacement"); revoked <- err }()
+	select {
+	case err := <-revoked:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		cancel()
+		require.NoError(t, tx.Rollback(t.Context()))
+		<-applied
+		<-revoked
+		t.Fatal("workspace row wait blocked boot revocation")
+	}
+	require.NoError(t, tx.Rollback(t.Context()))
+	require.ErrorIs(t, <-applied, ErrUnauthorized)
+	require.Zero(t, objects.publications)
+	for _, table := range []string{"product_job_events", "burst_files", "machine_event_receipts"} {
+		var count int
+		require.NoError(t, pool.QueryRow(t.Context(), "SELECT count(*) FROM "+table).Scan(&count))
+		require.Zero(t, count, table)
+	}
+}

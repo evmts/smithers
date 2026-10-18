@@ -1,0 +1,143 @@
+package cleanup
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+type mockWorkspaceCleanupStore struct {
+	calls []string
+
+	cleanupIdleSessionsFn        func(context.Context) error
+	cleanupStalePendingFn        func(context.Context) error
+	cleanupIdleWorkspacesFn      func(context.Context) error
+	cleanupOverQuotaWorkspacesFn func(context.Context) error
+	reclaimAgentDisksFn          func(context.Context) error
+	abandonedFn                  func(context.Context) error
+	childrenFn                   func(context.Context) error
+	journalsFn                   func(context.Context) error
+}
+
+func (m *mockWorkspaceCleanupStore) CleanupOrphanFlowJournals(ctx context.Context) error {
+	m.calls = append(m.calls, "journals")
+	if m.journalsFn != nil {
+		return m.journalsFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockWorkspaceCleanupStore) ReapWorkspaceChildren(ctx context.Context) error {
+	m.calls = append(m.calls, "children")
+	if m.childrenFn != nil {
+		return m.childrenFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockWorkspaceCleanupStore) CleanupAbandonedWorkspaces(ctx context.Context) error {
+	m.calls = append(m.calls, "abandoned")
+	if m.abandonedFn != nil {
+		return m.abandonedFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockWorkspaceCleanupStore) CleanupIdleSessions(ctx context.Context) error {
+	m.calls = append(m.calls, "idle_sessions")
+	if m.cleanupIdleSessionsFn != nil {
+		return m.cleanupIdleSessionsFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockWorkspaceCleanupStore) CleanupStalePendingWorkspaces(ctx context.Context) error {
+	m.calls = append(m.calls, "stale_pending")
+	if m.cleanupStalePendingFn != nil {
+		return m.cleanupStalePendingFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockWorkspaceCleanupStore) CleanupIdleWorkspaces(ctx context.Context) error {
+	m.calls = append(m.calls, "idle_workspaces")
+	if m.cleanupIdleWorkspacesFn != nil {
+		return m.cleanupIdleWorkspacesFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockWorkspaceCleanupStore) CleanupOverQuotaWorkspaces(ctx context.Context) error {
+	m.calls = append(m.calls, "over_quota_workspaces")
+	if m.cleanupOverQuotaWorkspacesFn != nil {
+		return m.cleanupOverQuotaWorkspacesFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockWorkspaceCleanupStore) CleanupStoppedAgentWorkspaceDisks(ctx context.Context) error {
+	m.calls = append(m.calls, "agent_disks")
+	if m.reclaimAgentDisksFn != nil {
+		return m.reclaimAgentDisksFn(ctx)
+	}
+	return nil
+}
+
+func TestWorkspaceCleanerSweep_CallsAllCleanupPasses(t *testing.T) {
+	t.Parallel()
+
+	store := &mockWorkspaceCleanupStore{}
+	cleaner := NewWorkspaceCleaner(store, time.Minute)
+
+	err := cleaner.sweep(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"idle_sessions", "stale_pending", "idle_workspaces", "over_quota_workspaces", "agent_disks", "abandoned", "children", "journals"}, store.calls)
+}
+
+func TestWorkspaceCleanerSweep_JoinsErrors(t *testing.T) {
+	t.Parallel()
+
+	store := &mockWorkspaceCleanupStore{
+		cleanupStalePendingFn:        func(context.Context) error { return errors.New("pending failed") },
+		cleanupIdleWorkspacesFn:      func(context.Context) error { return errors.New("idle failed") },
+		cleanupOverQuotaWorkspacesFn: func(context.Context) error { return errors.New("quota failed") },
+		reclaimAgentDisksFn:          func(context.Context) error { return errors.New("reclaim failed") },
+		abandonedFn:                  func(context.Context) error { return errors.New("abandon failed") },
+		childrenFn:                   func(context.Context) error { return errors.New("children failed") },
+		journalsFn:                   func(context.Context) error { return errors.New("journals failed") },
+	}
+	cleaner := NewWorkspaceCleaner(store, time.Minute)
+
+	err := cleaner.sweep(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cleanup stale pending workspaces")
+	assert.Contains(t, err.Error(), "cleanup idle workspaces")
+	assert.Contains(t, err.Error(), "cleanup over-quota workspaces")
+	assert.Contains(t, err.Error(), "reclaim stopped agent workspace disks: reclaim failed")
+	assert.Contains(t, err.Error(), "cleanup abandoned workspaces: abandon failed")
+	assert.Contains(t, err.Error(), "reap child workspaces: children failed")
+	assert.Contains(t, err.Error(), "drop orphan flow journals: journals failed")
+	assert.Equal(t, []string{"idle_sessions", "stale_pending", "idle_workspaces", "over_quota_workspaces", "agent_disks", "abandoned", "children", "journals"}, store.calls)
+}
+
+func TestWorkspaceCleanerMeterFailureIncrementsSweepFailures(t *testing.T) {
+	store := &mockWorkspaceCleanupStore{
+		cleanupOverQuotaWorkspacesFn: func(context.Context) error { return errors.New("meter unavailable") },
+	}
+	cleaner := NewWorkspaceCleaner(store, time.Minute)
+	ft := &fakeTicker{ch: make(chan time.Time, 1)}
+	cleaner.newTicker = func(time.Duration) ticker { return ft }
+	before := testutil.ToFloat64(SweepFailures.WithLabelValues("workspace"))
+	cleaner.Start(context.Background())
+	ft.ch <- time.Now()
+	waitForCondition(t, time.Second, func() bool {
+		return testutil.ToFloat64(SweepFailures.WithLabelValues("workspace")) == before+1
+	})
+	cleaner.Stop()
+	assert.Equal(t, []string{"idle_sessions", "stale_pending", "idle_workspaces", "over_quota_workspaces", "agent_disks", "abandoned", "children", "journals"}, store.calls)
+}

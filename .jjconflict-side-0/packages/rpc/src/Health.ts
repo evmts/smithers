@@ -1,0 +1,93 @@
+/**
+ * Wire contracts for control health observations and shared backend administrator probes. Observations never grant authority.
+ *
+ * @since 1.0.0
+ */
+
+import { z } from "zod"
+
+const systemHealthComponent = z.object({
+  status: z.enum(["ok", "error"]),
+  latency: z.string().optional(),
+  error: z.string().optional()
+}).strict()
+
+/**
+ * The shared backend's GET /api/admin/system/health response. A degraded
+ * observation arrives with HTTP 503 and is still health evidence.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const AdminSystemHealthSchema = z.object({
+  status: z.enum(["ok", "degraded"]),
+  database: systemHealthComponent,
+  components: z.record(z.string().min(1), systemHealthComponent).optional()
+}).strict()
+
+/**
+ * The decoded administrator health response from the shared backend.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type AdminSystemHealth = z.infer<typeof AdminSystemHealthSchema>
+
+const counter = z.number().int().nonnegative()
+/**
+ * One subject's health observation: its lifecycle state, what it is doing, how
+ * healthy and how fresh the observation is, and the monitor that recorded it.
+ * `provenance` is absent when nothing has observed the subject yet.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const StatusRollupSchema = z.object({
+  subjectId: z.string(),
+  state: z.enum([
+    "accepted",
+    "running",
+    "parked",
+    "waiting-approval",
+    "completed",
+    "failed",
+    "cancelled",
+    "spawning",
+    "exited"
+  ]),
+  activity: z.enum(["working", "idle", "needs-input", "unknown"]),
+  health: z.enum(["healthy", "stalled", "wedged-node", "runaway-loop", "awaiting-human", "failing", "unknown"]),
+  attention: z.enum(["none", "awaiting-approval", "needs-input", "needs-resume", "unhealthy"]),
+  freshness: z.enum(["fresh", "stale", "unobserved"]),
+  reason: z.enum([
+    "ok",
+    "no-progress",
+    "awaiting-reply",
+    "prompt-detected",
+    "quota-wait",
+    "timer-wait",
+    "event-wait",
+    "released",
+    "unreachable",
+    "probe-timeout",
+    "probe-error",
+    "owner-changed"
+  ]).optional(),
+  provenance: z.object({
+    checkerId: z.string(),
+    monitorId: z.string(),
+    observedAt: counter,
+    expiresAt: counter,
+    evidenceSeq: counter,
+    incarnation: z.string(),
+    version: counter
+  }).optional(),
+  updatedAt: counter
+})
+/**
+ * The decoded value accepted by {@link StatusRollupSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type StatusRollup = z.infer<typeof StatusRollupSchema>

@@ -777,7 +777,7 @@ function AppContent() {
     onAsk={() => controller.runCommand("chat.open")} onSignIn={() => controller.runCommand("sign-in")} ask={chat}>
     {codeRoute ? <RepositoryCodeView repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits} admitted={true} requestId={bootEntry.requestId} onAsk={text => controller.changeDraft(text)} /> : pullMatch ? <PullViews repo={bootRepository} number={pullMatch[2] ? Number(pullMatch[2]) : undefined} tab={pullMatch[3] as "commits" | "checks" | "files" | undefined} card={pullCard} retry={() => controller.runCommand("pr", JSON.stringify(pullMatch[2] ? { repo: bootRepository, number: Number(pullMatch[2]) } : { repo: bootRepository, operation: "list" }))}/> : issueMatch ? <IssueViews repo={bootRepository} number={issueMatch[1] ? Number(issueMatch[1]) : undefined} card={issueCard} signedIn={identity?.state === "signed-in"} run={(name, args) => controller.runCommand(name, args)}/> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
       tree={repoTreeRows.find(row => row.copyId === homeTreeCopy && row.path === "")}
-      home={repositoryHome} summary={repository?.summary}/>}
+      home={repositoryHome}/>}
   </RepoFrame>
 }
 

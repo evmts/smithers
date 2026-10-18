@@ -1,0 +1,119 @@
+# Smithers
+
+
+> Smithers maintains your codebase. It turns issues into reviewed, tested changes and, when enabled, keeps the project wiki current. Flows beside your code define how.
+
+
+## Start here
+
+- [Install Smithers](https://smithers.sh/docs/installation/): Install on your Mac and open the setup link.
+
+## Reference
+
+- [Library API](https://smithers.sh/docs/reference/api/): One page per @smthrs package: what it exports, with the types and defaults stitched from the api.md colocated with its source.
+- [@smthrs/flow](https://smithers.sh/docs/reference/api/flow/): What @smthrs/flow exports: the flow, action, runtime-port, and durable-primitive namespaces, with types and defaults from source.
+- [Export reference](https://smithers.sh/docs/reference/api/engine/): Every export of @smthrs/engine one at a time: FlowEngine, FlowProxy, and FlowProxyServer, each with its full type, its defaults, and its field tables.
+- [Smithers API cheat sheet](https://smithers.sh/docs/reference/api/cheat-sheet/): The complete top-level Smithers API used in WORKSPACE.ts and PACKAGE.ts, shown through examples.
+- [@smthrs/targets](https://smithers.sh/docs/reference/api/targets/): What @smthrs/targets exports: the Smithers namespace of workspace declarations, catalog rules, macros, actions, and errors, with types from source.
+- [@smthrs/agent](https://smithers.sh/docs/reference/api/agent/): The Smithers agent: the production agent loop composed on the durable engine, plus the two adapters that run it, AgentSession for control-plane runs and AgentAction for typed workflow steps
+- [@smthrs/artifacts](https://smithers.sh/docs/reference/api/artifacts/): Effect service for the Smithers content-addressed artifact store, local and remote
+- [@smthrs/build](https://smithers.sh/docs/reference/api/build/): Bazel-style TypeScript workflow orchestration with explicit pnpm installation
+- [@smthrs/build-cli](https://smithers.sh/docs/reference/api/build-cli/): Executes PACKAGE.ts target graphs with content-addressed caching
+- [@smthrs/canonical](https://smithers.sh/docs/reference/api/canonical/): RFC 8785 canonical JSON as an Effect Schema
+- [@smthrs/capability](https://smithers.sh/docs/reference/api/capability/): Capability values and permission failures: the leaf vocabulary of the Smithers permission kernel
+- [@smthrs/chain](https://smithers.sh/docs/reference/api/chain/): The Agent Chain spine: an append-only journal, keyed replayable calls, and the trampoline that runs model-authored flow scripts
+- [@smthrs/cli](https://smithers.sh/docs/reference/api/cli/): Node command-line interface for Smithers control
+- [@smthrs/control](https://smithers.sh/docs/reference/api/control/): Control services and RPC projections for flows
+- [@smthrs/core](https://smithers.sh/docs/reference/api/core/): Flow metadata and Markdown lowering over @smthrs/flow
+- [@smthrs/crypto](https://smithers.sh/docs/reference/api/crypto/): Strict SHA-256 hashing with injected and synchronous Effect entry points
+- [@smthrs/database](https://smithers.sh/docs/reference/api/database/): A driver-neutral SQL contract with a bounded write-retry seam, plus the composed migration ladder
+- [@smthrs/engine-store](https://smithers.sh/docs/reference/api/engine-store/): Effect services for durable engine action persistence and replay boundaries
+- [@smthrs/errors](https://smithers.sh/docs/reference/api/errors/): SmithersError and the error codes the integration adapters raise
+- [@smthrs/evals](https://smithers.sh/docs/reference/api/evals/): Fixed-suite evaluation, baselines, regression reports, and score gates for flows
+- [@smthrs/flows](https://smithers.sh/docs/reference/api/flows/): Barrel package re-exporting the whole @smthrs durable flow engine
+- [@smthrs/fs](https://smithers.sh/docs/reference/api/fs/): Private metadata routing and schema-checked command projections for Smithers flows
+- [@smthrs/gateway](https://smithers.sh/docs/reference/api/gateway/): Effect workspace gateway contracts, projections, and supervision ports for flows
+- [@smthrs/harness](https://smithers.sh/docs/reference/api/harness/): The Smithers built-in agent loop: a cell-first controller whose model turns produce JavaScript cells that run in a persistent realm and reach the world only through durable flow calls
+- [@smthrs/integrations](https://smithers.sh/docs/reference/api/integrations/): GitHub adapters over the Smithers control plane
+- [@smthrs/jj](https://smithers.sh/docs/reference/api/jj/): Jujutsu version control as a portable Effect host service
+- [@smthrs/journal](https://smithers.sh/docs/reference/api/journal/): Effect services for the Smithers event journal: the immutable run history and the owner fence on its durable channel
+- [@smthrs/kernel](https://smithers.sh/docs/reference/api/kernel/): Capability kernel: effect tiers, monotone capability sets, grant store, and permission-decorating layers over the Host services
+- [@smthrs/keys](https://smithers.sh/docs/reference/api/keys/): Canonical flow-key derivation and stored-key validation
+- [@smthrs/mcp](https://smithers.sh/docs/reference/api/mcp/): Model Context Protocol client and flow adapter: projects a remote MCP server's tools as ordinary FlowBinding.Source entries
+- [@smthrs/memory](https://smithers.sh/docs/reference/api/memory/): Effect services for durable cross-run facts, history, notes, recall, and maintenance
+- [@smthrs/migrate](https://smithers.sh/docs/reference/api/migrate/): Upgrades Smithers 0.x projects to Smithers 1.0 flows and writes an auditable migration report
+- [@smthrs/model](https://smithers.sh/docs/reference/api/model/): Schema-first Effect model protocols, routes, and streaming events for flows
+- [@smthrs/notifications](https://smithers.sh/docs/reference/api/notifications/): Durable notification queue, admission policy, and journal projection for flows
+- [@smthrs/observability](https://smithers.sh/docs/reference/api/observability/): Observability for flows: default OTLP export wiring plus Effect-native logger, metric, and OpenTelemetry SDK layers
+- [@smthrs/patterns](https://smithers.sh/docs/reference/api/patterns/): Higher-order flow patterns and decorators for flows. It composes @smthrs/flow and the one effect model in @smthrs/plan/Effects, and imports no Node built-ins.
+- [@smthrs/plan](https://smithers.sh/docs/reference/api/plan/): The persisted flows plan: a keyed action graph, its append-only store, and its diff
+- [@smthrs/plan-store](https://smithers.sh/docs/reference/api/plan-store/): The persisted plan's append-only SQLite store and the migrations that own its tables
+- [@smthrs/platform-browser](https://smithers.sh/docs/reference/api/platform-browser/): Browser implementations of Effect platform services backed by ZenFS and just-bash
+- [@smthrs/platform-bun](https://smithers.sh/docs/reference/api/platform-bun/): Bun Host bundle for flows: Effect's Bun platform services composed into the closed Host surface
+- [@smthrs/platform-node](https://smithers.sh/docs/reference/api/platform-node/): Node.js Host bundle for flows: Effect's Node platform services composed into the closed Host surface
+- [@smthrs/plugin](https://smithers.sh/docs/reference/api/plugin/): Vite-style typed plugin kernel for flows: hooks, resolution, and config execution
+- [@smthrs/registry](https://smithers.sh/docs/reference/api/registry/): Portable flow descriptor discovery and progressive-disclosure registry services
+- [@smthrs/run-store](https://smithers.sh/docs/reference/api/run-store/): Effect services for flows run state, attempts, and ownership arbitration
+- [@smthrs/sandbox](https://smithers.sh/docs/reference/api/sandbox/): Provisioned machines, provider-neutral remote process execution, conformance, and sandbox liveness for flows
+- [@smthrs/scorers](https://smithers.sh/docs/reference/api/scorers/): Flow-native scoring, durable observations, and asynchronous score runners for flows
+- [@smthrs/std](https://smithers.sh/docs/reference/api/std/): The flows standard tool library: filesystem, search, HTTP, web-search, shell, and language-server flows
+- [@smthrs/step-cache](https://smithers.sh/docs/reference/api/step-cache/): Effect service for the flows content-addressed step result cache
+- [@smthrs/sync](https://smithers.sh/docs/reference/api/sync/): Workspace read-path sync protocol, server, and client for flows
+- [@smthrs/testing](https://smithers.sh/docs/reference/api/testing/): Testing and conformance library for flows
+- [@smthrs/time-travel](https://smithers.sh/docs/reference/api/time-travel/): Durable replay, fork, and rewind primitives for flows
+- [@smthrs/triggers](https://smithers.sh/docs/reference/api/triggers/): Durable cron triggers and channel contracts for flows
+- [HTTP and RPC endpoints](https://smithers.sh/docs/reference/http-api/): The routes smthrs serve mounts, their protocols, their authentication rules, and the RPC groups each one serves.
+
+## Package documentation
+
+- [@smthrs/errors](https://github.com/smithersai/smithers/tree/main/packages/errors/docs): SmithersError and the error codes the integration adapters raise
+- [@smthrs/cli](https://github.com/smithersai/smithers/tree/main/packages/smithers/docs): Node command-line interface for Smithers control
+- [@smthrs/agent](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/docs): The Smithers agent: the production agent loop composed on the durable engine, plus the two adapters that run it, AgentSession for control-plane runs and AgentAction for typed workflow steps
+- [@smthrs/evals](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/evals/docs): Fixed-suite evaluation, baselines, regression reports, and score gates for flows
+- [@smthrs/harness](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/harness/docs): The Smithers built-in agent loop: a cell-first controller whose model turns produce JavaScript cells that run in a persistent realm and reach the world only through durable flow calls
+- [@smthrs/integrations](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/integrations/docs): GitHub adapters over the Smithers control plane
+- [@smthrs/memory](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/memory/docs): Effect services for durable cross-run facts, history, notes, recall, and maintenance
+- [@smthrs/model](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/model/docs): Schema-first Effect model protocols, routes, and streaming events for flows
+- [@smthrs/plugin](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/plugin/docs): Vite-style typed plugin kernel for flows: hooks, resolution, and config execution
+- [@smthrs/registry](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/registry/docs): Portable flow descriptor discovery and progressive-disclosure registry services
+- [@smthrs/scorers](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/scorers/docs): Flow-native scoring, durable observations, and asynchronous score runners for flows
+- [@smthrs/std](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/std/docs): The flows standard tool library: filesystem, search, HTTP, web-search, shell, and language-server flows
+- [@smthrs/triggers](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/triggers/docs): Durable cron triggers and channel contracts for flows
+- [@smthrs/build](https://github.com/smithersai/smithers/tree/main/packages/smithers/build/docs): Bazel-style TypeScript workflow orchestration with explicit pnpm installation
+- [@smthrs/build-cli](https://github.com/smithersai/smithers/tree/main/packages/smithers/build/build-cli/docs): Executes PACKAGE.ts target graphs with content-addressed caching
+- [@smthrs/targets](https://github.com/smithersai/smithers/tree/main/packages/smithers/build/targets/docs): Typed legacy declaration rules and macros for smithers build
+- [@smthrs/control](https://github.com/smithersai/smithers/tree/main/packages/smithers/control/docs): Control services and RPC projections for flows
+- [@smthrs/flows](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs): Barrel package re-exporting the whole @smthrs durable flow engine
+- [@smthrs/artifacts](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/artifacts/docs): Effect service for the Smithers content-addressed artifact store, local and remote
+- [@smthrs/canonical](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs): RFC 8785 canonical JSON as an Effect Schema
+- [@smthrs/capability](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/capability/docs): Capability values and permission failures: the leaf vocabulary of the Smithers permission kernel
+- [@smthrs/core](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/core/docs): Flow metadata and Markdown lowering over @smthrs/flow
+- [@smthrs/crypto](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/crypto/docs): Strict SHA-256 hashing with injected and synchronous Effect entry points
+- [@smthrs/database](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/database/docs): A driver-neutral SQL contract with a bounded write-retry seam, plus the composed migration ladder
+- [@smthrs/engine](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine/docs): The runtime that executes @smthrs/flow flows, plus HTTP and RPC transport projections
+- [@smthrs/engine-store](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine-store/docs): Effect services for durable engine action persistence and replay boundaries
+- [@smthrs/flow](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/flow/docs): The flow authoring model: flows, actions, durable waits, retry policy, and the runtime port they execute against
+- [@smthrs/jj](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/jj/docs): Jujutsu version control as a portable Effect host service
+- [@smthrs/journal](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/journal/docs): Effect services for the Smithers event journal: the immutable run history and the owner fence on its durable channel
+- [@smthrs/kernel](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/kernel/docs): Capability kernel: effect tiers, monotone capability sets, grant store, and permission-decorating layers over the Host services
+- [@smthrs/keys](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/keys/docs): Canonical flow-key derivation and stored-key validation
+- [@smthrs/observability](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/observability/docs): Observability for flows: default OTLP export wiring plus Effect-native logger, metric, and OpenTelemetry SDK layers
+- [@smthrs/patterns](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/patterns/docs): Higher-order flow patterns and decorators for flows. It composes @smthrs/flow and the one effect model in @smthrs/plan/Effects, and imports no Node built-ins.
+- [@smthrs/plan](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan/docs): The persisted flows plan: a keyed action graph, its append-only store, and its diff
+- [@smthrs/plan-store](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/docs): The persisted plan's append-only SQLite store and the migrations that own its tables
+- [@smthrs/platform-browser](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-browser/docs): Browser implementations of Effect platform services backed by ZenFS and just-bash
+- [@smthrs/platform-bun](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-bun/docs): Bun Host bundle for flows: Effect's Bun platform services composed into the closed Host surface
+- [@smthrs/platform-node](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-node/docs): Node.js Host bundle for flows: Effect's Node platform services composed into the closed Host surface
+- [@smthrs/run-store](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/run-store/docs): Effect services for flows run state, attempts, and ownership arbitration
+- [@smthrs/sandbox](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/docs): Provisioned machines, provider-neutral remote process execution, conformance, and sandbox liveness for flows
+- [@smthrs/step-cache](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/step-cache/docs): Effect service for the flows content-addressed step result cache
+- [@smthrs/sync](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sync/docs): Workspace read-path sync protocol, server, and client for flows
+- [@smthrs/time-travel](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/time-travel/docs): Durable replay, fork, and rewind primitives for flows
+- [@smthrs/gateway](https://github.com/smithersai/smithers/tree/main/packages/smithers/gateway/docs): Effect workspace gateway contracts, projections, and supervision ports for flows
+- [@smthrs/mcp](https://github.com/smithersai/smithers/tree/main/packages/smithers/mcp/docs): Model Context Protocol client and flow adapter: projects a remote MCP server's tools as ordinary FlowBinding.Source entries
+- [@smthrs/migrate](https://github.com/smithersai/smithers/tree/main/packages/smithers/migrate/docs): Upgrades Smithers 0.x projects to Smithers 1.0 flows and writes an auditable migration report
+- [@smthrs/notifications](https://github.com/smithersai/smithers/tree/main/packages/smithers/notifications/docs): Durable notification queue, admission policy, and journal projection for flows
+- [smthrs](https://github.com/smithersai/smithers/tree/main/packages/smthrs-deprecation/docs): The `smthrs` command for npx, and a migration notice for Smithers 1.0: importing this package throws.
+- [@smthrs/testing](https://github.com/smithersai/smithers/tree/main/packages/testing/docs): Testing and conformance library for flows
+
+## Optional

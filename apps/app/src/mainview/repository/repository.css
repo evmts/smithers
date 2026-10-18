@@ -1,4 +1,4 @@
-.repo-frame { height:100dvh; overflow:auto; background:var(--bg); color:var(--text); font:var(--fs-2)/1.5 var(--font-ui); }
+.repo-frame { height:100dvh; overflow:auto; background:var(--bg); color:var(--text); font:16px/1.55 var(--font-ui); }
 .repo-frame a { color:inherit; text-decoration:none; }
 .repo-frame a:hover { color:var(--brand); }
 .repo-frame h1,.repo-frame h2,.repo-frame h3 { margin:0; }
@@ -20,7 +20,23 @@
 .repo-ui-markdown h3 { font-size:var(--fs-4); margin:20px 0 12px; }
 .repo-ui-tabs { overflow-x:auto; }
 .repo-ui-tabs > a { flex-shrink:0; }
-/* Repository routes occupy the session shell; Ask retains the chat shell. */
-.session-shell:has(> .repo-frame) { padding-top: 0; }
-.session-shell > .repo-frame { flex: 1; width: 100%; min-width: 0; }
-.session-shell:has(> .repo-frame) > .session-navigation { display: none; }
+/* Keep the mock's focus ring and file-name column when commit metadata is absent. */
+.repo-frame :focus-visible { outline:2px solid var(--ring-border); outline-offset:2px; }
+.repo-frame .repo-code-home-file-row > span:first-child { text-align:left; grid-column:1; }
+.repo-frame .repo-ui-menu { max-width:calc(100vw - 32px); }
+.repo-frame .repo-ui-menu a { overflow-wrap:anywhere; }
+/* The repository frame owns the page header; the conversation strip belongs inside Ask. */
+.session-shell:has(> .repo-frame) { padding-top:0; }
+.session-shell:has(> .repo-frame) > .session-navigation { display:none; }
+.session-shell > .repo-frame { width:100%; flex:1; min-width:0; }
+
+.repo-frame-avatar-button { width:28px; height:28px; min-height:28px; border-radius:50%; padding:0; }
+.repo-frame-search { height:37px; }
+.repo-frame .repo-ui-tabs { height:52px; }
+.repo-frame-ask-button { background:var(--surface-2); color:var(--text); border-color:var(--border-strong); }
+
+/* Measured stage 1 frame: native account disclosure keeps the avatar box. */
+.repo-frame .repo-frame-avatar-button { font:inherit; padding:0; }
+@media (max-width:767px) {
+  .repo-frame .repo-frame-ask-button { background:var(--surface); padding:0 12px; }
+}
