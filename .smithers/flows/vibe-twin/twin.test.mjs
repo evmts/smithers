@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { normalizeDts, parseDts, twinFor } from "./twin.mjs"
+import { fallbackFor, normalizeDts, parseDts, twinFor } from "./twin.mjs"
 
 test("declarations that differ only in relative import extensions are equal", () => {
   const ts = `import { type A } from "./ErrorCode.ts";\nexport { B } from "../x/y.ts";\nexport declare const c: import("./z.ts").Z;\n`
@@ -47,11 +47,31 @@ export {};
 
 test("an import that resolves into src/ goes to the compiled twin when it exists", () => {
   const pkg = mkdtempSync(join(tmpdir(), "vibe-twin-"))
-  mkdirSync(join(pkg, ".vibe-twin", "out", "a"), { recursive: true })
-  writeFileSync(join(pkg, ".vibe-twin", "out", "a", "b.js"), "")
-  assert.equal(twinFor(join(pkg, "src", "a", "b.ts"), pkg), join(pkg, ".vibe-twin", "out", "a", "b.js"))
-  assert.equal(twinFor(join(pkg, "src", "a", "b.ts?v=1"), pkg), join(pkg, ".vibe-twin", "out", "a", "b.js"))
+  const out = join(pkg, ".vibe-twin", "out", "src-vibe")
+  mkdirSync(join(out, "a"), { recursive: true })
+  writeFileSync(join(out, "a", "b.js"), "")
+  writeFileSync(join(out, "a", "stub.js"), "")
+  writeFileSync(join(out, ".vibe-twin-modules.json"), JSON.stringify(["a/b"]))
+  assert.equal(twinFor(join(pkg, "src", "a", "stub.ts"), pkg), undefined, "a stub is not a twin")
+  assert.equal(twinFor(join(pkg, "src", "a", "b.ts"), pkg), join(out, "a", "b.js"))
+  assert.equal(twinFor(join(pkg, "src", "a", "b.ts?v=1"), pkg), join(out, "a", "b.js"))
   assert.equal(twinFor(join(pkg, "src", "a", "c.ts"), pkg), undefined, "no twin yet: keep the TypeScript")
   assert.equal(twinFor(join(pkg, "src", "a", "b.d.ts"), pkg), undefined)
   assert.equal(twinFor(join(pkg, "test", "b.ts"), pkg), undefined)
+})
+
+test("twin code falls back to src/ for a module the twin does not have yet", () => {
+  const pkg = mkdtempSync(join(tmpdir(), "vibe-twin-"))
+  const out = join(pkg, ".vibe-twin", "out", "src-vibe")
+  mkdirSync(join(out, "a"), { recursive: true })
+  mkdirSync(join(pkg, "src", "a"), { recursive: true })
+  writeFileSync(join(out, "a", "b.js"), "")
+  writeFileSync(join(pkg, "src", "flow-form.ts"), "")
+  writeFileSync(join(pkg, "src", "a", "b.ts"), "")
+  const importer = join(out, "a", "index.js")
+  assert.equal(fallbackFor("./b.js", importer, pkg), undefined, "twinned: keep it")
+  assert.equal(fallbackFor("../flow-form", importer, pkg), join(pkg, "src", "flow-form.ts"))
+  assert.equal(fallbackFor("../flow-form.js", importer, pkg), join(pkg, "src", "flow-form.ts"))
+  assert.equal(fallbackFor("effect", importer, pkg), undefined, "packages resolve normally")
+  assert.equal(fallbackFor("./b.js", join(pkg, "test", "x.ts"), pkg), undefined, "only twin code falls back")
 })

@@ -81,8 +81,62 @@ export const twinFor = (resolved, pkg) => {
   const file = resolved.split("?")[0]
   const src = join(pkg, "src") + sep
   if (!file.startsWith(src) || !/\.(?:ts|tsx|mts)$/.test(file) || file.endsWith(".d.ts")) return undefined
-  const out = join(pkg, ".vibe-twin", "out", file.slice(src.length).replace(/\.(?:ts|tsx|mts)$/, ".js"))
-  return existsSync(out) ? out : undefined
+  const rel = file.slice(src.length).replace(/\.(?:ts|tsx|mts)$/, "")
+  if (!twinModules(pkg).has(rel)) return undefined
+  return join(pkg, ".vibe-twin", "out", "src-vibe", `${rel}.js`)
+}
+
+/** The src/ modules (relative, no extension) that have a real twin; a stub is not one. */
+const twinModules = (pkg) => {
+  const manifest = join(pkg, ".vibe-twin", "out", "src-vibe", MANIFEST)
+  if (!existsSync(manifest)) return new Set()
+  return new Set(JSON.parse(readFileSync(manifest, "utf8")))
+}
+
+const MANIFEST = ".vibe-twin-modules.json"
+
+/** A src/ module without a twin yet: its path relative to src/, without extension. */
+const srcModules = (pkg) =>
+  walk(join(pkg, "src"))
+    .filter((f) => /\.(?:ts|tsx|mts)$/.test(f) && !/\.d\.ts$|\.(?:test|spec)\.tsx?$|(?:^|\/)__tests__\//.test(f))
+    .map((f) => ({ rel: f.replace(/\.(?:ts|tsx|mts)$/, ""), file: join(pkg, "src", f) }))
+
+/**
+ * After the twin compiles: record which src/ modules it twins, and give every
+ * other src/ module a stub in the output that re-exports the TypeScript, so a
+ * partial twin's imports of modules not twinned yet still run.
+ */
+const linkPartialTwin = (pkg, work) => {
+  const out = join(work, "out", "src-vibe")
+  const twinned = srcModules(pkg).filter(({ rel }) =>
+    ["vibe", "ts", "tsx"].some((x) => existsSync(join(pkg, "src-vibe", `${rel}.${x}`)))
+  )
+  const names = new Set(twinned.map(({ rel }) => rel))
+  mkdirSync(out, { recursive: true })
+  writeFileSync(join(out, MANIFEST), JSON.stringify([...names]) + "\n")
+  for (const { rel, file } of srcModules(pkg)) {
+    if (names.has(rel)) continue
+    const stub = join(out, `${rel}.js`)
+    mkdirSync(dirname(stub), { recursive: true })
+    const hasDefault = /^\s*export\s+default\b/m.test(readFileSync(file, "utf8"))
+    writeFileSync(stub, `// vibe-twin stub: not twinned yet\nexport * from ${JSON.stringify(file)}\n${hasDefault ? `export { default } from ${JSON.stringify(file)}\n` : ""}`)
+  }
+  return [...names]
+}
+
+/**
+ * For an import made by compiled twin code: undefined when the twin has the
+ * target, else the src/ module it falls back to. A partial twin imports modules
+ * that are not twinned yet with the TypeScript's own specifiers (rootDirs).
+ */
+export const fallbackFor = (source, importer, pkg) => {
+  const twinRoot = join(pkg, ".vibe-twin", "out", "src-vibe") + sep
+  if (!importer.startsWith(twinRoot) || !source.startsWith(".")) return undefined
+  const target = resolve(dirname(importer), source.split("?")[0])
+  const base = target.replace(/\.(?:js|mjs|ts|tsx|vibe)$/, "")
+  if ([target, `${base}.js`, join(target, "index.js")].some((f) => f.startsWith(twinRoot) && existsSync(f))) return undefined
+  const rel = base.slice(twinRoot.length)
+  return [".ts", ".tsx", ".mts", "/index.ts", "/index.tsx"].map((x) => join(pkg, "src", rel + x)).find(existsSync)
 }
 
 const walk = (dir, base = dir) =>
@@ -95,13 +149,16 @@ const walk = (dir, base = dir) =>
 /** A tool from the package's own node_modules, else the workspace root's. */
 const bin = (pkg, name) => [join(pkg, "node_modules", ".bin", name), join(root, "node_modules", ".bin", name)].find(existsSync)
 
-const tsconfig = (pkg, file, compilerOptions, include) => {
+const tsconfig = (pkg, file, compilerOptions, include, exclude = []) => {
   const base = existsSync(join(pkg, "tsconfig.json")) ? "../tsconfig.json" : undefined
   writeFileSync(
     file,
-    JSON.stringify({ ...(base ? { extends: base } : {}), compilerOptions, include }, null, 2) + "\n"
+    JSON.stringify({ ...(base ? { extends: base } : {}), compilerOptions, include, exclude }, null, 2) + "\n"
   )
 }
+
+/** Tests colocated in src/ are not modules of the API (apps/server keeps its tests there). */
+const testGlobs = ["../src/**/*.test.ts", "../src/**/*.test.tsx", "../src/**/*.spec.ts", "../src/**/__tests__/**"]
 
 const common = {
   noEmit: false,
@@ -142,7 +199,8 @@ const vitest = (pkg, config, outputFile) => {
     pass: tests.filter((t) => t.status === "passed").length,
     fail: tests.filter((t) => t.status === "failed").length + suiteErrors.length,
     skip: tests.filter((t) => t.status === "skipped" || t.status === "pending" || t.status === "todo").length,
-    failed: [...tests.filter((t) => t.status === "failed").map((t) => t.name), ...suiteErrors]
+    failed: [...tests.filter((t) => t.status === "failed").map((t) => t.name), ...suiteErrors],
+    passed: tests.filter((t) => t.status === "passed").map((t) => t.name)
   }
 }
 
@@ -153,7 +211,8 @@ const vitest = (pkg, config, outputFile) => {
  * instance types, must be identical (checked by the compiler).
  */
 const apiCheck = (pkg, work) => {
-  const twinDts = new Set(walk(join(work, "out")).filter((f) => f.endsWith(".d.ts")))
+  const twinOut = join(work, "out", "src-vibe")
+  const twinDts = new Set(walk(twinOut).filter((f) => f.endsWith(".d.ts")))
   const api = {
     modules: 0, identicalFiles: 0, checked: 0, missingModules: [], missingExports: [], extraExports: [],
     typeDiffers: [], valueDiffers: [], errors: []
@@ -171,7 +230,7 @@ const apiCheck = (pkg, work) => {
     }
     api.modules++
     const tsText = readFileSync(join(work, "ts-dts", file), "utf8")
-    const vbText = readFileSync(join(work, "out", file), "utf8")
+    const vbText = readFileSync(join(twinOut, file), "utf8")
     if (normalizeDts(tsText) === normalizeDts(vbText)) {
       api.identicalFiles++
       return
@@ -213,7 +272,8 @@ const apiCheck = (pkg, work) => {
   if (checks.size > 0) {
     writeFileSync(join(work, "api-check.ts"), lines.join("\n") + "\n")
     tsconfig(pkg, join(work, "tsconfig.api.json"), {
-      ...common, noEmit: true, rootDir: "..", allowImportingTsExtensions: true, declaration: false
+      ...common, noEmit: true, rootDir: "..", rootDirs: ["../src", "../src-vibe"], allowImportingTsExtensions: true,
+      declaration: false
     }, ["api-check.ts"])
     for (const line of compile(join(work, "tsconfig.api.json")).errors) {
       const at = line.match(/api-check\.ts\((\d+),\d+\)/)
@@ -229,6 +289,40 @@ const apiCheck = (pkg, work) => {
 const apiOk = (api) =>
   api.missingExports.length + api.extraExports.length + api.typeDiffers.length + api.valueDiffers.length + api.errors.length === 0
 
+/** Results from a JUnit XML report: Bun's `--reporter=junit`. */
+export const parseJunit = (xml, pkg) => {
+  const tests = [...xml.matchAll(/<testcase\b([^>]*?)(\/>|>([\s\S]*?)<\/testcase>)/g)].map((m) => {
+    const attr = (k) => (m[1].match(new RegExp(`\\b${k}="([^"]*)"`)) ?? [])[1] ?? ""
+    const body = m[3] ?? ""
+    const status = /<(failure|error)\b/.test(body) ? "failed" : /<skipped\b/.test(body) ? "skipped" : "passed"
+    return { name: `${relative(pkg, attr("file") || attr("classname"))} > ${attr("name")}`, status }
+  })
+  return {
+    ran: true,
+    pass: tests.filter((t) => t.status === "passed").length,
+    fail: tests.filter((t) => t.status === "failed").length,
+    skip: tests.filter((t) => t.status === "skipped").length,
+    failed: tests.filter((t) => t.status === "failed").map((t) => t.name),
+    passed: tests.filter((t) => t.status === "passed").map((t) => t.name)
+  }
+}
+
+/** `bun test <args>`, with an optional preload, read from its JUnit report. */
+const bunTest = (pkg, args, preload, outputFile) => {
+  const argv = ["test", ...(preload ? ["--preload", preload] : []), "--reporter=junit", `--reporter-outfile=${outputFile}`, ...args]
+  spawnSync("bun", argv, { cwd: pkg, encoding: "utf8", env: { ...process.env, CI: "1" }, maxBuffer: 64 * 1024 * 1024 })
+  return existsSync(outputFile)
+    ? parseJunit(readFileSync(outputFile, "utf8"), pkg)
+    : { ran: false, pass: 0, fail: 0, skip: 0, failed: ["(bun test wrote no report)"] }
+}
+
+/** The package's test runner: Bun when its test script runs `bun test`, else Vitest. */
+const runner = (pkg) => {
+  const script = JSON.parse(readFileSync(join(pkg, "package.json"), "utf8")).scripts?.test ?? ""
+  const bunArgs = script.match(/\bbun test\b(.*)$/)
+  return bunArgs ? { kind: "bun", args: bunArgs[1].trim().split(/\s+/).filter(Boolean) } : { kind: "vitest" }
+}
+
 export const run = (pkgArg) => {
   const pkg = resolve(pkgArg)
   if (!existsSync(join(pkg, "src-vibe"))) throw new Error(`${pkg}: no src-vibe/ twin`)
@@ -238,7 +332,8 @@ export const run = (pkgArg) => {
 
   tsconfig(pkg, join(work, "tsconfig.twin.json"), {
     ...common,
-    rootDir: "../src-vibe",
+    rootDir: "..",
+    rootDirs: ["../src", "../src-vibe"],
     outDir: "out",
     declaration: true,
     emitDeclarationOnly: false,
@@ -252,8 +347,9 @@ export const run = (pkgArg) => {
     outDir: "ts-dts",
     declaration: true,
     emitDeclarationOnly: true
-  }, ["../src/**/*"])
+  }, ["../src/**/*"], testGlobs)
   const twin = compile(join(work, "tsconfig.twin.json"))
+  const twinned = linkPartialTwin(pkg, work)
   const ts = compile(join(work, "tsconfig.ts.json"))
 
   const api = apiCheck(pkg, work)
@@ -264,7 +360,7 @@ export const run = (pkgArg) => {
   writeFileSync(
     config,
     `import { mergeConfig } from "vitest/config"
-import { twinFor } from ${JSON.stringify(fileURLToPath(import.meta.url))}
+import { fallbackFor, twinFor } from ${JSON.stringify(fileURLToPath(import.meta.url))}
 ${baseConfig ? `import base from ${JSON.stringify(baseConfig)}` : "const base = {}"}
 const pkg = ${JSON.stringify(pkg)}
 export default mergeConfig(base, {
@@ -273,7 +369,8 @@ export default mergeConfig(base, {
     name: "vibe-twin",
     enforce: "pre",
     async resolveId(source, importer, options) {
-      if (importer && importer.includes("/.vibe-twin/out/")) return null
+      if (!importer || importer.includes("/node_modules/") || !importer.startsWith(pkg)) return null
+      if (importer.includes("/.vibe-twin/out/")) return fallbackFor(source, importer, pkg) ?? null
       const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
       return resolved && twinFor(resolved.id, pkg) ? twinFor(resolved.id, pkg) : null
     }
@@ -282,21 +379,52 @@ export default mergeConfig(base, {
 })
 `
   )
-  const baseline = vitest(pkg, undefined, join(work, "ts.json"))
-  const vibe = twin.errors.length === 0 ? vitest(pkg, config, join(work, "vibe.json")) : { ran: false, pass: 0, fail: 0, skip: 0, failed: [] }
-  const tsFailed = new Set(baseline.failed)
-  const regressions = vibe.failed.filter((name) => !tsFailed.has(name))
+  const tests = runner(pkg)
+  const preload = join(work, "bun-preload.mjs")
+  if (tests.kind === "bun") {
+    writeFileSync(
+      preload,
+      `import { mock } from "bun:test"
+import { createRequire } from "node:module"
+const require = createRequire(import.meta.url)
+const pairs = ${JSON.stringify(twinned.map((rel) => [
+        ["ts", "tsx", "mts"].map((x) => join(pkg, "src", `${rel}.${x}`)).find(existsSync),
+        join(work, "out", "src-vibe", `${rel}.js`)
+      ]))}
+for (const [src, twin] of pairs) mock.module(src, () => require(twin))
+`
+    )
+  }
+  const notRun = { ran: false, pass: 0, fail: 0, skip: 0, failed: [] }
+  const baseline = tests.kind === "bun" ? bunTest(pkg, tests.args, undefined, join(work, "ts.xml")) : vitest(pkg, undefined, join(work, "ts.json"))
+  const vibe = twin.errors.length > 0
+    ? notRun
+    : tests.kind === "bun"
+    ? bunTest(pkg, tests.args, preload, join(work, "vibe.xml"))
+    : vitest(pkg, config, join(work, "vibe.json"))
+  // A regression is a test that passed on the TypeScript and did not pass on the
+  // twin: it failed, or its file never loaded (Bun's JUnit report omits those).
+  const vibePassed = new Set(vibe.passed ?? [])
+  const regressions = (baseline.passed ?? []).filter((name) => !vibePassed.has(name))
   const receipt = {
     package: relative(root, pkg),
+    runner: tests.kind,
     twinFiles: walk(join(pkg, "src-vibe")).length,
     compile: { twinErrors: twin.errors, twinWarnings: twin.warnings, tsErrors: ts.errors.length },
     api,
-    tests: { ts: { ...baseline, failed: undefined }, vibe: { ...vibe, failed: undefined } },
+    tests: { ts: { ...baseline, failed: undefined, passed: undefined }, vibe: { ...vibe, failed: undefined, passed: undefined } },
     regressions,
     ok: twin.errors.length === 0 && apiOk(api) && vibe.ran && regressions.length === 0 && vibe.pass >= baseline.pass,
     complete: false
   }
-  receipt.complete = receipt.ok && api.missingModules.length === 0
+  // W46 covers the Effect code: a module that never imports effect may stay TypeScript.
+  const importsEffect = (dts) => {
+    const mod = dts.replace(/\.d\.ts$/, "")
+    const file = ["ts", "tsx", "mts"].map((x) => join(pkg, "src", `${mod}.${x}`)).find(existsSync)
+    return file !== undefined && /from\s+["'](?:effect|@effect\/)/.test(readFileSync(file, "utf8"))
+  }
+  receipt.api.missingEffectModules = api.missingModules.filter(importsEffect)
+  receipt.complete = receipt.ok && receipt.api.missingEffectModules.length === 0
   writeFileSync(join(work, "receipt.json"), JSON.stringify(receipt, null, 2) + "\n")
   return receipt
 }
@@ -311,7 +439,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       [
         `${receipt.package}: ${receipt.complete ? "COMPLETE" : receipt.ok ? "OK (partial)" : "NOT OK"}`,
         `  compile: ${receipt.compile.twinErrors.length} errors, ${receipt.compile.twinWarnings.length} warnings`,
-        `  api: ${receipt.api.modules} modules twinned (${receipt.api.identicalFiles} with identical .d.ts), ${receipt.api.missingModules.length} not yet, ${receipt.api.checked} type checks`,
+        `  api: ${receipt.api.modules} modules twinned (${receipt.api.identicalFiles} with identical .d.ts), ${receipt.api.missingEffectModules.length} Effect modules not yet (${receipt.api.missingModules.length} in all), ${receipt.api.checked} type checks`,
         `  tests: ts ${t.ts.pass} pass ${t.ts.fail} fail ${t.ts.skip} skip | vibe ${t.vibe.pass} pass ${t.vibe.fail} fail ${t.vibe.skip} skip`,
         ...receipt.compile.twinErrors.slice(0, 20).map((e) => `  ${e}`),
         ...["missingExports", "extraExports", "typeDiffers", "valueDiffers", "errors"].flatMap((k) =>
