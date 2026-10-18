@@ -2680,8 +2680,13 @@ const visit = async (
     // and rewrite `node_modules` as a side effect of running `tsc`. Installing
     // is the `Npm.NodeModules` resource's business; a consumer of it never
     // installs. The setting lives only in `pnpm-workspace.yaml`, so `--config.`
-    // is the one spelling that reaches pnpm from here.
-    if (context.managerBinary === "pnpm" && (argv[1] === "exec" || argv[1] === "run")) {
+    // is the one spelling that reaches pnpm from here. Only pnpm's own argv
+    // takes it: `vitest run` from `node_modules/.bin` is not `pnpm run`.
+    if (
+      context.managerBinary === "pnpm" &&
+      NodePath.basename(argv[0]!).replace(/\.(?:cmd|exe)$/i, "") === context.managerBinary &&
+      (argv[1] === "exec" || argv[1] === "run")
+    ) {
       argv = [argv[0]!, "--config.verifyDepsBeforeRun=false", ...argv.slice(1)]
       if (selection?.family === "service" && selection.rule === "Shell.Serve") {
         selection = { ...selection, argv: [argv[0]!, ...argv.slice(1)] }

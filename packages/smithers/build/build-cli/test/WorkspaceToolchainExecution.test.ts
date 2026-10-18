@@ -172,6 +172,57 @@ describe("manifest toolchain execution", () => {
   })
 })
 
+describe("package-manager flags", () => {
+  // `pnpm exec` and `pnpm run` get pnpm's verify-deps opt-out. A workspace
+  // tool whose own first argument is `run`, such as `vitest run`, is not pnpm
+  // and must receive its declared argv unchanged.
+  it.skipIf(process.platform === "win32")("never prepends pnpm's flag to a node_modules tool invoked with run", async () => {
+    const root = await fixture("S.Runtime.Node({ manifest })")
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const vitest = S.Shell.Test({ bin: S.NodeModule.Bin("vitest"), args: ["run", "--project", "effect"] })
+export const Package = S.Package({ targets: { vitest } })
+`
+    )
+    await write(
+      root,
+      "node_modules/.bin/vitest",
+      `#!${process.execPath}
+require("node:fs").writeFileSync(${JSON.stringify(Path.join(root, "vitest-argv.json"))}, JSON.stringify(process.argv.slice(2)))
+`
+    )
+    await Fs.chmod(Path.join(root, "node_modules/.bin/vitest"), 0o755)
+    const result = await serve(root, ["test", "//:vitest", "--no-cache", "--jobs", "1"])
+    expect(result.code, result.output).toBe(0)
+    expect(JSON.parse(await Fs.readFile(Path.join(root, "vitest-argv.json"), "utf8"))).toEqual([
+      "run",
+      "--project",
+      "effect"
+    ])
+  })
+
+  it.skipIf(process.platform === "win32")("prepends it to pnpm's own exec", async () => {
+    const root = await fixture("S.Runtime.Node({ manifest })")
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const check = S.Shell.Test({ bin: S.PackageManager.bin, args: ["exec", "tsc", "-p", "tsconfig.json", "--noEmit"] })
+export const Package = S.Package({ targets: { check } })
+`
+    )
+    const result = await serve(root, ["test", "//:check", "--no-cache", "--jobs", "1"])
+    expect(result.code, result.output).toBe(0)
+    const invocations = (await Fs.readFile(Path.join(root, "manager-invocations.jsonl"), "utf8"))
+      .trim().split("\n").map((line) => JSON.parse(line) as ReadonlyArray<string>)
+    expect(invocations.filter((args) => args.includes("tsc"))).toEqual([
+      ["--config.verifyDepsBeforeRun=false", "exec", "tsc", "-p", "tsconfig.json", "--noEmit"]
+    ])
+  })
+})
+
 const privateExecutable = (version: string, marker: string): string =>
   `#!${process.execPath}
 const args = process.argv.slice(2)
