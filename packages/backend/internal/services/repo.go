@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/base64"
 	stdErrors "errors"
 	"fmt"
 	"log/slog"
@@ -345,6 +346,9 @@ type RepoContent struct {
 	Path        string `json:"path"`
 	SHA         string `json:"sha"`
 	Type        string `json:"type"`
+	CommitSHA   string `json:"commit_sha,omitempty"`
+	RawURL      string `json:"raw_url,omitempty"`
+	TooLarge    bool   `json:"too_large,omitempty"`
 	Encoding    string `json:"encoding"`
 	Content     string `json:"content"`
 	Size        int64  `json:"size"`
@@ -1561,7 +1565,7 @@ func (s *RepoService) GetRepoContents(ctx context.Context, viewer *db.User, owne
 	}
 
 	trimmedOwner := strings.TrimSpace(owner)
-	changeRef, err = s.resolveChangeRef(ctx, trimmedOwner, repository.Name, changeRef)
+	changeRef, err = s.resolveContentsCommit(ctx, trimmedOwner, repository.Name, changeRef)
 	if err != nil {
 		return RepoContent{}, err
 	}
@@ -1574,14 +1578,28 @@ func (s *RepoService) GetRepoContents(ctx context.Context, viewer *db.User, owne
 	if file.Path != "" {
 		filePath = file.Path
 	}
+	encoding := "utf-8"
+	size := int64(len(file.Content))
+	if file.TooLarge {
+		return RepoContent{}, errors.Internal("repository host omitted file size and bytes")
+	}
+	if file.Encoding == "base64" {
+		bytes, decodeErr := base64.StdEncoding.DecodeString(file.Content)
+		if decodeErr != nil {
+			return RepoContent{}, errors.Internal("invalid repository file encoding")
+		}
+		size = int64(len(bytes))
+		encoding = "base64"
+	}
 	return RepoContent{
-		Name:     path.Base(filePath),
-		Path:     filePath,
-		SHA:      "",
-		Type:     "file",
-		Encoding: "utf-8",
-		Content:  file.Content,
-		Size:     int64(len(file.Content)),
+		CommitSHA: changeRef,
+		Name:      path.Base(filePath),
+		Path:      filePath,
+		SHA:       "",
+		Type:      "file",
+		Encoding:  encoding,
+		Content:   file.Content,
+		Size:      size,
 	}, nil
 }
 

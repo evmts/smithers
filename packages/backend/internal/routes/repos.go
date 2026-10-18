@@ -2,6 +2,7 @@ package routes
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -479,7 +480,44 @@ func (h *RepoHandler) GetRepoContents(w http.ResponseWriter, r *http.Request) {
 	// contain many files, and a file path must return content, not a listing.
 	content, err := h.Service.GetRepoContents(r.Context(), middleware.UserFromContext(r.Context()), owner, repoName, ref, repoPath)
 	if err == nil {
+		rawQuery := url.Values{"raw": {"1"}}
+		if content.CommitSHA != "" {
+			rawQuery.Set("ref", content.CommitSHA)
+			w.Header().Set("X-Contents-Commit", content.CommitSHA)
+		} else if ref != "" {
+			rawQuery.Set("ref", ref)
+		}
+		content.RawURL = r.URL.EscapedPath() + "?" + rawQuery.Encode()
+		if r.URL.Query().Get("raw") == "1" {
+			data := []byte(content.Content)
+			if content.Encoding == "base64" {
+				var decodeErr error
+				data, decodeErr = base64.StdEncoding.DecodeString(content.Content)
+				if decodeErr != nil {
+					writeRouteError(w, r, errors.Internal("invalid repository file encoding"))
+					return
+				}
+			}
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			if !utf8.Valid(data) || strings.ContainsRune(string(data), 0) {
+				w.Header().Set("Content-Type", "application/octet-stream")
+				w.Header().Set("Content-Disposition", "attachment")
+			} else {
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(data)
+			return
+		}
+		if content.Size > 512*1024 {
+			content.Content = ""
+			content.TooLarge = true
+		}
 		errors.WriteJSON(w, http.StatusOK, content)
+		return
+	}
+	if apiErr, ok := err.(*errors.APIError); ok && apiErr.Status == http.StatusForbidden && middleware.UserFromContext(r.Context()) == nil {
+		errors.WriteError(w, errors.NotFound("repository not found"))
 		return
 	}
 	if apiErr, ok := err.(*errors.APIError); !ok || apiErr.Status != http.StatusNotFound {
