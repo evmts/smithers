@@ -1,3 +1,5 @@
+import type { RepositorySubject } from "@smthrs/rpc/RepositorySubjectPath"
+import { readDeclaredTabs, readDeclaredContent } from "../../repository/DeclaredTabsData"
 /*
  * The repository-flows seam: the flow catalog of the active repository, as
  * `.smithers/factory.json` declares it (the `flows` rows of the factory
@@ -33,6 +35,7 @@ import { readFactoryProjection } from "./TriggersSeam"
 export interface RepositoryFlowsSeam {
   /** Read one repository's flows and homepage; an absent projection clears its leaves. */
   readonly load: (repo: string) => Promise<void>
+  readonly loadSubject: (repo: string, subject: RepositorySubject, retry?: boolean) => Promise<void>
   /** Read the active repository's flows, and every new target's as it becomes one, until disposed. */
   readonly subscribe: (onDispose: (release: () => void) => void) => void
 }
@@ -104,11 +107,13 @@ export const createRepositoryFlowsSeam = (
   /** The latest read of each repository, current only for the account that started it. */
   const read = new Map<string, () => boolean>()
   let disposed = false
+  const loading = new Map<string, Promise<void>>()
+  const content = new Map<string, { current: () => boolean; result: ReturnType<typeof readDeclaredContent> }>()
 
-  const load: RepositoryFlowsSeam["load"] = async (repo) => {
+  const readRepository: RepositoryFlowsSeam["load"] = async (repo) => {
     const current = captureCloudOwner(ctx, false)
     read.set(repo, current)
-    const [answer, declared] = await Promise.all([readFactoryProjection(ctx, repo), readRepositoryHome(ctx, repo)])
+    const [answer, declared, navigation] = await Promise.all([readFactoryProjection(ctx, repo), readRepositoryHome(ctx, repo), readDeclaredTabs(ctx, repo)])
     if (disposed || !current() || read.get(repo) !== current) return
     const flows = "error" in answer || answer.absent ? [] : repositoryFlowsOf(answer.projection.flows ?? [])
     /*
@@ -119,8 +124,59 @@ export const createRepositoryFlowsSeam = (
      */
     const catalog = "error" in answer ? "unreadable" : answer.absent ? "absent" : "read"
     const home = resolveFlowViews(declared, flows, catalog)
-    ctx.dispatch({ type: "repository-flows.loaded", actor: "system", repo, flows, home, catalog })
+    const previous = ctx.store.collections.repositoryFlows.get(repo)?.declaredTabs
+    const declaredTabs = { ...navigation, tabs: navigation.tabs.map(tab => {
+      const cached = previous?.tabs.find(entry => JSON.stringify(entry.declaration) === JSON.stringify(tab.declaration))
+      if (!cached) return tab
+      const includes = (path: string) => tab.declaration.type === "docs" ? tab.navigation?.some(page => page.path === path) : tab.cases.includes(path)
+      const reads = Object.fromEntries(Object.entries(cached.reads ?? {}).filter(([path, read]) => read.state === "loaded" && includes(path)))
+      return { ...tab, reads, files: cached.files.filter(file => tab.declaration.type === "docs" ? includes(file.path) : includes(file.path.split("/")[0]!)) }
+    }) }
+    ctx.dispatch({ type: "repository-flows.loaded", actor: "system", repo, flows, home, catalog, declaredTabs })
     onHome?.(repo, home)
+  }
+
+  const load: RepositoryFlowsSeam["load"] = repo => {
+    const result = readRepository(repo)
+    loading.set(repo, result)
+    return result
+  }
+
+  const loadSubject: RepositoryFlowsSeam["loadSubject"] = async (repo, subject, retry = false) => {
+    if (subject.kind !== "docs" && subject.kind !== "evals") return
+    await (loading.get(repo) ?? load(repo))
+    const current = captureCloudOwner(ctx, false)
+    const findTab = () => ctx.store.collections.repositoryFlows.get(repo)?.declaredTabs?.tabs.find(tab =>
+      subject.kind === "docs" ? tab.declaration.type === "docs" : tab.declaration.type === "eval" && tab.declaration.suite === subject.suite)
+    if (retry && (findTab()?.error || ctx.store.collections.repositoryFlows.get(repo)?.declaredTabs?.error)) await load(repo)
+    if (disposed || !current()) return
+    const tab = findTab()
+    if (!tab || tab.error) return
+    const selection = subject.kind === "docs" && tab.declaration.type === "docs" ? subject.path === undefined ? tab.declaration.index : decodeURIComponent(subject.path) : subject.kind === "evals" ? subject.case : undefined
+    if (selection === undefined || tab.reads?.[selection]?.state === "loaded") return
+    if (subject.kind === "docs" ? !tab.navigation?.some(page => page.path === selection) : !tab.cases.includes(selection)) return
+    const key = JSON.stringify([repo, tab.declaration, selection])
+    let cached = content.get(key)
+    if (!cached?.current()) {
+      cached = { current, result: readDeclaredContent(ctx, repo, tab, selection) }
+      content.set(key, cached)
+    }
+    const publish = (state: "loading" | "loaded" | "failed", files: typeof tab.files = [], error?: string) => {
+      if (disposed || !current()) return
+      const row = ctx.store.collections.repositoryFlows.get(repo)
+      if (!row?.declaredTabs) return
+      const declaredTabs = { ...row.declaredTabs, tabs: row.declaredTabs.tabs.map(entry => JSON.stringify(entry.declaration) !== JSON.stringify(tab.declaration) ? entry : {
+        ...entry, files: state === "loaded" ? [...entry.files.filter(file => !files.some(next => next.path === file.path)), ...files] : entry.files,
+        reads: { ...entry.reads, [selection]: { state, ...(error === undefined ? {} : { error }) } }
+      }) }
+      ctx.dispatch({ type: "repository-flows.loaded", actor: "system", repo, flows: row.flows, home: row.home, catalog: row.catalog, declaredTabs })
+    }
+    publish("loading")
+    try { publish("loaded", await cached.result) }
+    catch (error) {
+      if (content.get(key) === cached) content.delete(key)
+      publish("failed", [], error instanceof Error ? error.message : String(error))
+    }
   }
 
   const loadTarget = (): void => {
@@ -148,7 +204,7 @@ export const createRepositoryFlowsSeam = (
     })
   }
 
-  return { load, subscribe }
+  return { load, loadSubject, subscribe }
 }
 
 const KNOWN_BLOCKS = new Set(["prompt", "flows", "markdown", "text", "links", "stack", "app", "view"])

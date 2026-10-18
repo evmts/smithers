@@ -1,3 +1,4 @@
+import { CodeFileView } from "@smthrs/ui/adapters/code-view"
 import { flowAction, flowProps, dynamicFlowProps } from "../flows/FlowAction"
 import { flowArgs } from "../flows/FlowArgs"
 import { FailureNotice, unavailableFailure } from "../FailureNotice"
@@ -21,12 +22,17 @@ import "./code-home.css"
 // transcript typography wrappers. Fences, inline formatting and links stay shared.
 // A repository file (the README, a home markdown block) reads as a document:
 // GitHub's HTML subset and soft line breaks; issue and pull request text stays chat.
-export function RepositoryMarkdown({ content, variant = "chat" }: { content: string; variant?: MarkdownVariant }) {
+export function RepositoryMarkdown({ content, variant = "chat", link, language }: { content: string; variant?: MarkdownVariant; link?: (href: string) => string; language?: string }) {
   const semantic = (node: ReactNode): ReactNode => {
     if (Array.isArray(node)) return node.map(semantic)
-    if (!isValidElement<{ className?: string; children?: ReactNode }>(node)) return node
+    if (!isValidElement<{ className?: string; children?: ReactNode; href?: string }>(node)) return node
+    if (node.type === "a" && node.props.href && link) return cloneElement(node, { href: link(node.props.href) }, semantic(node.props.children))
+    if (language && typeof (node.props as { code?: unknown }).code === "string") {
+      const block = node.props as { code: string; language?: string }
+      return <CodeFileView key={node.key} name={`page.${block.language === "ts" ? language : block.language ?? "txt"}`} contents={block.code}/>
+    }
     const level = /sui-md-h([1-6])(?:\s|$)/.exec(node.props.className ?? "")?.[1]
-    if (level) return createElement(`h${level}`, { key: node.key, className: node.props.className }, node.props.children)
+    if (level) return createElement(`h${level}`, { key: node.key, className: node.props.className }, semantic(node.props.children))
     return cloneElement(node, undefined, semantic(node.props.children))
   }
   return <div className="repo-ui-markdown sui-md">{semantic(markdownBlockParser.render(content, undefined, variant))}</div>
