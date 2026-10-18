@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -30,6 +31,17 @@ func NewPool(ctx context.Context, cfg config.DatabaseConfig, metrics ...DBQueryD
 	poolCfg.MinConns = cfg.MinConns
 	poolCfg.MaxConnLifetime = time.Duration(cfg.MaxConnLifetime) * time.Second
 	poolCfg.MaxConnIdleTime = time.Duration(cfg.MaxConnIdleTime) * time.Second
+	// Every session's own bounds, sent in its startup packet (plue#839): a
+	// statement or an idle open transaction past them ends and gives back its
+	// snapshot. Zero sends nothing and keeps the server's setting.
+	for name, seconds := range map[string]int{
+		"statement_timeout":                   cfg.StatementTimeout,
+		"idle_in_transaction_session_timeout": cfg.IdleInTransactionSessionTimeout,
+	} {
+		if seconds > 0 {
+			poolCfg.ConnConfig.RuntimeParams[name] = strconv.Itoa(seconds) + "s"
+		}
+	}
 	poolCfg.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
 		ConfigureSQLCTypes(conn.TypeMap())
 		return nil

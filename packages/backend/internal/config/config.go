@@ -270,12 +270,24 @@ type ServerConfig struct {
 	TrustedProxyHops int `mapstructure:"trusted_proxy_hops"`
 }
 
+// DefaultDatabaseIdleInTransactionSessionTimeoutSecs is a day. A workspace
+// provisioning claim holds its transaction idle while its work boots a guest
+// and clones the repository, and a session closed under it drops the claim's
+// lock while the guest is still starting (plue#839). The bound only ends a
+// transaction nothing will ever finish.
+const DefaultDatabaseIdleInTransactionSessionTimeoutSecs = 86400
+
 type DatabaseConfig struct {
 	URL             string `mapstructure:"url"`
 	MaxConns        int32  `mapstructure:"max_conns"`
 	MinConns        int32  `mapstructure:"min_conns"`
 	MaxConnLifetime int    `mapstructure:"max_conn_lifetime_secs"`
 	MaxConnIdleTime int    `mapstructure:"max_conn_idle_time_secs"`
+	// Session bounds every core-pool connection carries (plue#839): a
+	// statement or an idle open transaction past them ends, and with it the
+	// snapshot that holds the server's xmin back. 0 sends nothing.
+	StatementTimeout                int `mapstructure:"statement_timeout_secs"`
+	IdleInTransactionSessionTimeout int `mapstructure:"idle_in_transaction_session_timeout_secs"`
 }
 
 type RepoHostConfig struct {
@@ -504,6 +516,8 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("database.min_conns", 5)
 	v.SetDefault("database.max_conn_lifetime_secs", 3600)
 	v.SetDefault("database.max_conn_idle_time_secs", 1800)
+	v.SetDefault("database.statement_timeout_secs", 900)
+	v.SetDefault("database.idle_in_transaction_session_timeout_secs", DefaultDatabaseIdleInTransactionSessionTimeoutSecs)
 	v.SetDefault("repo_host.url", "http://localhost:8080")
 	v.SetDefault("repo_host.auth_token", "")
 	v.SetDefault("repo_host.push_hook_callback_token", "")
@@ -713,6 +727,8 @@ func Load(configFile string) (*Config, error) {
 		{"database.min_conns", "SMITHERS_DATABASE_MIN_CONNS"},
 		{"database.max_conn_lifetime_secs", "SMITHERS_DATABASE_MAX_CONN_LIFETIME_SECS"},
 		{"database.max_conn_idle_time_secs", "SMITHERS_DATABASE_MAX_CONN_IDLE_TIME_SECS"},
+		{"database.statement_timeout_secs", "SMITHERS_DATABASE_STATEMENT_TIMEOUT_SECS"},
+		{"database.idle_in_transaction_session_timeout_secs", "SMITHERS_DATABASE_IDLE_IN_TRANSACTION_SESSION_TIMEOUT_SECS"},
 		{"repo_host.url", "SMITHERS_REPO_HOST_URL"},
 		{"ssh.addr", "SMITHERS_SSH_ADDR"},
 		{"ssh.host_key_dir", "SMITHERS_SSH_HOST_KEY_DIR"},

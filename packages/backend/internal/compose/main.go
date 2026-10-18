@@ -532,6 +532,16 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// waiting on it, which is the difference between a duty parked in an
 	// acquire and a pool that is merely occupied and refusing.
 	smithersMetrics.MustRegister(database.PoolMetricsCollectors(pool)...)
+	if options.topology.workers() {
+		// The server's xmin, lock waits and dead tuples, on a one-connection
+		// pool of its own so a full core pool cannot hide them (plue#839).
+		stopDBHealth, err := database.StartDBHealthCollector(ctx, cfg.Database, smithersMetrics)
+		if err != nil {
+			slog.Error("failed to start database health collector", "error", err)
+			return err
+		}
+		defer stopDBHealth()
+	}
 
 	if options.RehearsalDaemon != "" {
 		if options.topology.hosted() {

@@ -17,11 +17,13 @@ func validStartupConfig() *Config {
 			ShutdownTimeout:  "30s",
 		},
 		Database: DatabaseConfig{
-			URL:             "postgres://smithers:smithers@localhost:5432/smithers?sslmode=require",
-			MaxConns:        25,
-			MinConns:        5,
-			MaxConnLifetime: 3600,
-			MaxConnIdleTime: 1800,
+			URL:                             "postgres://smithers:smithers@localhost:5432/smithers?sslmode=require",
+			MaxConns:                        25,
+			MinConns:                        5,
+			MaxConnLifetime:                 3600,
+			MaxConnIdleTime:                 1800,
+			StatementTimeout:                900,
+			IdleInTransactionSessionTimeout: 86400,
 		},
 		RepoHost: RepoHostConfig{
 			URL:                   "http://localhost:8080",

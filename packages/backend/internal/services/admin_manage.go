@@ -34,6 +34,8 @@ type AdminAgentCanceller interface {
 type AdminWorkspaceLifecycle interface {
 	StopWorkspace(context.Context, string, int64, int64) (WorkspaceResponse, error)
 	SuspendWorkspace(context.Context, string, int64, int64) (WorkspaceResponse, error)
+	// StopRetainedGuest stops the guest a failed workspace still binds.
+	StopRetainedGuest(context.Context, string) (WorkspaceResponse, error)
 }
 
 // AdminManageService lists and changes agent sessions, workspaces, and
@@ -248,22 +250,41 @@ func (s *AdminManageService) changeWorkspace(ctx context.Context, id string, sus
 	if err != nil {
 		return AdminManageStatus{}, manageStoreError(err, "workspace")
 	}
-	if row.Status == "stopped" || (suspend && row.Status != "running") {
+	action, expected := "stop", "stopped"
+	if suspend {
+		action, expected = "suspend", "suspended"
+	}
+	// A stop's verdict comes before any side effect (plue#839): a running
+	// guest is captured and put to sleep, a failed workspace's retained guest
+	// is stopped and the row stays failed, and anything else is refused
+	// without a runtime call or an audit row.
+	retainedGuest := false
+	switch {
+	case suspend:
+		if row.Status != "running" {
+			return AdminManageStatus{}, pkgerrors.Conflict("invalid workspace state transition")
+		}
+	case row.Status == "running" && strings.TrimSpace(row.VmID) != "":
+	case row.Status == "failed":
+		if _, ok := retainedGuestStopPending(row); !ok {
+			return AdminManageStatus{}, pkgerrors.Conflict("invalid workspace state transition")
+		}
+		retainedGuest, expected = true, "failed"
+	default:
 		return AdminManageStatus{}, pkgerrors.Conflict("invalid workspace state transition")
 	}
 	if s.workspaces == nil {
 		return AdminManageStatus{}, pkgerrors.Internal("workspace service unavailable")
 	}
-	action, expected := "stop", "stopped"
-	if suspend {
-		action, expected = "suspend", "suspended"
-	}
 	var result WorkspaceResponse
 	err = s.log.Operation(ctx, "workspace", id, action, map[string]any{"owner_id": strconv.FormatInt(row.UserID, 10)}, func() error {
 		var lifecycleErr error
-		if suspend {
+		switch {
+		case suspend:
 			result, lifecycleErr = s.workspaces.SuspendWorkspace(ctx, id, row.RepositoryID, row.UserID)
-		} else {
+		case retainedGuest:
+			result, lifecycleErr = s.workspaces.StopRetainedGuest(ctx, id)
+		default:
 			result, lifecycleErr = s.workspaces.StopWorkspace(ctx, id, row.RepositoryID, row.UserID)
 		}
 		if lifecycleErr == nil && result.Status != expected {
