@@ -67,23 +67,31 @@ const earlierCard = {
   createdAt: 1, ordinal: 1, payload: { repo: "ada/earlier", filter: "open" as const, issues: [] }
 }
 
-const openOnMissingRepository = async (installations: Response) => {
+const openOnMissingRepository = async (installations: Response, extra: Record<string, Response> = {}) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   window.history.replaceState(null, "", `/${REPO}/`)
-  const http = backend({
+  /* Mutable on purpose: a test changes what the backend answers after the page opened. */
+  const routes: Record<string, Response> = {
     "/api/user": json(200, { id: 1, username: "ada", is_admin: false }),
     "/api/auth/scopes": json(200, { scopes: [] }),
     // Smithers does not have it: the repository document is a 404 (RepoLink.openRequestedRepo).
     [`/api/repos/${REPO}`]: json(404, { status: "error" }),
-    "/api/user/github-app/installations": installations
-  })
+    "/api/user/github-app/installations": installations,
+    ...extra
+  }
+  const http = backend(routes)
   const controller = createAppController(store, silentAgent, { bootstrap: WEB, repositoryApp: REPO, ...http })
   await store.dispatch({ type: "card.upsert", actor: "user", card: earlierCard }).isPersisted.promise
   await controller.loadSession()
   const refusal = await openRequestedRepo(controller, http.fetchImpl, requestedRepo(window.location)!)
   await settled()
-  return { store, controller, refusal, ...mount(controller) }
+  return { store, controller, refusal, routes, ...mount(controller) }
 }
+
+const COVERED = () => json(200, { install_url: INSTALL_URL, repos: [{ fullName: REPO, installationId: 42 }] })
+const UNCOVERED = () => json(200, { install_url: INSTALL_URL, repos: [] })
+/** What plue answers an import into an organization the caller does not belong to (services/github_import.go). */
+const ORG_REFUSAL = "'ada' is an organization on this deployment; join it to import its repositories, or fork 'ada/widgets' into your own namespace"
 
 test("a covered repository the person has access to offers the import that exists", async () => {
   const { host, store, refusal } = await openOnMissingRepository(
@@ -112,6 +120,9 @@ test("a repository the App does not cover offers its installation page and no im
   const link = notice?.querySelector<HTMLAnchorElement>(`a[href="${INSTALL_URL}"]`)
   expect(link).not.toBeNull()
   expect(link?.textContent).toContain("Install the Smithers GitHub App")
+  // GitHub opens in its own tab, so closing it returns the reader here (production 2026-10-18).
+  expect(link?.target).toBe("_blank")
+  expect(link?.rel.split(" ")).toContain("noopener")
   // The 404 GitHub answers for a repository it has and withholds is the same 404
   // it answers for one it does not have: neither is asserted here.
   expect(notice?.textContent).not.toContain("private")
@@ -140,3 +151,84 @@ test("the notice's one act is reachable from the keyboard on a narrow desktop", 
   expect(document.activeElement).toBe(act)
 })
 
+/*
+ * Production 2026-10-18: an ultrawide reader pressed Import, the refusal went
+ * to a corner notice out of view, and they pressed Import three more times.
+ * The button that failed says it failed, and why, where they are looking.
+ */
+test("a refused import turns its button red and states the reason under it", async () => {
+  const { host } = await openOnMissingRepository(COVERED(), {
+    "/api/github/import": json(403, { code: "org_membership_required", message: ORG_REFUSAL })
+  })
+  host.querySelector<HTMLButtonElement>('[data-message-id="repository-entry"] [data-flow="repos.import"]')!.click()
+  await settled()
+  const notice = host.querySelector('[data-message-id="repository-entry"]')!
+  const act = notice.querySelector<HTMLButtonElement>('[data-flow="repos.import"]')!
+  expect(act.textContent).toBe("Retry import")
+  expect(act.className).toContain("sui-button-destructive")
+  expect(act.disabled).toBe(false)
+  const failure = notice.querySelector('[role="alert"]')
+  expect(failure?.textContent).toContain("is an organization on this deployment")
+  expect(act.getAttribute("aria-describedby")).toBe(failure?.id ?? "")
+})
+
+test("an import in flight disables its button so it is not pressed again", async () => {
+  const { host } = await openOnMissingRepository(COVERED(), {
+    "/api/github/import": json(202, { importJobId: "job-1", status: "cloning", stage: "cloning_github" }),
+    "/api/github/import/job-1": json(200, { importJobId: "job-1", status: "cloning", stage: "cloning_github" })
+  })
+  host.querySelector<HTMLButtonElement>('[data-message-id="repository-entry"] [data-flow="repos.import"]')!.click()
+  await settled()
+  const notice = host.querySelector('[data-message-id="repository-entry"]')!
+  const act = notice.querySelector<HTMLButtonElement>('[data-flow="repos.import"]')!
+  expect(act.textContent).toBe("Importing…")
+  expect(act.disabled).toBe(true)
+  expect(notice.querySelector('[role="status"]')?.textContent).toBe("Downloading from GitHub…")
+})
+
+/*
+ * Production 2026-10-18: "after installing the GH app on a repo I'd love for
+ * that repo to also be auto pulled in as that's what I want to view."
+ */
+test("returning from GitHub with the App now covering the repository imports it", async () => {
+  const { host, routes, store } = await openOnMissingRepository(UNCOVERED(), {
+    "/api/github/import": json(202, { importJobId: "job-1", status: "cloning", stage: "cloning_github" }),
+    "/api/github/import/job-1": json(200, { importJobId: "job-1", status: "cloning", stage: "cloning_github" })
+  })
+  expect(host.querySelector('[data-message-id="repository-entry"] [data-flow="repos.import"]')).toBeNull()
+  // The person installs the App in the other tab, closes it, and this tab gets focus back.
+  routes["/api/user/github-app/installations"] = COVERED()
+  window.dispatchEvent(new Event("focus"))
+  await settled()
+  expect(store.session().repositoryImports?.find(row => row.payload.repo === REPO)?.payload.phase).toBe("running")
+  const act = host.querySelector<HTMLButtonElement>('[data-message-id="repository-entry"] [data-flow="repos.import"]')
+  expect(act?.textContent).toBe("Importing…")
+})
+
+test("returning without installing imports nothing", async () => {
+  const { store } = await openOnMissingRepository(UNCOVERED())
+  window.dispatchEvent(new Event("focus"))
+  await settled()
+  expect(store.session().repositoryImports ?? []).toEqual([])
+})
+
+test("a covered repository is never imported just because the tab got focus", async () => {
+  const { store } = await openOnMissingRepository(COVERED())
+  window.dispatchEvent(new Event("focus"))
+  await settled()
+  expect(store.session().repositoryImports ?? []).toEqual([])
+})
+
+test("a finished import opens the repository it imported", async () => {
+  const { host, routes, store } = await openOnMissingRepository(COVERED(), {
+    "/api/github/import": json(202, { importJobId: "job-1", status: "ready" })
+  })
+  // Once imported, Smithers has it: the document reads and the inventory lists it.
+  routes[`/api/repos/${REPO}`] = json(200, { full_name: REPO, is_public: false })
+  routes["/api/user/repos"] = json(200, [{ full_name: REPO, name: "widgets", owner: { login: "ada" }, default_bookmark: "main" }])
+  host.querySelector<HTMLButtonElement>('[data-message-id="repository-entry"] [data-flow="repos.import"]')!.click()
+  await settled()
+  expect(store.session().repositoryEntry?.phase).toBe("ready")
+  expect(store.session().activeRepoKey).toBe(REPO)
+  expect(host.querySelector('[data-message-id="repository-entry"]')).toBeNull()
+})

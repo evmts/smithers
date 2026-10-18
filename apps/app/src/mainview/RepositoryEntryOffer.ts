@@ -1,3 +1,4 @@
+import type { RepositoryImportRequest } from "@smthrs/rpc/Cards"
 import type { FetchLike } from "@smthrs/rpc/NativeAgent"
 import type { GitHubAppStatusInput, GitHubAppStatusRow } from "./state/AppState"
 import { INSTALL_VERIFY_PATH, trustedInstallUrl } from "./state/seams/GitHubSeam"
@@ -207,19 +208,40 @@ export interface MissingRepositoryAction {
 
 export interface MissingRepositoryOffer {
   /** Which outcome this is, for the tests and the data attribute. */
-  readonly kind: "import" | "install" | "unknown"
+  readonly kind: "import" | "importing" | "import-failed" | "install" | "unknown"
   readonly text: string
   readonly action?: MissingRepositoryAction
+  /**
+   * The App's own github.com page, opened in a NEW tab so this one stays on
+   * Smithers and the person returns to it by closing GitHub's (production
+   * 2026-10-18). Only a trusted github.com URL is ever set here.
+   */
+  readonly link?: { readonly href: string; readonly label: string }
+  /** The act is running: its button is disabled and says so. */
+  readonly busy?: boolean
+  /** A line of progress for a running act, said under its button. */
+  readonly progress?: string
+  /**
+   * Why the act failed, said beside the button that failed (production
+   * 2026-10-18: on an ultrawide the corner notice was out of view, and the
+   * reader pressed Import three more times before finding it).
+   */
+  readonly failure?: string
 }
+
+/** The import record's fields the offer reads; absent when this account never asked. */
+export type EntryImport = Pick<RepositoryImportRequest["payload"], "phase" | "detail" | "error">
 
 /**
  * What a signed-in person reads at `/owner/repo` when Smithers does not have
  * it. `status` is the App-status row for that repository: absent means the
- * coverage door was never read or refused.
+ * coverage door was never read or refused. `imported` is this account's
+ * import of the repository, when one was asked for.
  */
 export const missingRepositoryOffer = (
   repo: string,
-  status: Pick<GitHubAppStatusRow, "installed" | "configured" | "installUrl"> | undefined
+  status: Pick<GitHubAppStatusRow, "installed" | "configured" | "installUrl"> | undefined,
+  imported?: EntryImport
 ): MissingRepositoryOffer => {
   /*
    * Re-read the coverage door for this repository. `app-status` is the one
@@ -235,11 +257,24 @@ export const missingRepositoryOffer = (
     return { kind: "unknown", text: `Smithers doesn't have ${repo}, and couldn't check whether it can import it.`, action: retry }
   }
   if (status.installed && status.configured) {
-    return {
-      kind: "import",
-      text: `Smithers doesn't have ${repo} yet. The Smithers GitHub App covers it for your account.`,
-      action: { flow: "repos.import", args: repo, label: "Import" }
+    const text = `Smithers doesn't have ${repo} yet. The Smithers GitHub App covers it for your account.`
+    const importAction = (label: string): MissingRepositoryAction => ({ flow: "repos.import", args: repo, label })
+    /*
+     * The import's state lives on its own record (RepoImportSeam), and the
+     * button that started it says it: disabled while it runs, red with the
+     * reason when it failed. A finished import reopens the entry
+     * (RepositoryEntryFollowUp.ts), which retires this offer; if the
+     * repository still cannot be opened, Import stands again.
+     */
+    if (imported?.phase === "starting" || imported?.phase === "running") {
+      return { kind: "importing", text, action: importAction("Importing…"), busy: true,
+        ...(imported.detail === null ? {} : { progress: imported.detail }) }
     }
+    if (imported?.phase === "failed") {
+      return { kind: "import-failed", text, action: importAction("Retry import"),
+        failure: imported.error ?? imported.detail ?? "The import failed." }
+    }
+    return { kind: "import", text, action: importAction("Import") }
   }
   const installUrl = status.installUrl === null ? null : trustedInstallUrl(status.installUrl)
   /*
@@ -252,7 +287,7 @@ export const missingRepositoryOffer = (
     const blocked = `Smithers doesn't have ${repo} yet. The Smithers GitHub App is installed on it, but it can't read it for your account.`
     return installUrl === null
       ? { kind: "install", text: blocked, action: retry }
-      : { kind: "install", text: `${blocked}\n\n[Open the Smithers GitHub App installation](${installUrl})` }
+      : { kind: "install", text: blocked, link: { href: installUrl, label: "Open the Smithers GitHub App installation" } }
   }
   /*
    * Truthful and no wider: the App does not cover it FOR THIS ACCOUNT. Why
@@ -265,5 +300,5 @@ export const missingRepositoryOffer = (
     + "\n\nIt may not exist on GitHub, or may not be accessible to this account."
   return installUrl === null
     ? { kind: "install", text: cause, action: retry }
-    : { kind: "install", text: `${cause}\n\n[Install the Smithers GitHub App](${installUrl})` }
+    : { kind: "install", text: cause, link: { href: installUrl, label: "Install the Smithers GitHub App" } }
 }

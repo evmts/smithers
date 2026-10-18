@@ -32,6 +32,7 @@ import { confirmCancelRefusal } from "@smthrs/rpc/ConfirmCard"
 import { refusalOf, type Refusal } from "@smthrs/rpc/Refusal"
 import { refusalLine } from "@smthrs/rpc/RefusalCopy"
 import { loadPublicCatalog, openRequestedRepo } from "../RepoLink"
+import { followRepositoryEntry } from "../RepositoryEntryFollowUp"
 import { createRepositoryReadiness } from "./controller/repositoryAdmission"
 
 import { createConversationHistoryController } from "./controller/conversationHistory"
@@ -3053,6 +3054,13 @@ export const createAppController = (
   })
   if (installHost && installSignedIn() && !setupEntry) queueMicrotask(() => { if (!ctx.disposed) void installSeam.showSetup() })
   ctx.onDispose(() => setupIdentitySubscription.unsubscribe())
+  /* The missing-repository offer's afterwards: an App installed in another tab imports, a finished import opens (RepositoryEntryFollowUp.ts). */
+  ctx.onDispose(followRepositoryEntry({
+    store, http: ctx.http, runCommand: (name, args) => runCommand(name, args),
+    reopen: repo => void openRequestedRepo({ store, selectRepo, loadRepositories: repositoriesSeam.loadRepositories, runCommand: (name, args) => runCommand(name, args) },
+      ctx.http, repo),
+    ...(typeof window === "undefined" ? {} : { page: window })
+  }))
   const importCloudSubscription = store.collections.cloudSessions.subscribeChanges(() => {
     repoImportSeam.resume()
     queueMicrotask(() => { if (!ctx.disposed) { secretsSeam.resumeSecretRequests(); egressSeam.resumeEgressRequests(); proposalSeam.resumeProposals(); orderSeam.resumeOrderRequests() } })

@@ -64,7 +64,8 @@
 	width: min(100%, var(--chat-max-width));
 	/* 42px top clears the 44px title strip; the rest reads the spacing scale. */
 	padding: 42px var(--sp-6) var(--sp-6);
-	gap: var(--sp-2);
+	/* Cards stacked at 8px read as one crowded block (production feedback 2026-10-18). */
+	gap: var(--sp-4);
 }
 
 .app-shell .smithers-transcript .sui-chat-messages > :first-child {
@@ -396,6 +397,40 @@
 .message-cta {
 	display: inline-flex;
 	margin-top: 8px;
+}
+
+/* The missing-repository offer's act and what it says beside itself (TranscriptMessage RepositoryEntryAct). */
+.repository-entry-act {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 6px;
+	margin-top: 8px;
+}
+
+.repository-entry-act .message-cta {
+	margin-top: 0;
+}
+
+.repository-entry-act .sui-button-destructive {
+	border-color: var(--danger);
+	background: var(--danger-soft);
+	color: var(--danger);
+	font-weight: 650;
+}
+
+.repository-entry-progress,
+.repository-entry-failure {
+	margin: 0;
+	font-size: var(--fs-small);
+}
+
+.repository-entry-progress {
+	color: var(--text-muted);
+}
+
+.repository-entry-failure {
+	color: var(--danger);
 }
 
 .message-init {

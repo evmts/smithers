@@ -4,7 +4,7 @@ import { flowArgs } from "./flows/FlowArgs"
 import { answerActions } from "./flows/AnswerActions"
 import { DiffAction } from "./cards/views/DiffAction"
 import { dynamicFlowAction, flowAction, flowProps } from "./flows/FlowAction"
-import { Button, Markdown, Marker, Reasoning } from "@smthrs/ui"
+import { Button, buttonVariants, Markdown, Marker, Reasoning } from "@smthrs/ui"
 import { CheckCircle2, Copy, RotateCcw } from "lucide-react"
 import { useRef, useState } from "react"
 import { useController } from "./ControllerContext"
@@ -19,6 +19,7 @@ import { contextOpenAction } from "./flows/contextOpenAction"
 import { ContextContainer } from "./ContextContainer"
 import { STORAGE_RECOVERY_EXPORT } from "./state/StorageRecoveryContract"
 import type { CommandOutcome } from "./flows/Commands"
+import type { MissingRepositoryOffer } from "./RepositoryEntryOffer"
 
 const systemNoteLabel = (message: Message): string => {
   if (message.statusDetail !== undefined) return `Turn interrupted — ${message.statusDetail}`
@@ -68,7 +69,34 @@ function AnswerContext({ items }: { items: NonNullable<Message["context"]> }) {
   return <ContextLine count={items.length} expanded={expanded} onView={patch => setExpanded(patch.expanded)} {...actions} />
 }
 
-export function TranscriptMessage({ entry, streamingMessageId }: { entry: { kind: "message"; message: Message } | { kind: "init"; message: InitMessage }; streamingMessageId?: string }) {
+/*
+ * The missing-repository offer's one act (RepositoryEntryOffer.ts), where the
+ * reader's eye already is: a running import disables its button and says how
+ * far it got, a failed one turns the button red and states why right under
+ * it, and the App's GitHub page opens in a new tab so this one stays here.
+ */
+function RepositoryEntryAct({ offer, run }: { offer: MissingRepositoryOffer; run: (name: string, args?: string) => unknown }) {
+  return <div className="repository-entry-act" data-offer={offer.kind}>
+    {offer.link !== undefined ?
+      <a className={buttonVariants({ variant: "default" }) + " message-cta"} href={offer.link.href} target="_blank" rel="noopener noreferrer">{offer.link.label}</a> :
+      offer.action !== undefined ?
+      <Button
+        className="message-cta"
+        variant={offer.failure === undefined ? "default" : "destructive"}
+        disabled={offer.busy === true}
+        aria-busy={offer.busy === true || undefined}
+        aria-describedby={offer.failure === undefined ? undefined : "repository-entry-failure"}
+        {...dynamicFlowAction(run, offer.action.flow, offer.action.args)}
+      >
+        {offer.action.label}
+      </Button> :
+      null}
+    {offer.progress !== undefined ? <p className="repository-entry-progress" role="status">{offer.progress}</p> : null}
+    {offer.failure !== undefined ? <p className="repository-entry-failure" id="repository-entry-failure" role="alert">{offer.failure}</p> : null}
+  </div>
+}
+
+export function TranscriptMessage({ entry, streamingMessageId, offer }: { entry: { kind: "message"; message: Message } | { kind: "init"; message: InitMessage }; streamingMessageId?: string; offer?: MissingRepositoryOffer }) {
   const controller = useController()
   const context = entry.kind === "message" ? controller.contextLine(entry.message.id) : undefined
   const external = entry.kind === "message" && entry.message.origin === "external"
@@ -137,7 +165,7 @@ export function TranscriptMessage({ entry, streamingMessageId }: { entry: { kind
           /></div>
         ) :
         null}
-      {!external && entry.kind === "message" && entry.message.role === "smithers" && entry.message.status === "complete" && entry.message.id !== streamingMessageId && !entry.message.action && scrubToolEcho(entry.message.text).trim() ? (() => {
+      {!external && entry.kind === "message" && entry.message.role === "smithers" && entry.message.status === "complete" && entry.message.id !== streamingMessageId && !entry.message.action && offer === undefined && scrubToolEcho(entry.message.text).trim() ? (() => {
         const bindings = answerActions((name, input) => controller.commands.submit({ name, payload: (input ?? {}) as Record<string, unknown>, actor: "user", ...(name === "wiki.save" ? { display: flowArgs("wiki.save", input as { name?: string; text?: string }) } : {}) }), scrubToolEcho(entry.message.text), controller.commands)
         // No shortcut this host runs is no footer at all (#4031): never an empty container.
         return bindings.actions.length === 0 ? null : <div className="message-answer-actions">{bindings.actions.map(action => <DiffAction key={action.tag} action={action} onAction={bindings.onAction} />)}</div>
@@ -155,7 +183,9 @@ export function TranscriptMessage({ entry, streamingMessageId }: { entry: { kind
           </time>
         ) :
         null}
-      {external ? null : entry.message.action?.flow === STORAGE_RECOVERY_EXPORT ?
+      {external ? null : offer !== undefined ?
+        <RepositoryEntryAct offer={offer} run={(name, args) => controller.runCommand(name, args)} /> :
+        entry.message.action?.flow === STORAGE_RECOVERY_EXPORT ?
         <StorageRecoveryButton state={controller.storageRecoveryState} onDownload={() => { controller.runCommand(STORAGE_RECOVERY_EXPORT) }} /> :
         entry.message.action !== undefined ?
         (

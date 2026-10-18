@@ -172,8 +172,9 @@ describe("missingRepositoryOffer", () => {
     expect(offer.text).toBe(
       "Smithers doesn't have acme/widgets, and the Smithers GitHub App doesn't cover it for your account."
       + "\n\nIt may not exist on GitHub, or may not be accessible to this account."
-      + `\n\n[Install the Smithers GitHub App](${INSTALL_URL})`
     )
+    // A button to GitHub's page, opened in a new tab by the transcript (production 2026-10-18).
+    expect(offer.link).toEqual({ href: INSTALL_URL, label: "Install the Smithers GitHub App" })
     // Absent on GitHub and withheld by GitHub are the same 404 upstream: BOTH are named, neither is claimed.
     expect(offer.text).not.toContain("private")
     expect(offer.text).not.toContain("no such repository")
@@ -198,6 +199,7 @@ describe("missingRepositoryOffer", () => {
     for (const url of ["http://github.com/apps/smithers", "https://github.com.evil.example/apps", "javascript:alert(1)", "not a url"]) {
       const offer = missingRepositoryOffer("acme/widgets", { installed: false, configured: false, installUrl: url })
       expect(offer.text).not.toContain(url)
+      expect(offer.link).toBeUndefined()
       expect(offer.text).toBe("Smithers doesn't have acme/widgets, and the Smithers GitHub App doesn't cover it for your account."
         + "\n\nIt may not exist on GitHub, or may not be accessible to this account.")
       expect(offer.action).toEqual({ flow: "github", args: JSON.stringify({ operation: "app-status", repo: "acme/widgets" }), label: "Retry" })
@@ -221,13 +223,58 @@ describe("missingRepositoryOffer", () => {
      */
     expect(blocked.text).toBe(
       "Smithers doesn't have acme/widgets yet. The Smithers GitHub App is installed on it, but it can't read it for your account."
-      + `\n\n[Open the Smithers GitHub App installation](${INSTALL_URL})`
     )
+    expect(blocked.link).toEqual({ href: INSTALL_URL, label: "Open the Smithers GitHub App installation" })
     for (const word of ["may not exist", "private", "no such repository", "does not exist"]) {
       expect(blocked.text.toLowerCase()).not.toContain(word)
     }
     /* With no page to link, the honest act is to read the door again. */
     expect(missingRepositoryOffer("acme/widgets", { installed: true, configured: false, installUrl: null }).action)
       .toEqual({ flow: "github", args: JSON.stringify({ operation: "app-status", repo: "acme/widgets" }), label: "Retry" })
+  })
+})
+
+/*
+ * Production 2026-10-18: an import refused upstream was said only in a corner
+ * notice an ultrawide reader never saw, so they pressed Import three more
+ * times. The button that started the import now carries its state.
+ */
+describe("missingRepositoryOffer with this account's import", () => {
+  const covered = { installed: true, configured: true, installUrl: null }
+
+  test("a running import disables its button and says how far it got", () => {
+    const offer = missingRepositoryOffer("acme/widgets", covered, { phase: "running", detail: "Downloading from GitHub…", error: null })
+    expect(offer.kind).toBe("importing")
+    expect(offer.busy).toBe(true)
+    expect(offer.action).toEqual({ flow: "repos.import", args: "acme/widgets", label: "Importing…" })
+    expect(offer.progress).toBe("Downloading from GitHub…")
+    expect(offer.failure).toBeUndefined()
+  })
+
+  test("a failed import states its reason beside a retry", () => {
+    const error = "'acme' is an organization on this deployment; join it to import its repositories, or fork 'acme/widgets' into your own namespace"
+    const offer = missingRepositoryOffer("acme/widgets", covered, { phase: "failed", detail: error, error })
+    expect(offer.kind).toBe("import-failed")
+    expect(offer.failure).toBe(error)
+    expect(offer.busy).toBeUndefined()
+    expect(offer.action).toEqual({ flow: "repos.import", args: "acme/widgets", label: "Retry import" })
+    // The offer's own sentence is unchanged; the failure is its own line.
+    expect(offer.text).toBe("Smithers doesn't have acme/widgets yet. The Smithers GitHub App covers it for your account.")
+  })
+
+  test("a failure with no words of its own still says it failed", () => {
+    expect(missingRepositoryOffer("acme/widgets", covered, { phase: "failed", detail: null, error: null }).failure).toBe("The import failed.")
+  })
+
+  test("a finished import offers Import again until the entry reopens", () => {
+    expect(missingRepositoryOffer("acme/widgets", covered, { phase: "done", detail: null, error: null }))
+      .toEqual(missingRepositoryOffer("acme/widgets", covered))
+  })
+
+  test("an import record never turns an uncovered repository into an import offer", () => {
+    const offer = missingRepositoryOffer("acme/widgets", { installed: false, configured: false, installUrl: INSTALL_URL },
+      { phase: "failed", detail: "x", error: "x" })
+    expect(offer.kind).toBe("install")
+    expect(offer.failure).toBeUndefined()
   })
 })

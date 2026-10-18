@@ -115,7 +115,9 @@ function AppContent() {
       resetConfirmOpen: session.resetConfirmOpen,
       verbose: session.verbose,
       activeRepoKey: session.activeRepoKey,
-      repositoryEntry: session.repositoryEntry
+      repositoryEntry: session.repositoryEntry,
+      /* The missing-repository offer's button carries its import's state (RepositoryEntryOffer.ts). */
+      repositoryImports: session.repositoryImports
     }))
   )
   const { data: worldDocumentRows } = useLiveQuery(collections.worldDocuments)
@@ -271,8 +273,11 @@ function AppContent() {
    * (production 2026-10-15: the header cleared to "Repository" while the
    * previous repository's cards stayed on screen). The cards stay stored.
    */
+  const entryImport = missingBootRepository === null ? undefined : session.repositoryImports?.find(row =>
+    row.payload.repo.toLowerCase() === missingBootRepository.toLowerCase() &&
+    (row.payload.accountOwner === undefined || row.payload.accountOwner === (accountOwnerOf(identity) ?? null)))
   const entryOffer = missingBootRepository !== null && identity?.state === "signed-in"
-    ? missingRepositoryOffer(missingBootRepository, appStatusRows.find(row => row.repo.toLowerCase() === missingBootRepository.toLowerCase()))
+    ? missingRepositoryOffer(missingBootRepository, appStatusRows.find(row => row.repo.toLowerCase() === missingBootRepository.toLowerCase()), entryImport?.payload)
     : undefined
   const repositoryEntryMessage: Message | undefined = entryOffer === undefined ? undefined : {
     id: "repository-entry",
@@ -500,7 +505,8 @@ function AppContent() {
       repositoryFlows={repositoryFlowRows}
       fileCards={fileCards}
       {...cardActions(controller, entry.card)}
-    /> : <TranscriptMessage key={entry.message.id} entry={entry} streamingMessageId={streamingMessageId} />}
+    /> : <TranscriptMessage key={entry.message.id} entry={entry} streamingMessageId={streamingMessageId}
+      {...(entry.message.id === repositoryEntryMessage?.id && entryOffer !== undefined ? { offer: entryOffer } : {})} />}
   </MessageScrollerItem>
 
   // Chat stays mounted when closed.

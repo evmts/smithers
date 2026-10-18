@@ -110,8 +110,34 @@ test("a curated repository the App does not cover links the installation page an
   await expect(notice).toContainText("the Smithers GitHub App doesn't cover it for your account")
   // Both readings GitHub's 404 allows, asserting neither (M-46).
   await expect(notice).toContainText("It may not exist on GitHub, or may not be accessible to this account.")
-  await expect(notice.getByRole("link", { name: "Install the Smithers GitHub App" })).toHaveAttribute("href", INSTALL_PAGE)
+  const install = notice.getByRole("link", { name: "Install the Smithers GitHub App" })
+  await expect(install).toHaveAttribute("href", INSTALL_PAGE)
+  // GitHub opens in its own tab; closing it returns the reader to this one (production 2026-10-18).
+  await expect(install).toHaveAttribute("target", "_blank")
+  await expect(install).toHaveAttribute("rel", /noopener/)
   await expect(notice.getByRole("button", { name: "Import", exact: true })).toHaveCount(0)
+})
+
+/*
+ * Production 2026-10-18: on an ultrawide the refusal went to a corner notice
+ * out of view, and the reader pressed Import three more times. The button
+ * that failed turns red and the reason sits right under it.
+ */
+test("a refused import turns its button red and states the reason where the reader is looking", async ({ page }, testInfo) => {
+  await visitor(page, { verdict: { verdict: "ok", installation_id: 42, install_url: INSTALL_PAGE } })
+  const refusal = "'effect-ts' is an organization on this deployment; join it to import its repositories, or fork 'effect-ts/effect' into your own namespace"
+  await page.route(url => url.pathname === "/api/github/import", route => route.fulfill({
+    status: 403, contentType: "application/json", body: JSON.stringify({ code: "org_membership_required", message: refusal })
+  }))
+  await page.goto(`/${CURATED}/`)
+  await mounted(page)
+  const notice = entryNotice(page)
+  await notice.getByRole("button", { name: "Import", exact: true }).click()
+  const retry = notice.getByRole("button", { name: "Retry import", exact: true })
+  await expect(retry).toBeVisible()
+  await expect(retry).toHaveClass(/sui-button-destructive/)
+  await expect(notice.getByRole("alert")).toContainText("is an organization on this deployment")
+  await page.screenshot({ path: testInfo.outputPath("curated-import-refused.png"), fullPage: true })
 })
 
 test("a curated repository whose installation cannot read it says so, and never claims it is absent", async ({ page }) => {
