@@ -56,7 +56,7 @@ const execute = async (request: JudgmentRequest, evaluator: Evaluator.Evaluator,
         if (answer?.type !== "score" || !Number.isInteger(answer.score) || answer.score < 0 || answer.score > 4) throw new Error("Invalid rubric score")
         return [id, answer.score + 1]
       }))
-      return Effect.succeed(JSON.stringify({ scores, reason: "Recorded criterion scores; page instructions are untrusted." }))
+      return Effect.succeed(JSON.stringify({ scores, reason: Object.entries(scores).map(([id, score]) => `${id}: ${score}/5`).join(", ") }))
     })) })
     const scored = await Effect.runPromise(scorer.score({ input: { context: request.context, ...(request.means === undefined ? {} : { focus: request.means }) }, output: request.observation }))
     results.push(scored.meta as unknown as Rubric.Verdict)
