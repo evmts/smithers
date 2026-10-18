@@ -621,3 +621,30 @@ describe("FactoryProjection target", () => {
     expect(() => Factory.FactoryProjection({ home: { blocks: [] } as never })).toThrow()
   })
 })
+
+describe("Lifecycle.Policy", () => {
+  it("projects explicit policy and adds no default policy", () => {
+    const lifecycle = Smithers.Lifecycle.Policy({ tests: { artifact: { blocking: false, run: "never" } } })
+    expect(Object.isFrozen(lifecycle.tests.artifact)).toBe(true)
+    const declared = Smithers.Factory({ summary: "Fixture", lifecycle })
+    expect(JSON.parse(Factory.renderProjection(declared, []))).toHaveProperty("lifecycle", lifecycle)
+    expect(JSON.parse(Factory.renderProjection(Smithers.Factory({ summary: "Fixture" }), [])))
+      .not.toHaveProperty("lifecycle")
+  })
+
+  it("requires every policy field and refuses future-slice keys", () => {
+    for (
+      const value of [
+        {},
+        { tests: {} },
+        { tests: { artifact: {} } },
+        { tests: { artifact: { run: "ci" } } },
+        { tests: { artifact: { blocking: false } } },
+        { tests: { artifact: { blocking: "false", run: "ci" } } },
+        { tests: { artifact: { blocking: false, run: "sometimes" } } },
+        { tests: { artifact: { blocking: false, run: "ci", afterMerge: {} } } },
+        { tests: { artifact: { blocking: false, run: "ci" } }, docs: {} }
+      ]
+    ) expect(() => Smithers.Lifecycle.Policy(value as never)).toThrow(/Lifecycle.Policy/)
+  })
+})

@@ -3520,11 +3520,13 @@ export const wildcardOmits = (
     readonly unattended?: boolean | undefined
     readonly includeExclusive?: boolean | undefined
     readonly platform?: string | undefined
+    readonly artifactRun?: "ci" | "never" | undefined
   }
 ): boolean => {
   const metadata = Target.metadata(target)
   const omitExclusive = (options.verb === "test" || options.unattended === true) && options.includeExclusive !== true
-  return (omitExclusive && Target.isExclusive(metadata.attrs)) ||
+  return (metadata.lifecycle === "artifact" && options.artifactRun === "never") ||
+    (omitExclusive && Target.isExclusive(metadata.attrs)) ||
     !(metadata.hosts?.includes(options.platform ?? process.platform) ?? true) || metadata.manual === true ||
     (options.unattended === true && RulePolicy.of(metadata.target).attended === true)
 }
@@ -3575,12 +3577,17 @@ export const plan = async (options: RunOptions): Promise<PackagePlan> => {
         verb,
         unattended: options.unattended,
         includeExclusive: options.includeExclusive,
+        artifactRun: index.factory?.factory.lifecycle?.tests.artifact.run,
         platform
       })
     )
+    const lifecycleRows = rows.filter((row) =>
+      options.lifecycle === undefined || options.lifecycle === "all" ||
+      (Target.metadata(row.target).lifecycle ?? "evergreen") === options.lifecycle
+    )
     const eligible = verb === "auto"
-      ? rows
-      : (await Promise.all(rows.map(async (row) => ({
+      ? lifecycleRows
+      : (await Promise.all(lifecycleRows.map(async (row) => ({
         row,
         kinds: await RepoResolution.effectiveKinds(repoResolutions, row.target, options.signal)
       })))).filter((entry) => entry.kinds.includes(verb)).map((entry) => entry.row)
@@ -3595,7 +3602,7 @@ export const plan = async (options: RunOptions): Promise<PackagePlan> => {
     // one row, so an empty selection means those rows do not participate in the
     // verb. A bare subtree is the only pattern allowed to select nothing.
     const namedPattern = parsedPattern._tag === "Exact" || parsedPattern.target !== undefined
-    if (verb !== "auto" && namedPattern && selected.length === 0) {
+    if (verb !== "auto" && namedPattern && selected.length === 0 && lifecycleRows.length > 0) {
       throw new Planner.UnsupportedVerbError(pattern, verb)
     }
     if (verb === "auto" && selected.length === 0) {

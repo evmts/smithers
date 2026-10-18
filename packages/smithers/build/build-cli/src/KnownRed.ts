@@ -80,6 +80,7 @@ export interface Verdict {
   readonly unrun: ReadonlyArray<string>
   readonly expired: ReadonlyArray<string>
   readonly recovered: ReadonlyArray<string>
+  readonly advisory?: ReadonlyArray<string>
 }
 
 /**
@@ -264,7 +265,7 @@ export const read = async (directory: string, path: string): Promise<{
 export const judge = (
   summary: Executor.Summary,
   list: { readonly source: string; readonly entries: ReadonlyArray<Entry> },
-  context: { readonly platform: string; readonly today: string }
+  context: { readonly platform: string; readonly today: string; readonly advisory?: ReadonlySet<string> }
 ): JudgedSummary => {
   const here = list.entries.filter((entry) =>
     entry.platforms === undefined || entry.platforms.includes(context.platform)
@@ -284,17 +285,33 @@ export const judge = (
     const failureDigest = row.error !== undefined && row.error.trim() !== "" ? fingerprint(row.error) : undefined
     if (failureDigest !== undefined) observed.push({ label: row.label, failureDigest })
     const matches = failureDigest !== undefined && identities.has(`${row.label} ${failureDigest}`)
+    if (context.advisory?.has(row.label)) continue
     if (matches) known.push(row.label)
     else newlyRed.push(row.label)
   }
   const unrun = summary.results
-    .filter((row) => row.status === "skipped" && row.blockedBy !== undefined && !live.has(row.label))
+    .filter((row) =>
+      row.status === "skipped" && row.blockedBy !== undefined && !live.has(row.label) &&
+      !context.advisory?.has(row.label)
+    )
     .map((row) => row.label)
   return {
     ...summary,
+    results: summary.results.map((row) =>
+      context.advisory?.has(row.label)
+        ? {
+          ...row,
+          blocking: false as const,
+          ...(row.status === "failed" ? { failureDigest: fingerprint(row.error ?? "") } : {})
+        }
+        : row
+    ),
     ok: newlyRed.length === 0 && unrun.length === 0,
     knownRed: {
       source: list.source,
+      ...(context.advisory === undefined
+        ? {}
+        : { advisory: failed.filter((row) => context.advisory!.has(row.label)).map((row) => row.label) }),
       known,
       newlyRed,
       observed,
@@ -312,8 +329,11 @@ export const judge = (
  * @since 1.0.0
  */
 export const describe = (verdict: Verdict): ReadonlyArray<string> => [
+  ...(verdict.advisory ?? []).map((label) => `advisory red (artifact lifecycle): ${label}`),
   ...verdict.known.map((label) => `known red (${verdict.source}): ${label}`),
-  ...verdict.newlyRed.map((label) => `newly red, no matching failure in ${verdict.source}: ${label}`),
+  ...verdict.newlyRed.map((label) =>
+    verdict.source === "" ? `failed: ${label}` : `newly red, no matching failure in ${verdict.source}: ${label}`
+  ),
   ...verdict.observed.map(({ label, failureDigest }) => `observed failure: ${label} ${failureDigest}`),
   ...verdict.unrun.map((label) => `not run, a dependency is red: ${label}`),
   ...verdict.expired.map((label) => `expired entry in ${verdict.source}, no longer excused: ${label}`),

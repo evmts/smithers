@@ -113,6 +113,8 @@ export interface RunOptions {
   readonly patterns: ReadonlyArray<string>
   /** Restricts roots while preserving the selection policy of their original patterns. */
   readonly rootLabels?: ReadonlyArray<string> | undefined
+  /** Filters selected roots; dependencies retain their declared behavior. */
+  readonly lifecycle?: "evergreen" | "artifact" | "all" | undefined
   /** Opts wildcard test and CI selections into the exclusive tier. */
   readonly includeExclusive?: boolean | undefined
   /**

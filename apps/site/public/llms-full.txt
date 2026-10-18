@@ -3759,6 +3759,44 @@ The second row stands for every public module. The subpaths `./internal/*` and
 `./index` map to `null`, so neither resolves. Registry installs use the built
 ESM/CommonJS distribution, and `effect` is a peer at exactly `4.0.5`.
 
+## Artifact test lifecycle
+
+`lifecycle?: "evergreen" | "artifact"` is a declaration key beside `summary`
+and `featured`, not an attr. It never enters the cache key. Omission and
+`"evergreen"` preserve existing metadata and index rows. Artifact declarations
+require a non-empty one-line summary describing the captured behavior:
+
+```ts
+const captured = S.Shell.Test({
+  shell: "false",
+  lifecycle: "artifact",
+  summary: "Captured failure on 2026-10-17"
+})
+```
+
+A repository must choose policy explicitly in `.smithers/FACTORY.ts`:
+
+```ts
+export const factory = S.Factory({
+  summary: "Repository checks",
+  lifecycle: S.Lifecycle.Policy({
+    tests: { artifact: { blocking: false, run: "ci" } }
+  })
+})
+```
+
+Every field is required. `blocking: false` makes artifact failures advisory in
+`test`, `ci`, and `affected`; `true` preserves blocking. `run: "never"` skips
+artifact targets in wildcard selection while explicit labels still run;
+`"ci"` preserves selection. Without policy artifacts still block, and doctor
+warns. The factory projection includes the policy; target-index rows include
+`lifecycle: "artifact"` only for artifacts. Artifact labels cannot appear in
+known-red lists.
+
+`smthrs test`, `ci`, `affected`, and `docs` accept
+`--lifecycle evergreen|artifact|all`, filtering roots without dropping their
+required dependencies or overriding wildcard omission.
+
 ## Namespaces
 
 `src/index.ts` declares one namespace export:

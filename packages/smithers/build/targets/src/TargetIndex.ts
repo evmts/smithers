@@ -117,6 +117,7 @@ export const Row = Schema.Struct({
   kinds: Schema.Array(Target.Kind),
   summary: Schema.optional(Schema.String),
   featured: Schema.optional(Schema.Literal(true)),
+  lifecycle: Schema.optional(Schema.Literal("artifact")),
   mode: Schema.optional(Schema.String),
   /** Present when the target is in the exclusive tier that wildcard `test` and `ci` selections omit. */
   exclusive: Schema.optional(Schema.Literal(true)),
