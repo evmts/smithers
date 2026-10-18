@@ -1,3 +1,4 @@
+import { DEFAULT_APP_DOCUMENT_PATH } from "./appDocument"
 import { afterEach, expect, test } from "bun:test"
 import edge from "./edge"
 
@@ -328,5 +329,20 @@ test("a coming-soon repository is routed exactly as an available catalog reposit
       // Each is served from its OWN prerendered page, not from the other's.
       expect({ method, subject, served: coming.seen }).toEqual({ method, subject, served: ["/effect-ts/effect/"] })
     }
+  }
+})
+
+
+test("Monday paths serve the app document and legacy subjects redirect with query", async () => {
+  const paths = ["commits", "commits/main/src", "commit/abcdef1", "branches", "flows", "flows/build", "settings/secrets", "search?q=hello", "runs", "runs/one", "approvals"]
+  for (const path of paths) {
+    const response = await edge.fetch(new Request(`https://smithers.sh/any/repo/${path}`), { ASSETS: { fetch: async request => new URL(request.url).pathname === DEFAULT_APP_DOCUMENT_PATH ? new Response("app") : new Response("missing", { status: 404 }) } })
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe("app")
+  }
+  for (const [from, to] of [["actions", "runs"], ["labels", "issues"], ["milestones", "issues"]]) {
+    const response = await edge.fetch(new Request(`https://smithers.sh/any/repo/${from}?q=a%2Fb`), { ASSETS: assets })
+    expect(response.status).toBe(301)
+    expect(response.headers.get("location")).toBe(`https://smithers.sh/any/repo/${to}?q=a%2Fb`)
   }
 })
