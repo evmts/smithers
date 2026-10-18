@@ -70,6 +70,8 @@ const lintSources = Smithers.glob("//apps/app/lint/**/*")
 const suiteSources = Smithers.glob("//apps/app/e2e/**/*")
 
 /** The proof page generator, its tests and the fixture run they read. */
+const specSources = Smithers.glob("//apps/app/spec/**/*")
+
 const proofSources = Smithers.glob("//apps/app/proof/**/*")
 
 /** The assertion contracts the e2e tiers share; pure, so the unit suite gates them. */
@@ -94,6 +96,7 @@ const check = Smithers.Typecheck({
     harnessSources,
     suiteSources,
     proofSources,
+    specSources,
     lintSources,
     ...buildConfigs,
     Smithers.file("playwright.config.ts"),
@@ -301,6 +304,28 @@ const journeyWikiObsidian = Smithers.NodeTest({
 })
 
 /** Reference-install qualification; omitted from wildcard test/ci selections. */
+/** Living-mock journeys; D1 build dependency is pending its held handoff. */
+const specJourneyInputs = [Smithers.glob("spec/**/*"), suiteSources, sources, componentSources,
+  styleSources, ...buildConfigs,
+  Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")]
+const journeyMock = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("spec/run.ts"), ["mock", "default/repo-read-signed-out"]),
+  // Fail closed until D1 supplies the built artifact dependency and browser identity.
+  cache: false, timeout: "10m", srcs: specJourneyInputs, deps: [rpcPackage.check], cwd
+})
+const specLiveJourney = (id: string) => Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("spec/run.ts"), ["live", id]),
+  cache: false, exclusive: true, timeout: "10m", srcs: specJourneyInputs, deps: [rpcPackage.check], cwd
+})
+const specJourneyLiveDefaultRepoRead = specLiveJourney("default/repo-read-signed-out")
+const specJourneyLiveSmithersSelfRead = specLiveJourney("smithers/self-read-signed-out")
+const specJourneyLiveEffeckRepoRead = specLiveJourney("effeck/repo-read-signed-out")
+const specJourneyLiveSmithersBugReport = specLiveJourney("smithers/bug-report-v0")
+const specJourneyLiveSmithersLanding = specLiveJourney("smithers/landing-install")
+const specJourneyLiveEffeckLanding = specLiveJourney("effeck/landing-install")
+
 const journeyJ1Release = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
   runner: Smithers.entrypoint(Smithers.file("scripts/run-real-e2e.ts"), ["j1.spec.ts"]),
@@ -631,5 +656,5 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { crateInputs, proofProductInputs, proofMockInputs, docsInputs, serverBundle, solidCodegenInputs, check, unitTests, conformance, browserE2e, browserE2eShard1, browserE2eShard2, browserE2eShard3, installE2e, viewStories, journeyJ1Activation, journeyJ1Release, journeyKeyboard, journeyFreshRepository, journeyWikiGeneratedRefresh, journeyWikiCoedit, journeySetup, journeyWikiObsidian, journeyTodoFromIssue, journeyTodoNeedsYou, journeyTodoEvidence, journeyTodoMerge, journeyAskRepository, journeyTodoStackActions, journeyGitHubMerge, journeyGitHubMergeContinuation, journeyGitHubPRShape, journeyFlowSourceRun, journeyWikiDecisionFollow, journeyBranchPresence, journeyDuplicateLaunch, journeyFileCoedit, journeyHome, journeyTodoMergeOrder, journeyTodoPlacement, journeyTodoSteer, journeyFlowActivation, journeyLearning, journeyAgentTerminal, journeyTerminalSignin, journeyFileGone, journeyGitHubSyncHealth, journeyForkAddToStack, journeySshBranch, journeyInstallOrigins, journeyFileIntelligence, journeyForkDropInstall, journeyGitHubForeignPush, journeyGitHubMainMovedRebase, proofRecord, proofPage, webSources, ...securityReview }
+  targets: { journeyMock, specJourneyLiveDefaultRepoRead, specJourneyLiveSmithersSelfRead, specJourneyLiveEffeckRepoRead, specJourneyLiveSmithersBugReport, specJourneyLiveSmithersLanding, specJourneyLiveEffeckLanding, crateInputs, proofProductInputs, proofMockInputs, docsInputs, serverBundle, solidCodegenInputs, check, unitTests, conformance, browserE2e, browserE2eShard1, browserE2eShard2, browserE2eShard3, installE2e, viewStories, journeyJ1Activation, journeyJ1Release, journeyKeyboard, journeyFreshRepository, journeyWikiGeneratedRefresh, journeyWikiCoedit, journeySetup, journeyWikiObsidian, journeyTodoFromIssue, journeyTodoNeedsYou, journeyTodoEvidence, journeyTodoMerge, journeyAskRepository, journeyTodoStackActions, journeyGitHubMerge, journeyGitHubMergeContinuation, journeyGitHubPRShape, journeyFlowSourceRun, journeyWikiDecisionFollow, journeyBranchPresence, journeyDuplicateLaunch, journeyFileCoedit, journeyHome, journeyTodoMergeOrder, journeyTodoPlacement, journeyTodoSteer, journeyFlowActivation, journeyLearning, journeyAgentTerminal, journeyTerminalSignin, journeyFileGone, journeyGitHubSyncHealth, journeyForkAddToStack, journeySshBranch, journeyInstallOrigins, journeyFileIntelligence, journeyForkDropInstall, journeyGitHubForeignPush, journeyGitHubMainMovedRebase, proofRecord, proofPage, webSources, ...securityReview }
 })
