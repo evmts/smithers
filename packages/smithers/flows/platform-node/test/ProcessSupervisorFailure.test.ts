@@ -69,6 +69,7 @@ interface Settings {
   readonly stop?: "exit" | "ignore" | "open-channel" | "cleanup-error"
   readonly snapshot?: "empty" | "survivor" | "own-group" | "owner" | "unavailable"
   readonly endOnDisconnect?: boolean
+  readonly slowDrainingSnapshot?: boolean
   readonly snapshotUnavailableAfterExitMs?: number
 }
 
@@ -129,11 +130,19 @@ const fixture = (settings: Settings = {}) => {
     })
   }
   const send = (message: unknown) => peer?.write(JSON.stringify(message) + "\n")
+  let drained = false
   const system: Cleanup.System = {
     platform: settings.platform ?? "darwin",
-    snapshot: () =>
-      settings.snapshot === "unavailable" ||
-        ownerDone && Date.now() - ownerEndedAt < (settings.snapshotUnavailableAfterExitMs ?? 0) ?
+    snapshot: () => {
+      if (ownerDone && settings.slowDrainingSnapshot && !drained) {
+        // A synchronous ps can sample a live member, then deliver that stale
+        // table after the group drains and the verification deadline expires.
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2600)
+        drained = true
+        return { ownGroup: 900_002, members: [{ pid: 900_003, startedAtMs: 1, zombie: false }] }
+      }
+      return settings.snapshot === "unavailable" ||
+          ownerDone && Date.now() - ownerEndedAt < (settings.snapshotUnavailableAfterExitMs ?? 0) ?
         undefined :
         ({
           ownGroup: settings.snapshot === "own-group" ? 900_001 : 900_002,
@@ -142,9 +151,10 @@ const fixture = (settings: Settings = {}) => {
             : settings.snapshot === "owner" && !ownerDone
             ? [{ pid: 900_001, startedAtMs: 1, zombie: false }]
             : []
-        }),
-    // Fixture identities are fabricated, so the kernel can prove nothing about them.
-    vacant: () => false
+        })
+    },
+    // Only the delayed-drain fixture supplies a positive kernel observation.
+    vacant: () => drained
   }
   const spawn = (command: ChildProcess.StandardCommand) =>
     Effect.gen(function*() {
@@ -766,6 +776,19 @@ describe("failed process shutdown", () => {
     }
   }, 7000)
 
+  it("rechecks kernel vacancy after a slow snapshot outlives a draining group", async () => {
+    const host = fixture({ slowDrainingSnapshot: true })
+    try {
+      const result = await run(host, (handle) => handle.kill())
+      expect(Exit.isSuccess(result.outcome)).toBe(true)
+      expect(result.live).toEqual([])
+      expect(host.rawKills).toBe(0)
+      expect(host.unrefs).toBe(0)
+    } finally {
+      host.dispose()
+    }
+  })
+
   for (const snapshot of ["survivor", "own-group"] as const) {
     it(`retains the record when the owner exits but the observation reports ${snapshot}`, async () => {
       const host = fixture({ snapshot })
@@ -775,6 +798,7 @@ describe("failed process shutdown", () => {
         if (Exit.isFailure(result.outcome)) {
           expect(String(result.outcome.cause)).toContain("cleanup could not be verified")
           expect(String(result.outcome.cause)).toMatch(/group vacant: false; group members: .*; host group \d+/)
+          if (snapshot === "survivor") expect(String(result.outcome.cause)).toContain("900003 live")
         }
         expect(result.live).toHaveLength(1)
         expect(host.unrefs).toBe(1)
