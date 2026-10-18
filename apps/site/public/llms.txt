@@ -6,7 +6,7 @@
 
 ## Start here
 
-- [Install Smithers](https://smithers.sh/docs/installation/): Install on your Mac and open the setup link.
+- [Install Smithers](https://smithers.sh/docs/installation/): Install the npm CLI, or prepare the planned self-hosted app on your Mac.
 
 ## Reference
 

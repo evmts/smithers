@@ -5,7 +5,17 @@ https://smithers.sh/docs/installation/
 
 Smithers maintains your codebase. It turns issues into reviewed, tested changes and, when enabled, keeps the project wiki current. Flows beside your code define how.
 
+## Install the CLI
+
+The npm CLI requires Node.js 26.4.0 or later. Its package declares no operating-system restriction; the release candidate's required verification platform is Linux with Node 26.4.0.
+
+```bash
+npm i -g smthrs@next
+```
+
 ## Install
+
+The Mac requirements below apply to the planned self-hosted app, not the npm CLI.
 
 **Planned.** The Homebrew package is not released. Prepare:
 
