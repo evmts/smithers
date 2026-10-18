@@ -308,3 +308,22 @@ describe("Monday repository subjects", () => {
     expect(parseRepositorySubject(path.split("/"))).toBeUndefined()
   })
 })
+
+it("round trips every original subject kind and pull tab", () => {
+  for (
+    const path of [
+      "tree/main/src",
+      "blob/main/A%20B",
+      "issues",
+      "issues/1",
+      "pulls",
+      "pull/1",
+      "pull/1/commits",
+      "pull/1/checks",
+      "pull/1/files"
+    ]
+  ) {
+    const subject = parseRepositorySubject(path.split("/"))!
+    expect(parseRepositorySubject(formatRepositorySubject(subject).split("/"))).toEqual(subject)
+  }
+})

@@ -279,3 +279,27 @@ describe("repository issue and pull query state", () => {
     expect(host.location.search).toBe("")
   })
 })
+
+
+test("frame writes retain a client-navigated subject and search query", () => {
+  const { host } = browser("/o/r")
+  const history = createBrowserFrameHistory(host)
+  history.replace(root)
+  host.history.pushState(host.history.state, "", "/o/r/search?q=hello")
+  history.push(card)
+  expect(host.location.pathname + host.location.search).toBe("/o/r/search?q=hello")
+  history.back()
+  expect(host.location.pathname + host.location.search).toBe("/o/r/search?q=hello")
+})
+
+test("frame writes retain a client-navigated subject booted from another subject", () => {
+  const { host } = browser("/alpha/one/issues?q=is%3Aopen")
+  const history = createBrowserFrameHistory(host)
+  history.replace(root)
+  host.history.pushState(host.history.state, "", "/alpha/one/pulls/3")
+  history.push(card)
+  expect(host.location.pathname + host.location.search).toBe("/alpha/one/pulls/3")
+  host.history.pushState(host.history.state, "", "/alpha/one/blob/main/README.md?L=4&tutorial")
+  history.push(root)
+  expect(host.location.pathname + host.location.search).toBe("/alpha/one/blob/main/README.md?L=4")
+})
