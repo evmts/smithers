@@ -5,7 +5,7 @@
     "path": "apps/server/docs/host-cookie-isolation.md",
     "digest": "cb4824053fbe9cacd9f438f28b9e578a6015824f97e1364e417ccb793740849e"
   },
-  "closure": "4dd1e4188fc2a686b99091e013ff605a832598893a0b6960fa7db0d93d535617",
+  "closure": "974b383f63b34f4dbaf88b11bf649a0fcc0eea66ccc41247e1de87b517be4e06",
   "inputs": [
     {
       "path": "apps/server/scripts/cutover/host-cookie-workerd.mjs",
@@ -17,7 +17,7 @@
     },
     {
       "path": "packages/backend/internal/middleware/auth.go",
-      "digest": "f5596fc507e7c61a86e25efab05be1084306145c47f0503f88ea305b28e977d8"
+      "digest": "83f49908e54aba6f46bab58d89635325e69ae3717353e9dbce3a197b01ae1c10"
     },
     {
       "path": "packages/backend/internal/middleware/csrf.go",

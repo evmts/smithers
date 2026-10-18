@@ -19,7 +19,7 @@ describe("repository path ownership", () => {
   })
 
   test("site and infrastructure segments cannot be GitHub owners, in any case", () => {
-    for (const segment of ["docs", "pricing", "changelogs", "demo", "blog", "download", "api", "w", "_astro", ...RESERVED_SITE_SEGMENTS]) {
+    for (const segment of ["docs", "pricing", "changelogs", "demo", "blog", "download", "api", "w", "__smithers", ...RESERVED_SITE_SEGMENTS]) {
       expect(isRepositoryPath(`/${segment}/nope/`)).toBe(false)
       expect(isRepositoryPath(`/${segment.toUpperCase()}/nope`)).toBe(false)
     }
@@ -84,7 +84,7 @@ describe("repository subject paths", () => {
   })
 
   test("the site's own routes cannot carry a subject, in any case", () => {
-    for (const segment of ["docs", "api", "migration", "w", "_astro", ...RESERVED_SITE_SEGMENTS]) {
+    for (const segment of ["docs", "api", "migration", "w", "__smithers", ...RESERVED_SITE_SEGMENTS]) {
       expect(repositorySubjectRoot(`/${segment}/cli/pull/2`)).toBeUndefined()
       expect(repositorySubjectRoot(`/${segment.toUpperCase()}/cli/issues/2`)).toBeUndefined()
     }

@@ -5,7 +5,7 @@
     "path": "packages/backend/docs/github-app.md",
     "digest": "6bbc95f21027cf379cdaa49535cc5d831546f6d23fa75681342a4607aac54fbc"
   },
-  "closure": "3eba41f9e03f37715357e526ad70d501ef5f20af51434320add55c5658571112",
+  "closure": "20a5a178cece1051283b7fe96729645aff693dfbbf4e5ea89a5df67433cd25b4",
   "inputs": [
     {
       "path": "docs/api/openapi/install.yaml",
@@ -49,7 +49,7 @@
     },
     {
       "path": "packages/backend/internal/compose/main.go",
-      "digest": "d6e52965587fecd323893a1e5fcbaad4b7bbbefd83da10293ba9cc911e834629"
+      "digest": "39a5f864e41b4d8260b26c2e7d30d11818a34b17d091ab095eaa2415ee02c770"
     },
     {
       "path": "packages/backend/internal/compose/runtime_helpers.go",
@@ -85,7 +85,7 @@
     },
     {
       "path": "packages/backend/internal/services/auth.go",
-      "digest": "a170a9713d97397f9ae3f501ab1838e51c5f3af3999ca187d9986e69cfe70efd"
+      "digest": "887056785fc74b0a81c393224962744b852aa236ff7b6ba1ed1ebc9945d2c596"
     },
     {
       "path": "packages/backend/internal/services/flow_catalog.go",

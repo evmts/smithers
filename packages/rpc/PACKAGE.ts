@@ -27,6 +27,7 @@ const failureCodes = [
 
 /** Frozen released-client input contracts read by the compatibility suite. */
 const releasedContracts = Smithers.glob("//packages/rpc/contracts/*.json")
+const contractSources = Smithers.Filegroup({ cwd, srcs: [sources, ...failureCodes, releasedContracts] })
 
 /**
  * Checks the contract against its own tsconfig.
@@ -266,6 +267,7 @@ const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
  */
 export const Package = Smithers.Package({
   targets: {
+    contractSources,
     check,
     unitTests,
     lint,
