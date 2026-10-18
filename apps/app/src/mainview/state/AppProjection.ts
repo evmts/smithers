@@ -3286,6 +3286,8 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           else {
             collections.repositories.update(repository.id, (draft) => {
               Object.assign(draft, row)
+              draft.issueTracker = row.issueTracker
+              draft.githubSource = row.githubSource
             })
           }
           settleSignupRepo(true)
