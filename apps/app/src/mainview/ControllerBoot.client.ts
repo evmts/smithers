@@ -178,10 +178,10 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     // frame history stores the frame location there, not in the URL.
     // A GitHub App setup-URL return carries its own parameters.
     if (controller.handleInstallReturn(entrySearch)) {
-      window.history.replaceState(window.history.state, "", window.location.pathname === "/" && options.keepUrl === true ? ROOT_APP_PATH : window.location.pathname)
+      window.history.replaceState(window.history.state, "", window.location.pathname === "/" && options.keepUrl === true ? ROOT_APP_PATH : withoutRepoParam(window.location, ["installation_id", "setup_action"]))
     }
     if (controller.handleAuthReturn(entrySearch)) {
-      window.history.replaceState(window.history.state, "", window.location.pathname === "/" && options.keepUrl === true ? ROOT_APP_PATH : window.location.pathname)
+      window.history.replaceState(window.history.state, "", window.location.pathname === "/" && options.keepUrl === true ? ROOT_APP_PATH : withoutRepoParam(window.location, ["signed-in", "auth"]))
     }
     // `/owner/name` (or the landing page's `/?repo=owner/name`) preselects a public-catalog repository.
     // The path stays in the address bar; the parameter leaves it.

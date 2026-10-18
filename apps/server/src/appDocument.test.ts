@@ -116,3 +116,10 @@ describe("repository subject paths", () => {
     expect(repositorySubjectRoot("/owner/.git/pull/2")).toBe("/owner/.git")
   })
 })
+
+test("declared tab paths use the repository document", () => {
+  for (const subject of ["docs", "docs/guide/start.md", "evals/convert-golden?case=01-basic"]) {
+    expect(repositorySubjectRoot(`/owner/repo/${subject}`)).toBe("/owner/repo")
+  }
+  expect(repositorySubjectRoot("/owner/repo/evals")).toBeUndefined()
+})

@@ -1,3 +1,4 @@
+import { DeclaredTabsDataSchema } from "../repository/DeclaredTabsModel"
 import { historicalPullNavigation, savedPullNavigationArgs } from "../flows/PullNavigationPayload"
 import { historicalWorkspaceNavigation, savedWorkspaceNavigationArgs } from "../flows/WorkspaceNavigationPayload"
 import { historicalRunLifecycle, savedRunLifecycleArgs } from "../flows/RunLifecyclePayload"
@@ -109,6 +110,7 @@ export const RepositoryFlowsRowSchema = z.object({
   id: z.string(),
   /** The projection's flow rows, featured first, in catalog order. */
   flows: z.array(RepositoryFlowSchema),
+  declaredTabs: DeclaredTabsDataSchema.optional(),
   home: z.union([RepositoryHomeSchema, z.object({ kind: z.literal("error"), message: z.string() })]).optional(),
   /**
    * How the catalog read itself ended, which an empty `flows` cannot say:
@@ -2098,7 +2100,7 @@ type AppTransitionBody =
   /* One repository job's host registration read: requested, then completed or failed. */
   | { type: "repository-job.observed"; actor: "system"; observation: RepositoryJobObservation }
   /* The repository's declared flows landed (or went absent: an empty list) from its factory projection. */
-  | { type: "repository-flows.loaded"; actor: "system"; repo: string; flows: ReadonlyArray<RepositoryFlow>; home?: RepositoryFlowsRow["home"]; catalog?: RepositoryFlowsRow["catalog"] }
+  | { type: "repository-flows.loaded"; actor: "system"; repo: string; flows: ReadonlyArray<RepositoryFlow>; home?: RepositoryFlowsRow["home"]; declaredTabs?: RepositoryFlowsRow["declaredTabs"]; catalog?: RepositoryFlowsRow["catalog"] }
   /* The whole of one flow's measured history, replacing whatever was read before. */
   | { type: "flow-durations.loaded"; actor: "system"; repo: string; workspaceId?: string; flowId: string; rows: ReadonlyArray<{ readonly actionTag: string; readonly samples: number; readonly p50Ms: number; readonly p90Ms: number }> }
   /* The workspace heading: its name, and the inline editor the pencil opens. */

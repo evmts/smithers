@@ -1,3 +1,4 @@
+import type { RepositorySubject } from "@smthrs/rpc/RepositorySubjectPath"
 import { createBranchMutations } from "./seams/BranchMutationsSeam"
 import { draftIssueTodo } from "./seams/IssueTodoDraft"
 import { createBranchControlsSeam } from "./seams/BranchControlsSeam"
@@ -224,6 +225,7 @@ export interface AppController extends IssueFlowsController {
    * registry derives one slash leaf each; undefined without a target
    * repository or before its projection has landed.
    */
+  readonly reloadDeclaredTabs: (repo: string, subject?: RepositorySubject, retry?: boolean) => Promise<void>
   readonly repositoryFlows: () => RepositoryFlowCatalog | undefined
   /**
    * The repositories a trailing `owner/repo` token beside other text may
@@ -2548,6 +2550,7 @@ export const createAppController = (
     bootstrap: services.bootstrap,
     identityProvider: identityProviderFor(services),
     repositoryApp: services.repositoryApp ?? null,
+    reloadDeclaredTabs: (repo, subject, retry) => subject === undefined ? repositoryFlowsSeam.load(repo) : repositoryFlowsSeam.loadSubject(repo, subject, retry),
     repositoryFlows,
     knownRepositories: () => knownRepositories(store),
     changeDraft,

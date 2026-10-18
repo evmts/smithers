@@ -287,7 +287,7 @@ const openRequestedFile = async (
  * when the URL named no subject or when the admission is not this request's.
  */
 export const openRequestedSubject = async (
-  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches">,
+  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches" | "reloadDeclaredTabs">,
   repo: string,
   subject: RepositorySubject | undefined,
   options: SubjectEntryOptions
@@ -295,6 +295,7 @@ export const openRequestedSubject = async (
   if (subject === undefined) return
   const owner = accountOwnerOf(controller.store.collections.identitySessions.get("identity"))
   if (!admitted(controller.store, repo, options.requestId, owner)) return
+  if (subject.kind === "docs" || subject.kind === "evals") return controller.reloadDeclaredTabs(repo, subject)
   if (subject.kind === "tree" || subject.kind === "blob") return openRequestedFile(controller, repo, subject, owner, options)
   const { name, args } = subjectCommand(repo, subject)
   // The read runs to completion first: its own card is what the tab is chosen

@@ -1,3 +1,4 @@
+import { CodeFileView } from "@smthrs/ui/adapters/code-view"
 import { markdownBlockParser } from "@smthrs/ui/markdown"
 import { cloneElement, createElement, isValidElement, useContext, useState, type ReactNode } from "react"
 import { FileText, Folder, GitBranch } from "lucide-react"
@@ -11,12 +12,17 @@ import "./code-home.css"
 
 // Reuse the shared safe parser, substituting native heading elements for its
 // transcript typography wrappers. Fences, inline formatting and links stay shared.
-export function RepositoryMarkdown({ content }: { content: string }) {
+export function RepositoryMarkdown({ content, link, language }: { content: string; link?: (href: string) => string; language?: string }) {
   const semantic = (node: ReactNode): ReactNode => {
     if (Array.isArray(node)) return node.map(semantic)
-    if (!isValidElement<{ className?: string; children?: ReactNode }>(node)) return node
+    if (!isValidElement<{ className?: string; children?: ReactNode; href?: string }>(node)) return node
+    if (node.type === "a" && node.props.href && link) return cloneElement(node, { href: link(node.props.href) }, semantic(node.props.children))
+    if (language && typeof (node.props as { code?: unknown }).code === "string") {
+      const block = node.props as { code: string; language?: string }
+      return <CodeFileView key={node.key} name={`page.${block.language === "ts" ? language : block.language ?? "txt"}`} contents={block.code}/>
+    }
     const level = /sui-md-h([1-6])(?:\s|$)/.exec(node.props.className ?? "")?.[1]
-    if (level) return createElement(`h${level}`, { key: node.key, className: node.props.className }, node.props.children)
+    if (level) return createElement(`h${level}`, { key: node.key, className: node.props.className }, semantic(node.props.children))
     return cloneElement(node, undefined, semantic(node.props.children))
   }
   return <div className="repo-ui-markdown sui-md">{semantic(markdownBlockParser.render(content))}</div>

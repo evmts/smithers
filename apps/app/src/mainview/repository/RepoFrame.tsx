@@ -1,3 +1,4 @@
+import type { RepositoryTab } from "@smthrs/rpc/RepositoryHome"
 import { WORDMARK } from "../Wordmark"
 import { createContext, useCallback, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
 import { BookOpen, X } from "lucide-react"
@@ -12,8 +13,8 @@ const tabs = [
 ] as const
 
 /** Repository route shell. `children` is the plain content slot shared by repo views. */
-export function RepoFrame({ repo, login, publicRepo, ask, onAsk, onSignIn, children }: {
-  repo: string; login?: string; publicRepo?: boolean
+export function RepoFrame({ repo, login, publicRepo, declaredTabs = [], ask, onAsk, onSignIn, children }: {
+  declaredTabs?: readonly RepositoryTab[]; repo: string; login?: string; publicRepo?: boolean
   ask: ReactNode | ((visible: boolean) => ReactNode); onAsk: () => void; onSignIn: () => void; children: ReactNode
 }) {
   const frame = useRef<HTMLDivElement>(null)
@@ -31,6 +32,8 @@ export function RepoFrame({ repo, login, publicRepo, ask, onAsk, onSignIn, child
   const base = `/${repo}`
   const [owner, name] = repo.split("/")
   const fileRoute = /^\/(?:tree|blob)\//.test(window.location.pathname.slice(base.length))
+  const navigation = [...tabs.filter(([path]) => String(path) !== "settings"), ...declaredTabs.map(tab => [tab.type === "docs" ? "docs" : `evals/${tab.suite}`, tab.title] as const), ...tabs.filter(([path]) => String(path) === "settings")]
+  const active = (path: string) => window.location.pathname.replace(/\/$/, "") === `${base}${path ? `/${path}` : ""}` || (path === "" && fileRoute) || (path !== "" && window.location.pathname.startsWith(`${base}/${path}/`))
   const openAsk = () => { if (!login) { onSignIn(); return }; setOpen(true); onAsk() }
   const close = () => { setOpen(false); trigger.current?.focus() }
   return <div ref={frame} className="repo-frame" data-ask-open={!login ? "false" : open === undefined ? "auto" : String(open)} onKeyDown={event => {
@@ -57,9 +60,9 @@ export function RepoFrame({ repo, login, publicRepo, ask, onAsk, onSignIn, child
         <div className="repo-frame-repo-title-row"><div className="repo-frame-repo-title"><BookOpen size={20} aria-hidden="true"/><h1><a href="/">{owner}</a><span>/</span><a href={base}>{name}</a></h1>{publicRepo && <span className="repo-frame-visibility">Public</span>}</div>
           <button ref={trigger} className={`repo-ui-btn ${fileRoute ? "repo-ui-btn-quiet" : "repo-ui-btn-primary"} repo-frame-ask-button`} aria-label="Ask" aria-controls="repo-ask" aria-expanded={expanded} onClick={openAsk}>Ask <kbd>⌘K</kbd></button>
         </div>
-        <nav className="repo-ui-tabs" aria-label="Repository">{tabs.map(([path, label]) => <a className="repo-ui-tab" key={path} href={`${base}${path ? `/${path}` : ""}`} aria-current={window.location.pathname.replace(/\/$/, "") === `${base}${path ? `/${path}` : ""}` || (path === "" && fileRoute) ? "page" : undefined}>{label}</a>)}</nav>
+        <nav className="repo-ui-tabs" aria-label="Repository">{navigation.map(([path, label]) => <a className="repo-ui-tab" key={path} href={`${base}${path ? `/${path}` : ""}`} aria-current={active(path) ? "page" : undefined}>{label}</a>)}</nav>
       </header>
-      <main id="repo-content" tabIndex={-1} className="repo-frame-content" data-keyboard-pane="Repository"><RepositoryAskContext.Provider value={openAsk}>{children}</RepositoryAskContext.Provider></main>
+      <main onClick={event => { if ((event.target as HTMLElement).closest("[data-ask-page]")) openAsk() }} id="repo-content" tabIndex={-1} className="repo-frame-content" data-keyboard-pane="Repository"><RepositoryAskContext.Provider value={openAsk}>{children}</RepositoryAskContext.Provider></main>
     </div>
     <aside id="repo-ask" className="repo-frame-ask" aria-label="Ask" data-keyboard-pane="Ask">
       <div className="repo-frame-ask-heading"><h2>Ask</h2><button className="repo-ui-icon-btn" aria-label="Close Ask" onClick={close}><X size={18}/></button></div>

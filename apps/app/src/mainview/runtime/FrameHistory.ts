@@ -1,4 +1,4 @@
-import { pathRepo, pathTarget } from "../RepoLink"
+import { pathRepo, pathTarget, withoutRepoParam } from "../RepoLink"
 
 export interface FrameLocation {
   readonly workspaceId: string
@@ -106,6 +106,7 @@ export const createBrowserFrameHistory = (
   const pinned: (() => string) | undefined = options.keepUrl === true && path === "/"
     ? () => `${host.location.pathname}${host.location.search}`
     : subject?.kind === "tree" || subject?.kind === "blob" ? codeUrl
+    : subject?.kind === "docs" || subject?.kind === "evals" ? () => withoutRepoParam({ pathname: path, search: host.location.search ?? "", hash: "" }, ["tutorial"])
     : pathRepo(path) !== null || options.keepUrl === true ? () => path : undefined
   const current = (): FrameLocation | undefined =>
     pinned === undefined ? parseFramePath(host.location.pathname) : stateLocation(host.history.state)

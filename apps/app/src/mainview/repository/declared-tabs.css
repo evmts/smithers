@@ -1,0 +1,24 @@
+.repo-declared-docs { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; }
+.repo-declared-docs nav { border-right: 1px solid var(--border); padding-right: 20px; }
+.repo-declared-docs nav h2 { font-size: 14px; margin: 0 0 16px; }
+.repo-declared-docs nav h3 { font-size: 12px; margin: 20px 10px 6px; color: var(--text-muted); }
+.repo-declared-docs nav a { display: block; padding: 8px 10px; color: inherit; text-decoration: none; font-size: 13px; border-radius: 6px; }
+.repo-declared-docs nav a[aria-current] { background: var(--surface-2); font-weight: 600; }
+.repo-declared-docs article { min-width: 0; }
+.repo-declared-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.repo-declared-docs .repo-declared-toolbar { justify-content: flex-end; }
+.repo-declared-toolbar h2 { font-size: 20px; margin: 0; }
+.repo-declared-held { padding: 16px; margin-bottom: 24px; }
+.repo-declared-held p { margin: 0 0 12px; }
+.repo-declared-held > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.repo-declared-held code { overflow-wrap: anywhere; font-size: 12px; }
+.repo-declared-cases { list-style: none; padding: 0; margin: 0; }
+.repo-declared-cases li + li { border-top: 1px solid var(--border); }
+.repo-declared-cases a { display: block; padding: 12px 16px; color: inherit; }
+.repo-declared-case { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
+.repo-declared-case > section { min-width: 0; overflow: hidden; }
+@media (max-width: 600px) {
+  .repo-declared-docs { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .repo-declared-docs nav { border-right: 0; border-bottom: 1px solid var(--border); padding: 0 0 16px; }
+  .repo-declared-case { grid-template-columns: minmax(0, 1fr); }
+}

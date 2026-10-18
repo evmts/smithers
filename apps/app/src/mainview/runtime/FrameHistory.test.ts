@@ -254,3 +254,15 @@ describe("browser frame history", () => {
     expect(createBrowserFrameHistory(host).current()).toBeUndefined()
   })
 })
+
+test("repository frame writes preserve the selected eval case through reload", () => {
+  const path = "/maya/tinyhttp/evals/convert-golden?case=01-basic"
+  const { host, entries } = browser(path)
+  const history = createBrowserFrameHistory(host)
+  history.replace(root)
+  history.push(card)
+  const restored = createBrowserFrameHistory(host)
+  restored.replace(card)
+  expect(entries()).toEqual([path, path])
+  expect(host.location.search).toBe("?case=01-basic")
+})

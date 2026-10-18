@@ -938,3 +938,14 @@ test("an unreadable signed-out repository returns after sign-in to its prefilled
     expect(missingRepositoryOffer(repo, store.collections.githubAppStatuses.get(repo)).action).toEqual({ flow: "repos.import", args: repo, label: "Import" })
   } finally { await store.dispose?.() }
 })
+
+test("requested target carries the eval case query into subject admission", () => {
+  expect(requestedTarget({ pathname: "/maya/tinyhttp/evals/convert-golden", search: "?case=01-basic" })).toEqual({
+    repo: "maya/tinyhttp", subject: { kind: "evals", suite: "convert-golden", case: "01-basic" }
+  })
+})
+
+test("return cleanup removes only consumed markers and keeps the eval case", () => {
+  expect(withoutRepoParam({ pathname: "/maya/tinyhttp/evals/convert-golden", search: "?signed-in=github&case=01-basic", hash: "" }, ["signed-in", "auth"])).toBe("/maya/tinyhttp/evals/convert-golden?case=01-basic")
+  expect(withoutRepoParam({ pathname: "/maya/tinyhttp/evals/convert-golden", search: "?installation_id=12&setup_action=install&case=01-basic", hash: "" }, ["installation_id", "setup_action"])).toBe("/maya/tinyhttp/evals/convert-golden?case=01-basic")
+})

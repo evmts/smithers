@@ -346,3 +346,11 @@ test("Monday paths serve the app document and legacy subjects redirect with quer
     expect(response.headers.get("location")).toBe(`https://smithers.sh/any/repo/${to}?q=a%2Fb`)
   }
 })
+
+test("declared docs and suite paths serve the app document", async () => {
+  for (const path of ["docs", "docs/guide/start.md", "evals/convert-golden?case=01-basic"]) {
+    const response = await edge.fetch(new Request(`https://smithers.sh/any/repo/${path}`), { ASSETS: { fetch: async request => new URL(request.url).pathname === DEFAULT_APP_DOCUMENT_PATH ? new Response("app") : new Response("missing", { status: 404 }) } })
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe("app")
+  }
+})

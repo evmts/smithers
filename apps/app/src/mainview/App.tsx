@@ -1,3 +1,5 @@
+import { splitRepositoryPath } from "@smthrs/rpc/RepositorySubjectPath"
+import { DeclaredTabView } from "./repository/DeclaredTabView"
 import { RepoFrame } from "./repository/RepoFrame"
 import { CodeHome } from "./repository/CodeHome"
 import { RepositoryCodeView } from "./repository/RepositoryCodeView"
@@ -757,13 +759,20 @@ function AppContent() {
   )
   if (bootRepository === null || (bootEntry?.phase !== "ready" && !(bootUnavailable && codeRoute))) return chat()
   const repository = repositoryRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())
+  const subject = splitRepositoryPath(window.location.pathname + window.location.search)?.subject
+  const declaredRoute = subject?.kind === "docs" || subject?.kind === "evals"
+  const declaredTabs = repositoryFlowRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())?.declaredTabs
   const rootRoute = window.location.pathname.replace(/\/$/, "") === `/${bootRepository}`
-  if (!rootRoute && !codeRoute) return chat()
-  return <RepoFrame repo={bootRepository} publicRepo={repository?.catalog === true}
+  if (!rootRoute && !codeRoute && !declaredRoute) return chat()
+  return <RepoFrame declaredTabs={declaredTabs?.tabs.map(tab => tab.declaration)} repo={bootRepository} publicRepo={repository?.catalog === true}
     login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
     onAsk={() => controller.runCommand("chat.open")} onSignIn={() => controller.runCommand("sign-in")} ask={(visible: boolean) => chat(visible)}>
     {codeRoute ? <RepositoryCodeView repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
-      admitted={bootEntry?.phase === "ready"} requestId={bootEntry?.requestId} error={bootUnavailable ? bootEntry?.error : undefined} onAsk={text => controller.changeDraft(text)} /> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
+      admitted={bootEntry?.phase === "ready"} requestId={bootEntry?.requestId} error={bootUnavailable ? bootEntry?.error : undefined} onAsk={text => controller.changeDraft(text)} />
+      : declaredRoute ? <DeclaredTabView repo={bootRepository} subject={subject} data={declaredTabs}
+      signedIn={identity?.state === "signed-in"} retry={() => void controller.reloadDeclaredTabs(bootRepository, subject, true)}
+      onAsk={path => { if (identity?.state === "signed-in") { controller.changeDraft(`Ask about ${path}: `) } }}/>
+      : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
       branches={codeBranchRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())}
       onBranchesOpen={() => { void controller.repositoryBranches.load(bootRepository) }}
       headCommit={repository?.head?.commitId}
