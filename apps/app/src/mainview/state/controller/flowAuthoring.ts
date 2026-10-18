@@ -1,3 +1,4 @@
+import { localGatewayCardFields } from "../RepoContext"
 import { canonical, digest } from "@smthrs/core/Digest"
 import { FLOW_AUTHORING_ENTRY, flowAuthoringUnavailable } from "@smthrs/rpc/FlowAuthoring"
 import type { Card } from "../AppState"
@@ -194,7 +195,7 @@ export const createFlowAuthoringController = (
       const ordinal = nextOrdinal() + 1
       saved = store.dispatch({ type: "card.upsert", actor, card: {
         id, kind: "run-trace", title: "Creating a flow", status: "active", ordinal, createdAt: Date.now(),
-        payload: { repo, ...binding, gatewayBindingVersion: 1, runId: "", workflow: FLOW_AUTHORING_ENTRY, phase: "launching", steps: [], result: null, lastSeq: 0,
+        payload: { repo, ...binding, gatewayBindingVersion: 1, ...localGatewayCardFields(store, repo), runId: "", workflow: FLOW_AUTHORING_ENTRY, phase: "launching", steps: [], result: null, lastSeq: 0,
           input: { args: description }, authoring: { requestId: randomUuid(), owner } }
       } }).isPersisted.promise
       persisting.set(id, saved)

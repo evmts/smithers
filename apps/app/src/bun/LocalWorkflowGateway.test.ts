@@ -85,7 +85,7 @@ test("launch checks real health and refuses unreachable or different workspaces"
   }
 })
 
-test("local API identifies an operator and exposes only the bound repository catalog", async () => {
+test("local API identifies an operator and synthesizes no inventory or catalog", async () => {
   const { localGatewayApi } = await import("./LocalWorkflowGateway")
   const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises")
   const { tmpdir } = await import("node:os")
@@ -97,7 +97,7 @@ test("local API identifies an operator and exposes only the bound repository cat
     await writeFile(join(directory, ".smithers/factory.json"), '{"flows":[]}')
     expect(await (await api("/api/user")).json()).toMatchObject({ username: "local-operator", display_name: "Local operator", is_admin: false })
     for (const path of ["/api/user/repos", "/api/user/orgs", "/api/user/workspaces", "/api/conversations/main/view-state", `/api/repos/${config.repo}/home`]) expect((await api(path)).status).toBe(409)
-    expect(await (await api(`/api/repos/${config.repo}/contents/.smithers/factory.json`)).json()).toEqual({ content: '{"flows":[]}', encoding: "utf-8" })
+    expect((await api(`/api/repos/${config.repo}/contents/.smithers/factory.json`)).status).toBe(409)
     expect((await api("/api/repos/wrong/repo/contents/.smithers/factory.json")).status).toBe(409)
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

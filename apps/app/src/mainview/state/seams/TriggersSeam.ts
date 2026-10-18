@@ -1,3 +1,4 @@
+import { localGatewayCardFields } from "../RepoContext"
 /*
  * The triggers seam: the dispatchers waiting on one repository, from two
  * sources that are never mixed (Factory design session 2026-09-07, mock 2).
@@ -694,7 +695,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     const previous = pauseCard(repo)
     const card: TriggerListCard = previous ?? {
       id: `trigger-list-${repo}`, kind: "trigger-list", title: `Dispatcher · ${repo}`,
-      status: "active", createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload: { repo, triggers: [] }
+      status: "active", createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload: { repo, ...localGatewayCardFields(ctx.store, repo), triggers: [] }
     }
     return ctx.dispatch({ type: "card.upsert", actor, card: { ...card, payload: {
       ...card.payload,
@@ -787,6 +788,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
       ordinal: ctx.nextOrdinal(),
       payload: {
         repo,
+        ...localGatewayCardFields(ctx.store, repo),
         declared: [...declared],
         ...(existing?.kind === "trigger-list" && existing.payload.pauseRequests ? { pauseRequests: existing.payload.pauseRequests } : {}),
         ...(existing?.kind === "trigger-list" && existing.payload.preparations ? { preparations: existing.payload.preparations } : {}),
@@ -833,7 +835,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     const previous = pauseCard(repo)
     const card: TriggerListCard = previous ?? {
       id: `trigger-list-${repo}`, kind: "trigger-list", title: `Dispatcher · ${repo}`,
-      status: "active", createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload: { repo, triggers: [] }
+      status: "active", createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload: { repo, ...localGatewayCardFields(ctx.store, repo), triggers: [] }
     }
     return ctx.dispatch({ type: "card.upsert", actor, card: { ...card, payload: { ...card.payload,
       preparations: [...(card.payload.preparations ?? []).filter(row => row.owner !== request.owner || row.draft.slug !== request.draft.slug), request]

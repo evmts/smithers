@@ -1,3 +1,4 @@
+import { localGatewayCardFields } from "../RepoContext"
 import { Data } from "effect"
 import type { Actor, Card } from "../AppState"
 import { actorSharedState } from "../ActorBindings"
@@ -241,7 +242,7 @@ export const createWorkflowLaunchController = (
   }
   const requestCard = (id: string, request: BoxLaunch): RunCard => ({ id, kind: "run-trace", title: `${request.triggerRegistration ? `Register ${request.triggerRegistration.slug}` : request.triggerDispatch ? `${request.input.operation === "resume" ? "Resume" : "Run"} ${request.triggerDispatch.slug}` : request.workflow} · ${request.repo}`,
     status: "active", createdAt: Date.now(), ordinal: nextOrdinal(), payload: { repo: request.repo,
-      workspaceId: request.workspaceId, gatewayBindingVersion: 1,
+      workspaceId: request.workspaceId, gatewayBindingVersion: 1, ...localGatewayCardFields(store, request.repo),
       workflow: request.workflow, runId: `pending-${request.id}`, phase: "launching", steps: [], result: null, lastSeq: 0, liveTail: true,
       input: { ...request.input, _workflowLaunch: request } } })
   const start = async (args: { repo: string; binding: GatewayWorkspaceBinding; workflow: string; input: Record<string, unknown>; actor: Actor; then?: "coding/vibe"; triggerDispatch?: WorkflowLaunch["triggerDispatch"]; triggerRegistration?: WorkflowLaunch["triggerRegistration"]; source?: WorkflowLaunch["source"]; rerunOf?: string }): Promise<string | { value: string }> => {
