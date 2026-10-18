@@ -9,6 +9,17 @@ sidebar:
 
 The CLI is on npm under the `next` tag, which carries the 1.0 release
 candidates; `latest` still points at 0.35.0. Use Node.js 26.4.0 or later.
+Install Node from [the official downloads](https://nodejs.org/en/download).
+On an Apple Silicon Mac, select macOS and ARM64, then open a new terminal and
+check `node --version` before installing Smithers.
+
+Install [Jujutsu](https://jj-vcs.github.io/jj/latest/install-and-setup/) (`jj`)
+for repository operations and `jq` for the quickstart's JSON commands.
+On macOS with [Homebrew](https://brew.sh/):
+
+```bash
+brew install jj jq
+```
 
 ```bash
 npm install -g smthrs@next
