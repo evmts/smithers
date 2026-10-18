@@ -65,3 +65,5 @@ least recently served.
 - `smithers_repo_host_upload_pack_peak_rss_bytes`: peak resident memory of each finished `upload-pack`, read from its exit rusage. Linux and Darwin fold in the largest child it reaped, so a pack build reports `pack-objects`. A depth-200 clone of `smithersai/smithers` measured about 600 MB, of which about 330 MB was anonymous (plue#837).
 
 Every series exists at zero before the first fetch, so an alert reads zero, not "no data".
+
+Repo-host also exports the Go runtime (`go_memstats_*`, `go_goroutines`) and process (`process_resident_memory_bytes`) collectors for the server itself. The container's working set counts active page cache, so compare the server's resident memory and the fetch peaks with the memory limit instead.

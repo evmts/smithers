@@ -15,6 +15,8 @@ func TestMetrics_H_NewMetricsReportsRegistrationErrors(t *testing.T) {
 		{name: "operation_duration", duplicate: "smithers_repo_host_operation_duration_seconds"},
 		{name: "service_up", duplicate: "smithers_repo_host_service_up"},
 		{name: "service_health", duplicate: "smithers_repo_host_service_health"},
+		{name: "go_runtime", duplicate: "go_goroutines"},
+		{name: "process", duplicate: "process_resident_memory_bytes"},
 	}
 
 	for _, tt := range tests {
