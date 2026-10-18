@@ -645,3 +645,63 @@ test("full-contrast opt-in keeps file text and can return to syntax colours", as
   expect(shadow().textContent).toContain("const answer = 42");
   expect(shadow().textContent).not.toContain("color: var(--code-text, currentColor) !important");
 });
+
+const VIBE = `error NotFound { id: string }
+service Users { find(id: string): User!NotFound }
+function greet(id: string) { return Users.find(id).name catch (e) => "none" }`;
+
+describe("VibeLang", () => {
+  test("file names select VibeLang and unknown extensions remain plain text", () => {
+    expect(languageForFile("examples/users/src/main.vibe")).toBe("vibe");
+    expect(languageForFile("examples/users/src/main.effeck")).toBe("vibe");
+    expect(languageForFile("main.unknown-language")).toBeNull();
+  });
+
+  test("the grammar preserves VibeLang form scopes and TypeScript function scopes", async () => {
+    const highlighter = await getSharedHighlighter({ themes: ["github-dark"], langs: ["vibe"] });
+    const tokens = highlighter.codeToTokens(VIBE, {
+      lang: "vibe",
+      theme: "github-dark",
+      includeExplanation: true,
+      tokenizeTimeLimit: 10_000,
+    }).tokens.flat();
+    for (
+      const [word, scope] of [
+        ["error", "storage.type.class.ts"],
+        ["service", "storage.modifier.ts"],
+        ["catch", "keyword.control.trycatch.ts"],
+        ["function", "storage.type.function.ts"],
+        ["greet", "entity.name.function.ts"],
+        ["string", "support.type.primitive.ts"],
+      ]
+    ) {
+      const token = tokens.find((token) => token.content === word);
+      expect(token?.explanation?.flatMap((part) => part.scopes.map((scope) => scope.scopeName))).toContain(scope);
+    }
+  }, 90_000);
+
+  for (const path of ["main-thread", "worker"] as const) {
+    test(`${path} renders VibeLang form words and TypeScript with colour`, async () => {
+      disposeCodeViewPool();
+      const originalWorker = globalThis.Worker;
+      if (path === "main-thread") globalThis.Worker = undefined as unknown as typeof Worker;
+      try {
+        await mount(<CodeFileView name="main.vibe" contents={VIBE} mode="dark" />);
+        await highlighted();
+        expect(host().getAttribute("data-highlighter")).toBe(path);
+        const model = tokenModel();
+        expect(coloursOf(model).size).toBeGreaterThan(1);
+        for (const word of ["error", "service", "catch", "function"]) {
+          expect(
+            Array.from(shadow().querySelectorAll("span")).some((span) =>
+              span.textContent?.split(/\s+/).includes(word) && span.getAttribute("style")?.includes("color")
+            ),
+          ).toBe(true);
+        }
+      } finally {
+        globalThis.Worker = originalWorker;
+        disposeCodeViewPool();
+      }
+    }, 90_000);
+  }
+});

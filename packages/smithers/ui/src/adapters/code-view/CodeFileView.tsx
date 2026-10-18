@@ -8,7 +8,10 @@ import { useResolvedTheme } from "../../internal/useResolvedTheme";
 import { useResolvedPalette } from "../../internal/useResolvedPalette";
 import type { ResolvedPalette } from "../../internal/resolvePalette";
 import { diffsThemeForMode, type PierreDiffMode } from "../pierre-diff-view";
+import { registerVibe } from "./vibe";
 import { codeViewWorkerPool, currentCodeViewPool, subscribeCodeViewPool } from "./workerPool";
+
+registerVibe();
 
 /**
  * CodeFileView renders ONE repository file, syntax highlighted, through
