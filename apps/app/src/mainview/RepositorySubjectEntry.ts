@@ -30,7 +30,7 @@ import type { Message } from "./state/AppState"
  * after it has been divided against the repository's own refs, so it is read
  * by {@link openRequestedFile} and never by {@link subjectCommand}.
  */
-export type RepositorySubjectView = Exclude<RepositorySubject, { readonly kind: "tree" | "blob" }>
+export type RepositorySubjectView = Extract<RepositorySubject, { readonly kind: "pull" | "pulls" | "issue" | "issues" }>
 
 /**
  * The registered read flow a subject opens, with its target bound explicitly.
@@ -279,6 +279,9 @@ export const openRequestedSubject = async (
   const owner = accountOwnerOf(controller.store.collections.identitySessions.get("identity"))
   if (!admitted(controller.store, repo, options.requestId, owner)) return
   if (subject.kind === "tree" || subject.kind === "blob") return openRequestedFile(controller, repo, subject, owner, options)
+  // The default repo UI projects the other subjects directly from RepositoryRouter.
+  // Never turn an unserved or newly mounted subject into an issues-list read.
+  if (subject.kind !== "pull" && subject.kind !== "pulls" && subject.kind !== "issue" && subject.kind !== "issues") return
   const { name, args } = subjectCommand(repo, subject)
   // The read runs to completion first: its own card is what the tab is chosen
   // on, and one command at a time is the lifecycle's own rule.

@@ -5,7 +5,8 @@ import { selectFirstRunRepository } from "./state/BootRepositoryTarget"
 import { Effect } from "effect"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { loadRuntimeApplicationClient } from "./runtime/ApplicationTransport"
-import { beginRepositoryEntry, openRequestedRepo, requestedTarget, withoutRepoParam } from "./RepoLink"
+import { beginRepositoryEntry, openRequestedRepo, withoutRepoParam } from "./RepoLink"
+import { repositoryRouter } from "./RepositoryRouter"
 import { openRequestedSubject } from "./RepositorySubjectEntry"
 import { createBrowserFrameHistory, ROOT_APP_PATH } from "./runtime/FrameHistory"
 import { BootstrapFailure, createRuntime, warmBootstrap, unavailableAgent } from "./runtime/Runtime"
@@ -48,7 +49,8 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     // frame, long before identity has loaded.
     // The whole target, not only its repository: `/owner/repo/pull/2/files` is
     // a pull request's Files tab, opened after that repository is admitted.
-    const target = yield* Effect.sync(() => requestedTarget(window.location))
+    const router = yield* Effect.sync(() => repositoryRouter())
+    const target = yield* Effect.sync(() => router.getSnapshot())
     const requested = target?.repo ?? null
     // The entry URL's query, read before frame history rewrites the address bar: the OAuth and
     // GitHub App setup-URL returns ride on it, and by the end of boot it is gone.
@@ -195,6 +197,19 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
         window.history.replaceState(window.history.state, "", withoutRepoParam(window.location))
       }
     }
+    // Route changes use the same admission and subject readers as the initial URL.
+    // Each admission supersedes pending reads before the next subject may open.
+    yield* Effect.sync(() => {
+      const unsubscribe = router.subscribe(() => {
+        const next = router.getSnapshot()
+        const requestId = beginRepositoryEntry(store, next?.repo ?? null)
+        if (next === null) return
+        void openRequestedRepo(controller, runtime.http, next.repo, requestId)
+          .then(() => openRequestedSubject(controller, next.repo, next.subject, { requestId, signal: pageLifetime.signal }))
+          .catch(() => {})
+      })
+      pageLifetime.signal.addEventListener("abort", () => { unsubscribe(); router.dispose() }, { once: true })
+    })
     // CLI card doors carry no credential or mutation; the browser uses its own identity.
     if (card !== undefined) {
       yield* Effect.sync(() => void controller.runCommandForResult(card).then(result => {

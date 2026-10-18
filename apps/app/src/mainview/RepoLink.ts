@@ -1,6 +1,6 @@
 import { AUTH_SIGNED_IN_PARAM } from "@smthrs/rpc/AgentApiRoutes"
 import type { FetchLike } from "@smthrs/rpc/NativeAgent"
-import { splitRepositoryPath } from "@smthrs/rpc/RepositorySubjectPath"
+import { RESERVED_SITE_SEGMENTS, splitRepositoryPath } from "@smthrs/rpc/RepositorySubjectPath"
 import type { RepositorySubject } from "@smthrs/rpc/RepositorySubjectPath"
 import { appCoverageRow, readRepoAccess } from "./RepositoryEntryOffer"
 import type { AppController } from "./state/AppController"
@@ -51,7 +51,7 @@ export const pathTarget = (pathname: string): RequestedTarget | null => {
   const split = splitRepositoryPath(pathname)
   if (split === undefined) return null
   const repo = `${split.owner}/${split.name}`
-  if (!REPO_NAME.test(repo)) return null
+  if (!REPO_NAME.test(repo) || [split.owner, split.name].some(part => part === "." || part === "..") || RESERVED_SITE_SEGMENTS.includes(split.owner.toLowerCase())) return null
   return split.subject === undefined ? { repo } : { repo, subject: split.subject }
 }
 
@@ -71,7 +71,7 @@ export const paramRepo = (search: string): string | null => {
  * `repo` parameter at `/`, which names a repository and never a subject.
  */
 export const requestedTarget = (location: Pick<Location, "pathname" | "search">): RequestedTarget | null => {
-  const path = pathTarget(location.pathname)
+  const path = pathTarget(location.pathname + location.search)
   if (path !== null) return path
   const param = location.pathname === "/" ? paramRepo(location.search) : null
   return param === null ? null : { repo: param }

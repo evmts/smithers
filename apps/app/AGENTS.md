@@ -97,3 +97,17 @@ workflow, offer to turn the session into a reusable smithers workflow for next
 time.
 
 <!-- smithers:prefer-workflows END -->
+
+
+## Repository URL navigation
+
+Use `hrefFor({ repo, subject })` from `src/mainview/RepositoryRouter.ts` for view
+links, for example `<a href={hrefFor({ repo, subject: { kind: "flows" } })}>Flows</a>`.
+Plain same-origin repository links navigate through the boot router; modified
+clicks keep browser behavior. Event handlers use `navigate(subject, { replace? })`;
+`hrefFor(subject)` also uses the current repository, or pass `{ repo, subject }`
+to either function to name another repository.
+Subscribe with `useSyncExternalStore(subscribe, getSnapshot, () => null)`; the
+snapshot is `{ repo, subject? }` or null. Project `routeStatus(snapshot) ===
+"not-found"` through the frame's not-found state (including Runs and Approvals).
+The URL is the external authority; views must not add another router or boot read.
