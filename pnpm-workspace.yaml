@@ -58,3 +58,11 @@ overrides:
   "@effect/sql-sqlite-do": "4.0.5"
   "@effect/sql-sqlite-node": "4.0.5"
   "@effect/vitest": "4.0.5"
+
+minimumReleaseAgeExclude:
+  - vibelang-darwin-arm64@0.0.1
+  - vibelang-darwin-x64@0.0.1
+  - vibelang-linux-arm64@0.0.1
+  - vibelang-linux-x64@0.0.1
+  - vibelang-runtime@0.0.1
+  - vibelang@0.0.1

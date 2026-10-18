@@ -145,6 +145,12 @@ importers:
       typescript-eslint:
         specifier: 8.69.0
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      vibelang:
+        specifier: 0.0.1
+        version: 0.0.1
+      vibelang-runtime:
+        specifier: 0.0.1
+        version: 0.0.1(effect@4.0.5)
       vite:
         specifier: ^8.2.2
         version: 8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
@@ -14104,6 +14110,37 @@ packages:
   vfile@6.0.3:
     resolution: {integrity: sha512-KzIbH/9tXat2u30jf+smMwFCsno4wHVdNmzFyL+T/L3UGqqk6JKfVqOFOZEpZSHADH1k40ab6NUIXZq422ov3Q==}
 
+  vibelang-darwin-arm64@0.0.1:
+    resolution: {integrity: sha512-/vLDt+AVuFQNfdV/WPnSjGcfD+VFm6t3iMFvb7ImIFRVgvlTE9zYNOFMtmZvXIE+eL4+7a0pfOEP7QvZmnPf3A==}
+    cpu: [arm64]
+    os: [darwin]
+
+  vibelang-darwin-x64@0.0.1:
+    resolution: {integrity: sha512-rDo4ugvAUB5gkABtyasR6ZA1MjU9ktXXndLRCQqiHaLjL6HD4DoHoRGOKu4zNj+W7Ws4VWtm+TTyvRwwnvmvDg==}
+    cpu: [x64]
+    os: [darwin]
+
+  vibelang-linux-arm64@0.0.1:
+    resolution: {integrity: sha512-Zl0OM1cXEjAyjm9Ej7m+QNtiby2fNflKbAWxzLtJ9xSQ+yOn73QxOCzzbRjdW04Bjz8SV5gPoKtjPYOgXsgNYw==}
+    cpu: [arm64]
+    os: [linux]
+
+  vibelang-linux-x64@0.0.1:
+    resolution: {integrity: sha512-uUJQFn9TFlLF7cgvSMKwhi9WeAeRVzOf4NaZM6DpvpYA22ujQ5bRxFnnZ1As0RIKeil/myaXjRiSxOHcKKYxxw==}
+    cpu: [x64]
+    os: [linux]
+
+  vibelang-runtime@0.0.1:
+    resolution: {integrity: sha512-iTuaDNjGrjKqulYsbHChwzgN/FEDNHQYz9bZZZn5usVj/8EyTyESxJtd7RS4Suq0kiGnihAnO87NdAz1ONETNg==}
+    engines: {bun: '>=1.4', node: '>=26'}
+    peerDependencies:
+      effect: 4.0.5
+
+  vibelang@0.0.1:
+    resolution: {integrity: sha512-W/v3SbLHQkGpsQy28pq3eAoziV3cmqozfBedtf1LsXQduqKo8SaNfiWMJo3dEh7E3W3imtd8VOnpsIp03fh9aQ==}
+    engines: {node: '>=22'}
+    hasBin: true
+
   victory-vendor@37.3.6:
     resolution: {integrity: sha512-SbPDPdDBYp+5MJHhBCAyI7wKM3d5ivekigc2Dk2s7pgbZ9wIgIBYGVw4zGHBml/qTFbexrofXW6Gu4noGxrOwQ==}
 
@@ -24296,6 +24333,29 @@ snapshots:
     dependencies:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
+
+  vibelang-darwin-arm64@0.0.1:
+    optional: true
+
+  vibelang-darwin-x64@0.0.1:
+    optional: true
+
+  vibelang-linux-arm64@0.0.1:
+    optional: true
+
+  vibelang-linux-x64@0.0.1:
+    optional: true
+
+  vibelang-runtime@0.0.1(effect@4.0.5):
+    dependencies:
+      effect: 4.0.5
+
+  vibelang@0.0.1:
+    optionalDependencies:
+      vibelang-darwin-arm64: 0.0.1
+      vibelang-darwin-x64: 0.0.1
+      vibelang-linux-arm64: 0.0.1
+      vibelang-linux-x64: 0.0.1
 
   victory-vendor@37.3.6:
     dependencies:
