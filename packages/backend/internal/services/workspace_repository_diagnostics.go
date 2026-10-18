@@ -108,11 +108,19 @@ const (
 	// refused the guest's CONNECT with 503 because it could not meter the
 	// connection. It is retried; see retryableWorkspaceTransfer.
 	workspaceRepositoryExitEgressUnavailable workspaceRepositoryExitClass = "egress_unavailable"
+	// workspaceRepositoryExitEgressGrantDenied: the sandbox egress proxy
+	// refused the guest's CONNECT with 403 because the sandbox holds no
+	// egress grant at all. It is not retried.
+	workspaceRepositoryExitEgressGrantDenied workspaceRepositoryExitClass = "egress_grant_denied"
 )
 
 // workspaceEgressQuotaExhaustedMessage is the verdict for a repository step the
 // sandbox egress proxy refused for quota.
 const workspaceEgressQuotaExhaustedMessage = "sandbox egress quota exhausted for today; it resets at 00:00 UTC"
+
+// workspaceEgressGrantDeniedMessage is the verdict for a repository step the
+// sandbox egress proxy refused because the sandbox holds no egress grant.
+const workspaceEgressGrantDeniedMessage = "sandbox egress grant denied"
 
 // workspaceProxyStatus is the closed vocabulary of the sandbox egress proxy's
 // answer to a guest's CONNECT. A refusal that never reached the proxy, or a
@@ -121,6 +129,7 @@ type workspaceProxyStatus string
 
 const (
 	workspaceProxyStatusNone        workspaceProxyStatus = "none"
+	workspaceProxyStatusGrantDenied workspaceProxyStatus = "403"
 	workspaceProxyStatusQuota       workspaceProxyStatus = "429"
 	workspaceProxyStatusUnavailable workspaceProxyStatus = "503"
 	workspaceProxyStatusOther       workspaceProxyStatus = "other"
@@ -136,6 +145,8 @@ func workspaceProxyStatusFor(stderr string) workspaceProxyStatus {
 	switch {
 	case match == nil:
 		return workspaceProxyStatusNone
+	case match[1] == "403":
+		return workspaceProxyStatusGrantDenied
 	case match[1] == "429":
 		return workspaceProxyStatusQuota
 	case match[1] == "503":
@@ -152,12 +163,17 @@ func workspaceRepositoryExitClassFor(result workspaceapi.CommandResult) workspac
 	switch {
 	case result.ExitCode == 0:
 		return workspaceRepositoryExitOK
-	case result.ExitCode == 128 && workspaceProxyStatusFor(result.Stderr) == workspaceProxyStatusQuota:
-		return workspaceRepositoryExitEgressQuota
-	case result.ExitCode == 128 && workspaceProxyStatusFor(result.Stderr) == workspaceProxyStatusUnavailable:
-		return workspaceRepositoryExitEgressUnavailable
 	case result.ExitCode == 128:
-		return workspaceRepositoryExitFatal
+		switch workspaceProxyStatusFor(result.Stderr) {
+		case workspaceProxyStatusGrantDenied:
+			return workspaceRepositoryExitEgressGrantDenied
+		case workspaceProxyStatusQuota:
+			return workspaceRepositoryExitEgressQuota
+		case workspaceProxyStatusUnavailable:
+			return workspaceRepositoryExitEgressUnavailable
+		default:
+			return workspaceRepositoryExitFatal
+		}
 	case result.ExitCode == 129:
 		return workspaceRepositoryExitUsage
 	case result.ExitCode < 0 || result.ExitCode > 129:
@@ -196,9 +212,9 @@ type workspaceRepositoryStepOutcome struct {
 	// retryableWorkspaceTransfer. True means the retry budget ran out on a
 	// 503/504 admission refusal or an egress proxy's 503; false means the
 	// refusal was never retryable — an authentication failure, a spent egress
-	// quota, a truncated answer or a command that changes the checkout — and
-	// separating those is the whole question when an advertisement cannot be
-	// verified.
+	// quota, a denied egress grant, a truncated answer or a command that
+	// changes the checkout — and separating those is the whole question when
+	// an advertisement cannot be verified.
 	retryable bool
 }
 

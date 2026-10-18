@@ -88,7 +88,7 @@ func workerEgressRefusal(status int) []byte {
 	case http.StatusServiceUnavailable:
 		body, retryAfter = "egress metering unavailable\n", "Retry-After: 1\r\n"
 	case http.StatusForbidden:
-		body = "egress not granted\n"
+		body = "no egress grant for this sandbox\n"
 	}
 	return []byte("HTTP/1.1 " + strconv.Itoa(status) + " " + http.StatusText(status) + "\r\n" + retryAfter +
 		"Content-Type: text/plain; charset=utf-8\r\nContent-Length: " + strconv.Itoa(len(body)) +
@@ -224,10 +224,34 @@ func TestWorkspaceRepositoryAdvertisementReportsAnEgressProxyOutage(t *testing.T
 	require.Equal(t, "true", logged.attrs["retry_budget_exhausted"])
 }
 
-// Any other proxy answer (403 for a sandbox with no egress grant, 407, ...)
-// is reported as `other`, never as its number, and is not retried.
-func TestWorkspaceRepositoryAdvertisementReportsAnotherProxyRefusal(t *testing.T) {
+// plue#839: the worker proxy answers 403 when the sandbox holds no egress
+// grant at all (a zero-byte policy, or a grant the controller refused). That
+// is neither a spent day nor an outage, and the row says so instead of a
+// generic advertisement failure. It is not retried: a grant does not appear
+// by asking again.
+func TestWorkspaceRepositoryAdvertisementReportsADeniedEgressGrant(t *testing.T) {
 	proxy := startEgressRefusalProxy(t, http.StatusForbidden)
+	records, err := advertiseThroughProxy(t, proxy.url)
+
+	api, cause := requireStepOutcome(t, err)
+	require.Equal(t, pkgerrors.CodeForbidden, api.Code)
+	require.Equal(t, "sandbox egress grant denied", api.Message)
+	require.Equal(t, "egress_grant_denied", string(cause.exitClass))
+	require.Equal(t, "403", string(cause.proxyStatus))
+	require.Equal(t, 1, cause.attempts)
+	require.False(t, cause.retryable)
+	require.Equal(t, 1, proxy.connections(), "a denied grant is not retried")
+
+	logged := requireUnverifiedLog(t, records)
+	require.Equal(t, "403", logged.attrs["proxy_status"])
+	require.Equal(t, "egress_grant_denied", logged.attrs["exit_class"])
+	require.Equal(t, "false", logged.attrs["retry_budget_exhausted"])
+}
+
+// Any other proxy answer (407, 502, ...) is reported as `other`, never as its
+// number, and is not retried.
+func TestWorkspaceRepositoryAdvertisementReportsAnotherProxyRefusal(t *testing.T) {
+	proxy := startEgressRefusalProxy(t, http.StatusProxyAuthRequired)
 	records, err := advertiseThroughProxy(t, proxy.url)
 
 	api, cause := requireStepOutcome(t, err)
@@ -239,7 +263,7 @@ func TestWorkspaceRepositoryAdvertisementReportsAnotherProxyRefusal(t *testing.T
 
 	logged := requireUnverifiedLog(t, records)
 	require.Equal(t, "other", logged.attrs["proxy_status"])
-	require.NotContains(t, logged.text, "403")
+	require.NotContains(t, logged.text, "407")
 }
 
 // A refusal that never reached a proxy says so.
@@ -265,7 +289,7 @@ func TestWorkspaceProxyStatusReadsOnlyCurlsConnectPhrase(t *testing.T) {
 		{"fatal: unable to access 'https://h/r.git/': CONNECT tunnel failed, response 429", workspaceProxyStatusQuota},
 		{"fatal: unable to access 'https://h/r.git/': CONNECT tunnel failed, response 429\nmore", workspaceProxyStatusQuota},
 		{"fatal: unable to access 'https://h/r.git/': CONNECT tunnel failed, response 503\r\n", workspaceProxyStatusUnavailable},
-		{"fatal: unable to access 'https://h/r.git/': CONNECT tunnel failed, response 403", workspaceProxyStatusOther},
+		{"fatal: unable to access 'https://h/r.git/': CONNECT tunnel failed, response 403", "403"},
 		{"fatal: unable to access 'https://h/r.git/': CONNECT tunnel failed, response 407", workspaceProxyStatusOther},
 		{"CONNECT tunnel failed, response 4290", workspaceProxyStatusNone},
 		{"CONNECT tunnel failed, response 42", workspaceProxyStatusNone},
@@ -285,6 +309,7 @@ func TestWorkspaceTransferRetriesOnlyAnUnavailableEgressProxy(t *testing.T) {
 		require.True(t, retryableWorkspaceTransfer(command, refusal("503")), verb)
 		require.False(t, retryableWorkspaceTransfer(command, refusal("429")), verb)
 		require.False(t, retryableWorkspaceTransfer(command, refusal("403")), verb)
+		require.False(t, retryableWorkspaceTransfer(command, refusal("407")), verb)
 	}
 	require.False(t, retryableWorkspaceTransfer(workspaceapi.Command{Args: []string{"git", "checkout"}}, refusal("503")))
 	truncated := refusal("503")
@@ -292,5 +317,6 @@ func TestWorkspaceTransferRetriesOnlyAnUnavailableEgressProxy(t *testing.T) {
 	require.False(t, retryableWorkspaceTransfer(workspaceapi.Command{Args: []string{"git", "fetch"}}, truncated))
 	require.Equal(t, workspaceRepositoryExitEgressUnavailable, workspaceRepositoryExitClassFor(refusal("503")))
 	require.Equal(t, workspaceRepositoryExitEgressQuota, workspaceRepositoryExitClassFor(refusal("429")))
-	require.Equal(t, workspaceRepositoryExitFatal, workspaceRepositoryExitClassFor(refusal("403")))
+	require.Equal(t, workspaceRepositoryExitClass("egress_grant_denied"), workspaceRepositoryExitClassFor(refusal("403")))
+	require.Equal(t, workspaceRepositoryExitFatal, workspaceRepositoryExitClassFor(refusal("407")))
 }
