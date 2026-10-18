@@ -278,3 +278,48 @@ The previous feed retains shipped history across failed cycles. Preserve it.
 The private spec host reads that feed for the player header and injects a
 same-origin status banner into mock HTML. Missing feeds show no fabricated
 counts. The banner polls once a minute; the production build has no banner.
+
+## Scheduled cycles (owner install)
+
+Write an external cycle config with absolute paths:
+
+```json
+{
+  "root": "/path/to/checkout",
+  "resultsDirectory": "/path/to/spec-results",
+  "manifest": "/path/to/drift-manifest.json",
+  "journeys": ["default/repo-read-signed-out"],
+  "policy": "/path/to/checkout/.smithers/factory.json"
+}
+```
+
+Use one results directory on the host: its exclusive `browser.lock` covers
+build, mock, live and judges. `cycles.jsonl` records busy cycles as skipped;
+they are never queued again by this script. After a crash, inspect the recorded
+PID before manually removing a stale lock. An optional `judgeSeat` points to the
+existing seat module; live uses the runner's policy, shared daily budget ledger
+and 30-day cache. Without a seat, exact live captures run and judged assertions
+remain unverified. No new model policy or evaluator is introduced.
+
+```sh
+bun apps/app/spec/triggers.ts register /path/to/cycle.json /path/to/checkout
+bun apps/app/spec/triggers.ts list /path/to/cycle.json /path/to/checkout
+bun apps/app/spec/triggers.ts remove /path/to/cycle.json /path/to/checkout
+```
+
+Registrations use the existing local Smithers CLI store: sync every ten minutes,
+live every thirty, overlap skip and no catch-up. `remove` disables these two
+registrations and preserves their history. The operator CLI has no remote
+registration or delete API. Start the existing `smthrs triggers serve` host;
+its normal human approval boundaries remain in force. Registering alone does
+not prove a running schedule or a fifteen-minute rebuild.
+
+Call `triggers.ts main-landed` from the owner's main-landing hook and
+`triggers.ts after-deploy` from the owner's deployment completion hook, with
+the same config and root arguments. These integrations are installation work;
+this script does not install a webhook or modify deployment gates. The flow
+`spec/cycle` wraps the same `cycle.ts sync|live <config>` entrypoint. Runtime
+cycles take build time from `dist-spec/__build.json` and `aheadMaxDays` from the
+factory's `spec` key. Live reads bootstrap without credentials and checks
+captured route contracts; failed bootstrap reads never imply an empty capability
+set. Set `SPEC_RESULTS_DIR` on the spec host to this results directory.
