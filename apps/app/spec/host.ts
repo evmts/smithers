@@ -1,4 +1,5 @@
-import { appendFile, chmod, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises"
+import { constants } from "node:fs"
+import { chmod, mkdir, open, readFile, realpath, stat, writeFile } from "node:fs/promises"
 import { homedir, networkInterfaces } from "node:os"
 import { dirname, extname, resolve, sep } from "node:path"
 import { timingSafeEqual, randomBytes } from "node:crypto"
@@ -41,9 +42,10 @@ export const startHost = async (options: HostOptions = {}) => {
   const hostname = options.hostname ?? (lan ? Object.values(networkInterfaces()).flat().find(address => address?.family === "IPv4" && !address.internal && privateAddress(address.address))?.address : "127.0.0.1")
   if (!hostname || (lan ? !privateAddress(hostname) && !(local && hostname === "127.0.0.1") : hostname !== "127.0.0.1")) throw new Error("Host requires loopback, or a private LAN IPv4 address in LAN mode")
   const resultsDirectory = await realpath(options.resultsDirectory ?? process.env.SPEC_RESULTS_DIR ?? resolve(homedir(), "smithers-spec/results"))
-  const labelsDirectory = resolve(options.labelsDirectory ?? process.env.SPEC_LABELS_DIR ?? resolve(homedir(), "smithers-spec/labels"))
+  let labelsDirectory = resolve(options.labelsDirectory ?? process.env.SPEC_LABELS_DIR ?? resolve(homedir(), "smithers-spec/labels"))
   await mkdir(labelsDirectory, { recursive: true, mode: 0o700 })
-  await noCheckout(await realpath(labelsDirectory))
+  labelsDirectory = await realpath(labelsDirectory)
+  await noCheckout(labelsDirectory)
   const tokenFile = options.tokenFile ?? resolve(homedir(), "smithers-spec/host-token")
   let token = ""
   if (lan) {
@@ -112,7 +114,10 @@ export const startHost = async (options: HostOptions = {}) => {
         const disputed = input.assertions.map(index => ({ index, ...step.assertions[index] }))
         const note = [input.note, ...disputed.map(assertion => `Assertion ${assertion.index + 1}: ${JSON.stringify(assertion)}`)].filter(Boolean).join("\n")
         const label = { ...input, assertions: [], ...(note ? { note } : {}), by, at: new Date().toISOString() }
-        const write = writes.then(() => appendFile(resolve(labelsDirectory, "journey.jsonl"), JSON.stringify(label) + "\n", { mode: 0o600 }))
+        const write = writes.then(async () => {
+          const file = await open(resolve(labelsDirectory, "journey.jsonl"), constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW, 0o600)
+          try { await file.writeFile(JSON.stringify(label) + "\n") } finally { await file.close() }
+        })
         writes = write.catch(() => {})
         try { await write } catch { return reply("Label write failed", 500) }
         return json({ counts: await countLabels() }, 201)

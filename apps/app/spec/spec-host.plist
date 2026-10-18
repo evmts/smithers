@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.smithers.spec-host</string>
+  <key>ProgramArguments</key><array><string>__BUN__</string><string>__CHECKOUT__/apps/app/spec/host.ts</string></array>
+  <key>WorkingDirectory</key><string>__CHECKOUT__</string>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>__HOME__/.local/node/bin:__HOME__/.bun/bin:/opt/homebrew/bin:__HOME__/.local/bin:/usr/bin:/bin</string>
+    <key>SPEC_RESULTS_DIR</key><string>__HOME__/smithers-spec/results</string>
+    <key>SPEC_LABELS_DIR</key><string>__HOME__/smithers-spec/labels</string>
+    <key>SPEC_HOST_PORT</key><string>4790</string>
+    <key>SPEC_HOST_LAN</key><string>0</string>
+    <key>SPEC_HOST_OWNER</key><string>will</string>
+  </dict>
+  <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>__HOME__/smithers-spec/host.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/smithers-spec/host-error.log</string>
+</dict></plist>
