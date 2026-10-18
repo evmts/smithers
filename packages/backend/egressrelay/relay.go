@@ -14,8 +14,9 @@
 // The relay is a guest's route to the bound hosts and nowhere else. It dials
 // only hosts a live binding names, never a private, loopback, link-local or
 // metadata address unless Config.Local names that exact address, and
-// intercepts TLS with its own in-memory CA so HTTPS requests can be
-// substituted. Values live only in this process's memory: they are never
+// intercepts TLS with its own in-memory CA (or Config.CA) so HTTPS requests
+// can be substituted. With Config.UpstreamProxy it reaches those hosts only
+// through that proxy, which then applies the destination policy. Values live only in this process's memory: they are never
 // logged, persisted, or written into the guest. Masking replaces a value's
 // literal, query-escaped and path-escaped bytes, and every run of fragmentMin
 // or more of those bytes; an upstream that echoes a value re-encoded is not
@@ -25,6 +26,7 @@ package egressrelay
 import (
 	"bufio"
 	"context"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -77,6 +79,14 @@ type Config struct {
 	RootCAs *x509.CertPool
 	// DenyCIDRs replaces ironproxy.DefaultUpstreamDenyCIDRs. Tests only.
 	DenyCIDRs []string
+	// CA, when set, signs the leaf certificates of intercepted tunnels in
+	// place of an in-memory CA. CertPEM is the signing certificate, then any
+	// chain above it; leaves are served with that chain.
+	CA *ironproxy.CA
+	// UpstreamProxy, when set, is an HTTP proxy every forwarded request goes
+	// through (CONNECT for https). The relay dials only that proxy, which
+	// applies the destination policy.
+	UpstreamProxy *url.URL
 	// Audit, when set, receives one value-free event per request the relay
 	// decides: forwarded, refused, or failed. It runs on the request's
 	// goroutine, so it must not block; a caller hands the event to a bounded
@@ -116,8 +126,13 @@ type Relay struct {
 	local    map[string]bool
 	deny     []*net.IPNet
 	caCert   *x509.Certificate
-	caKey    *ecdsa.PrivateKey
+	caKey    crypto.Signer
 	caPEM    []byte
+	// caChain is served after each leaf: the given CA and the chain above it.
+	caChain [][]byte
+	// proxy is Config.UpstreamProxy's address, the one destination dial
+	// reaches without the deny list.
+	proxy    string
 	upstream *http.Transport
 	audit    func(AuditEvent)
 
@@ -188,9 +203,18 @@ func New(config Config) (*Relay, error) {
 		}
 		relay.local[localKey(host, port)] = true
 	}
-	ca, err := ironproxy.GenerateCA("Smithers workspace egress relay", 0)
-	if err != nil {
-		return nil, err
+	var ca ironproxy.CA
+	if config.CA != nil {
+		if _, err := ironproxy.ParseCA(config.CA.CertPEM, config.CA.KeyPEM); err != nil {
+			return nil, fmt.Errorf("egress relay CA: %w", err)
+		}
+		ca = *config.CA
+	} else {
+		generated, err := ironproxy.GenerateCA("Smithers workspace egress relay", 0)
+		if err != nil {
+			return nil, err
+		}
+		ca = generated
 	}
 	pair, err := tls.X509KeyPair(ca.CertPEM, ca.KeyPEM)
 	if err != nil {
@@ -200,11 +224,22 @@ func New(config Config) (*Relay, error) {
 	if err != nil {
 		return nil, fmt.Errorf("egress relay CA: %w", err)
 	}
-	relay.caKey = pair.PrivateKey.(*ecdsa.PrivateKey)
-	relay.caPEM = ca.CertPEM
+	signer, ok := pair.PrivateKey.(crypto.Signer)
+	if !ok {
+		return nil, errors.New("egress relay CA key cannot sign")
+	}
+	relay.caKey, relay.caPEM = signer, slices.Clone(ca.CertPEM)
+	if config.CA != nil {
+		relay.caChain = pair.Certificate
+	}
+	var proxy func(*http.Request) (*url.URL, error)
+	if config.UpstreamProxy != nil {
+		proxy = http.ProxyURL(config.UpstreamProxy)
+		relay.proxy = localKey(config.UpstreamProxy.Hostname(), portOf(config.UpstreamProxy))
+	}
 	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 	relay.upstream = &http.Transport{
-		Proxy: nil,
+		Proxy: proxy,
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 			return relay.dial(ctx, dialer, network, address)
 		},
@@ -292,6 +327,22 @@ func (r *Relay) Bind(workspaceID string, secrets []sandbox.EgressProxySecret) (G
 	r.byWorkspace[workspaceID] = token
 	proxyURL := url.URL{Scheme: "http", User: url.UserPassword(proxyUser, token), Host: r.listener.Addr().String()}
 	return Grant{ProxyURL: proxyURL.String(), Hosts: hosts, CACertPEM: slices.Clone(r.caPEM)}, nil
+}
+
+// Mask replaces in text what the relay masks in a response for
+// workspaceID's live binding: every bound value form and every run of
+// fragmentMin or more of its bytes. Text for a workspace without a binding is
+// returned unchanged. A caller uses it on what another process wrote after
+// the relay swapped a value in, such as an upstream proxy's log line.
+func (r *Relay) Mask(workspaceID, text string) string {
+	r.mu.Lock()
+	token, ok := r.byWorkspace[strings.TrimSpace(workspaceID)]
+	bound := r.byToken[token]
+	r.mu.Unlock()
+	if !ok || bound == nil {
+		return text
+	}
+	return bound.mask(text)
 }
 
 // Revoke removes workspaceID's binding. It is idempotent.
@@ -867,14 +918,15 @@ func hostMatches(bound, host string) bool {
 }
 
 // dial refuses private, loopback, link-local and metadata addresses unless
-// Config.Local names the exact destination. It checks the resolved address,
-// so a public name that resolves privately is refused too.
+// Config.Local names the exact destination or it is Config.UpstreamProxy. It
+// checks the resolved address, so a public name that resolves privately is
+// refused too.
 func (r *Relay) dial(ctx context.Context, dialer *net.Dialer, network, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
 		return nil, err
 	}
-	if r.local[localKey(host, port)] {
+	if r.local[localKey(host, port)] || r.proxy != "" && localKey(host, port) == r.proxy {
 		return dialer.DialContext(ctx, network, address)
 	}
 	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
@@ -945,7 +997,7 @@ func (r *Relay) leaf(host string) (*tls.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
-	cert := &tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: parsed}
+	cert := &tls.Certificate{Certificate: append([][]byte{der}, r.caChain...), PrivateKey: key, Leaf: parsed}
 	r.leaves[host] = cert
 	return cert, nil
 }
