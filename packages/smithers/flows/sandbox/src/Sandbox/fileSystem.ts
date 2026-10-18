@@ -184,15 +184,15 @@ const emptyInfo = {
   mtime: Option.none<Date>(),
   atime: Option.none<Date>(),
   birthtime: Option.none<Date>(),
-  dev: 0,
-  ino: Option.none<number>(),
+  dev: 0n,
+  ino: Option.none<bigint>(),
   mode: 0,
-  nlink: Option.none<number>(),
+  nlink: Option.none<bigint>(),
   uid: Option.none<number>(),
   gid: Option.none<number>(),
-  rdev: Option.none<number>(),
+  rdev: Option.none<bigint>(),
   blksize: Option.none<ByteSize.ByteSize>(),
-  blocks: Option.none<number>()
+  blocks: Option.none<bigint>()
 }
 
 const fileTypes: Record<string, FileSystem.File.Info["type"]> = {

@@ -596,13 +596,13 @@ test("the Effect checker takes the range in a published library's peers and the 
   const pin = EXPECTED_EFFECT_VERSION
   const range = SUPPORTED_EFFECT_RANGE
   const library = { peerDependencies: { effect: range } }
-  const off = [UNSUPPORTED_EFFECT_VERSION, "^" + UNSUPPORTED_EFFECT_VERSION, "~" + pin, "4.0.3", "4.0.5", "^4.0.0", "*"]
+  const off = [UNSUPPORTED_EFFECT_VERSION, "^" + UNSUPPORTED_EFFECT_VERSION, "~" + pin, "4.0.3", "4.0.4", "^4.0.0", "*"]
   for (const name of ["effect", "@effect/platform-node", "@effect/sql-sqlite-node", "@effect/sql-pg", "@effect/new-adapter"]) {
     const only = (records, section) =>
       records.filter((record) => record.name === name && record.source === `fixture (${section})`)
     for (const section of ["dependencies", "devDependencies", "optionalDependencies"]) {
       const records = (version) => only(effectDeclarations({ ...library, [section]: { [name]: version } }, "fixture"), section)
-      for (const version of [...off, range]) {
+      for (const version of [...off, "^" + pin]) {
         assert.equal(records(version).length, 1)
         assert.throws(() => assertEffectPins(records(version)), /Effect-family entries off the release policy/, `${section} ${name}@${version}`)
       }
@@ -610,7 +610,7 @@ test("the Effect checker takes the range in a published library's peers and the 
     }
     const peers = (version) =>
       only(effectDeclarations({ peerDependencies: { effect: range, [name]: version } }, "fixture"), "peerDependencies")
-    for (const version of [...off, pin]) {
+    for (const version of [...off, "^" + pin]) {
       assert.equal(peers(version).length, 1)
       assert.throws(() => assertEffectPins(peers(version)), /Effect-family entries off the release policy/, `peer ${name}@${version}`)
     }
@@ -623,18 +623,18 @@ test("the Effect checker reads scoped and duplicate lock entries independently o
   // release, on a stable line as on a release candidate, and for an adapter
   // such as `@effect/sql-pg` that no list in the checker names.
   const pin = EXPECTED_EFFECT_VERSION
-  const pnpm = `packages:\n  effect@${pin}:\n  '@effect/platform-node@4.0.3':\n  '@effect/sql-pg@4.0.5':\n` +
+  const pnpm = `packages:\n  effect@${pin}:\n  '@effect/platform-node@4.0.3':\n  '@effect/sql-pg@4.0.4':\n` +
     `snapshots:\n  '@effect/platform-node@4.0.3(effect@${pin})':\n  '@effect/language-service@0.87.2':\n`
   assert.deepEqual(effectLockVersions(pnpm, "pnpm").map(({ name, version }) => [name, version]), [
-    ["effect", pin], ["@effect/platform-node", "4.0.3"], ["@effect/sql-pg", "4.0.5"], ["@effect/platform-node", "4.0.3"]
+    ["effect", pin], ["@effect/platform-node", "4.0.3"], ["@effect/sql-pg", "4.0.4"], ["@effect/platform-node", "4.0.3"]
   ])
   const bun = `"effect": ["effect@${pin}", ""], "@effect/platform-bun": ["@effect/platform-bun@${UNSUPPORTED_EFFECT_VERSION}", ""], ` +
-    '"@effect/sql-sqlite-bun": ["@effect/sql-sqlite-bun@4.0.5", ""]'
+    '"@effect/sql-sqlite-bun": ["@effect/sql-sqlite-bun@4.0.4", ""]'
   assert.deepEqual(effectLockVersions(bun, "bun").map(({ name, version }) => [name, version]), [
-    ["effect", pin], ["@effect/platform-bun", UNSUPPORTED_EFFECT_VERSION], ["@effect/sql-sqlite-bun", "4.0.5"]
+    ["effect", pin], ["@effect/platform-bun", UNSUPPORTED_EFFECT_VERSION], ["@effect/sql-sqlite-bun", "4.0.4"]
   ])
-  assert.throws(() => assertEffectPins(effectLockVersions(pnpm, "pnpm")), /platform-node@4\.0\.3 must be [\s\S]*sql-pg@4\.0\.5 must be/)
-  assert.throws(() => assertEffectPins(effectLockVersions(bun, "bun")), /platform-bun@4\.0\.0-rc\.\d+ must be [\s\S]*sql-sqlite-bun@4\.0\.5 must be/)
+  assert.throws(() => assertEffectPins(effectLockVersions(pnpm, "pnpm")), /platform-node@4\.0\.3 must be [\s\S]*sql-pg@4\.0\.4 must be/)
+  assert.throws(() => assertEffectPins(effectLockVersions(bun, "bun")), /platform-bun@4\.0\.0-rc\.\d+ must be [\s\S]*sql-sqlite-bun@4\.0\.4 must be/)
   assert.doesNotThrow(() => assertEffectPins(effectLockVersions(`packages:\n  effect@${pin}:\n  '@effect/sql-pg@${pin}':\n`, "pnpm")))
 })
 

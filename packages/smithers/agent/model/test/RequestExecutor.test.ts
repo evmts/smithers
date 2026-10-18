@@ -16,6 +16,7 @@ import * as Request from "effect/http/HttpClientRequest"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Layer from "effect/Layer"
 import * as Random from "effect/Random"
+import * as Redacted from "effect/Redacted"
 import type * as Scope from "effect/Scope"
 import * as TestClock from "effect/testing/TestClock"
 import * as Tracer from "effect/Tracer"
@@ -1876,6 +1877,23 @@ describe("RequestExecutor", () => {
     const form = Request.bodyFormData(Request.post("https://provider.test/v1/models"), formData)
     expect(JSON.stringify(await errorFor({ status: 400, body: "echoed form-secret" }, form)))
       .not.toContain("form-secret")
+  })
+
+  it("scrubs redacted URL parameters even when their names are public", async () => {
+    const sent = Request.post("https://provider.test/v1/models").pipe(
+      Request.setUrlParam("tenant", Redacted.make("redacted-tenant-secret")),
+      Request.setUrlParam("page", "2")
+    )
+    const error = await errorFor({ status: 400, body: "echoed redacted-tenant-secret" }, sent)
+    expect(JSON.stringify(error)).not.toContain("redacted-tenant-secret")
+    const transport = await transportFailure(
+      (attempted) =>
+        new HttpClientError.TransportError({ request: attempted, description: "echoed redacted-tenant-secret" }),
+      sent
+    )
+    expect(transport.message).toContain("tenant=%3Credacted%3E")
+    expect(transport.message).toContain("page=2")
+    expect(transport.message).not.toContain("redacted-tenant-secret")
   })
 
   it("scrubs credentials carried as appended URL parameters", async () => {

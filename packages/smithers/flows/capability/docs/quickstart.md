@@ -14,7 +14,7 @@ model: the package decides, and the caller acts.
 
 - Node.js 26.4.0 or later.
 - The package and its `effect` peer installed:
-  `npm install @smthrs/capability@next effect@^4.0.4`.
+  `npm install @smthrs/capability@next effect@4.0.5`.
 
 ## Parse the configured patterns into rules
 

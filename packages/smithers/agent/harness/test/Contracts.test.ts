@@ -186,6 +186,16 @@ const jevEvents: ReadonlyArray<AgentEvent.AgentEvent> = [
 ]
 
 describe("AgentEvent", () => {
+  it("retains every member and its ordered unique tag after tagged-union validation", () => {
+    const union = AgentEvent.AgentEvent
+    expect(union.members).toHaveLength(48)
+    expect(union.discriminants).toEqual(Object.keys(union.cases))
+    expect(new Set(union.discriminants).size).toBe(48)
+    for (const member of union.members) {
+      expect(Object.values(union.cases)).toContain(member)
+    }
+  })
+
   it("round-trips every stable event variant", () => {
     const events: ReadonlyArray<AgentEvent.AgentEvent> = [
       new AgentEvent.DisciplineArmed({

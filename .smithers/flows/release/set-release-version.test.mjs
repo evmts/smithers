@@ -15,11 +15,11 @@ const example = {
   },
   // A library's Effect peer is a range the cut has no business moving.
   peerDependencies: {
-    effect: "^4.0.4"
+    effect: "4.0.5"
   },
   devDependencies: {
     "@smthrs/kernel": "workspace:*",
-    effect: "4.0.4",
+    effect: "4.0.5",
     vitest: "5.0.0"
   }
 }
@@ -32,11 +32,11 @@ test("retarget moves the version and the exact workspace ranges together", () =>
       "@smthrs/kernel": "0.1.0-next.0"
     },
     peerDependencies: {
-      effect: "^4.0.4"
+      effect: "4.0.5"
     },
     devDependencies: {
       "@smthrs/kernel": "0.1.0-next.0",
-      effect: "4.0.4",
+      effect: "4.0.5",
       vitest: "5.0.0"
     }
   })

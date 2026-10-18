@@ -43,14 +43,14 @@ export const memoryFileSystem = (seed: Record<string, string> = {}) => {
         exists(path) ?
           Effect.succeed({
             type: directory(path) ? "Directory" : "File",
-            dev: 1,
-            ino: Option.some(identity(path)),
+            dev: 1n,
+            ino: Option.some(BigInt(identity(path))),
             mode: directory(path) ? 0o40700 : 0o100600,
             size: ByteSize.bytes(files.get(path)?.byteLength ?? 0),
             mtime: Option.some(new Date(mtimes.get(path) ?? 0)),
             atime: Option.none(),
             birthtime: Option.none(),
-            nlink: Option.some(1),
+            nlink: Option.some(1n),
             uid: Option.none(),
             gid: Option.none(),
             rdev: Option.none(),

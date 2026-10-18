@@ -8,7 +8,7 @@ sidebar:
 ## Requirements
 
 - Node.js 26.4.0 or later.
-- `effect` `^4.0.4`. The package's schemas, layers, and error classes are
+- `effect` `4.0.5`. The package's schemas, layers, and error classes are
   Effect values, so it uses the one `effect` your application installs.
 
 ## Install

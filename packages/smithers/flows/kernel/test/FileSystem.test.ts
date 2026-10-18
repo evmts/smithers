@@ -370,7 +370,7 @@ itEffect("authorizes a no-follow batch with one batched resolve before and after
   volume.entries.set("/workspace/flaky", { kind: "file" })
   // Uninspectable once its grant is decided: the settling resolution refuses it.
   volume.after.set("resolve:/workspace/flaky", () => volume.entries.set("/workspace/flaky", { kind: "locked" }))
-  const info = { type: "File", dev: 7, ino: Option.some(9) } as EffectFileSystem.File.Info
+  const info = { type: "File", dev: 7n, ino: Option.some(9n) } as EffectFileSystem.File.Info
   const frames: Array<string> = []
   type Member = FileSystem.AtomicBatchResponse["entries"][number]
   const answer = (member: FileSystem.AtomicBatchRequest, index: number): Effect.Effect<Array<Member>> => {
@@ -1184,7 +1184,7 @@ describe("FileSystem", () => {
       stat: () =>
         Effect.succeed({
           type: "File",
-          nlink: Option.some(2)
+          nlink: Option.some(2n)
         } as unknown as EffectFileSystem.File.Info),
       writeFile: () =>
         Effect.sync(() => {

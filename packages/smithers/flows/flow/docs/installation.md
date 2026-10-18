@@ -13,8 +13,8 @@ npm install @smthrs/flow@next effect
 
 The `next` tag carries the 1.0 release candidates.
 
-`effect` is a peer dependency of this package, in the range `^4.0.4`. Add one
-`effect` in that range to your own dependencies: your declarations import
+`effect` is a peer dependency of this package, at exactly `4.0.5`. Add one
+`effect` at that version to your own dependencies: your declarations import
 `effect/Schema` and your implementations import `effect/Effect` directly, and two
 copies of `effect` in one program are two sets of service tags.
 
@@ -28,7 +28,7 @@ from, and the canonical JSON checks applied to values.
 ## Use the libraries
 
 Every `@smthrs` library installs from npm the same way. Name each package your
-code imports with the `next` tag, and add one `effect` in the `^4.0.4` range
+code imports with the `next` tag, and add one `effect` in the `4.0.5` range
 the libraries peer. The [Quickstart](./quickstart.md) program needs these:
 
 ```bash

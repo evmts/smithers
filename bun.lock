@@ -10,7 +10,7 @@
         "@babel/plugin-transform-nullish-coalescing-operator": "^7.29.7",
         "@babel/plugin-transform-optional-chaining": "^7.29.7",
         "@babel/plugin-transform-typescript": "^7.29.9",
-        "@effect/platform-node": "4.0.4",
+        "@effect/platform-node": "4.0.5",
         "@playwright/test": "1.62.1",
         "@smthrs/build-cli": "workspace:*",
         "@smthrs/cli": "workspace:*",
@@ -28,7 +28,7 @@
         "@smthrs/targets": "workspace:*",
         "@smthrs/ui": "workspace:*",
         "@types/node": "26.4.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-plugin-jsdoc": "64.3.4",
@@ -54,8 +54,8 @@
     ".smithers/flows": {
       "name": "@smithers/release-workflows",
       "dependencies": {
-        "@effect/platform-bun": "4.0.4",
-        "@effect/platform-node": "4.0.4",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
         "@pierre/diffs": "^1.3.6",
         "@smthrs/agent": "workspace:*",
         "@smthrs/build-cli": "workspace:*",
@@ -82,7 +82,7 @@
         "@smthrs/std": "workspace:*",
         "@smthrs/targets": "workspace:*",
         "@smthrs/ui-styleguide": "workspace:*",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "mermaid": "^11.17.2",
         "microsandbox": "0.6.16",
         "playwright": "1.62.1",
@@ -109,7 +109,7 @@
       "name": "@smthrs/eval-review-seeded-bugs",
       "version": "0.0.0",
       "dependencies": {
-        "@effect/platform-node": "4.0.4",
+        "@effect/platform-node": "4.0.5",
         "@smthrs/agent": "workspace:*",
         "@smthrs/cli": "workspace:*",
         "@smthrs/core": "workspace:*",
@@ -120,7 +120,7 @@
         "@smthrs/model": "workspace:*",
         "@smthrs/registry": "workspace:*",
         "@smthrs/scorers": "workspace:*",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@smthrs/targets": "workspace:*",
@@ -167,7 +167,7 @@
         "@tanstack/react-db": "0.3.7",
         "@xyflow/react": "^12.11.6",
         "dagre": "^0.8.5",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "lib0": "0.2.114",
         "lucide-react": "1.40.0",
         "react": "19.2.8",
@@ -178,7 +178,7 @@
         "zod": "4.5.4",
       },
       "devDependencies": {
-        "@effect/platform-node": "4.0.4",
+        "@effect/platform-node": "4.0.5",
         "@happy-dom/global-registrator": "^20.13.2",
         "@playwright/test": "1.62.1",
         "@smthrs/control": "workspace:*",
@@ -219,7 +219,7 @@
         "@types/node": "26.4.1",
         "alchemy": "2.0.0-beta.82",
         "bun-types": "^1.4.0",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "typescript": "~5.9.3",
       },
     },
@@ -229,7 +229,7 @@
         "@smthrs/harness": "workspace:*",
         "@smthrs/model-host": "workspace:*",
         "@smthrs/rpc": "workspace:*",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@types/node": "26.4.1",
@@ -242,7 +242,7 @@
       "version": "1.0.0",
       "dependencies": {
         "@smthrs/rpc": "workspace:*",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "zod": "4.5.4",
       },
       "devDependencies": {
@@ -265,8 +265,8 @@
       },
       "devDependencies": {
         "@astrojs/check": "^0.9.10",
-        "@effect/platform-node": "4.0.4",
-        "@effect/platform-node-shared": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/platform-node-shared": "4.0.5",
         "@smthrs/agent": "workspace:*",
         "@smthrs/capability": "workspace:*",
         "@smthrs/control": "workspace:*",
@@ -294,7 +294,7 @@
         "@smthrs/testing": "workspace:*",
         "@smthrs/time-travel": "workspace:*",
         "@types/react": "^19.2.18",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "typescript": "~5.9.3",
       },
     },
@@ -305,7 +305,7 @@
         "smithers-tui": "./src/main.tsx",
       },
       "dependencies": {
-        "@effect/platform-node": "4.0.4",
+        "@effect/platform-node": "4.0.5",
         "@opentui/core": "0.5.11",
         "@opentui/react": "0.5.11",
         "@smthrs/agent": "workspace:*",
@@ -326,7 +326,7 @@
         "@smthrs/std": "workspace:*",
         "@smthrs/ui": "workspace:*",
         "diff": "9.0.0",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "react": "19.2.8",
         "string-width": "7.2.0",
       },
@@ -360,7 +360,7 @@
         "@smthrs/core": "workspace:*",
         "@smthrs/evals": "workspace:*",
         "@smthrs/scorers": "workspace:*",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@smthrs/targets": "workspace:*",
@@ -378,7 +378,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -391,7 +391,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/repo-targets": {
@@ -399,7 +399,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@smthrs/targets": "workspace:*",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@smthrs/plan": "workspace:*",
@@ -437,7 +437,7 @@
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "0.3.283",
         "@clack/prompts": "1.7.0",
-        "@effect/sql-sqlite-node": "4.0.4",
+        "@effect/sql-sqlite-node": "4.0.5",
         "@opentui/core": "0.5.11",
         "@opentui/react": "0.5.11",
         "@smthrs/agent": "1.0.0-rc.12",
@@ -490,19 +490,19 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-bun": "4.0.4",
-        "@effect/platform-node": "4.0.4",
-        "@effect/platform-node-shared": "4.0.4",
-        "@effect/sql-pg": "4.0.4",
-        "@effect/sql-sqlite-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@effect/platform-node-shared": "4.0.5",
+        "@effect/sql-pg": "4.0.5",
+        "@effect/sql-sqlite-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/artifacts": "1.0.0-rc.12",
         "@smthrs/testing": "1.0.0-rc.12",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -515,9 +515,9 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "@effect/sql-pg": "4.0.4",
-        "@effect/sql-sqlite-node": "4.0.4",
-        "effect": "4.0.4",
+        "@effect/sql-pg": "4.0.5",
+        "@effect/sql-sqlite-node": "4.0.5",
+        "effect": "4.0.5",
       },
       "optionalPeers": [
         "@effect/sql-pg",
@@ -547,8 +547,8 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/database": "1.0.0-rc.12",
         "@smthrs/engine": "1.0.0-rc.12",
@@ -560,7 +560,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -573,7 +573,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/agent/chain": {
@@ -586,7 +586,7 @@
         "@smthrs/memory": "workspace:*",
         "@smthrs/model": "workspace:*",
         "@smthrs/registry": "workspace:*",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "quickjs-emscripten-core": "0.32.0",
       },
       "devDependencies": {
@@ -621,7 +621,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -634,7 +634,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/agent/fs": {
@@ -646,13 +646,13 @@
         "@smthrs/core": "workspace:*",
         "@smthrs/flow": "workspace:*",
         "@smthrs/registry": "workspace:*",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "incur": "0.5.1",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
@@ -691,14 +691,14 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -711,7 +711,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/agent/harness-detect": {
@@ -772,8 +772,8 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/engine": "1.0.0-rc.12",
         "@smthrs/flows": "1.0.0-rc.12",
@@ -782,7 +782,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -795,7 +795,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/agent/memory": {
@@ -809,12 +809,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.4",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -827,7 +827,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/agent/model": {
@@ -843,13 +843,13 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.4",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/platform-node": "1.0.0-rc.12",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -862,7 +862,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/agent/model-host": {
@@ -874,7 +874,7 @@
         "@smthrs/memory": "workspace:*",
         "@smthrs/model": "workspace:*",
         "@smthrs/rpc": "workspace:*",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "zod": "4.5.4",
       },
       "devDependencies": {
@@ -903,12 +903,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.4",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -921,7 +921,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/agent/registry": {
@@ -937,8 +937,8 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/engine": "1.0.0-rc.12",
         "@smthrs/engine-store": "1.0.0-rc.12",
@@ -949,7 +949,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -962,14 +962,14 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/agent/regression": {
       "name": "@smthrs/eval-agent",
       "version": "0.0.0",
       "dependencies": {
-        "@effect/platform-node": "4.0.4",
+        "@effect/platform-node": "4.0.5",
         "@smthrs/agent": "workspace:*",
         "@smthrs/core": "workspace:*",
         "@smthrs/engine": "workspace:*",
@@ -980,7 +980,7 @@
         "@smthrs/plan": "workspace:*",
         "@smthrs/registry": "workspace:*",
         "@smthrs/scorers": "workspace:*",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "yaml": "2.9.0",
       },
       "devDependencies": {
@@ -1001,15 +1001,15 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/kernel": "1.0.0-rc.12",
         "@smthrs/platform-node": "1.0.0-rc.12",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1022,7 +1022,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/agent/std": {
@@ -1037,8 +1037,8 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/flow": "1.0.0-rc.12",
         "@smthrs/patterns": "1.0.0-rc.12",
@@ -1046,7 +1046,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1059,7 +1059,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/agent/triggers": {
@@ -1071,12 +1071,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.4",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1089,7 +1089,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/build": {
@@ -1102,12 +1102,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
+        "@effect/platform-node": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1120,7 +1120,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/build/build-cli": {
@@ -1156,14 +1156,14 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/platform-node-shared": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/platform-node-shared": "4.0.5",
         "@eslint/js": "9.39.5",
         "@rsbuild/core": "2.2.3",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1175,7 +1175,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/build/infra": {
@@ -1193,7 +1193,7 @@
         "alchemy": "2.0.0-beta.82",
         "aws4fetch": "1.0.20",
         "dprint": "0.55.2",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "eslint": "9.39.1",
         "typescript": "5.9.3",
         "typescript-eslint": "8.65.0",
@@ -1219,7 +1219,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1232,7 +1232,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/control": {
@@ -1252,7 +1252,7 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.4",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/core": "1.0.0-rc.12",
         "@smthrs/engine-store": "1.0.0-rc.12",
@@ -1263,7 +1263,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1276,14 +1276,14 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows": {
       "name": "@smthrs/flows",
       "version": "1.0.0-rc.12",
       "dependencies": {
-        "@effect/sql-sqlite-node": "4.0.4",
+        "@effect/sql-sqlite-node": "4.0.5",
         "@smthrs/artifacts": "1.0.0-rc.12",
         "@smthrs/canonical": "1.0.0-rc.12",
         "@smthrs/capability": "1.0.0-rc.12",
@@ -1313,9 +1313,9 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/platform-node-shared": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/platform-node-shared": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/control": "1.0.0-rc.12",
         "@smthrs/core": "1.0.0-rc.12",
@@ -1328,7 +1328,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
         "eslint-plugin-import": "2.32.0",
@@ -1342,7 +1342,7 @@
       },
       "peerDependencies": {
         "@smthrs/platform-bun": "1.0.0-rc.12",
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
       "optionalPeers": [
         "@smthrs/platform-bun",
@@ -1356,13 +1356,13 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1375,7 +1375,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/canonical": {
@@ -1383,11 +1383,11 @@
       "version": "1.0.0-rc.12",
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.4",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1401,7 +1401,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/capability": {
@@ -1412,12 +1412,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.4",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1431,7 +1431,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/core": {
@@ -1446,14 +1446,14 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/engine": "1.0.0-rc.12",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1466,7 +1466,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/crypto": {
@@ -1474,13 +1474,13 @@
       "version": "1.0.0-rc.12",
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1494,7 +1494,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/database": {
@@ -1502,16 +1502,16 @@
       "version": "1.0.0-rc.12",
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/sql-pg": "4.0.4",
-        "@effect/sql-sqlite-bun": "4.0.4",
-        "@effect/sql-sqlite-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/sql-pg": "4.0.5",
+        "@effect/sql-sqlite-bun": "4.0.5",
+        "@effect/sql-sqlite-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/bun": "1.3.6",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1525,9 +1525,9 @@
       },
       "peerDependencies": {
         "@effect/sql-pg": "*",
-        "@effect/sql-sqlite-bun": "4.0.4",
+        "@effect/sql-sqlite-bun": "4.0.5",
         "@effect/sql-sqlite-node": "*",
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
       "optionalPeers": [
         "@effect/sql-pg",
@@ -1549,13 +1549,13 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1570,7 +1570,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/engine-store": {
@@ -1594,8 +1594,8 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/core": "1.0.0-rc.12",
         "@smthrs/patterns": "1.0.0-rc.12",
@@ -1603,7 +1603,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1617,7 +1617,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/flow": {
@@ -1632,13 +1632,13 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1651,7 +1651,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/jj": {
@@ -1663,12 +1663,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.4",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1681,7 +1681,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/journal": {
@@ -1692,14 +1692,14 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/sql-sqlite-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/sql-sqlite-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/flow": "1.0.0-rc.12",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1713,7 +1713,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/kernel": {
@@ -1727,14 +1727,14 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/database": "1.0.0-rc.12",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1749,7 +1749,7 @@
       },
       "peerDependencies": {
         "@effect/vitest": "*",
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
         "vitest": "^5.0.0",
       },
       "optionalPeers": [
@@ -1766,13 +1766,13 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1786,22 +1786,22 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/observability": {
       "name": "@smthrs/observability",
       "version": "1.0.0-rc.12",
       "dependencies": {
-        "@effect/opentelemetry": "4.0.4",
+        "@effect/opentelemetry": "4.0.5",
         "@opentelemetry/sdk-logs": "0.222.0",
         "@opentelemetry/sdk-metrics": "2.11.0",
         "@smthrs/journal": "1.0.0-rc.12",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/opentelemetry": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/opentelemetry": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@opentelemetry/api": "1.9.1",
         "@opentelemetry/exporter-logs-otlp-http": "0.222.0",
@@ -1813,7 +1813,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1833,7 +1833,7 @@
         "@opentelemetry/sdk-trace-base": ">=2.11.0 <3.0.0",
         "@opentelemetry/sdk-trace-node": ">=2.11.0 <3.0.0",
         "@opentelemetry/sdk-trace-web": ">=2.11.0 <3.0.0",
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
       "optionalPeers": [
         "@opentelemetry/exporter-logs-otlp-http",
@@ -1853,13 +1853,13 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.4",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/core": "1.0.0-rc.12",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1872,7 +1872,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/plan": {
@@ -1885,13 +1885,13 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1905,7 +1905,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/plan-store": {
@@ -1918,13 +1918,13 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1937,7 +1937,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/platform-browser": {
@@ -1949,14 +1949,14 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/artifacts": "1.0.0-rc.12",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1969,7 +1969,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/platform-bun": {
@@ -1985,17 +1985,17 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-bun": "4.0.4",
-        "@effect/platform-node": "4.0.4",
-        "@effect/platform-node-shared": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@effect/platform-node-shared": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/artifacts": "1.0.0-rc.12",
         "@smthrs/platform-node": "1.0.0-rc.12",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2009,7 +2009,7 @@
       },
       "peerDependencies": {
         "@smthrs/platform-node": "1.0.0-rc.12",
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/platform-node": {
@@ -2025,15 +2025,15 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/platform-node-shared": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/platform-node-shared": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/journal": "1.0.0-rc.12",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2046,7 +2046,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/run-store": {
@@ -2060,12 +2060,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.4",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2078,7 +2078,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/sandbox": {
@@ -2090,8 +2090,8 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/flow": "1.0.0-rc.12",
         "@smthrs/platform-node": "1.0.0-rc.12",
@@ -2099,7 +2099,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2113,7 +2113,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/step-cache": {
@@ -2125,12 +2125,12 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.4",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2143,7 +2143,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/sync": {
@@ -2154,8 +2154,8 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/database": "1.0.0-rc.12",
         "@smthrs/engine-store": "1.0.0-rc.12",
@@ -2163,7 +2163,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2177,7 +2177,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/flows/time-travel": {
@@ -2193,8 +2193,8 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/artifacts": "1.0.0-rc.12",
         "@smthrs/engine": "1.0.0-rc.12",
@@ -2205,7 +2205,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2218,7 +2218,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/gateway": {
@@ -2238,10 +2238,10 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-bun": "4.0.4",
-        "@effect/platform-node": "4.0.4",
-        "@effect/platform-node-shared": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@effect/platform-node-shared": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/database": "1.0.0-rc.12",
         "@smthrs/flows": "1.0.0-rc.12",
@@ -2252,7 +2252,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2266,7 +2266,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/mcp": {
@@ -2282,8 +2282,8 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/agent": "1.0.0-rc.12",
         "@smthrs/flow": "1.0.0-rc.12",
@@ -2293,7 +2293,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2306,7 +2306,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/migrate": {
@@ -2324,15 +2324,15 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/platform-node": "4.0.4",
-        "@effect/platform-node-shared": "4.0.4",
-        "@effect/vitest": "4.0.4",
+        "@effect/platform-node": "4.0.5",
+        "@effect/platform-node-shared": "4.0.5",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@types/node": "26.4.1",
         "@typescript/typescript6": "6.0.2",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2358,7 +2358,7 @@
         "@smthrs/registry": "1.0.0-rc.12",
       },
       "peerDependencies": {
-        "effect": "4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/notifications": {
@@ -2371,13 +2371,13 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.4",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/database": "1.0.0-rc.12",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2391,7 +2391,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.5",
       },
     },
     "packages/smithers/ui": {
@@ -2419,7 +2419,7 @@
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "d3-force": "3.0.0",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "radix-ui": "^1.6.7",
         "recharts": "^3.10.1",
         "y-codemirror.next": "0.3.6",
@@ -2496,13 +2496,13 @@
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
-        "@effect/vitest": "4.0.4",
+        "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
         "@smthrs/platform-node": "1.0.0-rc.12",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
-        "effect": "4.0.4",
+        "effect": "4.0.5",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -2515,8 +2515,8 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "@effect/vitest": "4.0.4",
-        "effect": "^4.0.4",
+        "@effect/vitest": "4.0.5",
+        "effect": "4.0.5",
         "vitest": "^5.0.0",
       },
       "optionalPeers": [
@@ -2526,16 +2526,16 @@
     },
   },
   "overrides": {
-    "@effect/opentelemetry": "4.0.4",
-    "@effect/platform-bun": "4.0.4",
-    "@effect/platform-node": "4.0.4",
-    "@effect/platform-node-shared": "4.0.4",
-    "@effect/sql-d1": "4.0.4",
-    "@effect/sql-sqlite-bun": "4.0.4",
-    "@effect/sql-sqlite-do": "4.0.4",
-    "@effect/sql-sqlite-node": "4.0.4",
-    "@effect/vitest": "4.0.4",
-    "effect": "4.0.4",
+    "@effect/opentelemetry": "4.0.5",
+    "@effect/platform-bun": "4.0.5",
+    "@effect/platform-node": "4.0.5",
+    "@effect/platform-node-shared": "4.0.5",
+    "@effect/sql-d1": "4.0.5",
+    "@effect/sql-sqlite-bun": "4.0.5",
+    "@effect/sql-sqlite-do": "4.0.5",
+    "@effect/sql-sqlite-node": "4.0.5",
+    "@effect/vitest": "4.0.5",
+    "effect": "4.0.5",
   },
   "packages": {
     "@alchemy.run/cloudflare-runtime": ["@alchemy.run/cloudflare-runtime@2.0.0-beta.82", "", { "dependencies": { "@alchemy.run/node-utils": "2.0.0-beta.82", "@cloudflare/unenv-preset": "2.16.1", "@puppeteer/browsers": "3.2.2", "capnp-es": "0.0.16", "magic-string": "0.30.21", "mime": "4.1.1", "sharp": "0.35.4", "unenv": "2.0.0-rc.24", "workerd": "1.20261002.1", "yauzl": "3.4.0" }, "peerDependencies": { "@distilled.cloud/cloudflare": "1.0.0-rc.15", "@effect/platform-bun": "4.0.4", "@effect/platform-node": "4.0.4", "effect": "4.0.4", "rolldown": "1.2.5", "vite": "^7.0.0 || ^8.0.0" }, "optionalPeers": ["@effect/platform-bun", "@effect/platform-node", "rolldown", "vite"] }, "sha512-xm+Lrq0ElXtayY5ZO7Bv4WxVgUtCxQxPGRIFESHHoaSssyeSOMK8bXSR5GJzpBnMVYIAoEJ7UA7kGSPn7SzORQ=="],
@@ -2872,25 +2872,25 @@
 
     "@effect/language-service": ["@effect/language-service@0.87.2", "", { "bin": { "effect-language-service": "cli.js" } }, "sha512-CfiSoaVQO8pZgaMZGw5VvMvRGybsJ2LaSDoLYaqiVGvo/YYPYVR2GzUKY0h1NtIweq/+SQ5XLrvtzPIttWQ0GQ=="],
 
-    "@effect/opentelemetry": ["@effect/opentelemetry@4.0.4", "", { "peerDependencies": { "@opentelemetry/api": ">=1.9.0 <2.0.0", "@opentelemetry/api-logs": ">=0.203.0 <0.300.0", "@opentelemetry/resources": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-logs": ">=0.203.0 <0.300.0", "@opentelemetry/sdk-metrics": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-base": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-node": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-web": ">=2.0.0 <3.0.0", "@opentelemetry/semantic-conventions": ">=1.33.0 <2.0.0", "effect": "4.0.4" }, "optionalPeers": ["@opentelemetry/api", "@opentelemetry/api-logs", "@opentelemetry/resources", "@opentelemetry/sdk-logs", "@opentelemetry/sdk-metrics", "@opentelemetry/sdk-trace-base", "@opentelemetry/sdk-trace-node", "@opentelemetry/sdk-trace-web"] }, "sha512-tj2uchUghlc5cxrv4pvtGLNdLweTgchtBa8dEMNxl4jlMF8783+B9Iq95tMvfUqEmE3DCWYIsLe/REkGTCknKQ=="],
+    "@effect/opentelemetry": ["@effect/opentelemetry@4.0.5", "", { "peerDependencies": { "@opentelemetry/api": ">=1.9.0 <2.0.0", "@opentelemetry/api-logs": ">=0.203.0 <0.300.0", "@opentelemetry/resources": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-logs": ">=0.203.0 <0.300.0", "@opentelemetry/sdk-metrics": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-base": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-node": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-web": ">=2.0.0 <3.0.0", "@opentelemetry/semantic-conventions": ">=1.33.0 <2.0.0", "effect": "^4.0.5" }, "optionalPeers": ["@opentelemetry/api", "@opentelemetry/api-logs", "@opentelemetry/resources", "@opentelemetry/sdk-logs", "@opentelemetry/sdk-metrics", "@opentelemetry/sdk-trace-base", "@opentelemetry/sdk-trace-node", "@opentelemetry/sdk-trace-web"] }, "sha512-/Ms5DCZyHZzAbQQtXP4QRCSvHnKXaw3vLnDUegFmO3K3qIRqRdqfVtIqbGa1pbjMKdTShggiitDjRAYOHyWo1A=="],
 
-    "@effect/platform-bun": ["@effect/platform-bun@4.0.4", "", { "dependencies": { "@effect/platform-node-shared": "4.0.4" }, "peerDependencies": { "effect": "4.0.4" } }, "sha512-L5xA9sF2RET7rqi18Q8yUcWq301o+jBMm9GWJixmJWGwzeipzMqjjPk+10vE8vUiHPbtdtJaBSIgs0AJ2jEF1g=="],
+    "@effect/platform-bun": ["@effect/platform-bun@4.0.5", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.5" }, "peerDependencies": { "effect": "^4.0.5" } }, "sha512-tB/GapZ/bVoCbwRgnojGP4TwopvkMoFoSCipXT1sf0guvG/2oRVhWzJW/1vkrYFEdLM7XyRnVVLrSJyqdok7DA=="],
 
-    "@effect/platform-node": ["@effect/platform-node@4.0.4", "", { "dependencies": { "@effect/platform-node-shared": "4.0.4", "undici": "8.11.2" }, "peerDependencies": { "effect": "4.0.4", "redis": ">=5.0.0 <7.0.0" } }, "sha512-SdoyQMrO5zmqBebb2fxDk0sHYyJjBiw4QmLdV2ZcWf3ATpQPge3B5sTLijZg49PadekOwNeO83o5TfdtiiFEig=="],
+    "@effect/platform-node": ["@effect/platform-node@4.0.5", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.5", "undici": "^8.11.2" }, "peerDependencies": { "effect": "^4.0.5", "redis": ">=5.0.0 <7.0.0" } }, "sha512-v4KD5fWvEUa4QmWFpZFbBsRhmfnTP6ETCME2r9ifyXVDPjhfpxpTZl41prjgQFMqZBHdWWCl7YC5ImbXv5ui5g=="],
 
-    "@effect/platform-node-shared": ["@effect/platform-node-shared@4.0.4", "", { "dependencies": { "@types/ws": "8.18.2", "ws": "8.22.0" }, "peerDependencies": { "effect": "4.0.4" } }, "sha512-gh2KRmqGWrJ0FVL8GqnI1GpB+fCfCUI7sGiUZkxxBHyHj1t94rm6VDJffCfuVZWe6GpvYXtizifVczUrgOce8A=="],
+    "@effect/platform-node-shared": ["@effect/platform-node-shared@4.0.5", "", { "dependencies": { "@types/ws": "^8.18.2", "ws": "^8.22.0" }, "peerDependencies": { "effect": "^4.0.5" } }, "sha512-a8rCdEkfZBGe9C6bsIjxVZuRp73svIyK5IHwHdDAVsvZXjrbkxusfI+rZ8WlX31RP1mKizwI/E72GQTNfdMWHw=="],
 
-    "@effect/sql-d1": ["@effect/sql-d1@4.0.4", "", { "dependencies": { "@cloudflare/workers-types": "5.20261012.1" }, "peerDependencies": { "effect": "4.0.4" } }, "sha512-zE5zzv8RCg9DqsrR64N3PPG8+5gtV/IO/xQtJDjssrKbcfkQZqGXrOJ7veqmmoJ2G3dGJqpIa1u1njpzUDnjTA=="],
+    "@effect/sql-d1": ["@effect/sql-d1@4.0.5", "", { "dependencies": { "@cloudflare/workers-types": "^5.20261010.1" }, "peerDependencies": { "effect": "^4.0.5" } }, "sha512-ERArvCS/qOHx52yKFePc8v5qs0y18Ld+Ha6Xkkm/I1R+zTf+flfWpsuxlxkPKlwQCqB9K+yfU6Kw1gshKGRCPQ=="],
 
-    "@effect/sql-pg": ["@effect/sql-pg@4.0.4", "", { "peerDependencies": { "effect": "4.0.4" } }, "sha512-41x5O2C+gRF3A/Sf+IkV+OOzo5BexsIubH1cib3m4NwhZcjQUQUrq5YbOw7fIuWmBODtAyHNXFjaeEtiXoPL9Q=="],
+    "@effect/sql-pg": ["@effect/sql-pg@4.0.5", "", { "peerDependencies": { "effect": "^4.0.5" } }, "sha512-F9tG76H+aryhYcp5pvgd+MwWrNltv3XAuLcZSBsOOX6q+PEl+IM4zkQKzx0TF9OsEMH/SQ+3gZRdYWOsDF+vJQ=="],
 
-    "@effect/sql-sqlite-bun": ["@effect/sql-sqlite-bun@4.0.4", "", { "peerDependencies": { "effect": "4.0.4" } }, "sha512-Ae1qfvi7t7xmuP8EmuwgJ8IINNcgy7caF9dNndBYGOlKeuBTub8xeHnP16nZRhUyn2/h42oB3uyP/trSdaRlIQ=="],
+    "@effect/sql-sqlite-bun": ["@effect/sql-sqlite-bun@4.0.5", "", { "peerDependencies": { "effect": "^4.0.5" } }, "sha512-gL6mOT/BPM/AOWzcHhFphv6092zpgbJC79j29vfORakJ2ZLE/p+Eah9DeahokI6WBOk7AqFcaXsKVnjJBTUNXw=="],
 
-    "@effect/sql-sqlite-do": ["@effect/sql-sqlite-do@4.0.4", "", { "peerDependencies": { "effect": "4.0.4" } }, "sha512-6Uqa6zbm5GPTWjoIVVty8msQ5C+8coPQDzj8qZM9Mk4NXUWa/RVlaziW335mXZ/8tCnQsFj2iJ/CJdv54JXuew=="],
+    "@effect/sql-sqlite-do": ["@effect/sql-sqlite-do@4.0.5", "", { "peerDependencies": { "effect": "^4.0.5" } }, "sha512-TGlU65ZJJMa81I7EoicQXxhRsJDxDPz6A/PNOPzMYRgmCdLs6EsTTXIkKZ+8apb7pl2o0OKVcrT6i6mGlluyLg=="],
 
-    "@effect/sql-sqlite-node": ["@effect/sql-sqlite-node@4.0.4", "", { "peerDependencies": { "effect": "4.0.4" } }, "sha512-dKPaiab7UpRvD+CfkcT2qavV83h9k2Vz5cjvNvwa7DyxZWuf10LQiSl8tJDtXMcz69BMLdy7skUUFFnlXVNROw=="],
+    "@effect/sql-sqlite-node": ["@effect/sql-sqlite-node@4.0.5", "", { "peerDependencies": { "effect": "^4.0.5" } }, "sha512-SHza5qNwiI4dRtUk45wvUfvZq7vB950DW2wD6npzt2aH/tesFfPlZJSDBIvwhazoK+gvDknBOONfKyFZsIF+tg=="],
 
-    "@effect/vitest": ["@effect/vitest@4.0.4", "", { "peerDependencies": { "effect": "4.0.4", "vitest": ">=5.0.0 <6.0.0" } }, "sha512-l5KN46RbDVpqZxWzwXZtX6FVQiyzd+/hTYqL543uSDRo7hC0m19IeICh6O9U/nqCtfersqsNZnBjgHFfkuHsBw=="],
+    "@effect/vitest": ["@effect/vitest@4.0.5", "", { "peerDependencies": { "effect": "^4.0.5", "vitest": ">=5.0.0 <6.0.0" } }, "sha512-q64paZ/i4V2NiRhTyqCmT2KiDbFjlxc2EZrZca8GGt+Nf8844946HyJM5bPk/q+YeRkFSxIrlCs+J+LSfky/wA=="],
 
     "@electric-sql/pglite": ["@electric-sql/pglite@0.3.15", "", {}, "sha512-Cj++n1Mekf9ETfdc16TlDi+cDDQF0W7EcbyRHYOAeZdsAe8M/FJg18itDTSwyHfar2WIezawM9o0EKaRGVKygQ=="],
 
@@ -4280,7 +4280,7 @@
 
     "bun-ffi-structs": ["bun-ffi-structs@0.3.1", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-3gM7PpVWLyrwxWjcilSiGuhWanhZivvo6l0u573NziPH6f/gwk6McbaYgn7oJWov6pKGRTDbrg94W5DcJsKTtQ=="],
 
-    "bun-types": ["bun-types@1.4.0", "", { "dependencies": { "@types/node": "26.4.1" } }, "sha512-iIKw23BspnQQYd3prITOBxeUsxBHnwzX6YJfGMuNOZzeNcMmVqzIIVGRm1l69ogaPQmb4wB6BN8mA5bE9YuC5Q=="],
+    "bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "26.4.1", "undici-types": "8.3.0" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
 
     "bytes": ["bytes@3.1.2", "", {}, "sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg=="],
 
@@ -4558,7 +4558,7 @@
 
     "ee-first": ["ee-first@1.1.1", "", {}, "sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow=="],
 
-    "effect": ["effect@4.0.4", "", {}, "sha512-Sr50OeVSC3M5UkoUYUhFf3EULryhGaZZUf6OzDHTvaznOw7HRlxOKdF3/4nvQXHL22StOyMG3Cvo8Bt7xUp+Ng=="],
+    "effect": ["effect@4.0.5", "", {}, "sha512-BY4/28NlpOd99yzmV741xbVGmp+1U7tks4oB7F/Png64bTa5tm5eCA6W0RiXsnuLDDoJpjfVSo4Dnq4BZb/89Q=="],
 
     "electron-to-chromium": ["electron-to-chromium@1.5.420", "", {}, "sha512-2yD6XreGusOfNV+dUcvipJEXc3n/n7fgr7996aszTG+YY5E4mqM4tOq/3uhP129cazL9YHbVWSpc79ePotWtPA=="],
 
@@ -6104,12 +6104,6 @@
 
     "@smthrs/database/@types/bun": ["@types/bun@1.3.6", "", { "dependencies": { "bun-types": "1.3.6" } }, "sha512-uWCv6FO/8LcpREhenN1d1b6fcspAB+cefwD7uti8C8VffIv0Um08TKMn98FynpTiU38+y2dUO55T11NgDt8VAA=="],
 
-    "@smthrs/eval-agent/bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "26.4.1", "undici-types": "8.3.0" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
-
-    "@smthrs/eval-recommend/bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "26.4.1", "undici-types": "8.3.0" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
-
-    "@smthrs/eval-review-seeded-bugs/bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "26.4.1", "undici-types": "8.3.0" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
-
     "@smthrs/migrate/typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
 
     "@smthrs/rpc/dprint": ["dprint@0.55.2", "", { "optionalDependencies": { "@dprint/android-arm64": "0.55.2", "@dprint/android-x64": "0.55.2", "@dprint/darwin-arm64": "0.55.2", "@dprint/darwin-x64": "0.55.2", "@dprint/linux-arm64-glibc": "0.55.2", "@dprint/linux-arm64-musl": "0.55.2", "@dprint/linux-loong64-glibc": "0.55.2", "@dprint/linux-loong64-musl": "0.55.2", "@dprint/linux-ppc64-glibc": "0.55.2", "@dprint/linux-ppc64-musl": "0.55.2", "@dprint/linux-riscv64-glibc": "0.55.2", "@dprint/linux-x64-glibc": "0.55.2", "@dprint/linux-x64-musl": "0.55.2", "@dprint/win32-arm64": "0.55.2", "@dprint/win32-x64": "0.55.2" }, "bin": { "dprint": "bin.cjs" } }, "sha512-1d4D4SB9KiD2qFnBWbl3aoYjLvPVpZoth28yxTT00xJv2yXugdz0Xoyv7sGG0w0hzE6hQZMgd6B333GnySDpGQ=="],
@@ -6133,8 +6127,6 @@
     "@types/babel__template/@babel/types": ["@babel/types@7.29.8", "", { "dependencies": { "@babel/helper-string-parser": "7.29.7", "@babel/helper-validator-identifier": "7.29.7" } }, "sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg=="],
 
     "@types/babel__traverse/@babel/types": ["@babel/types@7.29.8", "", { "dependencies": { "@babel/helper-string-parser": "7.29.7", "@babel/helper-validator-identifier": "7.29.7" } }, "sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg=="],
-
-    "@types/bun/bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "26.4.1", "undici-types": "8.3.0" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
 
     "@typescript-eslint/visitor-keys/eslint-visitor-keys": ["eslint-visitor-keys@5.0.1", "", {}, "sha512-tD40eHxA35h0PEIZNeIjkHoDR4YjjJp34biM0mDvplBe//mB+IHCqHDGV7pxF+7MklTvighcCPPZC7ynWyjdTA=="],
 
@@ -6271,8 +6263,6 @@
     "sass-lookup/commander": ["commander@12.1.0", "", {}, "sha512-Vw8qHK3bZM9y/P10u3Vib8o/DdkvA2OtPtZvD871QKjy74Wj1WSKFILMPRPSdUSx5RFK1arlJzEtA4PkFgnbuA=="],
 
     "sitemap/@types/node": ["@types/node@24.13.3", "", { "dependencies": { "undici-types": "7.18.2" } }, "sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q=="],
-
-    "smithers-tui/bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "26.4.1" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
 
     "string-width/strip-ansi": ["strip-ansi@7.2.0", "", { "dependencies": { "ansi-regex": "6.3.0" } }, "sha512-yDPMNjp4WyfYBkHnjIRLfca1i6KMyGCtsVgoKe/z1+6vukgaENdgGBZt+ZmKPc4gavvEZ5OgHfHdrazhgNyG7w=="],
 

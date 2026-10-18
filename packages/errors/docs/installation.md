@@ -12,7 +12,7 @@ npm install @smthrs/errors@next effect
 The `next` tag carries the 1.0 release candidates.
 
 The package has no runtime dependencies. `effect` is a peer dependency in the
-range `^4.0.4`, and Node.js 26.4.0 or later is required, declared in `engines`.
+version `4.0.5`, and Node.js 26.4.0 or later is required, declared in `engines`.
 
 ## Import it
 

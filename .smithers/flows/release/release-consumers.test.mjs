@@ -143,14 +143,14 @@ test("a registry spec names its package with or without a scope, a version, a ra
   for (
     const [spec, name] of [
       ["effect", "effect"],
-      ["effect@4.0.4", "effect"],
-      ["effect@^4.0.4", "effect"],
+      ["effect@4.0.5", "effect"],
+      ["effect@^4.0.5", "effect"],
       ["effect@latest", "effect"],
       ["@smthrs/flows", "@smthrs/flows"],
       ["@smthrs/flows@next", "@smthrs/flows"],
       ["@smthrs/flows@1.0.0-rc.5", "@smthrs/flows"],
       ["@effect/sql-sqlite-bun", "@effect/sql-sqlite-bun"],
-      ["@effect/sql-sqlite-bun@>=4.0.4 <5", "@effect/sql-sqlite-bun"]
+      ["@effect/sql-sqlite-bun@>=4.0.5 <5", "@effect/sql-sqlite-bun"]
     ]
   ) assert.equal(specName(spec), name, spec)
 })
@@ -164,7 +164,7 @@ test("the release consumer matrix and the package contract declare no Effect ver
   // release candidate, and the tested release with or without a range operator.
   const tested = EXPECTED_EFFECT_VERSION.replaceAll(".", "\\.")
   const restated = new RegExp(`\\d+\\.\\d+\\.\\d+-rc\\.\\d+|(?<![\\d.])${tested}(?![\\d.])`, "g")
-  assert.deepEqual("0.4.0.44 14.0.4 4.0.40".match(restated), null, "a longer version is another package's")
+  assert.deepEqual("0.4.0.54 14.0.5 4.0.50".match(restated), null, "a longer version is another package's")
   assert.deepEqual(`effect@${EXPECTED_EFFECT_VERSION} ${SUPPORTED_EFFECT_RANGE} ${UNSUPPORTED_EFFECT_VERSION}`.match(restated), [
     EXPECTED_EFFECT_VERSION,
     EXPECTED_EFFECT_VERSION,
@@ -354,8 +354,8 @@ test("consumer tree refuses an off-pin Effect-family dependency even with one co
     // tested release, and fails when the tree holds some other Effect.
     assert.throws(() => assertConsumerTree(consumer, onEffect(profile, later)), /installed another Effect release/)
     install("effect", later)
-    assert.equal(assertConsumerTree(consumer, onEffect(profile, later)).effectFamily.length, 2)
-    assert.throws(() => assertConsumerTree(consumer, profile), /Effect-family packages off/)
+    assert.throws(() => assertConsumerTree(consumer, onEffect(profile, later)), /is outside the supported range/)
+    assert.throws(() => assertConsumerTree(consumer, profile), /is outside the supported range/)
     // An Effect below the range is refused whatever the profile asked for.
     install("effect", UNSUPPORTED_EFFECT_VERSION)
     for (const asked of [profile, onEffect(profile, UNSUPPORTED_EFFECT_VERSION)]) {
@@ -438,8 +438,9 @@ test("each manager refuses an Effect below the supported range, and the gate fai
 
 test("a profile runs on the Effect the registry tags latest, beside the adapter a library pins", { timeout: 5 * 60_000 }, async () => {
   const version = "1.0.0"
-  // A release after the tested one, as the registry will serve it one day.
-  const later = "4.9.0"
+  // The registry currently serves the exact supported cohort.
+  const later = EXPECTED_EFFECT_VERSION
+  assert.equal(satisfies("4.9.0", SUPPORTED_EFFECT_RANGE), false)
   assert.equal(satisfies(later, SUPPORTED_EFFECT_RANGE), true)
   await withRegistries("smithers-effect-latest-", {
     later: [
@@ -509,7 +510,7 @@ test("pnpm's ignored build scripts reduce to package names, without versions", (
     'Run "pnpm approve-builds" to pick which dependencies should be allowed to run scripts.'
   ].join("\n")
   assert.deepEqual(pnpmIgnoredBuilds(output), ["@scope/native", "esbuild"])
-  assert.deepEqual(pnpmIgnoredBuilds("+ effect 4.0.4\nDone in 1s"), [])
+  assert.deepEqual(pnpmIgnoredBuilds("+ effect 4.0.5\nDone in 1s"), [])
 })
 
 test("program imports reduce to package names, without relative and node: specifiers", () => {

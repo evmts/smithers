@@ -122,10 +122,10 @@ test("a relative specifier that stays inside its own package or outside every sr
 
 test("runtime imports allow validated private adapters without admitting unrelated dev dependencies", () => {
   const manifest = {
-    dependencies: { effect: "4.0.4" },
+    dependencies: { effect: "4.0.5" },
     devDependencies: {
-      "@effect/platform-node": "4.0.4",
-      "@effect/platform-node-shared": "4.0.4",
+      "@effect/platform-node": "4.0.5",
+      "@effect/platform-node-shared": "4.0.5",
       typescript: "6.0.3",
     },
     smthrs: { privateEffectAdapters: ["@effect/platform-node", "@effect/platform-node-shared"] },
@@ -143,13 +143,13 @@ test("runtime imports allow validated private adapters without admitting unrelat
   const library = {
     ...manifest,
     dependencies: {},
-    peerDependencies: { effect: "^4.0.4" },
-    devDependencies: { ...manifest.devDependencies, effect: "4.0.4" },
+    peerDependencies: { effect: "4.0.5" },
+    devDependencies: { ...manifest.devDependencies, effect: "4.0.5" },
   }
   assert.ok(dependencySets({ manifest: library }).runtime.has("@effect/platform-node"))
   assert.throws(
-    () => dependencySets({ manifest: { ...library, peerDependencies: { effect: "4.0.4" } } }),
-    /Effect peer that starts at their build release/
+    () => dependencySets({ manifest: { ...library, peerDependencies: { effect: "^4.0.5" } } }),
+    /exact Effect peer matching their build release/
   )
 })
 
@@ -157,9 +157,9 @@ test("runtime imports allow validated private adapters without admitting unrelat
 // and a shipped driver module may import it.
 test("an optional peer named only in peerDependenciesMeta is a runtime dependency", () => {
   const manifest = {
-    peerDependencies: { effect: "^4.0.4" },
+    peerDependencies: { effect: "4.0.5" },
     peerDependenciesMeta: { "@effect/sql-pg": { optional: true }, typescript: { optional: false } },
-    devDependencies: { "@effect/sql-pg": "4.0.4", effect: "4.0.4" },
+    devDependencies: { "@effect/sql-pg": "4.0.5", effect: "4.0.5" },
   }
   const { runtime } = dependencySets({ manifest })
   assert.ok(runtime.has("@effect/sql-pg"))

@@ -17,7 +17,7 @@ The `next` tag carries the 1.0 release candidates.
 
 - Node.js 26.4.0 or later for the Node runtime, matching the package's
   `engines` field.
-- [`effect`](https://effect.website) in the range `^4.0.4`, as a peer
+- [`effect`](https://effect.website) at exactly `4.0.5`, as a peer
   dependency. Install one `effect` in the consuming project, so the service
   tags and schemas this package exports are the same class instances the
   project constructs.

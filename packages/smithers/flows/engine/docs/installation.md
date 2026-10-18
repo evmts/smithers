@@ -19,7 +19,7 @@ author against: `Flow`, `Action`, `DurableDeferred`, `DurableClock`, and
 resolve.
 
 `effect` is the peer everything is built on. This release accepts
-`effect@^4.0.4`; install one `effect` in that range, because two copies of `effect`
+`effect@4.0.5`; install one `effect` at that version, because two copies of `effect`
 in one process split the service context and a flow authored against one
 instance is not runnable by an engine holding the other.
 

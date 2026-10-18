@@ -19,8 +19,8 @@ CommonJS with TypeScript declarations. Its dependencies install with it:
 [`@smthrs/journal`](/api/journal) for the `OwnerId` fencing token, and
 [`@smthrs/observability`](/api/observability) for the shared throughput metric.
 
-[`effect`](https://effect.website) is a peer dependency in the range
-`^4.0.4`, so install one `effect` in that range. Two copies of `effect` in one
+[`effect`](https://effect.website) is a peer dependency in the version
+`4.0.5`, so install one `effect` at that version. Two copies of `effect` in one
 program are two sets of service tags, and a store layer built against one copy
 cannot be provided to a program holding the other: the mismatch surfaces as a
 missing service rather than as a version error.

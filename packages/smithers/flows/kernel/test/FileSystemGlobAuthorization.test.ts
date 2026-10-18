@@ -5,7 +5,7 @@ import * as Guarded from "../src/FileSystem.ts"
 import * as GrantStore from "../src/GrantStore.ts"
 import * as Workspace from "../src/Workspace.ts"
 
-const info = { type: "Directory", dev: 7, ino: Option.some(9) } as FileSystem.File.Info
+const info = { type: "Directory", dev: 7n, ino: Option.some(9n) } as FileSystem.File.Info
 
 /**
  * Model Windows' invalid-name refusal on wildcard lookup on every CI host.

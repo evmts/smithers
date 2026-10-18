@@ -4,7 +4,7 @@ import { declaredRanges } from "./check-lockfile-parity.mjs"
 
 test("an optional peer named only in peerDependenciesMeta is a peer of any version, as Bun records it", () => {
   const pkg = {
-    peerDependencies: { effect: "^4.0.4", "@effect/sql-pg": "^4.0.4" },
+    peerDependencies: { effect: "4.0.5", "@effect/sql-pg": "4.0.5" },
     peerDependenciesMeta: {
       "@effect/sql-pg": { optional: true },
       "@effect/sql-sqlite-node": { optional: true },
@@ -13,8 +13,8 @@ test("an optional peer named only in peerDependenciesMeta is a peer of any versi
     dependencies: { undici: "8.11.2" }
   }
   assert.deepEqual(declaredRanges(pkg, "peerDependencies"), {
-    effect: "^4.0.4",
-    "@effect/sql-pg": "^4.0.4",
+    effect: "4.0.5",
+    "@effect/sql-pg": "4.0.5",
     "@effect/sql-sqlite-node": "*"
   })
   assert.deepEqual(declaredRanges(pkg, "dependencies"), { undici: "8.11.2" })

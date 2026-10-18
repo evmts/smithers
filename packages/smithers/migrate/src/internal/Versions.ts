@@ -17,18 +17,16 @@
  * @since 1.0.0-rc.0
  * @private
  */
-export const effectVersion = "4.0.4"
+export const effectVersion = "4.0.5"
 
 /**
- * The Effect range a migrated manifest's `peerDependencies` end on: the range
- * every published `@smthrs/*` library accepts. A peer is installed by whoever
- * consumes the migrated package, so it carries what Smithers supports, not the
- * one release the migration ran on.
+ * The exact Effect peer a migrated manifest requires. It matches the runtime
+ * pin; wider supported ranges are tracked in #4238.
  *
  * @since 1.0.0-rc.5
  * @private
  */
-export const effectRange = "^4.0.4"
+export const effectRange = "4.0.5"
 
 /**
  * What the `effect` entry of one manifest field ends on: {@link effectRange}

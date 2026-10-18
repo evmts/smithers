@@ -283,16 +283,16 @@ const toInfo = (value: unknown): FileSystem.File.Info => {
     mtime: Option.some(date(info.mtime, "mtime")),
     atime: Option.some(date(info.atime, "atime")),
     birthtime: optional(info.birthtime, (raw) => date(raw, "birthtime")),
-    dev: integer(info.dev, "dev"),
-    ino: optional(info.ino, (raw) => integer(raw, "ino")),
+    dev: BigInt(integer(info.dev, "dev")),
+    ino: optional(info.ino, (raw) => BigInt(integer(raw, "ino"))),
     mode: integer(info.mode, "mode"),
-    nlink: Option.some(integer(info.nlink, "nlink")),
+    nlink: Option.some(BigInt(integer(info.nlink, "nlink"))),
     uid: Option.some(integer(info.uid, "uid")),
     gid: Option.some(integer(info.gid, "gid")),
-    rdev: Option.some(integer(info.rdev, "rdev")),
+    rdev: Option.some(BigInt(integer(info.rdev, "rdev"))),
     size: size(info.size, "size"),
     blksize: optional(info.blksize, (raw) => size(raw, "blksize")),
-    blocks: optional(info.blocks, (raw) => integer(raw, "blocks"))
+    blocks: optional(info.blocks, (raw) => BigInt(integer(raw, "blocks")))
   }
 }
 

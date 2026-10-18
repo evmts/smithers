@@ -49,13 +49,13 @@ the `next` tag.
   "devDependencies": {
     "@smthrs/build-cli": "1.0.0-rc.12",
     "@smthrs/targets": "1.0.0-rc.12",
-    "effect": "4.0.4"
+    "effect": "4.0.5"
   }
 }
 ```
 
 It ships dual ESM/CommonJS output, targets Node.js 26.4.0 or later, and takes
-`effect` in the range `^4.0.4` as a peer dependency.
+`effect` at exactly `4.0.5` as a peer dependency.
 
 ## The shortest real example
 

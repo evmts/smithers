@@ -29,7 +29,7 @@ export type EffectModule = Pick<typeof Effect, "succeed">
 /** One schema of the corpus, built on demand so a failing build is one entry's failure. */
 export type Entry = () => Schema.Top
 
-/** The 4.0.4 name of each check rc.115 exported under another name. */
+/** The 4.0.5 name of each check rc.115 exported under another name. */
 export const renamedSinceRc115 = {
   isStartingWith: "isStartsWith",
   isEndingWith: "isEndsWith",

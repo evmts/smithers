@@ -131,7 +131,7 @@ describe("MigrateFlow.postconditions", () => {
       const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
         dependencies: Record<string, string>
       }
-      manifest.dependencies["effect"] = "4.0.4"
+      manifest.dependencies["effect"] = "4.0.5"
       writeFileSync(join(root, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`)
 
       const dependenciesAfter = yield* MigrateFlow.postconditions(root, dependencies)
@@ -142,25 +142,25 @@ describe("MigrateFlow.postconditions", () => {
       const pinCheck = "effect is pinned to the version this release ships"
       writeFileSync(
         join(root, "package.json"),
-        `${JSON.stringify({ ...manifest, peerDependencies: { effect: "4.0.4" } }, null, 2)}\n`
+        `${JSON.stringify({ ...manifest, peerDependencies: { effect: "^4.0.5" } }, null, 2)}\n`
       )
       const exactPeer = yield* MigrateFlow.postconditions(root, dependencies)
       expect(exactPeer.find((check) => check.name === pinCheck)?.findings.map((finding) => finding.message))
-        .toEqual(["peerDependencies.\"effect\" is 4.0.4; the migration writes ^4.0.4"])
+        .toEqual(["peerDependencies.\"effect\" is ^4.0.5; the migration writes 4.0.5"])
       writeFileSync(
         join(root, "package.json"),
-        `${JSON.stringify({ ...manifest, peerDependencies: { effect: "^4.0.4" } }, null, 2)}\n`
+        `${JSON.stringify({ ...manifest, peerDependencies: { effect: "4.0.5" } }, null, 2)}\n`
       )
       const rangedPeer = yield* MigrateFlow.postconditions(root, dependencies)
       expect(rangedPeer.every((check) => check.ok)).toBe(true)
       // And a range where the project installs effect is a finding.
       writeFileSync(
         join(root, "package.json"),
-        `${JSON.stringify({ ...manifest, dependencies: { ...manifest.dependencies, effect: "^4.0.4" } }, null, 2)}\n`
+        `${JSON.stringify({ ...manifest, dependencies: { ...manifest.dependencies, effect: "^4.0.5" } }, null, 2)}\n`
       )
       const rangedInstall = yield* MigrateFlow.postconditions(root, dependencies)
       expect(rangedInstall.find((check) => check.name === pinCheck)?.findings.map((finding) => finding.message))
-        .toEqual(["dependencies.\"effect\" is ^4.0.4; the migration writes 4.0.4"])
+        .toEqual(["dependencies.\"effect\" is ^4.0.5; the migration writes 4.0.5"])
 
       delete manifest.dependencies["smthrs"]
       writeFileSync(join(root, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`)

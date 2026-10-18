@@ -46,12 +46,12 @@ npm install -g smthrs@next
 
 ## Install the executable
 
-The executable selects `effect@4.0.4` through its peer and depends on
-`@effect/sql-sqlite-node@4.0.4` because its
+The executable selects `effect@4.0.5` through its peer and depends on
+`@effect/sql-sqlite-node@4.0.5` because its
 default runtime opens SQLite, so every package manager installs it with the
 CLI. The
 database library itself keeps SQLite optional for driver-neutral consumers.
-The CLI’s optional PostgreSQL adapter is `@effect/sql-pg@4.0.4`.
+The CLI’s optional PostgreSQL adapter is `@effect/sql-pg@4.0.5`.
 
 Confirm what you got, and what the registry offers, with the CLI itself:
 
@@ -146,8 +146,9 @@ npx smthrs targets
 ```
 
 The loader and declarations must resolve the same physical Effect and Smithers
-packages. The CLI and authoring packages take `effect` as a `^4.0.4` peer,
-so npm selects one shared runtime without an explicit pin. A separately
+packages. The CLI and authoring packages require exactly `effect@4.0.5`. Your application
+must use the same version. A wider supported range is tracked in
+[#4238](https://github.com/smithersai/smithers/issues/4238). A separately
 installed global CLI reports `declaration_dependency_mismatch` even when
 versions match. The
 [first-target tutorial](https://github.com/smithersai/smithers/blob/main/packages/smithers/build/docs/getting-started/first-build.md) walks

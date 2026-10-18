@@ -874,12 +874,12 @@
     "redis": "6.2.1",
     "@types/ws": "8.18.2",
     "ws": "8.22.0",
-    "@effect/sql-sqlite-node": "4.0.4"
+    "@effect/sql-sqlite-node": "4.0.5"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/sql-sqlite-node": "4.0.4",
-    "@effect/vitest": "4.0.4",
+    "@effect/sql-sqlite-node": "4.0.5",
+    "@effect/vitest": "4.0.5",
     "@eslint/js": "9.39.5",
     "@smthrs/artifacts": "1.0.0-rc.12",
     "@smthrs/testing": "1.0.0-rc.12",
@@ -895,17 +895,17 @@
     "madge": "8.0.0",
     "typescript-eslint": "8.69.0",
     "vitest": "5.0.0",
-    "@effect/platform-node": "4.0.4",
-    "@effect/platform-node-shared": "4.0.4",
-    "effect": "4.0.4",
+    "@effect/platform-node": "4.0.5",
+    "@effect/platform-node-shared": "4.0.5",
+    "effect": "4.0.5",
     "fast-check": "4.9.0",
-    "@effect/sql-pg": "4.0.4",
-    "@effect/platform-bun": "4.0.4"
+    "@effect/sql-pg": "4.0.5",
+    "@effect/platform-bun": "4.0.5"
   },
   "peerDependencies": {
-    "effect": "4.0.4",
-    "@effect/sql-pg": "4.0.4",
-    "@effect/sql-sqlite-node": "4.0.4"
+    "effect": "4.0.5",
+    "@effect/sql-pg": "4.0.5",
+    "@effect/sql-sqlite-node": "4.0.5"
   },
   "peerDependenciesMeta": {
     "@effect/sql-pg": {
