@@ -103,3 +103,12 @@ export const repositorySubjectRoot = (pathname: string): string | undefined => {
   const root = `/${target.owner}/${target.name}`
   return isRepositoryPath(root) ? root : undefined
 }
+
+
+/** The canonical replacement for a retired repository subject, preserving query. */
+export const repositoryRedirectPath = (pathname: string): string | undefined => {
+  const target = splitRepositoryPath(pathname)
+  if (target?.subject?.kind !== "redirect") return undefined
+  const root = `/${target.owner}/${target.name}`
+  return isRepositoryPath(root) ? `${root}/${target.subject.to}` : undefined
+}

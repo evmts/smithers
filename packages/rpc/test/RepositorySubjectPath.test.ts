@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  formatRepositorySubject,
   isCommitRevision,
   parseRepositorySubject,
   REPOSITORY_LOCATION_MAX_SEGMENTS,
@@ -264,5 +265,46 @@ describe("isCommitRevision", () => {
     expect(isCommitRevision("3bad5fe63720eb8e3f7ae33a10de9e7aefb2dc7")).toBe(false)
     expect(isCommitRevision("main")).toBe(false)
     expect(isCommitRevision("")).toBe(false)
+  })
+})
+
+describe("Monday repository subjects", () => {
+  const cases = [
+    ["commits", { kind: "commits" }],
+    ["commits/release/1.2/src", { kind: "commits", location: "release/1.2/src" }],
+    ["commit/abcdef1", { kind: "commit", sha: "abcdef1" }],
+    ["branches", { kind: "branches" }],
+    ["flows", { kind: "flows" }],
+    ["flows/build", { kind: "flows", name: "build" }],
+    ["settings", { kind: "settings" }],
+    ["settings/secrets", { kind: "settings", section: "secrets" }],
+    ["search", { kind: "search", q: "" }],
+    ["runs", { kind: "runs" }],
+    ["runs/run-1", { kind: "run", id: "run-1" }],
+    ["approvals", { kind: "approvals" }],
+    ["actions", { kind: "redirect", to: "runs" }],
+    ["labels", { kind: "redirect", to: "issues", from: "labels" }],
+    ["milestones", { kind: "redirect", to: "issues", from: "milestones" }]
+  ] as const
+  it.each(cases)("parses and round trips %s", (path, subject) => {
+    expect(parseRepositorySubject(path.split("/"))).toEqual(subject)
+    expect(splitRepositoryPath(`/o/r/${formatRepositorySubject(subject)}`)?.subject).toEqual(subject)
+  })
+  it("keeps search q including reserved characters", () => {
+    const subject = { kind: "search", q: "path:a/b + c" } as const
+    expect(splitRepositoryPath(`/o/r/${formatRepositorySubject(subject)}`)?.subject).toEqual(subject)
+  })
+  it.each([
+    "blame/main/a",
+    "tags",
+    "releases",
+    "wiki",
+    "stack",
+    "branches/extra",
+    "settings/a/b",
+    "commit/nope",
+    "runs/a/b"
+  ])("refuses %s", (path) => {
+    expect(parseRepositorySubject(path.split("/"))).toBeUndefined()
   })
 })
