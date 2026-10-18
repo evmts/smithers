@@ -12,14 +12,15 @@ export const checkpoint = async (frame: HTMLIFrameElement, definition: Journey, 
   if (url.origin !== location.origin) throw new Error("Mock route must stay on the spec host")
   url.searchParams.set("__spec_mock", "1")
   for (const [key, value] of Object.entries({ ...definition.world.variant, ...variant })) url.searchParams.set(key, value)
-  await new Promise<void>((resolve, reject) => {
+  const navigate = (destination: string) => new Promise<void>((resolve, reject) => {
     const abort = () => { cleanup(); reject(new DOMException("Cancelled", "AbortError")) }
     const load = () => { cleanup(); resolve() }
     const timeout = setTimeout(() => { cleanup(); reject(new Error("Checkpoint timed out")) }, 20_000)
     const cleanup = () => { clearTimeout(timeout); frame.removeEventListener("load", load); signal.removeEventListener("abort", abort) }
     if (signal.aborted) { abort(); return }
-    frame.addEventListener("load", load, { once: true }); signal.addEventListener("abort", abort, { once: true }); frame.src = url.href
+    frame.addEventListener("load", load, { once: true }); signal.addEventListener("abort", abort, { once: true }); frame.src = destination
   })
+  await navigate(url.href)
   const find = (target: Element, root: Document | HTMLElement): HTMLElement | undefined => {
     const scope = target.within ? find(target.within, root) : root
     if (!scope) return undefined
@@ -42,7 +43,13 @@ export const checkpoint = async (frame: HTMLIFrameElement, definition: Journey, 
     while (!signal.aborted && !(control = find(target, frame.contentDocument!)) && Date.now() < deadline) await sleep(50)
     if (signal.aborted) throw new DOMException("Cancelled", "AbortError")
     if (!control) throw new Error(`Checkpoint control unavailable: ${target.name ?? target.role}`)
-    if (step.click) control.click()
+    if (step.click) {
+      const link = control.closest("a")
+      if (link?.target === "_blank") {
+        if (new URL(link.href).origin !== location.origin) throw new Error("Linked document must stay on the spec host")
+        await navigate(link.href)
+      } else control.click()
+    }
     else if (step.type) {
       const value = interpolate(step.type.text, bindings)
       const win = frame.contentWindow!

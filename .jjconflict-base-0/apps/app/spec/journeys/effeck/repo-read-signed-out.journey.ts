@@ -7,6 +7,6 @@ export default journey({
   bind: { wholeFile: { read: "GET /api/repos/:repo/contents/docs/user/src/001-onboarding.md", pick: "fileText" } },
   steps: [
     { caption: "Read Effeck home", go: "/${repo}", expect: [...mondayClaim,{ see: { role: "link", name: "Install Effeck" } }, { see: { role: "link", name: "Docs" } }, { text: "README" }] },
-    { caption: "Read the whole Docs file", go: "/${repo}/blob/main/docs/user/src/001-onboarding.md", expect: [...mondayClaim,{ absent: "Truncated" }, { text: "${wholeFile}" }, { shape: "GET /api/repos/:repo/contents/docs/user/src/001-onboarding.md", schema: "RepoContents" }] }
+    { caption: "Read the whole Docs file", click: { role: "link", name: "Docs" }, expect: [...mondayClaim,{ absent: "Truncated" }, { text: "${wholeFile}" }, { shape: "GET /api/repos/:repo/contents/docs/user/src/001-onboarding.md", schema: "RepoContents" }] }
   ]
 })

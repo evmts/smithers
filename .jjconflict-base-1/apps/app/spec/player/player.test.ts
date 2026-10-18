@@ -120,3 +120,36 @@ test("thumbs persist one line per action, retain disputed chips and update count
     await page.screenshot({ path: resolve(process.env.SPEC_PLAYER_EVIDENCE ?? root, "player-live-labels.png"), fullPage: true })
   } finally { await context.close() }
 }, 30_000)
+
+test("index exposes every P1 case with distinct links and restores the last state", async () => {
+  const context = await browser.newContext()
+  try {
+    const page = await context.newPage()
+    await page.goto(host.origin)
+    await browserExpect(page.getByRole("link", { name: "default/github-paths", exact: true })).toBeVisible()
+    for (const id of ["default/line-to-run", "default/waiting-on-you", "default/issue-to-stack", "default/settings-models-no", "default/settings-models-yes"])
+      await browserExpect(page.getByRole("link", { name: id, exact: true })).toBeVisible()
+    await browserExpect(page.locator('a[href^="?journey=default%2Fstates-"]')).toHaveCount(80)
+    await page.getByRole("link", { name: "default/states-16-denied", exact: true }).click()
+    await browserExpect(page.locator("#count")).toHaveText("1/1")
+    await browserExpect(page.locator("#caption")).toHaveText("default/states-16-denied")
+    await browserExpect(page.locator('iframe[title="Mock checkpoint"]')).toHaveAttribute("src", /access=denied/)
+    await page.reload()
+    await browserExpect(page.locator("#caption")).toHaveText("default/states-16-denied")
+  } finally { await context.close() }
+}, 30000)
+
+
+test("player follows the home Docs link when restoring L3", async () => {
+  const context = await browser.newContext()
+  try {
+    const page = await context.newPage()
+    await page.goto(`${host.origin}/?journey=effeck/repo-read-signed-out&s=1`)
+    await browserExpect(page.locator("#caption")).toHaveText("Read the whole Docs file")
+    await browserExpect(page.getByRole("button", { name: "Try it", exact: true })).toBeEnabled()
+    const frame = page.frameLocator('iframe[title="Mock checkpoint"]')
+    await browserExpect(page.locator('iframe[title="Mock checkpoint"]')).toHaveAttribute("src", /docs\/user\/src\/001-onboarding.md/)
+    await browserExpect(frame.locator("body")).toContainText("END OF EFFECK ONBOARDING")
+    await browserExpect(frame.getByText("Truncated", { exact: true })).toHaveCount(0)
+  } finally { await context.close() }
+}, 30000)

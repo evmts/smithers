@@ -31,8 +31,10 @@ reaches the static server, including requests originating in workers.
 
 Known product gaps are retained as failing tests, outside the D1 transport gate:
 `SPEC_PRODUCT_GAPS=1 pnpm exec playwright test --config playwright.spec.config.ts --workers=1`.
-They assert whole long files (L3/L4) and semantic README headings; the product
-currently clips file cards at 16 KiB and draws homepage headings without roles.
+They retain chat file-card cap and semantic README heading checks. L3 follows
+the home Docs link to the 6 KiB `docs/user/src/001-onboarding.md`; blob files up
+to 512 KiB must display whole, without “Truncated” (PM repo-ui view 2).
+The onboarding fixture is synthetic prose of the real file’s size class.
 
 # Journey runner
 
@@ -236,5 +238,25 @@ owner's `Tailscale-User-Login` value. LAN defaults to `will`. Real owner counts
 remain zero until the owner labels real judged evidence; test fixtures do not
 calibrate a model. A mock receipt whose revision differs from the currently
 served build is hidden, and the host refuses labels for it. Rerun mock after
-each build before labeling it. The integrated spec typecheck inherits the six
-known errors documented by spec2/spec4; no clean whole-tree check is claimed.
+each build before labeling it. Run `pnpm install --frozen-lockfile --ignore-scripts` before typechecking;
+cloned node_modules can retain stale Effect types (spec10).
+
+## Case modules
+
+A journey module exports either one journey or an array of cases. Each case has
+its own stable ID, receipts, captures and player link. The CLI expands all cases
+in module order; `journeyMock` uses `mock --all` to discover every module.
+Missing site worlds remain unverified, and product assertion failures still fail.
+The six P1 modules alone contain 86 definitions and 124 mock checkpoints.
+Source revision lookup tolerates concurrent jj operation heads without snapshotting.
+
+For a shorter assertion budget during gap collection, pass
+`--assertion-timeout-ms 1500`; the default remains 5000 ms. This changes waiting
+time, never assertions or verdicts. Manual signed-out production collection:
+
+```sh
+bun apps/app/spec/run.ts live smithers/landing-install --results-file l1-live.json
+(cd apps/app && SPEC_P1_LIVE=1 bun test --isolate spec/p1.test.ts)
+```
+
+Queue `test.txt` commands stay offline; live collection is an operator action.

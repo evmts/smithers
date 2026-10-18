@@ -15,7 +15,7 @@ export const spec = {
   failures: [] as string[],
   violations: [] as string[],
   sockets: [] as string[],
-  world: defaultWorld(new URLSearchParams(location.search)),
+  world: defaultWorld(new URLSearchParams(location.search), location.origin),
   assertClean() {
     if (this.failures.length || this.violations.length) throw new Error([...this.failures, ...this.violations].join("\n"))
   }

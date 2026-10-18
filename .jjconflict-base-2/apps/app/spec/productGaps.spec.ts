@@ -5,7 +5,7 @@ import { staticServer } from "./staticServer"
 let host: Awaited<ReturnType<typeof staticServer>>
 test.beforeAll(async () => { host = await staticServer(resolve("dist-spec")) })
 test.afterAll(async () => { await host.close() })
-for (const [repo, path] of [["effeck/effeck", "docs/guide.md"], ["smithers-canary/smithers", "src/runtime.ts"]]) {
+for (const [repo, path] of [["effeck/effeck", "docs/user/src/001-onboarding.md"], ["smithers-canary/smithers", "src/runtime.ts"]]) {
   test(`${repo} shows the whole ${path} (L3/L4)`, async ({ page }) => {
     await page.goto(`${host.origin}/${repo}`)
     await page.getByRole("button", { name: "Chat", exact: true }).click()
@@ -18,7 +18,7 @@ for (const [repo, path] of [["effeck/effeck", "docs/guide.md"], ["smithers-canar
     await expect.poll(async () => {
       await card.locator(".cm-scroller").evaluate(node => { node.scrollTop = node.scrollHeight })
       return card.textContent()
-    }).toContain(repo === "effeck/effeck" ? "END OF EFFECK GUIDE" : "END OF LONG TYPESCRIPT FILE")
+    }).toContain(repo === "effeck/effeck" ? "END OF EFFECK ONBOARDING" : "END OF LONG TYPESCRIPT FILE")
     await page.evaluate(() => window.__spec.assertClean())
     expect(host.escapes).toEqual([])
   })

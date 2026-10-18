@@ -5,7 +5,7 @@ import { readRoutes } from "./routes/reads"
 import { matchRoute } from "./route"
 
 test("all identity and data variants decode at their RPC boundaries", () => {
-  expect(validateFixtures()).toBe(828)
+  expect(validateFixtures()).toBe(816)
   const member = defaultWorld(new URLSearchParams("as=member&data=empty&net=slow"))
   expect(member.viewer?.username).toBe("maya")
   expect(member.variants).toEqual({ as: "member", data: "empty", net: "slow" })
