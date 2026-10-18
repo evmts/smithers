@@ -44,6 +44,9 @@ describe("function identity", () => {
 
     expect(identity(one)).toEqual(identity(one))
     expect(identity(one)).not.toEqual(identity(alsoOne))
+    expect(identity(one).sourceDigest).toMatch(/^[0-9a-f]{64}$/)
+    expect(identity(one).sourceDigest).toBe(identity(alsoOne).sourceDigest)
+    expect(identity(one).sourceDigest).not.toBe(functionIdentity((value: number) => value * 2).sourceDigest)
     expect(() => functionIdentity(null)).toThrow(/requires a function/)
   })
 
@@ -64,6 +67,7 @@ describe("function identity", () => {
     expect(identity(one.operation)).toEqual(identity(same.operation))
     expect(identity(one.operation)).not.toEqual(identity(two.operation))
     expect(identity(one.operation).algorithm).toBe("sha256-source-captures/v5")
+    expect(identity(one.operation).sourceDigest).toBeUndefined()
     expect(Object.isFrozen(one.captures)).toBe(false)
     expect(Object.isFrozen(one.captures.nested)).toBe(false)
     expect(() => capture({ value: Number.NaN }, () => undefined)).toThrow(/is not finite/)

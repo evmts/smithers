@@ -225,6 +225,12 @@ machine finds no process behind the owner's pid, reclaims the run at once, and
 resumes it. A run it cannot prove abandoned, such as one owned by another
 `hostId`, waits, and the host logs why and for how long.
 
+Resume with the same flow source. Editing a callback or the plan refuses that
+execution with `plan_changed`; use a new execution id for the changed plan.
+Uncaptured callbacks allow restart, but steps whose keys include them rerun;
+[`Node.capture`](../core/docs/concepts/identity.md) gives those callbacks stable
+identities when their closed-over values are declared.
+
 ## Next steps
 
 - [How Smithers Flows works](./concepts/how-it-works.md): why a step that did

@@ -48,6 +48,8 @@ export interface FunctionIdentity {
   readonly _tag: "FunctionIdentity"
   readonly algorithm: Algorithm
   readonly digest: string
+  /** Exact ordinary source without entropy, for resume comparison only; never a cache identity. */
+  readonly sourceDigest?: string | undefined
 }
 
 /** @private */
@@ -494,6 +496,7 @@ export const functionIdentity = (operation: unknown): FunctionIdentity => {
   return {
     _tag: "FunctionIdentity",
     algorithm: metadata === undefined ? "sha256-source-ephemeral/v4" : "sha256-source-captures/v5",
-    digest: digestSync(metadata === undefined ? `${source}\0${ephemeral}` : `${source}\0${metadata.captures}`)
+    digest: digestSync(metadata === undefined ? `${source}\0${ephemeral}` : `${source}\0${metadata.captures}`),
+    ...(metadata === undefined && !nativeSource.test(source) ? { sourceDigest: digestSync(source) } : {})
   }
 }

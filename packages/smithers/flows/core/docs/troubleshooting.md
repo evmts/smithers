@@ -190,10 +190,18 @@ a package defect.
 
 ### A step reruns after a restart
 
-The step's mapper, continuation, or flow body has process-local identity, which
-is what an unannotated function gets. Declare what the function closes over
+The step's key includes a mapper, continuation, or flow body with process-local
+identity, which is what an unannotated function gets. The recorded-plan check
+permits unchanged source to resume, but that step's key still changes. Declare what the function closes over
 with `Node.capture` and the algorithm becomes `sha256-source-captures/v5`. See
 [Identity and key material](./concepts/identity.md).
+
+### plan_changed after editing a callback
+
+The rebuilt plan differs from the first recorded plan. This check includes
+callback source and declared captures, even when the edit leaves the same
+topology. Resume with the original declarations, or start a new execution id
+for the changed plan.
 
 ### planned_value_computed
 

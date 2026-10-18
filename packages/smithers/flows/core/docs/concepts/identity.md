@@ -58,6 +58,18 @@ The package answers honestly rather than guessing:
   nonce, so it is the same in every process that runs the same code with the
   same captures, including their shared-reference topology.
 
+The durable interpreter checks a separate recorded-plan digest before resuming.
+For process-local callbacks, that check compares exact source without the nonce;
+the step key keeps its entropy. The same source can therefore resume after a
+host restart, reusing finished actions whose keys are stable. A step keyed on
+an opaque callback still misses the cache. Changed callback source, declared
+captures, inputs, or topology refuses the resume with `plan_changed`; use a new
+execution id for the changed plan. Source comparison cannot inspect undeclared
+closure values, so declare them with `Node.capture` when result reuse needs them.
+Bound functions and function proxies expose native source instead of their
+callback's source; they retain the process-local guard and refuse a restart.
+Use an ordinary function so its source can be compared.
+
 A step whose result must survive a restart therefore has to declare what it
 closes over:
 

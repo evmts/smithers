@@ -80,6 +80,7 @@ import * as HumanTask from "./HumanTask.ts"
 import * as BoundedJson from "./internal/BoundedJson.ts"
 import { ExecutionMiddleware } from "./internal/ExecutionMiddleware.ts"
 import { OutcomeValueTypeId } from "./internal/OutcomeMarker.ts"
+import { recordedPlanDrafts } from "./internal/RecordedPlan.ts"
 import * as Sleep from "./Sleep.ts"
 import * as WaitFor from "./WaitFor.ts"
 
@@ -272,7 +273,7 @@ const planPages = (
 > =>
   Effect.gen(function*() {
     const identity = yield* StepKey.content({
-      body: { flow, nodes: Graph.drafts(graph), edges: Graph.edges(graph) },
+      body: { flow, nodes: recordedPlanDrafts(graph), edges: Graph.edges(graph) },
       inputs: {},
       layers: [],
       capabilities: {}
