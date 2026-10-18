@@ -1,0 +1,12 @@
+[
+  {
+    "tag": "create-effeck@0.0.1",
+    "name": "create-effeck 0.0.1",
+    "date": "2026-10-18T02:22:49Z",
+    "author": "maya",
+    "prerelease": false,
+    "latest": true,
+    "body": "Create an Effeck application with `npm create effeck@latest my-app`.\n\nThe starter pins the compiler, runtime and Vite plugin to 0.0.1, includes a service and typed error, and tests with @effect/vitest. macOS on Apple silicon and Linux on x64 were tested for 0.0.1; other listed platforms remain unverified.\n\nVersion: [packages/create-effeck/package.json](smithers.sh/effeck/effeck/blob/main/packages/create-effeck/package.json?L=3).",
+    "pulls": []
+  }
+]

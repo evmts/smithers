@@ -1,0 +1,304 @@
+[
+  {
+    "view": "",
+    "context": "maya/tinyhttp · main",
+    "question": "How is a request handled?",
+    "answer": "[src/router.ts:114](smithers.sh/maya/tinyhttp/blob/main/src/router.ts?L=114) matches a method and path, fills params, and runs middleware before the handler. Query strings are decoded by [src/query.ts:7](smithers.sh/maya/tinyhttp/blob/main/src/query.ts?L=7). Bun and Node share the same Web Request boundary.",
+    "cards": [
+      {
+        "kind": "file",
+        "ref": "src/router.ts"
+      },
+      {
+        "kind": "file",
+        "ref": "src/query.ts"
+      }
+    ]
+  },
+  {
+    "view": "blob/:ref/*",
+    "context": "main · src/router.ts",
+    "question": "What happens when a route parameter has a bad escape?",
+    "answer": "[src/router.ts:15](smithers.sh/maya/tinyhttp/blob/main/src/router.ts?L=15) catches malformed percent escapes and returns an HttpError with status 400. [test/router.test.ts:33](smithers.sh/maya/tinyhttp/blob/main/test/router.test.ts?L=33) covers the regression from #31.",
+    "cards": [
+      {
+        "kind": "issue",
+        "ref": "31"
+      },
+      {
+        "kind": "commit",
+        "ref": "0d96451d52dbbc3567593b74fa12638d7b7de262"
+      }
+    ]
+  },
+  {
+    "view": "blame/:ref/*",
+    "context": "src/router.ts · line history",
+    "question": "Who fixed malformed path escapes?",
+    "answer": "The agent wrote the fix in 0d96451 during run-507; Maya reviewed and merged #32. The guard is at [src/router.ts:19](smithers.sh/maya/tinyhttp/blob/main/src/router.ts?L=19).",
+    "cards": [
+      {
+        "kind": "commit",
+        "ref": "0d96451d52dbbc3567593b74fa12638d7b7de262"
+      },
+      {
+        "kind": "run",
+        "ref": "run-507"
+      }
+    ]
+  },
+  {
+    "view": "commits/:ref",
+    "context": "main · 72 commits",
+    "question": "Which recent changes affect HTTP responses?",
+    "answer": "HEAD now retains status and headers at [src/router.ts:157](smithers.sh/maya/tinyhttp/blob/main/src/router.ts?L=157). Malformed path escapes return 400 at [src/router.ts:15](smithers.sh/maya/tinyhttp/blob/main/src/router.ts?L=15). Both were reviewed and merged by Maya.",
+    "cards": [
+      {
+        "kind": "commit",
+        "ref": "a41c9e0b0a300d7b3206e3e41b5393fdf22f6a75"
+      },
+      {
+        "kind": "commit",
+        "ref": "0d96451d52dbbc3567593b74fa12638d7b7de262"
+      }
+    ]
+  },
+  {
+    "view": "commit/:sha",
+    "context": "main · malformed parameter fix",
+    "question": "What regression does this commit prevent?",
+    "answer": "GET /users/%ZZ returns 400 instead of 500. [test/router.test.ts:33](smithers.sh/maya/tinyhttp/blob/main/test/router.test.ts?L=33) pins that behavior; [test/router.test.ts:4](smithers.sh/maya/tinyhttp/blob/main/test/router.test.ts?L=4) keeps valid percent decoding covered.",
+    "cards": [
+      {
+        "kind": "issue",
+        "ref": "31"
+      },
+      {
+        "kind": "pull",
+        "ref": "32"
+      }
+    ]
+  },
+  {
+    "view": "branches",
+    "context": "9 branches · main protected",
+    "question": "Where can I try the Bun adapter?",
+    "answer": "The sandbox on sandbox/bun-compat is running on port 3000. [examples/hello.ts:7](smithers.sh/maya/tinyhttp/blob/main/examples/hello.ts?L=7) starts the example; [src/adapters/bun.ts:9](smithers.sh/maya/tinyhttp/blob/main/src/adapters/bun.ts?L=9) accepts an ephemeral port for tests.",
+    "cards": [
+      {
+        "kind": "file",
+        "ref": "examples/hello.ts"
+      }
+    ]
+  },
+  {
+    "view": "issues",
+    "context": "19 open · 9 closed",
+    "question": "Which issue is a good first contribution?",
+    "answer": "#39 is a small docs change: show a POST request against a GET-only route. The behavior is defined at [src/router.ts:150](smithers.sh/maya/tinyhttp/blob/main/src/router.ts?L=150); put the example in [docs/routing.md:1](smithers.sh/maya/tinyhttp/blob/main/docs/routing.md?L=1).",
+    "cards": [
+      {
+        "kind": "issue",
+        "ref": "39"
+      }
+    ]
+  },
+  {
+    "view": "issues/:n",
+    "context": "Issue #31 · landed",
+    "question": "Is this fix actually on main?",
+    "answer": "Yes. Maya merged #32 and 0d96451 is on main. [src/router.ts:19](smithers.sh/maya/tinyhttp/blob/main/src/router.ts?L=19) contains the guard, and [test/router.test.ts:33](smithers.sh/maya/tinyhttp/blob/main/test/router.test.ts?L=33) is its regression.",
+    "cards": [
+      {
+        "kind": "commit",
+        "ref": "0d96451d52dbbc3567593b74fa12638d7b7de262"
+      },
+      {
+        "kind": "pull",
+        "ref": "32"
+      },
+      {
+        "kind": "run",
+        "ref": "run-507"
+      }
+    ]
+  },
+  {
+    "view": "pulls",
+    "context": "4 open changes, including 1 draft",
+    "question": "Which change still needs a decision?",
+    "answer": "#34 is waiting for Maya to choose how invalid CORS configuration should fail. The relevant branch changes [src/middleware/cors.ts:13](smithers.sh/maya/tinyhttp/blob/main/src/middleware/cors.ts?L=13). Cora requested a constructor-time guard and a default-origin regression.",
+    "cards": [
+      {
+        "kind": "pull",
+        "ref": "34"
+      },
+      {
+        "kind": "run",
+        "ref": "run-511"
+      }
+    ]
+  },
+  {
+    "view": "pull/:n",
+    "context": "Pull #12 · query fix",
+    "question": "What changes for empty values and bare keys?",
+    "answer": "#12 keeps an empty string for ?a= and still ignores ?a. The current guard is at [src/query.ts:13](smithers.sh/maya/tinyhttp/blob/main/src/query.ts?L=13); the proposed diff removes the empty-value skip and adds both regressions to [test/query.test.ts:20](smithers.sh/maya/tinyhttp/blob/main/test/query.test.ts?L=20).",
+    "cards": [
+      {
+        "kind": "file",
+        "ref": "src/query.ts"
+      },
+      {
+        "kind": "run",
+        "ref": "run-512"
+      }
+    ]
+  },
+  {
+    "view": "stack",
+    "context": "7 ordered changes",
+    "question": "What needs my answer before work can continue?",
+    "answer": "The CORS change asks whether to throw a configuration error or disable credentials. Cora recommends throwing at construction. The current wildcard default is at [src/middleware/cors.ts:13](smithers.sh/maya/tinyhttp/blob/main/src/middleware/cors.ts?L=13).",
+    "cards": [
+      {
+        "kind": "issue",
+        "ref": "33"
+      },
+      {
+        "kind": "run",
+        "ref": "run-511"
+      }
+    ]
+  },
+  {
+    "view": "runs",
+    "context": "18 runs · 3 active",
+    "question": "Why did the release notes run fail?",
+    "answer": "run-510 was given v0.4.3, which does not exist. Create the tag or select v0.4.2 and retry. The release process requires an existing tag; the current version is in [package.json:3](smithers.sh/maya/tinyhttp/blob/main/package.json?L=3).",
+    "cards": [
+      {
+        "kind": "run",
+        "ref": "run-510"
+      }
+    ]
+  },
+  {
+    "view": "runs/:id",
+    "context": "run-512 · stage 3 of 5",
+    "question": "What is the agent changing right now?",
+    "answer": "It is updating the empty-value guard in [src/query.ts:13](smithers.sh/maya/tinyhttp/blob/main/src/query.ts?L=13) and running query regressions in [test/query.test.ts:4](smithers.sh/maya/tinyhttp/blob/main/test/query.test.ts?L=4). #12 is open; verification has not finished.",
+    "cards": [
+      {
+        "kind": "pull",
+        "ref": "12"
+      },
+      {
+        "kind": "file",
+        "ref": "src/query.ts"
+      }
+    ]
+  },
+  {
+    "view": "flows",
+    "context": "5 repository flows",
+    "question": "What starts the issue implementation flow?",
+    "answer": "The accepted issue label or a manual request starts implement-issue. Its source is [.smithers/flows/implement-issue.tsx:18](smithers.sh/maya/tinyhttp/blob/main/.smithers/flows/implement-issue.tsx?L=18); repository instructions require a regression and a person’s review in [.smithers/instructions.md:5](smithers.sh/maya/tinyhttp/blob/main/.smithers/instructions.md?L=5).",
+    "cards": [
+      {
+        "kind": "flow",
+        "ref": "implement-issue"
+      }
+    ]
+  },
+  {
+    "view": "flows/:name",
+    "context": "implement-issue · issue number input",
+    "question": "Does this flow merge the change for me?",
+    "answer": "No. It proposes a change for Maya to review. [.smithers/flows/implement-issue.tsx:17](smithers.sh/maya/tinyhttp/blob/main/.smithers/flows/implement-issue.tsx?L=17) names the reviewer, and [.smithers/instructions.md:5](smithers.sh/maya/tinyhttp/blob/main/.smithers/instructions.md?L=5) keeps merge decisions with a person.",
+    "cards": [
+      {
+        "kind": "flow",
+        "ref": "implement-issue"
+      },
+      {
+        "kind": "pull",
+        "ref": "32"
+      }
+    ]
+  },
+  {
+    "view": "wiki/*",
+    "context": "Repository wiki · source-backed pages",
+    "question": "What does the wiki say about middleware order?",
+    "answer": "Logger wraps CORS, which wraps JSON parsing and the handler. [src/router.ts:166](smithers.sh/maya/tinyhttp/blob/main/src/router.ts?L=166) defines that order; [src/middleware/logger.ts:13](smithers.sh/maya/tinyhttp/blob/main/src/middleware/logger.ts?L=13) starts timing before next(). The wiki’s pending CORS proposal still needs a person’s decision.",
+    "cards": [
+      {
+        "kind": "file",
+        "ref": "src/router.ts"
+      }
+    ]
+  },
+  {
+    "view": "docs/*",
+    "context": "docs/ · 6 pages",
+    "question": "Where is the Node adapter documented?",
+    "answer": "[docs/adapters.md:16](smithers.sh/maya/tinyhttp/blob/main/docs/adapters.md?L=16) shows createNodeServer and leaves listening and shutdown to the application. [examples/users.ts:20](smithers.sh/maya/tinyhttp/blob/main/examples/users.ts?L=20) is a complete users API example.",
+    "cards": [
+      {
+        "kind": "file",
+        "ref": "docs/adapters.md"
+      },
+      {
+        "kind": "file",
+        "ref": "examples/users.ts"
+      }
+    ]
+  },
+  {
+    "view": "releases",
+    "context": "v0.4.2 · latest",
+    "question": "What changed in v0.4.2?",
+    "answer": "#32 returns 400 for malformed path params and #30 retains headers on HEAD responses. Both are recorded in [CHANGELOG.md:3](smithers.sh/maya/tinyhttp/blob/main/CHANGELOG.md?L=3), with source regressions in [test/router.test.ts:26](smithers.sh/maya/tinyhttp/blob/main/test/router.test.ts?L=26).",
+    "cards": [
+      {
+        "kind": "pull",
+        "ref": "32"
+      },
+      {
+        "kind": "pull",
+        "ref": "30"
+      }
+    ]
+  },
+  {
+    "view": "settings/*",
+    "context": "Repository settings · Maya owner",
+    "question": "Which network destinations can a sandbox reach?",
+    "answer": "The allowlist contains registry.npmjs.org and github.com. The Bun example binds to loopback at [src/adapters/bun.ts:12](smithers.sh/maya/tinyhttp/blob/main/src/adapters/bun.ts?L=12). Choose a sandbox port explicitly; [examples/hello.ts:7](smithers.sh/maya/tinyhttp/blob/main/examples/hello.ts?L=7) uses 3000."
+  },
+  {
+    "view": "search",
+    "context": "Search maya/tinyhttp",
+    "question": "Where is a query string decoded?",
+    "answer": "[src/query.ts:4](smithers.sh/maya/tinyhttp/blob/main/src/query.ts?L=4) handles percent escapes and plus signs. [src/query.ts:7](smithers.sh/maya/tinyhttp/blob/main/src/query.ts?L=7) splits pairs; [src/router.ts:129](smithers.sh/maya/tinyhttp/blob/main/src/router.ts?L=129) attaches the result to the request.",
+    "cards": [
+      {
+        "kind": "file",
+        "ref": "src/query.ts"
+      }
+    ]
+  },
+  {
+    "view": "change",
+    "context": "Hosted changes held · landing=install",
+    "question": "Fix the empty query values in #11.",
+    "answer": "Hosted runs that change code are held. Run smthrs locally: `npm i -g smthrs@next`",
+    "cards": [
+      {
+        "kind": "issue",
+        "ref": "11"
+      }
+    ]
+  }
+]

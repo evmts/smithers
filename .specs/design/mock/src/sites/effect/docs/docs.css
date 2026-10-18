@@ -1,0 +1,37 @@
+.effect-docs-package-select{display:block;min-width:0}.effect-docs-package-select select{width:100%;min-width:0;font-size:var(--fs-1)}
+.effect-docs-search{position:relative;display:flex;align-items:center;gap:var(--sp-2);color:var(--text-faint)}
+.effect-docs-search input{width:100%;min-width:0;font-size:var(--fs-2)}
+.effect-docs-index{display:flex;flex-direction:column;gap:var(--sp-6)}
+.effect-docs-package-group h2{font-size:var(--fs-2);font-weight:600;margin:0 0 var(--sp-3)}
+.effect-docs-package-list{border:1px solid var(--border);border-radius:var(--r-3);overflow:hidden}
+.effect-docs-package-row{padding:var(--sp-4);display:flex;flex-direction:column;gap:var(--sp-3);border-top:1px solid var(--border)}
+.effect-docs-package-row:first-child{border-top:0}
+.effect-docs-package-row>div{min-width:0}.effect-docs-package-name{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);font-family:var(--font-mono);font-size:var(--fs-2);font-weight:500;color:var(--text);overflow-wrap:anywhere}
+.effect-docs-package-row p{font-size:var(--fs-1);line-height:1.5;color:var(--text-muted);margin:var(--sp-1) 0 0;overflow-wrap:anywhere}
+.effect-docs-page-links{display:flex;flex-wrap:wrap;gap:var(--sp-2) var(--sp-4);font-size:var(--fs-1)}
+.effect-docs-page-links a{color:var(--text-muted)}.effect-docs-page-links span{color:var(--text-faint)}
+.effect-docs-guide-list{display:flex;flex-direction:column;border-top:1px solid var(--border)}
+.effect-docs-guide-list a{display:flex;justify-content:space-between;padding:var(--sp-3) 0;border-bottom:1px solid var(--border);font-size:var(--fs-2);color:var(--text)}
+.effect-docs-source{display:flex;flex-direction:column;gap:var(--sp-2);font-size:var(--fs-1);color:var(--text-faint);margin-bottom:var(--sp-5)}
+.effect-docs-source>a{display:flex;align-items:center;gap:var(--sp-2);color:var(--text-muted);font-family:var(--font-mono);overflow-wrap:anywhere}
+.effect-docs-source svg{flex-shrink:0}
+.effect-docs-stale{display:flex;align-items:flex-start;gap:var(--sp-2);flex-wrap:wrap;font-size:var(--fs-1);line-height:1.6;padding:var(--sp-3) var(--sp-4);border:1px solid var(--border);border-radius:var(--r-2);background:var(--warning-soft);color:var(--text)}
+.effect-docs-stale>svg{color:var(--warning);flex-shrink:0;margin-top:3px}.effect-docs-stale>a{margin-left:auto;white-space:nowrap}
+.effect-docs-notice,.effect-docs-generation,.effect-docs-generate-form{border:1px solid var(--border);border-radius:var(--r-3);padding:var(--sp-4);font-size:var(--fs-2);background:var(--surface)}
+.effect-docs-notice p,.effect-docs-generation p{color:var(--text-muted);font-size:var(--fs-2);margin:var(--sp-2) 0 var(--sp-3);line-height:1.6}
+.effect-docs-command{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);padding:var(--sp-3);background:var(--code-bg);border-radius:var(--r-2);margin-bottom:var(--sp-3)}
+.effect-docs-notice code{font-family:var(--font-mono);font-size:var(--fs-1);overflow-wrap:anywhere}.effect-docs-failure{background:var(--danger-soft)}
+.effect-docs-actions{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3)}
+.effect-docs-generation header{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-2)}
+.effect-docs-generation header span{margin-left:auto;color:var(--text-muted);font-size:var(--fs-1)}
+.effect-docs-generation>a{font-size:var(--fs-1)}
+.effect-docs-preview{border-top:1px solid var(--border);padding-top:var(--sp-4);margin-top:var(--sp-4)}
+.effect-docs-preview strong{font-size:var(--fs-2)}.effect-docs-preview ul{padding-left:var(--sp-4);font-size:var(--fs-2);line-height:1.8}
+.effect-docs-generate-form{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-3)}
+.effect-docs-generate-form select{flex:1;min-width:0}
+
+/* Stage 4 QA: review the generated content before accepting it. */
+.effect-docs-preview-pages { display: grid; gap: 16px; margin-block: 16px; min-width: 0; }
+.effect-docs-preview-pages details { min-width: 0; border: 1px solid var(--border); border-radius: var(--r-2); }
+.effect-docs-preview-pages summary { cursor: pointer; padding: 12px 16px; font-size: 14px; }
+.effect-docs-preview-pages pre { margin: 0; padding: 16px; max-width: 100%; overflow-x: auto; font: 12px/1.7 var(--font-mono); background: var(--surface-2); }

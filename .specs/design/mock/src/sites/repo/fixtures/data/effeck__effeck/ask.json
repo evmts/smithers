@@ -1,0 +1,122 @@
+[
+  {
+    "view": "",
+    "context": "effeck/effeck · Code",
+    "question": "How do I start a project?",
+    "answer": "Run `npm create vibelang@latest my-app`, then `cd my-app`, `npm install`, and `npm run start`.\n\n[docs/user/src/getting-started/004-installation.md](smithers.sh/effeck/effeck/blob/main/docs/user/src/getting-started/004-installation.md?L=50)",
+    "cards": [
+      {
+        "kind": "file",
+        "ref": "docs/user/src/getting-started/004-installation.md"
+      }
+    ]
+  },
+  {
+    "view": "docs/*",
+    "context": "VibeLang guides",
+    "question": "What does string!!Users mean?",
+    "answer": "`Effect.Effect<string, never, Users>`: a string result, no expected failures, and the Users service as a requirement. VibeLang infers all three.\n\n[docs/user/src/001-onboarding.md](smithers.sh/effeck/effeck/blob/main/docs/user/src/001-onboarding.md?L=39)",
+    "cards": [
+      {
+        "kind": "file",
+        "ref": "docs/user/src/001-onboarding.md"
+      }
+    ]
+  },
+  {
+    "view": "blob/:ref/*",
+    "context": "templates/app/src/main.vibe",
+    "question": "What type does greeting return?",
+    "answer": "`greeting(name)` is `Effect.Effect<string, EmptyName, never>`. It throws EmptyName for an empty name. GreeterLive supplies the Greeter service used by main.\n\n[templates/app/src/greeting.vibe](smithers.sh/effeck/effeck/blob/main/templates/app/src/greeting.vibe?L=3)",
+    "cards": [
+      {
+        "kind": "file",
+        "ref": "templates/app/src/greeting.vibe"
+      }
+    ]
+  },
+  {
+    "view": "issues/:n",
+    "context": "Issue #31 · hover crash",
+    "question": "Did the hover crash reach main?",
+    "answer": "Yes. maya reviewed landing #101 and landed `8fadacb5` on main. The receipt links the report, acceptance, run, review and commit.",
+    "cards": [
+      {
+        "kind": "issue",
+        "ref": "31"
+      },
+      {
+        "kind": "run",
+        "ref": "run-8fadacb5"
+      },
+      {
+        "kind": "pull",
+        "ref": "101"
+      },
+      {
+        "kind": "commit",
+        "ref": "8fadacb51dc15e706bf033af8878f8f4e9a2047d"
+      }
+    ]
+  },
+  {
+    "view": "issues",
+    "context": "VibeLang reports",
+    "question": "Why does catch not handle my defect?",
+    "answer": "Ordinary catch handles expected failures. Inspect defects at a defect or Cause boundary and preserve interruption. Explicit `throw new Error(...)` is a typed failure; `die(...)` creates a defect.\n\n[docs/user/src/error-management/015-unexpected-errors.md](smithers.sh/effeck/effeck/blob/main/docs/user/src/error-management/015-unexpected-errors.md?L=17)",
+    "cards": [
+      {
+        "kind": "file",
+        "ref": "docs/user/src/error-management/015-unexpected-errors.md"
+      }
+    ]
+  },
+  {
+    "view": "runs",
+    "context": "convert-golden",
+    "question": "Can I turn on the converter?",
+    "answer": "The converter is off for Monday. It needs a real model run with at least 16 of 20 outputs compiling, including the hero. The illustrative 14/20 expected-source validation is excluded from gate history. No held-out model run is available. score.mjs compiles expected outputs only; the pinned prompt uses separate examples.\n\n[Golden set](smithers.sh/effeck/effeck/evals/convert-golden)",
+    "cards": [
+      {
+        "kind": "flow",
+        "ref": "convert-golden"
+      }
+    ]
+  },
+  {
+    "view": "pulls/:n",
+    "context": "Review · mapper forms",
+    "question": "Does mapper parity mean the compiler can emit programs?",
+    "answer": "The executable rendering is still a placeholder. Check declaration parity and emitted execution separately.\n\n[typescript/tsc/internal/vibelangmapper/plan.go](smithers.sh/effeck/effeck/blob/main/typescript/tsc/internal/vibelangmapper/plan.go?L=24)",
+    "cards": [
+      {
+        "kind": "file",
+        "ref": "typescript/tsc/internal/vibelangmapper/plan.go"
+      }
+    ]
+  },
+  {
+    "view": "docs",
+    "context": "VibeLang CLI",
+    "question": "How do I check without emitting JavaScript?",
+    "answer": "Run `npx vibelang --noEmit`. It checks .vibe and .ts together; `--watch` rebuilds on save and `-b` builds project references.\n\n[docs/user/src/setup/vibelang-cli.md](smithers.sh/effeck/effeck/blob/main/docs/user/src/setup/vibelang-cli.md?L=44)",
+    "cards": [
+      {
+        "kind": "file",
+        "ref": "docs/user/src/setup/vibelang-cli.md"
+      }
+    ]
+  },
+  {
+    "view": "evals",
+    "context": "Converter golden set · converter off",
+    "question": "Why is the converter off?",
+    "answer": "The gate needs 16 of 20 model outputs to compile, including the hero. The illustrative 14/20 expected-source validation is excluded from gate history. No held-out model run is available. Expected-output checks do not satisfy that gate.",
+    "cards": [
+      {
+        "kind": "run",
+        "ref": "run-convert-golden-eval"
+      }
+    ]
+  }
+]

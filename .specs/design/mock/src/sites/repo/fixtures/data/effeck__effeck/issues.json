@@ -1,0 +1,526 @@
+[
+  {
+    "n": 31,
+    "title": "Hover on an Effeck form crashes the language server",
+    "state": "closed",
+    "author": "dev-ahn",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug",
+      "compiler",
+      "accepted",
+      "fixed-by-agents"
+    ],
+    "opened": "2026-10-17T23:49:48Z",
+    "updated": "2026-10-18T02:52:48Z",
+    "body": "Hover over the provide or catch word in an Effeck file. The language server stops answering.\n\nExpected: a hover describing the form, followed by the declaration documentation.\n\nReproduce with the service example in the welcome guide.\n\nObserved panic: \"did not expect KindClassDeclaration to have KindIdentifier in its trivia\". The source change records a docs sweep with 0 of 198,891 hover requests failing after the fix.",
+    "comments": [
+      {
+        "author": "maya",
+        "date": "2026-10-18T01:44:48Z",
+        "body": "Reproduced on the service example. Accepted."
+      },
+      {
+        "author": "smithers-agent",
+        "date": "2026-10-18T02:47:48Z",
+        "body": "Form words have source tokens without ordinary source nodes; desugared children can also lie out of order. The AST navigation fix finds an exact source token or the form’s declaration keyword. The source commit records a clean hover sweep.",
+        "agent": {
+          "run": "run-8fadacb5",
+          "flow": "implement-issue",
+          "harness": "Claude Code · claude-opus-5-5",
+          "for": "maya"
+        }
+      },
+      {
+        "author": "maya",
+        "date": "2026-10-18T02:51:48Z",
+        "body": "Landed #101 as 8fadacb5. Hovering provide and catch keeps the server alive."
+      }
+    ],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T01:39:48Z",
+        "label": "accepted"
+      },
+      {
+        "kind": "run",
+        "actor": "maya",
+        "date": "2026-10-18T02:37:48Z",
+        "run": "run-8fadacb5",
+        "state": "succeeded"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-18T02:51:48Z",
+        "reason": "completed",
+        "sha": "8fadacb51dc15e706bf033af8878f8f4e9a2047d",
+        "pull": 101
+      }
+    ],
+    "pulls": [
+      101
+    ],
+    "receipt": {
+      "reported": {
+        "by": "dev-ahn",
+        "date": "2026-10-17T23:49:48Z"
+      },
+      "accepted": {
+        "by": "maya",
+        "date": "2026-10-18T01:39:48Z"
+      },
+      "working": {
+        "run": "run-8fadacb5",
+        "date": "2026-10-18T02:37:48Z"
+      },
+      "review": {
+        "pull": 101,
+        "date": "2026-10-18T02:48:48Z"
+      },
+      "landed": {
+        "sha": "8fadacb51dc15e706bf033af8878f8f4e9a2047d",
+        "date": "2026-10-18T02:51:48Z"
+      }
+    },
+    "todo": "todo-31"
+  },
+  {
+    "n": 32,
+    "title": "Keep golden cases out of the converter prompt",
+    "state": "open",
+    "author": "cora",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "converter",
+      "accepted"
+    ],
+    "opened": "2026-10-18T01:04:43Z",
+    "updated": "2026-10-18T04:07:43Z",
+    "body": "The prompt builder reads the cases used to score conversion. Use ten separate example pairs and reject normalized copies of held-out input or output, including copies inside larger blocks.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T02:54:43Z",
+        "label": "accepted"
+      }
+    ],
+    "pulls": [
+      102
+    ],
+    "receipt": {
+      "reported": {
+        "by": "cora",
+        "date": "2026-10-18T01:04:43Z"
+      },
+      "accepted": {
+        "by": "maya",
+        "date": "2026-10-18T02:54:43Z"
+      }
+    },
+    "todo": "todo-32"
+  },
+  {
+    "n": 33,
+    "title": "Show inferred types inside docs code blocks",
+    "state": "open",
+    "author": "dev-ahn",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "docs",
+      "accepted"
+    ],
+    "opened": "2026-10-18T01:08:58Z",
+    "updated": "2026-10-18T04:57:00Z",
+    "body": "Readers should inspect Users.find and string!!Users in place. Add keyboard reachable compiler hovers and definitions without a client script.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T02:58:58Z",
+        "label": "accepted"
+      },
+      {
+        "kind": "run",
+        "actor": "maya",
+        "date": "2026-10-18T04:45:00Z",
+        "run": "run-doc-hovers-live",
+        "state": "running"
+      }
+    ],
+    "pulls": [
+      103
+    ],
+    "receipt": {
+      "reported": {
+        "by": "dev-ahn",
+        "date": "2026-10-18T01:08:58Z"
+      },
+      "accepted": {
+        "by": "maya",
+        "date": "2026-10-18T02:58:58Z"
+      },
+      "working": {
+        "run": "run-doc-hovers-live",
+        "date": "2026-10-18T04:45:00Z"
+      }
+    },
+    "todo": "todo-33"
+  },
+  {
+    "n": 34,
+    "title": "Repack skipped platform optional dependencies",
+    "state": "open",
+    "author": "cora",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug",
+      "release",
+      "accepted"
+    ],
+    "opened": "2026-10-18T01:24:30Z",
+    "updated": "2026-10-18T04:57:00Z",
+    "body": "A clean npm ci after scaffolding can install a lockfile without the platform compiler. Repack the tarball, check payloads and permissions, then install from the generated lockfile.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T03:14:30Z",
+        "label": "accepted"
+      },
+      {
+        "kind": "run",
+        "actor": "maya",
+        "date": "2026-10-18T04:12:30Z",
+        "run": "run-release-review",
+        "state": "succeeded"
+      }
+    ],
+    "pulls": [
+      104
+    ],
+    "receipt": {
+      "reported": {
+        "by": "cora",
+        "date": "2026-10-18T01:24:30Z"
+      },
+      "accepted": {
+        "by": "maya",
+        "date": "2026-10-18T03:14:30Z"
+      },
+      "working": {
+        "run": "run-release-review",
+        "date": "2026-10-18T04:45:00Z"
+      },
+      "review": {
+        "pull": 104,
+        "date": "2026-10-18T04:56:00Z"
+      }
+    },
+    "todo": "todo-34"
+  },
+  {
+    "n": 35,
+    "title": "Resolve lambda and by-name forms through the forms table",
+    "state": "open",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "mapper",
+      "accepted"
+    ],
+    "opened": "2026-10-18T01:17:44Z",
+    "updated": "2026-10-18T04:20:44Z",
+    "body": "Use the syntax-only resolver for lambda, method, block parameter and by-name argument lowering. Report EK9100 when a form requires a choice. Keep the fork’s literal types and error unions.",
+    "comments": [],
+    "events": [],
+    "pulls": [
+      108
+    ],
+    "todo": "todo-35"
+  },
+  {
+    "n": 36,
+    "title": "Preserve Scope for a fork in a lambda expression body",
+    "state": "open",
+    "author": "dev-ahn",
+    "assignees": [],
+    "labels": [
+      "bug",
+      "mapper"
+    ],
+    "opened": "2026-10-18T01:17:44Z",
+    "updated": "2026-10-18T04:20:44Z",
+    "body": "A block owns its forked fiber, but an expression body has no enclosing block. Compare both bodies in the declaration parity suite.",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 37,
+    "title": "Do not deploy docs that fail on the released compiler",
+    "state": "closed",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "docs",
+      "fixed-by-agents"
+    ],
+    "opened": "2026-10-18T01:06:01Z",
+    "updated": "2026-10-18T04:09:01Z",
+    "body": "Compile guide snippets with compiler and runtime release tarballs. The checkout compiler can accept syntax users cannot install.",
+    "comments": [],
+    "events": [],
+    "pulls": [
+      105
+    ]
+  },
+  {
+    "n": 38,
+    "title": "Keep the landing page behind an explicit build flag",
+    "state": "closed",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "docs"
+    ],
+    "opened": "2026-10-18T01:19:51Z",
+    "updated": "2026-10-18T04:22:51Z",
+    "body": "Plain docs deployments must keep onboarding at the site root. Only EFFECK_LANDING=1 should build the draft landing page.",
+    "comments": [],
+    "events": [],
+    "pulls": [
+      106
+    ]
+  },
+  {
+    "n": 39,
+    "title": "Pin the converter worker image by digest",
+    "state": "closed",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "converter"
+    ],
+    "opened": "2026-10-18T01:07:49Z",
+    "updated": "2026-10-18T04:10:49Z",
+    "body": "Record the image, compiler and dependency digests. A staged build is not evidence of a deployed service; document rollout and rollback.",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 40,
+    "title": "Check using, interruption regions and finally exits in the mapper",
+    "state": "open",
+    "author": "dev-ahn",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "mapper",
+      "accepted"
+    ],
+    "opened": "2026-10-18T01:06:34Z",
+    "updated": "2026-10-18T04:09:34Z",
+    "body": "Project using through acquisition so the enclosing block removes Scope. Preserve try Exit values in finally (exit) and completion records through interruption regions.",
+    "comments": [],
+    "events": [],
+    "pulls": [
+      107
+    ],
+    "todo": "todo-40"
+  },
+  {
+    "n": 41,
+    "title": "Document Vite project references for .effeck sources",
+    "state": "open",
+    "author": "cora",
+    "assignees": [],
+    "labels": [
+      "docs"
+    ],
+    "opened": "2026-10-17T23:45:36Z",
+    "updated": "2026-10-18T02:48:36Z",
+    "body": "A Vite root tsconfig often has files: [] and project references. Show effeck({ project: \"tsconfig.app.json\" }) and keep rewriteRelativeImportExtensions.",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 42,
+    "title": "Scaffold with npm create effeck and exact package versions",
+    "state": "open",
+    "author": "cora",
+    "assignees": [],
+    "labels": [
+      "release"
+    ],
+    "opened": "2026-10-17T23:17:49Z",
+    "updated": "2026-10-18T02:20:49Z",
+    "body": "Verify npm create effeck@latest my-app. The compiler, runtime and Vite plugin must share the creator’s version. Effect stays pinned at 4.0.5.",
+    "comments": [],
+    "events": [],
+    "pulls": [],
+    "todo": "todo-42"
+  },
+  {
+    "n": 43,
+    "title": "Distinguish typed failures from defects in catch examples",
+    "state": "open",
+    "author": "dev-ahn",
+    "assignees": [],
+    "labels": [
+      "docs"
+    ],
+    "opened": "2026-10-17T21:04:23Z",
+    "updated": "2026-10-18T00:07:23Z",
+    "body": "Ordinary catch handles expected failures. Show a typed fallback, a defect boundary and how to preserve interruption in a complete Cause.",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 44,
+    "title": "Make hover notes precede declaration JSDoc",
+    "state": "closed",
+    "author": "dev-ahn",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "compiler",
+      "docs"
+    ],
+    "opened": "2026-10-18T00:08:31Z",
+    "updated": "2026-10-18T03:11:31Z",
+    "body": "Put the Effeck execution note first, then a rule, then the declaration JSDoc summary. Make the docs cache follow the language server split.",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 45,
+    "title": "Reject pausing callbacks passed to synchronous JavaScript",
+    "state": "closed",
+    "author": "cora",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug",
+      "compiler"
+    ],
+    "opened": "2026-10-17T22:38:20Z",
+    "updated": "2026-10-18T01:41:20Z",
+    "body": "Array.map cannot run a callback that pauses. Report EK4301 at the callback and point at an Effect iteration.",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 46,
+    "title": "Give hatch captures an input quick fix",
+    "state": "open",
+    "author": "dev-ahn",
+    "assignees": [],
+    "labels": [
+      "compiler"
+    ],
+    "opened": "2026-10-17T21:06:49Z",
+    "updated": "2026-10-18T00:09:49Z",
+    "body": "sync(() => text.length) captures an outside value. EK4405 should offer sync((text) => text.length, text), keeping the string type.",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 47,
+    "title": "Track mapper parity separately from executable output",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [
+      "mapper"
+    ],
+    "opened": "2026-10-17T23:06:33Z",
+    "updated": "2026-10-18T02:09:33Z",
+    "body": "Record identical declarations, union sites and known differences. Checking parity does not prove the executable rendering is implemented.",
+    "comments": [],
+    "events": [],
+    "pulls": [],
+    "todo": "todo-47"
+  },
+  {
+    "n": 48,
+    "title": "Publish Markdown copies beside the HTML guide",
+    "state": "closed",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "docs"
+    ],
+    "opened": "2026-10-17T22:05:37Z",
+    "updated": "2026-10-18T01:08:37Z",
+    "body": "Keep each guide available as Markdown with stable relative links and list pages in llms.txt. Replace private checkout paths before publishing.",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 49,
+    "title": "Replace plain await with join and Deferred.await fixes",
+    "state": "open",
+    "author": "cora",
+    "assignees": [],
+    "labels": [
+      "compiler"
+    ],
+    "opened": "2026-10-17T21:01:36Z",
+    "updated": "2026-10-18T00:04:36Z",
+    "body": "Distinguish waiting for a fiber (join) from a Deferred (d.await()). An Effeck call already waits for its result.",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 50,
+    "title": "Keep converter compile jobs credential free",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [
+      "converter"
+    ],
+    "opened": "2026-10-18T00:50:10Z",
+    "updated": "2026-10-18T03:53:10Z",
+    "body": "Compile only; never execute submitted code. Bound source size, diagnostics, CPU, memory and time. Logs omit submitted source and customer payloads.",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  }
+]

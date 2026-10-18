@@ -1,0 +1,1045 @@
+{
+  "site": "effect",
+  "routes": [
+    {
+      "pattern": "__screens",
+      "screens": [
+        {
+          "id": "effect-all-screens",
+          "route": "__screens",
+          "label": "All Effect screens",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/",
+      "screens": [
+        {
+          "id": "effect-landing-install",
+          "route": "smithers.sh/?as=out",
+          "label": "Monday: wordmark, headline, install command, quickstart link",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/signin",
+      "screens": [
+        {
+          "id": "effect-signin-return-repo",
+          "route": "smithers.sh/signin?return=smithers.sh%2Fmaya%2Ftinyhttp",
+          "label": "Authorize Smithers, returning to a repo",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/docs",
+      "screens": [
+        {
+          "id": "effect-docs-index",
+          "route": "smithers.sh/docs?as=out",
+          "label": "Index: Installation, HTTP API, quickstart on GitHub, Smithers on Smithers",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/packages",
+      "screens": [
+        {
+          "id": "effect-packages-ready",
+          "route": "smithers.sh/Effect-TS/effect/packages?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "All 38 packages",
+          "site": "effect"
+        },
+        {
+          "id": "effect-packages-loading",
+          "route": "smithers.sh/Effect-TS/effect/packages?as=in&role=member&net=slow&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Loading packages",
+          "site": "effect",
+          "wait": 120
+        },
+        {
+          "id": "effect-packages-error",
+          "route": "smithers.sh/Effect-TS/effect/packages?as=in&role=member&net=error&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Manifest read failed",
+          "site": "effect"
+        },
+        {
+          "id": "effect-packages-empty",
+          "route": "smithers.sh/Effect-TS/effect/packages?as=in&role=member&net=ok&data=empty&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "No packages",
+          "site": "effect"
+        },
+        {
+          "id": "effect-packages-signed-out",
+          "route": "smithers.sh/Effect-TS/effect/packages?as=out&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Browse packages signed out",
+          "site": "effect"
+        },
+        {
+          "id": "effect-packages-filtered",
+          "route": "smithers.sh/Effect-TS/effect/packages?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected&q=postgresql",
+          "label": "SQL packages",
+          "site": "effect"
+        },
+        {
+          "id": "effect-packages-no-matches",
+          "route": "smithers.sh/Effect-TS/effect/packages?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected&q=missing-package",
+          "label": "No matching packages",
+          "site": "effect"
+        },
+        {
+          "id": "effect-packages-open-form",
+          "route": "smithers.sh/Effect-TS/effect/packages?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected&ask=%2Fpackage.open",
+          "label": "Choose a package in Ask",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/packages/:slug",
+      "screens": [
+        {
+          "id": "effect-package-home-ready",
+          "route": "smithers.sh/Effect-TS/effect/packages/sql-pg?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "PostgreSQL package",
+          "site": "effect"
+        },
+        {
+          "id": "effect-package-home-loading",
+          "route": "smithers.sh/Effect-TS/effect/packages/sql-pg?as=in&role=member&net=slow&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Loading package",
+          "site": "effect",
+          "wait": 120
+        },
+        {
+          "id": "effect-package-home-error",
+          "route": "smithers.sh/Effect-TS/effect/packages/sql-pg?as=in&role=member&net=error&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Package read failed",
+          "site": "effect"
+        },
+        {
+          "id": "effect-package-home-empty",
+          "route": "smithers.sh/Effect-TS/effect/packages/sql-pg?as=in&role=member&net=ok&data=empty&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Empty package",
+          "site": "effect"
+        },
+        {
+          "id": "effect-package-home-signed-out",
+          "route": "smithers.sh/Effect-TS/effect/packages/sql-pg?as=out&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Read package signed out",
+          "site": "effect"
+        },
+        {
+          "id": "effect-package-home-private",
+          "route": "smithers.sh/Effect-TS/effect/packages/bundle?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Private workspace tool",
+          "site": "effect"
+        },
+        {
+          "id": "effect-package-home-core",
+          "route": "smithers.sh/Effect-TS/effect/packages/effect?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Core package and dependents",
+          "site": "effect"
+        },
+        {
+          "id": "effect-package-home-missing",
+          "route": "smithers.sh/Effect-TS/effect/packages/missing-package?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Package not found",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/runs/:id/matrix",
+      "screens": [
+        {
+          "id": "effect-ci-matrix-failed",
+          "route": "smithers.sh/Effect-TS/effect/runs/run-4802/matrix?as=in&role=member&landing=open&host=hosted&hosted=up&net=ok&data=full&still=1",
+          "label": "CI matrix · Bun SQLite failure",
+          "site": "effect"
+        },
+        {
+          "id": "effect-ci-matrix-all-pass",
+          "route": "smithers.sh/Effect-TS/effect/runs/run-4806/matrix?as=in&role=member&landing=open&host=hosted&hosted=up&net=ok&data=full&still=1",
+          "label": "CI matrix · passed; push-only jobs skipped",
+          "site": "effect"
+        },
+        {
+          "id": "effect-ci-matrix-running",
+          "route": "smithers.sh/Effect-TS/effect/runs/run-4805/matrix?as=in&role=member&landing=open&host=hosted&hosted=up&net=ok&data=full&still=1",
+          "label": "CI matrix · running",
+          "site": "effect"
+        },
+        {
+          "id": "effect-ci-matrix-setup-failure",
+          "route": "smithers.sh/Effect-TS/effect/runs/run-ci-setup/matrix?as=in&role=member&landing=open&host=hosted&hosted=up&net=ok&data=full&still=1",
+          "label": "CI matrix · install failed before tests",
+          "site": "effect"
+        },
+        {
+          "id": "effect-ci-matrix-scoped",
+          "route": "smithers.sh/Effect-TS/effect/runs/run-4802/matrix?as=in&role=member&landing=open&host=hosted&hosted=up&net=ok&data=full&still=1&package=sql-pg&failures=0",
+          "label": "CI matrix · PostgreSQL scope; overall failure",
+          "site": "effect"
+        },
+        {
+          "id": "effect-ci-matrix-cancelled",
+          "route": "smithers.sh/Effect-TS/effect/runs/run-4807/matrix?as=in&role=member&landing=open&host=hosted&hosted=up&net=ok&data=full&still=1",
+          "label": "CI matrix · cancelled",
+          "site": "effect"
+        },
+        {
+          "id": "effect-ci-matrix-excluded",
+          "route": "smithers.sh/Effect-TS/effect/runs/run-4806/matrix?as=in&role=member&landing=open&host=hosted&hosted=up&net=ok&data=full&still=1&package=platform-bun",
+          "label": "CI matrix · excluded runtimes",
+          "site": "effect"
+        },
+        {
+          "id": "effect-ci-matrix-missing",
+          "route": "smithers.sh/Effect-TS/effect/runs/run-4806/matrix?as=in&role=member&landing=open&host=hosted&hosted=up&net=ok&data=full&still=1&package=sql-pg&result=missing",
+          "label": "CI matrix · result not reported",
+          "site": "effect"
+        },
+        {
+          "id": "effect-ci-matrix-loading",
+          "route": "smithers.sh/Effect-TS/effect/runs/run-4802/matrix?as=in&role=member&landing=open&host=hosted&hosted=up&net=slow&data=full&still=1",
+          "label": "CI matrix · loading",
+          "site": "effect",
+          "wait": 100
+        },
+        {
+          "id": "effect-ci-matrix-error",
+          "route": "smithers.sh/Effect-TS/effect/runs/run-4802/matrix?as=in&role=member&landing=open&host=hosted&hosted=up&net=error&data=full&still=1",
+          "label": "CI matrix · unavailable",
+          "site": "effect"
+        },
+        {
+          "id": "effect-ci-matrix-empty",
+          "route": "smithers.sh/Effect-TS/effect/runs/run-4802/matrix?as=in&role=member&landing=open&host=hosted&hosted=up&net=ok&data=empty&still=1",
+          "label": "CI matrix · no results",
+          "site": "effect"
+        },
+        {
+          "id": "effect-ci-matrix-signed-out",
+          "route": "smithers.sh/Effect-TS/effect/runs/run-4802/matrix?as=out&role=member&landing=open&host=hosted&hosted=up&net=ok&data=full&still=1",
+          "label": "CI matrix · public read only",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/runs",
+      "screens": [
+        {
+          "id": "effect-ci-runs",
+          "route": "smithers.sh/Effect-TS/effect/runs?as=in&role=member&landing=open&host=hosted&hosted=up&net=ok&data=full&still=1",
+          "label": "Repository runs",
+          "site": "effect"
+        },
+        {
+          "id": "effect-ci-runs-loading",
+          "route": "smithers.sh/Effect-TS/effect/runs?as=in&role=member&landing=open&host=hosted&hosted=up&net=slow&data=full&still=1",
+          "label": "Runs · loading",
+          "site": "effect",
+          "wait": 100
+        },
+        {
+          "id": "effect-ci-runs-error",
+          "route": "smithers.sh/Effect-TS/effect/runs?as=in&role=member&landing=open&host=hosted&hosted=up&net=error&data=full&still=1",
+          "label": "Runs · unavailable",
+          "site": "effect"
+        },
+        {
+          "id": "effect-ci-runs-empty",
+          "route": "smithers.sh/Effect-TS/effect/runs?as=in&role=member&landing=open&host=hosted&hosted=up&net=ok&data=empty&still=1",
+          "label": "Runs · empty",
+          "site": "effect"
+        },
+        {
+          "id": "effect-ci-runs-signed-out",
+          "route": "smithers.sh/Effect-TS/effect/runs?as=out&role=member&landing=open&host=hosted&hosted=up&net=ok&data=full&still=1",
+          "label": "Runs · public read only",
+          "site": "effect"
+        },
+        {
+          "id": "effect-ci-runs-reader",
+          "route": "smithers.sh/Effect-TS/effect/runs?as=in&role=reader&landing=open&host=hosted&hosted=up&net=ok&data=full&still=1",
+          "label": "Runs · reader",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/runs/:id",
+      "screens": [
+        {
+          "id": "effect-ci-setup-log",
+          "route": "smithers.sh/Effect-TS/effect/runs/run-ci-setup?as=in&role=member&landing=open&host=hosted&hosted=up&net=ok&data=full&still=1&stage=setup-bun",
+          "label": "CI run · install failure log",
+          "site": "effect"
+        },
+        {
+          "id": "effect-ci-failure-log",
+          "route": "smithers.sh/Effect-TS/effect/runs/run-4802?as=in&role=member&landing=open&host=hosted&hosted=up&net=ok&data=full&still=1&stage=test-bun",
+          "label": "CI run · named Bun SQLite failure",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/releases/plan",
+      "screens": [
+        {
+          "id": "effect-releases-plan-ready",
+          "route": "smithers.sh/Effect-TS/effect/releases/plan?as=in&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&screen=plan-ready",
+          "label": "Version packages · pending changesets",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-plan-preview",
+          "route": "smithers.sh/Effect-TS/effect/releases/plan?as=in&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&preview=1&screen=plan-preview",
+          "label": "Version packages · computed preview",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-plan-confirm",
+          "route": "smithers.sh/Effect-TS/effect/releases/plan?as=in&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&preview=1&act=prepare&screen=plan-confirm",
+          "label": "Version packages · confirmation",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-plan-existing-pr",
+          "route": "smithers.sh/Effect-TS/effect/releases/plan?as=in&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&existing=1&screen=plan-existing-pr",
+          "label": "Version packages · existing PR",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-plan-stale",
+          "route": "smithers.sh/Effect-TS/effect/releases/plan?as=in&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&stale=1&screen=plan-stale",
+          "label": "Version packages · main moved",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-plan-running",
+          "route": "smithers.sh/Effect-TS/effect/releases/plan?as=in&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&preparing=1&screen=plan-running",
+          "label": "Version packages · preparation running",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-plan-failed",
+          "route": "smithers.sh/Effect-TS/effect/releases/plan?as=in&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&failed=1&screen=plan-failed",
+          "label": "Version packages · preparation failed",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-plan-empty",
+          "route": "smithers.sh/Effect-TS/effect/releases/plan?as=in&role=member&net=ok&data=empty&landing=open&host=hosted&hosted=up&model=connected&screen=plan-empty",
+          "label": "Version packages · no changesets",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-plan-held",
+          "route": "smithers.sh/Effect-TS/effect/releases/plan?as=in&role=member&net=ok&data=full&landing=install&host=hosted&hosted=up&model=connected&preview=1&screen=plan-held",
+          "label": "Version packages · local command",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-plan-signed-out",
+          "route": "smithers.sh/Effect-TS/effect/releases/plan?as=out&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&preview=1&act=prepare&screen=plan-signed-out",
+          "label": "Version packages · sign in to prepare",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-plan-denied",
+          "route": "smithers.sh/Effect-TS/effect/releases/plan?as=in&role=reader&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&preview=1&act=prepare&screen=plan-denied",
+          "label": "Version packages · membership required",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-plan-scoped",
+          "route": "smithers.sh/Effect-TS/effect/releases/plan?as=in&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&preview=1&package=sql-pg&screen=plan-scoped",
+          "label": "Version packages · scope keeps the complete impact",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-plan-loading",
+          "route": "smithers.sh/Effect-TS/effect/releases/plan?as=in&role=member&net=slow&data=full&landing=open&host=hosted&hosted=up&model=connected&screen=plan-loading",
+          "label": "Version packages · loading",
+          "site": "effect",
+          "wait": 100
+        },
+        {
+          "id": "effect-releases-plan-error",
+          "route": "smithers.sh/Effect-TS/effect/releases/plan?as=in&role=member&net=error&data=full&landing=open&host=hosted&hosted=up&model=connected&screen=plan-error",
+          "label": "Version packages · read failed",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/releases",
+      "screens": [
+        {
+          "id": "effect-releases-sql-pg",
+          "route": "smithers.sh/Effect-TS/effect/releases?as=in&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&package=sql-pg&screen=sql-pg",
+          "label": "Releases · PostgreSQL changelog",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-unscoped",
+          "route": "smithers.sh/Effect-TS/effect/releases?as=in&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&screen=unscoped",
+          "label": "Releases · shared notes",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-private",
+          "route": "smithers.sh/Effect-TS/effect/releases?as=in&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&package=ai-codegen&screen=private",
+          "label": "Releases · private tools excluded",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-empty",
+          "route": "smithers.sh/Effect-TS/effect/releases?as=in&role=member&net=ok&data=empty&landing=open&host=hosted&hosted=up&model=connected&package=sql-pg&screen=empty",
+          "label": "Releases · empty",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-signed-out",
+          "route": "smithers.sh/Effect-TS/effect/releases?as=out&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&package=sql-pg&screen=signed-out",
+          "label": "Releases · public notes",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-reader",
+          "route": "smithers.sh/Effect-TS/effect/releases?as=in&role=reader&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&package=sql-pg&screen=reader",
+          "label": "Releases · reader",
+          "site": "effect"
+        },
+        {
+          "id": "effect-releases-loading",
+          "route": "smithers.sh/Effect-TS/effect/releases?as=in&role=member&net=slow&data=full&landing=open&host=hosted&hosted=up&model=connected&package=sql-pg&screen=loading",
+          "label": "Releases · loading",
+          "site": "effect",
+          "wait": 100
+        },
+        {
+          "id": "effect-releases-error",
+          "route": "smithers.sh/Effect-TS/effect/releases?as=in&role=member&net=error&data=full&landing=open&host=hosted&hosted=up&model=connected&package=sql-pg&screen=error",
+          "label": "Releases · read failed",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/releases/tag/:tag",
+      "screens": [
+        {
+          "id": "effect-releases-sql-pg-tag",
+          "route": "smithers.sh/Effect-TS/effect/releases/tag/4.0.0-rc.118?as=in&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&package=sql-pg&screen=sql-pg-tag",
+          "label": "Release · PostgreSQL notes",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/Effect-TS/effect/pull/111",
+      "screens": [
+        {
+          "id": "effect-releases-version-pr-conversation",
+          "route": "smithers.sh/Effect-TS/effect/pull/111?as=in&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&screen=version-pr-conversation",
+          "label": "Version PR · conversation",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/Effect-TS/effect/pull/111/commits",
+      "screens": [
+        {
+          "id": "effect-releases-version-pr-commits",
+          "route": "smithers.sh/Effect-TS/effect/pull/111/commits?as=in&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&screen=version-pr-commits",
+          "label": "Version PR · commits",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/Effect-TS/effect/pull/111/checks",
+      "screens": [
+        {
+          "id": "effect-releases-version-pr-checks",
+          "route": "smithers.sh/Effect-TS/effect/pull/111/checks?as=in&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&screen=version-pr-checks",
+          "label": "Version PR · checks",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/Effect-TS/effect/pull/111/files",
+      "screens": [
+        {
+          "id": "effect-releases-version-pr-files",
+          "route": "smithers.sh/Effect-TS/effect/pull/111/files?as=in&role=member&net=ok&data=full&landing=open&host=hosted&hosted=up&model=connected&screen=version-pr-files",
+          "label": "Version PR · files",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/docs",
+      "screens": [
+        {
+          "id": "effect-docs-packages-index",
+          "route": "smithers.sh/Effect-TS/effect/docs?as=in&role=member&landing=open&host=hosted&net=ok&data=full&model=connected",
+          "label": "Docs · all packages",
+          "site": "effect"
+        },
+        {
+          "id": "effect-docs-index-scoped",
+          "route": "smithers.sh/Effect-TS/effect/docs?as=in&role=member&landing=open&host=hosted&net=ok&data=full&model=connected&package=sql-pg",
+          "label": "Docs · PostgreSQL package",
+          "site": "effect"
+        },
+        {
+          "id": "effect-docs-loading",
+          "route": "smithers.sh/Effect-TS/effect/docs?as=in&role=member&landing=open&host=hosted&net=slow&data=full&model=connected",
+          "label": "Docs · loading",
+          "site": "effect",
+          "wait": 100
+        },
+        {
+          "id": "effect-docs-error",
+          "route": "smithers.sh/Effect-TS/effect/docs?as=in&role=member&landing=open&host=hosted&net=error&data=full&model=connected",
+          "label": "Docs · error",
+          "site": "effect"
+        },
+        {
+          "id": "effect-docs-empty",
+          "route": "smithers.sh/Effect-TS/effect/docs?as=in&role=member&landing=open&host=hosted&net=ok&data=empty&model=connected",
+          "label": "Docs · empty",
+          "site": "effect"
+        },
+        {
+          "id": "effect-docs-signed-out",
+          "route": "smithers.sh/Effect-TS/effect/docs?as=out&role=member&landing=open&host=hosted&net=ok&data=full&model=connected",
+          "label": "Docs · public reading",
+          "site": "effect"
+        },
+        {
+          "id": "effect-docs-reader",
+          "route": "smithers.sh/Effect-TS/effect/docs?as=in&role=reader&landing=open&host=hosted&net=ok&data=full&model=connected",
+          "label": "Docs · reader",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/docs/*",
+      "screens": [
+        {
+          "id": "effect-docs-sql-pg",
+          "route": "smithers.sh/Effect-TS/effect/docs/sql-pg?as=in&role=member&landing=open&host=hosted&net=ok&data=full&model=connected&package=sql-pg",
+          "label": "Docs · PostgreSQL README",
+          "site": "effect"
+        },
+        {
+          "id": "effect-docs-api",
+          "route": "smithers.sh/Effect-TS/effect/docs/sql-pg/PgClient?as=in&role=member&landing=open&host=hosted&net=ok&data=full&model=connected&package=sql-pg",
+          "label": "Docs · PgClient API",
+          "site": "effect"
+        },
+        {
+          "id": "effect-docs-stale",
+          "route": "smithers.sh/Effect-TS/effect/docs/sql-pg/PgConnection?as=in&role=member&landing=open&host=hosted&net=ok&data=full&model=connected&package=sql-pg",
+          "label": "Docs · source changed since generation",
+          "site": "effect"
+        },
+        {
+          "id": "effect-docs-missing",
+          "route": "smithers.sh/Effect-TS/effect/docs/sql-pg/no-such-page?as=in&role=member&landing=open&host=hosted&net=ok&data=full&model=connected&package=sql-pg",
+          "label": "Docs · missing page",
+          "site": "effect"
+        },
+        {
+          "id": "effect-docs-no-package-docs",
+          "route": "smithers.sh/Effect-TS/effect/docs/ai-codegen?as=in&role=member&landing=open&host=hosted&net=ok&data=full&model=connected&package=ai-codegen",
+          "label": "Docs · package without docs",
+          "site": "effect"
+        },
+        {
+          "id": "effect-docs-page-loading",
+          "route": "smithers.sh/Effect-TS/effect/docs/sql-pg?as=in&role=member&landing=open&host=hosted&net=slow&data=full&model=connected&package=sql-pg",
+          "label": "Docs · page loading",
+          "site": "effect",
+          "wait": 100
+        },
+        {
+          "id": "effect-docs-page-error",
+          "route": "smithers.sh/Effect-TS/effect/docs/sql-pg?as=in&role=member&landing=open&host=hosted&net=error&data=full&model=connected&package=sql-pg",
+          "label": "Docs · page error",
+          "site": "effect"
+        },
+        {
+          "id": "effect-docs-page-empty",
+          "route": "smithers.sh/Effect-TS/effect/docs/sql-pg?as=in&role=member&landing=open&host=hosted&net=ok&data=empty&model=connected&package=sql-pg",
+          "label": "Docs · package empty",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/actions",
+      "screens": [
+        {
+          "id": "effect-repo-actions",
+          "route": "smithers.sh/Effect-TS/effect/actions?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Redirect · actions",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/labels",
+      "screens": [
+        {
+          "id": "effect-repo-labels",
+          "route": "smithers.sh/Effect-TS/effect/labels?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Redirect · labels",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/milestones",
+      "screens": [
+        {
+          "id": "effect-repo-milestones",
+          "route": "smithers.sh/Effect-TS/effect/milestones?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Redirect · milestones",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/releases/latest",
+      "screens": [
+        {
+          "id": "effect-repo-releases-latest",
+          "route": "smithers.sh/Effect-TS/effect/releases/latest?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Redirect · releases/latest",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo",
+      "screens": [
+        {
+          "id": "effect-repo-home",
+          "route": "smithers.sh/Effect-TS/effect?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository · Code",
+          "site": "effect"
+        },
+        {
+          "id": "effect-repo-home-loading",
+          "route": "smithers.sh/Effect-TS/effect?as=in&role=member&net=slow&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Loading repository",
+          "site": "effect",
+          "wait": 120
+        },
+        {
+          "id": "effect-repo-home-error",
+          "route": "smithers.sh/Effect-TS/effect?as=in&role=member&net=error&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository read failed",
+          "site": "effect"
+        },
+        {
+          "id": "effect-repo-home-empty",
+          "route": "smithers.sh/Effect-TS/effect?as=in&role=member&net=ok&data=empty&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Empty repository",
+          "site": "effect"
+        },
+        {
+          "id": "effect-repo-home-signed-out",
+          "route": "smithers.sh/Effect-TS/effect?as=out&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Public repository",
+          "site": "effect"
+        },
+        {
+          "id": "effect-repo-home-scoped",
+          "route": "smithers.sh/Effect-TS/effect?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected&package=sql-pg",
+          "label": "Repository with package scope",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/tree/:ref",
+      "screens": [
+        {
+          "id": "effect-repo-tree-ref",
+          "route": "smithers.sh/Effect-TS/effect/tree/main?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository root",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/tree/:ref/*",
+      "screens": [
+        {
+          "id": "effect-repo-tree-ref-path",
+          "route": "smithers.sh/Effect-TS/effect/tree/main/packages/sql/pg/src?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Directory",
+          "site": "effect"
+        },
+        {
+          "id": "effect-package-inferred-tree",
+          "route": "smithers.sh/Effect-TS/effect/tree/main/packages/sql/pg/src?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Package inferred from directory",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/blob/:ref/*",
+      "screens": [
+        {
+          "id": "effect-repo-blob-ref-path",
+          "route": "smithers.sh/Effect-TS/effect/blob/main/packages/sql/pg/src/PgClient.ts?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "File",
+          "site": "effect"
+        },
+        {
+          "id": "effect-package-inferred-file",
+          "route": "smithers.sh/Effect-TS/effect/blob/main/packages/sql/pg/src/PgClient.ts?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Package inferred from source file",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/blame/:ref/*",
+      "screens": [
+        {
+          "id": "effect-repo-blame-ref-path",
+          "route": "smithers.sh/Effect-TS/effect/blame/main/packages/sql/pg/src/PgClient.ts?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Line history",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/branches/:branch/terminal",
+      "screens": [
+        {
+          "id": "effect-repo-branches-branch-terminal",
+          "route": "smithers.sh/Effect-TS/effect/branches/fix%2Fpg-aborted-commit/terminal?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository · Branch terminal",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/commits/:ref",
+      "screens": [
+        {
+          "id": "effect-repo-commits-ref",
+          "route": "smithers.sh/Effect-TS/effect/commits/main?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository · Commits",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/commits/:ref/*",
+      "screens": [
+        {
+          "id": "effect-repo-commits-ref-path",
+          "route": "smithers.sh/Effect-TS/effect/commits/main/packages/sql/pg/src?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository · Path history",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/commit/:sha",
+      "screens": [
+        {
+          "id": "effect-repo-commit-sha",
+          "route": "smithers.sh/Effect-TS/effect/commit/399df09b4bf4102f7e5be8feceffa9e5a33c8a8b?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository · Commit",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/branches",
+      "screens": [
+        {
+          "id": "effect-repo-branches",
+          "route": "smithers.sh/Effect-TS/effect/branches?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository · Branches",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/tags",
+      "screens": [
+        {
+          "id": "effect-repo-tags",
+          "route": "smithers.sh/Effect-TS/effect/tags?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository · Tags",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/bug",
+      "screens": [
+        {
+          "id": "effect-repo-bug",
+          "route": "smithers.sh/Effect-TS/effect/bug?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "S#9 Report a bug · PM #37–40",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/bug/sent/:n",
+      "screens": [
+        {
+          "id": "effect-repo-bug-sent-n",
+          "route": "smithers.sh/Effect-TS/effect/bug/sent/42?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "S#9 Published bug · PM #39",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/issues",
+      "screens": [
+        {
+          "id": "effect-repo-issues",
+          "route": "smithers.sh/Effect-TS/effect/issues?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository · Issues",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/issues/new",
+      "screens": [
+        {
+          "id": "effect-repo-issues-new",
+          "route": "smithers.sh/Effect-TS/effect/issues/new?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository · New issue",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/issues/:n",
+      "screens": [
+        {
+          "id": "effect-repo-issues-n",
+          "route": "smithers.sh/Effect-TS/effect/issues/42?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository · Issue",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/pull/:n/commits",
+      "screens": [
+        {
+          "id": "effect-repo-pull-n-commits",
+          "route": "smithers.sh/Effect-TS/effect/pull/101/commits?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Pull request · Commits",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/pull/:n/checks",
+      "screens": [
+        {
+          "id": "effect-repo-pull-n-checks",
+          "route": "smithers.sh/Effect-TS/effect/pull/101/checks?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Pull request · Checks",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/pull/:n/files",
+      "screens": [
+        {
+          "id": "effect-repo-pull-n-files",
+          "route": "smithers.sh/Effect-TS/effect/pull/101/files?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Pull request · Files changed",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/pull/:n",
+      "screens": [
+        {
+          "id": "effect-repo-pull-n",
+          "route": "smithers.sh/Effect-TS/effect/pull/101?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Pull request · Conversation",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/pulls",
+      "screens": [
+        {
+          "id": "effect-repo-pulls",
+          "route": "smithers.sh/Effect-TS/effect/pulls?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Pull requests",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/stack",
+      "screens": [
+        {
+          "id": "effect-repo-stack",
+          "route": "smithers.sh/Effect-TS/effect/stack?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Stack",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/approvals",
+      "screens": [
+        {
+          "id": "effect-repo-approvals",
+          "route": "smithers.sh/Effect-TS/effect/approvals?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository approvals",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/flows/:name",
+      "screens": [
+        {
+          "id": "effect-repo-flows-name",
+          "route": "smithers.sh/Effect-TS/effect/flows/affected?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository flow",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/agents",
+      "screens": [
+        {
+          "id": "effect-repo-agents",
+          "route": "smithers.sh/Effect-TS/effect/agents?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository agents",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/flows",
+      "screens": [
+        {
+          "id": "effect-repo-flows",
+          "route": "smithers.sh/Effect-TS/effect/flows?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository flows",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/evals",
+      "screens": [
+        {
+          "id": "effect-repo-evals",
+          "route": "smithers.sh/Effect-TS/effect/evals?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Undeclared tab · not found",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/evals/:suite",
+      "screens": [
+        {
+          "id": "effect-repo-evals-suite",
+          "route": "smithers.sh/Effect-TS/effect/evals/agent?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Undeclared tab · not found",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/wiki/:page",
+      "screens": [
+        {
+          "id": "effect-repo-wiki-page",
+          "route": "smithers.sh/Effect-TS/effect/wiki/architecture?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository wiki page",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/wiki",
+      "screens": [
+        {
+          "id": "effect-repo-wiki",
+          "route": "smithers.sh/Effect-TS/effect/wiki?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository wiki",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/settings/:section",
+      "screens": [
+        {
+          "id": "effect-repo-settings-section",
+          "route": "smithers.sh/Effect-TS/effect/settings/models?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository settings · section",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/settings",
+      "screens": [
+        {
+          "id": "effect-repo-settings",
+          "route": "smithers.sh/Effect-TS/effect/settings?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository settings",
+          "site": "effect"
+        }
+      ]
+    },
+    {
+      "pattern": "smithers.sh/:owner/:repo/search",
+      "screens": [
+        {
+          "id": "effect-repo-search",
+          "route": "smithers.sh/Effect-TS/effect/search?as=in&role=member&net=ok&data=full&landing=open&hosted=up&host=hosted&model=connected",
+          "label": "Repository · Search",
+          "site": "effect"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,961 @@
+[
+  {
+    "pattern": "__screens",
+    "screens": [
+      {
+        "id": "effeck-site-all-screens",
+        "route": "__screens",
+        "label": "All screens",
+        "site": "effeck-site"
+      }
+    ]
+  },
+  {
+    "pattern": "effeck.dev/",
+    "screens": [
+      {
+        "id": "effeck-site-landing-example",
+        "route": "effeck.dev/",
+        "label": "Converter off: read-only example pair, install command",
+        "site": "effeck-site"
+      },
+      {
+        "id": "effeck-site-landing-example-copied",
+        "route": "effeck.dev/?state=copied",
+        "label": "Converter off: install command copied",
+        "site": "effeck-site"
+      },
+      {
+        "id": "effeck-site-converter-initial",
+        "route": "effeck.dev/?converter=on",
+        "label": "Precomputed pair, Compiles, Convert disabled",
+        "site": "effeck-site"
+      },
+      {
+        "id": "effeck-site-converter-edited",
+        "route": "effeck.dev/?converter=on&state=edited",
+        "label": "Edited left, out-of-date right, Convert enabled",
+        "site": "effeck-site"
+      },
+      {
+        "id": "effeck-site-converter-converting",
+        "route": "effeck.dev/?converter=on&state=converting",
+        "label": "Left locked, right mid-stream, Cancel",
+        "site": "effeck-site"
+      },
+      {
+        "id": "effeck-site-converter-compiled",
+        "route": "effeck.dev/?converter=on&state=compiled",
+        "label": "Converted output, Copy, Share, install and Smithers lines",
+        "site": "effeck-site"
+      },
+      {
+        "id": "effeck-site-converter-failed",
+        "route": "effeck.dev/?converter=on&state=failed",
+        "label": "Did not compile, diagnostics, Report this conversion",
+        "site": "effeck-site"
+      },
+      {
+        "id": "effeck-site-converter-not-effect",
+        "route": "effeck.dev/?converter=on&state=not-effect",
+        "label": "Left holds React; refusal replaces the right pane",
+        "site": "effeck-site"
+      },
+      {
+        "id": "effeck-site-converter-limit",
+        "route": "effeck.dev/?converter=on&state=limit",
+        "label": "Daily limit reached; install line offered",
+        "site": "effeck-site"
+      },
+      {
+        "id": "effeck-site-converter-shared",
+        "route": "effeck.dev/?converter=on&state=shared",
+        "label": "Opened from a share link, verified receipt",
+        "site": "effeck-site"
+      },
+      {
+        "id": "effeck-site-converter-shared-altered",
+        "route": "effeck.dev/?converter=on&state=shared-altered",
+        "label": "Share link content altered; Not verified, no Share",
+        "site": "effeck-site"
+      }
+    ]
+  },
+  {
+    "pattern": "effeck.dev/*",
+    "screens": [
+      {
+        "id": "effeck-site-effeck-docs-welcome",
+        "route": "effeck.dev/001-onboarding.html",
+        "label": "Welcome to VibeLang",
+        "site": "effeck-site"
+      },
+      {
+        "id": "effeck-site-effeck-docs-why",
+        "route": "effeck.dev/getting-started/002-why-effect.html",
+        "label": "Why VibeLang?",
+        "site": "effeck-site"
+      },
+      {
+        "id": "effeck-site-effeck-docs-installation",
+        "route": "effeck.dev/getting-started/004-installation.html",
+        "label": "Installation",
+        "site": "effeck-site"
+      },
+      {
+        "id": "effeck-site-effeck-docs-two-error-types",
+        "route": "effeck.dev/error-management/006-two-error-types.html",
+        "label": "Two Types of Errors",
+        "site": "effeck-site"
+      },
+      {
+        "id": "effeck-site-effeck-docs-pipelines",
+        "route": "effeck.dev/getting-started/011-building-pipelines.html",
+        "label": "Building Pipelines",
+        "site": "effeck-site"
+      },
+      {
+        "id": "effeck-site-effeck-docs-cli",
+        "route": "effeck.dev/setup/effeck-cli.html",
+        "label": "Build with the vibelang CLI",
+        "site": "effeck-site"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/signin",
+    "screens": [
+      {
+        "id": "effeck-site-signin-return-repo",
+        "route": "smithers.sh/signin?return=smithers.sh%2Feffeck%2Feffeck",
+        "label": "Authorize Smithers, returning to a repo",
+        "site": "effeck-site"
+      },
+      {
+        "id": "effeck-site-signin-return-bug",
+        "route": "smithers.sh/signin?return=smithers.sh%2Feffeck%2Feffeck%3Fcard%3Dbug",
+        "label": "Authorize Smithers, returning to the bug card",
+        "site": "effeck-site"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo",
+    "screens": [
+      {
+        "id": "effeck-site-home",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository · Code"
+      },
+      {
+        "id": "effeck-site-home-loading",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=slow&data=full",
+        "label": "Loading",
+        "wait": 100
+      },
+      {
+        "id": "effeck-site-home-error",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=error&data=full",
+        "label": "Read failed · Retry"
+      },
+      {
+        "id": "effeck-site-home-empty",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=empty",
+        "label": "Empty"
+      },
+      {
+        "id": "effeck-site-home-signed-out",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck?as=out&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Read signed out"
+      },
+      {
+        "id": "effeck-site-home-reader",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck?as=in&role=reader&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Read as a reader"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/tree/:ref",
+    "screens": [
+      {
+        "id": "effeck-site-tree",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/tree/main?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository root"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/tree/:ref/*",
+    "screens": [
+      {
+        "id": "effeck-site-directory",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/tree/main/examples/users/src?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Directory"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/blob/:ref/*",
+    "screens": [
+      {
+        "id": "effeck-site-file",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/blob/main/examples/users/src/main.effeck?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "File"
+      },
+      {
+        "id": "effeck-site-file-diagnostic",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/blob/main/typescript/effeck/lsp-fixture/src/old-await.effeck?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "VibeLang compiler diagnostic"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/blame/:ref/*",
+    "screens": [
+      {
+        "id": "effeck-site-blame",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/blame/main/examples/users/src/main.effeck?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Line history"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/branches/:branch/terminal",
+    "screens": [
+      {
+        "id": "effeck-site-terminal",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/branches/main/terminal?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository · Branch terminal"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/commits/:ref",
+    "screens": [
+      {
+        "id": "effeck-site-commits",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/commits/main?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository · Commits"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/commits/:ref/*",
+    "screens": [
+      {
+        "id": "effeck-site-file-history",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/commits/main/templates/app/src/greeting.effeck?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository · Path history"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/commit/:sha",
+    "screens": [
+      {
+        "id": "effeck-site-commit",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/commit/8eb9c4ae1e461549ba57e4f158ecec20526a7a93?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository · Commit"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/branches",
+    "screens": [
+      {
+        "id": "effeck-site-branches",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/branches?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository · Branches"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/tags",
+    "screens": [
+      {
+        "id": "effeck-site-tags",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/tags?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository · Tags"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/issues",
+    "screens": [
+      {
+        "id": "effeck-site-issues",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/issues?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository · Issues"
+      },
+      {
+        "id": "effeck-site-fixed-by-agents",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/issues?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&q=is%3Afixed-by-agents",
+        "label": "Fixed by agents · four receipts"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/issues/new",
+    "screens": [
+      {
+        "id": "effeck-site-new-issue",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/issues/new?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository · New issue"
+      },
+      {
+        "id": "effeck-site-new-issue-signed-out",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/issues/new?as=out&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Sign in to report an issue"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/issues/:n",
+    "screens": [
+      {
+        "id": "effeck-site-issue",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/issues/31?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository · Issue"
+      },
+      {
+        "id": "effeck-site-receipt-32",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/issues/32?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Factory receipt · #32"
+      },
+      {
+        "id": "effeck-site-receipt-33",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/issues/33?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Factory receipt · #33"
+      },
+      {
+        "id": "effeck-site-receipt-34",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/issues/34?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Factory receipt · #34"
+      },
+      {
+        "id": "effeck-site-implement-held",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/issues/50?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&act=implement",
+        "label": "Implement · hosted held"
+      },
+      {
+        "id": "effeck-site-implement-denied",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/issues/50?as=in&role=reader&landing=open&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&act=implement",
+        "label": "Implement · members only"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/pull/:n/commits",
+    "screens": [
+      {
+        "id": "effeck-site-pull-commits",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/pull/103/commits?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Pull request · Commits"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/pull/:n/checks",
+    "screens": [
+      {
+        "id": "effeck-site-pull-checks",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/pull/103/checks?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Pull request · Checks"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/pull/:n/files",
+    "screens": [
+      {
+        "id": "effeck-site-pull-files",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/pull/103/files?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Pull request · Files changed"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/pull/:n",
+    "screens": [
+      {
+        "id": "effeck-site-pull",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/pull/103?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Pull request · Conversation"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/pulls",
+    "screens": [
+      {
+        "id": "effeck-site-pulls",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/pulls?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Pull requests"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/stack",
+    "screens": [
+      {
+        "id": "effeck-site-stack",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/stack?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Stack"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/runs/:id",
+    "screens": [
+      {
+        "id": "effeck-site-run",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/runs/run-convert-golden-eval?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository run"
+      },
+      {
+        "id": "effeck-site-run-docs-examples",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/runs/run-docs-examples-eval?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Docs compile result"
+      },
+      {
+        "id": "effeck-site-run-release",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/runs/run-release-review?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Release · waiting for a person"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/approvals",
+    "screens": [
+      {
+        "id": "effeck-site-approvals",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/approvals?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository approvals"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/runs",
+    "screens": [
+      {
+        "id": "effeck-site-runs",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/runs?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository runs"
+      },
+      {
+        "id": "effeck-site-runs-convert-golden",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/runs?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&flow=convert-golden",
+        "label": "Runs · convert-golden"
+      },
+      {
+        "id": "effeck-site-runs-docs-sync",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/runs?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&flow=docs-sync",
+        "label": "Runs · docs-sync"
+      },
+      {
+        "id": "effeck-site-runs-implement-issue",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/runs?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&flow=implement-issue",
+        "label": "Runs · implement-issue"
+      },
+      {
+        "id": "effeck-site-runs-release",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/runs?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&flow=release",
+        "label": "Runs · release"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/flows/:name",
+    "screens": [
+      {
+        "id": "effeck-site-flow",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/flows/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository flow"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/agents",
+    "screens": [
+      {
+        "id": "effeck-site-agents",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/agents?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository agents"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/flows",
+    "screens": [
+      {
+        "id": "effeck-site-flows",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/flows?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository flows"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/evals",
+    "screens": [
+      {
+        "id": "effeck-site-evals",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository · Evals"
+      },
+      {
+        "id": "effeck-site-evals-loading",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=slow&data=full",
+        "label": "Loading",
+        "wait": 100
+      },
+      {
+        "id": "effeck-site-evals-error",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=error&data=full",
+        "label": "Read failed · Retry"
+      },
+      {
+        "id": "effeck-site-evals-empty",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=empty",
+        "label": "Empty"
+      },
+      {
+        "id": "effeck-site-evals-signed-out",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals?as=out&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Read signed out"
+      },
+      {
+        "id": "effeck-site-evals-reader",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals?as=in&role=reader&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Read as a reader"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/evals/:suite",
+    "screens": [
+      {
+        "id": "effeck-site-golden-set",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository · Eval suite"
+      },
+      {
+        "id": "effeck-site-golden-set-loading",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=slow&data=full",
+        "label": "Loading",
+        "wait": 100
+      },
+      {
+        "id": "effeck-site-golden-set-error",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=error&data=full",
+        "label": "Read failed · Retry"
+      },
+      {
+        "id": "effeck-site-golden-set-empty",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=empty",
+        "label": "Empty"
+      },
+      {
+        "id": "effeck-site-golden-set-signed-out",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=out&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Read signed out"
+      },
+      {
+        "id": "effeck-site-golden-set-reader",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=reader&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Read as a reader"
+      },
+      {
+        "id": "effeck-site-golden-case-01-hero-batch-lookup",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=01-hero-batch-lookup",
+        "label": "Golden case · Hero · batch user lookup"
+      },
+      {
+        "id": "effeck-site-golden-case-02-typed-error-fallback",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=02-typed-error-fallback",
+        "label": "Golden case · Typed error fallback"
+      },
+      {
+        "id": "effeck-site-golden-case-03-service-and-layer",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=03-service-and-layer",
+        "label": "Golden case · Service and Layer.succeed"
+      },
+      {
+        "id": "effeck-site-golden-case-04-layer-with-setup",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=04-layer-with-setup",
+        "label": "Golden case · Layer.effect setup"
+      },
+      {
+        "id": "effeck-site-golden-case-05-retry-recurs",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=05-retry-recurs",
+        "label": "Golden case · Bounded retries"
+      },
+      {
+        "id": "effeck-site-golden-case-06-timeout-fallback",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=06-timeout-fallback",
+        "label": "Golden case · Timeout fallback"
+      },
+      {
+        "id": "effeck-site-golden-case-07-foreach-concurrency",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=07-foreach-concurrency",
+        "label": "Golden case · forEach concurrency"
+      },
+      {
+        "id": "effeck-site-golden-case-08-all-concurrent",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=08-all-concurrent",
+        "label": "Golden case · Concurrent tuple"
+      },
+      {
+        "id": "effeck-site-golden-case-09-schema-struct",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=09-schema-struct",
+        "label": "Golden case · Schema with optional field"
+      },
+      {
+        "id": "effeck-site-golden-case-10-option-methods",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=10-option-methods",
+        "label": "Golden case · Option methods"
+      },
+      {
+        "id": "effeck-site-golden-case-11-ref-counter",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=11-ref-counter",
+        "label": "Golden case · Ref counter"
+      },
+      {
+        "id": "effeck-site-golden-case-12-console-and-log",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=12-console-and-log",
+        "label": "Golden case · Console and log"
+      },
+      {
+        "id": "effeck-site-golden-case-13-fork-join",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=13-fork-join",
+        "label": "Golden case · Fork and join"
+      },
+      {
+        "id": "effeck-site-golden-case-14-race",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=14-race",
+        "label": "Golden case · Race two programs"
+      },
+      {
+        "id": "effeck-site-golden-case-15-ensuring-finally",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=15-ensuring-finally",
+        "label": "Golden case · Finally cleanup"
+      },
+      {
+        "id": "effeck-site-golden-case-16-config",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=16-config",
+        "label": "Golden case · Config integer"
+      },
+      {
+        "id": "effeck-site-golden-case-17-stream-methods",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=17-stream-methods",
+        "label": "Golden case · Stream methods"
+      },
+      {
+        "id": "effeck-site-golden-case-18-catch-all",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=18-catch-all",
+        "label": "Golden case · Exhaustive error recovery"
+      },
+      {
+        "id": "effeck-site-golden-case-19-sync-and-try",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=19-sync-and-try",
+        "label": "Golden case · try and sync hatches"
+      },
+      {
+        "id": "effeck-site-golden-case-20-schedule-repeat",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&case=20-schedule-repeat",
+        "label": "Golden case · Schedule repeat"
+      },
+      {
+        "id": "effeck-site-docs-examples-compile",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/docs-examples-compile?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Docs examples compile"
+      },
+      {
+        "id": "effeck-site-eval-held",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&act=run",
+        "label": "Model gate not wired · expected-output command"
+      },
+      {
+        "id": "effeck-site-eval-denied",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=in&role=reader&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&act=run",
+        "label": "Run eval · members only"
+      },
+      {
+        "id": "effeck-site-eval-signin",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/evals/convert-golden?as=out&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&act=run",
+        "label": "Sign in to run eval"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/wiki/:page",
+    "screens": [
+      {
+        "id": "effeck-site-wiki-page",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/wiki/Golden-set?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository wiki page"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/wiki",
+    "screens": [
+      {
+        "id": "effeck-site-wiki",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/wiki?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository wiki"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/docs",
+    "screens": [
+      {
+        "id": "effeck-site-docs",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/docs?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository · Docs"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/docs/*",
+    "screens": [
+      {
+        "id": "effeck-site-docs-page",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/docs/user/src/001-onboarding?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository · Docs page"
+      },
+      {
+        "id": "effeck-site-docs-page-loading",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/docs/user/src/001-onboarding?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=slow&data=full",
+        "label": "Loading",
+        "wait": 100
+      },
+      {
+        "id": "effeck-site-docs-page-error",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/docs/user/src/001-onboarding?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=error&data=full",
+        "label": "Read failed · Retry"
+      },
+      {
+        "id": "effeck-site-docs-page-empty",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/docs/user/src/001-onboarding?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=empty",
+        "label": "Empty"
+      },
+      {
+        "id": "effeck-site-docs-page-signed-out",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/docs/user/src/001-onboarding?as=out&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Read signed out"
+      },
+      {
+        "id": "effeck-site-docs-page-reader",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/docs/user/src/001-onboarding?as=in&role=reader&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Read as a reader"
+      },
+      {
+        "id": "effeck-site-docs-hover-find",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/docs/user/src/001-onboarding?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&hover=find",
+        "label": "Docs hover · Effect.Effect<User, UserNotFound, Users>"
+      },
+      {
+        "id": "effeck-site-docs-hover-signed-out",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/docs/user/src/001-onboarding?as=out&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&hover=find",
+        "label": "Docs hover · signed out"
+      },
+      {
+        "id": "effeck-site-docs-002-why-effect",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/docs/user/src/getting-started/002-why-effect?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Why VibeLang?"
+      },
+      {
+        "id": "effeck-site-docs-004-installation",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/docs/user/src/getting-started/004-installation?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Installation"
+      },
+      {
+        "id": "effeck-site-docs-014-expected-errors",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/docs/user/src/error-management/014-expected-errors?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Expected Errors"
+      },
+      {
+        "id": "effeck-site-docs-015-unexpected-errors",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/docs/user/src/error-management/015-unexpected-errors?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Unexpected Errors"
+      },
+      {
+        "id": "effeck-site-docs-effeck-cli",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/docs/user/src/setup/effeck-cli?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Build with the vibelang CLI"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/releases/tag/:tag",
+    "screens": [
+      {
+        "id": "effeck-site-release",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/releases/tag/create-effeck%400.0.1?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository · Release"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/releases",
+    "screens": [
+      {
+        "id": "effeck-site-releases",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/releases?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository · Releases"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/settings/:section",
+    "screens": [
+      {
+        "id": "effeck-site-models",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/settings/models?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository settings · section"
+      },
+      {
+        "id": "effeck-site-models-held",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/settings/models?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Hosted model connections held"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/settings",
+    "screens": [
+      {
+        "id": "effeck-site-settings",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/settings?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Repository settings"
+      },
+      {
+        "id": "effeck-site-settings-denied",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/settings?as=in&role=reader&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Settings require membership"
+      },
+      {
+        "id": "effeck-site-settings-signin",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/settings?as=out&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full",
+        "label": "Sign in to open settings"
+      }
+    ]
+  },
+  {
+    "pattern": "smithers.sh/:owner/:repo/search",
+    "screens": [
+      {
+        "id": "effeck-site-search",
+        "site": "effeck-site",
+        "route": "smithers.sh/effeck/effeck/search?as=in&role=member&landing=install&host=hosted&hosted=up&converter=off&guest=off&model=connected&net=ok&data=full&q=Users",
+        "label": "Repository · Search"
+      }
+    ]
+  }
+]

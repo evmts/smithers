@@ -1,0 +1,42 @@
+[
+  {
+    "name": "bug",
+    "tone": "danger",
+    "description": "Something behaves incorrectly"
+  },
+  {
+    "name": "enhancement",
+    "tone": "brand",
+    "description": "A change to the public API"
+  },
+  {
+    "name": "docs",
+    "tone": "info",
+    "description": "Documentation and examples"
+  },
+  {
+    "name": "good first issue",
+    "tone": "success",
+    "description": "A small, scoped first contribution"
+  },
+  {
+    "name": "accepted",
+    "tone": "success",
+    "description": "A member agreed this should be worked on"
+  },
+  {
+    "name": "needs-repro",
+    "tone": "warning",
+    "description": "Needs a minimal reproduction"
+  },
+  {
+    "name": "perf",
+    "tone": "warning",
+    "description": "Runtime or memory performance"
+  },
+  {
+    "name": "question",
+    "tone": "neutral",
+    "description": "A question about expected behavior"
+  }
+]

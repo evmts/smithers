@@ -1,0 +1,560 @@
+[
+  {
+    "id": "review-seeded-bugs",
+    "title": "Review seeded bugs",
+    "file": ".smithers/flows/review/seeded-bugs/review-seeded-bugs.eval.ts",
+    "scorer": "review-seeded-bugs/f1",
+    "threshold": "No drift from the deterministic baseline",
+    "latest": {
+      "run": "run-eval-snapshot-review-seeded-bugs",
+      "date": "2026-10-17T23:00:00Z",
+      "score": 0.631578947368421,
+      "baseline": 0.631578947368421,
+      "passed": 16,
+      "total": 16,
+      "state": "pass"
+    },
+    "history": [
+      {
+        "date": "2026-10-17T23:00:00Z",
+        "score": 0.631578947368421
+      }
+    ],
+    "cases": [
+      {
+        "id": "clean-error-message",
+        "title": "clean-error-message",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded deterministic baseline: 0 matched, 0 false positive, 0 missed. Exact anchors and severity are gated separately."
+      },
+      {
+        "id": "clean-jsdoc",
+        "title": "clean-jsdoc",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded deterministic baseline: 0 matched, 0 false positive, 0 missed. Exact anchors and severity are gated separately."
+      },
+      {
+        "id": "clean-refactor",
+        "title": "clean-refactor",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded deterministic baseline: 0 matched, 0 false positive, 0 missed. Exact anchors and severity are gated separately."
+      },
+      {
+        "id": "clean-rename",
+        "title": "clean-rename",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded deterministic baseline: 0 matched, 0 false positive, 0 missed. Exact anchors and severity are gated separately."
+      },
+      {
+        "id": "cross-file-signature-mismatch",
+        "title": "cross-file-signature-mismatch",
+        "score": 0.0,
+        "baseline": 0.0,
+        "passed": true,
+        "detail": "Recorded deterministic baseline: 0 matched, 0 false positive, 1 missed. Exact anchors and severity are gated separately."
+      },
+      {
+        "id": "deleted-null-check",
+        "title": "deleted-null-check",
+        "score": 0.0,
+        "baseline": 0.0,
+        "passed": true,
+        "detail": "Recorded deterministic baseline: 0 matched, 0 false positive, 1 missed. Exact anchors and severity are gated separately."
+      },
+      {
+        "id": "deleted-null-check-config",
+        "title": "deleted-null-check-config",
+        "score": 0.0,
+        "baseline": 0.0,
+        "passed": true,
+        "detail": "Recorded deterministic baseline: 0 matched, 0 false positive, 1 missed. Exact anchors and severity are gated separately."
+      },
+      {
+        "id": "missing-await",
+        "title": "missing-await",
+        "score": 1.0,
+        "baseline": 1.0,
+        "passed": true,
+        "detail": "Recorded deterministic baseline: 1 matched, 0 false positive, 0 missed. Exact anchors and severity are gated separately."
+      },
+      {
+        "id": "missing-await-flush",
+        "title": "missing-await-flush",
+        "score": 0.6666666666666666,
+        "baseline": 0.6666666666666666,
+        "passed": true,
+        "detail": "Recorded deterministic baseline: 1 matched, 1 false positive, 0 missed. Exact anchors and severity are gated separately."
+      },
+      {
+        "id": "off-by-one-boundary",
+        "title": "off-by-one-boundary",
+        "score": 0.0,
+        "baseline": 0.0,
+        "passed": true,
+        "detail": "Recorded deterministic baseline: 0 matched, 0 false positive, 1 missed. Exact anchors and severity are gated separately."
+      },
+      {
+        "id": "off-by-one-slice",
+        "title": "off-by-one-slice",
+        "score": 1.0,
+        "baseline": 1.0,
+        "passed": true,
+        "detail": "Recorded deterministic baseline: 1 matched, 0 false positive, 0 missed. Exact anchors and severity are gated separately."
+      },
+      {
+        "id": "resource-leak",
+        "title": "resource-leak",
+        "score": 0.0,
+        "baseline": 0.0,
+        "passed": true,
+        "detail": "Recorded deterministic baseline: 0 matched, 0 false positive, 1 missed. Exact anchors and severity are gated separately."
+      },
+      {
+        "id": "resource-leak-timer",
+        "title": "resource-leak-timer",
+        "score": 0.0,
+        "baseline": 0.0,
+        "passed": true,
+        "detail": "Recorded deterministic baseline: 0 matched, 0 false positive, 1 missed. Exact anchors and severity are gated separately."
+      },
+      {
+        "id": "sql-injection",
+        "title": "sql-injection",
+        "score": 1.0,
+        "baseline": 1.0,
+        "passed": true,
+        "detail": "Recorded deterministic baseline: 1 matched, 0 false positive, 0 missed. Exact anchors and severity are gated separately."
+      },
+      {
+        "id": "sql-injection-like",
+        "title": "sql-injection-like",
+        "score": 1.0,
+        "baseline": 1.0,
+        "passed": true,
+        "detail": "Recorded deterministic baseline: 1 matched, 0 false positive, 0 missed. Exact anchors and severity are gated separately."
+      },
+      {
+        "id": "tautological-test",
+        "title": "tautological-test",
+        "score": 1.0,
+        "baseline": 1.0,
+        "passed": true,
+        "detail": "Recorded deterministic baseline: 1 matched, 0 false positive, 0 missed. Exact anchors and severity are gated separately."
+      }
+    ],
+    "note": "Offline pipeline baseline: F1 63.2%, recall 50%, precision 85.7%. A person reviews the resulting findings.",
+    "runnable": true,
+    "sourceFile": ".smithers/flows/review/seeded-bugs/baseline.json"
+  },
+  {
+    "id": "authoring",
+    "title": "Workflow authoring",
+    "file": "evals/authoring/validate.ts",
+    "scorer": "Chat shape · public workspace imports",
+    "threshold": "All pilot rows satisfy the validator",
+    "latest": {
+      "run": "run-eval-snapshot-authoring",
+      "date": "2026-10-17T23:00:00Z",
+      "score": 0,
+      "baseline": 0,
+      "passed": 0,
+      "total": 10,
+      "state": "inconclusive"
+    },
+    "history": [],
+    "cases": [
+      {
+        "id": "pilot-01",
+        "title": "pilot-01",
+        "score": 0,
+        "baseline": 0,
+        "passed": false,
+        "detail": "Pilot chat-format row: assistant final turn, user context, public workspace imports. Display snapshot; no validator execution receipt is supplied."
+      },
+      {
+        "id": "pilot-02",
+        "title": "pilot-02",
+        "score": 0,
+        "baseline": 0,
+        "passed": false,
+        "detail": "Pilot chat-format row: assistant final turn, user context, public workspace imports. Display snapshot; no validator execution receipt is supplied."
+      },
+      {
+        "id": "pilot-03",
+        "title": "pilot-03",
+        "score": 0,
+        "baseline": 0,
+        "passed": false,
+        "detail": "Pilot chat-format row: assistant final turn, user context, public workspace imports. Display snapshot; no validator execution receipt is supplied."
+      },
+      {
+        "id": "pilot-04",
+        "title": "pilot-04",
+        "score": 0,
+        "baseline": 0,
+        "passed": false,
+        "detail": "Pilot chat-format row: assistant final turn, user context, public workspace imports. Display snapshot; no validator execution receipt is supplied."
+      },
+      {
+        "id": "pilot-05",
+        "title": "pilot-05",
+        "score": 0,
+        "baseline": 0,
+        "passed": false,
+        "detail": "Pilot chat-format row: assistant final turn, user context, public workspace imports. Display snapshot; no validator execution receipt is supplied."
+      },
+      {
+        "id": "pilot-06",
+        "title": "pilot-06",
+        "score": 0,
+        "baseline": 0,
+        "passed": false,
+        "detail": "Pilot chat-format row: assistant final turn, user context, public workspace imports. Display snapshot; no validator execution receipt is supplied."
+      },
+      {
+        "id": "pilot-07",
+        "title": "pilot-07",
+        "score": 0,
+        "baseline": 0,
+        "passed": false,
+        "detail": "Pilot chat-format row: assistant final turn, user context, public workspace imports. Display snapshot; no validator execution receipt is supplied."
+      },
+      {
+        "id": "pilot-08",
+        "title": "pilot-08",
+        "score": 0,
+        "baseline": 0,
+        "passed": false,
+        "detail": "Pilot chat-format row: assistant final turn, user context, public workspace imports. Display snapshot; no validator execution receipt is supplied."
+      },
+      {
+        "id": "pilot-09",
+        "title": "pilot-09",
+        "score": 0,
+        "baseline": 0,
+        "passed": false,
+        "detail": "Pilot chat-format row: assistant final turn, user context, public workspace imports. Display snapshot; no validator execution receipt is supplied."
+      },
+      {
+        "id": "pilot-10",
+        "title": "pilot-10",
+        "score": 0,
+        "baseline": 0,
+        "passed": false,
+        "detail": "Pilot chat-format row: assistant final turn, user context, public workspace imports. Display snapshot; no validator execution receipt is supplied."
+      }
+    ],
+    "note": "Pilot dataset snapshot. No validator execution receipt or fixed-suite adapter is supplied.",
+    "runnable": false,
+    "unavailable": "The authoring validator has no eval suite adapter yet.",
+    "sourceFile": "evals/authoring/data/pilot-sft.jsonl",
+    "unexecuted": true
+  },
+  {
+    "id": "recommend",
+    "title": "Command recommendations",
+    "file": "packages/backend/modelhost/recommend-eval/recommend.eval.ts",
+    "scorer": "recommend/hit-rate · hit@5",
+    "threshold": "No regression from the sample log",
+    "latest": {
+      "run": "run-eval-snapshot-recommend",
+      "date": "2026-10-17T23:00:00Z",
+      "score": 0.6923076923076923,
+      "baseline": 0.6923076923076923,
+      "passed": 1,
+      "total": 1,
+      "state": "pass"
+    },
+    "history": [
+      {
+        "date": "2026-10-17T23:00:00Z",
+        "score": 0.6923076923076923
+      }
+    ],
+    "cases": [
+      {
+        "id": "sample",
+        "title": "sample",
+        "score": 0.6923076923076923,
+        "baseline": 0.6923076923076923,
+        "passed": true,
+        "detail": "9/13 outcomes hit an offered command. 3 rows without outcomes are excluded, not scored as failures."
+      }
+    ],
+    "note": "Offline sample log: 13/16 rows have outcomes.",
+    "runnable": true,
+    "sourceFile": "packages/backend/modelhost/recommend-eval/fixtures/sample.jsonl"
+  },
+  {
+    "id": "swebench",
+    "title": "SWE-bench Verified",
+    "file": "evals/swebench/fixtures/scorecard.json",
+    "scorer": "Resolved instances · tests pass",
+    "threshold": "Match the recorded Codex comparison (5/5)",
+    "latest": {
+      "run": "run-eval-snapshot-swebench",
+      "date": "2026-08-19T23:00:00Z",
+      "score": 0.2,
+      "baseline": 1,
+      "passed": 1,
+      "total": 5,
+      "state": "regressed"
+    },
+    "history": [
+      {
+        "date": "2026-08-19T23:00:00Z",
+        "score": 0.2
+      }
+    ],
+    "cases": [
+      {
+        "id": "astropy__astropy-8707",
+        "title": "astropy__astropy-8707",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Recorded 2026-08-19 fixture wave. Flows: empty patch; Codex comparison: resolved. 0 patch bytes. This is not a current benchmark result."
+      },
+      {
+        "id": "django__django-16612",
+        "title": "django__django-16612",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded 2026-08-19 fixture wave. Flows: resolved; Codex comparison: resolved. 643 patch bytes. This is not a current benchmark result."
+      },
+      {
+        "id": "pydata__xarray-7393",
+        "title": "pydata__xarray-7393",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Recorded 2026-08-19 fixture wave. Flows: empty patch; Codex comparison: resolved. 0 patch bytes. This is not a current benchmark result."
+      },
+      {
+        "id": "pytest-dev__pytest-6197",
+        "title": "pytest-dev__pytest-6197",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Recorded 2026-08-19 fixture wave. Flows: unresolved; Codex comparison: resolved. 386 patch bytes. This is not a current benchmark result."
+      },
+      {
+        "id": "sphinx-doc__sphinx-11445",
+        "title": "sphinx-doc__sphinx-11445",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Recorded 2026-08-19 fixture wave. Flows: unresolved; Codex comparison: resolved. 2373 patch bytes. This is not a current benchmark result."
+      }
+    ],
+    "note": "Imported snapshot · not in this repository. Recorded fixture wave · August 19, 2026. Flows resolved 1/5; Codex resolved 5/5. Baseline is that comparison, not a prior Smithers run. No current performance claim.",
+    "runnable": false,
+    "unavailable": "Recorded fixture wave · imported snapshot, not a repository suite.",
+    "sourceFile": "evals/swebench/fixtures/scorecard.json",
+    "importedSnapshot": true
+  },
+  {
+    "id": "agent",
+    "title": "Agent regression",
+    "file": "packages/smithers/agent/regression/agent.eval.ts",
+    "scorer": "evals/agent/behaviour · evals/agent/contract",
+    "threshold": "Mean 1 · minimum 1 · no missing cases",
+    "latest": {
+      "run": "run-eval-snapshot-agent",
+      "date": "2026-10-17T23:00:00Z",
+      "score": 1,
+      "baseline": 1,
+      "passed": 21,
+      "total": 21,
+      "state": "pass"
+    },
+    "history": [
+      {
+        "date": "2026-10-17T23:00:00Z",
+        "score": 1
+      }
+    ],
+    "cases": [
+      {
+        "id": "cell-calls-a-flow",
+        "title": "cell-calls-a-flow",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "checkpoint-at-base-is-never-silently-ignored",
+        "title": "checkpoint-at-base-is-never-silently-ignored",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "checkpoint-is-refused-by-a-host-that-pins-nothing",
+        "title": "checkpoint-is-refused-by-a-host-that-pins-nothing",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "checkpoint-mint-is-refused-catchably-without-a-store",
+        "title": "checkpoint-mint-is-refused-catchably-without-a-store",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "checkpoint-refuses-a-write-at-a-pinned-tree",
+        "title": "checkpoint-refuses-a-write-at-a-pinned-tree",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "correction-budget-exhausted",
+        "title": "correction-budget-exhausted",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "correction-reprompt-recovers",
+        "title": "correction-reprompt-recovers",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "max-frames-stops-the-run",
+        "title": "max-frames-stops-the-run",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "park-every-frame-still-hits-the-read-only-cap",
+        "title": "park-every-frame-still-hits-the-read-only-cap",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "park-without-a-human-is-answered",
+        "title": "park-without-a-human-is-answered",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "read-only-cap-stops-a-reading-run",
+        "title": "read-only-cap-stops-a-reading-run",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "repl-completion-behind-a-guard",
+        "title": "repl-completion-behind-a-guard",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "repl-completion-stops-the-calls-after-it",
+        "title": "repl-completion-stops-the-calls-after-it",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "repl-guard-that-does-not-fire-carries-on",
+        "title": "repl-guard-that-does-not-fire-carries-on",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "repl-print-reaches-the-next-frame",
+        "title": "repl-print-reaches-the-next-frame",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "repl-read-only-cap-takes-ctx-justify",
+        "title": "repl-read-only-cap-takes-ctx-justify",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "repl-realm-carries-a-binding-across-frames",
+        "title": "repl-realm-carries-a-binding-across-frames",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "seat-unresolved-is-typed",
+        "title": "seat-unresolved-is-typed",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "structured-output-decode",
+        "title": "structured-output-decode",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "structured-output-from-prose",
+        "title": "structured-output-from-prose",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      },
+      {
+        "id": "sufficiency-signal-reaches-the-next-frame",
+        "title": "sufficiency-signal-reaches-the-next-frame",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Recorded committed baseline. Both evals/agent/behaviour and evals/agent/contract must remain 1. No live model is graded."
+      }
+    ],
+    "note": "Scripted-provider baseline. Each case gates behaviour and observation contracts.",
+    "runnable": true,
+    "sourceFile": "packages/smithers/agent/regression/baseline.json"
+  }
+]

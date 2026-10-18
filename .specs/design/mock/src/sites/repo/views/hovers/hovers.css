@@ -1,0 +1,54 @@
+.repo-hovers-code {
+  margin: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: auto;
+  padding: var(--sp-5);
+  background: var(--code-bg);
+  color: var(--text);
+  tab-size: 2;
+  font: var(--fs-2)/1.8 var(--font-mono);
+}
+.repo-hovers-code code { font: inherit; white-space: pre; }
+.repo-frame .repo-hovers-token {
+  display: inline;
+  height: 1lh;
+  min-height: 0;
+  vertical-align: top;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-1);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  cursor: help;
+  text-decoration: underline dotted var(--border-strong);
+  text-underline-offset: 4px;
+}
+.repo-hovers-token:hover, .repo-hovers-token[aria-expanded="true"] { background: var(--brand-soft); color: var(--brand); }
+.repo-hovers-token:focus-visible, .repo-hovers-card a:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.repo-hovers-card {
+  position: fixed;
+  z-index: 150;
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-3);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-2);
+  font: var(--fs-2)/1.6 var(--font-ui);
+}
+.repo-hovers-card > code { display: block; color: var(--text); font: 13px/1.7 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.repo-hovers-card > p { margin: var(--sp-3) 0 0; color: var(--text-muted); }
+.repo-hovers-card nav { display: flex; flex-wrap: wrap; gap: var(--sp-4); margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.repo-hovers-card a { color: var(--brand); }
+/* Shared EvalCases accepts detail text; retain source indentation until it supports a code slot. */
+.repo-hovers-eval-details .repo-evals-case-detail p { white-space: pre-wrap; font: var(--fs-1)/1.8 var(--font-mono); }
+@media (max-width: 640px) {
+  .repo-hovers-code { padding: var(--sp-4); }
+}

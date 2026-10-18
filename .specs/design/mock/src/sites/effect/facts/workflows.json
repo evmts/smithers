@@ -1,0 +1,315 @@
+[
+  {
+    "file": ".github/workflows/ai-codegen.yml",
+    "name": "Nightly AI Codegen",
+    "on": {
+      "schedule": [
+        {
+          "cron": "0 0 * * *"
+        }
+      ],
+      "workflow_dispatch": null
+    },
+    "jobs": [
+      {
+        "id": "codegen",
+        "name": "AI Codegen",
+        "runsOn": "namespace-profile-linux-small",
+        "matrix": {},
+        "steps": [
+          "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+          "Install dependencies",
+          "Run AI Codegen",
+          "Check for changes",
+          "Create Pull Request"
+        ]
+      }
+    ]
+  },
+  {
+    "file": ".github/workflows/bundle-comment.yml",
+    "name": "Bundle Size Comment",
+    "on": {
+      "workflow_run": {
+        "workflows": [
+          "Check"
+        ],
+        "types": [
+          "completed"
+        ]
+      }
+    },
+    "jobs": [
+      {
+        "id": "comment",
+        "name": "Bundle",
+        "runsOn": "ubuntu-latest",
+        "matrix": {},
+        "steps": [
+          "Download Artifact",
+          "Get stats",
+          "Get PR number",
+          "Find Comment",
+          "Create Comment"
+        ]
+      }
+    ]
+  },
+  {
+    "file": ".github/workflows/check.yml",
+    "name": "Check",
+    "on": {
+      "workflow_dispatch": null,
+      "pull_request": {
+        "branches": [
+          "main",
+          "v4/next-minor",
+          "v4/next-major"
+        ]
+      },
+      "push": {
+        "branches": [
+          "main",
+          "v4/next-minor",
+          "v4/next-major"
+        ]
+      }
+    },
+    "jobs": [
+      {
+        "id": "static-checks",
+        "name": "Static",
+        "runsOn": "ubuntu-latest",
+        "matrix": {},
+        "steps": [
+          "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+          "Install dependencies",
+          "Lint",
+          "Check circular dependencies",
+          "Generate AI documentation",
+          "Verify AI documentation is up-to-date"
+        ]
+      },
+      {
+        "id": "types",
+        "name": "Types",
+        "runsOn": "namespace-profile-linux-small",
+        "matrix": {},
+        "steps": [
+          "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+          "Install dependencies",
+          "pnpm check",
+          "deno check .",
+          "pnpm test-types --target '>=5.9'"
+        ]
+      },
+      {
+        "id": "build",
+        "name": "Build",
+        "runsOn": "ubuntu-latest",
+        "matrix": {},
+        "steps": [
+          "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+          "Install dependencies",
+          "Set strip internals config",
+          "pnpm build",
+          "pnpm check-dist-types"
+        ]
+      },
+      {
+        "id": "bundle",
+        "name": "Bundle",
+        "runsOn": "ubuntu-latest",
+        "matrix": {},
+        "steps": [
+          "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+          "Install dependencies",
+          "Clone base ref",
+          "Set strip internals config",
+          "Build",
+          "Compare bundle size",
+          "Upload stats artifact"
+        ]
+      },
+      {
+        "id": "test",
+        "name": "Test (${{ matrix.runtime }})",
+        "runsOn": "namespace-profile-linux-default",
+        "matrix": {
+          "include": [
+            {
+              "runtime": "Node",
+              "deno": "",
+              "bun": "",
+              "command": "pnpm test --max-concurrency=10"
+            },
+            {
+              "runtime": "Deno",
+              "deno": "v2.9.4",
+              "bun": "",
+              "command": "deno task test --max-concurrency=10"
+            },
+            {
+              "runtime": "Bun",
+              "deno": "",
+              "bun": "1.4.0",
+              "command": "bun run --bun vitest run --max-concurrency=10"
+            }
+          ]
+        },
+        "steps": [
+          "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+          "Pre-pull test container images",
+          "Install dependencies",
+          "Test"
+        ]
+      },
+      {
+        "id": "doctest",
+        "name": "Test (Documentation)",
+        "runsOn": "namespace-profile-linux-small",
+        "matrix": {},
+        "steps": [
+          "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+          "Install dependencies",
+          "Test Documentation"
+        ]
+      }
+    ]
+  },
+  {
+    "file": ".github/workflows/cluster.yml",
+    "name": "Cluster Integration",
+    "on": {
+      "workflow_dispatch": null
+    },
+    "jobs": [
+      {
+        "id": "test",
+        "name": "Test",
+        "runsOn": "namespace-profile-linux-small",
+        "matrix": {},
+        "steps": [
+          "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+          "Install dependencies",
+          "Test"
+        ]
+      }
+    ]
+  },
+  {
+    "file": ".github/workflows/release-queue.yml",
+    "name": "Release queue",
+    "on": {
+      "issue_comment": {
+        "types": [
+          "created"
+        ]
+      },
+      "pull_request_target": {
+        "branches": [
+          "main",
+          "v4/next-minor",
+          "v4/next-major"
+        ]
+      },
+      "push": {
+        "branches": [
+          "main",
+          "v4/next-minor",
+          "v4/next-major"
+        ]
+      }
+    },
+    "jobs": [
+      {
+        "id": "approval-gate",
+        "name": null,
+        "runsOn": "ubuntu-latest",
+        "matrix": {},
+        "steps": [
+          "echo \"Fork PR approved by maintainer.\""
+        ]
+      },
+      {
+        "id": "update",
+        "name": "Update",
+        "runsOn": "ubuntu-latest",
+        "matrix": {},
+        "steps": [
+          "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+          "gh pr checkout ${{ github.event.pull_request.number }}",
+          "Effect-TS/next-release-action@63daaa626282bc42fad44dcb89c7f7db9c53b786"
+        ]
+      }
+    ]
+  },
+  {
+    "file": ".github/workflows/release.yml",
+    "name": "Release",
+    "on": {
+      "push": {
+        "branches": [
+          "main"
+        ]
+      }
+    },
+    "jobs": [
+      {
+        "id": "release",
+        "name": "Release",
+        "runsOn": "ubuntu-latest",
+        "matrix": {},
+        "steps": [
+          "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+          "Install dependencies",
+          "Upgrade npm for OIDC support",
+          "Create Release Pull Request or Publish",
+          "Deploy website"
+        ]
+      }
+    ]
+  },
+  {
+    "file": ".github/workflows/snapshot.yml",
+    "name": "Snapshot",
+    "on": {
+      "push": {
+        "branches": [
+          "main"
+        ]
+      },
+      "pull_request": {
+        "branches": [
+          "main"
+        ]
+      },
+      "workflow_dispatch": null
+    },
+    "jobs": [
+      {
+        "id": "approval-gate",
+        "name": null,
+        "runsOn": "namespace-profile-linux-small",
+        "matrix": {},
+        "steps": [
+          "echo \"Fork PR approved by maintainer.\""
+        ]
+      },
+      {
+        "id": "snapshot",
+        "name": "Snapshot",
+        "runsOn": "namespace-profile-linux-small",
+        "matrix": {},
+        "steps": [
+          "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+          "Install dependencies",
+          "Set strip internals config",
+          "Run codemods",
+          "Build package",
+          "Create snapshot"
+        ]
+      }
+    ]
+  }
+]
