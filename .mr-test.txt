@@ -1,0 +1,4 @@
+cd packages/backend && test -z "$(gofmt -l apiclient)" && go build ./... && go vet ./apiclient
+cd packages/backend && go test ./internal/pkg/errors ./apiclient/... -count=1
+cd packages/backend && go test ./internal/compose -run "TestOpenAPI|TestInstallRouteAuthorizationCoverage|TestInstallAuthorizationOpenAPIResponses" -count=1
+pnpm exec smthrs test //packages/backend:openapiBundle //packages/backend:openapiClients --verbose

@@ -2595,6 +2595,20 @@ type GetAPIReposOwnerRepoContentsPathParams struct {
 	After *string
 }
 
+// GetAPIReposOwnerRepoBranchesParams is the query of GET /api/repos/{owner}/{repo}/branches.
+type GetAPIReposOwnerRepoBranchesParams struct {
+	Cursor *string
+	Limit  *int64
+}
+
+// GetAPIReposOwnerRepoCommitsParams is the query of GET /api/repos/{owner}/{repo}/commits.
+type GetAPIReposOwnerRepoCommitsParams struct {
+	Ref    *string
+	Path   *string
+	Cursor *string
+	Limit  *int64
+}
+
 // GetAPIReposOwnerRepoGithubMetadataPathParams is the query of GET /api/repos/{owner}/{repo}/github/metadata/{path}.
 type GetAPIReposOwnerRepoGithubMetadataPathParams struct {
 	State     *string
@@ -2862,6 +2876,24 @@ type GetAPIReposOwnerRepoMonitorsIDParams struct {
 // GetAPIReposOwnerRepoMonitorsIDTraceParams is the query of GET /api/repos/{owner}/{repo}/monitors/{id}/trace.
 type GetAPIReposOwnerRepoMonitorsIDTraceParams struct {
 	At *int64
+}
+
+// GetAPIReposOwnerRepoSearchCodeParams is the query of GET /api/repos/{owner}/{repo}/search/code.
+type GetAPIReposOwnerRepoSearchCodeParams struct {
+	Q      *string
+	Cursor *string
+	Limit  *int64
+}
+
+// GetAPIReposOwnerRepoSearchIssuesParams is the query of GET /api/repos/{owner}/{repo}/search/issues.
+type GetAPIReposOwnerRepoSearchIssuesParams struct {
+	Q         *string
+	State     *string
+	Label     *string
+	Assignee  *string
+	Milestone *string
+	Cursor    *string
+	Limit     *int64
 }
 
 // DeleteAPISecretsBody is generated from docs/api/openapi.yaml.
@@ -5524,6 +5556,47 @@ func (c *Client) GetAPIReposOwnerRepoGitRefs(ctx context.Context, owner string, 
 	return out, err
 }
 
+// GetAPIReposOwnerRepoBranches calls GET /api/repos/{owner}/{repo}/branches.
+func (c *Client) GetAPIReposOwnerRepoBranches(ctx context.Context, owner string, repo string, params GetAPIReposOwnerRepoBranchesParams) (AnyJSON, error) {
+	query := url.Values{}
+	if params.Cursor != nil {
+		query.Set("cursor", *params.Cursor)
+	}
+	if params.Limit != nil {
+		query.Set("limit", strconv.FormatInt(*params.Limit, 10))
+	}
+	var out AnyJSON
+	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/branches", query, nil, &out)
+	return out, err
+}
+
+// GetAPIReposOwnerRepoCommits calls GET /api/repos/{owner}/{repo}/commits.
+func (c *Client) GetAPIReposOwnerRepoCommits(ctx context.Context, owner string, repo string, params GetAPIReposOwnerRepoCommitsParams) (AnyJSON, error) {
+	query := url.Values{}
+	if params.Ref != nil {
+		query.Set("ref", *params.Ref)
+	}
+	if params.Path != nil {
+		query.Set("path", *params.Path)
+	}
+	if params.Cursor != nil {
+		query.Set("cursor", *params.Cursor)
+	}
+	if params.Limit != nil {
+		query.Set("limit", strconv.FormatInt(*params.Limit, 10))
+	}
+	var out AnyJSON
+	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/commits", query, nil, &out)
+	return out, err
+}
+
+// GetAPIReposOwnerRepoCommitsSHA calls GET /api/repos/{owner}/{repo}/commits/{sha}.
+func (c *Client) GetAPIReposOwnerRepoCommitsSHA(ctx context.Context, owner string, repo string, sha string) (AnyJSON, error) {
+	var out AnyJSON
+	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/commits/"+url.PathEscape(sha), nil, nil, &out)
+	return out, err
+}
+
 // GetAPIReposOwnerRepoGithubAppStatus calls GET /api/repos/{owner}/{repo}/github-app-status.
 func (c *Client) GetAPIReposOwnerRepoGithubAppStatus(ctx context.Context, owner string, repo string) (AnyJSON, error) {
 	var out AnyJSON
@@ -6908,6 +6981,52 @@ func (c *Client) GetAPIReposOwnerRepoMonitorsIDTrace(ctx context.Context, owner 
 func (c *Client) GetAPIRunsIDBackgroundStatus(ctx context.Context, id string) (HomeBackgroundReceipt, error) {
 	var out HomeBackgroundReceipt
 	err := c.do(ctx, "GET", "/api/runs/"+url.PathEscape(id)+"/background-status", nil, nil, &out)
+	return out, err
+}
+
+// GetAPIReposOwnerRepoSearchCode calls GET /api/repos/{owner}/{repo}/search/code.
+func (c *Client) GetAPIReposOwnerRepoSearchCode(ctx context.Context, owner string, repo string, params GetAPIReposOwnerRepoSearchCodeParams) (AnyJSON, error) {
+	query := url.Values{}
+	if params.Q != nil {
+		query.Set("q", *params.Q)
+	}
+	if params.Cursor != nil {
+		query.Set("cursor", *params.Cursor)
+	}
+	if params.Limit != nil {
+		query.Set("limit", strconv.FormatInt(*params.Limit, 10))
+	}
+	var out AnyJSON
+	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/search/code", query, nil, &out)
+	return out, err
+}
+
+// GetAPIReposOwnerRepoSearchIssues calls GET /api/repos/{owner}/{repo}/search/issues.
+func (c *Client) GetAPIReposOwnerRepoSearchIssues(ctx context.Context, owner string, repo string, params GetAPIReposOwnerRepoSearchIssuesParams) (AnyJSON, error) {
+	query := url.Values{}
+	if params.Q != nil {
+		query.Set("q", *params.Q)
+	}
+	if params.State != nil {
+		query.Set("state", *params.State)
+	}
+	if params.Label != nil {
+		query.Set("label", *params.Label)
+	}
+	if params.Assignee != nil {
+		query.Set("assignee", *params.Assignee)
+	}
+	if params.Milestone != nil {
+		query.Set("milestone", *params.Milestone)
+	}
+	if params.Cursor != nil {
+		query.Set("cursor", *params.Cursor)
+	}
+	if params.Limit != nil {
+		query.Set("limit", strconv.FormatInt(*params.Limit, 10))
+	}
+	var out AnyJSON
+	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/search/issues", query, nil, &out)
 	return out, err
 }
 
