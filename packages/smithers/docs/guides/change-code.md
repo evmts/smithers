@@ -11,7 +11,7 @@ npm install -g smthrs@next
 smthrs --version
 ```
 
-The tested prerelease printed `1.0.0-rc.13`.
+The tested prerelease printed `1.0.0-rc.15`.
 
 ## Create a project
 
