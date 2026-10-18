@@ -186,7 +186,7 @@ export const main = async (argv: string[]): Promise<number> => {
     )
   )
   const policy = factory.judges
-  const runId = `spec-${crypto.randomUUID()}`
+  const runId = process.env.SMITHERS_SPEC_RUN ?? `spec-${crypto.randomUUID()}`
   const ledger = resolve(resultsFile ? dirname(resultsFile) : output, "review-budget.json")
   let evaluator: import("@smthrs/model/Evaluator").Evaluator | undefined
   let fuzzyEvaluator: import("@smthrs/model/Evaluator").Evaluator | undefined

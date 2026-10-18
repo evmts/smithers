@@ -3,7 +3,7 @@ import * as Model from "@smthrs/model/Model"
 import { ModelRequest } from "@smthrs/model/ModelRequest"
 import { Effect } from "effect"
 
-/** Node configuration resolves the account; this adapter pins the seat/model and requests temperature zero. */
+/** Node configuration resolves the account; this adapter pins the seat/model. The Codex subscription backend refuses temperature. */
 export const seatEvaluator = (
   seat: { readonly modelId: string; readonly model: Model.Model; readonly id?: string },
   expectedModel: string,
@@ -21,9 +21,13 @@ export const seatEvaluator = (
       : undefined
     if (actual !== engine) throw new Error("Configured seat does not match policy engine")
   }
+  const subscription = seat.id?.startsWith("codex:") === true
   const model = Model.make({
     stream: (request) =>
-      seat.model.stream(ModelRequest.make({ ...request, params: { ...request.params, temperature: 0 } }))
+      seat.model.stream(ModelRequest.make({
+        ...request,
+        params: subscription ? request.params : { ...request.params, temperature: 0 }
+      }))
   })
   return Effect.gen(function*() {
     return yield* Evaluator.Evaluator

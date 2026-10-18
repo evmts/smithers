@@ -209,3 +209,16 @@ test("corrupt budget ledger is inconclusive and cannot dispatch", async () => {
   expect((await record(options)).verdict).toBe("inconclusive")
   expect(options.calls()).toBe(0)
 })
+
+
+test("changing only the exact Codex subscription provider makes a recorded receipt stale", async () => {
+  const options = await setup()
+  const pinned = { ...policy, engines: {
+    rubric: { engine: "codex" as const, model: "test-model", seat: "codex:test-model" },
+    fuzzy: { engine: "codex" as const, model: "test-model", seat: "codex:test-model" }
+  } }
+  expect((await record({ ...options, policy: pinned })).verdict).toBe("pass")
+  const changed = { ...pinned, engines: { ...pinned.engines, rubric: { ...pinned.engines.rubric, seat: "openai:test-model" } } }
+  expect((await replay(options.path, request, changed)).verdict).toBe("stale")
+  expect(options.calls()).toBe(3)
+})

@@ -4,7 +4,7 @@ import { expect, test } from "bun:test"
 import { Effect, Stream } from "effect"
 import { seatEvaluator } from "./seatEvaluator.ts"
 
-test("resolved seat gets the pinned model and temperature zero through layerFromSeat", async () => {
+test("resolved seat gets the pinned model and Codex temperature omission through layerFromSeat", async () => {
   const seen: ModelRequest[] = []
   const model = Model.make({
     stream: (request) => {
@@ -25,12 +25,12 @@ test("resolved seat gets the pinned model and temperature zero through layerFrom
   expect(() => seatEvaluator({ id: "openai:pinned", modelId: "pinned", model }, "pinned", "claude")).toThrow(
     "policy engine"
   )
-  for (const id of ["anthropic:pinned", "claude-code:other"]) {
-    expect(() => seatEvaluator({ id, modelId: "pinned", model }, "pinned", "claude", "claude-code:pinned")).toThrow("policy seat")
+  for (const id of ["openai:pinned", "codex:other"]) {
+    expect(() => seatEvaluator({ id, modelId: "pinned", model }, "pinned", "codex", "codex:pinned")).toThrow("policy seat")
   }
-  expect(() => seatEvaluator({ id: "claude-code:pinned", modelId: "wrong", model }, "pinned", "claude", "claude-code:pinned")).toThrow("policy model")
+  expect(() => seatEvaluator({ id: "codex:pinned", modelId: "wrong", model }, "pinned", "codex", "codex:pinned")).toThrow("policy model")
   const evaluator = await Effect.runPromise(
-    seatEvaluator({ id: "claude-code:pinned", modelId: "pinned", model }, "pinned", "claude", "claude-code:pinned")
+    seatEvaluator({ id: "codex:pinned", modelId: "pinned", model }, "pinned", "codex", "codex:pinned")
   )
   const response = await Effect.runPromise(
     evaluator.evaluate({
@@ -41,5 +41,8 @@ test("resolved seat gets the pinned model and temperature zero through layerFrom
   expect(response.answers.honesty).toEqual({ type: "score", score: 4 })
   expect(seen).toHaveLength(1)
   expect(seen[0]?.modelId).toBe("pinned")
-  expect(seen[0]?.params.temperature).toBe(0)
+  expect(seen[0]?.params.temperature).toBeUndefined()
+  const api = await Effect.runPromise(seatEvaluator({ id: "openai:pinned", modelId: "pinned", model }, "pinned", "codex", "openai:pinned"))
+  await Effect.runPromise(api.evaluate({ state: "page", questions: { honesty: { type: "score", instructions: "Judge", criteria: ["1", "2", "3", "4", "5"] } } }))
+  expect(seen[1]?.params.temperature).toBe(0)
 })

@@ -176,7 +176,7 @@ test("judge --record CLI persists inconclusive results and exits 5 under a one-c
   )
   await writeFile(
     seatFile,
-    `export const seat = { id: "claude-code:claude-opus-5-5", modelId: ${
+    `export const seat = { id: ${JSON.stringify(policy.engines.rubric.seat)}, modelId: ${
       JSON.stringify(policy.engines.rubric.model)
     }, model: { stream() { throw new Error("Budget must prevent dispatch") } } }`
   )

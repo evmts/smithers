@@ -2004,14 +2004,14 @@
   "judges": {
     "engines": {
       "rubric": {
-        "engine": "claude",
-        "model": "claude-opus-5-5",
-        "seat": "claude-code:claude-opus-5-5"
+        "engine": "codex",
+        "model": "gpt-6.1-sol",
+        "seat": "codex:gpt-6.1-sol"
       },
       "fuzzy": {
-        "engine": "claude",
-        "model": "claude-opus-5-5",
-        "seat": "claude-code:claude-opus-5-5"
+        "engine": "codex",
+        "model": "gpt-6.1-sol",
+        "seat": "codex:gpt-6.1-sol"
       }
     },
     "budget": {

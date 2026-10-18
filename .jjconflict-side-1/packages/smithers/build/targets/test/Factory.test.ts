@@ -740,8 +740,8 @@ it("keeps Smithers' checked-in policy aligned with the accepted design", () => {
   const projected = JSON.parse(readFileSync(new URL("../../../../../.smithers/factory.json", import.meta.url), "utf8"))
   expect(projected.judges).toEqual({
     engines: {
-      rubric: { engine: "claude", model: "claude-opus-5-5", seat: "claude-code:claude-opus-5-5" },
-      fuzzy: { engine: "claude", model: "claude-opus-5-5", seat: "claude-code:claude-opus-5-5" }
+      rubric: { engine: "codex", model: "gpt-6.1-sol", seat: "codex:gpt-6.1-sol" },
+      fuzzy: { engine: "codex", model: "gpt-6.1-sol", seat: "codex:gpt-6.1-sol" }
     },
     budget: { perRun: { modelCalls: 150, promptTokens: 2_000_000, wallMs: 1_800_000 }, perDay: { modelCalls: 600 } },
     trials: 3,

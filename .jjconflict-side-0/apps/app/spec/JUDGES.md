@@ -7,9 +7,9 @@ before hashing; counts are retained unless the journey explicitly marks them.
 No raw DOM, hidden text, credentials or page scripts enter the observation.
 
 `record` runs Rubric.make three times through a supplied Evaluator. The real
-seat adapter uses Evaluator.layerFromSeat and requests temperature zero; node
+seat adapter uses Evaluator.layerFromSeat; node
 configuration chooses the account and must resolve the policy's exact model.
-The Claude Code subscription route does not forward temperature to its SDK; zero is not guaranteed. Stability must be measured.
+API routes request temperature zero. Codex subscription recording omits it because the backend rejects it; measure stability.
 Requests fence all page evidence as untrusted data. A score question returns a
 zero-based integer which is converted to Rubric's 1–5 scale. Reasons summarize
 the recorded scores rather than free-form model explanations.
@@ -25,6 +25,7 @@ The budget file beside results reserves three calls, estimated prompt tokens
 Reservation is conservative: errors and cancellation do not refund capacity.
 An exclusive directory lock refuses concurrent writers; after a crashed writer,
 an operator must inspect the ledger before removing its abandoned lock.
+`SMITHERS_SPEC_RUN` shares a run identity across both recording CLIs.
 A run keeps its limit across UTC midnight; daily limits reset on UTC dates.
 Exhaustion is inconclusive (exit 5), never pass. Missing/stale receipts exit 1.
 A split is uncertain and appends a pending-label request. These files should
@@ -47,7 +48,7 @@ keyed by zero-based `step:assertion`. Live sidecars stay under the output direct
 and never overwrite committed mock evidence. `judge --record` selects mock;
 `judge --record --live` selects read-only live capture. `SPEC_JUDGE_SEAT` names a
 trusted node module exporting `seat` or `seats: {rubric, fuzzy}`; each seat must
-match its policy model, engine and optional exact seat. This repository pins `claude-code:claude-opus-5-5`; `CLAUDE_CONFIG_DIR` chooses the subscription login with `ANTHROPIC_API_KEY` unset. `SPEC_JUDGE_POLICY` optionally names a factory projection.
+match its policy model, engine and optional exact seat. This repository pins `codex:gpt-6.1-sol`; `CODEX_HOME` chooses the subscription login. `SPEC_JUDGE_POLICY` optionally names a factory projection.
 The existing journeyMock target depends on specSite and replays only.
 `judgeLive` is exclusive and cache false: NodeTest does not support maxAge or
 keyScope on this build CLI. Live writes fresh evidence on each invocation.
@@ -60,3 +61,9 @@ failing seeded defects. Limits stricter than those minimums remain in force.
 No owner labels are invented. The 30 authored eval fixtures test prompt fencing,
 Rubric scoring and label comparison offline; they do not calibrate real models
 or promote rubrics. A model/rubric version change requires fresh owner evidence.
+
+The policy pins `codex:gpt-6.1-sol`. Set `CODEX_HOME` on the recording host;
+the native resolver reads that login. The subscription backend rejects
+`temperature`, so the adapter omits it for `codex:` seats. Temperature zero is
+not enforced. Evaluator requests JSON in text and validates it locally; this
+route does not send a structured-output schema. Recalibrate after a seat change.
