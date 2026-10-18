@@ -11,7 +11,7 @@ npm install -g smthrs@next
 smthrs --version
 ```
 
-The tested prerelease printed `1.0.0-rc.12`. That prerelease needs the generated-flow fixes tracked in [#4231](https://github.com/smithersai/smithers/issues/4231); use a newer prerelease containing those fixes before continuing.
+The tested prerelease printed `1.0.0-rc.14`. The coding walkthrough passed after a retry for [#4283](https://github.com/smithersai/smithers/issues/4283). Another attempt failed with [#4284](https://github.com/smithersai/smithers/issues/4284). Resuming after a process kill failed with `plan_changed`; see [#4268](https://github.com/smithersai/smithers/issues/4268).
 
 ## Create a project
 
@@ -85,6 +85,12 @@ status: completed
 ```
 
 Continue only after `status: completed`. If it failed or parked, inspect the diagnosis in `runs show` and follow [Diagnose a run](./diagnose-a-run.md).
+
+### If the run stops
+
+If the process running the flow dies, `smthrs runs show <id>` shows the saved run.
+Use `smthrs runs resume <id>` to request continuation of the same run; the tested prerelease failed this check as noted above.
+See [Diagnose a run](./diagnose-a-run.md).
 
 ## Review and test
 
