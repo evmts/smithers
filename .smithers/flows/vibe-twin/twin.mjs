@@ -342,7 +342,7 @@ const vitest = (pkg, config, outputFile) => {
   const vitestBin = bin(pkg, "vitest")
   if (!vitestBin) return { ran: false, pass: 0, fail: 0, skip: 0, failed: ["(no vitest in the package or the root)"] }
   const child = spawnSync(vitestBin, args, { cwd: pkg, encoding: "utf8", env: { ...process.env, CI: "1" }, maxBuffer: 64 * 1024 * 1024 })
-  if (!existsSync(outputFile)) return { ran: false, pass: 0, fail: 0, skip: 0, failed: [] }
+  if (!existsSync(outputFile)) return noReport(child, "vitest")
   const report = JSON.parse(readFileSync(outputFile, "utf8"))
   const tests = report.testResults.flatMap((file) =>
     file.assertionResults.map((t) => ({ name: `${relative(pkg, file.name)} > ${t.fullName}`, status: t.status }))
@@ -639,6 +639,19 @@ export const affectedTests = (pkg, folders, twinned, mode = "transitive") => {
     .map((file) => relative(pkg, file))
 }
 
+/** A test process that wrote no report: keep its status, signal and output tail as evidence (F-4). */
+const noReport = (child, tool) => ({
+  ran: false,
+  pass: 0,
+  fail: 0,
+  skip: 0,
+  failed: [`(${tool} wrote no report; exit ${child.signal ?? child.status ?? child.error?.message ?? "unknown"})`],
+  status: child.status ?? -1,
+  signal: child.signal ?? null,
+  error: child.error?.message,
+  outputTail: `${child.stdout ?? ""}${child.stderr ?? ""}`.trim().slice(-1500)
+})
+
 /** `bun test <args>`, with an optional preload, read from its JUnit report. */
 const bunTest = (pkg, args, preload, outputFile) => {
   const argv = ["test", ...(preload ? ["--preload", preload] : []), "--reporter=junit", `--reporter-outfile=${outputFile}`, ...args]
@@ -649,7 +662,7 @@ const bunTest = (pkg, args, preload, outputFile) => {
   if (!existsSync(outputFile) && configured && existsSync(join(pkg, configured))) renameSync(join(pkg, configured), outputFile)
   return existsSync(outputFile)
     ? { ...parseJunit(readFileSync(outputFile, "utf8"), pkg), status: child.status, signal: child.signal, error: child.error?.message }
-    : { ran: false, pass: 0, fail: 0, skip: 0, failed: ["(bun test wrote no report)"] }
+    : noReport(child, "bun test")
 }
 
 /** `node <flags> --test <files>`, with an optional --import, read from its JUnit report. */
@@ -662,7 +675,7 @@ const nodeTest = (pkg, args, register, outputFile) => {
   const child = spawnSync(process.execPath, argv, { cwd: pkg, encoding: "utf8", env, maxBuffer: 64 * 1024 * 1024 })
   return existsSync(outputFile)
     ? { ...parseJunit(readFileSync(outputFile, "utf8"), pkg), status: child.status, signal: child.signal, error: child.error?.message }
-    : { ran: false, pass: 0, fail: 0, skip: 0, failed: ["(node --test wrote no report)"] }
+    : noReport(child, "node --test")
 }
 
 /** The package's test runner: Bun for `bun test`, Node for `node ... --test`, else Vitest. */
@@ -858,7 +871,8 @@ registerHooks({
     skip: results.reduce((n, r) => n + r.skip, 0),
     failed: results.flatMap((r) => r.failed ?? []),
     passed: results.flatMap((r) => r.passed ?? []),
-    status: results.find((r) => r.status !== 0 && r.status !== undefined)?.status ?? 0,
+    // A run without a status (no report, no process) is not a clean exit (F-4).
+    status: results.find((r) => r.status !== 0)?.status ?? 0,
     signal: results.find((r) => r.signal)?.signal ?? null,
     error: results.find((r) => r.error)?.error
   })
