@@ -35,6 +35,7 @@ import { packageVersion } from "../Version.ts"
 import * as Argv from "./Argv.ts"
 import * as Presentation from "./Presentation.ts"
 import * as RunProgress from "./RunProgress.ts"
+import { writeOperatorTokenFile } from "./OperatorTokenFile.ts"
 
 /**
  * Shared connection options for commands that reach the control plane.
@@ -470,6 +471,9 @@ export const host = async (bind: Serve.Bind, options: ConnectionOptions, runtime
   const operatorToken = bind.credential === undefined || bind.credential === ""
     ? randomBytes(32).toString("hex")
     : undefined
+  if (bind.operatorTokenFile !== undefined) {
+    await writeOperatorTokenFile(bind.operatorTokenFile, operatorToken ?? bind.credential!)
+  }
   const servedBind = { ...bind, operatorToken }
   const control = NodeControl.layer({
     ...config,
@@ -480,7 +484,7 @@ export const host = async (bind: Serve.Bind, options: ConnectionOptions, runtime
   const root = Project.root(config.root, process.cwd())
   const host = Layer.merge(control, layerTriggerScheduler(root).pipe(Layer.provide(control)))
   if (!options.quiet) process.stderr.write(`${Serve.banner(servedBind)}\n`)
-  if (operatorToken !== undefined) process.stderr.write(`  approval token  ${operatorToken}\n`)
+  if (operatorToken !== undefined && bind.operatorTokenFile === undefined) process.stderr.write(`  approval token  ${operatorToken}\n`)
   const result = await Effect.runPromiseExit(
     Serve.host(servedBind, root).pipe(
       Effect.provide(host),
