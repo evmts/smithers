@@ -714,7 +714,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
   }> => {
     let response: Response
     try {
-      response = await fetchRepositoryMetadata(ctx, githubSourceIssuesPath(repo, filter))
+      response = await (signedInOwner() === undefined ? fetchRepositoryMetadata(ctx, githubSourceIssuesPath(repo, filter)) : ctx.http(githubSourceIssuesPath(repo, filter)))
     } catch {
       // The tapped fetch recorded the thrown request; its text is not copy.
       return { issues: [], meta: { source: "unreachable", syncedAt: null, stale: false, syncError: null, refusal: "Could not reach GitHub." } }
@@ -747,7 +747,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
   ): Promise<ViewResult> => {
     let response: Response
     try {
-      response = await fetchRepositoryMetadata(ctx, githubSourceIssuesPath(repo, filter))
+      response = await (signedInOwner() === undefined ? fetchRepositoryMetadata(ctx, githubSourceIssuesPath(repo, filter)) : ctx.http(githubSourceIssuesPath(repo, filter)))
     } catch (error) {
       return unreachable(`list issues for ${repo} from its GitHub source`, error)
     }
@@ -790,7 +790,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     let issue: Record<string, unknown> | undefined
     for (let page = 1; page <= 50; page += 1) {
       let response: Response
-      try { response = await fetchRepositoryMetadata(ctx, `${listPath}&per_page=100&page=${page}`) }
+      try { response = await (signedInOwner() === undefined ? fetchRepositoryMetadata(ctx, `${listPath}&per_page=100&page=${page}`) : ctx.http(`${listPath}&per_page=100&page=${page}`)) }
       catch (error) { return unreachable(`load GitHub issue #${number} in ${repo}`, error) }
       if (!response.ok) return readErrorMessage(response, `Loading GitHub issue #${number} failed (${response.status})`)
       const rows: unknown = await response.json().catch(() => null)
@@ -805,7 +805,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     const commentsPath = `${listPath.split("?")[0]}/${number}/comments`
     for (let page = 1; page <= 50; page += 1) {
       let response: Response
-      try { response = await fetchRepositoryMetadata(ctx, `${commentsPath}?per_page=100&page=${page}`) }
+      try { response = await (signedInOwner() === undefined ? fetchRepositoryMetadata(ctx, `${commentsPath}?per_page=100&page=${page}`) : ctx.http(`${commentsPath}?per_page=100&page=${page}`)) }
       catch (error) { return unreachable(`load comments for GitHub issue #${number} in ${repo}`, error) }
       if (!response.ok) return readErrorMessage(response, `Loading GitHub issue comments failed (${response.status})`)
       const rows: unknown = await response.json().catch(() => null)

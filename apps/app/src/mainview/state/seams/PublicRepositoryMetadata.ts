@@ -42,5 +42,7 @@ export const fetchRepositoryMetadata = async (
  if (!url.startsWith(prefix)) return response
  const match = /^([^/]+)\/([^/]+)\/((?:issues|pulls)(?:\/[1-9][0-9]*(?:\/comments)?)?)(\?.*)?$/.exec(url.slice(prefix.length))
  if (!match) return response
- return ctx.http(`${ctx.baseUrl}/api/repos/${match[1]}/${match[2]}/github/metadata/${match[3]}${match[4] ?? ""}`)
+ // A mirror that cannot answer leaves the original refusal in place.
+ const mirror = await ctx.http(`${ctx.baseUrl}/api/repos/${match[1]}/${match[2]}/github/metadata/${match[3]}${match[4] ?? ""}`).catch(() => undefined)
+ return mirror?.ok === true ? mirror : response
 }
