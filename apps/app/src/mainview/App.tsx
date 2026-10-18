@@ -1,5 +1,7 @@
 import { RepoFrame } from "./repository/RepoFrame"
 import { CodeHome } from "./repository/CodeHome"
+import { RepositoryCodeView } from "./repository/RepositoryCodeView"
+import { pathTarget as codePathTarget } from "./RepoLink"
 import { rememberComposerFocus, restoreComposerFocus } from "./runtime/ComposerFocus"
 import { useSharedConversation } from "./state/useSharedConversation"
 import { useTodoRole } from "./cards/TodoCard"
@@ -121,6 +123,7 @@ function AppContent() {
     }))
   )
   const { data: worldDocumentRows } = useLiveQuery(collections.worldDocuments)
+  const { data: codeBranchRows } = useLiveQuery(controller.repositoryBranches.rows)
   const cardRows = useCardRows(collections.cards)
   const workflowCatalogs = useWorkflowCatalogRows(collections.cards)
   const triggerCatalogs = useTriggerListRows(collections.cards)
@@ -253,6 +256,10 @@ function AppContent() {
   // pending/failed request, or reject a repository added since this build.
   const bootEntry = session.repositoryEntry?.repo.toLowerCase() === bootRepository?.toLowerCase()
     ? session.repositoryEntry : undefined
+  const codeTarget = typeof window === "undefined" ? null : codePathTarget(window.location.pathname)
+  const codeBranches = codeBranchRows.find(row => row.id.toLowerCase() === codeTarget?.repo.toLowerCase())
+  const codeDefaultRef = repositoryRows.find(row => row.id.toLowerCase() === codeTarget?.repo.toLowerCase())?.head?.bookmark
+  const codeRefs = [...new Set([...(codeBranches?.names ?? []), ...(codeDefaultRef ? [codeDefaultRef] : [])])]
   const bootPending = bootRepository !== null && (bootEntry === undefined || bootEntry.phase === "pending")
   const bootUnavailable = bootEntry?.phase === "failed" && bootEntry.failureKind !== "not-public"
   const missingBootRepository = bootEntry?.phase === "failed" && bootEntry.failureKind === "not-public"
@@ -610,6 +617,7 @@ function AppContent() {
         view — the first thing a first visit sees would be the page's end
         rather than the launcher it came for (#4041).
       */}
+
       <MessageScrollerProvider key={transcriptKey} scrollAnchor={launcherOpening ? "none" : "bottom"}
             initialMessageId={controller.sharedConversation ? sharedConversation.view?.scroll_anchor : initialReadId}
             readAnchor={controller.sharedConversation && readEntry === undefined && !(latestEntry?.kind === "card" && latestEntry.card.kind === "docs") ? undefined : { messageId: latestReadId ?? "",
@@ -753,12 +761,14 @@ function AppContent() {
   if (bootRepository === null || bootEntry?.phase !== "ready") return chat
   const repository = repositoryRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())
   const rootRoute = window.location.pathname.replace(/\/$/, "") === `/${bootRepository}`
-  if (!rootRoute) return chat
+  const codeRoute = codeTarget?.subject?.kind === "tree" || codeTarget?.subject?.kind === "blob"
+  if (!rootRoute && !codeRoute) return chat
   return <RepoFrame repo={bootRepository} publicRepo={repository?.catalog === true}
     login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
     member={identity?.state === "signed-in" && repository !== undefined && repository.catalog !== true}
     onAsk={() => controller.runCommand("chat.open")} onSignIn={() => controller.runCommand("sign-in")} ask={chat}>
-    {<CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
+    {codeRoute ? <RepositoryCodeView repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
+      admitted={true} requestId={bootEntry.requestId} onAsk={text => controller.changeDraft(text)} /> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
       tree={repoTreeRows.find(row => row.copyId === homeTreeCopy && row.path === "")}
       home={repositoryHome} summary={repository?.summary}/>}
   </RepoFrame>
