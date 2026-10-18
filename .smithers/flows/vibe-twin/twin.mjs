@@ -15,7 +15,7 @@
  * and the twin run has no failure the TypeScript run lacks.
  */
 import { spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
@@ -623,6 +623,10 @@ export const affectedTests = (pkg, folders, twinned, mode = "transitive") => {
 const bunTest = (pkg, args, preload, outputFile) => {
   const argv = ["test", ...(preload ? ["--preload", preload] : []), "--reporter=junit", `--reporter-outfile=${outputFile}`, ...args]
   const child = spawnSync("bun", argv, { cwd: pkg, encoding: "utf8", env: { ...process.env, CI: "1" }, maxBuffer: 64 * 1024 * 1024 })
+  // A bunfig.toml [test.reporter] junit path wins over --reporter-outfile (apps/app, F-1).
+  const bunfig = join(pkg, "bunfig.toml")
+  const configured = existsSync(bunfig) ? readFileSync(bunfig, "utf8").match(/^\s*junit\s*=\s*"([^"]+)"/m)?.[1] : undefined
+  if (!existsSync(outputFile) && configured && existsSync(join(pkg, configured))) renameSync(join(pkg, configured), outputFile)
   return existsSync(outputFile)
     ? { ...parseJunit(readFileSync(outputFile, "utf8"), pkg), status: child.status, signal: child.signal, error: child.error?.message }
     : { ran: false, pass: 0, fail: 0, skip: 0, failed: ["(bun test wrote no report)"] }
@@ -649,7 +653,10 @@ export const runner = (pkg) => {
   const suites = existsSync(suitesFile) ? JSON.parse(readFileSync(suitesFile, "utf8")) : {}
   const declared = suites[relative(root, pkg)]
   if (declared) {
-    return { kind: declared.kind, args: declared.args, affectedOnly: declared.affectedOnly, unverifiable: declared.unverifiable ? declared.why : undefined }
+    // A package whose folders use different runners (.smithers/flows: node:test and bun:test,
+    // E-9) lists several suites; their results are merged.
+    const suites = (declared.suites ?? [declared]).map((suite) => ({ kind: suite.kind, args: suite.args ?? [] }))
+    return { ...suites[0], suites, affectedOnly: declared.affectedOnly, unverifiable: declared.unverifiable ? declared.why : undefined }
   }
   const script = JSON.parse(readFileSync(join(pkg, "package.json"), "utf8")).scripts?.test ?? ""
   const words = (text) => text.trim().split(/\s+/).filter(Boolean)
@@ -660,7 +667,42 @@ export const runner = (pkg) => {
   return { kind: "vitest" }
 }
 
-export const run = (pkgArg) => {
+/**
+ * One harness run per package at a time (E-10): concurrent runs share .vibe-twin/ and would
+ * overwrite each other's reports. A lock left by a dead process is taken over.
+ */
+const withLock = (pkg, body) => {
+  const lock = join(pkg, ".vibe-twin.lock")
+  const deadline = Date.now() + 30 * 60 * 1000
+  for (;;) {
+    try {
+      mkdirSync(lock)
+      writeFileSync(join(lock, "pid"), String(process.pid))
+      break
+    } catch {
+      const holder = Number(existsSync(join(lock, "pid")) ? readFileSync(join(lock, "pid"), "utf8") : 0)
+      let alive = false
+      try {
+        alive = holder > 0 && process.kill(holder, 0)
+      } catch {}
+      if (!alive) {
+        rmSync(lock, { recursive: true, force: true })
+        continue
+      }
+      if (Date.now() > deadline) throw new Error(`${pkg}: another harness run (pid ${holder}) holds ${lock}`)
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2000)
+    }
+  }
+  try {
+    return body()
+  } finally {
+    rmSync(lock, { recursive: true, force: true })
+  }
+}
+
+export const run = (pkgArg) => withLock(resolve(pkgArg), () => runUnlocked(pkgArg))
+
+const runUnlocked = (pkgArg) => {
   const pkg = resolve(pkgArg)
   if (!existsSync(join(pkg, "src-vibe"))) throw new Error(`${pkg}: no src-vibe/ twin`)
   const work = join(pkg, ".vibe-twin")
@@ -727,8 +769,9 @@ export default mergeConfig(base, {
 `
   )
   const tests = runner(pkg)
+  const suiteList = tests.suites ?? [tests]
   const preload = join(work, "bun-preload.mjs")
-  if (tests.kind === "bun") {
+  if (suiteList.some((suite) => suite.kind === "bun")) {
     writeFileSync(
       preload,
       `import { mock } from "bun:test"
@@ -743,7 +786,7 @@ for (const [src, twin] of pairs) mock.module(src, () => require(twin))
     )
   }
   const register = join(work, "node-register.mjs")
-  if (tests.kind === "node") {
+  if (suiteList.some((suite) => suite.kind === "node")) {
     writeFileSync(join(work, "node-hooks.mjs"), `import { fileURLToPath, pathToFileURL } from "node:url"
 import { fallbackFor, twinFor } from ${JSON.stringify(fileURLToPath(import.meta.url))}
 const pkg = ${JSON.stringify(pkg)}
@@ -768,23 +811,35 @@ export async function resolve(specifier, context, next) {
     writeFileSync(register, `import { register } from "node:module"\nregister(${JSON.stringify(pathToFileURL(join(work, "node-hooks.mjs")).href)})\n`)
   }
   if (tests.affectedOnly) {
-    const files = affectedTests(pkg, tests.args.filter((a) => !a.startsWith("-")), twinned, tests.affectedOnly === "direct" ? "direct" : "transitive")
-    tests.args = [...tests.args.filter((a) => a.startsWith("-")), ...files]
-    tests.affected = files.length
+    tests.affected = 0
+    for (const suite of suiteList) {
+      const files = affectedTests(pkg, suite.args.filter((a) => !a.startsWith("-")), twinned, tests.affectedOnly === "direct" ? "direct" : "transitive")
+      suite.args = [...suite.args.filter((a) => a.startsWith("-")), ...files]
+      tests.affected += files.length
+    }
   }
   const notRun = { ran: false, pass: 0, fail: 0, skip: 0, failed: [] }
-  const baseline = tests.kind === "bun"
-    ? bunTest(pkg, tests.args, undefined, join(work, "ts.xml"))
-    : tests.kind === "node"
-    ? nodeTest(pkg, tests.args, undefined, join(work, "ts.xml"))
-    : vitest(pkg, undefined, join(work, "ts.json"))
-  const vibe = !compileOk || twin.errors.length > 0
-    ? notRun
-    : tests.kind === "bun"
-    ? bunTest(pkg, tests.args, preload, join(work, "vibe.xml"))
-    : tests.kind === "node"
-    ? nodeTest(pkg, tests.args, register, join(work, "vibe.xml"))
-    : vitest(pkg, config, join(work, "vibe.json"))
+  const runSuite = (suite, i, twinRun) => {
+    const out = join(work, `${twinRun ? "vibe" : "ts"}-${i}.${suite.kind === "vitest" ? "json" : "xml"}`)
+    return suite.kind === "bun"
+      ? bunTest(pkg, suite.args, twinRun ? preload : undefined, out)
+      : suite.kind === "node"
+      ? nodeTest(pkg, suite.args, twinRun ? register : undefined, out)
+      : vitest(pkg, twinRun ? config : undefined, out)
+  }
+  const merge = (results) => ({
+    ran: results.every((r) => r.ran),
+    pass: results.reduce((n, r) => n + r.pass, 0),
+    fail: results.reduce((n, r) => n + r.fail, 0),
+    skip: results.reduce((n, r) => n + r.skip, 0),
+    failed: results.flatMap((r) => r.failed ?? []),
+    passed: results.flatMap((r) => r.passed ?? []),
+    status: results.find((r) => r.status !== 0 && r.status !== undefined)?.status ?? 0,
+    signal: results.find((r) => r.signal)?.signal ?? null,
+    error: results.find((r) => r.error)?.error
+  })
+  const baseline = merge(suiteList.map((suite, i) => runSuite(suite, i, false)))
+  const vibe = !compileOk || twin.errors.length > 0 ? notRun : merge(suiteList.map((suite, i) => runSuite(suite, i, true)))
   // A regression is a test that passed on the TypeScript and did not pass on the
   // twin: it failed, or its file never loaded (Bun's JUnit report omits those).
   // The B-1 workaround (a held tagged template called by hand) hides a VibeLang bug: it fails.

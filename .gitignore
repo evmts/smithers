@@ -250,3 +250,4 @@ __pycache__/
 
 # VibeLang twin harness output (.smithers/flows/vibe-twin)
 .vibe-twin/
+.vibe-twin.lock/

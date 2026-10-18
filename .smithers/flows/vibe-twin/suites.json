@@ -22,5 +22,31 @@
       "scripts"
     ],
     "affectedOnly": "direct"
+  },
+  ".smithers/flows": {
+    "why": "The package.json test script runs only test/*.test.ts and test/canary-coding-setup.test.mjs, but the flow folders keep their own suites (issue-sweep/test, release/**, land, quality, issue-claim, docs-sync: node:test; review/tests: bun:test), which PACKAGE.ts targets run (finding E-9). perf/ and bench/ are benchmarks, not suites.",
+    "suites": [
+      {
+        "kind": "node",
+        "args": [
+          "--experimental-strip-types",
+          "--test",
+          "test/*.test.ts",
+          "test/canary-coding-setup.test.mjs",
+          "issue-sweep/test/*.test.ts",
+          "release/**/*.test.ts",
+          "land/*.test.*",
+          "quality/*.test.*",
+          "issue-claim/*.test.*",
+          "docs-sync/*.test.*"
+        ]
+      },
+      {
+        "kind": "bun",
+        "args": [
+          "review/tests"
+        ]
+      }
+    ]
   }
 }
