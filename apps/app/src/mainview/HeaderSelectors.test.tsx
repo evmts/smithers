@@ -316,7 +316,10 @@ describe("repository Code home metadata", () => {
     expect(host.textContent).toContain("2 branches")
     expect(host.querySelector('a[href="/maya/tinyhttp/tree/docs%2Fui"]')?.textContent).toBe("docs/ui")
     const failed = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="main" branches={{ id:"maya/tinyhttp", state:"failed", names:["stale"], error:"Permission denied" }}/>)
-    expect(failed.querySelector('[role="alert"]')?.textContent).toBe("Permission denied")
+    const failure = failed.querySelector('[role="alert"]')!
+    expect(failure.querySelector("p")?.textContent).toBe("Couldn’t load branches.")
+    expect(failure.querySelector("details")?.hasAttribute("open")).toBe(false)
+    expect(failure.querySelector('[aria-label="Failure details"]')?.textContent).toBe("Permission denied")
     expect(failed.textContent).not.toContain("stale")
     expect(failed.textContent).not.toContain("1 branch")
   })

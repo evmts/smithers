@@ -785,7 +785,7 @@ test("an unresolved file ref keeps the repository breadcrumb as text", async () 
   document.body.append(host)
   const root = createRoot(host)
   mounted.push(() => { flushSync(() => root.unmount()); host.remove() })
-  flushSync(() => root.render(<RepositoryCodeView repo={REPO} cards={[]} refs={[]} admitted={false} onAsk={() => {}} />))
+  flushSync(() => root.render(<RepositoryCodeView onRunCommand={() => {}} repo={REPO} cards={[]} refs={[]} admitted={false} onAsk={() => {}} />))
   await settled()
   const breadcrumb = host.querySelector('nav[aria-label="File path"]')!
   expect(breadcrumb.textContent).toBe("e2e-verify")

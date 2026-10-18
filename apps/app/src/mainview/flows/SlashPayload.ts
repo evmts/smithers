@@ -596,7 +596,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "card.dismiss": (args) => required("cardId", args, "card.dismiss needs the card id"),
   // The clipboard text is taken verbatim: trimming would silently rewrite what
   // the human asked to copy.
-  "chat.copy-message": (args) => (args ?? "") === "" ? no("copy-message needs the text to copy") : ok({ text: args ?? "" }),
+  "chat.copy-message": (args) => args === undefined ? no("copy-message needs the text to copy") : ok({ text: args }),
   "approval.approve": (args) => required("cardId", args, "approval.approve needs the card id"),
   "approval.deny": (args) => required("cardId", args, "approval.deny needs the card id"),
   "wiki.select": (args) => required("documentId", args, "wiki.select needs the document id"),

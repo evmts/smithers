@@ -10,8 +10,24 @@ import { flow, CodePosition } from "./Declare"
 import type { FlowEntry } from "../registry"
 import type { CommandActions } from "./Declare"
 
+export const CODE_VIEW_REASON = "repository URL navigation is the human's browser gesture"
+
 /** The `code` flows registered as one aggregator block. */
 export const codeFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+  flow({ name: "code.view", summary: "Change the repository file view", hidden: true, visibility: "in-card",
+    agent: "never", agentReason: CODE_VIEW_REASON,
+    form: { args: payload => JSON.stringify(payload) },
+    grammar: args => { try { return { payload: JSON.parse(args ?? "{}") } } catch { return { error: "Choose a valid file view." } } },
+    input: Schema.Struct({ pathname: Schema.String, field: Schema.Literals(["raw", "L"]), value: Schema.String }),
+    handler: ({ pathname, field, value }) => {
+      if (typeof window === "undefined" || window.location.pathname !== pathname || !/\/(?:tree|blob)\//.test(pathname)) return
+      if (field === "raw" ? !/^[01]$/.test(value) : !/^[1-9]\d*(?:-[1-9]\d*)?$/.test(value)) return "Choose a valid file view."
+      const url = new URL(window.location.href)
+      url.searchParams.set(field, value)
+      window.history.replaceState(window.history.state, "", url)
+      window.dispatchEvent(new Event("repository-code-location"))
+    }
+  }),
   // The controller admits all three doors only with a qualified daemon session host.
   flow({
     // Keep unqualified hosts dark; the dispatcher rechecks admission on every call.

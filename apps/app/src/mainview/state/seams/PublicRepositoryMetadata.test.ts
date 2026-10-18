@@ -44,3 +44,14 @@ test("public pull choices follow the imported local repository permission", asyn
  expect(await readLandingOptions(ctx,"local/mirror")).toEqual({options:[{value:"7",label:"#7 Pull"}]})
  expect(calls).toHaveLength(2)
 })
+
+
+test("rejected reads retain a typed failure and never fetch invalid paths", async () => {
+ let calls = 0
+ const ctx = { baseUrl: "", http: async () => { calls++; return new Response(null, { status: 403 }) } }
+ await expect(readPublicRepositoryMetadata(ctx, "owner/repo", "issues/../../user")).rejects.toMatchObject({ _tag: "RepositoryMetadataReadFailed" })
+ expect(calls).toBe(0)
+ for (const status of [403, 404, 500]) {
+  await expect(readPublicRepositoryMetadata({ ...ctx, http: async () => new Response(null, { status }) }, "owner/repo", "issues")).rejects.toMatchObject({ _tag: "RepositoryMetadataReadFailed", status })
+ }
+})

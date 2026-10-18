@@ -27,6 +27,7 @@ import type { AppStore } from "../state/AppStore"
 import { loadBox, TEST_BOX } from "../state/TestFixtures"
 import { STORAGE_RECOVERY_USER_ONLY_REASON, STORAGE_RESET_USER_ONLY_REASON } from "../state/StorageRecoveryContract"
 import { modelInvocable, nameOf } from "./registry"
+import { CODE_VIEW_REASON } from "./entries/code"
 import { PALETTE_ACTIONS_REASON, PALETTE_OPEN_REASON } from "./entries/palette"
 import { WIKI_ATTACH_USER_ONLY_REASON, WIKI_HEADING_USER_ONLY_REASON } from "@smthrs/ui/app-operations/wiki"
 
@@ -82,6 +83,8 @@ const USER_ONLY_ALLOWLIST: Readonly<Record<string, string>> = {
   "toast.dismiss": "dismissing a toast is the human's gesture",
   "repo.select": "which pinned repository is active is the human's selection",
   "repos.create": "creating a repository on the person's GitHub account is the person's act",
+  "code.view": CODE_VIEW_REASON,
+  "chat.close": "closing Chat is the human's focus gesture",
   "chat.open": "opening Chat is the human's focus gesture",
   "palette.open": PALETTE_OPEN_REASON,
   "palette.actions": PALETTE_ACTIONS_REASON,
