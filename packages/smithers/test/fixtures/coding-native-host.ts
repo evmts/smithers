@@ -1,6 +1,7 @@
 /** Offline provider transport for the coding guide's real CLI host. */
 import { MockAgent } from "@effect/platform-node/Undici"
 import { Effect } from "effect"
+import { writeFileSync } from "node:fs"
 import "./scripted-native-host.ts"
 import { layerRebuildableRequestExecutor, platform } from "../../src/internal/NodeControlHost.ts"
 
@@ -20,7 +21,17 @@ Object.assign(platform, {
         }
       ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("")
       agent.get("https://api.openai.com").intercept({ method: "POST", path: "/v1/responses" })
-        .reply(200, stream, { headers: { "content-type": "text/event-stream" } }).persist()
+        .reply(() => {
+          if (process.env.SMITHERS_TEST_CODING_STARTED) {
+            writeFileSync("index.js", "export const name = \"coding in progress\"\n")
+            writeFileSync(process.env.SMITHERS_TEST_CODING_STARTED, String(process.pid))
+          }
+          return {
+            statusCode: 200,
+            data: stream,
+            responseOptions: { headers: { "content-type": "text/event-stream" } }
+          }
+        }).delay(process.env.SMITHERS_TEST_CODING_STARTED ? 120_000 : 1).persist()
       return agent
     }),
     (agent) => Effect.promise(() => agent.close())

@@ -426,9 +426,18 @@ describe("what the summary costs a large value", () => {
   })
 })
 
-describe("inherited plan observations", () => {
-  it.each(["absent", "ancestor", "ancestor-no-revision", "unrelated", "other-sequence", "paged"])(
-    "preserves only attested ancestor metadata: %s",
+describe("original plan observations", () => {
+  it.each([
+    "absent",
+    "self",
+    "self-no-revision",
+    "ancestor",
+    "ancestor-no-revision",
+    "unrelated",
+    "other-sequence",
+    "paged"
+  ])(
+    "preserves only attested original metadata: %s",
     async (scenario) => {
       const observed = await runPromise(
         Effect.scoped(Effect.gen(function*() {
@@ -441,7 +450,7 @@ describe("inherited plan observations", () => {
               version: 1,
               flowName: Empty._tag,
               payload: {},
-              forkKeyRunIds: ["parent-plan"]
+              forkKeyRunIds: scenario.startsWith("self") ? [] : ["parent-plan"]
             })
           )
           const real = yield* Journal.Journal
@@ -459,8 +468,8 @@ describe("inherited plan observations", () => {
           const seedScope = {
             runId,
             sourceId: "fork-plan",
-            lineageId: scenario === "unrelated" ? "stranger" : inherited,
-            ...(scenario === "ancestor-no-revision" ? {} : { sourceRevision: "ancestor-revision" })
+            lineageId: scenario.startsWith("self") ? root : scenario === "unrelated" ? "stranger" : inherited,
+            ...(scenario.endsWith("no-revision") ? {} : { sourceRevision: "ancestor-revision" })
           }
           // Ownerless historical fixture admission; re-emission below remains fenced.
           if (scenario === "paged") {
@@ -495,7 +504,8 @@ describe("inherited plan observations", () => {
           )
           expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
           expect(writes).toHaveLength(1)
-          const attested = scenario === "ancestor" || scenario === "ancestor-no-revision" || scenario === "paged"
+          const attested = scenario.startsWith("self") || scenario === "ancestor" ||
+            scenario === "ancestor-no-revision" || scenario === "paged"
           return {
             entry: writes[0]!,
             payload:
