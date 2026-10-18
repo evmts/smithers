@@ -627,8 +627,9 @@ func (s *WorkspaceService) runRuntimeRepositoryCommand(ctx context.Context, row 
 // Git reports an HTTP refusal in stderr. Retry the remote's 503/504 admission
 // refusal and the egress proxy's 503 (its ledger is unavailable; it sends
 // Retry-After: 1). Do not retry the proxy's 429 (the payer's daily egress is
-// spent until 00:00 UTC), authentication errors, truncated evidence,
-// transport uncertainty, or commands that change checkout.
+// spent until 00:00 UTC) or 403 (the sandbox holds no egress grant),
+// authentication errors, truncated evidence, transport uncertainty, or
+// commands that change checkout.
 func retryableWorkspaceTransfer(command workspaceapi.Command, result workspaceapi.CommandResult) bool {
 	if len(command.Args) < 2 || command.Args[0] != "git" || (command.Args[1] != "fetch" && command.Args[1] != "clone" && command.Args[1] != "ls-remote") || result.ExitCode == 0 || result.OutputTruncated {
 		return false
@@ -661,8 +662,11 @@ func (s *WorkspaceService) runtimeRepositoryCommandOutput(ctx context.Context, r
 			retryable:   retryableWorkspaceTransfer(command, result),
 		}
 		outcome.record(row.ID)
-		if outcome.exitClass == workspaceRepositoryExitEgressQuota {
+		switch outcome.exitClass {
+		case workspaceRepositoryExitEgressQuota:
 			return "", pkgerrors.QuotaExceeded(workspaceEgressQuotaExhaustedMessage).WithCause(outcome)
+		case workspaceRepositoryExitEgressGrantDenied:
+			return "", pkgerrors.Forbidden(workspaceEgressGrantDeniedMessage).WithCause(outcome)
 		}
 		// WithCause, never concatenation: the sentence IS the persisted
 		// verdict (see workspaceRepositoryStepUnverifiedMessage), so the
