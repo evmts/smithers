@@ -257,6 +257,7 @@ function AppContent() {
   const bootEntry = session.repositoryEntry?.repo.toLowerCase() === bootRepository?.toLowerCase()
     ? session.repositoryEntry : undefined
   const codeTarget = typeof window === "undefined" ? null : codePathTarget(window.location.pathname)
+  const codeRoute = codeTarget?.subject?.kind === "tree" || codeTarget?.subject?.kind === "blob"
   const codeBranches = codeBranchRows.find(row => row.id.toLowerCase() === codeTarget?.repo.toLowerCase())
   const codeDefaultRef = repositoryRows.find(row => row.id.toLowerCase() === codeTarget?.repo.toLowerCase())?.head?.bookmark
   const codeRefs = [...new Set([...(codeBranches?.names ?? []), ...(codeDefaultRef ? [codeDefaultRef] : [])])]
@@ -758,17 +759,16 @@ function AppContent() {
       <WikiDeleteDialog />
     </div>
   )
-  if (bootRepository === null || bootEntry?.phase !== "ready") return chat
+  if (bootRepository === null || (bootEntry?.phase !== "ready" && !(bootUnavailable && codeRoute))) return chat
   const repository = repositoryRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())
   const rootRoute = window.location.pathname.replace(/\/$/, "") === `/${bootRepository}`
-  const codeRoute = codeTarget?.subject?.kind === "tree" || codeTarget?.subject?.kind === "blob"
   if (!rootRoute && !codeRoute) return chat
   return <RepoFrame repo={bootRepository} publicRepo={repository?.catalog === true}
     login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
     member={identity?.state === "signed-in" && repository !== undefined && repository.catalog !== true}
     onAsk={() => controller.runCommand("chat.open")} onSignIn={() => controller.runCommand("sign-in")} ask={chat}>
     {codeRoute ? <RepositoryCodeView repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
-      admitted={true} requestId={bootEntry.requestId} onAsk={text => controller.changeDraft(text)} /> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
+      admitted={bootEntry?.phase === "ready"} requestId={bootEntry?.requestId} error={bootUnavailable ? bootEntry?.error : undefined} onAsk={text => controller.changeDraft(text)} /> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
       tree={repoTreeRows.find(row => row.copyId === homeTreeCopy && row.path === "")}
       home={repositoryHome} summary={repository?.summary}/>}
   </RepoFrame>

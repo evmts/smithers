@@ -1792,6 +1792,7 @@ const FIXTURES: Record<
       localRepoId: "repo-1",
       path: "README.md",
       content: "# hi\n",
+      originalSize: 20000,
       truncated: true,
       binary: false,
       address: "/smithersai/smithers/README.md",

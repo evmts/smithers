@@ -240,8 +240,16 @@ const openRequestedFile = async (
   const readKey = codeReadKey(repo, subject.kind, subject.location, options.requestId)
   setCodeRead(readKey, "loading")
   const target = selectedRepoId(controller.store, repo)
-  const inventory = await authoritativeRefs(controller, target)
-  if (!admitted(controller.store, repo, options.requestId, owner)) return
+  let inventory: RefInventory
+  try { inventory = await authoritativeRefs(controller, target) }
+  catch {
+    setCodeRead(readKey, "failed", "Could not read repository branches.")
+    return
+  }
+  if (!admitted(controller.store, repo, options.requestId, owner)) {
+    setCodeRead(readKey, "failed", "Repository access changed while reading branches.")
+    return
+  }
   const located = resolveRefLocation(subject.location, inventory.refs)
   const say = async (text: string, action: Message["action"]): Promise<void> => {
     await controller.store.dispatch({ type: "message.appended", actor: "system", text, spoken: true, ...(action === undefined ? {} : { action }) }).isPersisted.promise

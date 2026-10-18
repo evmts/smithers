@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { readSelection, sourceRoute } from "./RepositoryCodeView"
+import { permalinkCommit, readSelection, sourceRoute } from "./RepositoryCodeView"
 import { tokenize } from "./syntax"
 describe("repository code routes", () => {
   test("encodes path segments and slash branches", () => {
@@ -28,4 +28,13 @@ test("read receipts from different admission requests cannot satisfy one another
   setCodeRead(next, "loading")
   expect(repositoryCodeReads.get(next)?.error).toBeUndefined()
   expect(repositoryCodeReads.get(old)?.state).toBe("ready")
+})
+
+test("permalinks use resolved commits, full SHA routes, or read branch commits only", () => {
+  const head = "a".repeat(40), resolved = "b".repeat(40)
+  expect(permalinkCommit("main", resolved, { main: head })).toBe(resolved)
+  expect(permalinkCommit("main", undefined, { main: head })).toBe(head)
+  expect(permalinkCommit(head)).toBe(head)
+  expect(permalinkCommit("main")).toBeUndefined()
+  expect(permalinkCommit("main", null, { main: "not-a-commit" })).toBeUndefined()
 })

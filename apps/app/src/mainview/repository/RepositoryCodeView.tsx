@@ -5,7 +5,7 @@ import { useContext, useRef, useSyncExternalStore, type CSSProperties } from "re
 import { File, Folder } from "lucide-react"
 import type { Card } from "../state/AppState"
 import { pathTarget } from "../RepoLink"
-import { resolveRefLocation } from "@smthrs/rpc/RepositorySubjectPath"
+import { isCommitRevision, resolveRefLocation } from "@smthrs/rpc/RepositorySubjectPath"
 import { tokenize } from "./syntax"
 import "./code.css"
 import "./repository-code.css"
@@ -21,9 +21,14 @@ export const readSelection = (search: string, count: number) => {
 const subscribe = (notify: () => void) => { window.addEventListener("popstate", notify); window.addEventListener("repository-code-location", notify); return () => { window.removeEventListener("popstate", notify); window.removeEventListener("repository-code-location", notify) } }
 const location = () => window.location.pathname + window.location.search
 
+export const permalinkCommit = (revision: string, readCommit?: string | null, commits?: Readonly<Record<string, string>>) => {
+  const candidate = readCommit ?? (isCommitRevision(revision) ? revision : commits?.[revision])
+  return candidate && isCommitRevision(candidate) ? candidate : undefined
+}
+
 /** A projection of the admitted route's existing read, never an independent reader. */
-export function RepositoryCodeView({ repo, cards, refs, commits, admitted, requestId, onAsk }: {
-  repo: string; cards: ReadonlyArray<Card>; refs: ReadonlyArray<string>; commits?: Readonly<Record<string, string>>; admitted: boolean; requestId?: string; onAsk: (text: string) => void
+export function RepositoryCodeView({ repo, cards, refs, commits, admitted, requestId, error, onAsk }: {
+  repo: string; cards: ReadonlyArray<Card>; refs: ReadonlyArray<string>; commits?: Readonly<Record<string, string>>; admitted: boolean; requestId?: string; error?: string; onAsk: (text: string) => void
 }) {
   const anchor = useRef<number | null>(null)
   const openAsk = useContext(RepositoryAskContext)
@@ -49,9 +54,11 @@ export function RepositoryCodeView({ repo, cards, refs, commits, admitted, reque
     if (!extend) anchor.current = line
     query("L", first === line ? String(line) : `${Math.min(first, line)}-${Math.max(first, line)}`)
   }
+  const commit = permalinkCommit(revision, payload?.readAt?.commitId, commits)
+  const failure = error ?? (read?.state === "failed" ? read.error : undefined)
   const permalink = () => {
-    const commit = payload?.readAt?.commitId ?? commits?.[revision]
-    const url = new URL(route(subject.kind, path, commit ?? revision), window.location.origin)
+    if (!commit) return
+    const url = new URL(route(subject.kind, path, commit), window.location.origin)
     if (selected) url.searchParams.set("L", `${selected.start}${selected.end === selected.start ? "" : `-${selected.end}`}`)
     void navigator.clipboard.writeText(url.href)
   }
@@ -63,18 +70,18 @@ export function RepositoryCodeView({ repo, cards, refs, commits, admitted, reque
       <nav className="repo-code-breadcrumbs" aria-label="File path"><a href={route("tree", "")}>{repo.split("/").at(-1)}</a>
         {path.split("/").filter(Boolean).map((part, index, parts) => <span key={index}><span className="repo-code-separator">/</span>{index === parts.length - 1 ? <strong>{part}</strong> : <a href={route("tree", parts.slice(0, index + 1).join("/"))}>{part}</a>}</span>)}
       </nav>
-      {located && <button className="repo-ui-btn repo-ui-btn-primary repo-code-permalink" onClick={permalink}>Copy permalink</button>}
+      {located && commit && <button className="repo-ui-btn repo-ui-btn-primary repo-code-permalink" onClick={permalink}>Copy permalink</button>}
     </div>
-    {read?.state === "failed" ? <p role="alert">{read.error}</p> : !card ? <p role="status">Loading…</p> : card.kind === "file-list" ? <div className="repository-code-box">
+    {failure ? <p role="alert">{failure}</p> : !card ? <p role="status">Loading…</p> : card.kind === "file-list" ? <div className="repository-code-box">
       {card.payload.entries.length === 0 ? <p>This folder is empty.</p> : <div role="table" aria-label={path ? `Files in ${path}` : "Repository files"}>
         {path && <div role="row" className="repo-code-file-row"><span role="cell"><a href={route("tree", path.split("/").slice(0, -1).join("/"))} aria-label="Parent directory">..</a></span></div>}
         {card.payload.entries.map(entry => <div className="repo-code-file-row" role="row" key={entry.name}><span role="cell"><a href={route(entry.kind === "dir" ? "tree" : "blob", [path, entry.name].filter(Boolean).join("/"))}>{entry.kind === "dir" ? <Folder size={17} aria-hidden="true" /> : <File size={17} aria-hidden="true" />}{entry.name}</a></span></div>)}
       </div>}{card.payload.truncated && <p>Truncated</p>}
     </div> : payload && <div className="repository-code-box">
-      <div className="repo-code-file-toolbar"><strong>Code</strong><span className="repo-code-file-stats">{tokens.length} lines · {new TextEncoder().encode(payload.content).length.toLocaleString("en-US")} B</span><span className="repo-code-toolbar-spacer" /><button onClick={() => query("raw", raw ? "0" : "1")}>{raw ? "Exit raw" : "Raw"}</button><button aria-label="Copy file contents" onClick={() => void navigator.clipboard.writeText(payload.content)}>Copy</button></div>
+      <div className="repo-code-file-toolbar"><strong>Code</strong><span className="repo-code-file-stats">{tokens.length} lines · {(payload.originalSize ?? new TextEncoder().encode(payload.content).length).toLocaleString("en-US")} B{payload.truncated && payload.originalSize === undefined ? " shown" : ""}</span><span className="repo-code-toolbar-spacer" /><button onClick={() => query("raw", raw ? "0" : "1")}>{raw ? "Exit raw" : "Raw"}</button><button aria-label="Copy file contents" onClick={() => void navigator.clipboard.writeText(payload.content)}>Copy</button></div>
       {payload.truncated && <p role="status">Truncated</p>}
       {payload.binary ? <p>Binary file</p> : !payload.content ? <p>This file is empty.</p> : raw ? <pre className="repo-code-raw" aria-label={`Raw ${path}`}>{payload.content}</pre> : <>
-        {selected && <div className="repo-code-selection" aria-label="Selected line actions"><span>lines {selected.start}-{selected.end}</span><button onClick={() => { onAsk(`Explain lines ${selected.start}-${selected.end} of ${path} at ${revision}`); openAsk?.() }}>Ask about lines</button><button onClick={permalink}>Copy link</button></div>}
+        {selected && <div className="repo-code-selection" aria-label="Selected line actions"><span>lines {selected.start}-{selected.end}</span><button onClick={() => { onAsk(`Explain lines ${selected.start}-${selected.end} of ${path} at ${revision}`); openAsk?.() }}>Ask about lines</button>{commit && <button onClick={permalink}>Copy link</button>}</div>}
         <div className="repo-code-source" role="region" aria-label={`Source of ${path}`} style={{ "--repo-code-number-width": `calc(${String(tokens.length).length}ch + 12px)` } as CSSProperties}><div className="repo-code-source-scroll"><pre>{tokens.map((line, index) => <span className="repo-code-source-line" key={index} data-line={index + 1} data-selected={selected && index + 1 >= selected.start && index + 1 <= selected.end || undefined}><a className="repo-code-line-number" href={`?L=${index + 1}`} aria-label={`Select line ${index + 1}`} onKeyDown={event => { if (event.key === "Enter" && event.shiftKey) { event.preventDefault(); selectLine(index + 1, true) } }} onClick={event => { event.preventDefault(); selectLine(index + 1, event.shiftKey) }}>{index + 1}</a><span className="repo-code-diagnostic-gutter" /><code>{line.length ? line.map((token, i) => <span key={i} className={`repo-code-token-${token.kind}`}>{token.text}</span>) : " "}</code></span>)}</pre></div></div>
       </>}
     </div>}
