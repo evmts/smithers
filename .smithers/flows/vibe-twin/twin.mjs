@@ -200,8 +200,12 @@ export const fallbackFor = (source, importer, pkg) => {
   if (!importer.startsWith(twinRoot) || !source.startsWith(".")) return undefined
   const target = resolve(dirname(importer), source.split("?")[0])
   const base = target.replace(/\.(?:js|mjs|ts|tsx|vibe)$/, "")
-  if ([target, `${base}.js`, join(target, "index.js")].some((f) => f.startsWith(twinRoot) && existsSync(f))) return undefined
+  if (!base.startsWith(twinRoot)) return undefined
   const rel = base.slice(twinRoot.length)
+  // A real twin, or a twin-only file such as a hatch, stays. A module not twinned yet goes to
+  // its src/ file itself, not the stub, so it has one namespace identity (A-9).
+  const twins = twinModules(pkg)
+  if (twins.has(rel) || twins.has(`${rel}/index`)) return undefined
   return [".ts", ".tsx", ".mts", "/index.ts", "/index.tsx"].map((x) => join(pkg, sourceRoot(pkg), rel + x)).find(existsSync)
 }
 
