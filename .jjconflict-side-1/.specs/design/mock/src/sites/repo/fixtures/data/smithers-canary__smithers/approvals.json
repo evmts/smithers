@@ -1,0 +1,15 @@
+[
+  {
+    "id": "approval-release-rc13",
+    "run": "run-release-rc13",
+    "title": "Prepare 1.0.0-rc.13",
+    "question": "Write the release preparation for 1.0.0-rc.13?",
+    "askedOf": "maya",
+    "asked": "2026-10-18T04:43:00Z",
+    "options": [
+      "Prepare release",
+      "Decline"
+    ],
+    "state": "waiting"
+  }
+]

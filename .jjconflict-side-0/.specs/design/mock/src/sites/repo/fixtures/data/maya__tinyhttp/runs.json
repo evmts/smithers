@@ -1,0 +1,2678 @@
+[
+  {
+    "id": "run-512",
+    "flow": "implement-issue",
+    "title": "Fix #11: parse empty query values as empty strings",
+    "state": "running",
+    "trigger": {
+      "kind": "issue",
+      "by": "maya",
+      "ref": "#11"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T20:57:00.000Z",
+    "duration": "3 m",
+    "cost": {
+      "usd": 0.34,
+      "tokens": 8400
+    },
+    "branch": "smithers/empty-query-values",
+    "issue": 11,
+    "pull": 12,
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Understand",
+        "state": "succeeded",
+        "started": "2026-10-17T20:57:00.000Z",
+        "duration": "25 s",
+        "summary": "parseQuery(\"?a=\") drops the a key",
+        "log": [
+          "read src/query.ts",
+          "read test/query.test.ts",
+          "context: parseQuery(\"?a=\") drops the a key",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-10-17T20:58:00.000Z",
+        "duration": "42 s",
+        "summary": "Reproduce",
+        "log": [
+          "inspect test/query.test.ts",
+          "reproduction: parseQuery(\"?a=\") drops the a key",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Implement",
+        "state": "running",
+        "started": "2026-10-17T20:59:00.000Z",
+        "summary": "keep a pair when its value is empty",
+        "log": [
+          "edit src/query.ts",
+          "change: keep a pair when its value is empty",
+          "read test/query.test.ts",
+          "regression: empty value and bare-key regressions",
+          "checkpoint saved: proposed diff",
+          "push smithers/empty-query-values at 9c1e2ab",
+          "pull #12 opened as a work in progress",
+          "run query regressions: in progress",
+          "stream connected: latest stage output received"
+        ]
+      },
+      {
+        "id": "stage-4",
+        "label": "Verify",
+        "state": "queued",
+        "summary": "",
+        "log": []
+      },
+      {
+        "id": "stage-5",
+        "label": "Open pull request",
+        "state": "queued",
+        "summary": "",
+        "log": []
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T20:57:00.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read src/query.ts"
+      },
+      {
+        "at": "2026-10-17T20:57:15.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: parseQuery(\"?a=\") drops the a key"
+      },
+      {
+        "at": "2026-10-17T20:58:00.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect test/query.test.ts"
+      },
+      {
+        "at": "2026-10-17T20:58:15.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Reproduce"
+      },
+      {
+        "at": "2026-10-17T20:59:00.000Z",
+        "stage": "stage-3",
+        "kind": "tool",
+        "text": "edit src/query.ts"
+      },
+      {
+        "at": "2026-10-17T20:59:15.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Saved stage-3: keep a pair when its value is empty"
+      }
+    ]
+  },
+  {
+    "id": "run-511",
+    "flow": "implement-issue",
+    "title": "Fix #33: validate credentialed CORS origins",
+    "state": "waiting",
+    "trigger": {
+      "kind": "issue",
+      "by": "maya",
+      "ref": "#33"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-17T20:13:00.000Z",
+    "duration": "47 m",
+    "cost": {
+      "usd": 0.15,
+      "tokens": 10137
+    },
+    "branch": "cora/cors-credentials",
+    "issue": 33,
+    "pull": 34,
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Understand",
+        "state": "succeeded",
+        "started": "2026-10-17T20:13:00.000Z",
+        "duration": "25 s",
+        "summary": "credentials with a wildcard origin is rejected by the browser",
+        "log": [
+          "read src/middleware/cors.ts",
+          "read test/cors.test.ts",
+          "context: credentials with a wildcard origin is rejected by the browser",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-10-17T20:14:00.000Z",
+        "duration": "42 s",
+        "summary": "Reproduce",
+        "log": [
+          "inspect test/cors.test.ts",
+          "reproduction: credentials with a wildcard origin is rejected by the browser",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-10-17T20:15:00.000Z",
+        "duration": "59 s",
+        "summary": "validate wildcard credentials during middleware construction",
+        "log": [
+          "edit src/middleware/cors.ts",
+          "change: validate wildcard credentials during middleware construction",
+          "read test/cors.test.ts",
+          "regression: default origin with credentials regression",
+          "checkpoint saved: proposed diff"
+        ]
+      },
+      {
+        "id": "stage-4",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-10-17T20:16:00.000Z",
+        "duration": "76 s",
+        "summary": "Tests pass, including the default-origin-with-credentials regression",
+        "log": [
+          "run bun run check",
+          "TypeScript: no errors",
+          "run bun test test/cors.test.ts",
+          "31 tests passed; 1 failed",
+          "failure: credentials without origin still accepts wildcard",
+          "waiting for Maya to confirm constructor-time rejection"
+        ]
+      },
+      {
+        "id": "stage-5",
+        "label": "Ask about the policy",
+        "state": "waiting",
+        "started": "2026-10-17T20:17:00.000Z",
+        "summary": "Waiting for maya to choose the CORS configuration policy",
+        "log": [
+          "approval requested from maya: choose the CORS configuration policy",
+          "saved checkpoint before waiting",
+          "no changes will be published while this decision is pending"
+        ]
+      }
+    ],
+    "approvals": [
+      "approval-cors"
+    ],
+    "trace": [
+      {
+        "at": "2026-10-17T20:13:00.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read src/middleware/cors.ts"
+      },
+      {
+        "at": "2026-10-17T20:13:15.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: credentials with a wildcard origin is rejected by the browser"
+      },
+      {
+        "at": "2026-10-17T20:14:00.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect test/cors.test.ts"
+      },
+      {
+        "at": "2026-10-17T20:14:15.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Reproduce"
+      },
+      {
+        "at": "2026-10-17T20:15:00.000Z",
+        "stage": "stage-3",
+        "kind": "tool",
+        "text": "edit src/middleware/cors.ts"
+      },
+      {
+        "at": "2026-10-17T20:15:15.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Saved stage-3: validate wildcard credentials during middleware construction"
+      },
+      {
+        "at": "2026-10-17T20:16:00.000Z",
+        "stage": "stage-4",
+        "kind": "tool",
+        "text": "run bun run check"
+      },
+      {
+        "at": "2026-10-17T20:16:15.000Z",
+        "stage": "stage-4",
+        "kind": "error",
+        "text": "Tag v0.4.3 is missing. Select a known tag and retry."
+      },
+      {
+        "at": "2026-10-17T20:17:00.000Z",
+        "stage": "stage-5",
+        "kind": "tool",
+        "text": "approval requested from maya: choose the CORS configuration policy"
+      },
+      {
+        "at": "2026-10-17T20:17:15.000Z",
+        "stage": "stage-5",
+        "kind": "approval",
+        "text": "approval requested from maya: choose the CORS configuration policy"
+      }
+    ]
+  },
+  {
+    "id": "run-510",
+    "flow": "release-notes",
+    "title": "Draft release notes for v0.4.3",
+    "state": "failed",
+    "trigger": {
+      "kind": "manual",
+      "by": "maya",
+      "ref": "#45"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T19:30:00.000Z",
+    "finished": "2026-10-17T19:31:00.000Z",
+    "duration": "1 m",
+    "cost": {
+      "usd": 0.02,
+      "tokens": 1260
+    },
+    "issue": 45,
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Collect changes",
+        "state": "failed",
+        "started": "2026-10-17T19:30:00.000Z",
+        "summary": "Selected release tag is missing",
+        "log": [
+          "input accepted: tag v0.4.3",
+          "source repository: maya/tinyhttp",
+          "read CHANGELOG.md",
+          "current package version: 0.4.2",
+          "fetch remote refs: complete",
+          "release notes draft kept unchanged",
+          "read package.json: version 0.4.2",
+          "read remote tag list: 8 tags",
+          "lookup v0.4.3: missing",
+          "stopped: create the tag or choose v0.4.2, then retry"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Group notes",
+        "state": "queued",
+        "summary": "",
+        "log": []
+      },
+      {
+        "id": "stage-3",
+        "label": "Check links",
+        "state": "queued",
+        "summary": "",
+        "log": []
+      },
+      {
+        "id": "stage-4",
+        "label": "Ask owner",
+        "state": "queued",
+        "summary": "",
+        "log": []
+      }
+    ],
+    "approvals": [],
+    "failure": {
+      "stage": "stage-1",
+      "reason": "Tag v0.4.3 does not exist. Create the tag or choose v0.4.2, then retry."
+    },
+    "trace": [
+      {
+        "at": "2026-10-17T19:30:00.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "input accepted: tag v0.4.3"
+      },
+      {
+        "at": "2026-10-17T19:30:15.000Z",
+        "stage": "stage-1",
+        "kind": "error",
+        "text": "Tag v0.4.3 is missing. Select a known tag and retry."
+      }
+    ]
+  },
+  {
+    "id": "run-509",
+    "flow": "docs-sync",
+    "title": "Document Node adapter shutdown",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "cora",
+      "ref": "#44"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-17T19:25:00.000Z",
+    "finished": "2026-10-17T19:57:00.000Z",
+    "duration": "32 m",
+    "cost": {
+      "usd": 0.24,
+      "tokens": 13611
+    },
+    "branch": "docs/adapter-examples",
+    "issue": 44,
+    "pull": 35,
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Read changes",
+        "state": "succeeded",
+        "started": "2026-10-17T19:25:00.000Z",
+        "duration": "25 s",
+        "summary": "Node shutdown example is missing",
+        "log": [
+          "read docs/adapters.md",
+          "read examples/users.ts",
+          "context: Node shutdown example is missing",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Find pages",
+        "state": "succeeded",
+        "started": "2026-10-17T19:26:00.000Z",
+        "duration": "42 s",
+        "summary": "Find pages",
+        "log": [
+          "inspect examples/users.ts",
+          "reproduction: Node shutdown example is missing",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Draft updates",
+        "state": "succeeded",
+        "started": "2026-10-17T19:27:00.000Z",
+        "duration": "59 s",
+        "summary": "document server.close and in-flight requests",
+        "log": [
+          "edit docs/adapters.md",
+          "change: document server.close and in-flight requests",
+          "read examples/users.ts",
+          "regression: TypeScript adapter examples",
+          "checkpoint saved: proposed diff"
+        ]
+      },
+      {
+        "id": "stage-4",
+        "label": "Verify examples",
+        "state": "succeeded",
+        "started": "2026-10-17T19:28:00.000Z",
+        "duration": "76 s",
+        "summary": "TypeScript adapter examples",
+        "log": [
+          "run bun run check",
+          "TypeScript: no errors",
+          "run bun test",
+          "31 tests passed; 0 failed",
+          "run bun run lint",
+          "Biome: no errors"
+        ]
+      },
+      {
+        "id": "stage-5",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-10-17T19:29:00.000Z",
+        "duration": "93 s",
+        "summary": "Open pull request",
+        "log": [
+          "prepare pull #35",
+          "include docs/adapters.md and examples/users.ts",
+          "attach verification receipt",
+          "a person reviews the diff and decides whether to merge"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T19:25:00.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read docs/adapters.md"
+      },
+      {
+        "at": "2026-10-17T19:25:15.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: Node shutdown example is missing"
+      },
+      {
+        "at": "2026-10-17T19:26:00.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect examples/users.ts"
+      },
+      {
+        "at": "2026-10-17T19:26:15.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Find pages"
+      },
+      {
+        "at": "2026-10-17T19:27:00.000Z",
+        "stage": "stage-3",
+        "kind": "tool",
+        "text": "edit docs/adapters.md"
+      },
+      {
+        "at": "2026-10-17T19:27:15.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Saved stage-3: document server.close and in-flight requests"
+      },
+      {
+        "at": "2026-10-17T19:28:00.000Z",
+        "stage": "stage-4",
+        "kind": "tool",
+        "text": "run bun run check"
+      },
+      {
+        "at": "2026-10-17T19:28:15.000Z",
+        "stage": "stage-4",
+        "kind": "checkpoint",
+        "text": "Saved stage-4: TypeScript adapter examples"
+      },
+      {
+        "at": "2026-10-17T19:29:00.000Z",
+        "stage": "stage-5",
+        "kind": "tool",
+        "text": "prepare pull #35"
+      },
+      {
+        "at": "2026-10-17T19:29:15.000Z",
+        "stage": "stage-5",
+        "kind": "checkpoint",
+        "text": "Saved stage-5: Open pull request"
+      },
+      {
+        "at": "2026-10-17T19:36:00.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Browser tab closed. Worker continued; UI reattached to checkpoint stage-3 with the saved documentation diff."
+      }
+    ],
+    "resumed": {
+      "at": "2026-10-17T19:36:00.000Z",
+      "checkpoint": "stage-3: docs draft saved"
+    }
+  },
+  {
+    "id": "run-508",
+    "flow": "implement-issue",
+    "title": "Measure route lookup before changing the matcher",
+    "state": "cancelled",
+    "trigger": {
+      "kind": "issue",
+      "by": "maya",
+      "ref": "#42"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-16T20:50:00.000Z",
+    "finished": "2026-10-16T20:52:00.000Z",
+    "duration": "2 m",
+    "cost": {
+      "usd": 0.28,
+      "tokens": 15348
+    },
+    "branch": "sandbox/bun-compat",
+    "issue": 42,
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Understand",
+        "state": "succeeded",
+        "started": "2026-10-16T20:50:00.000Z",
+        "duration": "25 s",
+        "summary": "no reproducible route-lookup baseline exists",
+        "log": [
+          "read src/router.ts",
+          "read test/router.test.ts",
+          "context: no reproducible route-lookup baseline exists",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Reproduce",
+        "state": "cancelled",
+        "started": "2026-10-16T20:51:00.000Z",
+        "summary": "Reproduce",
+        "log": [
+          "inspect test/router.test.ts",
+          "reproduction: no reproducible route-lookup baseline exists",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction",
+          "maya cancelled before implementation; working directory retained",
+          "no pull request opened"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Implement",
+        "state": "queued",
+        "summary": "",
+        "log": []
+      },
+      {
+        "id": "stage-4",
+        "label": "Verify",
+        "state": "queued",
+        "summary": "",
+        "log": []
+      },
+      {
+        "id": "stage-5",
+        "label": "Open pull request",
+        "state": "queued",
+        "summary": "",
+        "log": []
+      }
+    ],
+    "approvals": [
+      "approval-benchmark"
+    ],
+    "trace": [
+      {
+        "at": "2026-10-16T20:50:00.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read src/router.ts"
+      },
+      {
+        "at": "2026-10-16T20:50:15.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: no reproducible route-lookup baseline exists"
+      },
+      {
+        "at": "2026-10-16T20:51:00.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect test/router.test.ts"
+      },
+      {
+        "at": "2026-10-16T20:51:15.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Reproduce"
+      }
+    ]
+  },
+  {
+    "id": "run-507",
+    "flow": "implement-issue",
+    "title": "Fix #31: return 400 for malformed path encoding",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "issue",
+      "by": "maya",
+      "ref": "#31"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-15T20:15:12.000Z",
+    "finished": "2026-10-15T20:30:12.000Z",
+    "duration": "15 m",
+    "cost": {
+      "usd": 0.32,
+      "tokens": 17085
+    },
+    "issue": 31,
+    "pull": 32,
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Understand",
+        "state": "succeeded",
+        "started": "2026-10-15T20:15:12.000Z",
+        "duration": "25 s",
+        "summary": "GET /users/%ZZ returns 500 instead of 400",
+        "log": [
+          "read src/router.ts",
+          "read test/router.test.ts",
+          "context: GET /users/%ZZ returns 500 instead of 400",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-10-15T20:16:12.000Z",
+        "duration": "42 s",
+        "summary": "Reproduce",
+        "log": [
+          "inspect test/router.test.ts",
+          "reproduction: GET /users/%ZZ returns 500 instead of 400",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-10-15T20:17:12.000Z",
+        "duration": "59 s",
+        "summary": "catch malformed path escapes and throw HttpError(400)",
+        "log": [
+          "edit src/router.ts",
+          "change: catch malformed path escapes and throw HttpError(400)",
+          "read test/router.test.ts",
+          "regression: malformed escapes and valid percent-encoded params",
+          "checkpoint saved: proposed diff"
+        ]
+      },
+      {
+        "id": "stage-4",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-10-15T20:18:12.000Z",
+        "duration": "76 s",
+        "summary": "malformed escapes and valid percent-encoded params",
+        "log": [
+          "run bun run check",
+          "TypeScript: no errors",
+          "run bun test",
+          "31 tests passed; 0 failed",
+          "run bun run lint",
+          "Biome: no errors"
+        ]
+      },
+      {
+        "id": "stage-5",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-10-15T20:19:12.000Z",
+        "duration": "93 s",
+        "summary": "Open pull request",
+        "log": [
+          "prepare pull #32",
+          "include src/router.ts and test/router.test.ts",
+          "attach verification receipt",
+          "a person reviews the diff and decides whether to merge"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-15T20:15:12.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read src/router.ts"
+      },
+      {
+        "at": "2026-10-15T20:15:27.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: GET /users/%ZZ returns 500 instead of 400"
+      },
+      {
+        "at": "2026-10-15T20:16:12.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect test/router.test.ts"
+      },
+      {
+        "at": "2026-10-15T20:16:27.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Reproduce"
+      },
+      {
+        "at": "2026-10-15T20:17:12.000Z",
+        "stage": "stage-3",
+        "kind": "tool",
+        "text": "edit src/router.ts"
+      },
+      {
+        "at": "2026-10-15T20:17:27.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Saved stage-3: catch malformed path escapes and throw HttpError(400)"
+      },
+      {
+        "at": "2026-10-15T20:18:12.000Z",
+        "stage": "stage-4",
+        "kind": "tool",
+        "text": "run bun run check"
+      },
+      {
+        "at": "2026-10-15T20:18:27.000Z",
+        "stage": "stage-4",
+        "kind": "checkpoint",
+        "text": "Saved stage-4: malformed escapes and valid percent-encoded params"
+      },
+      {
+        "at": "2026-10-15T20:19:12.000Z",
+        "stage": "stage-5",
+        "kind": "tool",
+        "text": "prepare pull #32"
+      },
+      {
+        "at": "2026-10-15T20:19:27.000Z",
+        "stage": "stage-5",
+        "kind": "checkpoint",
+        "text": "Saved stage-5: Open pull request"
+      }
+    ]
+  },
+  {
+    "id": "run-506",
+    "flow": "triage",
+    "title": "Confirm the Node stream disconnect reproduction",
+    "state": "waiting",
+    "trigger": {
+      "kind": "schedule",
+      "by": "cora",
+      "ref": "#38"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-15T20:15:00.000Z",
+    "duration": "2 d",
+    "cost": {
+      "usd": 0.37,
+      "tokens": 18822
+    },
+    "issue": 38,
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Read report",
+        "state": "succeeded",
+        "started": "2026-10-15T20:15:00.000Z",
+        "duration": "25 s",
+        "summary": "a disconnected client leaves the response producer active",
+        "log": [
+          "read src/adapters/node.ts",
+          "read test/node.test.ts",
+          "context: a disconnected client leaves the response producer active",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-10-15T20:16:00.000Z",
+        "duration": "42 s",
+        "summary": "Reproduce",
+        "log": [
+          "inspect test/node.test.ts",
+          "reproduction: a disconnected client leaves the response producer active",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Classify",
+        "state": "succeeded",
+        "started": "2026-10-15T20:17:00.000Z",
+        "duration": "59 s",
+        "summary": "classify the socket-disconnect reproduction",
+        "log": [
+          "edit src/adapters/node.ts",
+          "change: classify the socket-disconnect reproduction",
+          "read test/node.test.ts",
+          "regression: real node:http socket cancellation",
+          "checkpoint saved: proposed diff"
+        ]
+      },
+      {
+        "id": "stage-4",
+        "label": "Propose label",
+        "state": "waiting",
+        "started": "2026-10-15T20:18:00.000Z",
+        "summary": "Waiting for cora",
+        "log": [
+          "approval requested from cora: confirm the socket-disconnect reproduction",
+          "saved checkpoint before waiting",
+          "no changes will be published while this decision is pending"
+        ]
+      }
+    ],
+    "approvals": [
+      "approval-repro"
+    ],
+    "trace": [
+      {
+        "at": "2026-10-15T20:15:00.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read src/adapters/node.ts"
+      },
+      {
+        "at": "2026-10-15T20:15:15.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: a disconnected client leaves the response producer active"
+      },
+      {
+        "at": "2026-10-15T20:16:00.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect test/node.test.ts"
+      },
+      {
+        "at": "2026-10-15T20:16:15.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Reproduce"
+      },
+      {
+        "at": "2026-10-15T20:17:00.000Z",
+        "stage": "stage-3",
+        "kind": "tool",
+        "text": "edit src/adapters/node.ts"
+      },
+      {
+        "at": "2026-10-15T20:17:15.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Saved stage-3: classify the socket-disconnect reproduction"
+      },
+      {
+        "at": "2026-10-15T20:18:00.000Z",
+        "stage": "stage-4",
+        "kind": "tool",
+        "text": "approval requested from cora: confirm the socket-disconnect reproduction"
+      },
+      {
+        "at": "2026-10-15T20:18:15.000Z",
+        "stage": "stage-4",
+        "kind": "approval",
+        "text": "approval requested from cora: confirm the socket-disconnect reproduction"
+      }
+    ]
+  },
+  {
+    "id": "run-505",
+    "flow": "implement-issue",
+    "title": "Keep response headers when handling HEAD",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "pull",
+      "by": "maya",
+      "ref": "#30"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-16T19:12:36.000Z",
+    "finished": "2026-10-16T19:29:36.000Z",
+    "duration": "17 m",
+    "cost": {
+      "usd": 0.41,
+      "tokens": 20559
+    },
+    "pull": 30,
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Understand",
+        "state": "succeeded",
+        "started": "2026-10-16T19:12:36.000Z",
+        "duration": "25 s",
+        "summary": "HEAD responses lose the GET handler response headers",
+        "log": [
+          "read src/router.ts",
+          "read test/router.test.ts",
+          "context: HEAD responses lose the GET handler response headers",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-10-16T19:13:36.000Z",
+        "duration": "42 s",
+        "summary": "Reproduce",
+        "log": [
+          "inspect test/router.test.ts",
+          "reproduction: HEAD responses lose the GET handler response headers",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-10-16T19:14:36.000Z",
+        "duration": "59 s",
+        "summary": "carry response status and headers into the empty HEAD response",
+        "log": [
+          "edit src/router.ts",
+          "change: carry response status and headers into the empty HEAD response",
+          "read test/router.test.ts",
+          "regression: x-ready header and empty response body",
+          "checkpoint saved: proposed diff"
+        ]
+      },
+      {
+        "id": "stage-4",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-10-16T19:15:36.000Z",
+        "duration": "76 s",
+        "summary": "x-ready header and empty response body",
+        "log": [
+          "run bun run check",
+          "TypeScript: no errors",
+          "run bun test",
+          "31 tests passed; 0 failed",
+          "run bun run lint",
+          "Biome: no errors"
+        ]
+      },
+      {
+        "id": "stage-5",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-10-16T19:16:36.000Z",
+        "duration": "93 s",
+        "summary": "Open pull request",
+        "log": [
+          "prepare pull #30",
+          "include src/router.ts and test/router.test.ts",
+          "attach verification receipt",
+          "a person reviews the diff and decides whether to merge"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-16T19:12:36.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read src/router.ts"
+      },
+      {
+        "at": "2026-10-16T19:12:51.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: HEAD responses lose the GET handler response headers"
+      },
+      {
+        "at": "2026-10-16T19:13:36.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect test/router.test.ts"
+      },
+      {
+        "at": "2026-10-16T19:13:51.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Reproduce"
+      },
+      {
+        "at": "2026-10-16T19:14:36.000Z",
+        "stage": "stage-3",
+        "kind": "tool",
+        "text": "edit src/router.ts"
+      },
+      {
+        "at": "2026-10-16T19:14:51.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Saved stage-3: carry response status and headers into the empty HEAD response"
+      },
+      {
+        "at": "2026-10-16T19:15:36.000Z",
+        "stage": "stage-4",
+        "kind": "tool",
+        "text": "run bun run check"
+      },
+      {
+        "at": "2026-10-16T19:15:51.000Z",
+        "stage": "stage-4",
+        "kind": "checkpoint",
+        "text": "Saved stage-4: x-ready header and empty response body"
+      },
+      {
+        "at": "2026-10-16T19:16:36.000Z",
+        "stage": "stage-5",
+        "kind": "tool",
+        "text": "prepare pull #30"
+      },
+      {
+        "at": "2026-10-16T19:16:51.000Z",
+        "stage": "stage-5",
+        "kind": "checkpoint",
+        "text": "Saved stage-5: Open pull request"
+      }
+    ]
+  },
+  {
+    "id": "run-504",
+    "flow": "implement-issue",
+    "title": "Enforce JSON size limits on streamed bodies",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "issue",
+      "by": "maya",
+      "ref": "#15"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-10T02:10:48.000Z",
+    "finished": "2026-10-10T02:28:48.000Z",
+    "duration": "18 m",
+    "cost": {
+      "usd": 0.45,
+      "tokens": 22296
+    },
+    "issue": 15,
+    "pull": 28,
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Understand",
+        "state": "succeeded",
+        "started": "2026-10-10T02:10:48.000Z",
+        "duration": "25 s",
+        "summary": "a chunked JSON body bypasses the content-length guard",
+        "log": [
+          "read src/middleware/body.ts",
+          "read test/body.test.ts",
+          "context: a chunked JSON body bypasses the content-length guard",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-10-10T02:11:48.000Z",
+        "duration": "42 s",
+        "summary": "Reproduce",
+        "log": [
+          "inspect test/body.test.ts",
+          "reproduction: a chunked JSON body bypasses the content-length guard",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-10-10T02:12:48.000Z",
+        "duration": "59 s",
+        "summary": "count bytes read and cancel the reader above the limit",
+        "log": [
+          "edit src/middleware/body.ts",
+          "change: count bytes read and cancel the reader above the limit",
+          "read test/body.test.ts",
+          "regression: missing content-length and oversized chunks",
+          "checkpoint saved: proposed diff"
+        ]
+      },
+      {
+        "id": "stage-4",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-10-10T02:13:48.000Z",
+        "duration": "76 s",
+        "summary": "missing content-length and oversized chunks",
+        "log": [
+          "run bun run check",
+          "TypeScript: no errors",
+          "run bun test",
+          "31 tests passed; 0 failed",
+          "run bun run lint",
+          "Biome: no errors"
+        ]
+      },
+      {
+        "id": "stage-5",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-10-10T02:14:48.000Z",
+        "duration": "93 s",
+        "summary": "Open pull request",
+        "log": [
+          "prepare pull #28",
+          "include src/middleware/body.ts and test/body.test.ts",
+          "attach verification receipt",
+          "a person reviews the diff and decides whether to merge"
+        ]
+      }
+    ],
+    "approvals": [
+      "approval-body"
+    ],
+    "trace": [
+      {
+        "at": "2026-10-10T02:10:48.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read src/middleware/body.ts"
+      },
+      {
+        "at": "2026-10-10T02:11:03.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: a chunked JSON body bypasses the content-length guard"
+      },
+      {
+        "at": "2026-10-10T02:11:48.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect test/body.test.ts"
+      },
+      {
+        "at": "2026-10-10T02:12:03.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Reproduce"
+      },
+      {
+        "at": "2026-10-10T02:12:48.000Z",
+        "stage": "stage-3",
+        "kind": "tool",
+        "text": "edit src/middleware/body.ts"
+      },
+      {
+        "at": "2026-10-10T02:13:03.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Saved stage-3: count bytes read and cancel the reader above the limit"
+      },
+      {
+        "at": "2026-10-10T02:13:48.000Z",
+        "stage": "stage-4",
+        "kind": "tool",
+        "text": "run bun run check"
+      },
+      {
+        "at": "2026-10-10T02:14:03.000Z",
+        "stage": "stage-4",
+        "kind": "checkpoint",
+        "text": "Saved stage-4: missing content-length and oversized chunks"
+      },
+      {
+        "at": "2026-10-10T02:14:48.000Z",
+        "stage": "stage-5",
+        "kind": "tool",
+        "text": "prepare pull #28"
+      },
+      {
+        "at": "2026-10-10T02:15:03.000Z",
+        "stage": "stage-5",
+        "kind": "checkpoint",
+        "text": "Saved stage-5: Open pull request"
+      }
+    ]
+  },
+  {
+    "id": "run-503",
+    "flow": "docs-sync",
+    "title": "Explain middleware order and input limits",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "maya",
+      "ref": "#26"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-08T04:06:00.000Z",
+    "finished": "2026-10-08T04:25:00.000Z",
+    "duration": "19 m",
+    "cost": {
+      "usd": 0.5,
+      "tokens": 24033
+    },
+    "pull": 26,
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Read changes",
+        "state": "succeeded",
+        "started": "2026-10-08T04:06:00.000Z",
+        "duration": "25 s",
+        "summary": "middleware ordering is unclear in the guide",
+        "log": [
+          "read docs/middleware.md",
+          "read docs/recipes.md",
+          "context: middleware ordering is unclear in the guide",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Find pages",
+        "state": "succeeded",
+        "started": "2026-10-08T04:07:00.000Z",
+        "duration": "42 s",
+        "summary": "Find pages",
+        "log": [
+          "inspect docs/recipes.md",
+          "reproduction: middleware ordering is unclear in the guide",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Draft updates",
+        "state": "succeeded",
+        "started": "2026-10-08T04:08:00.000Z",
+        "duration": "59 s",
+        "summary": "show logger, CORS, and bounded JSON input in order",
+        "log": [
+          "edit docs/middleware.md",
+          "change: show logger, CORS, and bounded JSON input in order",
+          "read docs/recipes.md",
+          "regression: all guide imports and public API names",
+          "checkpoint saved: proposed diff"
+        ]
+      },
+      {
+        "id": "stage-4",
+        "label": "Verify examples",
+        "state": "succeeded",
+        "started": "2026-10-08T04:09:00.000Z",
+        "duration": "76 s",
+        "summary": "all guide imports and public API names",
+        "log": [
+          "run bun run check",
+          "TypeScript: no errors",
+          "run bun test",
+          "31 tests passed; 0 failed",
+          "run bun run lint",
+          "Biome: no errors"
+        ]
+      },
+      {
+        "id": "stage-5",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-10-08T04:10:00.000Z",
+        "duration": "93 s",
+        "summary": "Open pull request",
+        "log": [
+          "prepare pull #26",
+          "include docs/middleware.md and docs/recipes.md",
+          "attach verification receipt",
+          "a person reviews the diff and decides whether to merge"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-08T04:06:00.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read docs/middleware.md"
+      },
+      {
+        "at": "2026-10-08T04:06:15.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: middleware ordering is unclear in the guide"
+      },
+      {
+        "at": "2026-10-08T04:07:00.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect docs/recipes.md"
+      },
+      {
+        "at": "2026-10-08T04:07:15.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Find pages"
+      },
+      {
+        "at": "2026-10-08T04:08:00.000Z",
+        "stage": "stage-3",
+        "kind": "tool",
+        "text": "edit docs/middleware.md"
+      },
+      {
+        "at": "2026-10-08T04:08:15.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Saved stage-3: show logger, CORS, and bounded JSON input in order"
+      },
+      {
+        "at": "2026-10-08T04:09:00.000Z",
+        "stage": "stage-4",
+        "kind": "tool",
+        "text": "run bun run check"
+      },
+      {
+        "at": "2026-10-08T04:09:15.000Z",
+        "stage": "stage-4",
+        "kind": "checkpoint",
+        "text": "Saved stage-4: all guide imports and public API names"
+      },
+      {
+        "at": "2026-10-08T04:10:00.000Z",
+        "stage": "stage-5",
+        "kind": "tool",
+        "text": "prepare pull #26"
+      },
+      {
+        "at": "2026-10-08T04:10:15.000Z",
+        "stage": "stage-5",
+        "kind": "checkpoint",
+        "text": "Saved stage-5: Open pull request"
+      }
+    ]
+  },
+  {
+    "id": "run-502",
+    "flow": "implement-issue",
+    "title": "Keep private query values out of request logs",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "issue",
+      "by": "maya",
+      "ref": "#13"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-05T06:58:48.000Z",
+    "finished": "2026-10-05T07:18:48.000Z",
+    "duration": "20 m",
+    "cost": {
+      "usd": 0.54,
+      "tokens": 25770
+    },
+    "issue": 13,
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Understand",
+        "state": "succeeded",
+        "started": "2026-10-05T06:58:48.000Z",
+        "duration": "25 s",
+        "summary": "logger writes query values as part of the request URL",
+        "log": [
+          "read src/middleware/logger.ts",
+          "read test/logger.test.ts",
+          "context: logger writes query values as part of the request URL",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-10-05T06:59:48.000Z",
+        "duration": "42 s",
+        "summary": "Reproduce",
+        "log": [
+          "inspect test/logger.test.ts",
+          "reproduction: logger writes query values as part of the request URL",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-10-05T07:00:48.000Z",
+        "duration": "59 s",
+        "summary": "write request.path instead of request.raw.url",
+        "log": [
+          "edit src/middleware/logger.ts",
+          "change: write request.path instead of request.raw.url",
+          "read test/logger.test.ts",
+          "regression: private query values are absent from serialized records",
+          "checkpoint saved: proposed diff"
+        ]
+      },
+      {
+        "id": "stage-4",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-10-05T07:01:48.000Z",
+        "duration": "76 s",
+        "summary": "private query values are absent from serialized records",
+        "log": [
+          "run bun run check",
+          "TypeScript: no errors",
+          "run bun test",
+          "31 tests passed; 0 failed",
+          "run bun run lint",
+          "Biome: no errors"
+        ]
+      },
+      {
+        "id": "stage-5",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-10-05T07:02:48.000Z",
+        "duration": "93 s",
+        "summary": "Open pull request",
+        "log": [
+          "prepare a reviewable proposal",
+          "include src/middleware/logger.ts and test/logger.test.ts",
+          "attach verification receipt",
+          "a person reviews the diff and decides whether to merge"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-05T06:58:48.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read src/middleware/logger.ts"
+      },
+      {
+        "at": "2026-10-05T06:59:03.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: logger writes query values as part of the request URL"
+      },
+      {
+        "at": "2026-10-05T06:59:48.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect test/logger.test.ts"
+      },
+      {
+        "at": "2026-10-05T07:00:03.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Reproduce"
+      },
+      {
+        "at": "2026-10-05T07:00:48.000Z",
+        "stage": "stage-3",
+        "kind": "tool",
+        "text": "edit src/middleware/logger.ts"
+      },
+      {
+        "at": "2026-10-05T07:01:03.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Saved stage-3: write request.path instead of request.raw.url"
+      },
+      {
+        "at": "2026-10-05T07:01:48.000Z",
+        "stage": "stage-4",
+        "kind": "tool",
+        "text": "run bun run check"
+      },
+      {
+        "at": "2026-10-05T07:02:03.000Z",
+        "stage": "stage-4",
+        "kind": "checkpoint",
+        "text": "Saved stage-4: private query values are absent from serialized records"
+      },
+      {
+        "at": "2026-10-05T07:02:48.000Z",
+        "stage": "stage-5",
+        "kind": "tool",
+        "text": "prepare a reviewable proposal"
+      },
+      {
+        "at": "2026-10-05T07:03:03.000Z",
+        "stage": "stage-5",
+        "kind": "checkpoint",
+        "text": "Saved stage-5: Open pull request"
+      }
+    ]
+  },
+  {
+    "id": "run-501",
+    "flow": "implement-issue",
+    "title": "Return safe errors for malformed query encoding",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "pull",
+      "by": "maya",
+      "ref": "v0.4.2"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-02T09:51:36.000Z",
+    "finished": "2026-10-02T10:12:36.000Z",
+    "duration": "21 m",
+    "cost": {
+      "usd": 0.58,
+      "tokens": 27507
+    },
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Understand",
+        "state": "succeeded",
+        "started": "2026-10-02T09:51:36.000Z",
+        "duration": "25 s",
+        "summary": "malformed query escapes become unexpected errors",
+        "log": [
+          "read src/router.ts",
+          "read src/query.ts",
+          "context: malformed query escapes become unexpected errors",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-10-02T09:52:36.000Z",
+        "duration": "42 s",
+        "summary": "Reproduce",
+        "log": [
+          "inspect src/query.ts",
+          "reproduction: malformed query escapes become unexpected errors",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-10-02T09:53:36.000Z",
+        "duration": "59 s",
+        "summary": "translate URIError to a safe client response",
+        "log": [
+          "edit src/router.ts",
+          "change: translate URIError to a safe client response",
+          "read src/query.ts",
+          "regression: malformed and valid query escapes",
+          "checkpoint saved: proposed diff"
+        ]
+      },
+      {
+        "id": "stage-4",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-10-02T09:54:36.000Z",
+        "duration": "76 s",
+        "summary": "malformed and valid query escapes",
+        "log": [
+          "run bun run check",
+          "TypeScript: no errors",
+          "run bun test",
+          "31 tests passed; 0 failed",
+          "run bun run lint",
+          "Biome: no errors"
+        ]
+      },
+      {
+        "id": "stage-5",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-10-02T09:55:36.000Z",
+        "duration": "93 s",
+        "summary": "Open pull request",
+        "log": [
+          "prepare a reviewable proposal",
+          "include src/router.ts and src/query.ts",
+          "attach verification receipt",
+          "a person reviews the diff and decides whether to merge"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-02T09:51:36.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read src/router.ts"
+      },
+      {
+        "at": "2026-10-02T09:51:51.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: malformed query escapes become unexpected errors"
+      },
+      {
+        "at": "2026-10-02T09:52:36.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect src/query.ts"
+      },
+      {
+        "at": "2026-10-02T09:52:51.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Reproduce"
+      },
+      {
+        "at": "2026-10-02T09:53:36.000Z",
+        "stage": "stage-3",
+        "kind": "tool",
+        "text": "edit src/router.ts"
+      },
+      {
+        "at": "2026-10-02T09:53:51.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Saved stage-3: translate URIError to a safe client response"
+      },
+      {
+        "at": "2026-10-02T09:54:36.000Z",
+        "stage": "stage-4",
+        "kind": "tool",
+        "text": "run bun run check"
+      },
+      {
+        "at": "2026-10-02T09:54:51.000Z",
+        "stage": "stage-4",
+        "kind": "checkpoint",
+        "text": "Saved stage-4: malformed and valid query escapes"
+      },
+      {
+        "at": "2026-10-02T09:55:36.000Z",
+        "stage": "stage-5",
+        "kind": "tool",
+        "text": "prepare a reviewable proposal"
+      },
+      {
+        "at": "2026-10-02T09:55:51.000Z",
+        "stage": "stage-5",
+        "kind": "checkpoint",
+        "text": "Saved stage-5: Open pull request"
+      }
+    ]
+  },
+  {
+    "id": "run-500",
+    "flow": "implement-issue",
+    "title": "Decode plus signs in form-style query values",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "issue",
+      "by": "maya",
+      "ref": "#4"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-09-29T12:44:24.000Z",
+    "finished": "2026-09-29T13:06:24.000Z",
+    "duration": "22 m",
+    "cost": {
+      "usd": 0.63,
+      "tokens": 29244
+    },
+    "issue": 4,
+    "pull": 9,
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Understand",
+        "state": "succeeded",
+        "started": "2026-09-29T12:44:24.000Z",
+        "duration": "25 s",
+        "summary": "a plus sign stays literal in a form-encoded query value",
+        "log": [
+          "read src/query.ts",
+          "read test/query.test.ts",
+          "context: a plus sign stays literal in a form-encoded query value",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-09-29T12:45:24.000Z",
+        "duration": "42 s",
+        "summary": "Reproduce",
+        "log": [
+          "inspect test/query.test.ts",
+          "reproduction: a plus sign stays literal in a form-encoded query value",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-09-29T12:46:24.000Z",
+        "duration": "59 s",
+        "summary": "replace plus with a space before decodeURIComponent",
+        "log": [
+          "edit src/query.ts",
+          "change: replace plus with a space before decodeURIComponent",
+          "read test/query.test.ts",
+          "regression: literal %2B and form-style + remain distinct",
+          "checkpoint saved: proposed diff"
+        ]
+      },
+      {
+        "id": "stage-4",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-09-29T12:47:24.000Z",
+        "duration": "76 s",
+        "summary": "literal %2B and form-style + remain distinct",
+        "log": [
+          "run bun run check",
+          "TypeScript: no errors",
+          "run bun test",
+          "31 tests passed; 0 failed",
+          "run bun run lint",
+          "Biome: no errors"
+        ]
+      },
+      {
+        "id": "stage-5",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-09-29T12:48:24.000Z",
+        "duration": "93 s",
+        "summary": "Open pull request",
+        "log": [
+          "prepare pull #9",
+          "include src/query.ts and test/query.test.ts",
+          "attach verification receipt",
+          "a person reviews the diff and decides whether to merge"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-09-29T12:44:24.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read src/query.ts"
+      },
+      {
+        "at": "2026-09-29T12:44:39.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: a plus sign stays literal in a form-encoded query value"
+      },
+      {
+        "at": "2026-09-29T12:45:24.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect test/query.test.ts"
+      },
+      {
+        "at": "2026-09-29T12:45:39.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Reproduce"
+      },
+      {
+        "at": "2026-09-29T12:46:24.000Z",
+        "stage": "stage-3",
+        "kind": "tool",
+        "text": "edit src/query.ts"
+      },
+      {
+        "at": "2026-09-29T12:46:39.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Saved stage-3: replace plus with a space before decodeURIComponent"
+      },
+      {
+        "at": "2026-09-29T12:47:24.000Z",
+        "stage": "stage-4",
+        "kind": "tool",
+        "text": "run bun run check"
+      },
+      {
+        "at": "2026-09-29T12:47:39.000Z",
+        "stage": "stage-4",
+        "kind": "checkpoint",
+        "text": "Saved stage-4: literal %2B and form-style + remain distinct"
+      },
+      {
+        "at": "2026-09-29T12:48:24.000Z",
+        "stage": "stage-5",
+        "kind": "tool",
+        "text": "prepare pull #9"
+      },
+      {
+        "at": "2026-09-29T12:48:39.000Z",
+        "stage": "stage-5",
+        "kind": "checkpoint",
+        "text": "Saved stage-5: Open pull request"
+      }
+    ]
+  },
+  {
+    "id": "run-499",
+    "flow": "implement-issue",
+    "title": "Stream Web Responses through node:http",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "issue",
+      "by": "maya",
+      "ref": "#6"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-09-23T18:30:00.000Z",
+    "finished": "2026-09-23T18:53:00.000Z",
+    "duration": "23 m",
+    "cost": {
+      "usd": 0.67,
+      "tokens": 30981
+    },
+    "issue": 6,
+    "pull": 24,
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Understand",
+        "state": "succeeded",
+        "started": "2026-09-23T18:30:00.000Z",
+        "duration": "25 s",
+        "summary": "the first response byte waits for the full body",
+        "log": [
+          "read src/adapters/node.ts",
+          "read test/node.test.ts",
+          "context: the first response byte waits for the full body",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-09-23T18:31:00.000Z",
+        "duration": "42 s",
+        "summary": "Reproduce",
+        "log": [
+          "inspect test/node.test.ts",
+          "reproduction: the first response byte waits for the full body",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-09-23T18:32:00.000Z",
+        "duration": "59 s",
+        "summary": "pipe Readable.fromWeb into the Node response",
+        "log": [
+          "edit src/adapters/node.ts",
+          "change: pipe Readable.fromWeb into the Node response",
+          "read test/node.test.ts",
+          "regression: first-byte delivery and server completion",
+          "checkpoint saved: proposed diff"
+        ]
+      },
+      {
+        "id": "stage-4",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-09-23T18:33:00.000Z",
+        "duration": "76 s",
+        "summary": "first-byte delivery and server completion",
+        "log": [
+          "run bun run check",
+          "TypeScript: no errors",
+          "run bun test",
+          "31 tests passed; 0 failed",
+          "run bun run lint",
+          "Biome: no errors"
+        ]
+      },
+      {
+        "id": "stage-5",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-09-23T18:34:00.000Z",
+        "duration": "93 s",
+        "summary": "Open pull request",
+        "log": [
+          "prepare pull #24",
+          "include src/adapters/node.ts and test/node.test.ts",
+          "attach verification receipt",
+          "a person reviews the diff and decides whether to merge"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-09-23T18:30:00.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read src/adapters/node.ts"
+      },
+      {
+        "at": "2026-09-23T18:30:15.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: the first response byte waits for the full body"
+      },
+      {
+        "at": "2026-09-23T18:31:00.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect test/node.test.ts"
+      },
+      {
+        "at": "2026-09-23T18:31:15.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Reproduce"
+      },
+      {
+        "at": "2026-09-23T18:32:00.000Z",
+        "stage": "stage-3",
+        "kind": "tool",
+        "text": "edit src/adapters/node.ts"
+      },
+      {
+        "at": "2026-09-23T18:32:15.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Saved stage-3: pipe Readable.fromWeb into the Node response"
+      },
+      {
+        "at": "2026-09-23T18:33:00.000Z",
+        "stage": "stage-4",
+        "kind": "tool",
+        "text": "run bun run check"
+      },
+      {
+        "at": "2026-09-23T18:33:15.000Z",
+        "stage": "stage-4",
+        "kind": "checkpoint",
+        "text": "Saved stage-4: first-byte delivery and server completion"
+      },
+      {
+        "at": "2026-09-23T18:34:00.000Z",
+        "stage": "stage-5",
+        "kind": "tool",
+        "text": "prepare pull #24"
+      },
+      {
+        "at": "2026-09-23T18:34:15.000Z",
+        "stage": "stage-5",
+        "kind": "checkpoint",
+        "text": "Saved stage-5: Open pull request"
+      }
+    ]
+  },
+  {
+    "id": "run-498",
+    "flow": "implement-issue",
+    "title": "Pin static route precedence in both registration orders",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "issue",
+      "by": "maya",
+      "ref": "#8"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-09-16T02:10:48.000Z",
+    "finished": "2026-09-16T02:34:48.000Z",
+    "duration": "24 m",
+    "cost": {
+      "usd": 0.71,
+      "tokens": 32718
+    },
+    "issue": 8,
+    "pull": 7,
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Understand",
+        "state": "succeeded",
+        "started": "2026-09-16T02:10:48.000Z",
+        "duration": "25 s",
+        "summary": "parameter routes can shadow static paths",
+        "log": [
+          "read src/router.ts",
+          "read test/router.test.ts",
+          "context: parameter routes can shadow static paths",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-09-16T02:11:48.000Z",
+        "duration": "42 s",
+        "summary": "Reproduce",
+        "log": [
+          "inspect test/router.test.ts",
+          "reproduction: parameter routes can shadow static paths",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-09-16T02:12:48.000Z",
+        "duration": "59 s",
+        "summary": "pin route specificity and stable equal-score ordering with regressions",
+        "log": [
+          "edit src/router.ts",
+          "change: pin route specificity and stable equal-score ordering with regressions",
+          "read test/router.test.ts",
+          "regression: both route registration orders",
+          "checkpoint saved: proposed diff"
+        ]
+      },
+      {
+        "id": "stage-4",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-09-16T02:13:48.000Z",
+        "duration": "76 s",
+        "summary": "both route registration orders",
+        "log": [
+          "run bun run check",
+          "TypeScript: no errors",
+          "run bun test",
+          "31 tests passed; 0 failed",
+          "run bun run lint",
+          "Biome: no errors"
+        ]
+      },
+      {
+        "id": "stage-5",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-09-16T02:14:48.000Z",
+        "duration": "93 s",
+        "summary": "Open pull request",
+        "log": [
+          "prepare pull #7",
+          "include src/router.ts and test/router.test.ts",
+          "attach verification receipt",
+          "a person reviews the diff and decides whether to merge"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-09-16T02:10:48.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read src/router.ts"
+      },
+      {
+        "at": "2026-09-16T02:11:03.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: parameter routes can shadow static paths"
+      },
+      {
+        "at": "2026-09-16T02:11:48.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect test/router.test.ts"
+      },
+      {
+        "at": "2026-09-16T02:12:03.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Reproduce"
+      },
+      {
+        "at": "2026-09-16T02:12:48.000Z",
+        "stage": "stage-3",
+        "kind": "tool",
+        "text": "edit src/router.ts"
+      },
+      {
+        "at": "2026-09-16T02:13:03.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Saved stage-3: pin route specificity and stable equal-score ordering with regressions"
+      },
+      {
+        "at": "2026-09-16T02:13:48.000Z",
+        "stage": "stage-4",
+        "kind": "tool",
+        "text": "run bun run check"
+      },
+      {
+        "at": "2026-09-16T02:14:03.000Z",
+        "stage": "stage-4",
+        "kind": "checkpoint",
+        "text": "Saved stage-4: both route registration orders"
+      },
+      {
+        "at": "2026-09-16T02:14:48.000Z",
+        "stage": "stage-5",
+        "kind": "tool",
+        "text": "prepare pull #7"
+      },
+      {
+        "at": "2026-09-16T02:15:03.000Z",
+        "stage": "stage-5",
+        "kind": "checkpoint",
+        "text": "Saved stage-5: Open pull request"
+      }
+    ]
+  },
+  {
+    "id": "run-497",
+    "flow": "implement-issue",
+    "title": "Add CORS preflight responses",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "pull",
+      "by": "maya",
+      "ref": "v0.4.2"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-09-07T10:49:12.000Z",
+    "finished": "2026-09-07T11:13:12.000Z",
+    "duration": "24 m",
+    "cost": {
+      "usd": 0.75,
+      "tokens": 34455
+    },
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Understand",
+        "state": "succeeded",
+        "started": "2026-09-07T10:49:12.000Z",
+        "duration": "25 s",
+        "summary": "OPTIONS requests do not reach a preflight handler",
+        "log": [
+          "read src/middleware/cors.ts",
+          "read test/cors.test.ts",
+          "context: OPTIONS requests do not reach a preflight handler",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-09-07T10:50:12.000Z",
+        "duration": "42 s",
+        "summary": "Reproduce",
+        "log": [
+          "inspect test/cors.test.ts",
+          "reproduction: OPTIONS requests do not reach a preflight handler",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-09-07T10:51:12.000Z",
+        "duration": "59 s",
+        "summary": "answer preflight in middleware before route dispatch",
+        "log": [
+          "edit src/middleware/cors.ts",
+          "change: answer preflight in middleware before route dispatch",
+          "read test/cors.test.ts",
+          "regression: allowed method and header response values",
+          "checkpoint saved: proposed diff"
+        ]
+      },
+      {
+        "id": "stage-4",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-09-07T10:52:12.000Z",
+        "duration": "76 s",
+        "summary": "allowed method and header response values",
+        "log": [
+          "run bun run check",
+          "TypeScript: no errors",
+          "run bun test",
+          "31 tests passed; 0 failed",
+          "run bun run lint",
+          "Biome: no errors"
+        ]
+      },
+      {
+        "id": "stage-5",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-09-07T10:53:12.000Z",
+        "duration": "93 s",
+        "summary": "Open pull request",
+        "log": [
+          "prepare a reviewable proposal",
+          "include src/middleware/cors.ts and test/cors.test.ts",
+          "attach verification receipt",
+          "a person reviews the diff and decides whether to merge"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-09-07T10:49:12.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read src/middleware/cors.ts"
+      },
+      {
+        "at": "2026-09-07T10:49:27.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: OPTIONS requests do not reach a preflight handler"
+      },
+      {
+        "at": "2026-09-07T10:50:12.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect test/cors.test.ts"
+      },
+      {
+        "at": "2026-09-07T10:50:27.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Reproduce"
+      },
+      {
+        "at": "2026-09-07T10:51:12.000Z",
+        "stage": "stage-3",
+        "kind": "tool",
+        "text": "edit src/middleware/cors.ts"
+      },
+      {
+        "at": "2026-09-07T10:51:27.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Saved stage-3: answer preflight in middleware before route dispatch"
+      },
+      {
+        "at": "2026-09-07T10:52:12.000Z",
+        "stage": "stage-4",
+        "kind": "tool",
+        "text": "run bun run check"
+      },
+      {
+        "at": "2026-09-07T10:52:27.000Z",
+        "stage": "stage-4",
+        "kind": "checkpoint",
+        "text": "Saved stage-4: allowed method and header response values"
+      },
+      {
+        "at": "2026-09-07T10:53:12.000Z",
+        "stage": "stage-5",
+        "kind": "tool",
+        "text": "prepare a reviewable proposal"
+      },
+      {
+        "at": "2026-09-07T10:53:27.000Z",
+        "stage": "stage-5",
+        "kind": "checkpoint",
+        "text": "Saved stage-5: Open pull request"
+      }
+    ]
+  },
+  {
+    "id": "run-496",
+    "flow": "review-change",
+    "title": "Review the JSON body limit change",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "issue",
+      "by": "maya",
+      "ref": "#15"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-10T01:40:48.000Z",
+    "finished": "2026-10-10T02:04:48.000Z",
+    "duration": "24 m",
+    "cost": {
+      "usd": 0.8,
+      "tokens": 36192
+    },
+    "issue": 15,
+    "pull": 28,
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Read diff",
+        "state": "succeeded",
+        "started": "2026-10-10T01:40:48.000Z",
+        "duration": "25 s",
+        "summary": "body size limits must hold without content-length",
+        "log": [
+          "read src/middleware/body.ts",
+          "read test/body.test.ts",
+          "context: body size limits must hold without content-length",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Inspect callers",
+        "state": "succeeded",
+        "started": "2026-10-10T01:41:48.000Z",
+        "duration": "42 s",
+        "summary": "Inspect callers",
+        "log": [
+          "inspect test/body.test.ts",
+          "reproduction: body size limits must hold without content-length",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Run checks",
+        "state": "succeeded",
+        "started": "2026-10-10T01:42:48.000Z",
+        "duration": "59 s",
+        "summary": "review reader cancellation and byte accounting",
+        "log": [
+          "edit src/middleware/body.ts",
+          "change: review reader cancellation and byte accounting",
+          "read test/body.test.ts",
+          "regression: oversized streamed requests and invalid JSON",
+          "checkpoint saved: proposed diff"
+        ]
+      },
+      {
+        "id": "stage-4",
+        "label": "Write review",
+        "state": "succeeded",
+        "started": "2026-10-10T01:43:48.000Z",
+        "duration": "76 s",
+        "summary": "oversized streamed requests and invalid JSON",
+        "log": [
+          "run bun run check",
+          "TypeScript: no errors",
+          "run bun test",
+          "31 tests passed; 0 failed",
+          "run bun run lint",
+          "Biome: no errors"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-10T01:40:48.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read src/middleware/body.ts"
+      },
+      {
+        "at": "2026-10-10T01:41:03.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: body size limits must hold without content-length"
+      },
+      {
+        "at": "2026-10-10T01:41:48.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect test/body.test.ts"
+      },
+      {
+        "at": "2026-10-10T01:42:03.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Inspect callers"
+      },
+      {
+        "at": "2026-10-10T01:42:48.000Z",
+        "stage": "stage-3",
+        "kind": "tool",
+        "text": "edit src/middleware/body.ts"
+      },
+      {
+        "at": "2026-10-10T01:43:03.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Saved stage-3: review reader cancellation and byte accounting"
+      },
+      {
+        "at": "2026-10-10T01:43:48.000Z",
+        "stage": "stage-4",
+        "kind": "tool",
+        "text": "run bun run check"
+      },
+      {
+        "at": "2026-10-10T01:44:03.000Z",
+        "stage": "stage-4",
+        "kind": "checkpoint",
+        "text": "Saved stage-4: oversized streamed requests and invalid JSON"
+      }
+    ]
+  },
+  {
+    "id": "run-495",
+    "flow": "release-notes",
+    "title": "Draft v0.4.2 notes from merged changes",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "manual",
+      "by": "maya",
+      "ref": "v0.4.2"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-17T19:30:00.000Z",
+    "finished": "2026-10-17T19:54:00.000Z",
+    "duration": "24 m",
+    "cost": {
+      "usd": 0.84,
+      "tokens": 37929
+    },
+    "stages": [
+      {
+        "id": "stage-1",
+        "label": "Collect changes",
+        "state": "succeeded",
+        "started": "2026-10-17T19:30:00.000Z",
+        "duration": "25 s",
+        "summary": "v0.4.2 needs notes for the landed fixes",
+        "log": [
+          "read CHANGELOG.md",
+          "read package.json",
+          "context: v0.4.2 needs notes for the landed fixes",
+          "checkpoint saved: input and source revision"
+        ]
+      },
+      {
+        "id": "stage-2",
+        "label": "Group notes",
+        "state": "succeeded",
+        "started": "2026-10-17T19:31:00.000Z",
+        "duration": "42 s",
+        "summary": "Group notes",
+        "log": [
+          "inspect package.json",
+          "reproduction: v0.4.2 needs notes for the landed fixes",
+          "isolated fixture prepared without credentials",
+          "checkpoint saved: reproduction"
+        ]
+      },
+      {
+        "id": "stage-3",
+        "label": "Check links",
+        "state": "succeeded",
+        "started": "2026-10-17T19:32:00.000Z",
+        "duration": "59 s",
+        "summary": "group merged pulls #32 and #30 into release notes",
+        "log": [
+          "edit CHANGELOG.md",
+          "change: group merged pulls #32 and #30 into release notes",
+          "read package.json",
+          "regression: tag, merged shas, and pull request links",
+          "checkpoint saved: proposed diff"
+        ]
+      },
+      {
+        "id": "stage-4",
+        "label": "Ask owner",
+        "state": "succeeded",
+        "started": "2026-10-17T19:33:00.000Z",
+        "duration": "76 s",
+        "summary": "tag, merged shas, and pull request links",
+        "log": [
+          "run bun run check",
+          "TypeScript: no errors",
+          "run bun test",
+          "31 tests passed; 0 failed",
+          "run bun run lint",
+          "Biome: no errors"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T19:30:00.000Z",
+        "stage": "stage-1",
+        "kind": "tool",
+        "text": "read CHANGELOG.md"
+      },
+      {
+        "at": "2026-10-17T19:30:15.000Z",
+        "stage": "stage-1",
+        "kind": "checkpoint",
+        "text": "Saved stage-1: v0.4.2 needs notes for the landed fixes"
+      },
+      {
+        "at": "2026-10-17T19:31:00.000Z",
+        "stage": "stage-2",
+        "kind": "tool",
+        "text": "inspect package.json"
+      },
+      {
+        "at": "2026-10-17T19:31:15.000Z",
+        "stage": "stage-2",
+        "kind": "checkpoint",
+        "text": "Saved stage-2: Group notes"
+      },
+      {
+        "at": "2026-10-17T19:32:00.000Z",
+        "stage": "stage-3",
+        "kind": "tool",
+        "text": "edit CHANGELOG.md"
+      },
+      {
+        "at": "2026-10-17T19:32:15.000Z",
+        "stage": "stage-3",
+        "kind": "checkpoint",
+        "text": "Saved stage-3: group merged pulls #32 and #30 into release notes"
+      },
+      {
+        "at": "2026-10-17T19:33:00.000Z",
+        "stage": "stage-4",
+        "kind": "tool",
+        "text": "run bun run check"
+      },
+      {
+        "at": "2026-10-17T19:33:15.000Z",
+        "stage": "stage-4",
+        "kind": "checkpoint",
+        "text": "Saved stage-4: tag, merged shas, and pull request links"
+      }
+    ]
+  },
+  {
+    "id": "run-review-example",
+    "flow": "implement-issue",
+    "title": "Add a review example",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "manual",
+      "by": "maya"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-17T20:56:00Z",
+    "finished": "2026-10-17T20:59:00Z",
+    "duration": "3 min",
+    "cost": {
+      "usd": 0.01,
+      "tokens": 100
+    },
+    "branch": "mock/review-example",
+    "pull": 9001,
+    "stages": [
+      {
+        "id": "understand",
+        "label": "Understand",
+        "state": "succeeded",
+        "started": "2026-10-17T20:56:00Z",
+        "duration": "1 min",
+        "summary": "Mock review example.",
+        "log": [
+          "Simulated example step completed."
+        ]
+      },
+      {
+        "id": "implement",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-10-17T20:56:00Z",
+        "duration": "1 min",
+        "summary": "Mock review example.",
+        "log": [
+          "Simulated example step completed."
+        ]
+      },
+      {
+        "id": "verify",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-10-17T20:56:00Z",
+        "duration": "1 min",
+        "summary": "Mock review example.",
+        "log": [
+          "Simulated example step completed."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T20:59:00Z",
+        "stage": "verify",
+        "kind": "checkpoint",
+        "text": "Mock check passed; human review requested."
+      }
+    ]
+  }
+]

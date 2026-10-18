@@ -1,0 +1,12 @@
+{
+  "name": "@smthrs/maintainer-site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A local site for maintainers: every e2e flow GIF and a linked knowledge base of the repository's docs.",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test markdown.test.mjs",
+    "screenshots": "node screenshots.mjs"
+  }
+}

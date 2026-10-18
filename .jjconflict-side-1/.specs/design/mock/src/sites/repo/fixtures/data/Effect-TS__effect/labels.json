@@ -1,0 +1,37 @@
+[
+  {
+    "name": "bug",
+    "tone": "danger",
+    "description": "A behavior differs from its contract."
+  },
+  {
+    "name": "enhancement",
+    "tone": "brand",
+    "description": "A small API improvement."
+  },
+  {
+    "name": "documentation",
+    "tone": "info",
+    "description": "Guides, API examples, or generated docs."
+  },
+  {
+    "name": "sql",
+    "tone": "neutral",
+    "description": "SQL clients and shared transaction behavior."
+  },
+  {
+    "name": "runtime",
+    "tone": "warning",
+    "description": "Node, Deno, or Bun behavior."
+  },
+  {
+    "name": "release",
+    "tone": "success",
+    "description": "Changesets and prereleases."
+  },
+  {
+    "name": "schema",
+    "tone": "neutral",
+    "description": "Schema parsing and branding."
+  }
+]

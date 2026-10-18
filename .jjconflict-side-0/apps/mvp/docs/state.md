@@ -1,0 +1,111 @@
+# State: one framework-free state machine, many frontends
+
+The app's state and behavior live in a state machine that knows nothing about React or the DOM. The web app is one frontend for it; the TUI and other frontends will reuse it later (Will, 2026-10-19). Shared state lives in Postgres and reaches every device through Electric into TanStack DB collections that the device keeps; one tab's own state lives in local-only TanStack DB collections ([decision 0001](decisions/0001-electric-postgres-tanstack-db.md), [decision 0002](decisions/0002-local-first.md)).
+
+## Rules
+
+1. **Flux, one way.** Actions write to collections, live queries read them, and views render the queries. All business logic (validation, asking, unsent questions, the window, the connection pill, shortcuts) lives in the framework-free chat layer; React is only the view.
+2. **One file, one side.** A feature folder may hold its logic and its React views, never in the same file: no `.tsx` file imports `effect` or our Effect libraries, and no logic file imports `react` or `@tanstack/react-db`.
+3. **Every library API is used through Effect.** TanStack DB and Electric are reached only through two SDK libraries ([`docs/libraries.md`](../../../docs/libraries.md#local-state-and-sync)):
+   - `@smthrs/effect-tanstack-db`: collections are scoped services checked by an Effect `Schema` (`Collection.local`, `Collection.persisted`), changes and live query rows are `Stream`s, mutations are Effects with typed errors, `Persistence` keeps collections on the device, and `Outbox` sends every write durably. Its `Query` expressions are pure data.
+   - `@smthrs/effect-electric`: `ElectricCollection.make` syncs a collection from ChatApi's shape proxy and keeps it on the device (`persist`), decodes every row with the `Message` schema, retries failed requests under its `Schedule` sync policy, reports each request on its `sync` stream, and waits for writes with `awaitTxId` and `awaitMatch`. ChatApi serves the shape with its `ShapeProxy`.
+4. **One Effect boundary.** `main.tsx` calls `start` (`src/boot.ts`) once. `start` builds the program's one `ManagedRuntime` from `appLayer` and runs the boot program on it. A plain callback a layer registers (the outbox's mutation, Electric's fetch and `onError`, the ⌘K, `online`, `offline` and `pageshow` listeners, each bound action) runs its Effect with the services captured when it was registered, through `Effect.runPromiseWith` or `Effect.runSyncWith`, so it shares the app's store, logger, tracer, metrics and `HttpClient`. Tests build their own runtime with `ManagedRuntime.make`.
+5. **Frontends get `{ queries, actions }`.** The chat layer (`Chat`, `features/chat/chat.ts`) gives each frontend the TanStack DB collection of every live query, for its binding (React: `useLiveQuery`), and plain action functions bound when the layer is built, such as `ask(text)` and `retry()`. A frontend never sees an Effect type, a runtime or `run`. It holds no state of its own: no `useState`, and no `useEffect` for state.
+6. **Dependencies are layers or arguments.** ChatApi's origin, `fetch`, the page's `reload`, telemetry, deadlines, the sync policy, page size, the event target for keys and connectivity, and the host (the device store's database, persistence and tab coordinator; the outbox's entry point, storage, network detector and lock service; whether the browser is online; persistent storage; where the theme paints; the engine worker; the wipe sign-out runs; the clipboard) come from `appLayer`'s options, layers or the boot program's arguments, so a test or another frontend supplies its own. The browser reaches the world through two services: ChatApi's client (`ChatClient`, `features/chat/api.ts`) and Electric's shape source (`ShapeSource`, `@smthrs/effect-electric`). `appLayer` and `start` take them as `services`: `realServices` in production.
+7. **Order comes from Postgres, never a clock.** The conversation sorts by `messages.position`. A question this device holds that Postgres doesn't have yet sorts after every synced row, in the order asked (`queuedAt`, strictly increasing per tab), until Electric delivers it. `createdAt` is display and diagnostics only.
+8. **Testable without a frontend.** The chat layer's unit tests drive every behavior through its actions and queries, with no React, against the compose Postgres and Electric (`pnpm db:up`) and ChatApi's real handler, never a fake of them, on a Node device that runs TanStack DB's own browser persistence and outbox (`src/test/chatApi.ts` `nodeDevice`). A tab opened with `answers` runs its device's agent on a real engine leader (`BrowserRuntime.serve` on a `MessageChannel`, its store a Postgres schema), as a browser's engine worker does; any other tab's engine never leads. The model is the only scripted piece.
+9. **Faults by injection only.** A test of an unhappy path gives the browser the faulty services (`src/test/faults.ts`): ChatApi's real client behind `QuestionFaults`, and the real shape source behind `ShapeSource.Faults` (down, refuse, stall, corrupt, heal). A host capability that fails (an outbox storage that refuses a write, a lock another tab holds, a database that can't be read) is a test implementation of that capability, passed in the host. Every happy-path test uses the real services. Nothing intercepts a request. The end-to-end tests get the same services from the page: under the dev server, `/app?faults` (or `?faults=down`, `refuse`, `refuse-<status>`, `stall`, `corrupt` to open with sync failing) starts the app through `src/test/e2e.ts`, which puts the switches on `window.faults`. A production build drops that branch of `main.tsx`, and the test modules with it.
+
+## Layout
+
+```
+src/features/<feature>/
+  contract.ts      constants, status copy and telemetry names the browser, ChatApi and the tests share   framework-free
+  schema.ts        every row's Effect Schema, which its collection checks rows with      framework-free
+  store.ts         the feature's collections, outbox, queries and followers as a service and layer
+  queries.ts       live queries: what frontends read
+  actions.ts       what a person does: Effects that finish synchronously
+  chat.ts          the chat layer: queries and actions bound as plain functions
+  api.ts           ChatApi calls (Effect HttpClient)
+  shortcuts.ts     key bindings, as a scoped Effect over an EventTarget
+  connectivity.ts  the browser's offline, online and pageshow events, as a scoped Effect over an EventTarget
+  metrics.ts       the feature's usage metrics (Effect Metric)
+  *.test.ts        unit tests, Node
+  components/      React views: useChat() for queries and actions                         web only
+src/features/      chat, auth (sign-in), theme, agent (the browser's agent: chat/Answer), model (the model endpoint's
+                   contract), repo (the repository view)
+src/flows/         the flow registry (tab-safe references), the declarations and registrations only an engine imports,
+                   dispatch, placement, the tab's engine and the engine worker (docs/features/flows.md)
+src/screens/       one folder per route; AppScreen is the shell                             web only
+src/page.ts        the page as actions see it (reload), and its record
+src/telemetry.ts   BROWSER_TELEMETRY: every feature's record names and fields, which ChatApi's relay allows   framework-free
+src/boot.ts        appLayer (the browser's services), the Host type, realServices, the boot program and start, the boundary
+src/AppContext.tsx the chat layer for React components                                      web only
+src/main.tsx       the browser's host (the shared SQLite the engine worker serves, IndexedDB outbox, Web Locks, the
+                   theme's paint, the engine worker, the wipe), calls start and renders   web only
+src/test/          ChatApi's real handler on a scratch schema with a scripted model, a Node device (`nodeDevice`), the
+                   faulty services (faults.ts), the end-to-end entry's composition (e2e.ts), the OTLP reader and relay
+public/            the PWA's icons; vite.config.ts makes the manifest and the service worker
+```
+
+`appLayer` builds, from the bottom: the page and telemetry; the tab's engine (`tabEngine`: it starts this tab's engine worker and needs nothing of the tab); the device store (`Persistence.layer` over `SharedSqlite`, which the leading tab's worker serves; it opens in memory at once if this tab's worker fails, `failFastOnEngine`); ChatApi's clients; the theme's store and the tab's answers to its worker (`tabAnswers`); the server's flow door, dispatch and chat's store; and on top the chat, sign-in and theme layers, which `boot` renders.
+
+When a second frontend (the TUI) starts using a feature's machine, the framework-free files move into a shared package. Until then they stay here, so there's one copy and no premature abstraction.
+
+## Sign-in (2026-10-20)
+
+`src/features/auth/` follows every rule above: one local row (`AuthStore`) saying who is signed in, and the last session ChatApi confirmed, kept on the device (`auth-confirmed`), so a Member who reloads offline can still ask; `load`, `pressSignIn` and `signOut` as actions; after ChatApi ends the session, `signOut` runs the host's `wipe` (`DeviceWipe`), which deletes the device's database, the engine's store and the outbox at the next boot of every tab; and `Auth` binding them for frontends. Its components are a link ("Sign in with GitHub"), the account in the header and `ComposerGate`, which shows the composer only to a Member or above ("Members can ask Smithers." for a Guest, the sign-in prompt when signed out). Its unit tests (`auth.test.ts`) run against sign-in's real routes with the scripted GitHub. See [sign-in.md](features/sign-in.md#the-browser).
+
+## Theme and flows (2026-10-20)
+
+`src/features/theme/` keeps this device's theme in a persisted local collection and paints it through the host; its button dispatches `app/theme/set`, the flow the agent calls too. Every action is a registered flow dispatched through `FlowDispatch` (`src/flows/`): a client flow runs on this browser's engine, the leading tab's engine worker, and reaches its tab's collections through the tab port. See [flows.md](features/flows.md).
+
+## Chat (2026-10-20)
+
+`src/features/chat/` follows every rule above, and decision [0002](decisions/0002-local-first.md): every read comes from the device, and every write goes through one durable outbox.
+
+| Piece | What it is |
+|---|---|
+| `messages` | the conversation in Postgres: an Electric collection, eager, kept on the device (SQLite on OPFS, `persist: { schemaVersion: 2 }`), read-only. A reload restores it before the network answers, and Electric resumes from the stored handle and offset |
+| `asking` | questions the outbox holds: the optimistic rows of its writes, in memory. The outbox restores them after a reload, from its own storage |
+| `unsent` | questions the server refused (`refused` 400, 401 or 403, `conflict` 409, `too_large` 413) or the outbox couldn't take (`not_admitted`); kept on the device until the person edits, discards or retries them |
+| `composer`, `connection`, `history` | this tab's composer (open, draft), connection pill (`up`, `offline`, `failed`, `stopped`, and whether Retry shows) and window (`opened`, `limit`, `earlier`), in memory |
+| `conversation` | `messages ∪ (unsent − messages) ∪ (asking − messages − unsent)`: synced rows in `position` order, then this device's own rows by `queuedAt`. An unsent row Postgres already has with this device's answer id is hidden (a delete the device store lost when the leading tab closed); a `conflict` (409) still shows. A failed answer reads `Couldn't answer`. Each row's `status` is the message's, or `queued` or `unsent`; `sendAgain` says Retry applies to an unsent one |
+| `latest`, `shown` | the window: the most recent `pageSize` (50) rows of the conversation, then the same oldest first, which the view shows |
+| (the view) | `Conversation.tsx` keys each row by its id, and an unsent copy by `unsent:<id>`, so a question syncing or an answer settling changes its element in place and its fade-in plays once (`e2e/chat.spec.ts` "steady") |
+| `queued` | the conversation's queued rows: the pill counts them |
+| `ask(text)` | trims and checks 1 to 8,000 characters (else `{ asked: false }`, draft kept), puts the question into the outbox, clears the draft. Always: offline, or while an answer streams |
+| `editUnsent(id)`, `discardUnsent(id)`, `resendUnsent(id)` | Edit (text to the composer, which opens; the question goes), Discard, and Retry for a question the outbox couldn't take |
+| `retryAnswer(answerId)` | Retry on a failed answer: asks its question again under new ids |
+| `retry()` | Retry on the pill: syncs and sends now. The browser's `online` event does the same |
+| `loadEarlier()` | widens the window by a page; the device has every row, so it needs no network |
+| `openComposer(via)`, `closeComposer()`, `setDraft(text)` | the composer; `via` is `shortcut` or `button`. ⌘K (Ctrl+K) toggles and Esc hides (`chatShortcuts`) |
+| `reload()` | reloads the page: a page restored from the back/forward cache |
+
+Asking, in order:
+1. `ask` makes the question's ids and calls the outbox's `transact("ask", { idempotencyKey: questionId }, asking.insert(row))`, synchronously. The question shows at once, at the end of the conversation, and the draft clears.
+2. The outbox (`@tanstack/offline-transactions`, through `Outbox`) stores the write in IndexedDB (admitted), then runs the `ask` mutation (`store.ts`): `POST /api/questions` through `ChatClient`, under one 15 s deadline, then waits until Electric delivers the question (`awaitTxId` on 202; on 200, at once if the device has the row, else `awaitMatch`).
+   Once ChatApi takes it (202 or 200), the mutation forks `FlowDispatch.dispatch("chat/Answer", { answerId }, { door: "composer", executionId: answerId })` into the store's scope: this browser's agent answers ([agent.md](features/agent.md)). The engine starts each execution id once, so a resend starts no second run.
+3. Once Electric delivers it, the anti-join hides the `asking` row in the same frame, the mutation succeeds, and the outbox deletes the write.
+4. A send that doesn't get through (the network, a deadline, 5xx, 429, a 202 cut short, Electric not delivering within `confirmWithin`) is sent again with the same ids: the library's backoff, 1 s doubling to 60 s, or at once on `retry()` or the browser's `online` event. ChatApi answers a resend 200, so Postgres keeps one question.
+5. A refusal (400, 401, 403, 409, 413) keeps the question in `unsent` first, then stops the write, which rolls `asking` back: the question stays where it was, `Not sent`.
+6. A question the outbox can't take (this tab doesn't lead the outbox, or its storage refused the write) goes to `unsent` as `not_admitted`. When this tab comes to lead the outbox, it sends those questions again, in the order asked (`chat.ts`).
+
+The outbox's leader: one tab per browser, elected through `@smthrs/platform-browser`'s `WebLock` service (`Outbox.lockLeader`, lock `smithers-outbox`). A tab that doesn't get the lock waits for it, so when the leading tab closes, the next one leads, restores the writes the first one stored, and sends them.
+
+The connection pill (`store.ts`), from the browser's `offline` and `online` events, the shape's `sync` stream and the outbox's `status`:
+- `offline` at once on the browser's `offline` event, or when the browser says it is offline at boot: `Offline`, or `Offline · <n>` with questions queued.
+- `offline` with Retry when shape requests or sends have kept failing for `unreachableAfter` (10 s) with the browser online.
+- `failed` with Retry when Electric stopped the shape (a 4xx, or a response it couldn't read): `Sync failed`.
+- `stopped` with Reload when this tab's engine is unavailable (`BrowserEngine`'s `unavailable`: its worker failed): `Smithers can't run in this browser`. It overrides every other state, for good: the device can't answer and keeps its rows in memory (`failFastOnEngine`). `BrowserEngine` logs `browser.engine.unavailable` and counts it; chat counts `smithers_web_sync_failures` with `reason: engine`.
+- It hides once a shape request succeeds (or, sent after failures, hasn't failed within 1 s: Electric holds a live request until Postgres changes), nothing is failing and no question is queued. Reconnecting has no state of its own.
+- `Queued` badges show only while the pill shows.
+
+The window: `latest` starts at 50. While the conversation is longer, `earlier` is true and the conversation heads it with Load earlier, which widens the window by 50 from the device. Until `messages` is restored from the device (or, without it, synced), the conversation is blank, never the empty state.
+
+Tests: `src/features/chat/chat.test.ts` (asking, sending and resending, refusals and unsent actions, admission, two tabs on one device and the outbox's handover, reloads restoring the conversation, queued and unsent questions, the pill, the window, the composer, first-text time, the page, shortcuts, the tab's own agent answering, a resend starting no second run, signed-out and Guest asks staying Not sent, a failed engine worker), `src/features/chat/telemetry.test.ts` (every chat record, read back from the OTLP exports), `src/features/chat/api.test.ts` (`POST /api/questions`'s deadline against a local HTTP server that holds its answer), `src/boot.test.ts` (the boot program, its records, page errors, reload and `start`, and the app's own layer syncing a repository and copying a permalink). They run ChatApi's real handler (`src/test/chatApi.ts`) with a scripted model on a Node device. The libraries' own suites cover the wrappers, persistence, the outbox, the sync policy and the shape proxy.
+
+## Repositories (2026-10-20)
+
+`src/features/repo/` follows every rule above ([repo.md](features/repo.md#the-browser)). `repositories` is an Electric collection kept on the device; `trees`, `blobs`, `clones` and the routed `view` are local-only rows. The route loaders call `openRoute`, which loads what the location needs once; nothing loads from `useEffect`. `RepoView` keeps its own tree expansion and Markdown mode, element state the flux rule allows. A clone is a plain request through `RepoClient`, not chat's outbox: RepoApi takes it idempotently, and it needs the network and sign-in anyway. Copying a permalink goes through the injected `Clipboard` (`Host.clipboard`). `repositories` rows carry the clone attempt's `cloneId` (migration `0009_clone_ids`), so the collection is at `schemaVersion: 2`. `appLayer` builds `Repo.layer` over `RepoStore`, `RepoClient` and `Clipboard`, with `AuthStore` below both `RepoStore` and `Auth`; `render` gets the chat, sign-in, theme and repo layers, and `main.tsx` wraps the router in `RepoProvider` and gives it `{ repo }` as context, so the three repo routes' loaders call `context.repo.actions.openRoute`. `repo/tree` and `repo/read` are client flows in the registry, so the agent's catalog reads repositories too. Tests: `src/features/repo/repo.test.ts` (two tabs on RepoApi's real handler and Electric), `faults.test.ts` (a faulty `RepoClient` and a down shape source), `api.test.ts`, `reader.test.ts`, `paths.test.ts`, `view.test.ts`, `contract.test.ts`.
+

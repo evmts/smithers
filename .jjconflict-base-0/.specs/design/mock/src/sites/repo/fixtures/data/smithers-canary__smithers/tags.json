@@ -1,0 +1,26 @@
+[
+  {
+    "name": "v1.0.0-rc.12",
+    "sha": "e432cfdb4de0ce5283a0bd4499ac8063ba532f21",
+    "date": "2026-10-16T12:00:00Z",
+    "release": true
+  },
+  {
+    "name": "v1.0.0-rc.11",
+    "sha": "b5ff279e1a",
+    "date": "2026-10-16T12:00:00Z",
+    "release": true
+  },
+  {
+    "name": "v1.0.0-rc.10",
+    "sha": "9346ce20b6",
+    "date": "2026-10-16T12:00:00Z",
+    "release": true
+  },
+  {
+    "name": "v0.35.0",
+    "sha": "369a03babf",
+    "date": "2026-08-20T12:00:00Z",
+    "release": true
+  }
+]

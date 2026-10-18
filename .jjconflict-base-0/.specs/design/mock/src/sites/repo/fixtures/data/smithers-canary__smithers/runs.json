@@ -1,0 +1,2305 @@
+[
+  {
+    "id": "run-land-queued",
+    "flow": "land",
+    "title": "Queued for your landing checks: diagnose flow-plan load failures",
+    "state": "queued",
+    "trigger": {
+      "kind": "todo",
+      "by": "lander",
+      "ref": "queue-4253"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-18T04:58:00Z",
+    "duration": "—",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "stages": [
+      {
+        "id": "tests",
+        "label": "Tests",
+        "state": "queued",
+        "summary": "Queued for your landing checks",
+        "log": []
+      },
+      {
+        "id": "gates",
+        "label": "Landing gates",
+        "state": "queued",
+        "summary": "Awaiting tests",
+        "log": []
+      },
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "queued",
+        "summary": "Awaiting gates",
+        "log": []
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T04:58:00Z",
+        "stage": "tests",
+        "kind": "checkpoint",
+        "text": "Queued for your landing checks"
+      },
+      {
+        "at": "2026-10-18T04:58:00Z",
+        "stage": "gates",
+        "kind": "checkpoint",
+        "text": "Awaiting tests"
+      },
+      {
+        "at": "2026-10-18T04:58:00Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Awaiting gates"
+      }
+    ],
+    "issue": 4253,
+    "branch": "queue/flow-plan-diagnostics"
+  },
+  {
+    "id": "run-land-landing",
+    "flow": "land",
+    "title": "Checking: retain signal delivery receipts",
+    "state": "running",
+    "trigger": {
+      "kind": "todo",
+      "by": "lander",
+      "ref": "queue-signal-receipts"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-18T04:55:00Z",
+    "duration": "8m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "stages": [
+      {
+        "id": "tests",
+        "label": "Tests",
+        "state": "succeeded",
+        "summary": "Signal receipt tests passed",
+        "log": [
+          "A signal admission receipt is distinct from delivery."
+        ],
+        "started": "2026-10-18T04:55:00Z",
+        "duration": "2m"
+      },
+      {
+        "id": "gates",
+        "label": "Landing gates",
+        "state": "running",
+        "summary": "Checking migrations and declaration drift",
+        "log": [
+          "The check agent is running the mandatory gates.",
+          "No commit or push receipt yet."
+        ],
+        "started": "2026-10-18T04:57:00Z"
+      },
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "queued",
+        "summary": "Awaiting gates",
+        "log": []
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T04:55:00Z",
+        "stage": "tests",
+        "kind": "checkpoint",
+        "text": "Signal receipt tests passed"
+      },
+      {
+        "at": "2026-10-18T04:57:00Z",
+        "stage": "gates",
+        "kind": "checkpoint",
+        "text": "Checking migrations and declaration drift"
+      },
+      {
+        "at": "2026-10-18T04:55:00Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Awaiting gates"
+      }
+    ],
+    "branch": "queue/signal-receipts"
+  },
+  {
+    "id": "run-release-rc13",
+    "flow": "release",
+    "title": "Prepare 1.0.0-rc.13",
+    "state": "waiting",
+    "trigger": {
+      "kind": "manual",
+      "by": "maya"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-18T04:38:00Z",
+    "duration": "8m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "stages": [
+      {
+        "id": "collect",
+        "label": "Collect changes",
+        "state": "succeeded",
+        "summary": "Native helper mode fix and formatter repair selected",
+        "log": [
+          "037d43ef5a2f · native helper executable permissions",
+          "358846054559 · formatter drift repair"
+        ],
+        "started": "2026-10-18T04:38:00Z",
+        "duration": "2m"
+      },
+      {
+        "id": "audit",
+        "label": "Audit docs",
+        "state": "succeeded",
+        "summary": "Preparation evidence assembled",
+        "log": [
+          "Review release notes against the candidate changes."
+        ],
+        "started": "2026-10-18T04:40:00Z",
+        "duration": "3m"
+      },
+      {
+        "id": "prepare",
+        "label": "Approve preparation",
+        "state": "waiting",
+        "summary": "Waiting for roninjin10",
+        "log": [
+          "No preparation files written; no packages published."
+        ],
+        "started": "2026-10-18T04:43:00Z"
+      },
+      {
+        "id": "write",
+        "label": "Write preparation",
+        "state": "queued",
+        "summary": "Awaiting approval",
+        "log": []
+      }
+    ],
+    "approvals": [
+      "approval-release-rc13"
+    ],
+    "trace": [
+      {
+        "at": "2026-10-18T04:38:00Z",
+        "stage": "collect",
+        "kind": "checkpoint",
+        "text": "Native helper mode fix and formatter repair selected"
+      },
+      {
+        "at": "2026-10-18T04:40:00Z",
+        "stage": "audit",
+        "kind": "checkpoint",
+        "text": "Preparation evidence assembled"
+      },
+      {
+        "at": "2026-10-18T04:43:00Z",
+        "stage": "prepare",
+        "kind": "approval",
+        "text": "Waiting for roninjin10"
+      },
+      {
+        "at": "2026-10-18T04:38:00Z",
+        "stage": "write",
+        "kind": "checkpoint",
+        "text": "Awaiting approval"
+      }
+    ]
+  },
+  {
+    "id": "run-land-lint-refused",
+    "flow": "land",
+    "title": "Refused: lint failed",
+    "state": "failed",
+    "trigger": {
+      "kind": "todo",
+      "by": "lander",
+      "ref": "queue-format-refused"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-18T04:28:00Z",
+    "duration": "3m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "stages": [
+      {
+        "id": "tests",
+        "label": "Tests",
+        "state": "succeeded",
+        "summary": "Selected tests passed",
+        "log": [
+          "Run the submitted test commands."
+        ],
+        "started": "2026-10-18T04:28:00Z",
+        "duration": "2m"
+      },
+      {
+        "id": "lint",
+        "label": "Lint",
+        "state": "failed",
+        "summary": "dprint found unformatted package files",
+        "log": [
+          "pnpm exec smthrs lint //...:fmt",
+          "Formatter drift detected in packages/smithers/test/FaultTiers.test.ts.",
+          "Publication refused; main did not move."
+        ],
+        "started": "2026-10-18T04:30:00Z",
+        "duration": "1m"
+      },
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "skipped",
+        "summary": "Refused before publication",
+        "log": []
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T04:28:00Z",
+        "stage": "tests",
+        "kind": "checkpoint",
+        "text": "Selected tests passed"
+      },
+      {
+        "at": "2026-10-18T04:30:00Z",
+        "stage": "lint",
+        "kind": "error",
+        "text": "dprint found unformatted package files"
+      }
+    ],
+    "finished": "2026-10-18T04:31:00Z",
+    "failure": {
+      "stage": "lint",
+      "reason": "dprint check failed; format the changed package files and queue the change again."
+    },
+    "branch": "queue/formatter-check"
+  },
+  {
+    "id": "run-docs-sync-check",
+    "flow": "docs-sync",
+    "title": "Check packaged documentation",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "schedule",
+      "by": "maya",
+      "ref": "0 4 * * *"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-18T04:20:00Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "stages": [
+      {
+        "id": "redirects",
+        "label": "Check redirects",
+        "state": "succeeded",
+        "summary": "Redirect map matches package docs",
+        "log": [
+          "node .smithers/flows/docs-sync/package-docs.mjs --check"
+        ],
+        "started": "2026-10-18T04:20:00Z",
+        "duration": "1m"
+      },
+      {
+        "id": "tarballs",
+        "label": "Check tarballs",
+        "state": "succeeded",
+        "summary": "README and docs included in package tarballs",
+        "log": [
+          "Check package README, docs/ pages and retired-site links."
+        ],
+        "started": "2026-10-18T04:21:00Z",
+        "duration": "3m"
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T04:20:00Z",
+        "stage": "redirects",
+        "kind": "checkpoint",
+        "text": "Redirect map matches package docs"
+      },
+      {
+        "at": "2026-10-18T04:21:00Z",
+        "stage": "tarballs",
+        "kind": "checkpoint",
+        "text": "README and docs included in package tarballs"
+      }
+    ],
+    "finished": "2026-10-18T04:24:00Z"
+  },
+  {
+    "id": "run-land-358846054559",
+    "flow": "land",
+    "title": "🎨 style: format the eight packages whose dprint check fails on main",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "3588460545591ad7470c82095cb84434ced94aba"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-18T04:14:39Z",
+    "finished": "2026-10-18T04:18:39Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-18T04:14:39Z",
+        "duration": "4m",
+        "summary": "358846054559",
+        "log": [
+          "Commit 3588460545591ad7470c82095cb84434ced94aba",
+          "🎨 style: format the eight packages whose dprint check fails on main"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T04:18:39Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 3588460545591ad7470c82095cb84434ced94aba"
+      }
+    ]
+  },
+  {
+    "id": "run-land-d38d44b92821",
+    "flow": "land",
+    "title": "📝 docs(backend): restamp github-app docs for the host-scoped cookie names",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "d38d44b92821d35ef6fcac121d9fd84476a871a4"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-18T04:08:54Z",
+    "finished": "2026-10-18T04:12:54Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-18T04:08:54Z",
+        "duration": "4m",
+        "summary": "d38d44b92821",
+        "log": [
+          "Commit d38d44b92821d35ef6fcac121d9fd84476a871a4",
+          "📝 docs(backend): restamp github-app docs for the host-scoped cookie names"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T04:12:54Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit d38d44b92821d35ef6fcac121d9fd84476a871a4"
+      }
+    ]
+  },
+  {
+    "id": "run-land-037d43ef5a2f",
+    "flow": "land",
+    "title": "🐛 fix(release): pack native helpers with executable permissions",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "037d43ef5a2fc0481d6116ccdea27feffba5e4e4"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-18T04:02:30Z",
+    "finished": "2026-10-18T04:06:30Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-18T04:02:30Z",
+        "duration": "4m",
+        "summary": "037d43ef5a2f",
+        "log": [
+          "Commit 037d43ef5a2fc0481d6116ccdea27feffba5e4e4",
+          "🐛 fix(release): pack native helpers with executable permissions"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T04:06:30Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 037d43ef5a2fc0481d6116ccdea27feffba5e4e4"
+      }
+    ]
+  },
+  {
+    "id": "run-land-28986e29bafb",
+    "flow": "land",
+    "title": "⬆️ deps: move Smithers to effect 4.0.5",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "28986e29bafb0ce6e9eb2a672cef9e26a82bebbe"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-18T03:48:25Z",
+    "finished": "2026-10-18T03:52:25Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-18T03:48:25Z",
+        "duration": "4m",
+        "summary": "28986e29bafb",
+        "log": [
+          "Commit 28986e29bafb0ce6e9eb2a672cef9e26a82bebbe",
+          "⬆️ deps: move Smithers to effect 4.0.5"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T03:52:25Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 28986e29bafb0ce6e9eb2a672cef9e26a82bebbe"
+      }
+    ]
+  },
+  {
+    "id": "run-land-e75952e77560",
+    "flow": "land",
+    "title": "🐛 fix(egressrelay): flush streamed bytes that cannot begin a secret (#4251)",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "e75952e77560b6a4b0a5ae529d4f690a5332d11c"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-18T03:40:14Z",
+    "finished": "2026-10-18T03:44:14Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-18T03:40:14Z",
+        "duration": "4m",
+        "summary": "e75952e77560",
+        "log": [
+          "Commit e75952e77560b6a4b0a5ae529d4f690a5332d11c",
+          "🐛 fix(egressrelay): flush streamed bytes that cannot begin a secret (#4251)"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T03:44:14Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit e75952e77560b6a4b0a5ae529d4f690a5332d11c"
+      }
+    ]
+  },
+  {
+    "id": "run-land-556158785a18",
+    "flow": "land",
+    "title": "🔒 fix(auth): isolate browser sessions and CSRF cookies by host",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "556158785a180b836beb45d880fb2b7453406c2c"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-18T03:29:10Z",
+    "finished": "2026-10-18T03:33:10Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-18T03:29:10Z",
+        "duration": "4m",
+        "summary": "556158785a18",
+        "log": [
+          "Commit 556158785a180b836beb45d880fb2b7453406c2c",
+          "🔒 fix(auth): isolate browser sessions and CSRF cookies by host"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T03:33:10Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 556158785a180b836beb45d880fb2b7453406c2c"
+      }
+    ]
+  },
+  {
+    "id": "run-land-68f1d8946ed3",
+    "flow": "land",
+    "title": "✨ feat(guest): reserve sponsored repository chat",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "68f1d8946ed35e3d1169ab880dc240f2910be2aa"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-18T03:20:23Z",
+    "finished": "2026-10-18T03:24:23Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-18T03:20:23Z",
+        "duration": "4m",
+        "summary": "68f1d8946ed3",
+        "log": [
+          "Commit 68f1d8946ed35e3d1169ab880dc240f2910be2aa",
+          "✨ feat(guest): reserve sponsored repository chat"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T03:24:23Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 68f1d8946ed35e3d1169ab880dc240f2910be2aa"
+      }
+    ]
+  },
+  {
+    "id": "run-land-065cdd316d8a",
+    "flow": "land",
+    "title": "🐛 fix(app): stop polling an absent TODO route",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "065cdd316d8af0fb2b881a596e0e02ed7d6da0b1"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-18T03:09:42Z",
+    "finished": "2026-10-18T03:13:42Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-18T03:09:42Z",
+        "duration": "4m",
+        "summary": "065cdd316d8a",
+        "log": [
+          "Commit 065cdd316d8af0fb2b881a596e0e02ed7d6da0b1",
+          "🐛 fix(app): stop polling an absent TODO route"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T03:13:42Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 065cdd316d8af0fb2b881a596e0e02ed7d6da0b1"
+      }
+    ]
+  },
+  {
+    "id": "run-land-7ce5c49675b8",
+    "flow": "land",
+    "title": "✨ feat(build-cli): mount an overlay's .smithers onto a pinned upstream checkout (#4217)",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "7ce5c49675b840f044d333ce7532ea520fff4861"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-18T03:02:38Z",
+    "finished": "2026-10-18T03:06:38Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-18T03:02:38Z",
+        "duration": "4m",
+        "summary": "7ce5c49675b8",
+        "log": [
+          "Commit 7ce5c49675b840f044d333ce7532ea520fff4861",
+          "✨ feat(build-cli): mount an overlay's .smithers onto a pinned upstream checkout (#4217)"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T03:06:38Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 7ce5c49675b840f044d333ce7532ea520fff4861"
+      }
+    ]
+  },
+  {
+    "id": "run-land-24015c927059",
+    "flow": "land",
+    "title": "🐛 fix(build-cli): give pnpm's verify flag to pnpm only, not to a tool invoked with run (#4218)",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "24015c927059be421d59eeb545c72da2b3a2d732"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-18T01:38:15Z",
+    "finished": "2026-10-18T01:42:15Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-18T01:38:15Z",
+        "duration": "4m",
+        "summary": "24015c927059",
+        "log": [
+          "Commit 24015c927059be421d59eeb545c72da2b3a2d732",
+          "🐛 fix(build-cli): give pnpm's verify flag to pnpm only, not to a tool invoked with run (#4218)"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T01:42:15Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 24015c927059be421d59eeb545c72da2b3a2d732"
+      }
+    ]
+  },
+  {
+    "id": "run-land-f53d5abfd8a4",
+    "flow": "land",
+    "title": "🐛 fix(registry): retain typed prompt declaration in discovery (#2271)",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "f53d5abfd8a4a3192c45dc67a438e623f5146a84"
+    },
+    "harness": "Agent · harness unavailable",
+    "started": "2026-10-17T12:41:58Z",
+    "finished": "2026-10-17T12:45:58Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T12:41:58Z",
+        "duration": "4m",
+        "summary": "f53d5abfd8a4",
+        "log": [
+          "Commit f53d5abfd8a4a3192c45dc67a438e623f5146a84",
+          "🐛 fix(registry): retain typed prompt declaration in discovery (#2271)"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T12:45:58Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit f53d5abfd8a4a3192c45dc67a438e623f5146a84"
+      }
+    ]
+  },
+  {
+    "id": "run-land-a37342fe6da5",
+    "flow": "land",
+    "title": "🧪 test(build): exercise native host executable cache replacement (#4200)",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "a37342fe6da5ea6c550a6c648a47df522e7c693b"
+    },
+    "harness": "Agent · harness unavailable",
+    "started": "2026-10-17T12:41:43Z",
+    "finished": "2026-10-17T12:45:43Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T12:41:43Z",
+        "duration": "4m",
+        "summary": "a37342fe6da5",
+        "log": [
+          "Commit a37342fe6da5ea6c550a6c648a47df522e7c693b",
+          "🧪 test(build): exercise native host executable cache replacement (#4200)"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T12:45:43Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit a37342fe6da5ea6c550a6c648a47df522e7c693b"
+      }
+    ]
+  },
+  {
+    "id": "run-land-a8831c3ea907",
+    "flow": "land",
+    "title": "🐛 fix(coding): normalize authenticated provider workspace paths (#4145)",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "a8831c3ea9073b4b7365db4a7da5f75cae37cb0c"
+    },
+    "harness": "Agent · harness unavailable",
+    "started": "2026-10-17T12:40:20Z",
+    "finished": "2026-10-17T12:44:20Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T12:40:20Z",
+        "duration": "4m",
+        "summary": "a8831c3ea907",
+        "log": [
+          "Commit a8831c3ea9073b4b7365db4a7da5f75cae37cb0c",
+          "🐛 fix(coding): normalize authenticated provider workspace paths (#4145)"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T12:44:20Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit a8831c3ea9073b4b7365db4a7da5f75cae37cb0c"
+      }
+    ]
+  },
+  {
+    "id": "run-land-6ee0078981a7",
+    "flow": "land",
+    "title": "📈 feat(repo-host): export running fetches and pack-objects peak memory",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "6ee0078981a76f4a5d775ed6446fc0f465b131c8"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T12:25:13Z",
+    "finished": "2026-10-17T12:29:13Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T12:25:13Z",
+        "duration": "4m",
+        "summary": "6ee0078981a7",
+        "log": [
+          "Commit 6ee0078981a76f4a5d775ed6446fc0f465b131c8",
+          "📈 feat(repo-host): export running fetches and pack-objects peak memory"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T12:29:13Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 6ee0078981a76f4a5d775ed6446fc0f465b131c8"
+      }
+    ]
+  },
+  {
+    "id": "run-land-acee35be8bf2",
+    "flow": "land",
+    "title": "🐛 fix(land): source lane prerequisites from .smithers/flows and gate J1 on a Linux bwrap host",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "acee35be8bf2eedbff4080042fd48b9f907563f6"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T10:45:12Z",
+    "finished": "2026-10-17T10:49:12Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T10:45:12Z",
+        "duration": "4m",
+        "summary": "acee35be8bf2",
+        "log": [
+          "Commit acee35be8bf2eedbff4080042fd48b9f907563f6",
+          "🐛 fix(land): source lane prerequisites from .smithers/flows and gate J1 on a Linux bwrap host"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T10:49:12Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit acee35be8bf2eedbff4080042fd48b9f907563f6"
+      }
+    ]
+  },
+  {
+    "id": "run-land-a18b6c3bc911",
+    "flow": "land",
+    "title": "🐛 fix(stack): let a proposal wait while the stack rebases its own sealed capture",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "a18b6c3bc911c73c0b88b1148a69fbedd74db1fe"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T10:41:32Z",
+    "finished": "2026-10-17T10:45:32Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T10:41:32Z",
+        "duration": "4m",
+        "summary": "a18b6c3bc911",
+        "log": [
+          "Commit a18b6c3bc911c73c0b88b1148a69fbedd74db1fe",
+          "🐛 fix(stack): let a proposal wait while the stack rebases its own sealed capture"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T10:45:32Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit a18b6c3bc911c73c0b88b1148a69fbedd74db1fe"
+      }
+    ]
+  },
+  {
+    "id": "run-land-62de1621dee5",
+    "flow": "land",
+    "title": "fix(platform-node): close terminal TLS status before bounded owner exit (#4214)",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "62de1621dee5c48cebf56fdad08eac0d5120eaf8"
+    },
+    "harness": "Agent · harness unavailable",
+    "started": "2026-10-17T10:28:03Z",
+    "finished": "2026-10-17T10:32:03Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T10:28:03Z",
+        "duration": "4m",
+        "summary": "62de1621dee5",
+        "log": [
+          "Commit 62de1621dee5c48cebf56fdad08eac0d5120eaf8",
+          "fix(platform-node): close terminal TLS status before bounded owner exit (#4214)"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T10:32:03Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 62de1621dee5c48cebf56fdad08eac0d5120eaf8"
+      }
+    ]
+  },
+  {
+    "id": "run-land-4307a1cca325",
+    "flow": "land",
+    "title": "🐛 fix(agent): re-drive a parked TODO run when a steer wakes it",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "4307a1cca32555d3ae063e4989c05e70437020cc"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T09:22:09Z",
+    "finished": "2026-10-17T09:26:09Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T09:22:09Z",
+        "duration": "4m",
+        "summary": "4307a1cca325",
+        "log": [
+          "Commit 4307a1cca32555d3ae063e4989c05e70437020cc",
+          "🐛 fix(agent): re-drive a parked TODO run when a steer wakes it"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T09:26:09Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 4307a1cca32555d3ae063e4989c05e70437020cc"
+      }
+    ]
+  },
+  {
+    "id": "run-land-6ba607221b33",
+    "flow": "land",
+    "title": "🐛 fix(stack): propose the rebased candidate when an earlier TODO moves the prefix",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "6ba607221b333a52d865b9cf70f069ce81d51956"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T08:29:58Z",
+    "finished": "2026-10-17T08:33:58Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T08:29:58Z",
+        "duration": "4m",
+        "summary": "6ba607221b33",
+        "log": [
+          "Commit 6ba607221b333a52d865b9cf70f069ce81d51956",
+          "🐛 fix(stack): propose the rebased candidate when an earlier TODO moves the prefix"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T08:33:58Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 6ba607221b333a52d865b9cf70f069ce81d51956"
+      }
+    ]
+  },
+  {
+    "id": "run-land-a7407dfe7c55",
+    "flow": "land",
+    "title": "test(build-cli): quote submodule URLs through Git config (#4209)",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "a7407dfe7c550f9ce3e9846f014caeb0ddc721da"
+    },
+    "harness": "Agent · harness unavailable",
+    "started": "2026-10-17T08:01:49Z",
+    "finished": "2026-10-17T08:05:49Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T08:01:49Z",
+        "duration": "4m",
+        "summary": "a7407dfe7c55",
+        "log": [
+          "Commit a7407dfe7c550f9ce3e9846f014caeb0ddc721da",
+          "test(build-cli): quote submodule URLs through Git config (#4209)"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T08:05:49Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit a7407dfe7c550f9ce3e9846f014caeb0ddc721da"
+      }
+    ]
+  },
+  {
+    "id": "run-land-0f43eff054d4",
+    "flow": "land",
+    "title": "✅ test(backend): read the J2 review verdict from the first line of its summary",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "0f43eff054d406bf18b771879a0edd2a75b42ebe"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T07:46:45Z",
+    "finished": "2026-10-17T07:50:45Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T07:46:45Z",
+        "duration": "4m",
+        "summary": "0f43eff054d4",
+        "log": [
+          "Commit 0f43eff054d406bf18b771879a0edd2a75b42ebe",
+          "✅ test(backend): read the J2 review verdict from the first line of its summary"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T07:50:45Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 0f43eff054d406bf18b771879a0edd2a75b42ebe"
+      }
+    ]
+  },
+  {
+    "id": "run-land-642f333139d7",
+    "flow": "land",
+    "title": "🐛 fix(flows): capture every TODO plan callback so a parked TODO resumes",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "642f333139d711366ff5153ef812f0318d9ad1a1"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T07:28:07Z",
+    "finished": "2026-10-17T07:32:07Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T07:28:07Z",
+        "duration": "4m",
+        "summary": "642f333139d7",
+        "log": [
+          "Commit 642f333139d711366ff5153ef812f0318d9ad1a1",
+          "🐛 fix(flows): capture every TODO plan callback so a parked TODO resumes"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T07:32:07Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 642f333139d711366ff5153ef812f0318d9ad1a1"
+      }
+    ]
+  },
+  {
+    "id": "run-land-ee29a966d973",
+    "flow": "land",
+    "title": "🐛 fix(app): keep an Add refusal through background roster reads",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "ee29a966d97378c705c44dad3ed84008613eda4d"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T06:34:42Z",
+    "finished": "2026-10-17T06:38:42Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T06:34:42Z",
+        "duration": "4m",
+        "summary": "ee29a966d973",
+        "log": [
+          "Commit ee29a966d97378c705c44dad3ed84008613eda4d",
+          "🐛 fix(app): keep an Add refusal through background roster reads"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T06:38:42Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit ee29a966d97378c705c44dad3ed84008613eda4d"
+      }
+    ]
+  },
+  {
+    "id": "run-land-f74a0f5a58c4",
+    "flow": "land",
+    "title": "🐛 fix(flows): repair coding-vibe-landing test imports after the flows move",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "f74a0f5a58c4417456b0c2f5343939a2bd1af6d2"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T06:32:18Z",
+    "finished": "2026-10-17T06:36:18Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T06:32:18Z",
+        "duration": "4m",
+        "summary": "f74a0f5a58c4",
+        "log": [
+          "Commit f74a0f5a58c4417456b0c2f5343939a2bd1af6d2",
+          "🐛 fix(flows): repair coding-vibe-landing test imports after the flows move"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T06:36:18Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit f74a0f5a58c4417456b0c2f5343939a2bd1af6d2"
+      }
+    ]
+  },
+  {
+    "id": "run-land-34b7d521fa0f",
+    "flow": "land",
+    "title": "✅ test(app): hold C-PRC-03 to the recorder tests check-receipts still declares",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "34b7d521fa0f2cccc5bc3867cb8d3d0b3f1fc3a5"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T06:12:16Z",
+    "finished": "2026-10-17T06:16:16Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T06:12:16Z",
+        "duration": "4m",
+        "summary": "34b7d521fa0f",
+        "log": [
+          "Commit 34b7d521fa0f2cccc5bc3867cb8d3d0b3f1fc3a5",
+          "✅ test(app): hold C-PRC-03 to the recorder tests check-receipts still declares"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T06:16:16Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 34b7d521fa0f2cccc5bc3867cb8d3d0b3f1fc3a5"
+      }
+    ]
+  },
+  {
+    "id": "run-land-b4cd6382a4a1",
+    "flow": "land",
+    "title": "✅ test(app): scope the repository home stack toggle as presentation in launch parity",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "b4cd6382a4a1b353a2ec05997789167c49a4f619"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T06:02:59Z",
+    "finished": "2026-10-17T06:06:59Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T06:02:59Z",
+        "duration": "4m",
+        "summary": "b4cd6382a4a1",
+        "log": [
+          "Commit b4cd6382a4a1b353a2ec05997789167c49a4f619",
+          "✅ test(app): scope the repository home stack toggle as presentation in launch parity"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T06:06:59Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit b4cd6382a4a1b353a2ec05997789167c49a4f619"
+      }
+    ]
+  },
+  {
+    "id": "run-land-a0668ee9e0b4",
+    "flow": "land",
+    "title": "🔥 test: serve the journey rehearsals from @smthrs/testing and delete distribution/",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "a0668ee9e0b448a839f2397d9e0f79b9ee0072b3"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T05:56:02Z",
+    "finished": "2026-10-17T06:00:02Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T05:56:02Z",
+        "duration": "4m",
+        "summary": "a0668ee9e0b4",
+        "log": [
+          "Commit a0668ee9e0b448a839f2397d9e0f79b9ee0072b3",
+          "🔥 test: serve the journey rehearsals from @smthrs/testing and delete distribution/"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T06:00:02Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit a0668ee9e0b448a839f2397d9e0f79b9ee0072b3"
+      }
+    ]
+  },
+  {
+    "id": "run-land-1da732093958",
+    "flow": "land",
+    "title": "✨ feat(testing): add ScriptedModel, BuiltinScript and TurnLog",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "1da732093958eb7cab318afa2a7211e9eb59839e"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T05:56:02Z",
+    "finished": "2026-10-17T06:00:02Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T05:56:02Z",
+        "duration": "4m",
+        "summary": "1da732093958",
+        "log": [
+          "Commit 1da732093958eb7cab318afa2a7211e9eb59839e",
+          "✨ feat(testing): add ScriptedModel, BuiltinScript and TurnLog"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T06:00:02Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 1da732093958eb7cab318afa2a7211e9eb59839e"
+      }
+    ]
+  },
+  {
+    "id": "run-land-eeb09c91c419",
+    "flow": "land",
+    "title": "✅ test(app): excuse the literals the moved catalog and flow-host scripts carry",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "eeb09c91c4191609768c13c243c30aa649955ea1"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T05:55:41Z",
+    "finished": "2026-10-17T05:59:41Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T05:55:41Z",
+        "duration": "4m",
+        "summary": "eeb09c91c419",
+        "log": [
+          "Commit eeb09c91c4191609768c13c243c30aa649955ea1",
+          "✅ test(app): excuse the literals the moved catalog and flow-host scripts carry"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T05:59:41Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit eeb09c91c4191609768c13c243c30aa649955ea1"
+      }
+    ]
+  },
+  {
+    "id": "run-land-be196ebd1025",
+    "flow": "land",
+    "title": "✅ test(rpc): pass each refused flow view as one array argument",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "be196ebd10259e8921edacf11eea6945d8ee30d3"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T05:52:39Z",
+    "finished": "2026-10-17T05:56:39Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T05:52:39Z",
+        "duration": "4m",
+        "summary": "be196ebd1025",
+        "log": [
+          "Commit be196ebd10259e8921edacf11eea6945d8ee30d3",
+          "✅ test(rpc): pass each refused flow view as one array argument"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T05:56:39Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit be196ebd10259e8921edacf11eea6945d8ee30d3"
+      }
+    ]
+  },
+  {
+    "id": "run-land-8e3276cde761",
+    "flow": "land",
+    "title": "✅ test: link the moved flows package's node_modules in the pinned-closure and TUI review tests",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "8e3276cde761d5bc2f94d5f053e0d8191f73326f"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T05:41:18Z",
+    "finished": "2026-10-17T05:45:18Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T05:41:18Z",
+        "duration": "4m",
+        "summary": "8e3276cde761",
+        "log": [
+          "Commit 8e3276cde761d5bc2f94d5f053e0d8191f73326f",
+          "✅ test: link the moved flows package's node_modules in the pinned-closure and TUI review tests"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T05:45:18Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 8e3276cde761d5bc2f94d5f053e0d8191f73326f"
+      }
+    ]
+  },
+  {
+    "id": "run-land-da413d0c96f9",
+    "flow": "land",
+    "title": "📝 docs: document settlementSuccess and regenerate the site's API page and llms-full",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "da413d0c96f9b3125a4ac22362693264d2653b47"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T05:31:11Z",
+    "finished": "2026-10-17T05:35:11Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T05:31:11Z",
+        "duration": "4m",
+        "summary": "da413d0c96f9",
+        "log": [
+          "Commit da413d0c96f9b3125a4ac22362693264d2653b47",
+          "📝 docs: document settlementSuccess and regenerate the site's API page and llms-full"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T05:35:11Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit da413d0c96f9b3125a4ac22362693264d2653b47"
+      }
+    ]
+  },
+  {
+    "id": "run-land-5be81944af2c",
+    "flow": "land",
+    "title": "👷 ci(drift): re-pin trusted drift to the commit that moved the flows labels",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "5be81944af2c85852f21ce6b5e15e5f974130fbb"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T05:29:18Z",
+    "finished": "2026-10-17T05:33:18Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T05:29:18Z",
+        "duration": "4m",
+        "summary": "5be81944af2c",
+        "log": [
+          "Commit 5be81944af2c85852f21ce6b5e15e5f974130fbb",
+          "👷 ci(drift): re-pin trusted drift to the commit that moved the flows labels"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T05:33:18Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 5be81944af2c85852f21ce6b5e15e5f974130fbb"
+      }
+    ]
+  },
+  {
+    "id": "run-land-7df5f685fc84",
+    "flow": "land",
+    "title": "🚚 refactor(repo): move this repository's flows to .smithers/flows (M-49)",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "7df5f685fc8495bd32c05b192e10f1b8270f016a"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T05:15:35Z",
+    "finished": "2026-10-17T05:19:35Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T05:15:35Z",
+        "duration": "4m",
+        "summary": "7df5f685fc84",
+        "log": [
+          "Commit 7df5f685fc8495bd32c05b192e10f1b8270f016a",
+          "🚚 refactor(repo): move this repository's flows to .smithers/flows (M-49)"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T05:19:35Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 7df5f685fc8495bd32c05b192e10f1b8270f016a"
+      }
+    ]
+  },
+  {
+    "id": "run-land-14feaf3811ea",
+    "flow": "land",
+    "title": "🐛 fix(smithers): read .smithers/wiki as 1.0 state, not a 0.x marker",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "14feaf3811ea73f2308a634d3d2247fba59a8fb4"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T05:15:35Z",
+    "finished": "2026-10-17T05:19:35Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T05:15:35Z",
+        "duration": "4m",
+        "summary": "14feaf3811ea",
+        "log": [
+          "Commit 14feaf3811ea73f2308a634d3d2247fba59a8fb4",
+          "🐛 fix(smithers): read .smithers/wiki as 1.0 state, not a 0.x marker"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T05:19:35Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 14feaf3811ea73f2308a634d3d2247fba59a8fb4"
+      }
+    ]
+  },
+  {
+    "id": "run-land-5d43ac6b7d11",
+    "flow": "land",
+    "title": "🐛 fix(targets): accept a hidden-directory package in generated CI patterns",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "5d43ac6b7d11d8039e23d466c7757981a5de29f6"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T05:15:34Z",
+    "finished": "2026-10-17T05:19:34Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T05:15:34Z",
+        "duration": "4m",
+        "summary": "5d43ac6b7d11",
+        "log": [
+          "Commit 5d43ac6b7d11d8039e23d466c7757981a5de29f6",
+          "🐛 fix(targets): accept a hidden-directory package in generated CI patterns"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T05:19:34Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 5d43ac6b7d11d8039e23d466c7757981a5de29f6"
+      }
+    ]
+  },
+  {
+    "id": "run-land-71c8f035f6ed",
+    "flow": "land",
+    "title": "🧪 fix(ci): provision the real uv backend fixture dependency (#4186)",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "71c8f035f6ed200133bfcfa837940ffe45d9b082"
+    },
+    "harness": "Gemini",
+    "started": "2026-10-17T05:12:47Z",
+    "finished": "2026-10-17T05:16:47Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T05:12:47Z",
+        "duration": "4m",
+        "summary": "71c8f035f6ed",
+        "log": [
+          "Commit 71c8f035f6ed200133bfcfa837940ffe45d9b082",
+          "🧪 fix(ci): provision the real uv backend fixture dependency (#4186)"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T05:16:47Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 71c8f035f6ed200133bfcfa837940ffe45d9b082"
+      }
+    ]
+  },
+  {
+    "id": "run-land-38470a2970be",
+    "flow": "land",
+    "title": "📝 fix(site): regenerate bounded-loop LLM documentation (#4163)",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "38470a2970be2af1fc99530e780822f25a65a2b7"
+    },
+    "harness": "Agent · harness unavailable",
+    "started": "2026-10-17T05:08:50Z",
+    "finished": "2026-10-17T05:12:50Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T05:08:50Z",
+        "duration": "4m",
+        "summary": "38470a2970be",
+        "log": [
+          "Commit 38470a2970be2af1fc99530e780822f25a65a2b7",
+          "📝 fix(site): regenerate bounded-loop LLM documentation (#4163)"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T05:12:50Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 38470a2970be2af1fc99530e780822f25a65a2b7"
+      }
+    ]
+  },
+  {
+    "id": "run-land-94b44ed69352",
+    "flow": "land",
+    "title": "🐛 fix(agent): settle a void flow's completion as null so its run completes",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "lander",
+      "ref": "94b44ed693526a7232f627d9034f34382d445a36"
+    },
+    "harness": "Claude Code · claude-opus-5-5",
+    "started": "2026-10-17T03:26:25Z",
+    "finished": "2026-10-17T03:30:25Z",
+    "duration": "4m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "main",
+    "stages": [
+      {
+        "id": "land",
+        "label": "Person lands",
+        "state": "succeeded",
+        "started": "2026-10-17T03:26:25Z",
+        "duration": "4m",
+        "summary": "94b44ed69352",
+        "log": [
+          "Commit 94b44ed693526a7232f627d9034f34382d445a36",
+          "🐛 fix(agent): settle a void flow's completion as null so its run completes"
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T03:30:25Z",
+        "stage": "land",
+        "kind": "checkpoint",
+        "text": "Exported main commit 94b44ed693526a7232f627d9034f34382d445a36"
+      }
+    ]
+  },
+  {
+    "id": "run-eval-snapshot-review-seeded-bugs",
+    "flow": "eval.run",
+    "title": "Recorded eval snapshot: Review seeded bugs",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "manual",
+      "by": "maya",
+      "ref": "Recorded fixture"
+    },
+    "harness": "Offline fixture",
+    "started": "2026-10-17T23:00:00Z",
+    "finished": "2026-10-17T23:00:00Z",
+    "duration": "Recorded",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "stages": [
+      {
+        "id": "snapshot",
+        "label": "Snapshot import",
+        "state": "succeeded",
+        "started": "2026-10-17T23:00:00Z",
+        "summary": "Offline pipeline baseline: F1 63.2%, recall 50%, precision 85.7%. A person reviews the resulting findings.",
+        "log": [
+          "Snapshot import; no eval was executed by this site.",
+          "Source: .smithers/flows/review/seeded-bugs/baseline.json",
+          "Offline pipeline baseline: F1 63.2%, recall 50%, precision 85.7%. A person reviews the resulting findings."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T23:00:00Z",
+        "stage": "snapshot",
+        "kind": "message",
+        "text": "Offline pipeline baseline: F1 63.2%, recall 50%, precision 85.7%. A person reviews the resulting findings."
+      }
+    ]
+  },
+  {
+    "id": "run-eval-snapshot-authoring",
+    "flow": "eval.run",
+    "title": "Authoring dataset snapshot",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "manual",
+      "by": "maya",
+      "ref": "Recorded fixture"
+    },
+    "harness": "Offline fixture",
+    "started": "2026-10-17T23:00:00Z",
+    "finished": "2026-10-17T23:00:00Z",
+    "duration": "Recorded",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "stages": [
+      {
+        "id": "snapshot",
+        "label": "Snapshot import",
+        "state": "succeeded",
+        "started": "2026-10-17T23:00:00Z",
+        "summary": "Pilot dataset snapshot. No validator execution receipt or fixed-suite adapter is supplied.",
+        "log": [
+          "Snapshot import; no eval was executed by this site.",
+          "Source: evals/authoring/data/pilot-sft.jsonl",
+          "Pilot dataset snapshot. No validator execution receipt or fixed-suite adapter is supplied."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T23:00:00Z",
+        "stage": "snapshot",
+        "kind": "message",
+        "text": "Pilot dataset snapshot. No validator execution receipt or fixed-suite adapter is supplied."
+      }
+    ]
+  },
+  {
+    "id": "run-eval-snapshot-recommend",
+    "flow": "eval.run",
+    "title": "Recorded eval snapshot: Command recommendations",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "manual",
+      "by": "maya",
+      "ref": "Recorded fixture"
+    },
+    "harness": "Offline fixture",
+    "started": "2026-10-17T23:00:00Z",
+    "finished": "2026-10-17T23:00:00Z",
+    "duration": "Recorded",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "stages": [
+      {
+        "id": "snapshot",
+        "label": "Snapshot import",
+        "state": "succeeded",
+        "started": "2026-10-17T23:00:00Z",
+        "summary": "Offline sample log: 13/16 rows have outcomes.",
+        "log": [
+          "Snapshot import; no eval was executed by this site.",
+          "Source: packages/backend/modelhost/recommend-eval/fixtures/sample.jsonl",
+          "Offline sample log: 13/16 rows have outcomes."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T23:00:00Z",
+        "stage": "snapshot",
+        "kind": "message",
+        "text": "Offline sample log: 13/16 rows have outcomes."
+      }
+    ]
+  },
+  {
+    "id": "run-eval-snapshot-swebench",
+    "flow": "eval.run",
+    "title": "Recorded eval snapshot: SWE-bench Verified",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "manual",
+      "by": "maya",
+      "ref": "Recorded fixture"
+    },
+    "harness": "Offline fixture",
+    "started": "2026-08-19T23:00:00Z",
+    "finished": "2026-08-19T23:00:00Z",
+    "duration": "Recorded",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "stages": [
+      {
+        "id": "snapshot",
+        "label": "Snapshot import",
+        "state": "succeeded",
+        "started": "2026-08-19T23:00:00Z",
+        "summary": "Imported snapshot · not in this repository. Recorded fixture wave · August 19, 2026. Flows resolved 1/5; Codex resolved 5/5. Baseline is that comparison, not a prior Smithers run. No current performance claim.",
+        "log": [
+          "Imported snapshot; not a repository file. No eval was executed by this site.",
+          "Imported snapshot · not in this repository. Recorded fixture wave · August 19, 2026. Flows resolved 1/5; Codex resolved 5/5. Baseline is that comparison, not a prior Smithers run. No current performance claim."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-08-19T23:00:00Z",
+        "stage": "snapshot",
+        "kind": "message",
+        "text": "Imported snapshot · not in this repository. Recorded fixture wave · August 19, 2026. Flows resolved 1/5; Codex resolved 5/5. Baseline is that comparison, not a prior Smithers run. No current performance claim."
+      }
+    ]
+  },
+  {
+    "id": "run-eval-snapshot-agent",
+    "flow": "eval.run",
+    "title": "Recorded eval snapshot: Agent regression",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "manual",
+      "by": "maya",
+      "ref": "Recorded fixture"
+    },
+    "harness": "Offline fixture",
+    "started": "2026-10-17T23:00:00Z",
+    "finished": "2026-10-17T23:00:00Z",
+    "duration": "Recorded",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "stages": [
+      {
+        "id": "snapshot",
+        "label": "Snapshot import",
+        "state": "succeeded",
+        "started": "2026-10-17T23:00:00Z",
+        "summary": "Scripted-provider baseline. Each case gates behaviour and observation contracts.",
+        "log": [
+          "Snapshot import; no eval was executed by this site.",
+          "Source: packages/smithers/agent/regression/baseline.json",
+          "Scripted-provider baseline. Each case gates behaviour and observation contracts."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T23:00:00Z",
+        "stage": "snapshot",
+        "kind": "message",
+        "text": "Scripted-provider baseline. Each case gates behaviour and observation contracts."
+      }
+    ]
+  },
+  {
+    "id": "run-review-example",
+    "flow": "docs-sync",
+    "title": "Add a review example",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "manual",
+      "by": "maya"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-18T04:56:00Z",
+    "finished": "2026-10-18T04:59:00Z",
+    "duration": "3 min",
+    "cost": {
+      "usd": 0.01,
+      "tokens": 100
+    },
+    "branch": "mock/review-example",
+    "pull": 9001,
+    "stages": [
+      {
+        "id": "understand",
+        "label": "Understand",
+        "state": "succeeded",
+        "started": "2026-10-18T04:56:00Z",
+        "duration": "1 min",
+        "summary": "Mock review example.",
+        "log": [
+          "Simulated example step completed."
+        ]
+      },
+      {
+        "id": "implement",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-10-18T04:56:00Z",
+        "duration": "1 min",
+        "summary": "Mock review example.",
+        "log": [
+          "Simulated example step completed."
+        ]
+      },
+      {
+        "id": "verify",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-10-18T04:56:00Z",
+        "duration": "1 min",
+        "summary": "Mock review example.",
+        "log": [
+          "Simulated example step completed."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T04:59:00Z",
+        "stage": "verify",
+        "kind": "checkpoint",
+        "text": "Mock check passed; human review requested."
+      }
+    ]
+  }
+]

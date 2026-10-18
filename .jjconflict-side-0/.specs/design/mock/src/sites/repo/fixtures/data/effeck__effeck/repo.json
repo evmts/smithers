@@ -1,0 +1,93 @@
+{
+  "owner": "effeck",
+  "name": "effeck",
+  "slug": "effeck/effeck",
+  "description": "Effect, as a language.",
+  "visibility": "public",
+  "defaultBranch": "main",
+  "github": null,
+  "homepage": "https://effeck.dev",
+  "license": "MIT · TypeScript fork: Apache-2.0",
+  "topics": [
+    "effect",
+    "typescript",
+    "language",
+    "compiler"
+  ],
+  "languages": [
+    {
+      "name": "TypeScript",
+      "percent": 56
+    },
+    {
+      "name": "Go",
+      "percent": 39
+    },
+    {
+      "name": "JavaScript",
+      "percent": 5
+    }
+  ],
+  "counts": {
+    "commits": 78,
+    "branches": 7,
+    "tags": 1,
+    "issuesOpen": 13,
+    "pullsOpen": 6,
+    "runsActive": 5,
+    "contributors": 1
+  },
+  "config": {
+    "home": [
+      {
+        "type": "text",
+        "text": "VibeLang is Effect as a language: TypeScript syntax that compiles to TypeScript."
+      },
+      {
+        "type": "prompt",
+        "title": "Ask about VibeLang",
+        "placeholder": "Ask about VibeLang…"
+      },
+      {
+        "type": "links",
+        "links": [
+          {
+            "label": "Install VibeLang",
+            "url": "https://effeck.dev/"
+          },
+          {
+            "label": "Docs",
+            "url": "https://effeck.dev/001-onboarding.html"
+          },
+          {
+            "label": "Report a bug",
+            "url": "https://smithers.sh/effeck/effeck/issues"
+          }
+        ]
+      },
+      {
+        "type": "fixed-by-agents",
+        "issues": [
+          31,
+          32,
+          33,
+          34
+        ],
+        "compact": true,
+        "acceptedOnly": true
+      },
+      {
+        "type": "markdown",
+        "path": "README.md",
+        "title": "README"
+      }
+    ],
+    "docs": {
+      "root": "docs",
+      "title": "Docs"
+    },
+    "evals": {
+      "title": "Golden set"
+    }
+  }
+}

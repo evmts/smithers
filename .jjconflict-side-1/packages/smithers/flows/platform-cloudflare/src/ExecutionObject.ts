@@ -1,0 +1,603 @@
+/**
+ * The per-execution Durable Object, as functions a Durable Object delegates to.
+ *
+ * One Durable Object runs one flow execution and is named by its execution
+ * id. It stores what to run (the {@link Intent}) and owns one thing the
+ * engine cannot: an alarm that wakes it. {@link start} records the intent and
+ * arms the alarm; {@link alarm} builds the durable runtime, drives the
+ * execution until it settles or parks, hands every execution the drive left
+ * for another object to that object through the caller's {@link Router}, and
+ * arms the next wake; {@link wake} moves the alarm to now. Leases, attempts,
+ * timers, retries and results stay in the engine's Postgres store; the
+ * object's storage holds the intent, a failure count and, once the execution
+ * settles, when it did. A settled object keeps its intent for
+ * {@link settledRetentionMs}, then forgets it and empties its storage.
+ *
+ * The functions take the object's storage as a structural slice, so the
+ * same code runs under any Effect-native Durable Object (an Alchemy
+ * `DurableObjectState`'s `storage` satisfies it as is) and under the
+ * in-memory stand-in a test supplies.
+ *
+ * @since 1.0.0
+ */
+
+import { canonicalize } from "@smthrs/canonical"
+import { type DurableEngineState, EngineStore } from "@smthrs/engine-store"
+import { type Flow, RetryPolicy } from "@smthrs/flow"
+import type { RunStore } from "@smthrs/run-store"
+import * as Cause from "effect/Cause"
+import * as Clock from "effect/Clock"
+import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import type * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
+import * as Option from "effect/Option"
+import * as Schema from "effect/Schema"
+import * as Routing from "./internal/Routing.ts"
+
+/**
+ * What a Durable Object runs: the flow, by tag; the execution, by id; and
+ * the payload, encoded with the flow's own JSON codec.
+ *
+ * Build one with {@link intent}, which encodes the payload the way
+ * {@link alarm} decodes it.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export const Intent = Schema.Struct({
+  flow: Schema.NonEmptyString,
+  executionId: Schema.NonEmptyString,
+  payload: Schema.Json
+})
+
+/**
+ * The value form of {@link Intent}.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Intent = typeof Intent.Type
+
+/**
+ * The slice of Durable Object storage these functions use.
+ *
+ * `R` is whatever the object's storage methods require. An Alchemy
+ * `DurableObjectState`'s `storage` satisfies it with `R = RuntimeContext`; a
+ * test's in-memory stand-in satisfies it with `R = never`.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Storage<R = never> {
+  readonly get: <A = unknown>(key: string) => Effect.Effect<A | undefined, never, R>
+  readonly put: <A>(key: string, value: A) => Effect.Effect<void, never, R>
+  readonly delete: (key: string) => Effect.Effect<boolean, never, R>
+  readonly setAlarm: (scheduledTime: number) => Effect.Effect<void, never, R>
+  readonly deleteAlarm: () => Effect.Effect<void, never, R>
+}
+
+/**
+ * {@link start} was asked to run an execution this object already holds a
+ * different intent for. The stored intent is unchanged and the caller's
+ * effect did not run.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class IntentConflict extends Schema.TaggedError<IntentConflict>()(
+  "@smthrs/platform-cloudflare/IntentConflict",
+  {
+    executionId: Schema.String,
+    message: Schema.String
+  }
+) {}
+
+/**
+ * What one {@link alarm} did.
+ *
+ * - `Idle`: no intent is stored, so there was nothing to run; the alarm is
+ *   deleted.
+ * - `Settled`: the execution completed, failed or was cancelled. The object
+ *   keeps the intent until `forgetAtMs`, the settlement plus the retention
+ *   window, and the alarm is armed for it.
+ * - `Parked`: the execution waits. `wakeAtMs` is when the engine must next
+ *   drive it (`EngineStore.nextWake`), usually its earliest pending
+ *   `DurableClock`, and the alarm is armed for it; `null` means it waits on
+ *   an event, and the alarm is deleted until whoever delivers the event arms
+ *   it.
+ * - `Retrying`: building the runtime or driving the execution failed; the
+ *   alarm is armed at `retryAtMs`. `attempt` counts consecutive alarms that
+ *   made no progress, those that died included, and `failure` is the tag of
+ *   what failed, never its message.
+ * - `Forgotten`: the execution settled and its retention window has passed;
+ *   the object deleted its intent, its count and its settlement, and the
+ *   alarm is deleted. The object is empty, as one that never held an
+ *   execution.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Outcome =
+  | { readonly _tag: "Idle" }
+  | { readonly _tag: "Settled"; readonly forgetAtMs: number }
+  | { readonly _tag: "Parked"; readonly wakeAtMs: number | null }
+  | {
+    readonly _tag: "Retrying"
+    readonly attempt: number
+    readonly retryAtMs: number
+    readonly failure: string
+  }
+  | { readonly _tag: "Forgotten" }
+
+/**
+ * The services {@link alarm} reads from the runtime it builds:
+ * `@smthrs/engine-store`'s `EngineStore.Driver`, which drives the execution
+ * once, and the `RunStore` and `DurableEngineState` it reads the next wake
+ * and the other objects' work from. A `CloudflareRuntime.layer` provides all
+ * three.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Services = EngineStore.Driver | RunStore.RunStore | DurableEngineState.DurableEngineState
+
+/**
+ * How one Durable Object reaches another, both named by execution id. The
+ * Durable Object class supplies it over its namespace binding.
+ *
+ * - `start` calls {@link start} on the object named by `intent.executionId`,
+ *   with nothing for the caller's effect: the store already holds the
+ *   execution, so the intent only tells that object what to run.
+ * - `wake` calls {@link wake} on the object named by `executionId`.
+ *
+ * Both must be idempotent, as `start` and `wake` are: an alarm that dies
+ * after routing routes again. A failure re-arms the routing object's alarm
+ * with backoff, and the failure's tag is what it logs.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Router<E = never, R = never> {
+  readonly start: (intent: Intent) => Effect.Effect<void, E, R>
+  readonly wake: (executionId: string) => Effect.Effect<void, E, R>
+}
+
+/**
+ * The storage key the intent lives under.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const intentKey = "smithers/intent"
+
+/**
+ * The storage key the count of consecutive alarms without progress lives
+ * under.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const failuresKey = "smithers/failures"
+
+/**
+ * The storage key the time the execution settled, in epoch milliseconds,
+ * lives under. An object that holds it never drives its execution again.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const settledKey = "smithers/settled"
+
+/**
+ * How long a settled object keeps its intent, in milliseconds, unless
+ * {@link alarm} is given another window: one day.
+ *
+ * Within the window a duplicate {@link start} or a {@link wake} is answered
+ * from the object alone, with no drive, and another payload under the same
+ * execution id fails with {@link IntentConflict}. After it the object forgets
+ * the execution: a late {@link wake} answers `false`, and a late `start`
+ * stores the intent again, whose next alarm finds the run settled in the
+ * engine's store, runs no step and forgets it again a window later. The run's
+ * history and result stay in the engine's store under the engine's own
+ * retention.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const settledRetentionMs = 86_400_000
+
+/**
+ * How long after {@link start} records an intent the alarm fires on its own,
+ * in milliseconds, if `start` never reaches the line that moves it to now.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const startGraceMs = 5_000
+
+/**
+ * The backoff between consecutive alarms that make no progress, whether they
+ * failed or died: one second, doubling, at most five minutes, and never
+ * giving up.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const retryPolicy: RetryPolicy.RetryPolicy = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 300_000 })
+
+/**
+ * {@link start} calls, by `outcome`: `accepted`, `duplicate`, `conflict` or
+ * `failed` (the caller's effect failed after the intent was stored).
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const starts = Metric.counter("smithers_cloudflare_execution_starts", {
+  description: "Durable Object execution starts, by outcome",
+  incremental: true
+})
+
+/**
+ * {@link alarm} invocations, by `outcome`: `idle`, `settled`, `parked`,
+ * `retrying` or `forgotten`.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const alarms = Metric.counter("smithers_cloudflare_execution_alarms", {
+  description: "Durable Object execution alarms, by outcome",
+  incremental: true
+})
+
+/**
+ * Executions {@link alarm} handed to another object, by `route`: `start` or
+ * `wake`. Counted when the {@link Router} call succeeds.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const routed = Metric.counter("smithers_cloudflare_execution_routed", {
+  description: "Executions a Durable Object alarm handed to another object, by route",
+  incremental: true
+})
+
+/**
+ * {@link wake} calls, by `outcome`: `armed`, or `idle` when no intent is
+ * stored.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const wakes = Metric.counter("smithers_cloudflare_execution_wakes", {
+  description: "Durable Object execution wakes, by outcome",
+  incremental: true
+})
+
+const encodeIntent = Schema.encodeSync(Intent)
+const decodeIntent = Schema.decodeUnknownEffect(Schema.fromJsonString(Intent))
+
+/** The stored form of an intent: its canonical JSON, so equal intents are equal strings. */
+const stored = (value: Intent): string => canonicalize(encodeIntent(value))
+
+/** The ids an alarm's span carries: the execution and its flow, never the payload. */
+const annotateIntent = (value: Intent) =>
+  Effect.annotateCurrentSpan({ "smithers.execution.id": value.executionId, "smithers.flow": value.flow })
+
+/**
+ * The stable name of what a cause failed with, for a log line or a span
+ * attribute: an error's tag, never its message, which may quote a payload.
+ */
+const failureType = (cause: Cause.Cause<unknown>): string => RetryPolicy.errorTag(Cause.squash(cause)) ?? "unknown"
+
+/**
+ * Builds an intent, encoding the payload with the flow's own JSON codec.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const intent = <F extends Flow.Any>(
+  flow: F,
+  options: { readonly executionId: string; readonly payload: Flow.PayloadSchema<F>["Type"] }
+): Effect.Effect<Intent, Schema.SchemaError, Flow.PayloadSchema<F>["EncodingServices"]> =>
+  Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))(options.payload).pipe(
+    Effect.flatMap((payload) =>
+      Schema.decodeUnknownEffect(Intent)({ flow: flow._tag, executionId: options.executionId, payload })
+    )
+  )
+
+/**
+ * Records an intent, then runs the caller's effect, so the execution runs
+ * even when the caller dies partway.
+ *
+ * 1. Stores the intent and arms the alarm at now plus {@link startGraceMs}.
+ *    The Durable Object's output gate commits both before the caller hears
+ *    an answer.
+ * 2. Runs `effect`, the caller's own idempotent write (for example, the row
+ *    that shows the execution is under way).
+ * 3. Moves the alarm to now.
+ *
+ * If the isolate dies in step 2, the alarm armed in step 1 still fires and
+ * runs the flow; the flow's first step must therefore do the same write
+ * idempotently. If `effect` fails, its failure is returned unchanged and the
+ * alarm stays armed.
+ *
+ * Starting the same intent again is safe: nothing new is stored, `effect`
+ * runs again, and the alarm is moved to now, so a settled execution answers
+ * with its settlement once more. A different intent fails with
+ * {@link IntentConflict} before anything is stored or run. Both hold while
+ * the object holds the intent: until a settled execution's retention window
+ * passes ({@link settledRetentionMs}).
+ *
+ * @category operations
+ * @since 1.0.0
+ */
+export const start = <A, E, R, RS>(
+  storage: Storage<RS>,
+  value: Intent,
+  effect: Effect.Effect<A, E, R>
+): Effect.Effect<A, E | IntentConflict, R | RS> =>
+  Effect.gen(function*() {
+    const next = stored(value)
+    const previous = yield* storage.get<string>(intentKey)
+    if (previous !== undefined && previous !== next) {
+      yield* Effect.annotateCurrentSpan({ "smithers.execution.start": "conflict" })
+      yield* Metric.update(Metric.withAttributes(starts, { outcome: "conflict" }), 1)
+      yield* Effect.logWarning("cloudflare.execution.start").pipe(Effect.annotateLogs({ outcome: "conflict" }))
+      return yield* new IntentConflict({
+        executionId: value.executionId,
+        message: `Execution ${value.executionId} already holds a different intent`
+      })
+    }
+    if (previous === undefined) yield* storage.put(intentKey, next)
+    yield* storage.setAlarm((yield* Clock.currentTimeMillis) + startGraceMs)
+    const exit = yield* Effect.exit(effect)
+    if (Exit.isSuccess(exit)) yield* storage.setAlarm(yield* Clock.currentTimeMillis)
+    const outcome = Exit.isFailure(exit) ? "failed" : previous === undefined ? "accepted" : "duplicate"
+    yield* Effect.annotateCurrentSpan({ "smithers.execution.start": outcome })
+    yield* Metric.update(Metric.withAttributes(starts, { outcome }), 1)
+    yield* (Exit.isFailure(exit)
+      ? Effect.logWarning("cloudflare.execution.start").pipe(
+        Effect.annotateLogs({ outcome, "error.type": failureType(exit.cause) })
+      )
+      : Effect.logInfo("cloudflare.execution.start").pipe(Effect.annotateLogs({ outcome })))
+    return exit
+  }).pipe(
+    Effect.withSpan("cloudflare.execution.start", {
+      attributes: { "smithers.execution.id": value.executionId, "smithers.flow": value.flow }
+    }),
+    // The caller's exit is the span's value, never its failure: the span ends
+    // with the outcome alone, because the caller's failure may quote the
+    // payload.
+    Effect.flatMap((exit) => exit)
+  )
+
+/**
+ * Moves the alarm to now, so the object drives its execution again as soon
+ * as no other handler runs: what another object's {@link alarm} calls,
+ * through its {@link Router}, when its drive made this execution due (a child
+ * it waits on settled, or a cancellation reached it).
+ *
+ * Answers `true` when the alarm was armed and `false` when no intent is
+ * stored, which leaves the object idle: an object that never held this
+ * execution has nothing to drive. Waking an object whose execution has
+ * nothing due costs one alarm that parks it again.
+ *
+ * @category operations
+ * @since 1.0.0
+ */
+export const wake = <RS>(storage: Storage<RS>): Effect.Effect<boolean, never, RS> =>
+  Effect.gen(function*() {
+    const stored = (yield* storage.get<string>(intentKey)) !== undefined
+    if (stored) yield* storage.setAlarm(yield* Clock.currentTimeMillis)
+    const outcome = stored ? "armed" : "idle"
+    yield* Effect.annotateCurrentSpan({ "smithers.execution.wake": outcome })
+    yield* Metric.update(Metric.withAttributes(wakes, { outcome }), 1)
+    yield* Effect.logInfo("cloudflare.execution.wake").pipe(Effect.annotateLogs({ outcome }))
+    return stored
+  }).pipe(Effect.withSpan("cloudflare.execution.wake"))
+
+/**
+ * A flow this object was not given. The stored intent names it, so the alarm
+ * retries with backoff until a deploy that registers it again.
+ */
+class UnknownFlow extends Schema.TaggedError<UnknownFlow>()("@smthrs/platform-cloudflare/UnknownFlow", {
+  flow: Schema.String
+}) {}
+
+/**
+ * The drive stopped with work still due now: the runtime would not claim the
+ * execution (it is configured for another one), or the store became
+ * unavailable during the drive. Counted as a failed attempt, so an alarm that
+ * cannot make progress backs off instead of firing again at once, forever.
+ */
+class Undriven extends Schema.TaggedError<Undriven>()("@smthrs/platform-cloudflare/Undriven", {}) {}
+
+/** Drives the execution once (`EngineStore.drive`) and reads what that left it as. */
+const drive = (flow: Flow.Any, value: Intent) =>
+  Effect.gen(function*() {
+    // A flow's schemas carry the services they need with the flow's
+    // registration, so the erased requirements are satisfied there.
+    const payload = yield* (Schema.decodeUnknownEffect(Schema.toCodecJson(flow.payloadSchema))(
+      value.payload
+    ) as Effect.Effect<object, Schema.SchemaError>)
+    const driven = yield* EngineStore.drive(flow, { executionId: value.executionId, payload })
+    switch (driven._tag) {
+      case "Settled":
+        return { _tag: "Settled" } as const
+      case "Parked":
+        return { _tag: "Parked", wakeAtMs: driven.wakeAtMs ?? null } as const
+      case "Unfinished":
+        return yield* new Undriven()
+    }
+  })
+
+/**
+ * Hands every execution the drive left for another object to that object:
+ * starts the ones no object holds yet and wakes the ones that are due.
+ */
+const route = <E, R>(executionId: string, router: Router<E, R>) =>
+  Effect.gen(function*() {
+    const routes = yield* Routing.routes(executionId)
+    for (const next of routes.start) {
+      yield* router.start(yield* Schema.decodeUnknownEffect(Intent)(next))
+      yield* Metric.update(Metric.withAttributes(routed, { route: "start" }), 1)
+    }
+    for (const id of routes.wake) {
+      yield* router.wake(id)
+      yield* Metric.update(Metric.withAttributes(routed, { route: "wake" }), 1)
+    }
+    yield* Effect.annotateCurrentSpan({
+      "smithers.execution.started": routes.start.length,
+      "smithers.execution.woken": routes.wake.length
+    })
+  })
+
+/**
+ * Arms the alarm for a parked execution, then reads the store once more.
+ *
+ * Another object's {@link wake} can land while this alarm runs: Durable
+ * Objects interleave events while a handler waits on I/O. A wake that landed
+ * before this line is overwritten by it, so the store is read again after it:
+ * a waker records its work in the store before it wakes, so any wake this
+ * overwrote shows here as due work, and the alarm moves up to it. A wake that
+ * lands later arms the alarm itself. Without the second read a child that
+ * settles while its parent's alarm is still routing it leaves the parent
+ * parked for good.
+ */
+const arm = <RS>(storage: Storage<RS>, executionId: string, wakeAtMs: number | null) =>
+  Effect.gen(function*() {
+    yield* wakeAtMs === null ? storage.deleteAlarm() : storage.setAlarm(wakeAtMs)
+    const due = Option.getOrNull(yield* EngineStore.nextWake(executionId))
+    if (due === null || (wakeAtMs !== null && due >= wakeAtMs)) return wakeAtMs
+    yield* storage.setAlarm(due)
+    return due
+  })
+
+/** How long after attempt `attempt` started the next one may: {@link retryPolicy}'s delay. */
+const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextDelay(retryPolicy, attempt))
+
+/**
+ * Drives the stored execution, hands what the drive left for other objects to
+ * them, then arms the next wake.
+ *
+ * 1. Counts this alarm as an attempt and arms the alarm for the next one,
+ *    {@link retryPolicy}'s delay away. This is the watchdog: an alarm that
+ *    dies mid-drive (an isolate reset, an eviction, a crash in a step) leaves
+ *    both behind, so the next incarnation drives the execution after the
+ *    backoff, and a step that kills its isolate every time backs off further
+ *    each time. Cloudflare runs one alarm handler at a time per object, so the
+ *    watchdog never fires beside a handler that is still running.
+ * 2. Builds `runtime(intent)` in this alarm's scope, so its connections
+ *    close when the alarm ends.
+ * 3. Drives the execution once with `EngineStore.drive`, which claims the
+ *    run (or takes it from an earlier, dead incarnation of this object),
+ *    replays what is recorded and drives the rest until it settles or parks.
+ * 4. Routes: reads from the store which executions the drive left for other
+ *    objects, and hands each to `router`. A child the drive admitted and the
+ *    round a `.to()` handoff admitted are started on their own objects; a
+ *    parent waiting on this execution's settlement, and a child or next
+ *    round asked to cancel, are woken. Reading the store rather than the
+ *    drive's report is what makes this durable: an alarm that died after the
+ *    drive and before routing routes the same executions on its next attempt,
+ *    and starting or waking an object twice changes nothing.
+ * 5. On progress, records when the execution settled and arms the alarm for
+ *    the end of its retention window if it settled, or arms it for when the
+ *    engine must next drive it if it parked, reading the store again after
+ *    arming so a wake that landed meanwhile is kept; then clears the count.
+ *
+ * An object that recorded its execution's settlement never drives it again.
+ * Its alarm, whether the final one or one a duplicate `start` or a `wake`
+ * moved up, builds no runtime: before `retain` has passed since the
+ * settlement it arms the alarm for that moment and answers `Settled`; after,
+ * it deletes the intent, the count and the settlement, deletes the alarm and
+ * answers `Forgotten`. One final alarm per object, and no sweep.
+ *
+ * Any failure, a router call's included, re-arms the alarm with the backoff
+ * and returns `Retrying`, so the alarm never fails and Cloudflare's own retry
+ * limit never drops an execution. The failure is logged by its tag only.
+ *
+ * `flows` lists the declarations this object may run; an intent naming
+ * another flow is a failure like any other. Every object routes executions
+ * to objects of the same class, so `flows` lists every flow an execution may
+ * start as a child or hand off to.
+ *
+ * `settledRetentionMs` is how long a settled object keeps its intent; it
+ * defaults to {@link settledRetentionMs}.
+ *
+ * @category operations
+ * @since 1.0.0
+ */
+export const alarm = <E, R, RS, RE = never, RR = never>(
+  storage: Storage<RS>,
+  options: {
+    readonly flows: ReadonlyArray<Flow.Any>
+    readonly runtime: (intent: Intent) => Layer.Layer<Services, E, R>
+    readonly router: Router<RE, RR>
+    readonly settledRetentionMs?: number | undefined
+  }
+): Effect.Effect<Outcome, never, R | RS | RR> =>
+  Effect.gen(function*() {
+    const raw = yield* storage.get<string>(intentKey)
+    if (raw === undefined) {
+      yield* storage.deleteAlarm()
+      return { _tag: "Idle" } as const
+    }
+    const retain = options.settledRetentionMs ?? settledRetentionMs
+    const settledAt = yield* storage.get<number>(settledKey)
+    if (settledAt !== undefined) {
+      yield* decodeIntent(raw).pipe(Effect.flatMap(annotateIntent), Effect.ignore)
+      const forgetAtMs = settledAt + retain
+      if ((yield* Clock.currentTimeMillis) < forgetAtMs) {
+        yield* storage.setAlarm(forgetAtMs)
+        return { _tag: "Settled", forgetAtMs } as const
+      }
+      yield* storage.delete(intentKey)
+      yield* storage.delete(failuresKey)
+      yield* storage.delete(settledKey)
+      yield* storage.deleteAlarm()
+      return { _tag: "Forgotten" } as const
+    }
+    const attempt = ((yield* storage.get<number>(failuresKey)) ?? 0) + 1
+    yield* storage.put(failuresKey, attempt)
+    yield* storage.setAlarm((yield* Clock.currentTimeMillis) + backoff(attempt))
+    const outcome = yield* Effect.exit(Effect.gen(function*() {
+      const value = yield* decodeIntent(raw)
+      yield* annotateIntent(value)
+      const flow = options.flows.find((candidate) => candidate._tag === value.flow)
+      if (flow === undefined) return yield* new UnknownFlow({ flow: value.flow })
+      return yield* Effect.gen(function*() {
+        const driven = yield* drive(flow, value)
+        yield* route(value.executionId, options.router)
+        if (driven._tag === "Settled") {
+          const now = yield* Clock.currentTimeMillis
+          yield* storage.put(settledKey, now)
+          yield* storage.setAlarm(now + retain)
+          return { _tag: "Settled", forgetAtMs: now + retain } as const
+        }
+        return { _tag: "Parked", wakeAtMs: yield* arm(storage, value.executionId, driven.wakeAtMs) } as const
+      }).pipe(Effect.provide(options.runtime(value)))
+    }))
+    if (Exit.isSuccess(outcome)) {
+      yield* storage.delete(failuresKey)
+      return outcome.value
+    }
+    const retryAtMs = (yield* Clock.currentTimeMillis) + backoff(attempt)
+    yield* storage.setAlarm(retryAtMs)
+    return { _tag: "Retrying", attempt, retryAtMs, failure: failureType(outcome.cause) } as const
+  }).pipe(
+    Effect.tap((outcome) =>
+      Effect.gen(function*() {
+        const tag = outcome._tag.toLowerCase()
+        const failure = outcome._tag === "Retrying"
+          ? { "error.type": outcome.failure, "smithers.execution.attempt": outcome.attempt }
+          : {}
+        yield* Effect.annotateCurrentSpan({ "smithers.execution.alarm": tag, ...failure })
+        yield* Metric.update(Metric.withAttributes(alarms, { outcome: tag }), 1)
+        yield* (outcome._tag === "Retrying" ? Effect.logWarning : Effect.logInfo)("cloudflare.execution.alarm").pipe(
+          Effect.annotateLogs({ outcome: tag, ...failure })
+        )
+      })
+    ),
+    Effect.withSpan("cloudflare.execution.alarm")
+  )

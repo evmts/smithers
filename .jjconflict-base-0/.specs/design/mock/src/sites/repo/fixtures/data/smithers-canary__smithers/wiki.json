@@ -1,0 +1,39 @@
+[
+  {
+    "slug": "home",
+    "title": "Smithers",
+    "body": "A flow lives beside the repository at `.smithers/flows/<name>/`. Durable runs retain their plan, approvals and events.\n\n- [Project state](wiki:project-state)\n- [Landing queue](wiki:landing-queue)",
+    "updated": "2026-10-18T04:24:00Z",
+    "author": "smithers-agent",
+    "revision": 3,
+    "provenance": {
+      "source": "run",
+      "run": "run-docs-sync-check",
+      "confidence": "high"
+    }
+  },
+  {
+    "slug": "project-state",
+    "title": "Project state",
+    "body": "`smthrs doctor` checks project discovery without launching a run. Sources live in `.smithers/flows/`; control and execution databases live in `.flows/control.db` and `.flows/engine.db`.\n\nSource: [Project and state](smithers.sh/smithers-canary/smithers/blob/main/packages/smithers/docs/concepts/project-and-state.md).",
+    "updated": "2026-10-18T04:24:00Z",
+    "author": "smithers-agent",
+    "revision": 2,
+    "provenance": {
+      "source": "run",
+      "run": "run-docs-sync-check",
+      "confidence": "high"
+    }
+  },
+  {
+    "slug": "landing-queue",
+    "title": "Landing queue",
+    "body": "The Stack is the landing queue. You land; the queue runs your submitted tests and mandatory gates first. A failed lint check refuses the landing. maya decides human approvals.\n\nSource: [.smithers/flows/land/flow.ts](smithers.sh/smithers-canary/smithers/blob/main/.smithers/flows/land/flow.ts).",
+    "updated": "2026-10-18T04:25:00Z",
+    "author": "maya",
+    "revision": 4,
+    "provenance": {
+      "source": "person"
+    }
+  }
+]

@@ -1,0 +1,107 @@
+[
+  {
+    "name": "main",
+    "head": "a41c9e0b0a300d7b3206e3e41b5393fdf22f6a75",
+    "author": "maya",
+    "updated": "2026-10-17T19:00:00.000Z",
+    "ahead": 0,
+    "behind": 0,
+    "isDefault": true,
+    "protected": true
+  },
+  {
+    "name": "smithers/empty-query-values",
+    "head": "9c1e2ab0f3212bcb126ae780c2cda73b39c0d2b3",
+    "author": "maya",
+    "updated": "2026-10-17T20:58:00.000Z",
+    "ahead": 1,
+    "behind": 0,
+    "pull": 12,
+    "run": "run-512"
+  },
+  {
+    "name": "cora/cors-credentials",
+    "head": "d36e2c209d0e25809dc611ee7c4eeb4c3c40c7e4",
+    "author": "cora",
+    "updated": "2026-10-17T20:29:00.000Z",
+    "ahead": 1,
+    "behind": 0,
+    "pull": 34
+  },
+  {
+    "name": "docs/adapter-examples",
+    "head": "873430b9b35e2034cb6e9d3ea874fca6d283e08f",
+    "author": "maya",
+    "updated": "2026-10-17T19:57:00.000Z",
+    "ahead": 1,
+    "behind": 0,
+    "pull": 35
+  },
+  {
+    "name": "dev-ahn/route-inspection",
+    "head": "228d798c980f6f758ddb7f86c50320eff94a1a69",
+    "author": "dev-ahn",
+    "updated": "2026-10-17T18:30:00.000Z",
+    "ahead": 1,
+    "behind": 0
+  },
+  {
+    "name": "sandbox/bun-compat",
+    "head": "a41c9e0b0a300d7b3206e3e41b5393fdf22f6a75",
+    "author": "maya",
+    "updated": "2026-10-17T20:20:00.000Z",
+    "ahead": 0,
+    "behind": 0,
+    "sandbox": {
+      "state": "running",
+      "id": "box-bun-7",
+      "since": "2026-10-17T20:20:00.000Z",
+      "ports": [
+        3000
+      ]
+    }
+  },
+  {
+    "name": "sandbox/node-streams",
+    "head": "a41c9e0b0a300d7b3206e3e41b5393fdf22f6a75",
+    "author": "maya",
+    "updated": "2026-10-17T19:30:00.000Z",
+    "ahead": 0,
+    "behind": 0,
+    "sandbox": {
+      "state": "suspended",
+      "id": "box-node-3",
+      "since": "2026-10-16T21:00:00.000Z",
+      "ports": [
+        3000
+      ]
+    }
+  },
+  {
+    "name": "maya/readme-links",
+    "head": "a41c9e0b0a300d7b3206e3e41b5393fdf22f6a75",
+    "author": "maya",
+    "updated": "2026-10-17T18:00:00.000Z",
+    "ahead": 0,
+    "behind": 0
+  },
+  {
+    "name": "archive/radix-router",
+    "head": "a0dfbd349614952823c7cfd521b352efad0fd758",
+    "author": "maya",
+    "updated": "2026-09-16T21:00:00.000Z",
+    "ahead": 1,
+    "behind": 40
+  },
+  {
+    "name": "mock/review-example",
+    "head": "9e7ac478b1928f9600cdbf1260322041e94562a2",
+    "author": "smithers-agent",
+    "updated": "2026-10-17T20:59:00Z",
+    "ahead": 1,
+    "behind": 0,
+    "protected": false,
+    "pull": 9001,
+    "run": "run-review-example"
+  }
+]

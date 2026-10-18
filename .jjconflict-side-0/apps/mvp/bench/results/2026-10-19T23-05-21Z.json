@@ -1,0 +1,798 @@
+{
+  "ok": true,
+  "env": {
+    "commit": "932ec67209ab5871b0e17054c11e73408e937759",
+    "baseUrl": "http://localhost:1337",
+    "server": "vite-dev",
+    "machine": {
+      "model": "Mac15,8",
+      "cpu": "Apple M3 Max",
+      "cores": 16,
+      "memoryGiB": 64
+    },
+    "os": "macOS 26.2 (25C56), arm64",
+    "browser": "Chromium 151.0.7922.34 (headless)",
+    "playwright": "1.62.1",
+    "node": "v26.10.0",
+    "date": "2026-10-19T23:05:21.547Z",
+    "n": 10,
+    "suites": [
+      "load",
+      "cmdk",
+      "answer",
+      "sync"
+    ],
+    "conversationMessages": 348
+  },
+  "metrics": {
+    "load.cold.ttfb": {
+      "n": 10,
+      "p50": 8.1,
+      "p95": 47.4,
+      "min": 5.9,
+      "max": 75.3
+    },
+    "load.cold.fcp": {
+      "n": 10,
+      "p50": 240,
+      "p95": 288.6,
+      "min": 220,
+      "max": 312
+    },
+    "load.cold.lcp": {
+      "n": 10,
+      "p50": 716,
+      "p95": 743.8,
+      "min": 692,
+      "max": 760
+    },
+    "load.cold.usable": {
+      "n": 10,
+      "p50": 717.5,
+      "p95": 887.3,
+      "min": 693.2,
+      "max": 954.9
+    },
+    "load.cold.newest": {
+      "n": 10,
+      "p50": 1057.7,
+      "p95": 1276.1,
+      "min": 1025.4,
+      "max": 1352.6
+    },
+    "load.warm.ttfb": {
+      "n": 10,
+      "p50": 7.8,
+      "p95": 93.9,
+      "min": 6.5,
+      "max": 133.2
+    },
+    "load.warm.fcp": {
+      "n": 10,
+      "p50": 112,
+      "p95": 251.2,
+      "min": 108,
+      "max": 280
+    },
+    "load.warm.usable": {
+      "n": 10,
+      "p50": 428.4,
+      "p95": 564.4,
+      "min": 422.8,
+      "max": 591.6
+    },
+    "load.warm.newest": {
+      "n": 10,
+      "p50": 428.4,
+      "p95": 564.4,
+      "min": 422.8,
+      "max": 591.6
+    },
+    "cmdk.focus": {
+      "n": 10,
+      "p50": 1.5,
+      "p95": 6.8,
+      "min": 1.1,
+      "max": 8.1
+    },
+    "answer.question": {
+      "n": 10,
+      "p50": 13.7,
+      "p95": 30.4,
+      "min": 8.7,
+      "max": 30.7
+    },
+    "answer.first_text": {
+      "n": 10,
+      "p50": 356.1,
+      "p95": 2067.5,
+      "min": 287.6,
+      "max": 3037.5
+    },
+    "answer.complete": {
+      "n": 10,
+      "p50": 356.1,
+      "p95": 2067.5,
+      "min": 287.6,
+      "max": 3037.5
+    },
+    "sync.question": {
+      "n": 10,
+      "p50": 68.9,
+      "p95": 107.6,
+      "min": 54.9,
+      "max": 117.3
+    },
+    "sync.answer_delta": {
+      "n": 10,
+      "p50": 29.4,
+      "p95": 49.1,
+      "min": 18.8,
+      "max": 58
+    }
+  },
+  "notReported": {
+    "load.warm.lcp": 10
+  },
+  "checks": {
+    "passed": 71,
+    "failed": []
+  },
+  "comparison": {
+    "baseline": "results/2026-10-19T23-04-36Z.json",
+    "threshold": 0.25,
+    "floorMs": 5,
+    "regressions": [
+      {
+        "metric": "load.cold.ttfb",
+        "stat": "p95",
+        "baseline": 13.2,
+        "current": 47.4
+      },
+      {
+        "metric": "load.warm.ttfb",
+        "stat": "p95",
+        "baseline": 8,
+        "current": 93.9
+      },
+      {
+        "metric": "load.warm.fcp",
+        "stat": "p95",
+        "baseline": 114.2,
+        "current": 251.2
+      },
+      {
+        "metric": "load.warm.usable",
+        "stat": "p95",
+        "baseline": 428.1,
+        "current": 564.4
+      },
+      {
+        "metric": "load.warm.newest",
+        "stat": "p95",
+        "baseline": 428.1,
+        "current": 564.4
+      },
+      {
+        "metric": "answer.first_text",
+        "stat": "p95",
+        "baseline": 1487.5,
+        "current": 2067.5
+      },
+      {
+        "metric": "answer.complete",
+        "stat": "p95",
+        "baseline": 1487.5,
+        "current": 2067.5
+      },
+      {
+        "metric": "sync.answer_delta",
+        "stat": "p95",
+        "baseline": 37.1,
+        "current": 49.1
+      }
+    ]
+  },
+  "samples": {
+    "load.cold.ttfb": [
+      6.5999999940395355,
+      13.199999988079071,
+      6,
+      5.9000000059604645,
+      8.299999982118607,
+      8.400000005960464,
+      7.200000017881393,
+      8,
+      9.400000005960464,
+      75.30000001192093
+    ],
+    "load.cold.fcp": [
+      220,
+      240,
+      240,
+      236,
+      232,
+      244,
+      236,
+      244,
+      260,
+      312
+    ],
+    "load.cold.lcp": [
+      700,
+      712,
+      720,
+      716,
+      716,
+      724,
+      724,
+      692,
+      712,
+      760
+    ],
+    "load.cold.usable": [
+      693.1999999880791,
+      706.2999999821186,
+      715.9000000059605,
+      707.9000000059605,
+      708.2999999821186,
+      719.2000000178814,
+      719.0999999940395,
+      954.8999999761581,
+      747.9000000059605,
+      804.5999999940395
+    ],
+    "load.cold.newest": [
+      1025.4000000059605,
+      1040.3999999761581,
+      1039.199999988079,
+      1039.5,
+      1062.5,
+      1052.800000011921,
+      1182.5999999940395,
+      1352.5999999940395,
+      1097.5,
+      1170.800000011921
+    ],
+    "load.warm.ttfb": [
+      6.9000000059604645,
+      8.400000005960464,
+      8.199999988079071,
+      6.9000000059604645,
+      6.5,
+      8.700000017881393,
+      6.5999999940395355,
+      133.19999998807907,
+      7.5,
+      45.80000001192093
+    ],
+    "load.warm.fcp": [
+      112,
+      116,
+      112,
+      108,
+      116,
+      112,
+      112,
+      280,
+      112,
+      216
+    ],
+    "load.warm.usable": [
+      426,
+      431,
+      425.89999997615814,
+      422.80000001192093,
+      435.2000000178814,
+      426.40000000596046,
+      427.2000000178814,
+      591.5999999940395,
+      429.5,
+      531.2000000178814
+    ],
+    "load.warm.newest": [
+      426,
+      431,
+      425.89999997615814,
+      422.80000001192093,
+      435.2000000178814,
+      426.40000000596046,
+      427.2000000178814,
+      591.5999999940395,
+      429.5,
+      531.2000000178814
+    ],
+    "cmdk.focus": [
+      5.299999982118607,
+      1.5,
+      8.099999994039536,
+      1.5999999940395355,
+      1.800000011920929,
+      1.5999999940395355,
+      1.0999999940395355,
+      1.2000000178813934,
+      1.2000000178813934,
+      1.0999999940395355
+    ],
+    "answer.question": [
+      18.10009765625,
+      28.300048828125,
+      30.10009765625,
+      9.300048828125,
+      9,
+      30.699951171875,
+      9,
+      9.199951171875,
+      30.10009765625,
+      8.699951171875
+    ],
+    "answer.first_text": [
+      3037.5,
+      882,
+      354.300048828125,
+      287.60009765625,
+      343.800048828125,
+      383.199951171875,
+      298.5,
+      389.699951171875,
+      357.89990234375,
+      315.599853515625
+    ],
+    "answer.complete": [
+      3037.5,
+      882,
+      354.300048828125,
+      287.60009765625,
+      343.800048828125,
+      383.199951171875,
+      298.5,
+      389.699951171875,
+      357.89990234375,
+      315.599853515625
+    ],
+    "sync.question": [
+      66.599853515625,
+      71.199951171875,
+      95.199951171875,
+      54.900146484375,
+      56.89990234375,
+      95.800048828125,
+      117.300048828125,
+      92.199951171875,
+      56.500244140625,
+      56.5
+    ],
+    "sync.answer_delta": [
+      38.199951171875,
+      29.199951171875,
+      21.800048828125,
+      30.599853515625,
+      58,
+      28.300048828125,
+      29.599853515625,
+      18.800048828125,
+      28.900146484375,
+      30.2001953125
+    ]
+  },
+  "details": {
+    "load": [
+      {
+        "iteration": 0,
+        "cold": {
+          "ttfb": 6.5999999940395355,
+          "fcp": 220,
+          "lcp": 700,
+          "usable": 693.1999999880791,
+          "newest": 1025.4000000059605,
+          "messages": 348
+        },
+        "warm": {
+          "ttfb": 6.9000000059604645,
+          "fcp": 112,
+          "lcp": null,
+          "usable": 426,
+          "newest": 426,
+          "messages": 348
+        }
+      },
+      {
+        "iteration": 1,
+        "cold": {
+          "ttfb": 13.199999988079071,
+          "fcp": 240,
+          "lcp": 712,
+          "usable": 706.2999999821186,
+          "newest": 1040.3999999761581,
+          "messages": 348
+        },
+        "warm": {
+          "ttfb": 8.400000005960464,
+          "fcp": 116,
+          "lcp": null,
+          "usable": 431,
+          "newest": 431,
+          "messages": 348
+        }
+      },
+      {
+        "iteration": 2,
+        "cold": {
+          "ttfb": 6,
+          "fcp": 240,
+          "lcp": 720,
+          "usable": 715.9000000059605,
+          "newest": 1039.199999988079,
+          "messages": 348
+        },
+        "warm": {
+          "ttfb": 8.199999988079071,
+          "fcp": 112,
+          "lcp": null,
+          "usable": 425.89999997615814,
+          "newest": 425.89999997615814,
+          "messages": 348
+        }
+      },
+      {
+        "iteration": 3,
+        "cold": {
+          "ttfb": 5.9000000059604645,
+          "fcp": 236,
+          "lcp": 716,
+          "usable": 707.9000000059605,
+          "newest": 1039.5,
+          "messages": 348
+        },
+        "warm": {
+          "ttfb": 6.9000000059604645,
+          "fcp": 108,
+          "lcp": null,
+          "usable": 422.80000001192093,
+          "newest": 422.80000001192093,
+          "messages": 348
+        }
+      },
+      {
+        "iteration": 4,
+        "cold": {
+          "ttfb": 8.299999982118607,
+          "fcp": 232,
+          "lcp": 716,
+          "usable": 708.2999999821186,
+          "newest": 1062.5,
+          "messages": 348
+        },
+        "warm": {
+          "ttfb": 6.5,
+          "fcp": 116,
+          "lcp": null,
+          "usable": 435.2000000178814,
+          "newest": 435.2000000178814,
+          "messages": 348
+        }
+      },
+      {
+        "iteration": 5,
+        "cold": {
+          "ttfb": 8.400000005960464,
+          "fcp": 244,
+          "lcp": 724,
+          "usable": 719.2000000178814,
+          "newest": 1052.800000011921,
+          "messages": 348
+        },
+        "warm": {
+          "ttfb": 8.700000017881393,
+          "fcp": 112,
+          "lcp": null,
+          "usable": 426.40000000596046,
+          "newest": 426.40000000596046,
+          "messages": 348
+        }
+      },
+      {
+        "iteration": 6,
+        "cold": {
+          "ttfb": 7.200000017881393,
+          "fcp": 236,
+          "lcp": 724,
+          "usable": 719.0999999940395,
+          "newest": 1182.5999999940395,
+          "messages": 348
+        },
+        "warm": {
+          "ttfb": 6.5999999940395355,
+          "fcp": 112,
+          "lcp": null,
+          "usable": 427.2000000178814,
+          "newest": 427.2000000178814,
+          "messages": 348
+        }
+      },
+      {
+        "iteration": 7,
+        "cold": {
+          "ttfb": 8,
+          "fcp": 244,
+          "lcp": 692,
+          "usable": 954.8999999761581,
+          "newest": 1352.5999999940395,
+          "messages": 348
+        },
+        "warm": {
+          "ttfb": 133.19999998807907,
+          "fcp": 280,
+          "lcp": null,
+          "usable": 591.5999999940395,
+          "newest": 591.5999999940395,
+          "messages": 348
+        }
+      },
+      {
+        "iteration": 8,
+        "cold": {
+          "ttfb": 9.400000005960464,
+          "fcp": 260,
+          "lcp": 712,
+          "usable": 747.9000000059605,
+          "newest": 1097.5,
+          "messages": 354
+        },
+        "warm": {
+          "ttfb": 7.5,
+          "fcp": 112,
+          "lcp": null,
+          "usable": 429.5,
+          "newest": 429.5,
+          "messages": 354
+        }
+      },
+      {
+        "iteration": 9,
+        "cold": {
+          "ttfb": 75.30000001192093,
+          "fcp": 312,
+          "lcp": 760,
+          "usable": 804.5999999940395,
+          "newest": 1170.800000011921,
+          "messages": 354
+        },
+        "warm": {
+          "ttfb": 45.80000001192093,
+          "fcp": 216,
+          "lcp": null,
+          "usable": 531.2000000178814,
+          "newest": 531.2000000178814,
+          "messages": 354
+        }
+      }
+    ],
+    "cmdk": [
+      {
+        "iteration": 0,
+        "focus": 5.299999982118607
+      },
+      {
+        "iteration": 1,
+        "focus": 1.5
+      },
+      {
+        "iteration": 2,
+        "focus": 8.099999994039536
+      },
+      {
+        "iteration": 3,
+        "focus": 1.5999999940395355
+      },
+      {
+        "iteration": 4,
+        "focus": 1.800000011920929
+      },
+      {
+        "iteration": 5,
+        "focus": 1.5999999940395355
+      },
+      {
+        "iteration": 6,
+        "focus": 1.0999999940395355
+      },
+      {
+        "iteration": 7,
+        "focus": 1.2000000178813934
+      },
+      {
+        "iteration": 8,
+        "focus": 1.2000000178813934
+      },
+      {
+        "iteration": 9,
+        "focus": 1.0999999940395355
+      }
+    ],
+    "answer": [
+      {
+        "iteration": 0,
+        "word": "bench-mvfv48zv-a0",
+        "answer": "bench-mvfv48zv-a0",
+        "deltas": 1,
+        "question": 18.10009765625,
+        "firstText": 3037.5,
+        "complete": 3037.5
+      },
+      {
+        "iteration": 1,
+        "word": "bench-mvfv48zv-a1",
+        "answer": "bench-mvfv48zv-a1",
+        "deltas": 1,
+        "question": 28.300048828125,
+        "firstText": 882,
+        "complete": 882
+      },
+      {
+        "iteration": 2,
+        "word": "bench-mvfv48zv-a2",
+        "answer": "bench-mvfv48zv-a2",
+        "deltas": 1,
+        "question": 30.10009765625,
+        "firstText": 354.300048828125,
+        "complete": 354.300048828125
+      },
+      {
+        "iteration": 3,
+        "word": "bench-mvfv48zv-a3",
+        "answer": "bench-mvfv48zv-a3",
+        "deltas": 1,
+        "question": 9.300048828125,
+        "firstText": 287.60009765625,
+        "complete": 287.60009765625
+      },
+      {
+        "iteration": 4,
+        "word": "bench-mvfv48zv-a4",
+        "answer": "bench-mvfv48zv-a4",
+        "deltas": 1,
+        "question": 9,
+        "firstText": 343.800048828125,
+        "complete": 343.800048828125
+      },
+      {
+        "iteration": 5,
+        "word": "bench-mvfv48zv-a5",
+        "answer": "bench-mvfv48zv-a5",
+        "deltas": 1,
+        "question": 30.699951171875,
+        "firstText": 383.199951171875,
+        "complete": 383.199951171875
+      },
+      {
+        "iteration": 6,
+        "word": "bench-mvfv48zv-a6",
+        "answer": "bench-mvfv48zv-a6",
+        "deltas": 1,
+        "question": 9,
+        "firstText": 298.5,
+        "complete": 298.5
+      },
+      {
+        "iteration": 7,
+        "word": "bench-mvfv48zv-a7",
+        "answer": "bench-mvfv48zv-a7",
+        "deltas": 1,
+        "question": 9.199951171875,
+        "firstText": 389.699951171875,
+        "complete": 389.699951171875
+      },
+      {
+        "iteration": 8,
+        "word": "bench-mvfv48zv-a8",
+        "answer": "bench-mvfv48zv-a8",
+        "deltas": 1,
+        "question": 30.10009765625,
+        "firstText": 357.89990234375,
+        "complete": 357.89990234375
+      },
+      {
+        "iteration": 9,
+        "word": "bench-mvfv48zv-a9",
+        "answer": "bench-mvfv48zv-a9",
+        "deltas": 1,
+        "question": 8.699951171875,
+        "firstText": 315.599853515625,
+        "complete": 315.599853515625
+      }
+    ],
+    "sync": [
+      {
+        "iteration": 0,
+        "word": "bench-mvfv48zv-s0",
+        "answer": "bench-mvfv48zv-s0",
+        "question": 66.599853515625,
+        "deltas": [
+          38.199951171875
+        ]
+      },
+      {
+        "iteration": 1,
+        "word": "bench-mvfv48zv-s1",
+        "answer": "bench-mvfv48zv-s1",
+        "question": 71.199951171875,
+        "deltas": [
+          29.199951171875
+        ]
+      },
+      {
+        "iteration": 2,
+        "word": "bench-mvfv48zv-s2",
+        "answer": "bench-mvfv48zv-s2",
+        "question": 95.199951171875,
+        "deltas": [
+          21.800048828125
+        ]
+      },
+      {
+        "iteration": 3,
+        "word": "bench-mvfv48zv-s3",
+        "answer": "bench-mvfv48zv-s3",
+        "question": 54.900146484375,
+        "deltas": [
+          30.599853515625
+        ]
+      },
+      {
+        "iteration": 4,
+        "word": "bench-mvfv48zv-s4",
+        "answer": "bench-mvfv48zv-s4",
+        "question": 56.89990234375,
+        "deltas": [
+          58
+        ]
+      },
+      {
+        "iteration": 5,
+        "word": "bench-mvfv48zv-s5",
+        "answer": "bench-mvfv48zv-s5",
+        "question": 95.800048828125,
+        "deltas": [
+          28.300048828125
+        ]
+      },
+      {
+        "iteration": 6,
+        "word": "bench-mvfv48zv-s6",
+        "answer": "bench-mvfv48zv-s6",
+        "question": 117.300048828125,
+        "deltas": [
+          29.599853515625
+        ]
+      },
+      {
+        "iteration": 7,
+        "word": "bench-mvfv48zv-s7",
+        "answer": "bench-mvfv48zv-s7",
+        "question": 92.199951171875,
+        "deltas": [
+          18.800048828125
+        ]
+      },
+      {
+        "iteration": 8,
+        "word": "bench-mvfv48zv-s8",
+        "answer": "bench-mvfv48zv-s8",
+        "question": 56.500244140625,
+        "deltas": [
+          28.900146484375
+        ]
+      },
+      {
+        "iteration": 9,
+        "word": "bench-mvfv48zv-s9",
+        "answer": "bench-mvfv48zv-s9",
+        "question": 56.5,
+        "deltas": [
+          30.2001953125
+        ]
+      }
+    ]
+  }
+}

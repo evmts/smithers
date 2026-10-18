@@ -1,0 +1,47 @@
+[
+  {
+    "id": "implementer",
+    "name": "Implementer",
+    "harness": "claude-code",
+    "model": "claude-opus-5-5",
+    "connection": "claude",
+    "instructions": "Reproduce an accepted issue, add a regression, make the smallest fix, and open a pull request. A person reviews and merges.",
+    "flows": [
+      "implement-issue"
+    ]
+  },
+  {
+    "id": "reviewer",
+    "name": "Reviewer",
+    "harness": "codex",
+    "model": "gpt-6.1-sol",
+    "connection": "codex",
+    "instructions": "Read the complete diff and its callers. Check error paths and regressions. Post findings with file and line references; do not approve or merge.",
+    "flows": [
+      "review-change"
+    ]
+  },
+  {
+    "id": "triager",
+    "name": "Triager",
+    "harness": "claude-code",
+    "model": "claude-opus-5-5",
+    "connection": "claude",
+    "instructions": "Build a minimal reproduction and propose labels. Ask a member before accepting a report. Keep customer data out of logs.",
+    "flows": [
+      "triage"
+    ]
+  },
+  {
+    "id": "writer",
+    "name": "Writer",
+    "harness": "codex",
+    "model": "gpt-6.1-sol",
+    "connection": "codex",
+    "instructions": "Use source and merged pull requests as evidence. Verify every code example and link. Propose changes for a person to review.",
+    "flows": [
+      "docs-sync",
+      "release-notes"
+    ]
+  }
+]

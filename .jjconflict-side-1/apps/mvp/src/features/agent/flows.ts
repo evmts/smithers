@@ -1,0 +1,143 @@
+import { AgentAction } from "@smthrs/agent"
+import { Action, Flow, RetryPolicy } from "@smthrs/flow"
+import { Node, Placement } from "@smthrs/plan"
+import { Duration, Schema } from "effect"
+import { AnswerSettled, AnswersUnavailable, NotYourTurn, TurnOutOfTime } from "./answers"
+import { ANSWER_SETTLE_WITHIN, MAX_FRAMES } from "./contract"
+import { CHAT_SYSTEM } from "./instructions"
+import { AnswerReference } from "./reference"
+import { Exchange, Turn } from "./schema"
+
+// The agent (docs/features/agent.md): `chat/Answer`, the flow that answers one question on this device's durable
+// engine (decision 0011), started with the answer's id as its execution id:
+//
+//   chat/TurnDeadline ─▶ chat/LoadTurn ─▶ chat/Respond (the agent: an AgentAction, @smthrs/agent's cell loop)
+//                     ─▶ chat/Settle: done, or failed with why
+//
+// Every typed way the run ends settles the answer, as a step of the same run, so a crash anywhere still settles it on
+// resume: the agent answering or failing, and the turn wait running out (`TurnOutOfTime`), which `chat/LoadTurn`
+// itself answers once the run's turn deadline passes. The flow declares no `deadline`: the engine ends a run past one
+// with a defect, which settles nothing. A defect escapes a plan (`Node.catch` sees typed failures alone), and so does
+// a device that never comes back; the server's `chat/Expire` settles those answers (worker/flows/Expire.ts).
+//
+// Each model call inside `chat/Respond` is a sealed `ModelStep` through the server's model endpoint, role `agent`; a
+// resumed run replays what sealed and never pays for it twice. The agent's only authority is `ctx.call` on the app's
+// own flows (src/flows/catalog.ts). What a step does is injected by the host (src/features/agent/host.ts), so the
+// same flow runs in the browser's engine worker, on the Node host and later in the native app. This module imports
+// @smthrs/agent, so only an engine's host imports it; the tab dispatches `chat/Answer` by its reference (./reference.ts).
+
+/**
+ * How `chat/LoadTurn` keeps asking while an earlier answer streams, or while the routes are unreachable: until the step
+ * answers `TurnOutOfTime`, once the run's turn deadline has passed. The deadline is the one bound, so the policy never
+ * expires on its own.
+ */
+export const TURN_RETRY = RetryPolicy.make({
+  initialMs: 250,
+  factor: 2,
+  maxMs: 4_000,
+  nonRetryable: ["@smthrs/mvp/agent/AnswerSettled", "@smthrs/mvp/agent/TurnOutOfTime"],
+})
+
+/** How long `chat/Settle` keeps trying to land the answer while the routes are unreachable. */
+export const SETTLE_RETRY = RetryPolicy.make({
+  initialMs: 500,
+  factor: 2,
+  maxMs: 8_000,
+  expirationMs: Duration.toMillis(Duration.fromInputUnsafe(ANSWER_SETTLE_WITHIN)),
+  nonRetryable: ["@smthrs/mvp/agent/AnswerSettled"],
+})
+
+/**
+ * When the run stops waiting for its turn, in epoch milliseconds: its first start plus the host's turn wait
+ * (`ANSWER_TURN_WAIT` unless the host sets one). Sealed, so a resumed run keeps the time its first start set.
+ */
+export const TurnDeadline = Action.make("chat/TurnDeadline", {
+  payload: { answerId: Schema.String },
+  success: Schema.Number,
+  tier: "sealed",
+})
+
+/**
+ * Reads the answer's turn: its question and history, once every earlier answer has settled (decision 0002). While it
+ * waits, it answers `TurnOutOfTime` once `until` has passed.
+ */
+export const LoadTurn = Action.make("chat/LoadTurn", {
+  payload: { answerId: Schema.String, until: Schema.Number },
+  success: Turn,
+  error: Schema.Union([NotYourTurn, AnswerSettled, AnswersUnavailable, TurnOutOfTime]),
+  tier: "sealed",
+  retryPolicy: TURN_RETRY,
+})
+
+/** The question as the agent reads it: the conversation so far, then the question. */
+export const prompt = (turn: { readonly question: string; readonly history: ReadonlyArray<Exchange> }): string =>
+  turn.history.length === 0
+    ? turn.question
+    : [
+      "The conversation so far:",
+      ...turn.history.flatMap((exchange) => [`Person: ${exchange.question}`, `Smithers: ${exchange.answer}`]),
+      "",
+      `The person now asks: ${turn.question}`,
+    ].join("\n")
+
+/** The agent: answers the question, calling the app's flows from its cells, and finishes with the answer's text. */
+export const Respond = AgentAction.make("chat/Respond", {
+  payload: Turn,
+  output: Schema.String,
+  seat: "agent",
+  system: CHAT_SYSTEM,
+  profile: "conversation",
+  prompt,
+  maxFrames: MAX_FRAMES,
+})
+
+/**
+ * How the run ended, for `chat/Settle`: the agent's text, or `null` when it didn't answer; and whether the turn wait
+ * ran out first, which settles the answer `unfinished`.
+ */
+export const Ending = Schema.Struct({ text: Schema.NullOr(Schema.String), timedOut: Schema.Boolean })
+export type Ending = typeof Ending.Type
+
+/** Settles the answer as the run ended. The answer's parts come from the run. */
+export const Settle = Action.make("chat/Settle", {
+  payload: { answerId: Schema.String, ending: Ending },
+  success: AnswerReference.successSchema,
+  error: Schema.Union([AnswerSettled, AnswersUnavailable]),
+  tier: "sealed",
+  retryPolicy: SETTLE_RETRY,
+})
+
+/**
+ * `chat/Answer { answerId }`: answers the question asked with this answer's id, on this device. Its tag and schemas are
+ * its reference's (./reference.ts), the very objects the tab dispatches by.
+ */
+export const Answer = Flow.make(AnswerReference._tag, {
+  description: "Answer the question asked with this answer id.",
+  modelInvocable: false,
+  payload: AnswerReference.payloadSchema,
+  success: AnswerReference.successSchema,
+  error: AnswerReference.errorSchema,
+  body: Node.capture(
+    { deadline: TurnDeadline.name, load: LoadTurn.name, respond: Respond.name, settle: Settle.name },
+    ({ answerId }) =>
+      TurnDeadline.call({ answerId }).pipe(
+        Node.bindPlanned(Node.capture({ load: LoadTurn.name, respond: Respond.name }, (until) =>
+          LoadTurn.call({ answerId, until }).pipe(
+            Node.bindPlanned(Node.capture({ respond: Respond.name }, (turn) =>
+              Respond.call({ question: turn.question, history: turn.history }).pipe(
+                Node.map(Node.capture({ timedOut: false }, (text: string): Ending => ({ text, timedOut: false }))),
+                // The agent failed: the settle reads why from the run's progress.
+                Node.catch({
+                  onFailure: Node.capture({ text: null }, () => Node.succeed<Ending>({ text: null, timedOut: false })),
+                }),
+              ))),
+            Node.catch({
+              // By its tag: a class schema has no identity that survives a process, so a resumed run couldn't match it.
+              error: Schema.Struct({ _tag: Schema.Literal("@smthrs/mvp/agent/TurnOutOfTime") }),
+              onFailure: Node.capture({ timedOut: true }, () => Node.succeed<Ending>({ text: null, timedOut: true })),
+            }),
+          ))),
+        Node.bindPlanned(Node.capture({ settle: Settle.name }, (ending) => Settle.call({ answerId, ending }))),
+      ),
+  ),
+}).annotate(Flow.Placement, Placement.client())

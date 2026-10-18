@@ -4,6 +4,7 @@
 // Not generated (the request body is not JSON):
 //   post_api_auth_github_cli_consent (application/x-www-form-urlencoded)
 //   post_api_fast_model_sign_in (application/x-www-form-urlencoded)
+//   confirm_repository_site_sign_in (application/x-www-form-urlencoded)
 
 // Package apiclient is the typed Go client of the Smithers product API.
 package apiclient
@@ -2937,6 +2938,62 @@ type GetAPIReposOwnerRepoSearchIssuesParams struct {
 // DeleteAPISecretsBody is generated from docs/api/openapi.yaml.
 type DeleteAPISecretsBody struct {
 	Name string `json:"name"`
+}
+
+// RepositorySiteActionBody is generated from docs/api/openapi.yaml.
+type RepositorySiteActionBody struct {
+	Action    string                              `json:"action"`
+	Name      *string                             `json:"name,omitempty"`
+	AppPrefix *string                             `json:"appPrefix,omitempty"`
+	Domain    *string                             `json:"domain,omitempty"`
+	Version   *string                             `json:"version,omitempty"`
+	Expected  *string                             `json:"expected,omitempty"`
+	Files     []RepositorySiteActionBodyFilesItem `json:"files,omitempty"`
+}
+
+// RepositorySiteActionBodyFilesItem is generated from docs/api/openapi.yaml.
+type RepositorySiteActionBodyFilesItem struct {
+	Path string `json:"path"`
+	Data string `json:"data"`
+}
+
+// ResolveRepositorySiteHostParams is the query of GET /api/sites/resolve.
+type ResolveRepositorySiteHostParams struct {
+	Host string
+}
+
+// ResolveRepositorySiteHostResponse is generated from docs/api/openapi.yaml.
+type ResolveRepositorySiteHostResponse struct {
+	Repository string `json:"repository"`
+	AppPrefix  string `json:"appPrefix"`
+	Version    string `json:"version"`
+}
+
+// GetRepositorySiteContentParams is the query of GET /api/sites/content.
+type GetRepositorySiteContentParams struct {
+	Host string
+	Path string
+}
+
+// HeadRepositorySiteContentParams is the query of HEAD /api/sites/content.
+type HeadRepositorySiteContentParams struct {
+	Host string
+	Path string
+}
+
+// StartRepositorySiteSignInParams is the query of GET /api/auth/site/start.
+type StartRepositorySiteSignInParams struct {
+	ReturnTo *string
+}
+
+// AuthorizeRepositorySiteSignInParams is the query of GET /api/auth/site/authorize.
+type AuthorizeRepositorySiteSignInParams struct {
+	Request string
+}
+
+// CompleteRepositorySiteSignInParams is the query of GET /api/auth/site/complete.
+type CompleteRepositorySiteSignInParams struct {
+	Proof string
 }
 
 // PostAPITerminalsBody is generated from docs/api/openapi.yaml.
@@ -7139,6 +7196,68 @@ func (c *Client) PatchAPISecretsName(ctx context.Context, name string, body Upda
 	var out SecretMetadata
 	err := c.do(ctx, "PATCH", "/api/secrets/"+url.PathEscape(name), nil, body, &out)
 	return out, err
+}
+
+// GetRepositorySite calls GET /api/repos/{owner}/{repo}/site.
+func (c *Client) GetRepositorySite(ctx context.Context, owner string, repo string) (AnyJSON, error) {
+	var out AnyJSON
+	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/site", nil, nil, &out)
+	return out, err
+}
+
+// RepositorySiteAction calls POST /api/repos/{owner}/{repo}/site.
+func (c *Client) RepositorySiteAction(ctx context.Context, owner string, repo string, body RepositorySiteActionBody) (AnyJSON, error) {
+	var out AnyJSON
+	err := c.do(ctx, "POST", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/site", nil, body, &out)
+	return out, err
+}
+
+// ResolveRepositorySiteHost calls GET /api/sites/resolve.
+func (c *Client) ResolveRepositorySiteHost(ctx context.Context, params ResolveRepositorySiteHostParams) (ResolveRepositorySiteHostResponse, error) {
+	query := url.Values{}
+	query.Set("host", params.Host)
+	var out ResolveRepositorySiteHostResponse
+	err := c.do(ctx, "GET", "/api/sites/resolve", query, nil, &out)
+	return out, err
+}
+
+// GetRepositorySiteContent calls GET /api/sites/content. The caller closes the response body.
+func (c *Client) GetRepositorySiteContent(ctx context.Context, params GetRepositorySiteContentParams) (*http.Response, error) {
+	query := url.Values{}
+	query.Set("host", params.Host)
+	query.Set("path", params.Path)
+	return c.raw(ctx, "GET", "/api/sites/content", query, nil, "application/octet-stream")
+}
+
+// HeadRepositorySiteContent calls HEAD /api/sites/content.
+func (c *Client) HeadRepositorySiteContent(ctx context.Context, params HeadRepositorySiteContentParams) error {
+	query := url.Values{}
+	query.Set("host", params.Host)
+	query.Set("path", params.Path)
+	return c.do(ctx, "HEAD", "/api/sites/content", query, nil, nil)
+}
+
+// StartRepositorySiteSignIn calls GET /api/auth/site/start.
+func (c *Client) StartRepositorySiteSignIn(ctx context.Context, params StartRepositorySiteSignInParams) error {
+	query := url.Values{}
+	if params.ReturnTo != nil {
+		query.Set("return_to", *params.ReturnTo)
+	}
+	return c.do(ctx, "GET", "/api/auth/site/start", query, nil, nil)
+}
+
+// AuthorizeRepositorySiteSignIn calls GET /api/auth/site/authorize.
+func (c *Client) AuthorizeRepositorySiteSignIn(ctx context.Context, params AuthorizeRepositorySiteSignInParams) error {
+	query := url.Values{}
+	query.Set("request", params.Request)
+	return c.do(ctx, "GET", "/api/auth/site/authorize", query, nil, nil)
+}
+
+// CompleteRepositorySiteSignIn calls GET /api/auth/site/complete.
+func (c *Client) CompleteRepositorySiteSignIn(ctx context.Context, params CompleteRepositorySiteSignInParams) error {
+	query := url.Values{}
+	query.Set("proof", params.Proof)
+	return c.do(ctx, "GET", "/api/auth/site/complete", query, nil, nil)
 }
 
 // PostAPITelemetryErrors calls POST /api/telemetry/errors.

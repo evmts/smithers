@@ -1,0 +1,122 @@
+{
+  "owner": "smithers-canary",
+  "name": "smithers",
+  "slug": "smithers-canary/smithers",
+  "description": "Coding agents that work on your repository as durable flows.",
+  "visibility": "public",
+  "defaultBranch": "main",
+  "github": "https://github.com/smithersai/smithers",
+  "homepage": "https://smithers.sh",
+  "license": "MIT",
+  "topics": [
+    "typescript",
+    "effect",
+    "cli",
+    "flow"
+  ],
+  "languages": [
+    {
+      "name": "TypeScript",
+      "percent": 72
+    },
+    {
+      "name": "Go",
+      "percent": 20
+    },
+    {
+      "name": "JavaScript",
+      "percent": 6
+    },
+    {
+      "name": "Other",
+      "percent": 2
+    }
+  ],
+  "counts": {
+    "commits": 100,
+    "branches": 8,
+    "tags": 4,
+    "issuesOpen": 33,
+    "pullsOpen": 4,
+    "runsActive": 3,
+    "contributors": 3
+  },
+  "config": {
+    "stack": {
+      "title": "Landing queue",
+      "addTodo": false
+    },
+    "home": [
+      {
+        "type": "text",
+        "text": "Coding agents that work on your repository as durable flows."
+      },
+      {
+        "type": "prompt",
+        "title": "Ask about Smithers",
+        "placeholder": "Ask Smithers…"
+      },
+      {
+        "type": "app",
+        "flow": "issue.implement",
+        "title": "Fix an issue",
+        "picture": "issue"
+      },
+      {
+        "type": "app",
+        "flow": "prs.triage",
+        "title": "Review a PR",
+        "picture": "review"
+      },
+      {
+        "type": "app",
+        "flow": "wiki.ask",
+        "title": "Ask the codebase",
+        "picture": "wiki"
+      },
+      {
+        "type": "app",
+        "flow": "triggers.register",
+        "title": "Run it every night",
+        "picture": "schedule"
+      },
+      {
+        "type": "links",
+        "links": [
+          {
+            "label": "Install Smithers",
+            "url": "/"
+          },
+          {
+            "label": "Docs",
+            "url": "smithers.sh/docs"
+          },
+          {
+            "label": "Report a bug",
+            "url": "bug"
+          },
+          {
+            "label": "Fixed by agents",
+            "url": "issues?q=is:fixed-by-agents"
+          }
+        ]
+      },
+      {
+        "type": "fixed-by-agents",
+        "issues": [
+          4218,
+          4217,
+          4214,
+          4209
+        ]
+      }
+    ],
+    "docs": {
+      "root": "packages/smithers/docs",
+      "title": "Docs"
+    },
+    "evals": {
+      "title": "Evals"
+    }
+  }
+}

@@ -1,0 +1,57 @@
+/* Shared repo base; view-family CSS must use its own repo-<family>- prefix. */
+.repo-frame { font: var(--fs-3)/1.55 var(--font-ui); color: var(--text); background: var(--bg); min-height: 100dvh; overflow-wrap: anywhere; }
+.repo-frame *, .repo-frame *::before, .repo-frame *::after { box-sizing: border-box; }
+.repo-frame a { text-decoration: none; color: inherit; }
+.repo-frame a:hover { color: var(--brand); }
+.repo-frame button, .repo-frame input, .repo-frame textarea { font: inherit; }
+.repo-frame button { cursor: pointer; }
+.repo-frame .repo-ui-btn { height: var(--ctl-h); min-height: var(--ctl-h); font: 500 var(--fs-2)/1.4 var(--font-ui); padding-block: 0; }
+.repo-frame button:disabled { opacity: .5; cursor: not-allowed; }
+.repo-frame :is(button, a, input, textarea, select, summary):focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+.repo-frame h1, .repo-frame h2, .repo-frame h3, .repo-frame p { margin: 0; }
+.repo-frame kbd { color: var(--text-faint); font: var(--fs-1) var(--font-mono); }
+
+/* Hosted change in Ask. */
+.repo-change-thread { display: grid; gap: 16px; min-width: 0; }
+.repo-change-card { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: 16px; min-width: 0; font-size: 13px; }
+.repo-change-card header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.repo-change-card strong { font-weight: 600; }
+.repo-change-card p { margin: 12px 0; }
+.repo-change-meta { color: var(--text-muted); font-size: 12px; margin: 8px 0 12px; overflow-wrap: anywhere; }
+/* Lines break only between segments: "took 1 m 12 s" never splits. */
+.repo-change-meta > span { white-space: nowrap; }
+.repo-change-confirm blockquote { margin: 12px 0; padding-left: 12px; border-left: 2px solid var(--border-strong); }
+.repo-change-confirm code, .repo-change-card code { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.repo-change-chip { flex: none; border-radius: 6px; padding: 3px 6px; font-size: 12px; font-weight: 650; background: var(--surface-2); color: var(--text-muted); }
+.repo-change-chip[data-tone=live] { color: var(--brand); }
+.repo-change-chip[data-tone=failed], .repo-change-failure { color: var(--danger); }
+.repo-change-stage button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; border: 0; background: none; color: var(--text); font: 13px var(--font-ui); text-align: left; cursor: pointer; padding: 0; }
+.repo-change-stage button > span:first-of-type { flex: 1; }
+.repo-change-stage button code { color: var(--text-muted); }
+.repo-change-stage i { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--text-faint); }
+.repo-change-stage[data-tone=pending] i { background: none; border: 1px solid var(--border-strong); }
+.repo-change-stage[data-tone=done] i { background: var(--text-muted); }
+.repo-change-stage[data-tone=live] i { background: var(--brand); }
+.repo-change-stage[data-tone=failed] i { background: var(--danger); }
+.repo-change-detail { padding: 0 0 12px 15px; color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
+/* The test command the server ran, set apart from the prose around it. */
+.repo-change-card p code, .repo-change-detail code { padding: 1px 4px; border-radius: 4px; background: var(--surface-2); }
+.repo-change-detail pre { white-space: pre-wrap; font: 12px/1.6 var(--font-mono); }
+.repo-change-card footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+.repo-change-file { display: flex; justify-content: space-between; min-height: 32px; align-items: center; }
+.repo-change-added, .repo-change-file > span { color: var(--success); }
+.repo-change-show-diff > :not(.repo-change-main-diff) { display: none !important; }
+.repo-change-main-diff { min-width: 0; }
+.repo-change-main-diff > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.repo-change-main-diff h2 { font: 16px var(--font-mono); overflow-wrap: anywhere; }
+.repo-change-main-diff h3 { font: 13px var(--font-mono); margin: 0 0 12px; }
+.repo-change-main-diff .repo-change-card { margin-bottom: 16px; }
+.repo-change-main-diff pre { overflow-x: auto; font: 12px/1.7 var(--font-mono); margin: 0; color: var(--success); }
+@media (max-width: 880px) { .repo-change-stage button { min-height: 40px; } }
+
+.repo-change-card > p:first-child { margin-top: 0; }
+.repo-change-branch, .repo-change-confirm .repo-change-branch code { white-space: nowrap; overflow-wrap: normal; }
+.repo-change-duration { font: 12px var(--font-ui); font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.repo-change-chevron { flex: none; color: var(--text-muted); }
+.repo-change-stage button[aria-expanded=true] .repo-change-chevron { transform: rotate(180deg); }
+.repo-change-warning, .repo-change-chip[data-tone=warning] { color: var(--warning); }

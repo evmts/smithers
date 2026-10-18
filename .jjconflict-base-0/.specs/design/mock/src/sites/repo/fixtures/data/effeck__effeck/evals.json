@@ -1,0 +1,401 @@
+[
+  {
+    "id": "convert-golden",
+    "title": "Converter golden set",
+    "file": ".smithers/flows/convert/score.mjs",
+    "scorer": "Held-out model conversions · compile actual outputs",
+    "threshold": "Required: 16/20 actual outputs compile, including the hero",
+    "note": "The 20 gate cases must stay out of the prompt. The previous illustrative snapshot had holdout invalid. The pinned prompt now uses separate examples; no new model execution receipt exists. Converter off until a deployed held-out model run passes.",
+    "runnable": false,
+    "unavailable": "No held-out model execution receipt. score.mjs validates expected source only; it cannot run the model gate.",
+    "latest": {
+      "run": "run-convert-golden-eval",
+      "date": "2026-10-18T04:40:00Z",
+      "score": 0,
+      "baseline": 0.8,
+      "passed": 0,
+      "total": 20,
+      "state": "inconclusive"
+    },
+    "history": [],
+    "cases": [
+      {
+        "id": "01-hero-batch-lookup",
+        "title": "Hero · batch user lookup",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "error ApiError { status: number }\n\nservice Users {\n  name(id: string): string!ApiError\n}\n\nfunction nameOf(id: string) {\n  return Users.name(id)\n    |> retry(%, Schedule.exponential(\"100 millis\"))\n    |> timeout(%, \"2 seconds\")\n    catch \"unknown\"\n}\n\nexport function names(ids: ReadonlyArray<string>) {\n  const all = forEach(ids, nameOf, { concurrency: 8 })\n  log(`Loaded ${all.length} names`)\n  return all\n}\n",
+        "input": "import { Context, Effect, Schedule, Schema } from \"effect\"\n\nclass ApiError extends Schema.TaggedError<ApiError>()(\"ApiError\", {\n  status: Schema.Number\n}) {}\n\nclass Users extends Context.Service<Users, {\n  name(id: string): Effect.Effect<string, ApiError>\n}>()(\"app/Users\") {}\n\nconst nameOf = Effect.fn(\"nameOf\")(function* (id: string) {\n  const users = yield* Users\n  return yield* users.name(id).pipe(\n    Effect.retry(Schedule.exponential(\"100 millis\")),\n    Effect.timeout(\"2 seconds\"),\n    Effect.orElseSucceed(() => \"unknown\")\n  )\n})\n\nexport const names = Effect.fn(\"names\")(function* (ids: ReadonlyArray<string>) {\n  const all = yield* Effect.forEach(ids, nameOf, { concurrency: 8 })\n  yield* Effect.log(`Loaded ${all.length} names`)\n  return all\n})\n",
+        "source": ".smithers/flows/convert/golden/01-hero-batch-lookup/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "02-typed-error-fallback",
+        "title": "Typed error fallback",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "error NotFound { id: string }\n\nfunction find(id: string): string!NotFound {\n  if (id !== \"1\") throw new NotFound({ id })\n  return \"Ada\"\n}\n\nexport function greeting(id: string) {\n  return `Hello, ${find(id)}` catch (e) => match (e) {\n    when NotFound: `No user ${e.id}`;\n  }\n}\n",
+        "input": "import { Data, Effect } from \"effect\"\n\nclass NotFound extends Data.TaggedError(\"NotFound\")<{ readonly id: string }> {}\n\nconst find = (id: string): Effect.Effect<string, NotFound> =>\n  id === \"1\" ? Effect.succeed(\"Ada\") : Effect.fail(new NotFound({ id }))\n\nexport const greeting = (id: string) =>\n  find(id).pipe(\n    Effect.map((name) => `Hello, ${name}`),\n    Effect.catchTag(\"NotFound\", (e) => Effect.succeed(`No user ${e.id}`))\n  )\n",
+        "source": ".smithers/flows/convert/golden/02-typed-error-fallback/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "03-service-and-layer",
+        "title": "Service and Layer.succeed",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "service Clock2 {\n  now(): number!!\n}\n\nconst ClockLive = Layer.succeed(Clock2, {\n  now() { return 42 }\n})\n\nexport function program() {\n  provide ClockLive {\n    return Clock2.now() * 2\n  }\n}\n",
+        "input": "import { Context, Effect, Layer } from \"effect\"\n\nclass Clock2 extends Context.Service<Clock2, {\n  readonly now: () => Effect.Effect<number>\n}>()(\"app/Clock2\") {}\n\nconst ClockLive = Layer.succeed(Clock2, { now: () => Effect.succeed(42) })\n\nexport const program = Effect.gen(function* () {\n  const clock = yield* Clock2\n  const t = yield* clock.now()\n  return t * 2\n}).pipe(Effect.provide(ClockLive))\n",
+        "source": ".smithers/flows/convert/golden/03-service-and-layer/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "04-layer-with-setup",
+        "title": "Layer.effect setup",
+        "score": 0,
+        "baseline": 0,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "service Greeter {\n  greet(name: string): string!!\n}\n\nexport const GreeterLive = Layer.effect(Greeter) {\n  const prefix = \"Hello\"\n  log(\"greeter ready\")\n  return {\n    greet(name) { return `${prefix}, ${name}` }\n  }\n}\n",
+        "input": "import { Context, Effect, Layer } from \"effect\"\n\nclass Greeter extends Context.Service<Greeter, {\n  greet(name: string): Effect.Effect<string>\n}>()(\"app/Greeter\") {}\n\nexport const GreeterLive = Layer.effect(Greeter, Effect.gen(function* () {\n  const prefix = \"Hello\"\n  yield* Effect.log(\"greeter ready\")\n  return Greeter.of({ greet: (name) => Effect.succeed(`${prefix}, ${name}`) })\n}))\n",
+        "source": ".smithers/flows/convert/golden/04-layer-with-setup/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "05-retry-recurs",
+        "title": "Bounded retries",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "error Flaky\n\ndeclare function fetchScore(): number!Flaky\n\nexport function score() {\n  return fetchScore() |> retry(%, Schedule.recurs(3))\n}\n",
+        "input": "import { Data, Effect, Schedule } from \"effect\"\n\nclass Flaky extends Data.TaggedError(\"Flaky\") {}\n\ndeclare const fetchScore: Effect.Effect<number, Flaky>\n\nexport const score = fetchScore.pipe(Effect.retry(Schedule.recurs(3)))\n",
+        "source": ".smithers/flows/convert/golden/05-retry-recurs/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "06-timeout-fallback",
+        "title": "Timeout fallback",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "function slow() {\n  sleep(\"5 seconds\")\n  return \"done\"\n}\n\nexport function quick() {\n  return slow() |> timeout(%, \"1 second\") catch \"too slow\"\n}\n",
+        "input": "import { Effect } from \"effect\"\n\nconst slow = Effect.sleep(\"5 seconds\").pipe(Effect.as(\"done\"))\n\nexport const quick = slow.pipe(\n  Effect.timeout(\"1 second\"),\n  Effect.orElseSucceed(() => \"too slow\")\n)\n",
+        "source": ".smithers/flows/convert/golden/06-timeout-fallback/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "07-foreach-concurrency",
+        "title": "forEach concurrency",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "function double(n: number) {\n  return n * 2\n}\n\nexport function doubled() {\n  return forEach([1, 2, 3, 4], (n) => double(n), { concurrency: 2 })\n}\n",
+        "input": "import { Effect } from \"effect\"\n\nconst double = (n: number) => Effect.succeed(n * 2)\n\nexport const doubled = Effect.forEach([1, 2, 3, 4], double, { concurrency: 2 })\n",
+        "source": ".smithers/flows/convert/golden/07-foreach-concurrency/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "08-all-concurrent",
+        "title": "Concurrent tuple",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "function user() {\n  return { id: \"1\", name: \"Ada\" }\n}\n\nfunction orders() {\n  return [10, 20]\n}\n\nexport function both() {\n  const [u, o] = await.all [user(), orders()]\n  return `${u.name} has ${o.length} orders`\n}\n",
+        "input": "import { Effect } from \"effect\"\n\nconst user = Effect.succeed({ id: \"1\", name: \"Ada\" })\nconst orders = Effect.succeed([10, 20])\n\nexport const both = Effect.all([user, orders], { concurrency: \"unbounded\" }).pipe(\n  Effect.map(([u, o]) => `${u.name} has ${o.length} orders`)\n)\n",
+        "source": ".smithers/flows/convert/golden/08-all-concurrent/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "09-schema-struct",
+        "title": "Schema with optional field",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "export schema Account {\n  id: string\n  nickname?: string\n  role: \"admin\" | \"member\"\n}\n",
+        "input": "import { Schema } from \"effect\"\n\nexport const Account = Schema.Struct({\n  id: Schema.String,\n  nickname: Schema.optional(Schema.String),\n  role: Schema.Literals([\"admin\", \"member\"])\n})\nexport interface Account extends Schema.Schema.Type<typeof Account> {}\n",
+        "source": ".smithers/flows/convert/golden/09-schema-struct/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "10-option-methods",
+        "title": "Option methods",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "export function label(value: Option.Option<number>) {\n  return value.map((n) => n + 1).getOrElse(() => 0)\n}\n",
+        "input": "import { Effect, Option } from \"effect\"\n\nexport const label = (value: Option.Option<number>) =>\n  Effect.succeed(\n    value.pipe(\n      Option.map((n) => n + 1),\n      Option.getOrElse(() => 0)\n    )\n  )\n",
+        "source": ".smithers/flows/convert/golden/10-option-methods/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "11-ref-counter",
+        "title": "Ref counter",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "export function counted() {\n  const ref = Ref.make(0)\n  Ref.update(ref, (n) => n + 1)\n  Ref.update(ref, (n) => n + 1)\n  return Ref.get(ref)\n}\n",
+        "input": "import { Effect, Ref } from \"effect\"\n\nexport const counted = Effect.gen(function* () {\n  const ref = yield* Ref.make(0)\n  yield* Ref.update(ref, (n) => n + 1)\n  yield* Ref.update(ref, (n) => n + 1)\n  return yield* Ref.get(ref)\n})\n",
+        "source": ".smithers/flows/convert/golden/11-ref-counter/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "12-console-and-log",
+        "title": "Console and log",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "export function hello() {\n  Console.log(\"Hello\")\n  log(\"logged\")\n  return \"ok\"\n}\n",
+        "input": "import { Console, Effect } from \"effect\"\n\nexport const hello = Effect.gen(function* () {\n  yield* Console.log(\"Hello\")\n  yield* Effect.log(\"logged\")\n  return \"ok\"\n})\n",
+        "source": ".smithers/flows/convert/golden/12-console-and-log/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "13-fork-join",
+        "title": "Fork and join",
+        "score": 0,
+        "baseline": 0,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "function work(n: number) {\n  sleep(\"10 millis\")\n  return n\n}\n\nexport function both() {\n  const a = fork work(1)\n  const b = fork work(2)\n  return [join a, join b]\n}\n",
+        "input": "import { Effect, Fiber } from \"effect\"\n\nconst work = (n: number) => Effect.sleep(\"10 millis\").pipe(Effect.as(n))\n\nexport const both = Effect.gen(function* () {\n  const a = yield* Effect.forkChild(work(1))\n  const b = yield* Effect.forkChild(work(2))\n  return [yield* Fiber.join(a), yield* Fiber.join(b)]\n})\n",
+        "source": ".smithers/flows/convert/golden/13-fork-join/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "14-race",
+        "title": "Race two programs",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "function cache() {\n  sleep(\"50 millis\")\n  return \"cache\"\n}\n\nfunction network() {\n  sleep(\"10 millis\")\n  return \"network\"\n}\n\nexport function fastest() {\n  return race(cache(), network())\n}\n",
+        "input": "import { Effect } from \"effect\"\n\nconst cache = Effect.sleep(\"50 millis\").pipe(Effect.as(\"cache\"))\nconst network = Effect.sleep(\"10 millis\").pipe(Effect.as(\"network\"))\n\nexport const fastest = Effect.race(cache, network)\n",
+        "source": ".smithers/flows/convert/golden/14-race/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "15-ensuring-finally",
+        "title": "Finally cleanup",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "export function tracked() {\n  try {\n    return 1\n  } finally {\n    log(\"cleanup\")\n  }\n}\n",
+        "input": "import { Effect } from \"effect\"\n\nexport const tracked = Effect.succeed(1).pipe(\n  Effect.ensuring(Effect.log(\"cleanup\"))\n)\n",
+        "source": ".smithers/flows/convert/golden/15-ensuring-finally/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "16-config",
+        "title": "Config integer",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "export function port() {\n  return Config.Int(\"PORT\")() + 1\n}\n",
+        "input": "import { Config, Effect } from \"effect\"\n\nexport const port = Effect.gen(function* () {\n  const value = yield* Config.Int(\"PORT\")\n  return value + 1\n})\n",
+        "source": ".smithers/flows/convert/golden/16-config/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "17-stream-methods",
+        "title": "Stream methods",
+        "score": 0,
+        "baseline": 0,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "export function hot() {\n  return Array.from(Stream.make(18, 25, 30).filter((c) => c >= 25).map((c) => `${c} C`).runCollect())\n}\n",
+        "input": "import { Effect, Stream } from \"effect\"\n\nexport const hot = Stream.make(18, 25, 30).pipe(\n  Stream.filter((c) => c >= 25),\n  Stream.map((c) => `${c} C`),\n  Stream.runCollect,\n  Effect.map((chunk) => Array.from(chunk))\n)\n",
+        "source": ".smithers/flows/convert/golden/17-stream-methods/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "18-catch-all",
+        "title": "Exhaustive error recovery",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "error Timeout\nerror Refused { code: number }\n\ndeclare function call(): string!Timeout | Refused\n\nexport function safe() {\n  return call() catch (e) => match (e) {\n    when Timeout: \"timed out\";\n    when Refused: `refused ${e.code}`;\n  }\n}\n",
+        "input": "import { Data, Effect } from \"effect\"\n\nclass Timeout extends Data.TaggedError(\"Timeout\") {}\nclass Refused extends Data.TaggedError(\"Refused\")<{ readonly code: number }> {}\n\ndeclare const call: Effect.Effect<string, Timeout | Refused>\n\nexport const safe = call.pipe(\n  Effect.catch((e) => Effect.succeed(e._tag === \"Timeout\" ? \"timed out\" : `refused ${e.code}`))\n)\n",
+        "source": ".smithers/flows/convert/golden/18-catch-all/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "19-sync-and-try",
+        "title": "try and sync hatches",
+        "score": 0,
+        "baseline": 0,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "error BadJson { error: unknown }\n\nexport function parsed(text: string) {\n  return try((text) => JSON.parse(text) as unknown, (error) => new BadJson({ error }), text)\n}\n\nexport function id() {\n  return sync(crypto.randomUUID())\n}\n",
+        "input": "import { Data, Effect } from \"effect\"\n\nclass BadJson extends Data.TaggedError(\"BadJson\")<{ readonly error: unknown }> {}\n\nexport const parsed = (text: string) =>\n  Effect.try({ try: () => JSON.parse(text) as unknown, catch: (error) => new BadJson({ error }) })\n\nexport const id = Effect.sync(() => crypto.randomUUID())\n",
+        "source": ".smithers/flows/convert/golden/19-sync-and-try/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      },
+      {
+        "id": "20-schedule-repeat",
+        "title": "Schedule repeat",
+        "score": 0,
+        "baseline": 1,
+        "passed": false,
+        "detail": "Model conversion not run. Expected source is a reference, not a model result.",
+        "expected": "export function ticks() {\n  return log(\"tick\") |> repeat(%, Schedule.recurs(2))\n}\n",
+        "input": "import { Effect, Schedule } from \"effect\"\n\nexport const ticks = Effect.log(\"tick\").pipe(Effect.repeat(Schedule.recurs(2)))\n",
+        "source": ".smithers/flows/convert/golden/20-schedule-repeat/expected.vibe",
+        "actual": null,
+        "diagnostics": null
+      }
+    ],
+    "unexecuted": true,
+    "gate": {
+      "holdout": "invalid",
+      "identities": {
+        "model": null,
+        "prompt": null,
+        "compiler": null,
+        "dependencies": null
+      },
+      "validation": {
+        "passed": 14,
+        "total": 20,
+        "kind": "Illustrative expected-source validation",
+        "run": "run-convert-golden-eval"
+      }
+    }
+  },
+  {
+    "id": "docs-examples-compile",
+    "title": "Docs examples compile",
+    "file": "docs/tools/check-snippets.ts",
+    "scorer": "Snippet projects compile · released compiler",
+    "threshold": "Every documentation example compiles",
+    "note": "Mock result. Docs examples passing does not enable the converter.",
+    "latest": {
+      "run": "run-docs-examples-eval",
+      "date": "2026-10-18T04:44:00Z",
+      "score": 1,
+      "baseline": 1,
+      "passed": 6,
+      "total": 6,
+      "state": "pass"
+    },
+    "history": [
+      {
+        "date": "2026-10-14T04:44:00Z",
+        "score": 0.5
+      },
+      {
+        "date": "2026-10-15T04:44:00Z",
+        "score": 0.667
+      },
+      {
+        "date": "2026-10-16T04:44:00Z",
+        "score": 0.833
+      },
+      {
+        "date": "2026-10-17T04:44:00Z",
+        "score": 1
+      },
+      {
+        "date": "2026-10-18T04:44:00Z",
+        "score": 1
+      }
+    ],
+    "cases": [
+      {
+        "id": "001-onboarding",
+        "title": "Welcome to VibeLang",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Pass: complete page snippets compile with the pinned VibeLang compiler and runtime. Representative example:\n\ninterface User { id: string; name: string }\n\nerror UserNotFound { id: string }\n\nservice Users {\n  find(id: string): User!UserNotFound\n}\n\nfunction greet(id: string) {\n  const name = Users.find(id).name catch \"guest\"\n  return `Hello, ${name}`\n}\n// string!!Users",
+        "expected": "interface User { id: string; name: string }\n\nerror UserNotFound { id: string }\n\nservice Users {\n  find(id: string): User!UserNotFound\n}\n\nfunction greet(id: string) {\n  const name = Users.find(id).name catch \"guest\"\n  return `Hello, ${name}`\n}\n// string!!Users\n",
+        "source": "docs/user/src/001-onboarding.md"
+      },
+      {
+        "id": "002-why-effect",
+        "title": "Why VibeLang?",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Pass: complete page snippets compile with the pinned VibeLang compiler and runtime. Representative example:\n\nerror InvalidQuantity {\n  quantity: number\n}\n\nfunction unitPrice(total: number, quantity: number) {\n  if (quantity <= 0) throw new InvalidQuantity({ quantity })\n  return total / quantity\n}\n// number!InvalidQuantity!\n\nconst quote = () => unitPrice(72, 6)",
+        "expected": "error InvalidQuantity {\n  quantity: number\n}\n\nfunction unitPrice(total: number, quantity: number) {\n  if (quantity <= 0) throw new InvalidQuantity({ quantity })\n  return total / quantity\n}\n// number!InvalidQuantity!\n\nconst quote = () => unitPrice(72, 6)\n",
+        "source": "docs/user/src/getting-started/002-why-effect.md"
+      },
+      {
+        "id": "004-installation",
+        "title": "Installation",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Pass: complete page snippets compile with the pinned VibeLang compiler and runtime. Representative example:\n\n// TypeScript (.ts)\n// vitest.config.ts\nimport { defineConfig } from \"vitest/config\"\nimport vibelang from \"vibelang-vite\"\n\nexport default defineConfig({\n  plugins: [vibelang()],\n  test: { include: [\"src/**/*.test.vibe\"] }\n})",
+        "expected": "// TypeScript (.ts)\n// vitest.config.ts\nimport { defineConfig } from \"vitest/config\"\nimport vibelang from \"vibelang-vite\"\n\nexport default defineConfig({\n  plugins: [vibelang()],\n  test: { include: [\"src/**/*.test.vibe\"] }\n})\n",
+        "source": "docs/user/src/getting-started/004-installation.md"
+      },
+      {
+        "id": "014-expected-errors",
+        "title": "Expected Errors",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Pass: complete page snippets compile with the pinned VibeLang compiler and runtime. Representative example:\n\nerror InvalidCode {\n  input: string\n}\nerror ItemMissing {\n  code: string\n}\n\nfunction normalizeCode(input: string) {\n  const code = input.trim()\n  if (code.length === 0) throw new InvalidCode({ input })\n  return code.toUpperCase()\n}\n// string!InvalidCode!",
+        "expected": "error InvalidCode {\n  input: string\n}\nerror ItemMissing {\n  code: string\n}\n\nfunction normalizeCode(input: string) {\n  const code = input.trim()\n  if (code.length === 0) throw new InvalidCode({ input })\n  return code.toUpperCase()\n}\n// string!InvalidCode!\n",
+        "source": "docs/user/src/error-management/014-expected-errors.md"
+      },
+      {
+        "id": "015-unexpected-errors",
+        "title": "Unexpected Errors",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Pass: complete page snippets compile with the pinned VibeLang compiler and runtime. Representative example:\n\nfunction decodeOpcode(opcode: number) {\n  if (opcode !== 1) die(new Error(\"unknown internal opcode\"))\n  return \"start\"\n}\n// string!!",
+        "expected": "function decodeOpcode(opcode: number) {\n  if (opcode !== 1) die(new Error(\"unknown internal opcode\"))\n  return \"start\"\n}\n// string!!\n",
+        "source": "docs/user/src/error-management/015-unexpected-errors.md"
+      },
+      {
+        "id": "effeck-cli",
+        "title": "Build with the vibelang CLI",
+        "score": 1,
+        "baseline": 1,
+        "passed": true,
+        "detail": "Pass: complete page snippets compile with the pinned VibeLang compiler and runtime. Representative example:\n\n// src/hello.vibe\nexport function hello(name: string) {\n  return `Hello, ${name}!`\n}",
+        "expected": "// src/hello.vibe\nexport function hello(name: string) {\n  return `Hello, ${name}!`\n}\n",
+        "source": "docs/user/src/setup/vibelang-cli.md"
+      }
+    ]
+  }
+]

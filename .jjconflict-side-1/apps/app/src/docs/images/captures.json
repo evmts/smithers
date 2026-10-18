@@ -1,0 +1,107 @@
+[
+  {
+    "id": "quickstart-file",
+    "page": "quickstart",
+    "alt": "package.json in smithersai/vibelang on smithers.sh, with the file's path at the top (1)",
+    "path": "/smithersai/vibelang/blob/main/package.json",
+    "auth": "signed-out",
+    "origin": "https://smithers.sh",
+    "build": "7ad93f31b6fa10268ab0c600110cc12df76e8be9",
+    "themes": {
+      "light": {
+        "file": "quickstart-file.light.webp",
+        "bytes": 133234,
+        "pixelSha256": "d4514bfa597114449f7801e5bf913b348510cf72768ef67ded5f693ac302c7d1"
+      },
+      "dark": {
+        "file": "quickstart-file.dark.webp",
+        "bytes": 137652,
+        "pixelSha256": "a9924ea2212c12944ceb4a69896ce20afad94111060840c4e4bbbe94b0d402cc"
+      }
+    }
+  },
+  {
+    "id": "quickstart-issues",
+    "page": "quickstart",
+    "alt": "The Issues tab of smithersai/vibelang on smithers.sh: Issues (1) and Pull requests (2), with each issue's author hidden",
+    "path": "/smithersai/vibelang/issues",
+    "auth": "signed-out",
+    "origin": "https://smithers.sh",
+    "build": "7ad93f31b6fa10268ab0c600110cc12df76e8be9",
+    "themes": {
+      "light": {
+        "file": "quickstart-issues.light.webp",
+        "bytes": 46590,
+        "pixelSha256": "452b20a1b118be9bc17e3f7b9fabcb77cc16fc388804386e5c569db43c7890be"
+      },
+      "dark": {
+        "file": "quickstart-issues.dark.webp",
+        "bytes": 47856,
+        "pixelSha256": "3bc0e89f46194d46995be4d11bc41537989ae723ad5924fcce25e26840c111a3"
+      }
+    }
+  },
+  {
+    "id": "quickstart-repo-home",
+    "page": "quickstart",
+    "alt": "The smithersai/vibelang repository on smithers.sh, open on its file tree: the branch (1) and a folder (2), with the latest commit's author hidden",
+    "path": "/smithersai/vibelang",
+    "auth": "signed-out",
+    "origin": "https://smithers.sh",
+    "build": "7ad93f31b6fa10268ab0c600110cc12df76e8be9",
+    "themes": {
+      "light": {
+        "file": "quickstart-repo-home.light.webp",
+        "bytes": 49322,
+        "pixelSha256": "449a99da0cf53902d5eb191ab78208160e64980455dcc01178470c6056a04cad"
+      },
+      "dark": {
+        "file": "quickstart-repo-home.dark.webp",
+        "bytes": 51910,
+        "pixelSha256": "2ccdeeb61022bd7b41f26ed0475228998cd02e62a78e55c0da51cead43f94569"
+      }
+    }
+  },
+  {
+    "id": "quickstart-sign-in",
+    "page": "quickstart",
+    "alt": "GitHub's sign-in page, opened from Sign in on smithers.sh",
+    "path": "/",
+    "auth": "signed-out",
+    "origin": "https://smithers.sh",
+    "build": "7ad93f31b6fa10268ab0c600110cc12df76e8be9",
+    "themes": {
+      "light": {
+        "file": "quickstart-sign-in.light.webp",
+        "bytes": 48974,
+        "pixelSha256": "32eda98ebde8f5031f8cee683ed54f9aa4ea62d924130efb2c02927fd5928de3"
+      },
+      "dark": {
+        "file": "quickstart-sign-in.dark.webp",
+        "bytes": 47942,
+        "pixelSha256": "0d5716bdcc0632efab07bd1d922c1cafe4aca90781bbd922bf6b530aac8f216b"
+      }
+    }
+  },
+  {
+    "id": "welcome-home",
+    "page": "welcome",
+    "alt": "The smithers.sh home page: Sign in at the top right (1) and the command that adds a coding flow to a repository (2)",
+    "path": "/",
+    "auth": "signed-out",
+    "origin": "https://smithers.sh",
+    "build": "7ad93f31b6fa10268ab0c600110cc12df76e8be9",
+    "themes": {
+      "light": {
+        "file": "welcome-home.light.webp",
+        "bytes": 64496,
+        "pixelSha256": "1bd06288d4378c37ee2884771cff273a2036eb67b096202e005dbd3e1d4a0ff9"
+      },
+      "dark": {
+        "file": "welcome-home.dark.webp",
+        "bytes": 67860,
+        "pixelSha256": "46bb5cf98cfe477cd4d05a47160c7520c563a98b3d2cc4a57054ee256f15416d"
+      }
+    }
+  }
+]

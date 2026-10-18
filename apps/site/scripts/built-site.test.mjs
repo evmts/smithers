@@ -182,17 +182,17 @@ test("social card images are required references, whether emitted by path or by 
 
 /*
  * The app page is cross-origin isolated (COEP require-corp), and its OPFS
- * SQLite persistence starts a dedicated module worker from a /_astro chunk.
+ * SQLite persistence starts a dedicated module worker from a /__smithers chunk.
  * The browser refuses a worker script whose response lacks a matching embedder
  * policy, so the headers file the build ships must give every chunk one. Live
- * regression after the site and the app became one build: /_astro/opfs-worker-*.js
+ * regression after the site and the app became one build: /__smithers/opfs-worker-*.js
  * answered net::ERR_BLOCKED_BY_RESPONSE and the app fell back to localStorage.
  */
-test("the built _headers gives every /_astro chunk the embedder and resource policies the OPFS worker needs", (t) => {
+test("the built _headers gives every /__smithers chunk the embedder and resource policies the OPFS worker needs", (t) => {
   const root = fixture(t, {
     "_headers": [
       "# hashed chunks",
-      "/_astro/*",
+      "/__smithers/*",
       "  Cache-Control: public, max-age=31536000, immutable",
       "  Cross-Origin-Embedder-Policy: require-corp",
       "  Cross-Origin-Resource-Policy: same-origin",
@@ -203,25 +203,26 @@ test("the built _headers gives every /_astro chunk the embedder and resource pol
 })
 
 test("a _headers that only caches the chunks fails, naming each missing header", (t) => {
-  const root = fixture(t, { "_headers": "/_astro/*\n  Cache-Control: public, max-age=31536000, immutable\n" })
+  const root = fixture(t, { "_headers": "/__smithers/*\n  Cache-Control: public, max-age=31536000, immutable\n" })
   assert.deepEqual(checkAssetHeaders(root), [
-    "_headers: /_astro/* must set cross-origin-embedder-policy: require-corp (got nothing)",
-    "_headers: /_astro/* must set cross-origin-resource-policy: same-origin (got nothing)"
+    "_headers: /__smithers/* must set cross-origin-embedder-policy: require-corp (got nothing)",
+    "_headers: /__smithers/* must set cross-origin-resource-policy: same-origin (got nothing)"
   ])
-  assert.deepEqual(checkAssetHeaders(fixture(t, {})), ["_headers: missing the /_astro/* rule"])
+  assert.deepEqual(checkAssetHeaders(fixture(t, {})), ["_headers: missing the /__smithers/* rule"])
   const cors = fixture(t, {
     "_headers":
-      "/_astro/*\n  Cross-Origin-Embedder-Policy: require-corp\n  Cross-Origin-Resource-Policy: cross-origin\n"
+      "/__smithers/*\n  Cache-Control: public, max-age=31536000, immutable\n  Cross-Origin-Embedder-Policy: require-corp\n  Cross-Origin-Resource-Policy: cross-origin\n"
   })
   assert.deepEqual(checkAssetHeaders(cors), [
-    "_headers: /_astro/* must set cross-origin-resource-policy: same-origin (got cross-origin)"
+    "_headers: /__smithers/* must set cross-origin-resource-policy: same-origin (got cross-origin)"
   ])
 })
 
 test("a chunk rule that sets COOP fails: the opener policy is the app Worker's, on the document", (t) => {
   const root = fixture(t, {
     "_headers": [
-      "/_astro/*",
+      "/__smithers/*",
+      "  Cache-Control: public, max-age=31536000, immutable",
       "  Cross-Origin-Opener-Policy: same-origin",
       "  Cross-Origin-Embedder-Policy: require-corp",
       "  Cross-Origin-Resource-Policy: same-origin",
@@ -229,14 +230,18 @@ test("a chunk rule that sets COOP fails: the opener policy is the app Worker's, 
     ].join("\n")
   })
   assert.deepEqual(checkAssetHeaders(root), [
-    "_headers: /_astro/* must not set cross-origin-opener-policy; the app Worker sets it on the document"
+    "_headers: /__smithers/* must not set cross-origin-opener-policy; the app Worker sets it on the document"
   ])
 })
 
 test("the source public/_headers the build copies into dist already passes, so the build check is not the first to see it", () => {
   const publicDir = resolve(import.meta.dirname, "../public")
   assert.deepEqual(checkAssetHeaders(publicDir), [])
-  assert.deepEqual(Object.keys(ASSET_HEADERS), ["cross-origin-embedder-policy", "cross-origin-resource-policy"])
+  assert.deepEqual(Object.keys(ASSET_HEADERS), [
+    "cross-origin-embedder-policy",
+    "cross-origin-resource-policy",
+    "cache-control"
+  ])
 })
 
 test("the landing has exactly one static install or open action and its three buttons", t => {
@@ -259,7 +264,8 @@ test("the landing has exactly one static install or open action and its three bu
  */
 test("the build requires an app page for every routed repository, curated or available", (t) => {
   const repos = [{ name: "Effect-TS/effect" }, { name: "withastro/starlight" }]
-  const island = (name) => `<div id="root"><astro-island component-url="/_astro/AppIsland.js" client="only">${name}</astro-island></div>`
+  const island = (name) =>
+    `<div id="root"><astro-island component-url="/__smithers/AppIsland.js" client="only">${name}</astro-island></div>`
   const missing = fixture(t, { "effect-ts/effect/index.html": island("Effect") })
   assert.deepEqual(checkRepositoryPages(missing, repos), ["withastro/starlight/index.html: missing from the build"])
   const marketing = fixture(t, { "effect-ts/effect/index.html": '<h1>Effect — Coming soon</h1><a href="/api/auth/github?return_to=%2Feffect-ts%2Feffect%2F">Sign in with GitHub</a>' })
@@ -330,4 +336,18 @@ test("origin robots allows crawlers and advertises the sitemap", () => {
   assert.match(robots, /^Allow: \/$/m)
   assert.match(robots, /^Sitemap: https:\/\/smithers\.sh\/sitemap-index\.xml$/m)
   assert.doesNotMatch(robots, /^Disallow: \/$/m)
+})
+
+test("asset headers follow the configured build directory", (t) => {
+  const config = readFileSync(new URL("../astro.config.mjs", import.meta.url), "utf8")
+  const assets = /assets: "([^"]+)"/.exec(config)[1]
+  const headers = readFileSync(new URL("../public/_headers", import.meta.url), "utf8")
+  assert.match(headers, new RegExp(`^/${assets}/\\*`, "m"))
+  const root = fixture(t, { "_headers": headers, [`${assets}/worker.js`]: "export {}" })
+  assert.deepEqual(checkAssetHeaders(root), [])
+  const stale = fixture(t, {
+    "_headers": headers.replaceAll(`/${assets}/`, "/stale-assets/"),
+    [`${assets}/worker.js`]: "export {}"
+  })
+  assert.ok(checkAssetHeaders(stale).some((failure) => failure.includes(`/${assets}/*`)))
 })

@@ -1,0 +1,50 @@
+[
+  {
+    "tag": "v0.4.2",
+    "name": "v0.4.2",
+    "date": "2026-10-17T20:00:00.000Z",
+    "author": "maya",
+    "prerelease": false,
+    "latest": true,
+    "pulls": [
+      32,
+      30
+    ],
+    "body": "## Fixes\n\n- Return 400 for malformed percent escapes in route params ([#32](https://github.com/maya/tinyhttp/pull/32), fixes #31). Valid encoded params continue to decode.\n- Retain response headers when answering HEAD requests ([#30](https://github.com/maya/tinyhttp/pull/30)).\n\nNotes drafted from merged changes and reviewed by Maya.\n\n```sh\nbun add tinyhttp@0.4.2\n```"
+  },
+  {
+    "tag": "v0.4.0",
+    "name": "v0.4.0",
+    "date": "2026-10-11T01:43:12.000Z",
+    "author": "maya",
+    "prerelease": false,
+    "pulls": [
+      28,
+      26
+    ],
+    "body": "## Added\n\n- Size-limited JSON body middleware, with streamed-byte accounting (#28).\n- Middleware order, safe logging, and bounded input examples (#26).\n\nThe default JSON limit is 1 MiB and can be set per application."
+  },
+  {
+    "tag": "v0.3.0",
+    "name": "v0.3.0",
+    "date": "2026-09-30T12:16:48.000Z",
+    "author": "cora",
+    "prerelease": false,
+    "pulls": [
+      24,
+      9
+    ],
+    "body": "## Added\n\n- Stream Web Responses through node:http without buffering the complete body (#24).\n\n## Fixed\n\n- Decode plus signs as spaces in form-style query values, while preserving encoded literal plus signs (#9)."
+  },
+  {
+    "tag": "v0.2.0",
+    "name": "v0.2.0",
+    "date": "2026-09-11T07:28:48.000Z",
+    "author": "maya",
+    "prerelease": false,
+    "pulls": [
+      7
+    ],
+    "body": "## Routing\n\n- Prefer static segments over named parameters, regardless of registration order (#7, fixes #8).\n\nEqual-specificity routes retain their registration order."
+  }
+]

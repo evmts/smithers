@@ -1,0 +1,725 @@
+{
+  "status": "needs-preview",
+  "source": ".changeset/config.json",
+  "origin": "derived",
+  "currentVersion": "4.0.0-rc.118",
+  "nextVersion": null,
+  "mode": "pre",
+  "tag": "rc",
+  "changesets": [
+    {
+      "id": "concrete-schema-brand-identifiers",
+      "path": ".changeset/concrete-schema-brand-identifiers.md",
+      "summary": "Restrict `Schema.brand` to a single concrete identifier and require `Schema.fromBrand` to use the constructor's sole brand key. Apply `brand` or `fromBrand` repeatedly when composing distinct brands. For enum brand keys, pass the enum member instead of its string value.",
+      "packages": [
+        {
+          "name": "effect",
+          "type": "patch"
+        }
+      ]
+    },
+    {
+      "id": "workflow-reset-retry",
+      "path": ".changeset/workflow-reset-retry.md",
+      "summary": "Retry failed workflow run resets instead of acknowledging deferred completion before the run resumes.",
+      "packages": [
+        {
+          "name": "effect",
+          "type": "patch"
+        }
+      ]
+    }
+  ],
+  "fixedGroup": [
+    "effect",
+    "@effect/ai-anthropic",
+    "@effect/ai-openai",
+    "@effect/ai-typesafe",
+    "@effect/ai-openai-compat",
+    "@effect/ai-openrouter",
+    "@effect/atom-react",
+    "@effect/atom-solid",
+    "@effect/atom-vue",
+    "@effect/docgen",
+    "@effect/doctest",
+    "@effect/openapi-generator",
+    "@effect/opentelemetry",
+    "@effect/platform-browser",
+    "@effect/platform-bun",
+    "@effect/platform-deno",
+    "@effect/platform-node",
+    "@effect/platform-node-shared",
+    "@effect/sql-clickhouse",
+    "@effect/sql-d1",
+    "@effect/sql-libsql",
+    "@effect/sql-mssql",
+    "@effect/sql-mysql2",
+    "@effect/sql-pg",
+    "@effect/sql-pglite",
+    "@effect/sql-sqlite-bun",
+    "@effect/sql-sqlite-do",
+    "@effect/sql-sqlite-node",
+    "@effect/sql-sqlite-react-native",
+    "@effect/sql-sqlite-wasm",
+    "@effect/vitest"
+  ],
+  "directChanges": [
+    {
+      "package": "effect",
+      "type": "patch",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ]
+    }
+  ],
+  "fixedGroupExpansion": [
+    "@effect/ai-anthropic",
+    "@effect/ai-openai",
+    "@effect/ai-openai-compat",
+    "@effect/ai-openrouter",
+    "@effect/ai-typesafe",
+    "@effect/atom-react",
+    "@effect/atom-solid",
+    "@effect/atom-vue",
+    "@effect/opentelemetry",
+    "@effect/platform-browser",
+    "@effect/platform-bun",
+    "@effect/platform-deno",
+    "@effect/platform-node",
+    "@effect/platform-node-shared",
+    "@effect/sql-clickhouse",
+    "@effect/sql-d1",
+    "@effect/sql-libsql",
+    "@effect/sql-mssql",
+    "@effect/sql-mysql2",
+    "@effect/sql-pg",
+    "@effect/sql-pglite",
+    "@effect/sql-sqlite-bun",
+    "@effect/sql-sqlite-do",
+    "@effect/sql-sqlite-node",
+    "@effect/sql-sqlite-react-native",
+    "@effect/sql-sqlite-wasm",
+    "@effect/docgen",
+    "@effect/doctest",
+    "@effect/openapi-generator",
+    "@effect/vitest"
+  ],
+  "dependencyPropagation": [
+    {
+      "package": "@effect/ai-anthropic",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/ai-openai",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/ai-openai-compat",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/ai-openrouter",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/ai-typesafe",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/atom-react",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/atom-solid",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/atom-vue",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/opentelemetry",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/platform-browser",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/platform-bun",
+      "dependency": "@effect/platform-node-shared",
+      "kind": "runtime"
+    },
+    {
+      "package": "@effect/platform-bun",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/platform-deno",
+      "dependency": "@effect/platform-node-shared",
+      "kind": "runtime"
+    },
+    {
+      "package": "@effect/platform-deno",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/platform-node",
+      "dependency": "@effect/platform-node-shared",
+      "kind": "runtime"
+    },
+    {
+      "package": "@effect/platform-node",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/platform-node-shared",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/sql-clickhouse",
+      "dependency": "@effect/platform-node",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/sql-clickhouse",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/sql-d1",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/sql-libsql",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/sql-mssql",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/sql-mysql2",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/sql-pg",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/sql-pglite",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/sql-sqlite-bun",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/sql-sqlite-do",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/sql-sqlite-node",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/sql-sqlite-react-native",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/sql-sqlite-wasm",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/docgen",
+      "dependency": "@effect/platform-node",
+      "kind": "runtime"
+    },
+    {
+      "package": "@effect/docgen",
+      "dependency": "effect",
+      "kind": "runtime"
+    },
+    {
+      "package": "@effect/doctest",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/openapi-generator",
+      "dependency": "@effect/platform-node",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/openapi-generator",
+      "dependency": "effect",
+      "kind": "peer"
+    },
+    {
+      "package": "@effect/vitest",
+      "dependency": "effect",
+      "kind": "peer"
+    }
+  ],
+  "packages": [
+    {
+      "name": "@effect/ai-anthropic",
+      "path": "packages/ai/anthropic",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/ai-openai",
+      "path": "packages/ai/openai",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/ai-openai-compat",
+      "path": "packages/ai/openai-compat",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/ai-openrouter",
+      "path": "packages/ai/openrouter",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/ai-typesafe",
+      "path": "packages/ai/typesafe",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/atom-react",
+      "path": "packages/atom/react",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/atom-solid",
+      "path": "packages/atom/solid",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/atom-vue",
+      "path": "packages/atom/vue",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "effect",
+      "path": "packages/effect",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "direct",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/opentelemetry",
+      "path": "packages/opentelemetry",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/platform-browser",
+      "path": "packages/platform/browser",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/platform-bun",
+      "path": "packages/platform/bun",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/platform-deno",
+      "path": "packages/platform/deno",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/platform-node",
+      "path": "packages/platform/node",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/platform-node-shared",
+      "path": "packages/platform/node-shared",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/sql-clickhouse",
+      "path": "packages/sql/clickhouse",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/sql-d1",
+      "path": "packages/sql/d1",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/sql-libsql",
+      "path": "packages/sql/libsql",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/sql-mssql",
+      "path": "packages/sql/mssql",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/sql-mysql2",
+      "path": "packages/sql/mysql2",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/sql-pg",
+      "path": "packages/sql/pg",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/sql-pglite",
+      "path": "packages/sql/pglite",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/sql-sqlite-bun",
+      "path": "packages/sql/sqlite-bun",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/sql-sqlite-do",
+      "path": "packages/sql/sqlite-do",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/sql-sqlite-node",
+      "path": "packages/sql/sqlite-node",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/sql-sqlite-react-native",
+      "path": "packages/sql/sqlite-react-native",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/sql-sqlite-wasm",
+      "path": "packages/sql/sqlite-wasm",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/docgen",
+      "path": "packages/tools/docgen",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/doctest",
+      "path": "packages/tools/doctest",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/openapi-generator",
+      "path": "packages/tools/openapi-generator",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    },
+    {
+      "name": "@effect/vitest",
+      "path": "packages/vitest",
+      "currentVersion": "4.0.0-rc.118",
+      "nextVersion": null,
+      "type": "patch",
+      "reason": "fixed",
+      "changesets": [
+        "concrete-schema-brand-identifiers",
+        "workflow-reset-retry"
+      ],
+      "publish": true
+    }
+  ],
+  "privatePackagesExcluded": [
+    "@effect/ai-codegen",
+    "@effect/ai-docgen",
+    "@effect/api-diff",
+    "@effect/bundle",
+    "@effect/jsdocs",
+    "@effect/oxc",
+    "@effect/utils"
+  ],
+  "tooling": {
+    "package": "@changesets/cli",
+    "version": "3.0.3",
+    "command": "pnpm changeset-version",
+    "publishCommand": "pnpm changeset-publish",
+    "source": "package.json"
+  },
+  "preview": {
+    "run": "run-4803",
+    "baseSha": "7a13bb72e79ff883e62ca95f69eae180a242d6dd",
+    "inputsHash": "e3fff8a000a97a97404840a37590f6b4646d937c50fed6ba64ea741eff3a2215",
+    "state": "waiting",
+    "reason": "Exact next versions require the pinned Changesets CLI; the preview has not run."
+  },
+  "existingPull": null,
+  "historyDirectory": ".changeset/pre",
+  "releaseWorkflow": ".github/workflows/release.yml",
+  "website": {
+    "state": "not-dispatched",
+    "detail": "Release dispatches API publication only after packages publish; dispatch does not prove deployment."
+  }
+}

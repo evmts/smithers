@@ -1,0 +1,3766 @@
+{
+  "dist-default-ui": {
+    "site": "default",
+    "htmlSha256": "1f5d14a61798bf9430f6d241ff083db1609baeed5aef6f4589515845a83699b9",
+    "evidence": "registration only; no DOM or browser",
+    "specVersion": "2.1",
+    "registrationProblems": [],
+    "cases": {
+      "code-home": {
+        "applies": true,
+        "screenIds": [
+          "docs-installation",
+          "code-home-signed-out",
+          "code-home-reader",
+          "code-home-member",
+          "code-home-loading",
+          "code-home-error",
+          "code-home-empty",
+          "code-home-clone",
+          "code-home-sandbox",
+          "code-home-denied",
+          "code-home-guest",
+          "code-home-guest-limit",
+          "code-home-held",
+          "code-home-ask-agent-approval",
+          "code-home-ask-agent-todo",
+          "code-home-ask-agent-view",
+          "code-home-ask-sample",
+          "code-home-ask-commands",
+          "code-home-ask-command-form",
+          "code-home-ask-command-confirm",
+          "code-home-ask-command-denied",
+          "code-home-ask-command-signed-out",
+          "code-home-ask-search-form",
+          "code-home-ask-copy-form",
+          "code-home-ask-question-form",
+          "code-home-ask-theme-form",
+          "code-home-ask-user-only",
+          "code-home-ask-answer-error",
+          "code-home-smithers",
+          "code-home-effeck",
+          "code-home-effect",
+          "code-home-not-imported-signed-out",
+          "code-home-not-imported-member",
+          "code-home-ask-import-form"
+        ],
+        "states": {
+          "ready": [
+            "code-home-member",
+            "code-home-clone",
+            "code-home-sandbox",
+            "code-home-ask-agent-approval",
+            "code-home-ask-agent-todo",
+            "code-home-ask-agent-view",
+            "code-home-ask-sample",
+            "code-home-ask-commands",
+            "code-home-ask-command-form",
+            "code-home-ask-command-confirm",
+            "code-home-ask-question-form",
+            "code-home-ask-theme-form",
+            "code-home-ask-user-only",
+            "code-home-smithers",
+            "code-home-effeck",
+            "code-home-effect",
+            "code-home-not-imported-member",
+            "code-home-ask-import-form"
+          ],
+          "loading": [
+            "code-home-loading"
+          ],
+          "error": [
+            "code-home-error",
+            "code-home-ask-answer-error"
+          ],
+          "empty": [
+            "code-home-empty"
+          ],
+          "signed-out": [
+            "docs-installation",
+            "code-home-signed-out",
+            "code-home-guest",
+            "code-home-guest-limit",
+            "code-home-ask-command-signed-out",
+            "code-home-not-imported-signed-out"
+          ],
+          "reader-denied": [
+            "code-home-denied",
+            "code-home-ask-command-denied"
+          ],
+          "held": [
+            "code-home-held"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "tree-file": {
+        "applies": true,
+        "screenIds": [
+          "code-tree-root",
+          "code-tree-root-signed-out",
+          "code-tree-root-reader",
+          "code-tree-root-empty",
+          "code-tree-src",
+          "code-tree-middleware",
+          "code-tree-empty",
+          "code-tree-loading",
+          "code-tree-error",
+          "code-tree-signed-out",
+          "code-tree-reader",
+          "code-tree-not-found",
+          "code-blob-router",
+          "code-blob-tag",
+          "code-blob-smithers-omitted",
+          "code-blob-effect-omitted",
+          "code-blob-lines",
+          "code-blob-diagnostic",
+          "code-blob-readme",
+          "code-blob-readme-code",
+          "code-blob-raw",
+          "code-blob-loading",
+          "code-blob-error",
+          "code-blob-empty",
+          "code-blob-not-found",
+          "code-blob-image-not-found",
+          "code-blob-todo",
+          "code-blob-signed-out",
+          "code-blob-signin-wall",
+          "code-blob-reader"
+        ],
+        "states": {
+          "ready": [
+            "code-tree-root",
+            "code-tree-src",
+            "code-tree-middleware",
+            "code-tree-not-found",
+            "code-blob-router",
+            "code-blob-lines",
+            "code-blob-diagnostic",
+            "code-blob-readme",
+            "code-blob-readme-code",
+            "code-blob-raw",
+            "code-blob-not-found",
+            "code-blob-image-not-found",
+            "code-blob-todo"
+          ],
+          "loading": [
+            "code-tree-loading",
+            "code-blob-loading"
+          ],
+          "error": [
+            "code-tree-error",
+            "code-blob-error"
+          ],
+          "empty": [
+            "code-tree-root-empty",
+            "code-tree-empty",
+            "code-blob-empty"
+          ],
+          "signed-out": [
+            "code-tree-root-signed-out",
+            "code-tree-signed-out",
+            "code-blob-tag",
+            "code-blob-smithers-omitted",
+            "code-blob-effect-omitted",
+            "code-blob-signed-out",
+            "code-blob-signin-wall"
+          ],
+          "reader-denied": [
+            "code-blob-reader"
+          ],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "blame": {
+        "applies": true,
+        "screenIds": [
+          "code-blame-router",
+          "code-blame-agent",
+          "code-blame-readme",
+          "code-blame-loading",
+          "code-blame-error",
+          "code-blame-empty",
+          "code-blame-reader",
+          "code-blame-signed-out"
+        ],
+        "states": {
+          "ready": [
+            "code-blame-router",
+            "code-blame-agent",
+            "code-blame-readme"
+          ],
+          "loading": [
+            "code-blame-loading"
+          ],
+          "error": [
+            "code-blame-error"
+          ],
+          "empty": [
+            "code-blame-empty"
+          ],
+          "signed-out": [
+            "code-blame-signed-out"
+          ],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "commits": {
+        "applies": true,
+        "screenIds": [
+          "history-commits-main",
+          "history-commits-agent-only",
+          "history-commits-older",
+          "history-commits-loading",
+          "history-commits-error",
+          "history-commits-empty",
+          "history-commits-signed-out",
+          "history-commits-reader",
+          "history-commits-path"
+        ],
+        "states": {
+          "ready": [
+            "history-commits-main",
+            "history-commits-agent-only",
+            "history-commits-older",
+            "history-commits-path"
+          ],
+          "loading": [
+            "history-commits-loading"
+          ],
+          "error": [
+            "history-commits-error"
+          ],
+          "empty": [
+            "history-commits-empty"
+          ],
+          "signed-out": [
+            "history-commits-signed-out"
+          ],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "commit": {
+        "applies": true,
+        "screenIds": [
+          "history-commit-agent",
+          "history-commit-human",
+          "history-commit-failing-check",
+          "history-commit-line",
+          "history-commit-loading",
+          "history-commit-error",
+          "history-commit-empty",
+          "history-commit-reader",
+          "history-commit-signed-out"
+        ],
+        "states": {
+          "ready": [
+            "history-commit-agent",
+            "history-commit-human",
+            "history-commit-failing-check",
+            "history-commit-line"
+          ],
+          "loading": [
+            "history-commit-loading"
+          ],
+          "error": [
+            "history-commit-error"
+          ],
+          "empty": [
+            "history-commit-empty"
+          ],
+          "signed-out": [
+            "history-commit-signed-out"
+          ],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "branches": {
+        "applies": true,
+        "screenIds": [
+          "history-branches",
+          "history-branches-empty",
+          "history-branches-reader",
+          "history-branches-signed-out",
+          "history-branches-loading",
+          "history-branches-error",
+          "history-branches-stale",
+          "history-branches-new",
+          "history-branches-fork",
+          "history-branches-rebase",
+          "history-branches-archive",
+          "history-branches-sandbox",
+          "history-branches-denied",
+          "history-branches-signin"
+        ],
+        "states": {
+          "ready": [
+            "history-branches",
+            "history-branches-stale",
+            "history-branches-new",
+            "history-branches-fork",
+            "history-branches-rebase",
+            "history-branches-archive",
+            "history-branches-sandbox"
+          ],
+          "loading": [
+            "history-branches-loading"
+          ],
+          "error": [
+            "history-branches-error"
+          ],
+          "empty": [
+            "history-branches-empty"
+          ],
+          "signed-out": [
+            "history-branches-signed-out",
+            "history-branches-signin"
+          ],
+          "reader-denied": [
+            "history-branches-denied"
+          ],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "issues": {
+        "applies": true,
+        "screenIds": [
+          "issues-list-open",
+          "issues-list-closed",
+          "issues-list-label-bug",
+          "issues-list-fixed-by-agents",
+          "issues-list-fixed-ignores-state",
+          "issues-list-todo",
+          "issues-list-empty",
+          "issues-list-no-results",
+          "issues-list-loading",
+          "issues-list-error",
+          "issues-list-signed-out",
+          "issues-list-reader",
+          "issues-new",
+          "issues-new-preview",
+          "issues-new-bug-template",
+          "issues-new-signed-out",
+          "issues-new-reader",
+          "issues-new-loading",
+          "issues-new-error",
+          "issues-detail-landed",
+          "issues-detail-accepted-evidence",
+          "issues-detail-ask",
+          "issues-detail-working",
+          "issues-detail-todo",
+          "issues-detail-no-receipt",
+          "issues-detail-in-review",
+          "issues-detail-not-planned",
+          "issues-detail-reader",
+          "issues-detail-signed-out",
+          "issues-detail-held-implement",
+          "issues-detail-implement-confirm",
+          "issues-detail-repro-confirm",
+          "issues-detail-loading",
+          "issues-detail-error",
+          "issues-detail-not-found"
+        ],
+        "states": {
+          "ready": [
+            "issues-list-open",
+            "issues-list-closed",
+            "issues-list-label-bug",
+            "issues-list-fixed-by-agents",
+            "issues-list-fixed-ignores-state",
+            "issues-list-todo",
+            "issues-list-no-results",
+            "issues-new",
+            "issues-new-preview",
+            "issues-new-bug-template",
+            "issues-detail-landed",
+            "issues-detail-accepted-evidence",
+            "issues-detail-ask",
+            "issues-detail-working",
+            "issues-detail-todo",
+            "issues-detail-no-receipt",
+            "issues-detail-in-review",
+            "issues-detail-not-planned",
+            "issues-detail-implement-confirm",
+            "issues-detail-repro-confirm",
+            "issues-detail-not-found"
+          ],
+          "loading": [
+            "issues-list-loading",
+            "issues-new-loading",
+            "issues-detail-loading"
+          ],
+          "error": [
+            "issues-list-error",
+            "issues-new-error",
+            "issues-detail-error"
+          ],
+          "empty": [
+            "issues-list-empty"
+          ],
+          "signed-out": [
+            "issues-list-signed-out",
+            "issues-new-signed-out",
+            "issues-detail-signed-out"
+          ],
+          "reader-denied": [
+            "issues-detail-reader"
+          ],
+          "held": [
+            "issues-detail-held-implement"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "pulls-stack": {
+        "applies": true,
+        "screenIds": [
+          "effect-releases-version-pr-conversation",
+          "effect-releases-version-pr-commits",
+          "effect-releases-version-pr-checks",
+          "effect-releases-version-pr-files",
+          "pulls-commits",
+          "pulls-commits-loading",
+          "pulls-commits-error",
+          "pulls-commits-empty",
+          "pulls-checks-failing",
+          "pulls-checks-loading",
+          "pulls-checks-error",
+          "pulls-checks-empty",
+          "pulls-files-comments",
+          "pulls-files-review",
+          "pulls-files-reader",
+          "pulls-files-signed-out",
+          "pulls-files-loading",
+          "pulls-files-error",
+          "pulls-files-empty",
+          "pulls-conversation-changes-requested",
+          "pulls-conversation-failing",
+          "pulls-conversation-merged",
+          "pulls-conversation-draft",
+          "pulls-conversation-landing",
+          "pulls-conversation-merge-confirm",
+          "pulls-conversation-held",
+          "pulls-conversation-conflicts",
+          "pulls-conversation-signed-out",
+          "pulls-conversation-reader",
+          "pulls-conversation-loading",
+          "pulls-conversation-error",
+          "pulls-conversation-empty",
+          "pulls-list-open",
+          "pulls-list-closed",
+          "pulls-list-agent-made",
+          "pulls-list-empty",
+          "pulls-list-loading",
+          "pulls-list-error",
+          "pulls-list-signed-out",
+          "pulls-list-reader",
+          "pulls-stack",
+          "pulls-stack-needs-you",
+          "pulls-stack-working",
+          "pulls-stack-failed",
+          "pulls-stack-empty",
+          "pulls-stack-loading",
+          "pulls-stack-error",
+          "pulls-stack-reader",
+          "pulls-stack-signed-out",
+          "pulls-stack-install",
+          "pulls-stack-held"
+        ],
+        "states": {
+          "ready": [
+            "effect-releases-version-pr-conversation",
+            "effect-releases-version-pr-commits",
+            "effect-releases-version-pr-checks",
+            "effect-releases-version-pr-files",
+            "pulls-commits",
+            "pulls-checks-failing",
+            "pulls-files-comments",
+            "pulls-files-review",
+            "pulls-conversation-changes-requested",
+            "pulls-conversation-failing",
+            "pulls-conversation-merged",
+            "pulls-conversation-draft",
+            "pulls-conversation-landing",
+            "pulls-conversation-merge-confirm",
+            "pulls-conversation-conflicts",
+            "pulls-list-open",
+            "pulls-list-closed",
+            "pulls-list-agent-made",
+            "pulls-stack",
+            "pulls-stack-needs-you",
+            "pulls-stack-working",
+            "pulls-stack-failed",
+            "pulls-stack-install"
+          ],
+          "loading": [
+            "pulls-commits-loading",
+            "pulls-checks-loading",
+            "pulls-files-loading",
+            "pulls-conversation-loading",
+            "pulls-list-loading",
+            "pulls-stack-loading"
+          ],
+          "error": [
+            "pulls-commits-error",
+            "pulls-checks-error",
+            "pulls-files-error",
+            "pulls-conversation-error",
+            "pulls-list-error",
+            "pulls-stack-error"
+          ],
+          "empty": [
+            "pulls-commits-empty",
+            "pulls-checks-empty",
+            "pulls-files-empty",
+            "pulls-conversation-empty",
+            "pulls-list-empty",
+            "pulls-stack-empty"
+          ],
+          "signed-out": [
+            "pulls-files-signed-out",
+            "pulls-conversation-signed-out",
+            "pulls-list-signed-out",
+            "pulls-stack-signed-out"
+          ],
+          "reader-denied": [
+            "pulls-conversation-reader",
+            "pulls-stack-reader"
+          ],
+          "held": [
+            "pulls-conversation-held",
+            "pulls-stack-held"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "runs": {
+        "applies": true,
+        "screenIds": [
+          "runs-all",
+          "runs-waiting",
+          "runs-failed",
+          "runs-flow-filter",
+          "runs-empty",
+          "runs-loading",
+          "runs-error",
+          "runs-signed-out",
+          "runs-active",
+          "runs-succeeded",
+          "effect-ci-runs",
+          "effect-ci-runs-loading",
+          "effect-ci-runs-error",
+          "effect-ci-runs-empty",
+          "effect-ci-runs-signed-out",
+          "effect-ci-runs-reader",
+          "runs-run-running",
+          "runs-run-waiting",
+          "runs-run-waiting-cora",
+          "runs-run-failed",
+          "runs-run-resumed",
+          "runs-run-succeeded",
+          "runs-run-cancelled",
+          "runs-run-cancel-confirm",
+          "runs-run-retry-confirm",
+          "runs-run-approval-confirm",
+          "runs-run-graph",
+          "runs-run-trace",
+          "runs-run-reader",
+          "runs-run-signed-out",
+          "runs-run-held-retry",
+          "runs-run-loading",
+          "runs-run-error",
+          "runs-run-empty",
+          "effect-ci-setup-log",
+          "effect-ci-failure-log",
+          "runs-approvals",
+          "runs-approvals-everyone",
+          "runs-approvals-empty",
+          "runs-approvals-signed-out",
+          "runs-approvals-reader",
+          "runs-approvals-loading",
+          "runs-approvals-error"
+        ],
+        "states": {
+          "ready": [
+            "runs-all",
+            "runs-waiting",
+            "runs-failed",
+            "runs-flow-filter",
+            "runs-active",
+            "runs-succeeded",
+            "effect-ci-runs",
+            "runs-run-running",
+            "runs-run-waiting",
+            "runs-run-waiting-cora",
+            "runs-run-failed",
+            "runs-run-resumed",
+            "runs-run-succeeded",
+            "runs-run-cancelled",
+            "runs-run-cancel-confirm",
+            "runs-run-retry-confirm",
+            "runs-run-approval-confirm",
+            "runs-run-graph",
+            "runs-run-trace",
+            "effect-ci-setup-log",
+            "effect-ci-failure-log",
+            "runs-approvals",
+            "runs-approvals-everyone"
+          ],
+          "loading": [
+            "runs-loading",
+            "effect-ci-runs-loading",
+            "runs-run-loading",
+            "runs-approvals-loading"
+          ],
+          "error": [
+            "runs-error",
+            "effect-ci-runs-error",
+            "runs-run-error",
+            "runs-approvals-error"
+          ],
+          "empty": [
+            "runs-empty",
+            "effect-ci-runs-empty",
+            "runs-run-empty",
+            "runs-approvals-empty"
+          ],
+          "signed-out": [
+            "runs-signed-out",
+            "effect-ci-runs-signed-out",
+            "runs-run-signed-out",
+            "runs-approvals-signed-out"
+          ],
+          "reader-denied": [
+            "runs-run-reader",
+            "runs-approvals-reader"
+          ],
+          "held": [
+            "runs-run-held-retry"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "flows": {
+        "applies": true,
+        "screenIds": [
+          "flows-overview",
+          "flows-source",
+          "flows-runs",
+          "flows-run-form",
+          "flows-run-confirm",
+          "flows-held",
+          "flows-paused",
+          "flows-loading",
+          "flows-error",
+          "flows-empty",
+          "flows-not-found",
+          "flows-signed-out",
+          "flows-run-signed-out",
+          "flows-reader",
+          "flows-run-denied",
+          "flows-agents",
+          "flows-agents-disconnected",
+          "flows-agents-loading",
+          "flows-agents-error",
+          "flows-agents-empty",
+          "flows-agents-signed-out",
+          "flows-agents-reader",
+          "flows-list",
+          "flows-list-empty",
+          "flows-list-loading",
+          "flows-list-error",
+          "flows-list-signed-out",
+          "flows-list-reader",
+          "flows-list-run"
+        ],
+        "states": {
+          "ready": [
+            "flows-overview",
+            "flows-source",
+            "flows-runs",
+            "flows-run-form",
+            "flows-run-confirm",
+            "flows-not-found",
+            "flows-agents",
+            "flows-agents-disconnected",
+            "flows-list",
+            "flows-list-run"
+          ],
+          "loading": [
+            "flows-loading",
+            "flows-agents-loading",
+            "flows-list-loading"
+          ],
+          "error": [
+            "flows-error",
+            "flows-agents-error",
+            "flows-list-error"
+          ],
+          "empty": [
+            "flows-empty",
+            "flows-agents-empty",
+            "flows-list-empty"
+          ],
+          "signed-out": [
+            "flows-signed-out",
+            "flows-run-signed-out",
+            "flows-agents-signed-out",
+            "flows-list-signed-out"
+          ],
+          "reader-denied": [
+            "flows-run-denied"
+          ],
+          "held": [
+            "flows-held",
+            "flows-paused"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "wiki": {
+        "applies": true,
+        "screenIds": [
+          "wiki-github-home",
+          "wiki-person",
+          "wiki-proposal",
+          "wiki-proposal-confirm",
+          "wiki-edit",
+          "wiki-preview",
+          "wiki-history",
+          "wiki-not-found",
+          "wiki-page-loading",
+          "wiki-page-error",
+          "wiki-signed-out",
+          "wiki-reader",
+          "wiki-edit-denied",
+          "wiki-edit-signed-out",
+          "wiki-home",
+          "wiki-empty",
+          "wiki-new",
+          "wiki-loading",
+          "wiki-error",
+          "wiki-home-signed-out",
+          "wiki-home-reader"
+        ],
+        "states": {
+          "ready": [
+            "wiki-person",
+            "wiki-proposal",
+            "wiki-proposal-confirm",
+            "wiki-edit",
+            "wiki-preview",
+            "wiki-history",
+            "wiki-not-found",
+            "wiki-home"
+          ],
+          "loading": [
+            "wiki-page-loading",
+            "wiki-loading"
+          ],
+          "error": [
+            "wiki-page-error",
+            "wiki-error"
+          ],
+          "empty": [
+            "wiki-empty",
+            "wiki-new"
+          ],
+          "signed-out": [
+            "wiki-github-home",
+            "wiki-signed-out",
+            "wiki-edit-signed-out",
+            "wiki-home-signed-out"
+          ],
+          "reader-denied": [
+            "wiki-edit-denied"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "releases": {
+        "applies": true,
+        "screenIds": [
+          "releases-list",
+          "releases-empty",
+          "releases-loading",
+          "releases-error",
+          "releases-draft",
+          "releases-draft-denied",
+          "releases-draft-signed-out",
+          "releases-signed-out",
+          "releases-reader",
+          "effect-releases-sql-pg",
+          "effect-releases-unscoped",
+          "effect-releases-private",
+          "effect-releases-empty",
+          "effect-releases-signed-out",
+          "effect-releases-reader",
+          "effect-releases-loading",
+          "effect-releases-error",
+          "releases-tag-latest",
+          "releases-tag-older",
+          "releases-tag-not-found",
+          "releases-tag-loading",
+          "releases-tag-error",
+          "effect-releases-sql-pg-tag",
+          "repo-redirect-releases-latest"
+        ],
+        "states": {
+          "ready": [
+            "releases-list",
+            "releases-draft",
+            "effect-releases-sql-pg",
+            "effect-releases-unscoped",
+            "effect-releases-private",
+            "releases-tag-latest",
+            "releases-tag-older",
+            "releases-tag-not-found",
+            "effect-releases-sql-pg-tag",
+            "repo-redirect-releases-latest"
+          ],
+          "loading": [
+            "releases-loading",
+            "effect-releases-loading",
+            "releases-tag-loading"
+          ],
+          "error": [
+            "releases-error",
+            "effect-releases-error",
+            "releases-tag-error"
+          ],
+          "empty": [
+            "releases-empty",
+            "effect-releases-empty"
+          ],
+          "signed-out": [
+            "releases-draft-signed-out",
+            "releases-signed-out",
+            "effect-releases-signed-out"
+          ],
+          "reader-denied": [
+            "releases-draft-denied"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "settings": {
+        "applies": true,
+        "screenIds": [
+          "settings-general-member",
+          "settings-members-member",
+          "settings-models-member",
+          "settings-secrets-member",
+          "settings-environments-member",
+          "settings-sandboxes-member",
+          "settings-triggers-member",
+          "settings-webhooks-member",
+          "settings-sync-member",
+          "settings-reporting-member",
+          "settings-general-loading",
+          "settings-members-loading",
+          "settings-models-loading",
+          "settings-secrets-loading",
+          "settings-environments-loading",
+          "settings-sandboxes-loading",
+          "settings-triggers-loading",
+          "settings-webhooks-loading",
+          "settings-sync-loading",
+          "settings-reporting-loading",
+          "settings-general-error",
+          "settings-members-error",
+          "settings-models-error",
+          "settings-secrets-error",
+          "settings-environments-error",
+          "settings-sandboxes-error",
+          "settings-triggers-error",
+          "settings-webhooks-error",
+          "settings-sync-error",
+          "settings-reporting-error",
+          "settings-general-empty",
+          "settings-members-empty",
+          "settings-models-empty",
+          "settings-secrets-empty",
+          "settings-environments-empty",
+          "settings-sandboxes-empty",
+          "settings-triggers-empty",
+          "settings-webhooks-empty",
+          "settings-sync-empty",
+          "settings-reporting-empty",
+          "settings-models-connect-codex",
+          "settings-models-connected-both",
+          "settings-models-held",
+          "settings-sandboxes-hosted-paused",
+          "settings-members-empty-invites",
+          "settings-general-default",
+          "settings-reader-denied",
+          "settings-signed-out",
+          "settings-loading",
+          "settings-error"
+        ],
+        "states": {
+          "ready": [
+            "settings-general-member",
+            "settings-members-member",
+            "settings-models-member",
+            "settings-secrets-member",
+            "settings-environments-member",
+            "settings-sandboxes-member",
+            "settings-triggers-member",
+            "settings-webhooks-member",
+            "settings-sync-member",
+            "settings-reporting-member",
+            "settings-models-connect-codex",
+            "settings-models-connected-both",
+            "settings-members-empty-invites",
+            "settings-general-default"
+          ],
+          "loading": [
+            "settings-general-loading",
+            "settings-members-loading",
+            "settings-models-loading",
+            "settings-secrets-loading",
+            "settings-environments-loading",
+            "settings-sandboxes-loading",
+            "settings-triggers-loading",
+            "settings-webhooks-loading",
+            "settings-sync-loading",
+            "settings-reporting-loading",
+            "settings-loading"
+          ],
+          "error": [
+            "settings-general-error",
+            "settings-members-error",
+            "settings-models-error",
+            "settings-secrets-error",
+            "settings-environments-error",
+            "settings-sandboxes-error",
+            "settings-triggers-error",
+            "settings-webhooks-error",
+            "settings-sync-error",
+            "settings-reporting-error",
+            "settings-error"
+          ],
+          "empty": [
+            "settings-general-empty",
+            "settings-members-empty",
+            "settings-models-empty",
+            "settings-secrets-empty",
+            "settings-environments-empty",
+            "settings-sandboxes-empty",
+            "settings-triggers-empty",
+            "settings-webhooks-empty",
+            "settings-sync-empty",
+            "settings-reporting-empty"
+          ],
+          "signed-out": [
+            "settings-signed-out"
+          ],
+          "reader-denied": [
+            "settings-reader-denied"
+          ],
+          "held": [
+            "settings-models-held",
+            "settings-sandboxes-hosted-paused"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "search": {
+        "applies": true,
+        "screenIds": [
+          "search-empty-query",
+          "search-code",
+          "search-issues",
+          "search-runs",
+          "search-commits",
+          "search-pulls",
+          "search-wiki",
+          "search-docs",
+          "search-no-results",
+          "search-symbol",
+          "search-references",
+          "search-loading",
+          "search-error",
+          "search-empty",
+          "search-signed-out",
+          "search-reader"
+        ],
+        "states": {
+          "ready": [
+            "search-empty-query",
+            "search-code",
+            "search-issues",
+            "search-runs",
+            "search-commits",
+            "search-pulls",
+            "search-wiki",
+            "search-docs",
+            "search-no-results",
+            "search-symbol",
+            "search-references"
+          ],
+          "loading": [
+            "search-loading"
+          ],
+          "error": [
+            "search-error"
+          ],
+          "empty": [
+            "search-empty"
+          ],
+          "signed-out": [
+            "search-signed-out"
+          ],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "ask": {
+        "applies": true,
+        "screenIds": [
+          "code-home-guest-limit",
+          "code-home-held",
+          "code-home-ask-agent-approval",
+          "code-home-ask-agent-todo",
+          "code-home-ask-agent-view",
+          "code-home-ask-sample",
+          "code-home-ask-commands",
+          "code-home-ask-command-form",
+          "code-home-ask-command-confirm",
+          "code-home-ask-command-denied",
+          "code-home-ask-command-signed-out",
+          "code-home-ask-search-form",
+          "code-home-ask-copy-form",
+          "code-home-ask-question-form",
+          "code-home-ask-theme-form",
+          "code-home-ask-user-only",
+          "code-home-ask-answer-error",
+          "code-home-ask-import-form"
+        ],
+        "states": {
+          "ready": [
+            "code-home-ask-agent-approval",
+            "code-home-ask-agent-todo",
+            "code-home-ask-agent-view",
+            "code-home-ask-sample",
+            "code-home-ask-commands",
+            "code-home-ask-command-form",
+            "code-home-ask-command-confirm",
+            "code-home-ask-question-form",
+            "code-home-ask-theme-form",
+            "code-home-ask-user-only",
+            "code-home-ask-import-form"
+          ],
+          "loading": [],
+          "error": [
+            "code-home-ask-answer-error"
+          ],
+          "empty": [],
+          "signed-out": [
+            "code-home-guest-limit",
+            "code-home-ask-command-signed-out"
+          ],
+          "reader-denied": [
+            "code-home-ask-command-denied"
+          ],
+          "held": [
+            "code-home-held"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "terminal": {
+        "applies": true,
+        "screenIds": [
+          "history-terminal-running",
+          "history-terminal-suspended",
+          "history-terminal-hosted-paused",
+          "history-terminal-signed-out",
+          "history-terminal-reader",
+          "history-terminal-loading",
+          "history-terminal-error",
+          "history-terminal-empty",
+          "history-terminal-watched"
+        ],
+        "states": {
+          "ready": [
+            "history-terminal-running",
+            "history-terminal-suspended",
+            "history-terminal-watched"
+          ],
+          "loading": [
+            "history-terminal-loading"
+          ],
+          "error": [
+            "history-terminal-error"
+          ],
+          "empty": [
+            "history-terminal-empty"
+          ],
+          "signed-out": [
+            "history-terminal-signed-out"
+          ],
+          "reader-denied": [
+            "history-terminal-reader"
+          ],
+          "held": [
+            "history-terminal-hosted-paused"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "docs": {
+        "applies": true,
+        "screenIds": [
+          "docs-first-page",
+          "docs-loading",
+          "docs-error",
+          "docs-empty",
+          "docs-signed-out",
+          "docs-reader",
+          "docs-phone",
+          "effect-docs-packages-index",
+          "effect-docs-index-scoped",
+          "effect-docs-loading",
+          "effect-docs-error",
+          "effect-docs-empty",
+          "effect-docs-signed-out",
+          "effect-docs-reader",
+          "docs-routing",
+          "docs-not-found",
+          "docs-outline",
+          "docs-anchor",
+          "effect-docs-sql-pg",
+          "effect-docs-api",
+          "effect-docs-stale",
+          "effect-docs-missing",
+          "effect-docs-no-package-docs",
+          "effect-docs-page-loading",
+          "effect-docs-page-error",
+          "effect-docs-page-empty"
+        ],
+        "states": {
+          "ready": [
+            "docs-first-page",
+            "docs-phone",
+            "effect-docs-packages-index",
+            "effect-docs-index-scoped",
+            "docs-routing",
+            "docs-not-found",
+            "docs-outline",
+            "docs-anchor",
+            "effect-docs-sql-pg",
+            "effect-docs-api",
+            "effect-docs-stale",
+            "effect-docs-missing",
+            "effect-docs-no-package-docs"
+          ],
+          "loading": [
+            "docs-loading",
+            "effect-docs-loading",
+            "effect-docs-page-loading"
+          ],
+          "error": [
+            "docs-error",
+            "effect-docs-error",
+            "effect-docs-page-error"
+          ],
+          "empty": [
+            "docs-empty",
+            "effect-docs-empty",
+            "effect-docs-page-empty"
+          ],
+          "signed-out": [
+            "docs-signed-out",
+            "effect-docs-signed-out"
+          ],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "smithers-evals": {
+        "applies": true,
+        "screenIds": [
+          "smithers-evals-list",
+          "smithers-evals-loading",
+          "smithers-evals-error",
+          "smithers-evals-empty",
+          "smithers-evals-signed-out",
+          "smithers-evals-reader",
+          "smithers-evals-review",
+          "smithers-evals-case",
+          "smithers-evals-authoring",
+          "smithers-evals-recommend",
+          "smithers-evals-swebench",
+          "smithers-evals-agent",
+          "smithers-evals-suite-loading",
+          "smithers-evals-suite-error",
+          "smithers-evals-suite-empty",
+          "smithers-evals-suite-signed-out",
+          "smithers-evals-suite-reader",
+          "smithers-evals-confirm",
+          "smithers-evals-held",
+          "smithers-evals-denied",
+          "smithers-evals-signin",
+          "smithers-evals-paused",
+          "smithers-evals-missing"
+        ],
+        "states": {
+          "ready": [
+            "smithers-evals-list",
+            "smithers-evals-review",
+            "smithers-evals-case",
+            "smithers-evals-authoring",
+            "smithers-evals-recommend",
+            "smithers-evals-swebench",
+            "smithers-evals-agent",
+            "smithers-evals-confirm",
+            "smithers-evals-missing"
+          ],
+          "loading": [
+            "smithers-evals-loading",
+            "smithers-evals-suite-loading"
+          ],
+          "error": [
+            "smithers-evals-error",
+            "smithers-evals-suite-error"
+          ],
+          "empty": [
+            "smithers-evals-empty",
+            "smithers-evals-suite-empty"
+          ],
+          "signed-out": [
+            "smithers-evals-signed-out",
+            "smithers-evals-suite-signed-out",
+            "smithers-evals-signin"
+          ],
+          "reader-denied": [
+            "smithers-evals-denied"
+          ],
+          "held": [
+            "smithers-evals-held",
+            "smithers-evals-paused"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "effeck-golden-set": {
+        "applies": false,
+        "screenIds": [],
+        "states": {
+          "ready": [],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "effect-packages-scope": {
+        "applies": true,
+        "screenIds": [
+          "effect-packages-ready",
+          "effect-packages-loading",
+          "effect-packages-error",
+          "effect-packages-empty",
+          "effect-packages-signed-out",
+          "effect-packages-filtered",
+          "effect-packages-no-matches",
+          "effect-packages-open-form",
+          "effect-package-home-ready",
+          "effect-package-home-loading",
+          "effect-package-home-error",
+          "effect-package-home-empty",
+          "effect-package-home-signed-out",
+          "effect-package-home-private",
+          "effect-package-home-core",
+          "effect-package-home-missing",
+          "effect-ci-runs",
+          "effect-ci-runs-loading",
+          "effect-ci-runs-error",
+          "effect-ci-runs-empty",
+          "effect-ci-runs-signed-out",
+          "effect-ci-runs-reader",
+          "effect-docs-packages-index",
+          "effect-docs-index-scoped",
+          "effect-docs-loading",
+          "effect-docs-error",
+          "effect-docs-empty",
+          "effect-docs-signed-out",
+          "effect-docs-reader",
+          "effect-docs-sql-pg",
+          "effect-docs-api",
+          "effect-docs-stale",
+          "effect-docs-missing",
+          "effect-docs-no-package-docs",
+          "effect-docs-page-loading",
+          "effect-docs-page-error",
+          "effect-docs-page-empty",
+          "code-home-effect",
+          "code-blob-effect-omitted"
+        ],
+        "states": {
+          "ready": [
+            "effect-packages-ready",
+            "effect-packages-filtered",
+            "effect-packages-no-matches",
+            "effect-packages-open-form",
+            "effect-package-home-ready",
+            "effect-package-home-private",
+            "effect-package-home-core",
+            "effect-package-home-missing",
+            "effect-ci-runs",
+            "effect-docs-packages-index",
+            "effect-docs-index-scoped",
+            "effect-docs-sql-pg",
+            "effect-docs-api",
+            "effect-docs-stale",
+            "effect-docs-missing",
+            "effect-docs-no-package-docs",
+            "code-home-effect"
+          ],
+          "loading": [
+            "effect-packages-loading",
+            "effect-package-home-loading",
+            "effect-ci-runs-loading",
+            "effect-docs-loading",
+            "effect-docs-page-loading"
+          ],
+          "error": [
+            "effect-packages-error",
+            "effect-package-home-error",
+            "effect-ci-runs-error",
+            "effect-docs-error",
+            "effect-docs-page-error"
+          ],
+          "empty": [
+            "effect-packages-empty",
+            "effect-package-home-empty",
+            "effect-ci-runs-empty",
+            "effect-docs-empty",
+            "effect-docs-page-empty"
+          ],
+          "signed-out": [
+            "effect-packages-signed-out",
+            "effect-package-home-signed-out",
+            "effect-ci-runs-signed-out",
+            "effect-docs-signed-out",
+            "code-blob-effect-omitted"
+          ],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "effect-ci-matrix": {
+        "applies": true,
+        "screenIds": [
+          "effect-ci-matrix-failed",
+          "effect-ci-matrix-all-pass",
+          "effect-ci-matrix-running",
+          "effect-ci-matrix-setup-failure",
+          "effect-ci-matrix-scoped",
+          "effect-ci-matrix-cancelled",
+          "effect-ci-matrix-excluded",
+          "effect-ci-matrix-missing",
+          "effect-ci-matrix-loading",
+          "effect-ci-matrix-error",
+          "effect-ci-matrix-empty",
+          "effect-ci-matrix-signed-out"
+        ],
+        "states": {
+          "ready": [
+            "effect-ci-matrix-failed",
+            "effect-ci-matrix-all-pass",
+            "effect-ci-matrix-running",
+            "effect-ci-matrix-setup-failure",
+            "effect-ci-matrix-scoped",
+            "effect-ci-matrix-cancelled",
+            "effect-ci-matrix-excluded",
+            "effect-ci-matrix-missing"
+          ],
+          "loading": [
+            "effect-ci-matrix-loading"
+          ],
+          "error": [
+            "effect-ci-matrix-error"
+          ],
+          "empty": [
+            "effect-ci-matrix-empty"
+          ],
+          "signed-out": [
+            "effect-ci-matrix-signed-out"
+          ],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "effect-version-packages": {
+        "applies": true,
+        "screenIds": [
+          "effect-releases-plan-ready",
+          "effect-releases-plan-preview",
+          "effect-releases-plan-confirm",
+          "effect-releases-plan-existing-pr",
+          "effect-releases-plan-stale",
+          "effect-releases-plan-running",
+          "effect-releases-plan-failed",
+          "effect-releases-plan-empty",
+          "effect-releases-plan-held",
+          "effect-releases-plan-signed-out",
+          "effect-releases-plan-denied",
+          "effect-releases-plan-scoped",
+          "effect-releases-plan-loading",
+          "effect-releases-plan-error"
+        ],
+        "states": {
+          "ready": [
+            "effect-releases-plan-ready",
+            "effect-releases-plan-preview",
+            "effect-releases-plan-confirm",
+            "effect-releases-plan-existing-pr",
+            "effect-releases-plan-stale",
+            "effect-releases-plan-running",
+            "effect-releases-plan-failed",
+            "effect-releases-plan-scoped"
+          ],
+          "loading": [
+            "effect-releases-plan-loading"
+          ],
+          "error": [
+            "effect-releases-plan-error"
+          ],
+          "empty": [
+            "effect-releases-plan-empty"
+          ],
+          "signed-out": [
+            "effect-releases-plan-signed-out"
+          ],
+          "reader-denied": [
+            "effect-releases-plan-denied"
+          ],
+          "held": [
+            "effect-releases-plan-held"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "fixed-by-agents": {
+        "applies": false,
+        "screenIds": [],
+        "states": {
+          "ready": [],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      }
+    }
+  },
+  "dist-smithers-site": {
+    "site": "smithers-site",
+    "htmlSha256": "6f6659dbd56129c459ee3c1676d2ac6e41a1f941e1b9a354e6e379085c75fb4a",
+    "evidence": "registration only; no DOM or browser",
+    "specVersion": "2.1",
+    "registrationProblems": [],
+    "cases": {
+      "code-home": {
+        "applies": true,
+        "screenIds": [
+          "docs-installation",
+          "code-home-smithers",
+          "smithers-site-home",
+          "smithers-site-home-signed-out",
+          "smithers-site-home-loading",
+          "smithers-site-home-error",
+          "smithers-site-home-empty"
+        ],
+        "states": {
+          "ready": [
+            "code-home-smithers",
+            "smithers-site-home"
+          ],
+          "loading": [
+            "smithers-site-home-loading"
+          ],
+          "error": [
+            "smithers-site-home-error"
+          ],
+          "empty": [
+            "smithers-site-home-empty"
+          ],
+          "signed-out": [
+            "docs-installation",
+            "smithers-site-home-signed-out"
+          ],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "signed-out"
+        ]
+      },
+      "tree-file": {
+        "applies": true,
+        "screenIds": [
+          "smithers-site-tree",
+          "smithers-site-directory",
+          "code-blob-smithers-omitted",
+          "smithers-site-file"
+        ],
+        "states": {
+          "ready": [
+            "smithers-site-tree",
+            "smithers-site-directory",
+            "smithers-site-file"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [
+            "code-blob-smithers-omitted"
+          ],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "signed-out"
+        ]
+      },
+      "blame": {
+        "applies": true,
+        "screenIds": [
+          "smithers-site-blame"
+        ],
+        "states": {
+          "ready": [
+            "smithers-site-blame"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "commits": {
+        "applies": true,
+        "screenIds": [
+          "smithers-site-commits",
+          "smithers-site-file-history"
+        ],
+        "states": {
+          "ready": [
+            "smithers-site-commits",
+            "smithers-site-file-history"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "commit": {
+        "applies": true,
+        "screenIds": [
+          "smithers-site-commit"
+        ],
+        "states": {
+          "ready": [
+            "smithers-site-commit"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "branches": {
+        "applies": true,
+        "screenIds": [
+          "smithers-site-branches"
+        ],
+        "states": {
+          "ready": [
+            "smithers-site-branches"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "issues": {
+        "applies": true,
+        "screenIds": [
+          "smithers-site-issues",
+          "smithers-site-fixed-by-agents",
+          "smithers-site-new-issue",
+          "smithers-site-issue",
+          "smithers-site-receipt-4218",
+          "smithers-site-receipt-4217",
+          "smithers-site-receipt-4214",
+          "smithers-site-receipt-4209"
+        ],
+        "states": {
+          "ready": [
+            "smithers-site-issues",
+            "smithers-site-fixed-by-agents",
+            "smithers-site-new-issue",
+            "smithers-site-issue",
+            "smithers-site-receipt-4218",
+            "smithers-site-receipt-4217",
+            "smithers-site-receipt-4214",
+            "smithers-site-receipt-4209"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "pulls-stack": {
+        "applies": true,
+        "screenIds": [
+          "smithers-site-pull-commits",
+          "smithers-site-pull-checks",
+          "smithers-site-pull-files",
+          "smithers-site-pull",
+          "smithers-site-pulls",
+          "smithers-site-landing-queue",
+          "smithers-site-queue-reader"
+        ],
+        "states": {
+          "ready": [
+            "smithers-site-pull-commits",
+            "smithers-site-pull-checks",
+            "smithers-site-pull-files",
+            "smithers-site-pull",
+            "smithers-site-pulls",
+            "smithers-site-landing-queue"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "runs": {
+        "applies": true,
+        "screenIds": [
+          "smithers-site-run",
+          "smithers-site-approvals",
+          "smithers-site-runs",
+          "smithers-site-runs-issue-triage",
+          "smithers-site-runs-docs-sync",
+          "smithers-site-runs-land",
+          "smithers-site-runs-release"
+        ],
+        "states": {
+          "ready": [
+            "smithers-site-run",
+            "smithers-site-approvals",
+            "smithers-site-runs",
+            "smithers-site-runs-issue-triage",
+            "smithers-site-runs-docs-sync",
+            "smithers-site-runs-land",
+            "smithers-site-runs-release"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "flows": {
+        "applies": true,
+        "screenIds": [
+          "smithers-site-flow",
+          "smithers-site-agents",
+          "smithers-site-flows"
+        ],
+        "states": {
+          "ready": [
+            "smithers-site-flow",
+            "smithers-site-agents",
+            "smithers-site-flows"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "wiki": {
+        "applies": true,
+        "screenIds": [
+          "smithers-site-wiki-page",
+          "smithers-site-wiki"
+        ],
+        "states": {
+          "ready": [
+            "smithers-site-wiki-page",
+            "smithers-site-wiki"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "releases": {
+        "applies": true,
+        "screenIds": [
+          "smithers-site-redirect-latest",
+          "smithers-site-release",
+          "smithers-site-releases"
+        ],
+        "states": {
+          "ready": [
+            "smithers-site-redirect-latest",
+            "smithers-site-release",
+            "smithers-site-releases"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "settings": {
+        "applies": true,
+        "screenIds": [
+          "smithers-site-models",
+          "smithers-site-settings-denied",
+          "smithers-site-settings"
+        ],
+        "states": {
+          "ready": [
+            "smithers-site-models",
+            "smithers-site-settings"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [
+            "smithers-site-settings-denied"
+          ],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "search": {
+        "applies": true,
+        "screenIds": [
+          "smithers-site-search"
+        ],
+        "states": {
+          "ready": [
+            "smithers-site-search"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "ask": {
+        "applies": true,
+        "screenIds": [
+          "docs-installation",
+          "code-home-smithers",
+          "smithers-site-home",
+          "smithers-site-home-signed-out",
+          "smithers-site-home-loading",
+          "smithers-site-home-error",
+          "smithers-site-home-empty"
+        ],
+        "states": {
+          "ready": [
+            "code-home-smithers",
+            "smithers-site-home"
+          ],
+          "loading": [
+            "smithers-site-home-loading"
+          ],
+          "error": [
+            "smithers-site-home-error"
+          ],
+          "empty": [
+            "smithers-site-home-empty"
+          ],
+          "signed-out": [
+            "docs-installation",
+            "smithers-site-home-signed-out"
+          ],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "signed-out"
+        ]
+      },
+      "terminal": {
+        "applies": true,
+        "screenIds": [
+          "smithers-site-terminal"
+        ],
+        "states": {
+          "ready": [
+            "smithers-site-terminal"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "docs": {
+        "applies": true,
+        "screenIds": [
+          "smithers-site-docs",
+          "smithers-site-docs-page"
+        ],
+        "states": {
+          "ready": [
+            "smithers-site-docs",
+            "smithers-site-docs-page"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "smithers-evals": {
+        "applies": true,
+        "screenIds": [
+          "smithers-evals-list",
+          "smithers-evals-loading",
+          "smithers-evals-error",
+          "smithers-evals-empty",
+          "smithers-evals-signed-out",
+          "smithers-evals-reader",
+          "smithers-site-evals",
+          "smithers-evals-review",
+          "smithers-evals-case",
+          "smithers-evals-authoring",
+          "smithers-evals-recommend",
+          "smithers-evals-swebench",
+          "smithers-evals-agent",
+          "smithers-evals-suite-loading",
+          "smithers-evals-suite-error",
+          "smithers-evals-suite-empty",
+          "smithers-evals-suite-signed-out",
+          "smithers-evals-suite-reader",
+          "smithers-evals-confirm",
+          "smithers-evals-held",
+          "smithers-evals-denied",
+          "smithers-evals-signin",
+          "smithers-evals-paused",
+          "smithers-evals-missing",
+          "smithers-site-eval-suite"
+        ],
+        "states": {
+          "ready": [
+            "smithers-evals-list",
+            "smithers-site-evals",
+            "smithers-evals-review",
+            "smithers-evals-case",
+            "smithers-evals-authoring",
+            "smithers-evals-recommend",
+            "smithers-evals-swebench",
+            "smithers-evals-agent",
+            "smithers-evals-confirm",
+            "smithers-evals-missing",
+            "smithers-site-eval-suite"
+          ],
+          "loading": [
+            "smithers-evals-loading",
+            "smithers-evals-suite-loading"
+          ],
+          "error": [
+            "smithers-evals-error",
+            "smithers-evals-suite-error"
+          ],
+          "empty": [
+            "smithers-evals-empty",
+            "smithers-evals-suite-empty"
+          ],
+          "signed-out": [
+            "smithers-evals-signed-out",
+            "smithers-evals-suite-signed-out",
+            "smithers-evals-signin"
+          ],
+          "reader-denied": [
+            "smithers-evals-denied"
+          ],
+          "held": [
+            "smithers-evals-held",
+            "smithers-evals-paused"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "effeck-golden-set": {
+        "applies": false,
+        "screenIds": [],
+        "states": {
+          "ready": [],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "effect-packages-scope": {
+        "applies": false,
+        "screenIds": [],
+        "states": {
+          "ready": [],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "effect-ci-matrix": {
+        "applies": false,
+        "screenIds": [],
+        "states": {
+          "ready": [],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "effect-version-packages": {
+        "applies": false,
+        "screenIds": [],
+        "states": {
+          "ready": [],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "fixed-by-agents": {
+        "applies": true,
+        "screenIds": [
+          "smithers-site-fixed-by-agents"
+        ],
+        "states": {
+          "ready": [
+            "smithers-site-fixed-by-agents"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      }
+    }
+  },
+  "dist-effeck-site": {
+    "site": "effeck-site",
+    "htmlSha256": "1cf337bfdedf4a10ce3244db8b61c24ddba77a55e31818cb4443605e4322ffca",
+    "evidence": "registration only; no DOM or browser",
+    "specVersion": "2.1",
+    "registrationProblems": [],
+    "cases": {
+      "code-home": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-docs-installation",
+          "effeck-site-home",
+          "effeck-site-home-loading",
+          "effeck-site-home-error",
+          "effeck-site-home-empty",
+          "effeck-site-home-signed-out",
+          "effeck-site-home-reader"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-home"
+          ],
+          "loading": [
+            "effeck-site-home-loading"
+          ],
+          "error": [
+            "effeck-site-home-error"
+          ],
+          "empty": [
+            "effeck-site-home-empty"
+          ],
+          "signed-out": [
+            "effeck-site-docs-installation",
+            "effeck-site-home-signed-out"
+          ],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "signed-out"
+        ]
+      },
+      "tree-file": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-tree",
+          "effeck-site-directory",
+          "effeck-site-file",
+          "effeck-site-file-diagnostic"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-tree",
+            "effeck-site-directory",
+            "effeck-site-file",
+            "effeck-site-file-diagnostic"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "blame": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-blame"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-blame"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "commits": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-commits",
+          "effeck-site-file-history"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-commits",
+            "effeck-site-file-history"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "commit": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-commit"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-commit"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "branches": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-branches"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-branches"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "issues": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-issues",
+          "effeck-site-fixed-by-agents",
+          "effeck-site-new-issue",
+          "effeck-site-new-issue-signed-out",
+          "effeck-site-issue",
+          "effeck-site-receipt-32",
+          "effeck-site-receipt-33",
+          "effeck-site-receipt-34",
+          "effeck-site-implement-held",
+          "effeck-site-implement-denied"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-issues",
+            "effeck-site-fixed-by-agents",
+            "effeck-site-new-issue",
+            "effeck-site-issue",
+            "effeck-site-receipt-32",
+            "effeck-site-receipt-33",
+            "effeck-site-receipt-34"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [
+            "effeck-site-new-issue-signed-out"
+          ],
+          "reader-denied": [
+            "effeck-site-implement-denied"
+          ],
+          "held": [
+            "effeck-site-implement-held"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "signed-out"
+        ]
+      },
+      "pulls-stack": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-pull-commits",
+          "effeck-site-pull-checks",
+          "effeck-site-pull-files",
+          "effeck-site-pull",
+          "effeck-site-pulls",
+          "effeck-site-stack"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-pull-commits",
+            "effeck-site-pull-checks",
+            "effeck-site-pull-files",
+            "effeck-site-pull",
+            "effeck-site-pulls",
+            "effeck-site-stack"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "runs": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-run",
+          "effeck-site-run-docs-examples",
+          "effeck-site-run-release",
+          "effeck-site-approvals",
+          "effeck-site-runs",
+          "effeck-site-runs-convert-golden",
+          "effeck-site-runs-docs-sync",
+          "effeck-site-runs-implement-issue",
+          "effeck-site-runs-release"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-run",
+            "effeck-site-run-docs-examples",
+            "effeck-site-run-release",
+            "effeck-site-approvals",
+            "effeck-site-runs",
+            "effeck-site-runs-convert-golden",
+            "effeck-site-runs-docs-sync",
+            "effeck-site-runs-implement-issue",
+            "effeck-site-runs-release"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "flows": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-flow",
+          "effeck-site-agents",
+          "effeck-site-flows"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-flow",
+            "effeck-site-agents",
+            "effeck-site-flows"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "wiki": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-wiki-page",
+          "effeck-site-wiki"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-wiki-page",
+            "effeck-site-wiki"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "releases": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-redirect-latest",
+          "effeck-site-release",
+          "effeck-site-releases"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-redirect-latest",
+            "effeck-site-release",
+            "effeck-site-releases"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "settings": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-models",
+          "effeck-site-models-held",
+          "effeck-site-settings",
+          "effeck-site-settings-denied",
+          "effeck-site-settings-signin"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-models",
+            "effeck-site-settings"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [
+            "effeck-site-settings-signin"
+          ],
+          "reader-denied": [
+            "effeck-site-settings-denied"
+          ],
+          "held": [
+            "effeck-site-models-held"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "signed-out"
+        ]
+      },
+      "search": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-search"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-search"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "ask": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-docs-installation",
+          "effeck-site-home",
+          "effeck-site-home-loading",
+          "effeck-site-home-error",
+          "effeck-site-home-empty",
+          "effeck-site-home-signed-out",
+          "effeck-site-home-reader"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-home"
+          ],
+          "loading": [
+            "effeck-site-home-loading"
+          ],
+          "error": [
+            "effeck-site-home-error"
+          ],
+          "empty": [
+            "effeck-site-home-empty"
+          ],
+          "signed-out": [
+            "effeck-site-docs-installation",
+            "effeck-site-home-signed-out"
+          ],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "signed-out"
+        ]
+      },
+      "terminal": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-terminal"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-terminal"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "docs": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-docs",
+          "effeck-site-docs-page",
+          "effeck-site-docs-page-loading",
+          "effeck-site-docs-page-error",
+          "effeck-site-docs-page-empty",
+          "effeck-site-docs-page-signed-out",
+          "effeck-site-docs-page-reader",
+          "effeck-site-docs-hover-find",
+          "effeck-site-docs-hover-signed-out",
+          "effeck-site-docs-002-why-effect",
+          "effeck-site-docs-004-installation",
+          "effeck-site-docs-014-expected-errors",
+          "effeck-site-docs-015-unexpected-errors",
+          "effeck-site-docs-effeck-cli"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-docs",
+            "effeck-site-docs-page",
+            "effeck-site-docs-hover-find",
+            "effeck-site-docs-002-why-effect",
+            "effeck-site-docs-004-installation",
+            "effeck-site-docs-014-expected-errors",
+            "effeck-site-docs-015-unexpected-errors",
+            "effeck-site-docs-effeck-cli"
+          ],
+          "loading": [
+            "effeck-site-docs-page-loading"
+          ],
+          "error": [
+            "effeck-site-docs-page-error"
+          ],
+          "empty": [
+            "effeck-site-docs-page-empty"
+          ],
+          "signed-out": [
+            "effeck-site-docs-page-signed-out",
+            "effeck-site-docs-hover-signed-out"
+          ],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "smithers-evals": {
+        "applies": false,
+        "screenIds": [],
+        "states": {
+          "ready": [],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "effeck-golden-set": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-evals",
+          "effeck-site-evals-loading",
+          "effeck-site-evals-error",
+          "effeck-site-evals-empty",
+          "effeck-site-evals-signed-out",
+          "effeck-site-evals-reader",
+          "effeck-site-golden-set",
+          "effeck-site-golden-set-loading",
+          "effeck-site-golden-set-error",
+          "effeck-site-golden-set-empty",
+          "effeck-site-golden-set-signed-out",
+          "effeck-site-golden-set-reader",
+          "effeck-site-golden-case-01-hero-batch-lookup",
+          "effeck-site-golden-case-02-typed-error-fallback",
+          "effeck-site-golden-case-03-service-and-layer",
+          "effeck-site-golden-case-04-layer-with-setup",
+          "effeck-site-golden-case-05-retry-recurs",
+          "effeck-site-golden-case-06-timeout-fallback",
+          "effeck-site-golden-case-07-foreach-concurrency",
+          "effeck-site-golden-case-08-all-concurrent",
+          "effeck-site-golden-case-09-schema-struct",
+          "effeck-site-golden-case-10-option-methods",
+          "effeck-site-golden-case-11-ref-counter",
+          "effeck-site-golden-case-12-console-and-log",
+          "effeck-site-golden-case-13-fork-join",
+          "effeck-site-golden-case-14-race",
+          "effeck-site-golden-case-15-ensuring-finally",
+          "effeck-site-golden-case-16-config",
+          "effeck-site-golden-case-17-stream-methods",
+          "effeck-site-golden-case-18-catch-all",
+          "effeck-site-golden-case-19-sync-and-try",
+          "effeck-site-golden-case-20-schedule-repeat",
+          "effeck-site-docs-examples-compile",
+          "effeck-site-eval-held",
+          "effeck-site-eval-denied",
+          "effeck-site-eval-signin"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-evals",
+            "effeck-site-golden-set",
+            "effeck-site-golden-case-01-hero-batch-lookup",
+            "effeck-site-golden-case-02-typed-error-fallback",
+            "effeck-site-golden-case-03-service-and-layer",
+            "effeck-site-golden-case-04-layer-with-setup",
+            "effeck-site-golden-case-05-retry-recurs",
+            "effeck-site-golden-case-06-timeout-fallback",
+            "effeck-site-golden-case-07-foreach-concurrency",
+            "effeck-site-golden-case-08-all-concurrent",
+            "effeck-site-golden-case-09-schema-struct",
+            "effeck-site-golden-case-10-option-methods",
+            "effeck-site-golden-case-11-ref-counter",
+            "effeck-site-golden-case-12-console-and-log",
+            "effeck-site-golden-case-13-fork-join",
+            "effeck-site-golden-case-14-race",
+            "effeck-site-golden-case-15-ensuring-finally",
+            "effeck-site-golden-case-16-config",
+            "effeck-site-golden-case-17-stream-methods",
+            "effeck-site-golden-case-18-catch-all",
+            "effeck-site-golden-case-19-sync-and-try",
+            "effeck-site-golden-case-20-schedule-repeat",
+            "effeck-site-docs-examples-compile"
+          ],
+          "loading": [
+            "effeck-site-evals-loading",
+            "effeck-site-golden-set-loading"
+          ],
+          "error": [
+            "effeck-site-evals-error",
+            "effeck-site-golden-set-error"
+          ],
+          "empty": [
+            "effeck-site-evals-empty",
+            "effeck-site-golden-set-empty"
+          ],
+          "signed-out": [
+            "effeck-site-evals-signed-out",
+            "effeck-site-golden-set-signed-out",
+            "effeck-site-eval-signin"
+          ],
+          "reader-denied": [
+            "effeck-site-eval-denied"
+          ],
+          "held": [
+            "effeck-site-eval-held",
+            "effeck-site-eval-denied",
+            "effeck-site-eval-signin"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "effect-packages-scope": {
+        "applies": false,
+        "screenIds": [],
+        "states": {
+          "ready": [],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "effect-ci-matrix": {
+        "applies": false,
+        "screenIds": [],
+        "states": {
+          "ready": [],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "effect-version-packages": {
+        "applies": false,
+        "screenIds": [],
+        "states": {
+          "ready": [],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "fixed-by-agents": {
+        "applies": true,
+        "screenIds": [
+          "effeck-site-fixed-by-agents"
+        ],
+        "states": {
+          "ready": [
+            "effeck-site-fixed-by-agents"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      }
+    }
+  },
+  "dist-effect-monorepo": {
+    "site": "effect",
+    "htmlSha256": "349e2102bdcccee60822f3be4fd87ec750b1a529bf7b1652390417cd71710fff",
+    "evidence": "registration only; no DOM or browser",
+    "specVersion": "2.1",
+    "registrationProblems": [],
+    "cases": {
+      "code-home": {
+        "applies": true,
+        "screenIds": [
+          "effect-docs-installation",
+          "effect-repo-home",
+          "effect-repo-home-loading",
+          "effect-repo-home-error",
+          "effect-repo-home-empty",
+          "effect-repo-home-signed-out",
+          "effect-repo-home-scoped"
+        ],
+        "states": {
+          "ready": [
+            "effect-repo-home",
+            "effect-repo-home-scoped"
+          ],
+          "loading": [
+            "effect-repo-home-loading"
+          ],
+          "error": [
+            "effect-repo-home-error"
+          ],
+          "empty": [
+            "effect-repo-home-empty"
+          ],
+          "signed-out": [
+            "effect-docs-installation",
+            "effect-repo-home-signed-out"
+          ],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "signed-out"
+        ]
+      },
+      "tree-file": {
+        "applies": true,
+        "screenIds": [
+          "effect-repo-tree-ref",
+          "effect-repo-tree-ref-path",
+          "effect-package-inferred-tree",
+          "effect-repo-blob-ref-path",
+          "effect-package-inferred-file"
+        ],
+        "states": {
+          "ready": [
+            "effect-repo-tree-ref",
+            "effect-repo-tree-ref-path",
+            "effect-package-inferred-tree",
+            "effect-repo-blob-ref-path",
+            "effect-package-inferred-file"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "blame": {
+        "applies": true,
+        "screenIds": [
+          "effect-repo-blame-ref-path"
+        ],
+        "states": {
+          "ready": [
+            "effect-repo-blame-ref-path"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "commits": {
+        "applies": true,
+        "screenIds": [
+          "effect-repo-commits-ref",
+          "effect-repo-commits-ref-path"
+        ],
+        "states": {
+          "ready": [
+            "effect-repo-commits-ref",
+            "effect-repo-commits-ref-path"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "commit": {
+        "applies": true,
+        "screenIds": [
+          "effect-repo-commit-sha"
+        ],
+        "states": {
+          "ready": [
+            "effect-repo-commit-sha"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "branches": {
+        "applies": true,
+        "screenIds": [
+          "effect-repo-branches"
+        ],
+        "states": {
+          "ready": [
+            "effect-repo-branches"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "issues": {
+        "applies": true,
+        "screenIds": [
+          "effect-repo-issues",
+          "effect-repo-issues-new",
+          "effect-repo-issues-n"
+        ],
+        "states": {
+          "ready": [
+            "effect-repo-issues",
+            "effect-repo-issues-new",
+            "effect-repo-issues-n"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "pulls-stack": {
+        "applies": true,
+        "screenIds": [
+          "effect-releases-version-pr-conversation",
+          "effect-releases-version-pr-commits",
+          "effect-releases-version-pr-checks",
+          "effect-releases-version-pr-files",
+          "effect-repo-pull-n-commits",
+          "effect-repo-pull-n-checks",
+          "effect-repo-pull-n-files",
+          "effect-repo-pull-n",
+          "effect-repo-pulls",
+          "effect-repo-stack"
+        ],
+        "states": {
+          "ready": [
+            "effect-releases-version-pr-conversation",
+            "effect-releases-version-pr-commits",
+            "effect-releases-version-pr-checks",
+            "effect-releases-version-pr-files",
+            "effect-repo-pull-n-commits",
+            "effect-repo-pull-n-checks",
+            "effect-repo-pull-n-files",
+            "effect-repo-pull-n",
+            "effect-repo-pulls",
+            "effect-repo-stack"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "runs": {
+        "applies": true,
+        "screenIds": [
+          "effect-ci-runs",
+          "effect-ci-runs-loading",
+          "effect-ci-runs-error",
+          "effect-ci-runs-empty",
+          "effect-ci-runs-signed-out",
+          "effect-ci-runs-reader",
+          "effect-ci-setup-log",
+          "effect-ci-failure-log",
+          "effect-repo-approvals"
+        ],
+        "states": {
+          "ready": [
+            "effect-ci-runs",
+            "effect-ci-setup-log",
+            "effect-ci-failure-log",
+            "effect-repo-approvals"
+          ],
+          "loading": [
+            "effect-ci-runs-loading"
+          ],
+          "error": [
+            "effect-ci-runs-error"
+          ],
+          "empty": [
+            "effect-ci-runs-empty"
+          ],
+          "signed-out": [
+            "effect-ci-runs-signed-out"
+          ],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "signed-out"
+        ]
+      },
+      "flows": {
+        "applies": true,
+        "screenIds": [
+          "effect-repo-flows-name",
+          "effect-repo-agents",
+          "effect-repo-flows"
+        ],
+        "states": {
+          "ready": [
+            "effect-repo-flows-name",
+            "effect-repo-agents",
+            "effect-repo-flows"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "wiki": {
+        "applies": true,
+        "screenIds": [
+          "effect-repo-wiki-page",
+          "effect-repo-wiki"
+        ],
+        "states": {
+          "ready": [
+            "effect-repo-wiki-page",
+            "effect-repo-wiki"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "releases": {
+        "applies": true,
+        "screenIds": [
+          "effect-releases-sql-pg",
+          "effect-releases-unscoped",
+          "effect-releases-private",
+          "effect-releases-empty",
+          "effect-releases-signed-out",
+          "effect-releases-reader",
+          "effect-releases-loading",
+          "effect-releases-error",
+          "effect-releases-sql-pg-tag",
+          "effect-repo-releases-latest"
+        ],
+        "states": {
+          "ready": [
+            "effect-releases-sql-pg",
+            "effect-releases-unscoped",
+            "effect-releases-private",
+            "effect-releases-sql-pg-tag",
+            "effect-repo-releases-latest"
+          ],
+          "loading": [
+            "effect-releases-loading"
+          ],
+          "error": [
+            "effect-releases-error"
+          ],
+          "empty": [
+            "effect-releases-empty"
+          ],
+          "signed-out": [
+            "effect-releases-signed-out"
+          ],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "signed-out"
+        ]
+      },
+      "settings": {
+        "applies": true,
+        "screenIds": [
+          "effect-repo-settings-section",
+          "effect-repo-settings"
+        ],
+        "states": {
+          "ready": [
+            "effect-repo-settings-section",
+            "effect-repo-settings"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "search": {
+        "applies": true,
+        "screenIds": [
+          "effect-repo-search"
+        ],
+        "states": {
+          "ready": [
+            "effect-repo-search"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "ask": {
+        "applies": true,
+        "screenIds": [
+          "effect-docs-installation",
+          "effect-repo-home",
+          "effect-repo-home-loading",
+          "effect-repo-home-error",
+          "effect-repo-home-empty",
+          "effect-repo-home-signed-out",
+          "effect-repo-home-scoped"
+        ],
+        "states": {
+          "ready": [
+            "effect-repo-home",
+            "effect-repo-home-scoped"
+          ],
+          "loading": [
+            "effect-repo-home-loading"
+          ],
+          "error": [
+            "effect-repo-home-error"
+          ],
+          "empty": [
+            "effect-repo-home-empty"
+          ],
+          "signed-out": [
+            "effect-docs-installation",
+            "effect-repo-home-signed-out"
+          ],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "signed-out"
+        ]
+      },
+      "terminal": {
+        "applies": true,
+        "screenIds": [
+          "effect-repo-branches-branch-terminal"
+        ],
+        "states": {
+          "ready": [
+            "effect-repo-branches-branch-terminal"
+          ],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready"
+        ]
+      },
+      "docs": {
+        "applies": true,
+        "screenIds": [
+          "effect-docs-packages-index",
+          "effect-docs-index-scoped",
+          "effect-docs-loading",
+          "effect-docs-error",
+          "effect-docs-empty",
+          "effect-docs-signed-out",
+          "effect-docs-reader",
+          "effect-docs-sql-pg",
+          "effect-docs-api",
+          "effect-docs-stale",
+          "effect-docs-missing",
+          "effect-docs-no-package-docs",
+          "effect-docs-page-loading",
+          "effect-docs-page-error",
+          "effect-docs-page-empty"
+        ],
+        "states": {
+          "ready": [
+            "effect-docs-packages-index",
+            "effect-docs-index-scoped",
+            "effect-docs-sql-pg",
+            "effect-docs-api",
+            "effect-docs-stale",
+            "effect-docs-missing",
+            "effect-docs-no-package-docs"
+          ],
+          "loading": [
+            "effect-docs-loading",
+            "effect-docs-page-loading"
+          ],
+          "error": [
+            "effect-docs-error",
+            "effect-docs-page-error"
+          ],
+          "empty": [
+            "effect-docs-empty",
+            "effect-docs-page-empty"
+          ],
+          "signed-out": [
+            "effect-docs-signed-out"
+          ],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "smithers-evals": {
+        "applies": false,
+        "screenIds": [],
+        "states": {
+          "ready": [],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "effeck-golden-set": {
+        "applies": false,
+        "screenIds": [],
+        "states": {
+          "ready": [],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": [],
+          "held": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "effect-packages-scope": {
+        "applies": true,
+        "screenIds": [
+          "effect-packages-ready",
+          "effect-packages-loading",
+          "effect-packages-error",
+          "effect-packages-empty",
+          "effect-packages-signed-out",
+          "effect-packages-filtered",
+          "effect-packages-no-matches",
+          "effect-packages-open-form",
+          "effect-package-home-ready",
+          "effect-package-home-loading",
+          "effect-package-home-error",
+          "effect-package-home-empty",
+          "effect-package-home-signed-out",
+          "effect-package-home-private",
+          "effect-package-home-core",
+          "effect-package-home-missing",
+          "effect-ci-runs",
+          "effect-ci-runs-loading",
+          "effect-ci-runs-error",
+          "effect-ci-runs-empty",
+          "effect-ci-runs-signed-out",
+          "effect-ci-runs-reader",
+          "effect-docs-packages-index",
+          "effect-docs-index-scoped",
+          "effect-docs-loading",
+          "effect-docs-error",
+          "effect-docs-empty",
+          "effect-docs-signed-out",
+          "effect-docs-reader",
+          "effect-docs-sql-pg",
+          "effect-docs-api",
+          "effect-docs-stale",
+          "effect-docs-missing",
+          "effect-docs-no-package-docs",
+          "effect-docs-page-loading",
+          "effect-docs-page-error",
+          "effect-docs-page-empty",
+          "effect-repo-home",
+          "effect-repo-home-loading",
+          "effect-repo-home-error",
+          "effect-repo-home-empty",
+          "effect-repo-home-signed-out",
+          "effect-repo-home-scoped",
+          "effect-repo-tree-ref",
+          "effect-repo-tree-ref-path",
+          "effect-package-inferred-tree",
+          "effect-repo-blob-ref-path",
+          "effect-package-inferred-file",
+          "effect-repo-issues",
+          "effect-repo-pulls",
+          "effect-repo-flows",
+          "effect-repo-wiki",
+          "effect-repo-settings"
+        ],
+        "states": {
+          "ready": [
+            "effect-packages-ready",
+            "effect-packages-filtered",
+            "effect-packages-no-matches",
+            "effect-packages-open-form",
+            "effect-package-home-ready",
+            "effect-package-home-private",
+            "effect-package-home-core",
+            "effect-package-home-missing",
+            "effect-ci-runs",
+            "effect-docs-packages-index",
+            "effect-docs-index-scoped",
+            "effect-docs-sql-pg",
+            "effect-docs-api",
+            "effect-docs-stale",
+            "effect-docs-missing",
+            "effect-docs-no-package-docs",
+            "effect-repo-home",
+            "effect-repo-home-scoped",
+            "effect-repo-tree-ref",
+            "effect-repo-tree-ref-path",
+            "effect-package-inferred-tree",
+            "effect-repo-blob-ref-path",
+            "effect-package-inferred-file",
+            "effect-repo-issues",
+            "effect-repo-pulls",
+            "effect-repo-flows",
+            "effect-repo-wiki",
+            "effect-repo-settings"
+          ],
+          "loading": [
+            "effect-packages-loading",
+            "effect-package-home-loading",
+            "effect-ci-runs-loading",
+            "effect-docs-loading",
+            "effect-docs-page-loading",
+            "effect-repo-home-loading"
+          ],
+          "error": [
+            "effect-packages-error",
+            "effect-package-home-error",
+            "effect-ci-runs-error",
+            "effect-docs-error",
+            "effect-docs-page-error",
+            "effect-repo-home-error"
+          ],
+          "empty": [
+            "effect-packages-empty",
+            "effect-package-home-empty",
+            "effect-ci-runs-empty",
+            "effect-docs-empty",
+            "effect-docs-page-empty",
+            "effect-repo-home-empty"
+          ],
+          "signed-out": [
+            "effect-packages-signed-out",
+            "effect-package-home-signed-out",
+            "effect-ci-runs-signed-out",
+            "effect-docs-signed-out",
+            "effect-repo-home-signed-out"
+          ],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "effect-ci-matrix": {
+        "applies": true,
+        "screenIds": [
+          "effect-ci-matrix-failed",
+          "effect-ci-matrix-all-pass",
+          "effect-ci-matrix-running",
+          "effect-ci-matrix-setup-failure",
+          "effect-ci-matrix-scoped",
+          "effect-ci-matrix-cancelled",
+          "effect-ci-matrix-excluded",
+          "effect-ci-matrix-missing",
+          "effect-ci-matrix-loading",
+          "effect-ci-matrix-error",
+          "effect-ci-matrix-empty",
+          "effect-ci-matrix-signed-out"
+        ],
+        "states": {
+          "ready": [
+            "effect-ci-matrix-failed",
+            "effect-ci-matrix-all-pass",
+            "effect-ci-matrix-running",
+            "effect-ci-matrix-setup-failure",
+            "effect-ci-matrix-scoped",
+            "effect-ci-matrix-cancelled",
+            "effect-ci-matrix-excluded",
+            "effect-ci-matrix-missing"
+          ],
+          "loading": [
+            "effect-ci-matrix-loading"
+          ],
+          "error": [
+            "effect-ci-matrix-error"
+          ],
+          "empty": [
+            "effect-ci-matrix-empty"
+          ],
+          "signed-out": [
+            "effect-ci-matrix-signed-out"
+          ],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      },
+      "effect-version-packages": {
+        "applies": true,
+        "screenIds": [
+          "effect-releases-plan-ready",
+          "effect-releases-plan-preview",
+          "effect-releases-plan-confirm",
+          "effect-releases-plan-existing-pr",
+          "effect-releases-plan-stale",
+          "effect-releases-plan-running",
+          "effect-releases-plan-failed",
+          "effect-releases-plan-empty",
+          "effect-releases-plan-held",
+          "effect-releases-plan-signed-out",
+          "effect-releases-plan-denied",
+          "effect-releases-plan-scoped",
+          "effect-releases-plan-loading",
+          "effect-releases-plan-error"
+        ],
+        "states": {
+          "ready": [
+            "effect-releases-plan-ready",
+            "effect-releases-plan-preview",
+            "effect-releases-plan-confirm",
+            "effect-releases-plan-existing-pr",
+            "effect-releases-plan-stale",
+            "effect-releases-plan-running",
+            "effect-releases-plan-failed",
+            "effect-releases-plan-scoped"
+          ],
+          "loading": [
+            "effect-releases-plan-loading"
+          ],
+          "error": [
+            "effect-releases-plan-error"
+          ],
+          "empty": [
+            "effect-releases-plan-empty"
+          ],
+          "signed-out": [
+            "effect-releases-plan-signed-out"
+          ],
+          "reader-denied": [
+            "effect-releases-plan-denied"
+          ],
+          "held": [
+            "effect-releases-plan-held"
+          ]
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied",
+          "held"
+        ]
+      },
+      "fixed-by-agents": {
+        "applies": false,
+        "screenIds": [],
+        "states": {
+          "ready": [],
+          "loading": [],
+          "error": [],
+          "empty": [],
+          "signed-out": [],
+          "reader-denied": []
+        },
+        "requiredStates": [
+          "ready",
+          "loading",
+          "error",
+          "empty",
+          "signed-out",
+          "reader-denied"
+        ]
+      }
+    }
+  }
+}

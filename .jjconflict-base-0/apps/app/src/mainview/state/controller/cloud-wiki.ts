@@ -1,0 +1,906 @@
+import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
+import { parseWikilinks, restoreWikilinks } from "@smthrs/ui/vault"
+import { Effect } from "effect"
+import {
+  CloudWikiError,
+  CloudWikiTransport,
+  makeCloudWikiTransport,
+  mergeWikiState,
+  editWikiState,
+  decodeWikiState,
+  encodeWikiState,
+  wikiAttachmentSlug,
+  wikiContentPath,
+  wikiDocumentId,
+  wikiDocumentPath,
+  wikiPagePath
+} from "../../wiki/CloudWiki"
+import type { CloudWikiDocument, CloudWikiIndex, WikiSpace } from "../../wiki/CloudWiki"
+import type { CloudWikiState } from "../../wiki/CloudWikiState"
+import type { CommandGesture, PreparedWikiEdit } from "../../flows/CommandGesture"
+import { actorSharedState } from "../ActorBindings"
+import type { Card, WikiIndexRow, WorldDocument } from "../AppState"
+import { DEFAULT_BRANCH_ID, WIKI_DISPLAY_NAME, wikiIndexRowId } from "../AppState"
+import { resolveTargetRepo } from "../RepoContext"
+import { scrubToolEcho } from "../MessageScrub"
+import type { ControllerContext } from "./context"
+import { randomUuid } from "../../runtime/RandomUuid"
+import * as Y from "yjs"
+import { LiveChannel } from "../../runtime/LiveChannel"
+import { LiveDocProvider } from "../../runtime/LiveDocProvider"
+
+/** The space a page row lives in; rows saved before spaces existed were public. */
+export const spaceOf = (cloud: Pick<CloudWikiState, "visibility">): WikiSpace => cloud.visibility ?? "public"
+
+/**
+ * The live navigation indexes, one per repository and space: what the Wiki
+ * pane's tree, the card's tree and the backlinks rail read (the way the
+ * Wiki freshness reads `repositorySnapshots`). A snapshot of the backend's index,
+ * replaced whole on every read, never persisted.
+ */
+export interface WikiIndexStore {
+  readonly get: (repo: string, space: WikiSpace) => WikiIndexRow | undefined
+  readonly subscribe: (listener: () => void) => () => void
+}
+
+/** The index rows as the store keeps them: metadata and backlinks in the app's own names. */
+export const wikiIndexOf = (index: CloudWikiIndex): Pick<WikiIndexRow, "pages" | "folders" | "tags"> => ({
+  pages: index.pages.map((page) => ({
+    id: page.id, slug: page.slug, title: page.title, path: page.path ?? `${page.slug}.md`, revision: page.revision, updatedAt: page.updated_at,
+    ...(page.attachment === undefined ? {} : { attachment: { digest: page.attachment.digest, mediaType: page.attachment.media_type, size: page.attachment.size } }),
+    tags: page.metadata.tags ?? [], aliases: page.metadata.aliases ?? [], headings: page.metadata.headings ?? [],
+    links: (page.metadata.links ?? []).map((link) => ({ target: link.target, embed: link.embed,
+      ...(link.heading === undefined ? {} : { heading: link.heading }), ...(link.alias === undefined ? {} : { alias: link.alias }),
+      ...(link.page_id === undefined ? {} : { pageId: link.page_id }) })),
+    backlinks: (page.backlinks ?? []).map((row) => ({ pageId: row.page_id, path: row.path, embed: row.embed, ...(row.heading === undefined ? {} : { heading: row.heading }) })),
+    ...(page.metadata.error === undefined ? {} : { error: page.metadata.error })
+  })),
+  folders: [...(index.folders ?? [])],
+  tags: [...(index.tags ?? [])]
+})
+
+type Actor = "user" | "smithers"
+type DocumentInput = Omit<WorldDocument, "updatedAt" | "updatedBy" | "revision">
+type CloudDocument = WorldDocument & { cloud: CloudWikiState }
+const cloudDocument = (value: WorldDocument | undefined): value is CloudDocument => value?.cloud !== undefined
+/** JSON with object keys sorted: a saved row can read back with its keys in another order. */
+const canonicalJson = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) =>
+  item !== null && typeof item === "object" && !Array.isArray(item)
+    ? Object.fromEntries(Object.entries(item).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0))
+    : item)
+
+/** A controller scope owns handles and fibers; all document bytes and pending edits belong to TanStack DB. */
+export const createCloudWikiController = (ctx: ControllerContext, nextOrdinal: () => number) => {
+  const shared = actorSharedState(ctx, "cloudWiki", () => {
+    const transport = makeCloudWikiTransport({ http: ctx.http, baseUrl: ctx.baseUrl,
+      /* The gate's verdict is the host's own word that it serves no Wiki; every trigger reads it (flows/DoorAvailability.ts). */
+      onFeatureGate: () => ctx.doors.record("wiki") })
+    const documents = new Map<string, LiveDocProvider>()
+    const prepared = new Map<string, CloudWikiState["pending"]>()
+    const editors = new Map<string, Map<string, MarkdownEditorHandle>>()
+    let disposed = false
+    let lifetime = new AbortController()
+    const branch = () => ctx.store.session().activeBranchId ?? DEFAULT_BRANCH_ID
+    const indexes = new Map<string, WikiIndexRow>()
+    const indexListeners = new Set<() => void>()
+    const wikiIndexes: WikiIndexStore = {
+      get: (repo, space) => indexes.get(wikiIndexRowId(repo, space)),
+      subscribe: (listener) => { indexListeners.add(listener); return () => { indexListeners.delete(listener) } }
+    }
+    const notifyIndexes = () => {
+      for (const listener of indexListeners) {
+        try { listener() } catch (error) { ctx.failures.report("wiki.index.listener", error) }
+      }
+    }
+    const setIndex = (repo: string, space: WikiSpace, answer: Pick<WikiIndexRow, "pages" | "folders" | "tags"> | { readonly error: string; readonly errorCode?: string; readonly retainMetadata?: boolean }) => {
+      const id = wikiIndexRowId(repo, space)
+      const existing = "error" in answer && answer.retainMetadata ? indexes.get(id) : undefined
+      indexes.set(id, "error" in answer
+        ? { id, repo, space, pages: existing?.pages ?? [], folders: existing?.folders ?? [], tags: existing?.tags ?? [], error: answer.error, ...(answer.errorCode === undefined ? {} : { errorCode: answer.errorCode }), loadedAt: Date.now() }
+        : { id, repo, space, ...answer, loadedAt: Date.now() })
+      notifyIndexes()
+    }
+    const clearIndexes = () => {
+      indexes.clear()
+      notifyIndexes()
+    }
+    /** The space the pane shows (session), the default for every door that names none. */
+    const space = (): WikiSpace => ctx.store.session().wikiSpace ?? "public"
+    const login = () => {
+      const identity = ctx.store.collections.identitySessions.get("identity")
+      return identity?.state === "signed-in" ? identity.login : null
+    }
+    const provide = <A, E>(effect: Effect.Effect<A, E, CloudWikiTransport>) =>
+      Effect.provideService(effect, CloudWikiTransport, transport)
+    const run = <A, E>(effect: Effect.Effect<A, E, CloudWikiTransport>) => {
+      changed()
+      return Effect.runPromise(provide(effect), { signal: lifetime.signal })
+    }
+    const persist = (document: DocumentInput, actor: Actor | "system" = "system") =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.store.dispatch({ type: "world.document.upserted", actor, document, select: false }).isPersisted.promise,
+        catch: () =>
+          new CloudWikiError({ sentence: "The Wiki edit could not be saved locally. Check storage before retrying." })
+      }).pipe(Effect.asVoid)
+    const read = (id: string) => {
+      const document = ctx.store.collections.worldDocuments.get(id)
+      return cloudDocument(document) ? document : undefined
+    }
+    const accept = (
+      repo: string,
+      incoming: CloudWikiDocument,
+      owner: string,
+      originBranch: string,
+      actor: Actor | "system"
+    ) =>
+      Effect.gen(function*() {
+        const id = wikiDocumentId(repo, incoming.page.id)
+        const previous = read(id)
+        const previousCloud = previous?.cloud
+        const sameScope = previousCloud?.accountLogin === owner && previousCloud.branchId === originBranch
+        const pending = sameScope ? previousCloud.pending : []
+        // A stale response can acknowledge one UUID, but cannot regress a newer bootstrap.
+        const newer = sameScope && previousCloud.remoteRevision > incoming.page.revision
+        const baseState = newer || (sameScope && previousCloud?.live?.pending.length) ? previousCloud!.state : incoming.state
+        const merged = yield* Effect.try({
+          try: () => {
+            if (!newer && mergeWikiState(incoming.state).body !== incoming.page.body) {
+              throw new Error("State/body mismatch")
+            }
+            return mergeWikiState(baseState, ...pending.map((item) => item.update))
+          },
+          catch: () =>
+            new CloudWikiError({
+              sentence: "The Wiki text and collaborative state disagree. Local edits were retained."
+            })
+        })
+        const slug = newer ? previousCloud.slug : incoming.page.slug
+        yield* persist({
+          id,
+          path: wikiDocumentPath(repo, slug),
+          title: newer ? previous!.title : incoming.page.title,
+          body: merged.body,
+          links: [...new Set(parseWikilinks(merged.body).map((link) => link.target).filter(Boolean))],
+          tags: previous?.tags ?? [],
+          sources: [`plue:${repo}/wiki/${slug}`],
+          confidence: 1,
+          cloud: {
+            repo,
+            pageId: incoming.page.id,
+            slug,
+            visibility: incoming.page.visibility ?? previousCloud?.visibility ?? "public",
+            ...(incoming.page.path === undefined ? previousCloud?.path === undefined ? {} : { path: previousCloud.path } : { path: incoming.page.path }),
+            remoteRevision: newer ? previousCloud.remoteRevision : incoming.page.revision,
+            remoteAuthor: newer ? previousCloud.remoteAuthor : incoming.page.author.login,
+            remoteUpdatedAt: newer ? previousCloud.remoteUpdatedAt : incoming.page.updated_at,
+            state: merged.state,
+            pending,
+            ...(sameScope && previousCloud?.live ? { live: previousCloud.live } : {}),
+            accountLogin: owner,
+            branchId: originBranch,
+            phase: "cached",
+            error: null
+          }
+        }, actor)
+      })
+
+    const watch = (id: string) => {
+      if (documents.has(id)) return
+      const row = read(id)
+      if (!row || row.cloud.accountLogin !== login() || row.cloud.branchId !== branch()) return
+      const scopeOwner = login(), scopeBranch = branch(), scopeEpoch = ctx.accountEpoch
+      const current = () => !disposed && ctx.accountEpoch === scopeEpoch && login() === scopeOwner && branch() === scopeBranch
+      const provider = new LiveDocProvider(`doc:wiki:${row.cloud.pageId}`, ctx.services.live instanceof LiveChannel ? ctx.services.live : undefined,
+        { contract: true, actor: true, file: true, recovery: true, catalog: true, machine: true }, {
+          ...(row.cloud.live ? { initial: { state: decodeWikiState(row.cloud.state), clientId: row.cloud.live.clientId,
+            ...(row.cloud.live.epoch ? { epoch: row.cloud.live.epoch } : {}), pending: row.cloud.live.pending.map(decodeWikiState) } } : {}),
+          save: async value => {
+            if (!current()) throw new Error("Wiki account changed")
+            const latest = read(id)
+            if (!latest) throw new Error("Wiki page gone")
+            // Refusal/offline before the first sync has no authoritative replica.
+            // Keep the fetched page; a restored live replica may retain pending edits.
+            if (!provider.available && latest.cloud.live === undefined) return
+            const state = encodeWikiState(value.state)
+            // Persistence may trail rapid admitted keystrokes. Render the current
+            // replica and locally staged edits, never an earlier save snapshot.
+            const merged = mergeWikiState(encodeWikiState(Y.encodeStateAsUpdate(provider.doc)), ...(prepared.get(id) ?? latest.cloud.pending).map(item => item.update))
+            const next: DocumentInput = { ...latest, body: merged.body,
+              links: [...new Set(parseWikilinks(merged.body).map(link => link.target).filter(Boolean))],
+              cloud: { ...latest.cloud, state, phase: provider.available ? "live" : "cached",
+                live: { clientId: value.clientId, ...(value.epoch ? { epoch: value.epoch } : {}), pending: value.pending.map(encodeWikiState) } } }
+            // The provider saves on every channel event, so each reconnect and
+            // repeated assignment re-saves an unchanged replica. Writing it
+            // would add a journal event per reconnect (JournalGrowth.test.ts).
+            if (canonicalJson(next) === canonicalJson(latest)) return
+            await Effect.runPromise(persist(next))
+          }
+        })
+      documents.set(id, provider)
+      provider.subscribeText(() => {
+        if (!current() || !provider.available) return
+        const body = mergeWikiState(encodeWikiState(Y.encodeStateAsUpdate(provider.doc)), ...(prepared.get(id) ?? []).map(item => item.update)).body
+        for (const editor of editors.get(id)?.values() ?? []) {
+          if (restoreWikilinks(editor.getMarkdown()) !== body) editor.setMarkdown(body)
+        }
+      })
+    }
+    const stopDocument = (id: string) => {
+      documents.get(id)?.dispose()
+      documents.delete(id)
+    }
+
+    const detach = (resetRows = false) => {
+      lifetime.abort()
+      lifetime = new AbortController()
+      for (const id of documents.keys()) stopDocument(id)
+      prepared.clear()
+      if (!resetRows) return
+      for (const document of ctx.store.collections.worldDocuments.values()) {
+        if (document.cloud !== undefined && document.cloud.phase !== "deleted" && document.cloud.phase !== "cached") {
+          ctx.store.dispatch({
+            type: "world.document.upserted",
+            actor: "system",
+            select: false,
+            document: { ...document, cloud: { ...document.cloud, phase: "cached" } }
+          })
+        }
+      }
+    }
+    let owner = login()
+    let originBranch = branch()
+    let accountEpoch = ctx.accountEpoch
+    const changed = () => {
+      const accountChanged = owner !== login() || accountEpoch !== ctx.accountEpoch
+      if (!accountChanged && originBranch === branch()) return
+      owner = login()
+      originBranch = branch()
+      accountEpoch = ctx.accountEpoch
+      detach()
+      if (accountChanged) clearIndexes()
+    }
+    const stopAccountChanges = ctx.onAccountChange(changed)
+    const identitySubscription = ctx.store.collections.identitySessions.subscribeChanges(changed)
+    const sessionSubscription = ctx.store.collections.sessions.subscribeChanges(changed)
+    const documentSubscription = ctx.store.collections.worldDocuments.subscribeChanges(() => {
+      for (const [id, handles] of editors) {
+        const document = ctx.store.collections.worldDocuments.get(id)
+        if (document === undefined) continue
+        for (const editor of handles.values()) {
+          if (restoreWikilinks(editor.getMarkdown()) !== document.body) editor.setMarkdown(document.body)
+        }
+      }
+    })
+    detach(true)
+    ctx.onDispose(() => {
+      disposed = true
+      lifetime.abort()
+      clearIndexes()
+      for (const id of documents.keys()) stopDocument(id)
+      stopAccountChanges()
+      identitySubscription.unsubscribe()
+      sessionSubscription.unsubscribe()
+      documentSubscription.unsubscribe()
+      editors.clear()
+    })
+    return {
+      provide,
+      run,
+      persist,
+      read,
+      accept,
+      watch,
+      documents,
+      prepared,
+      stopDocument,
+      editors,
+      paneRead: 0,
+      indexReads: new Map<string, number>(),
+      branch,
+      space,
+      login,
+      wikiIndexes,
+      setIndex,
+      disposed: () => disposed
+    }
+  })
+
+  /** The repository a wiki door targets: the one named, else the active one. */
+  const targetRepo = (repo?: string): string | { readonly error: string } => {
+    const target = resolveTargetRepo(ctx.store, repo)
+    return "error" in target ? { error: target.error } : target.repo
+  }
+  const refusal = (error: unknown): string => error instanceof CloudWikiError ? error.sentence : `The ${WIKI_DISPLAY_NAME} request failed.`
+
+  const indexFailure = (error: unknown) => ({
+    error: refusal(error),
+    ...(error instanceof CloudWikiError && error.code !== undefined ? { errorCode: error.code } : {}),
+    retainMetadata: !(error instanceof CloudWikiError) || error.status === undefined ||
+      error.status === 408 || error.status === 429 || error.status >= 500
+  })
+
+  /**
+   * The space's navigation index, read into the collection (`wikiIndexes`).
+   * A read the person asked for shows its notice; the background read the
+   * pane makes on opening a space is quiet, so only a refusal is stated.
+   * Both actors of a pair count reads of a space together, so an older
+   * actor's answer never replaces a newer one.
+   */
+  const loadWikiIndex = async (repoArg?: string, spaceArg?: WikiSpace, quiet = true): Promise<string | { value: string }> => {
+    const repo = targetRepo(repoArg)
+    if (typeof repo !== "string") return repo.error
+    const owner = shared.login()
+    if (owner === null) return `Sign in to read the repository ${WIKI_DISPLAY_NAME}.`
+    const accountEpoch = ctx.accountEpoch
+    const originBranch = shared.branch()
+    const at = spaceArg ?? shared.space()
+    const key = wikiIndexRowId(repo, at)
+    const generation = (shared.indexReads.get(key) ?? 0) + 1
+    shared.indexReads.set(key, generation)
+    const current = () => shared.indexReads.get(key) === generation && !ctx.disposed && !shared.disposed() && ctx.accountEpoch === accountEpoch &&
+      shared.login() === owner && shared.branch() === originBranch
+    const outcome = await ctx.withToast(`wiki.index.${repo}.${at}`, `Reading the ${at} ${WIKI_DISPLAY_NAME}…`, `${WIKI_DISPLAY_NAME} read`, async () => {
+      const answer = await shared.run(Effect.gen(function*() {
+        const api = yield* CloudWikiTransport
+        return wikiIndexOf(yield* api.index(repo, at))
+      }).pipe(Effect.catch((error: CloudWikiError) => Effect.succeed(indexFailure(error))))).catch(indexFailure)
+      if (ctx.disposed || shared.disposed()) return "The app closed while the Wiki was loading."
+      if (!current()) {
+        return "The account or conversation changed while the Wiki was loading."
+      }
+      if ("error" in answer) {
+        shared.setIndex(repo, at, answer)
+        return answer.error
+      }
+      shared.setIndex(repo, at, answer)
+      return answer
+    }, quiet, current)
+    if (typeof outcome === "string") return outcome
+    if (!current()) return "The account or conversation changed while the Wiki was loading."
+    return { value: `${outcome.pages.length} ${at} ${WIKI_DISPLAY_NAME} page${outcome.pages.length === 1 ? "" : "s"} in ${repo}: ${outcome.pages.map((page) => page.path).join(", ") || "none"}.` }
+  }
+
+  /** `wiki.view <read|edit>`: the pane shows the page rendered, or its editor. */
+  const setWikiPageView = async (view: string): Promise<string | void> => {
+    if (view !== "read" && view !== "edit") return "A Wiki page view is read or edit."
+    if ((ctx.store.session().wikiPageView ?? "read") !== view) ctx.store.dispatch({ type: "wiki.page-view.changed", actor: ctx.commandActor, view })
+  }
+
+  const invalidatePaneRead = (): void => { ++shared.paneRead }
+
+  const readWikiForPane = async (): Promise<void> => {
+    const generation = ++shared.paneRead
+    const repo = targetRepo(undefined)
+    if (typeof repo !== "string" || shared.login() === null || ctx.store.session().surface !== "world") return
+    const space = shared.space()
+    const owner = shared.login()
+    const epoch = ctx.accountEpoch
+    const branch = shared.branch()
+    const current = () => generation === shared.paneRead && !ctx.disposed && !shared.disposed() &&
+      ctx.accountEpoch === epoch && shared.login() === owner && shared.branch() === branch &&
+      ctx.store.session().surface === "world" && shared.space() === space && targetRepo(undefined) === repo
+    await loadWikiIndex(repo, space)
+    if (!current()) return
+    const first = shared.wikiIndexes.get(repo, space)?.pages[0]
+    if (first?.attachment !== undefined) {
+      ctx.store.dispatch({ type: "world.document.selected", actor: ctx.commandActor, id: wikiDocumentId(repo, first.id) })
+    } else if (first !== undefined) {
+      try { await openCloudWiki(repo, first.slug, first.id, space, current) }
+      catch (error) { if (current()) ctx.failures.report("seam.failure", error, "wiki.pane.read") }
+    }
+  }
+
+  /** `wiki.space <public|private>`: the pane shows that space, and its index is read. */
+  const setWikiSpace = async (spaceArg: string, repoArg?: string): Promise<string | void> => {
+    if (spaceArg !== "public" && spaceArg !== "private") return "A Wiki space is public or private."
+    if (shared.space() !== spaceArg) ctx.store.dispatch({ type: "wiki.space.changed", actor: ctx.commandActor, space: spaceArg })
+    const repo = targetRepo(repoArg)
+    if (typeof repo !== "string" || shared.login() === null) return
+    ++shared.paneRead
+    if (ctx.store.session().surface === "world") void readWikiForPane()
+    else void loadWikiIndex(repo, spaceArg)
+  }
+
+  const listCloudWiki = async (repoArg?: string, page = 1, spaceArg?: WikiSpace): Promise<string | { value: string }> => {
+    const repo = targetRepo(repoArg)
+    if (typeof repo !== "string") return repo.error
+    const space = spaceArg ?? shared.space()
+    const owner = shared.login()
+    if (owner === null) return "Sign in to read the repository Wiki."
+    if (!Number.isSafeInteger(page) || page < 1) return "Choose a positive Wiki page number."
+    try {
+      wikiPagePath(repo, "home")
+    } catch {
+      return "Choose a repository as owner/repo."
+    }
+    const originBranch = shared.branch()
+    return shared.run(
+      Effect.gen(function*() {
+        const api = yield* CloudWikiTransport
+        const pages = yield* api.list(repo, page, space)
+        if (
+          shared.disposed() || shared.login() !== owner || shared.branch() !== originBranch
+        ) return "The account or conversation changed while the Wiki was loading."
+        // The listing is the index's page list; the pane's tree reads the navigation index beside it.
+        void loadWikiIndex(repo, space)
+        const cardId = `wiki-index-${repo}-${space}`
+        const previous = ctx.store.collections.cards.get(cardId)
+        const card: Card = {
+          id: cardId,
+          kind: "world",
+          title: `Wiki · ${repo}`,
+          status: "active",
+          createdAt: previous?.createdAt ?? Date.now(),
+          ordinal: nextOrdinal(),
+          payload: {
+            documents: pages.map((item) => ({
+              id: wikiDocumentId(repo, item.id),
+              path: wikiDocumentPath(repo, item.slug),
+              title: item.title,
+              confidence: 1,
+              cloud: { repo, slug: item.slug, revision: item.revision, visibility: space, accountLogin: owner }
+            })),
+            index: { repo, page, hasNext: pages.length === 50, space },
+            view: "outline"
+          }
+        }
+        yield* Effect.tryPromise({
+          try: () => ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card }).isPersisted.promise,
+          catch: () => new CloudWikiError({ sentence: "The Wiki index could not be saved locally." })
+        })
+        return {
+          value: `Embedded ${space} Wiki pages for ${repo}: ${
+            pages.map((item) => `${item.slug} (revision ${item.revision})`).join(", ") || "none"
+          }.`
+        }
+      }).pipe(Effect.catch((error: CloudWikiError) => Effect.succeed(error.sentence)))
+    )
+  }
+
+  /** A superseded open is neither a refusal nor a publication: a newer selection owns the pane. */
+  type OpenOutcome = { readonly value: string } | { readonly superseded: string } | { readonly refusal: string }
+  const superseded = (): OpenOutcome => ({ superseded: "The Wiki selection changed while the page was loading." })
+  const openOutcome = async (
+    repo: string,
+    slug: string,
+    expectedPageId?: number,
+    spaceArg?: WikiSpace,
+    isCurrent?: () => boolean
+  ): Promise<OpenOutcome> => {
+    const space = spaceArg ?? shared.space()
+    const owner = shared.login()
+    if (owner === null) return { refusal: "Sign in to read and edit the repository Wiki." }
+    try {
+      wikiPagePath(repo, slug)
+    } catch (error) {
+      return { refusal: error instanceof CloudWikiError ? error.sentence : "Invalid Wiki page." }
+    }
+    const selection = isCurrent === undefined && ctx.commandActor === "user" ? ++shared.paneRead : undefined
+    const current = isCurrent ?? (() => selection === undefined || selection === shared.paneRead)
+    const originBranch = shared.branch()
+    const actor = ctx.commandActor
+    return shared.run(
+      Effect.gen(function*() {
+        const api = yield* CloudWikiTransport
+        const incoming = yield* api.read(repo, slug, space)
+        if (
+          shared.disposed() || shared.login() !== owner || shared.branch() !== originBranch
+        ) return { refusal: "The account or conversation changed while the Wiki was loading." } as OpenOutcome
+        if (!current()) return superseded()
+        if (expectedPageId !== undefined && incoming.page.id !== expectedPageId) {
+          const oldId = wikiDocumentId(repo, expectedPageId)
+          shared.stopDocument(oldId)
+          const previous = shared.read(oldId)
+          const message = "A different page now uses this Wiki slug. Saved edits for the original page were retained."
+          if (previous !== undefined) {
+            yield* shared.persist({ ...previous, cloud: { ...previous.cloud, phase: "deleted", error: message } })
+          }
+          return { refusal: message }
+        }
+        const id = wikiDocumentId(repo, incoming.page.id)
+        yield* shared.accept(repo, { ...incoming, page: { ...incoming.page, visibility: incoming.page.visibility ?? space } }, owner, originBranch, actor)
+        if (!current()) return superseded()
+        shared.watch(id)
+        const document = shared.read(id)!
+        yield* shared.persist({ ...document, cloud: { ...document.cloud, phase: "cached" } }, actor)
+        if (!current()) return superseded()
+        // Automatic reads populate the active pane; explicit agent opens remain embedded in chat.
+        if (ctx.store.session().surface === "world" && (actor === "user" || isCurrent !== undefined)) {
+          ctx.store.dispatch({ type: "world.document.selected", actor, id })
+          return { value: `Opened ${document.path} at page revision ${incoming.page.revision}.` }
+        }
+        const cardId = `wiki-open-${id}`
+        const previous = ctx.store.collections.cards.get(cardId)
+        const card: Card = {
+          id: cardId,
+          kind: "world",
+          title: `${incoming.page.title} · ${repo}`,
+          status: "active",
+          createdAt: previous?.createdAt ?? Date.now(),
+          ordinal: nextOrdinal(),
+          payload: {
+            documents: [{ id, path: document.path, title: document.title, confidence: document.confidence }],
+            selectedDocumentId: id,
+            view: previous?.kind === "world" ? previous.payload.view ?? "read" : "read"
+          }
+        }
+        yield* Effect.tryPromise({
+          try: () => ctx.store.dispatch({ type: "card.upsert", actor, card }).isPersisted.promise,
+          catch: () => new CloudWikiError({ sentence: "The Wiki card could not be saved locally." })
+        })
+        // Only this explicit open resumes pending writes, and only in their original account/branch.
+        return { value: `Embedded ${document.path} at page revision ${incoming.page.revision}.\n\n${document.body}` }
+      }).pipe(Effect.catch((error: CloudWikiError) => Effect.succeed<OpenOutcome>({ refusal: error.sentence })))
+    )
+  }
+
+  /** `wiki.cloud.open <slug> [owner/repo]`: the page in the pane (user) or embedded in chat (agent); a superseded open states the selection change. */
+  const openCloudWiki = async (
+    repo: string,
+    slug: string,
+    expectedPageId?: number,
+    spaceArg?: WikiSpace,
+    isCurrent?: () => boolean
+  ): Promise<string | { value: string }> => {
+    const outcome = await openOutcome(repo, slug, expectedPageId, spaceArg, isCurrent)
+    return "value" in outcome ? outcome : "superseded" in outcome ? outcome.superseded : outcome.refusal
+  }
+
+  const prepareCloudWiki = (id: string, body: string): PreparedWikiEdit | undefined => {
+    const row = shared.read(id), provider = shared.documents.get(id)
+    if (!row || !provider?.editable) return undefined
+    // Persist the draft on the existing row before command admission; only the
+    // admitted continuation enters Yjs and the authenticated document channel.
+    const pending = shared.prepared.get(id) ?? row.cloud.pending
+    const staged = mergeWikiState(encodeWikiState(Y.encodeStateAsUpdate(provider.doc)), ...pending.map(item => item.update))
+    const edited = editWikiState(staged.state, body, provider.doc.clientID)
+    const updateId = randomUuid(), owner = shared.login(), branch = shared.branch(), epoch = ctx.accountEpoch
+    const drafts = [...pending, { updateId, update: edited.update, actor: ctx.commandActor, admitted: false }]
+    // Reserve causal clocks synchronously; collection persistence and command
+    // admission can trail the next keyboard event. This is local staging only.
+    shared.prepared.set(id, drafts)
+    const draft = shared.run(shared.persist({ ...row, body, cloud: { ...row.cloud, pending: drafts } }, ctx.commandActor))
+    let done = false
+    return { release() {}, complete: async () => {
+      await draft
+      if (done) return
+      done = true
+      if (ctx.accountEpoch !== epoch || shared.login() !== owner || shared.branch() !== branch || !provider.editable) return "Live Wiki editing is unavailable."
+      provider.doc.transact(transaction => {
+        Y.applyUpdate(provider.doc, decodeWikiState(edited.update))
+        // The prepared delta belongs to this tab. Yjs otherwise treats it as
+        // a foreign replica with our id and rotates the authenticated identity.
+        transaction.local = true
+      })
+      shared.prepared.set(id, (shared.prepared.get(id) ?? []).filter(item => item.updateId !== updateId))
+      const latest = shared.read(id)
+      if (latest) await shared.run(shared.persist({ ...latest, cloud: { ...latest.cloud, pending: shared.prepared.get(id)! } }, ctx.commandActor))
+    } }
+  }
+  const editCloudWiki = async (id: string, body: string): Promise<string | void> => {
+    if (shared.read(id) === undefined) return "This Wiki page is no longer available."
+    const prepared = prepareCloudWiki(id, body)
+    if (!prepared) return "Live Wiki editing is unavailable."
+    return prepared.complete()
+  }
+  const retryCloudWiki = async (id: string): Promise<string | void | { value: string }> => {
+    const document = shared.read(id)
+    if (document === undefined) return "This Wiki page is no longer available."
+    return openCloudWiki(document.cloud.repo, document.cloud.slug, document.cloud.pageId, spaceOf(document.cloud))
+  }
+
+  /** The page a slug names in the space: its loaded row, else the index's entry. */
+  const pageOf = (repo: string, space: WikiSpace, slug: string): { readonly pageId: number; readonly title: string; readonly path: string; readonly revision: number } | undefined => {
+    for (const document of ctx.store.collections.worldDocuments.values()) {
+      if (document.cloud?.repo === repo && document.cloud.slug === slug && spaceOf(document.cloud) === space) {
+        return { pageId: document.cloud.pageId, title: document.title, path: document.cloud.path ?? `${slug}.md`, revision: document.cloud.remoteRevision }
+      }
+    }
+    const row = shared.wikiIndexes.get(repo, space)?.pages.find((page) => page.slug === slug)
+    return row === undefined ? undefined : { pageId: row.id, title: row.title, path: row.path, revision: row.revision }
+  }
+
+  /** Whether an id names a page some read index lists (an attachment has no document; selecting it shows its bytes). */
+  const hasIndexedPage = (id: string): boolean => {
+    const match = /^wiki:(.+):(\d+)$/.exec(id)
+    if (match === null) return false
+    for (const space of ["public", "private"] as const) {
+      if (shared.wikiIndexes.get(match[1]!, space)?.pages.some((page) => String(page.id) === match[2])) return true
+    }
+    return false
+  }
+
+  /** `wiki.history <slug> [owner/repo]`: the page's revisions as a card, renames and the deletion included. */
+  const showWikiHistory = async (slug: string, repoArg?: string, page = 1, spaceArg?: WikiSpace): Promise<string | void | { value: string }> => {
+    const repo = targetRepo(repoArg)
+    if (typeof repo !== "string") return repo.error
+    if (shared.login() === null) return `Sign in to read the repository ${WIKI_DISPLAY_NAME}.`
+    const space = spaceArg ?? shared.space()
+    const found = pageOf(repo, space, slug)
+    if (found === undefined) return `There is no ${space} ${WIKI_DISPLAY_NAME} page ${slug} in ${repo}. Open the space first.`
+    const actor = ctx.commandActor
+    const outcome = await ctx.withToast(`wiki.history.${repo}.${space}.${found.pageId}`, `Reading the history of ${found.path}…`, `History of ${found.path}`, async () => {
+      const answer = await shared.run(Effect.gen(function*() {
+        const api = yield* CloudWikiTransport
+        return yield* api.history(repo, space, found.pageId, page)
+      }).pipe(Effect.catch((error: CloudWikiError) => Effect.succeed(error.sentence)))).catch(refusal)
+      if (typeof answer === "string") return answer
+      if (shared.disposed()) return "The app closed while the history was loading."
+      const cardId = `wiki-history-${repo}-${space}-${found.pageId}`
+      const previous = ctx.store.collections.cards.get(cardId)
+      const card: Card = {
+        id: cardId, kind: "wiki-history", title: `History · ${found.path}`, status: "active",
+        createdAt: previous?.createdAt ?? Date.now(), ordinal: nextOrdinal(),
+        payload: {
+          repo, space, pageId: found.pageId, slug, title: found.title, path: found.path, page, hasNext: answer.length === 50,
+          revisions: answer.map((row) => ({
+            revision: row.revision, title: row.title, path: row.path, author: row.author.login, at: row.updated_at, deleted: row.deleted, digest: row.content_digest,
+            ...(row.attachment === undefined ? {} : { attachment: { digest: row.attachment.digest, mediaType: row.attachment.media_type, size: row.attachment.size } })
+          }))
+        }
+      }
+      await ctx.store.dispatch({ type: "card.upsert", actor, card }).isPersisted.promise
+      return card.payload.revisions
+    })
+    if (typeof outcome === "string") return outcome
+    return { value: `Embedded the history of ${found.path} (${space}): ${outcome.map((row) => `r${row.revision} ${row.deleted ? "deleted" : row.path} by ${row.author}`).join("; ") || "no revisions"}.` }
+  }
+
+  /** The ordinary page door resolves vault paths and titles through the real index. */
+  const openWikiPage = async (name: string, revision?: number): Promise<string | void | { value: string }> => {
+    const repo = targetRepo()
+    if (typeof repo !== "string") return repo.error
+    const space = shared.space()
+    const epoch = ctx.accountEpoch, originBranch = shared.branch(), login = shared.login()
+    const current = () => !ctx.disposed && !shared.disposed() && ctx.accountEpoch === epoch && shared.branch() === originBranch && shared.login() === login
+    const indexed = await loadWikiIndex(repo, space)
+    if (typeof indexed === "string") return indexed
+    if (!current()) return "The account or conversation changed while the Wiki was loading."
+    const wanted = name.trim()
+    const page = shared.wikiIndexes.get(repo, space)?.pages.find(row =>
+      row.slug === wanted || row.title === wanted || row.path === wanted || row.path.replace(/\.md$/, "") === wanted)
+    if (revision === undefined) return page === undefined ? createCloudWikiPage(wanted, repo) : openCloudWiki(repo, page.slug, page.id, space)
+    if (!Number.isSafeInteger(revision) || revision <= 0 || page === undefined) return "This Wiki revision is unavailable."
+    const actor = ctx.commandActor
+    return ctx.withToast(`wiki.revision.${repo}.${space}.${page.id}.${revision}`, "Reading Wiki…", "Wiki read", async () => {
+      try {
+        const response = await ctx.boundedFetch(`${ctx.baseUrl}/api${wikiContentPath(repo, space, page.id, revision)}`)
+        if (!response.ok || !/^text\/(?:plain|markdown)(?:;|$)/i.test(response.headers.get("content-type") ?? "")) return "This Wiki revision is unavailable."
+        const markdown = await response.text()
+        if (!current()) return "The account or conversation changed while the Wiki was loading."
+        const id = `wiki-revision-${repo}-${space}-${page.id}-${revision}`
+        const previous = ctx.store.collections.cards.get(id)
+        await ctx.store.dispatch({ type: "card.upsert", actor, card: {
+          id, kind: "wiki-history", title: `${page.title} · r${revision}`, status: "active",
+          createdAt: previous?.createdAt ?? Date.now(), ordinal: nextOrdinal(),
+          payload: { repo, space, pageId: page.id, slug: page.slug, title: page.title, path: page.path,
+            revisions: [], page: 1, hasNext: false, content: { revision, markdown } }
+        } }).isPersisted.promise
+        return { value: `Opened ${page.title} at r${revision}` }
+      } catch { return "This Wiki revision is unavailable." }
+    }, false, current)
+  }
+
+  /** `wiki.cloud.new <title> [owner/repo]`: a Markdown page in the space, then opened. */
+  const createCloudWikiPage = async (title: string, repoArg?: string, body?: string): Promise<string | void | { value: string }> => {
+    const repo = targetRepo(repoArg)
+    if (typeof repo !== "string") return repo.error
+    if (shared.login() === null) return `Sign in to write the repository ${WIKI_DISPLAY_NAME}.`
+    const name = title.trim()
+    if (name === "") return "A page needs a title."
+    const space = shared.space()
+    const selection = ctx.commandActor === "user" ? ++shared.paneRead : undefined
+    const outcome = await ctx.withToast(`wiki.new.${repo}.${space}`, `Creating ${name}…`, `${name} created`, async () => {
+      const answer = await shared.run(Effect.gen(function*() {
+        const api = yield* CloudWikiTransport
+        return yield* api.create(repo, space, { title: name, body: body ?? `# ${name}\n\n` })
+      }).pipe(Effect.catch((error: CloudWikiError) => Effect.succeed(error.sentence)))).catch(refusal)
+      if (typeof answer === "string") return answer
+      if (shared.disposed()) return "The app closed while the page was being created."
+      void loadWikiIndex(repo, space)
+      const opened = await openOutcome(repo, answer.slug, answer.id, space,
+        selection === undefined ? undefined : () => selection === shared.paneRead)
+      return "refusal" in opened ? opened.refusal : answer
+    })
+    if (typeof outcome === "string") return outcome
+    return { value: `Created ${outcome.path ?? `${outcome.slug}.md`} in the ${space} ${WIKI_DISPLAY_NAME} of ${repo}.` }
+  }
+
+  type WikiSave = NonNullable<ReturnType<typeof ctx.store.session>["wikiSaves"]>[number]
+  const saving = actorSharedState(ctx, "wikiAnswerSaves", () => new Set<string>())
+  const saveRequest = (request: WikiSave) => ctx.store.dispatch({ type: "wiki.saves.changed", actor: "system",
+    requests: [...(ctx.store.session().wikiSaves ?? []).filter(row => row.id !== request.id), request] }).isPersisted.promise
+  const sendWikiSave = (request: WikiSave): void => {
+    if (saving.has(request.id) || shared.disposed() || shared.login() !== request.owner || shared.branch() !== request.branch) return
+    saving.add(request.id)
+    const epoch = ctx.accountEpoch
+    const current = () => !shared.disposed() && ctx.accountEpoch === epoch && shared.login() === request.owner && shared.branch() === request.branch
+    void ctx.withToast(`wiki.save.${request.id}`, `Saving ${request.name}…`, `${request.name} saved`, async () => {
+      const slug = `answer-${request.id}`
+      try {
+        const page = await shared.run(Effect.gen(function*() {
+          const api = yield* CloudWikiTransport
+          // A replay uses the same unique slug. A lost acknowledgement can be
+          // recovered only from this request's page, never somebody else's title.
+          return yield* api.create(request.repo, request.space, { title: request.name, body: request.text, slug,
+            path: request.name.endsWith(".md") ? request.name : `${request.name}.md` }).pipe(Effect.catch(error => {
+              if (error.status !== 409) return Effect.fail(error)
+              return api.read(request.repo, slug, request.space).pipe(Effect.flatMap(document =>
+                document.page.body === request.text && document.page.author.login === request.owner
+                  ? Effect.succeed(document.page) : Effect.fail(error)))
+            }))
+        }))
+        if (!current()) return "The Wiki save belongs to an earlier session."
+        await saveRequest({ ...request, state: "completed" })
+        void loadWikiIndex(request.repo, request.space)
+        const opened = await openOutcome(request.repo, page.slug, page.id, request.space)
+        return "refusal" in opened ? opened.refusal : { value: "Saved" }
+      } catch (error) {
+        if (!current()) return "The Wiki save belongs to an earlier session."
+        const message = error instanceof CloudWikiError ? error.sentence : "Could not save to Wiki."
+        /*
+         * The correlation a refused save leaves behind, and nothing a person
+         * reads: which status and which code the Wiki route answered, against
+         * this request's own slug. Without it a host whose Wiki is switched off
+         * and a page that genuinely conflicted are the same line in the ring.
+         *
+         * Reported for EVERY failed save, including the one the transport
+         * never classified. "Could not save to Wiki." is the only sentence
+         * here that names no cause, so it is the one a reader cannot diagnose
+         * from the screen — leaving it out of the ring would make the least
+         * explained failure the only invisible one.
+         */
+        ctx.failures.report("wiki.save", error, error instanceof CloudWikiError
+          ? `${slug} ${error.status ?? "no status"} ${error.code ?? "no code"}`
+          : `${slug} unclassified`)
+        await saveRequest({ ...request, state: "failed", error: message })
+        return message
+      }
+    }, false, current).catch(error => ctx.failures.report("seam.failure", error, "wiki.save")).finally(() => saving.delete(request.id))
+  }
+  const resumeWikiSaves = () => {
+    void (ctx.store.settled?.() ?? Promise.resolve()).then(() => {
+      for (const request of ctx.store.session().wikiSaves ?? []) if (request.state === "requested") sendWikiSave(request)
+    }).catch(error => ctx.failures.report("seam.failure", error, "wiki.save.recover"))
+  }
+  const wikiSaveIdentity = ctx.store.collections.identitySessions.subscribeChanges(resumeWikiSaves)
+  const wikiSaveSession = ctx.store.collections.sessions.subscribeChanges(resumeWikiSaves)
+  ctx.onDispose(() => { wikiSaveIdentity.unsubscribe(); wikiSaveSession.unsubscribe() })
+  queueMicrotask(resumeWikiSaves)
+  const saveWikiAnswer = async (name: string, text?: string) => {
+    const answer = text ?? [...ctx.store.collections.messages.values()]
+      .filter(message => message.role === "smithers" && message.status === "complete" && !message.action && message.act === undefined)
+      .sort((a, b) => b.ordinal - a.ordinal)
+      .map(message => scrubToolEcho(message.text))
+      .find(answer => answer.trim() !== "")
+    if (!answer?.trim()) return "Choose an answer to save."
+    const repo = targetRepo(undefined), owner = shared.login()
+    if (typeof repo !== "string") return repo.error
+    if (owner === null) return "Sign in to save to Wiki."
+    if (!name.trim()) return "A page needs a title."
+    const prior = (ctx.store.session().wikiSaves ?? []).find(row => row.owner === owner && row.repo === repo && row.space === shared.space()
+      && row.branch === shared.branch() && row.name === name.trim() && row.text === answer)
+    if (prior?.state === "completed") return { value: "Saved" }
+    const request: WikiSave = { id: prior?.id ?? randomUuid(), owner, repo, branch: shared.branch(), space: shared.space(), name: name.trim(), text: answer, state: "requested" }
+    await saveRequest(request)
+    sendWikiSave(request)
+    return { value: "Requested" }
+  }
+
+  /** `wiki.cloud.rename <slug> <path> [owner/repo]`: the path, checked against the revision the person saw; a stale revision is refused, never overwritten. */
+  const renameCloudWikiPage = async (slug: string, path: string, repoArg?: string): Promise<string | void> => {
+    const repo = targetRepo(repoArg)
+    if (typeof repo !== "string") return repo.error
+    if (shared.login() === null) return `Sign in to write the repository ${WIKI_DISPLAY_NAME}.`
+    const space = shared.space()
+    const found = pageOf(repo, space, slug)
+    if (found === undefined) return `There is no ${space} ${WIKI_DISPLAY_NAME} page ${slug} in ${repo}. Open the space first.`
+    const next = path.trim()
+    if (next === "" || next === found.path) return
+    const outcome = await ctx.withToast(`wiki.rename.${repo}.${space}.${found.pageId}`, `Renaming ${found.path}…`, `Renamed to ${next}`, async () => {
+      const answer = await shared.run(Effect.gen(function*() {
+        const api = yield* CloudWikiTransport
+        return yield* api.patch(repo, space, slug, { path: next, expected_revision: found.revision })
+      }).pipe(Effect.catch((error: CloudWikiError) =>
+        Effect.succeed(error.status === 409 ? `${found.path} changed since you opened it (revision ${found.revision}). Refresh the page and rename it again.` : error.sentence)))).catch(refusal)
+      if (typeof answer === "string") return answer
+      if (shared.disposed()) return "The app closed while the page was being renamed."
+      void loadWikiIndex(repo, space)
+      const id = wikiDocumentId(repo, answer.id)
+      const document = shared.read(id)
+      if (document !== undefined) await shared.run(shared.persist({ ...document, cloud: { ...document.cloud, path: answer.path ?? next, remoteRevision: answer.revision } }))
+      return true
+    })
+    return typeof outcome === "string" ? outcome : undefined
+  }
+
+  /** `wiki.cloud.delete <slug> [owner/repo]`: the page leaves the space; its history stays. */
+  const deleteCloudWikiPage = async (slug: string, repoArg?: string): Promise<string | void> => {
+    const repo = targetRepo(repoArg)
+    if (typeof repo !== "string") return repo.error
+    if (shared.login() === null) return `Sign in to write the repository ${WIKI_DISPLAY_NAME}.`
+    const space = shared.space()
+    const found = pageOf(repo, space, slug)
+    if (found === undefined) return `There is no ${space} ${WIKI_DISPLAY_NAME} page ${slug} in ${repo}. Open the space first.`
+    const outcome = await ctx.withToast(`wiki.delete.${repo}.${space}.${found.pageId}`, `Deleting ${found.path}…`, `${found.path} deleted`, async () => {
+      const answer = await shared.run(Effect.gen(function*() {
+        const api = yield* CloudWikiTransport
+        yield* api.remove(repo, space, slug)
+        return true as const
+      }).pipe(Effect.catch((error: CloudWikiError) => Effect.succeed(error.sentence)))).catch(refusal)
+      if (typeof answer === "string") return answer
+      if (shared.disposed()) return "The app closed while the page was being deleted."
+      void loadWikiIndex(repo, space)
+      const id = wikiDocumentId(repo, found.pageId)
+      const document = shared.read(id)
+      if (document !== undefined) {
+        shared.stopDocument(id)
+        await shared.run(shared.persist({ ...document, cloud: { ...document.cloud, phase: "deleted", error: "This page was deleted. Pending edits were kept locally." } }))
+      }
+      return true
+    })
+    return typeof outcome === "string" ? outcome : undefined
+  }
+
+  /**
+   * `wiki.attach [path] [owner/repo]`: the bytes the human's file
+   * dialog chose (the gesture), put at the path. The attachment the space's
+   * index lists at that path is replaced at its current revision, so a stale
+   * one is refused rather than overwritten; otherwise revision 0 creates it
+   * under the slug of its path and bytes, the one slug the server accepts.
+   */
+  const attachCloudWiki = async (path: string, repoArg: string | undefined, gesture?: CommandGesture): Promise<string | void | { value: string }> => {
+    const repo = targetRepo(repoArg)
+    if (typeof repo !== "string") return repo.error
+    if (shared.login() === null) return `Sign in to write the repository ${WIKI_DISPLAY_NAME}.`
+    const file = gesture?.takeFile?.()
+    if (file === undefined) return "Choose a file to attach."
+    if (file.size > 16 * 1024 * 1024) return "An attachment is at most 16 MiB."
+    const target = path.trim() || file.name
+    if (target === "" || /\.md$/i.test(target) || target.startsWith("/") || target.split("/").some((part) => part === "" || part === "." || part === "..")) return "An attachment path is a relative file path, not a Markdown page."
+    const space = shared.space()
+    const existing = shared.wikiIndexes.get(repo, space)?.pages.find((page) => page.path.toLowerCase() === target.toLowerCase())
+    const expectedRevision = existing?.revision ?? 0
+    const mediaType = file.type || "application/octet-stream"
+    const outcome = await ctx.withToast(`wiki.attach.${repo}.${space}.${target.toLowerCase()}`, `Attaching ${target}…`, `${target} attached`, async () => {
+      const answer = await shared.run(Effect.gen(function*() {
+        const bytes = yield* Effect.tryPromise({
+          try: async () => new Uint8Array(await file.arrayBuffer()),
+          catch: () => new CloudWikiError({ sentence: "The attachment could not be read. Choose the file again." })
+        })
+        const slug = existing?.slug ?? wikiAttachmentSlug(target, bytes)
+        const api = yield* CloudWikiTransport
+        return yield* api.attach(repo, space, slug, { path: target, mediaType, expectedRevision, bytes })
+      }).pipe(Effect.catch((error: CloudWikiError) =>
+        Effect.succeed(error.status === 409 ? `${target} changed since you opened it (revision ${expectedRevision}). Refresh and attach it again.` : error.sentence)))).catch(refusal)
+      if (typeof answer === "string") return answer
+      if (shared.disposed()) return "The app closed while the file was uploading."
+      void loadWikiIndex(repo, space)
+      return answer
+    })
+    if (typeof outcome === "string") return outcome
+    return { value: `Attached ${outcome.path ?? target} (${mediaType}, revision ${outcome.revision}) to the ${space} ${WIKI_DISPLAY_NAME} of ${repo}.` }
+  }
+
+  const attachWorldEditor = (id: string, slot: string, editor: MarkdownEditorHandle | null): void => {
+    const handles = shared.editors.get(id) ?? new Map<string, MarkdownEditorHandle>()
+    if (editor === null) handles.delete(slot)
+    else {
+      handles.set(slot, editor)
+      const document = ctx.store.collections.worldDocuments.get(id)
+      if (document !== undefined && restoreWikilinks(editor.getMarkdown()) !== document.body) editor.setMarkdown(document.body)
+    }
+    if (handles.size === 0) shared.editors.delete(id)
+    else shared.editors.set(id, handles)
+  }
+  const scrollEditor = (id: string, cardId: string, line: number): boolean => {
+    for (const [slot, editor] of shared.editors.get(id) ?? []) {
+      if (slot.startsWith(`${cardId}:`) && editor.scrollToLine(line)) return true
+    }
+    return false
+  }
+  return { listCloudWiki, openCloudWiki, openWikiPage, editCloudWiki, prepareCloudWiki, retryCloudWiki, attachWorldEditor, scrollEditor,
+    loadWikiIndex, readWikiForPane, setWikiSpace, setWikiPageView, showWikiHistory, createCloudWikiPage, saveWikiAnswer, renameCloudWikiPage, deleteCloudWikiPage, attachCloudWiki,
+    wikiIndexes: shared.wikiIndexes, hasIndexedPage, invalidatePaneRead }
+}

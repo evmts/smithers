@@ -1,0 +1,67 @@
+// The repository reads (docs/benchmarks.md#repo, docs/features/repo.md), from Node against the real RepoApi: the
+// `repositories` shape a device syncs first, then the fixture's file list and README at its head commit through the
+// GET routes. The first read of a commit may go to Code Storage; every later one is the immutable cache's. Nothing is
+// cloned here: the suite reads `octocat/Spoon-Knife` once something has cloned it (e2e/repo.spec.ts does), and only
+// counts `repo.not_ready` otherwise.
+import { now } from "./chatapi.ts"
+import type { Bench } from "./suites.ts"
+
+/** The fixture the e2e test clones: tiny, public, on GitHub since 2014. */
+export const FIXTURE = { owner: "octocat", name: "Spoon-Knife", id: "github/octocat/spoon-knife" }
+
+type ShapeMessage = { readonly key?: string; readonly value?: Record<string, unknown>; readonly headers: { readonly control?: string } }
+
+/** `GET /api/shapes/repositories` from offset -1 to up-to-date: how long it took, and every row it delivered. */
+export const repositoriesSync = async (baseUrl: string, timeoutMs = 30_000) => {
+  const rows = new Map<string, Record<string, unknown>>()
+  const startedAt = now()
+  let offset = "-1"
+  let handle: string | undefined
+  for (let requests = 1; ; requests++) {
+    if (now() - startedAt > timeoutMs) throw new Error(`the repositories shape wasn't up to date after ${timeoutMs} ms`)
+    const url = new URL(`${baseUrl}/api/shapes/repositories`)
+    url.searchParams.set("offset", offset)
+    if (handle !== undefined) url.searchParams.set("handle", handle)
+    const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
+    if (!response.ok) throw new Error(`GET /api/shapes/repositories answered ${response.status} at offset ${offset}`)
+    const messages = (await response.json()) as Array<ShapeMessage>
+    for (const message of messages) {
+      if (message.key !== undefined && message.value !== undefined) rows.set(String(message.value.id), message.value)
+    }
+    handle = response.headers.get("electric-handle") ?? handle
+    offset = response.headers.get("electric-offset") ?? offset
+    if (messages.some((message) => message.headers.control === "up-to-date")) {
+      return { ms: now() - startedAt, rows, requests }
+    }
+  }
+}
+
+/** One GET, timed to its whole body: its status, bytes and milliseconds. */
+const timedGet = async (url: string) => {
+  const startedAt = now()
+  const response = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+  const bytes = (await response.arrayBuffer()).byteLength
+  return { status: response.status, bytes, ms: now() - startedAt }
+}
+
+export const repo = async (bench: Bench) => {
+  for (let iteration = 0; iteration < bench.n; iteration++) {
+    const sync = await repositoriesSync(bench.baseUrl)
+    bench.record.sample("repo.shape.initial_sync", sync.ms)
+    const row = sync.rows.get(FIXTURE.id)
+    const sha = row?.status === "ready" ? String(row.head_sha) : undefined
+    if (sha === undefined) {
+      bench.record.count("repo.not_ready")
+      continue
+    }
+    const base = `${bench.baseUrl}/api/repos/${FIXTURE.owner}/${FIXTURE.name}`
+    const tree = await timedGet(`${base}/tree/${sha}`)
+    const readme = await timedGet(`${base}/blob/${sha}/README.md`)
+    bench.record.check("repo", iteration, "the tree answers 200", tree.status === 200, `status ${tree.status}`)
+    bench.record.check("repo", iteration, "the README answers 200", readme.status === 200, `status ${readme.status}`)
+    // The first iteration may read Code Storage; the rest are cache hits.
+    bench.record.sample(iteration === 0 ? "repo.tree.first" : "repo.tree.cached", tree.ms)
+    bench.record.sample(iteration === 0 ? "repo.blob.first" : "repo.blob.cached", readme.ms)
+    bench.record.detail("repo", { iteration, rows: sync.rows.size, treeBytes: tree.bytes, readmeBytes: readme.bytes })
+  }
+}

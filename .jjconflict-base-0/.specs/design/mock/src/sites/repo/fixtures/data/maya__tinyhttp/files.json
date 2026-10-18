@@ -1,0 +1,345 @@
+[
+  {
+    "path": "src/types.ts",
+    "lang": "ts",
+    "content": "/** Route context shared by the router and both server adapters. */\nexport interface Request {\n  method: string\n  path: string\n  params: Record<string, string>\n  query: Record<string, string>\n  headers: Headers\n  raw: globalThis.Request\n  state: Map<string, unknown>\n}\n\n/** Decoded query values, with the last value winning for repeated keys. */\nexport type Query = Record<string, string>\n\nexport type Handler = (request: Request) => Response | Promise<Response>\nexport type Next = () => Promise<Response>\nexport type Middleware = (request: Request, next: Next) => Response | Promise<Response>\nexport type ErrorHandler = (error: unknown, request: Request) => Response | Promise<Response>\n\nexport interface RouterOptions {\n  /** Treat /users and /users/ as different routes. Defaults to false. */\n  strictSlash?: boolean\n  onError?: ErrorHandler\n}\n\nexport interface RouteInfo {\n  method: string\n  path: string\n}"
+  },
+  {
+    "path": "src/errors.ts",
+    "lang": "ts",
+    "content": "/** An expected HTTP failure whose message is safe to send to a client. */\nexport class HttpError extends Error {\n  readonly status: number\n  readonly headers: Headers\n\n  constructor(status: number, message: string, headers?: HeadersInit) {\n    super(message)\n    this.name = \"HttpError\"\n    this.status = status\n    this.headers = new Headers(headers)\n  }\n}\n\nexport function errorResponse(error: unknown): Response {\n  if (error instanceof HttpError) {\n    return Response.json({ error: error.message }, {\n      status: error.status,\n      headers: error.headers,\n    })\n  }\n  return Response.json({ error: \"Internal server error\" }, { status: 500 })\n}"
+  },
+  {
+    "path": "src/query.ts",
+    "lang": "ts",
+    "content": "import type { Query } from \"./types.ts\"\n\n/** Decode form-style query components, including + as a space. */\nconst decode = (value: string): string => decodeURIComponent(value.replace(/\\+/g, \" \"))\n\n/** Parse a query string. Repeated keys keep their last value. */\nexport function parseQuery(input: string): Query {\n  const params: Record<string, string> = {}\n  const query = input.startsWith(\"?\") ? input.slice(1) : input\n  for (const pair of query.split(\"&\")) {\n    if (pair === \"\") continue\n    const eq = pair.indexOf(\"=\")\n    if (eq === -1 || eq === pair.length - 1) continue\n    const key = decode(pair.slice(0, eq))\n    Object.defineProperty(params, key, {\n      value: decode(pair.slice(eq + 1)),\n      enumerable: true,\n      configurable: true,\n      writable: true,\n    })\n  }\n  return params\n}\n\n/** Serialize a plain record as a query string without a leading ?. */\nexport function buildQuery(params: Query): string {\n  return Object.entries(params)\n    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)\n    .join(\"&\")\n}",
+    "symbols": [
+      {
+        "line": 1,
+        "name": "Query",
+        "kind": "type",
+        "hover": "type Query = Record<string, string>\nDecoded query values; repeated keys retain their last value.",
+        "definition": {
+          "path": "src/types.ts",
+          "line": 13
+        }
+      },
+      {
+        "line": 4,
+        "name": "decode",
+        "kind": "const",
+        "hover": "decode(value: string): string\nDecode percent escapes and form-style plus signs."
+      },
+      {
+        "line": 7,
+        "name": "parseQuery",
+        "kind": "function",
+        "hover": "parseQuery(input: string): Record<string, string>\nParse optional leading ?, preserving the last repeated value."
+      },
+      {
+        "line": 26,
+        "name": "buildQuery",
+        "kind": "function",
+        "hover": "buildQuery(params: Record<string, string>): string\nEncode key/value pairs without a leading question mark."
+      },
+      {
+        "line": 14,
+        "name": "decode",
+        "kind": "function",
+        "hover": "decode(value: string): string",
+        "definition": {
+          "path": "src/query.ts",
+          "line": 4
+        }
+      }
+    ]
+  },
+  {
+    "path": "src/router.ts",
+    "lang": "ts",
+    "content": "import { parseQuery } from \"./query.ts\"\nimport { errorResponse, HttpError } from \"./errors.ts\"\nimport type { Handler, Middleware, Request, RouteInfo, RouterOptions } from \"./types.ts\"\n\nexport type { Handler, Middleware, Request } from \"./types.ts\"\n\ninterface Route extends RouteInfo {\n  segments: string[]\n  handler: Handler\n  score: number\n}\n\nconst split = (path: string): string[] => path.split(\"/\").filter(part => part !== \"\")\n\nfunction decodeSegment(segment: string): string {\n  try {\n    return decodeURIComponent(segment)\n  } catch {\n    throw new HttpError(400, \"Invalid percent encoding in path\")\n  }\n}\n\n/** Match the path shape first, then decode named segments.\n * Static segments remain literal, so an encoded slash cannot add a segment.\n * Undefined means this route is not a candidate for the requested path.\n */\nfunction match(route: Route, parts: string[]): Record<string, string> | undefined {\n  if (route.segments.length !== parts.length) return undefined\n  const params: Record<string, string> = {}\n  for (let i = 0; i < parts.length; i += 1) {\n    const segment = route.segments[i]!\n    const value = parts[i]!\n    if (segment.startsWith(\":\")) {\n      params[segment.slice(1)] = decodeSegment(value)\n    } else if (segment !== value) {\n      return undefined\n    }\n  }\n  return params\n}\n\n/** A small HTTP router with explicit middleware order and Web Response handlers. */\nexport class Router {\n  private routes: Route[] = []\n  private middleware: Middleware[] = []\n  private options: RouterOptions\n\n  constructor(options: RouterOptions = {}) {\n    this.options = options\n  }\n\n  /** Run middleware in registration order around the selected handler. */\n  use(middleware: Middleware): this {\n    this.middleware.push(middleware)\n    return this\n  }\n\n  /** Register a GET handler and return this router. */\n  get(path: string, handler: Handler): this {\n    return this.add(\"GET\", path, handler)\n  }\n\n  /** Register a POST handler and return this router. */\n  post(path: string, handler: Handler): this {\n    return this.add(\"POST\", path, handler)\n  }\n\n  /** Register a PUT handler and return this router. */\n  put(path: string, handler: Handler): this {\n    return this.add(\"PUT\", path, handler)\n  }\n\n  /** Register a PATCH handler and return this router. */\n  patch(path: string, handler: Handler): this {\n    return this.add(\"PATCH\", path, handler)\n  }\n\n  /** Register a DELETE handler and return this router. */\n  delete(path: string, handler: Handler): this {\n    return this.add(\"DELETE\", path, handler)\n  }\n\n  /** Register a OPTIONS handler and return this router. */\n  optionsFor(path: string, handler: Handler): this {\n    return this.add(\"OPTIONS\", path, handler)\n  }\n\n  /** Return public route metadata without exposing handlers. */\n  inspect(): RouteInfo[] {\n    return this.routes.map(({ method, path }) => ({ method, path }))\n  }\n\n  private add(method: string, path: string, handler: Handler): this {\n    if (!path.startsWith(\"/\")) throw new TypeError(\"Route paths must start with /\")\n    const segments = split(path)\n    const names = segments.filter(part => part.startsWith(\":\"))\n    if (names.some(name => name.length === 1)) throw new TypeError(\"A route parameter needs a name\")\n    if (new Set(names).size !== names.length) throw new TypeError(\"Route parameters must be unique\")\n    // More literal segments make a route more specific.\n    // Stable sorting keeps registration order when two routes have equal scores.\n    const score = segments.filter(part => !part.startsWith(\":\")).length\n    this.routes.push({ method, path, segments, handler, score })\n    this.routes.sort((a, b) => b.score - a.score)\n    return this\n  }\n\n  /** Accept method + relative URL, or use fetch() for a native Request. */\n  async handle(method: string, url: string, init: RequestInit = {}): Promise<Response> {\n    const target = new URL(url, \"http://localhost\")\n    return this.fetch(new globalThis.Request(target, { ...init, method }))\n  }\n\n  /** The server adapters share this entry point. */\n  async fetch(raw: globalThis.Request): Promise<Response> {\n    const url = new URL(raw.url)\n    // Normalizing the method leaves adapter behavior identical across runtimes.\n    const method = raw.method.toUpperCase()\n    const parts = split(url.pathname)\n    const request: Request = {\n      method,\n      path: url.pathname,\n      params: {},\n      query: {},\n      headers: raw.headers,\n      raw,\n      state: new Map(),\n    }\n    try {\n      request.query = parseQuery(url.search)\n      let selected: Route | undefined\n      const allowed = new Set<string>()\n      for (const route of this.routes) {\n        if (this.options.strictSlash && route.path.endsWith(\"/\") !== url.pathname.endsWith(\"/\")) continue\n        const params = match(route, parts)\n        if (!params) continue\n        allowed.add(route.method)\n        if (route.method === \"GET\") allowed.add(\"HEAD\")\n        if (route.method !== method && !(method === \"HEAD\" && route.method === \"GET\")) continue\n        if (selected && method === \"HEAD\" && route.method !== \"HEAD\") continue\n        selected = route\n        request.params = params\n        if (method !== \"HEAD\" || route.method === \"HEAD\") break\n      }\n      // Matching a path with another method is distinct from a missing path.\n      // This also allows middleware to wrap the router-generated 404 and 405.\n      const terminal: Handler = selected\n        ? selected.handler\n        : () => allowed.size\n          ? new Response(\"Method not allowed\", {\n            status: 405,\n            headers: { Allow: [...allowed].sort().join(\", \") },\n          })\n          : new Response(\"Not found\", { status: 404 })\n      // HEAD runs the same middleware and handler before dropping the body.\n      const response = await this.dispatch(request, terminal)\n      return method === \"HEAD\"\n        ? new Response(null, { status: response.status, headers: response.headers })\n        : response\n    } catch (error) {\n      if (this.options.onError) return this.options.onError(error, request)\n      if (error instanceof URIError) return errorResponse(new HttpError(400, \"Invalid query encoding\"))\n      return errorResponse(error)\n    }\n  }\n\n  private async dispatch(request: Request, handler: Handler): Promise<Response> {\n    // Keep a single cursor per request to detect duplicate next() calls.\n    // Each request gets its own cursor, including concurrent fetch calls.\n    let previous = -1\n    const invoke = async (index: number): Promise<Response> => {\n      if (index <= previous) throw new Error(\"next() called more than once\")\n      previous = index\n      const middleware = this.middleware[index]\n      if (!middleware) return handler(request)\n      return middleware(request, () => invoke(index + 1))\n    }\n    return invoke(0)\n  }\n}",
+    "symbols": [
+      {
+        "line": 1,
+        "name": "parseQuery",
+        "kind": "function",
+        "hover": "parseQuery(input: string): Record<string, string>\nDecode form-style query pairs. Repeated keys keep the last value.",
+        "definition": {
+          "path": "src/query.ts",
+          "line": 7
+        }
+      },
+      {
+        "line": 2,
+        "name": "HttpError",
+        "kind": "class",
+        "hover": "new HttpError(status: number, message: string, headers?: HeadersInit)\nAn expected HTTP failure with a safe public message.",
+        "definition": {
+          "path": "src/errors.ts",
+          "line": 2
+        }
+      },
+      {
+        "line": 3,
+        "name": "Handler",
+        "kind": "type",
+        "hover": "type Handler = (request: Request) => Response | Promise<Response>",
+        "definition": {
+          "path": "src/types.ts",
+          "line": 15
+        }
+      },
+      {
+        "line": 43,
+        "name": "Router",
+        "kind": "class",
+        "hover": "class Router\nRoute Web Requests through ordered middleware and typed handlers."
+      },
+      {
+        "line": 108,
+        "name": "handle",
+        "kind": "method",
+        "hover": "handle(method: string, url: string, init?: RequestInit): Promise<Response>\nDispatch a relative URL without starting a server."
+      },
+      {
+        "line": 114,
+        "name": "fetch",
+        "kind": "method",
+        "hover": "fetch(raw: globalThis.Request): Promise<Response>\nShared entry point for Bun and Node."
+      },
+      {
+        "line": 166,
+        "name": "dispatch",
+        "kind": "method",
+        "hover": "dispatch(request: Request, handler: Handler): Promise<Response>\nRun each middleware at most once."
+      }
+    ]
+  },
+  {
+    "path": "src/middleware/cors.ts",
+    "lang": "ts",
+    "content": "import type { Middleware } from \"../types.ts\"\n\nexport interface CorsOptions {\n  origin?: string | string[]\n  methods?: string[]\n  headers?: string[]\n  credentials?: boolean\n  maxAge?: number\n}\n\n/** Add CORS headers and answer browser preflight requests. */\nexport function cors(options: CorsOptions = {}): Middleware {\n  const origins = options.origin ?? \"*\"\n  const methods = options.methods ?? [\"GET\", \"POST\", \"PUT\", \"PATCH\", \"DELETE\", \"OPTIONS\"]\n  return async (request, next) => {\n    const incoming = request.headers.get(\"origin\")\n    const origin = typeof origins === \"string\"\n      ? origins\n      : incoming && origins.includes(incoming) ? incoming : \"\"\n    const preflight = request.method === \"OPTIONS\" && request.headers.has(\"access-control-request-method\")\n    const response = preflight ? new Response(null, { status: 204 }) : await next()\n    const headers = new Headers(response.headers)\n    if (origin) headers.set(\"access-control-allow-origin\", origin)\n    if (origins !== \"*\") headers.append(\"vary\", \"Origin\")\n    if (options.credentials) headers.set(\"access-control-allow-credentials\", \"true\")\n    if (preflight) {\n      headers.set(\"access-control-allow-methods\", methods.join(\", \"))\n      headers.set(\"access-control-allow-headers\", (options.headers ?? [\"content-type\"]).join(\", \"))\n      headers.set(\"access-control-max-age\", String(options.maxAge ?? 600))\n    }\n    return new Response(response.body, { status: response.status, headers })\n  }\n}",
+    "symbols": [
+      {
+        "line": 1,
+        "name": "Middleware",
+        "kind": "type",
+        "hover": "type Middleware = (request: Request, next: Next) => Response | Promise<Response>",
+        "definition": {
+          "path": "src/types.ts",
+          "line": 17
+        }
+      },
+      {
+        "line": 3,
+        "name": "CorsOptions",
+        "kind": "interface",
+        "hover": "interface CorsOptions\nAllowed origins, methods, request headers, credentials, and preflight cache duration."
+      },
+      {
+        "line": 12,
+        "name": "cors",
+        "kind": "function",
+        "hover": "cors(options?: CorsOptions): Middleware\nAnswer preflight requests and add response CORS headers."
+      }
+    ],
+    "diagnostics": [
+      {
+        "line": 25,
+        "severity": "warning",
+        "message": "Wildcard origin with credentials is rejected by browsers. Require an explicit origin when credentials is true (#33).",
+        "source": "tinyhttp/cors"
+      }
+    ]
+  },
+  {
+    "path": "src/middleware/logger.ts",
+    "lang": "ts",
+    "content": "import type { Middleware } from \"../types.ts\"\n\nexport interface LogRecord {\n  method: string\n  path: string\n  status: number\n  durationMs: number\n}\n\n/** Log a completed response; query strings and request bodies stay private. */\nexport function logger(write: (record: LogRecord) => void = console.info): Middleware {\n  return async (request, next) => {\n    const start = performance.now()\n    const response = await next()\n    write({\n      method: request.method,\n      path: request.path,\n      status: response.status,\n      durationMs: Math.round((performance.now() - start) * 100) / 100,\n    })\n    return response\n  }\n}"
+  },
+  {
+    "path": "src/middleware/body.ts",
+    "lang": "ts",
+    "content": "import { HttpError } from \"../errors.ts\"\nimport type { Middleware, Request } from \"../types.ts\"\n\nconst key = \"tinyhttp.body\"\n\n/** Read a size-limited JSON body once and store it on the request context. */\nexport function jsonBody(maxBytes = 1024 * 1024): Middleware {\n  return async (request, next) => {\n    if (!request.headers.get(\"content-type\")?.split(\";\")[0]?.trim().endsWith(\"/json\")) return next()\n    if (Number(request.headers.get(\"content-length\")) > maxBytes) throw new HttpError(413, \"Body too large\")\n    const reader = request.raw.body?.getReader()\n    if (!reader) throw new HttpError(400, \"Expected a JSON body\")\n    const chunks: Uint8Array[] = []\n    let size = 0\n    try {\n      while (true) {\n        const { done, value } = await reader.read()\n        if (done) break\n        size += value.byteLength\n        if (size > maxBytes) {\n          await reader.cancel()\n          throw new HttpError(413, \"Body too large\")\n        }\n        chunks.push(value)\n      }\n    } finally {\n      reader.releaseLock()\n    }\n    const bytes = new Uint8Array(size)\n    let offset = 0\n    for (const chunk of chunks) {\n      bytes.set(chunk, offset)\n      offset += chunk.byteLength\n    }\n    try {\n      request.state.set(key, JSON.parse(new TextDecoder().decode(bytes)))\n    } catch {\n      throw new HttpError(400, \"Invalid JSON\")\n    }\n    return next()\n  }\n}\n\nexport function body<T = unknown>(request: Request): T {\n  return request.state.get(key) as T\n}"
+  },
+  {
+    "path": "src/adapters/bun.ts",
+    "lang": "ts",
+    "content": "import type { Router } from \"../router.ts\"\n\nexport interface BunOptions {\n  port?: number\n  hostname?: string\n}\n\n/** Start Bun's HTTP server with the same Web Request used by tests. */\nexport function serve(router: Router, options: BunOptions = {}) {\n  return Bun.serve({\n    port: options.port ?? 3000,\n    hostname: options.hostname ?? \"127.0.0.1\",\n    fetch: (request: globalThis.Request) => router.fetch(request),\n  })\n}"
+  },
+  {
+    "path": "src/adapters/node.ts",
+    "lang": "ts",
+    "content": "import { createServer, type IncomingMessage, type ServerResponse } from \"node:http\"\nimport { Readable } from \"node:stream\"\nimport { finished } from \"node:stream/promises\"\nimport type { Router } from \"../router.ts\"\n\nexport function toRequest(incoming: IncomingMessage): globalThis.Request {\n  const headers = new Headers()\n  for (const [key, value] of Object.entries(incoming.headers)) {\n    if (Array.isArray(value)) value.forEach(item => headers.append(key, item))\n    else if (value !== undefined) headers.set(key, value)\n  }\n  const method = incoming.method ?? \"GET\"\n  const init: RequestInit & { duplex?: \"half\" } = { method, headers }\n  if (method !== \"GET\" && method !== \"HEAD\") {\n    init.body = Readable.toWeb(incoming) as unknown as BodyInit\n    init.duplex = \"half\"\n  }\n  const path = incoming.url?.startsWith(\"/\") ? incoming.url : \"/\"\n  return new globalThis.Request(new URL(path, \"http://localhost\"), init)\n}\n\nasync function send(response: Response, outgoing: ServerResponse): Promise<void> {\n  outgoing.statusCode = response.status\n  response.headers.forEach((value, key) => outgoing.setHeader(key, value))\n  if (!response.body) { outgoing.end(); return }\n  const body = Readable.fromWeb(response.body as unknown as import(\"node:stream/web\").ReadableStream)\n  body.pipe(outgoing)\n  await finished(outgoing)\n}\n\n/** Return an unbound server so the caller controls its port and shutdown. */\nexport function createNodeServer(router: Router) {\n  return createServer((incoming, outgoing) => {\n    router.fetch(toRequest(incoming)).then(response => send(response, outgoing)).catch(() => {\n      if (!outgoing.headersSent) outgoing.writeHead(500, { \"content-type\": \"text/plain\" })\n      outgoing.end(\"Internal server error\")\n    })\n  })\n}"
+  },
+  {
+    "path": "src/index.ts",
+    "lang": "ts",
+    "content": "export { Router } from \"./router.ts\"\nexport { parseQuery, buildQuery } from \"./query.ts\"\nexport { HttpError, errorResponse } from \"./errors.ts\"\nexport { cors } from \"./middleware/cors.ts\"\nexport { logger } from \"./middleware/logger.ts\"\nexport { jsonBody, body } from \"./middleware/body.ts\"\nexport type { CorsOptions } from \"./middleware/cors.ts\"\nexport type { LogRecord } from \"./middleware/logger.ts\"\nexport type { Handler, Middleware, Request, RouterOptions, RouteInfo } from \"./types.ts\""
+  },
+  {
+    "path": "test/router.test.ts",
+    "lang": "ts",
+    "content": "import { expect, test } from \"bun:test\"\nimport { Router } from \"../src/router.ts\"\n\ntest(\"matches params and decodes values\", async () => {\n  const app = new Router().get(\"/users/:id\", req => Response.json(req.params))\n  expect(await (await app.handle(\"GET\", \"/users/a%20b\")).json()).toEqual({ id: \"a b\" })\n})\n\ntest(\"static routes win regardless of registration order\", async () => {\n  const app = new Router().get(\"/users/:id\", () => new Response(\"param\"))\n  app.get(\"/users/me\", () => new Response(\"static\"))\n  expect(await (await app.handle(\"GET\", \"/users/me\")).text()).toBe(\"static\")\n})\n\ntest(\"unmatched paths return 404\", async () => {\n  expect((await new Router().handle(\"GET\", \"/missing\")).status).toBe(404)\n})\n\ntest(\"other methods return 405 and Allow\", async () => {\n  const app = new Router().get(\"/users\", () => new Response(\"ok\"))\n  const response = await app.handle(\"POST\", \"/users\")\n  expect(response.status).toBe(405)\n  expect(response.headers.get(\"allow\")).toBe(\"GET, HEAD\")\n})\n\ntest(\"HEAD keeps headers and drops the response body\", async () => {\n  const app = new Router().get(\"/status\", () => new Response(\"healthy\", { headers: { \"x-ready\": \"1\" } }))\n  const response = await app.handle(\"HEAD\", \"/status\")\n  expect(response.headers.get(\"x-ready\")).toBe(\"1\")\n  expect(await response.text()).toBe(\"\")\n})\n\ntest(\"malformed path encoding is a client error\", async () => {\n  const app = new Router().get(\"/users/:id\", () => new Response(\"ok\"))\n  expect((await app.handle(\"GET\", \"/users/%ZZ\")).status).toBe(400)\n})\n\ntest(\"middleware wraps the handler in registration order\", async () => {\n  const calls: string[] = []\n  const app = new Router().use(async (_, next) => {\n    calls.push(\"before\")\n    const response = await next()\n    calls.push(\"after\")\n    return response\n  }).get(\"/\", () => { calls.push(\"handler\"); return new Response(\"ok\") })\n  await app.handle(\"GET\", \"/\")\n  expect(calls).toEqual([\"before\", \"handler\", \"after\"])\n})\n\ntest(\"rejects unnamed and repeated route parameters\", () => {\n  const app = new Router()\n  expect(() => app.get(\"/:\", () => new Response())).toThrow(\"needs a name\")\n  expect(() => app.get(\"/:id/:id\", () => new Response())).toThrow(\"must be unique\")\n})"
+  },
+  {
+    "path": "test/query.test.ts",
+    "lang": "ts",
+    "content": "import { expect, test } from \"bun:test\"\nimport { buildQuery, parseQuery } from \"../src/query.ts\"\n\ntest(\"parses pairs\", () => {\n  expect(parseQuery(\"a=1&b=2\")).toEqual({ a: \"1\", b: \"2\" })\n})\n\ntest(\"parses encoded values\", () => {\n  expect(parseQuery(\"a=%2Fb\")).toEqual({ a: \"/b\" })\n})\n\ntest(\"decodes plus as space\", () => {\n  expect(parseQuery(\"q=hello+world\")).toEqual({ q: \"hello world\" })\n})\n\ntest(\"round-trips through buildQuery\", () => {\n  expect(parseQuery(buildQuery({ a: \"1\", b: \"/x\" }))).toEqual({ a: \"1\", b: \"/x\" })\n})\n\ntest(\"accepts a leading question mark\", () => {\n  expect(parseQuery(\"?page=2\")).toEqual({ page: \"2\" })\n})\n\ntest(\"keeps the last value for a repeated key\", () => {\n  expect(parseQuery(\"tag=a&tag=b\")).toEqual({ tag: \"b\" })\n})"
+  },
+  {
+    "path": "test/cors.test.ts",
+    "lang": "ts",
+    "content": "import { expect, test } from \"bun:test\"\nimport { Router } from \"../src/router.ts\"\nimport { cors } from \"../src/middleware/cors.ts\"\n\ntest(\"adds the default origin to responses\", async () => {\n  const app = new Router().use(cors()).get(\"/\", () => new Response(\"ok\"))\n  expect((await app.handle(\"GET\", \"/\")).headers.get(\"access-control-allow-origin\")).toBe(\"*\")\n})\n\ntest(\"reflects a listed origin and varies on Origin\", async () => {\n  const app = new Router().use(cors({ origin: [\"https://example.test\"] }))\n  const response = await app.handle(\"GET\", \"/\", { headers: { origin: \"https://example.test\" } })\n  expect(response.headers.get(\"access-control-allow-origin\")).toBe(\"https://example.test\")\n  expect(response.headers.get(\"vary\")).toContain(\"Origin\")\n})\n\ntest(\"answers a preflight before routing\", async () => {\n  const app = new Router().use(cors({ methods: [\"POST\"] }))\n  const response = await app.handle(\"OPTIONS\", \"/items\", { headers: { \"access-control-request-method\": \"POST\" } })\n  expect(response.status).toBe(204)\n  expect(response.headers.get(\"access-control-allow-methods\")).toBe(\"POST\")\n})"
+  },
+  {
+    "path": "test/logger.test.ts",
+    "lang": "ts",
+    "content": "import { expect, test } from \"bun:test\"\nimport { Router } from \"../src/router.ts\"\nimport { logger, type LogRecord } from \"../src/middleware/logger.ts\"\n\ntest(\"records the response status and elapsed time\", async () => {\n  const records: LogRecord[] = []\n  const app = new Router().use(logger(row => records.push(row)))\n  await app.handle(\"GET\", \"/missing\")\n  expect(records[0]?.status).toBe(404)\n  expect(records[0]?.durationMs).toBeGreaterThanOrEqual(0)\n})\n\ntest(\"leaves query values out of the log\", async () => {\n  const records: LogRecord[] = []\n  const app = new Router().use(logger(row => records.push(row)))\n  await app.handle(\"GET\", \"/search?token=private\")\n  expect(records[0]?.path).toBe(\"/search\")\n  expect(JSON.stringify(records)).not.toContain(\"private\")\n})"
+  },
+  {
+    "path": "test/body.test.ts",
+    "lang": "ts",
+    "content": "import { expect, test } from \"bun:test\"\nimport { Router } from \"../src/router.ts\"\nimport { body, jsonBody } from \"../src/middleware/body.ts\"\n\ntest(\"reads JSON once for the handler\", async () => {\n  const app = new Router().use(jsonBody()).post(\"/\", req => Response.json(body(req)))\n  const response = await app.handle(\"POST\", \"/\", { headers: { \"content-type\": \"application/json\" }, body: '{\"name\":\"maya\"}' })\n  expect(await response.json()).toEqual({ name: \"maya\" })\n})\n\ntest(\"returns 400 for malformed JSON\", async () => {\n  const app = new Router().use(jsonBody()).post(\"/\", () => new Response(\"ok\"))\n  expect((await app.handle(\"POST\", \"/\", { headers: { \"content-type\": \"application/json\" }, body: \"{\" })).status).toBe(400)\n})\n\ntest(\"limits body bytes without trusting content-length\", async () => {\n  const app = new Router().use(jsonBody(4)).post(\"/\", () => new Response(\"ok\"))\n  expect((await app.handle(\"POST\", \"/\", { headers: { \"content-type\": \"application/json\" }, body: '{\"name\":\"maya\"}' })).status).toBe(413)\n})"
+  },
+  {
+    "path": "test/bun.test.ts",
+    "lang": "ts",
+    "content": "import { expect, test } from \"bun:test\"\nimport { Router } from \"../src/router.ts\"\nimport { serve } from \"../src/adapters/bun.ts\"\n\ntest(\"serves a route on an ephemeral port\", async () => {\n  const server = serve(new Router().get(\"/ping\", () => new Response(\"pong\")), { port: 0 })\n  try { expect(await (await fetch(new URL(\"/ping\", server.url))).text()).toBe(\"pong\") }\n  finally { await server.stop(true) }\n})\n\ntest(\"preserves handler status codes\", async () => {\n  const server = serve(new Router().post(\"/items\", () => new Response(null, { status: 201 })), { port: 0 })\n  try { expect((await fetch(new URL(\"/items\", server.url), { method: \"POST\" })).status).toBe(201) }\n  finally { await server.stop(true) }\n})"
+  },
+  {
+    "path": "test/node.test.ts",
+    "lang": "ts",
+    "content": "import { expect, test } from \"bun:test\"\nimport type { AddressInfo } from \"node:net\"\nimport { Router } from \"../src/router.ts\"\nimport { createNodeServer } from \"../src/adapters/node.ts\"\n\nasync function withServer(app: Router, read: (url: string) => Promise<void>) {\n  const server = createNodeServer(app)\n  await new Promise<void>(resolve => server.listen(0, \"127.0.0.1\", resolve))\n  try { await read(`http://127.0.0.1:${(server.address() as AddressInfo).port}`) }\n  finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())) }\n}\n\ntest(\"streams a Web Response through Node\", async () => {\n  await withServer(new Router().get(\"/\", () => new Response(\"node\")), async url => {\n    expect(await (await fetch(url)).text()).toBe(\"node\")\n  })\n})\n\ntest(\"forwards request bodies\", async () => {\n  await withServer(new Router().post(\"/\", async req => new Response(await req.raw.text())), async url => {\n    expect(await (await fetch(url, { method: \"POST\", body: \"hello\" })).text()).toBe(\"hello\")\n  })\n})"
+  },
+  {
+    "path": "test/errors.test.ts",
+    "lang": "ts",
+    "content": "import { expect, test } from \"bun:test\"\nimport { HttpError, errorResponse } from \"../src/errors.ts\"\n\ntest(\"preserves expected status and safe message\", async () => {\n  const response = errorResponse(new HttpError(422, \"Name is required\"))\n  expect(response.status).toBe(422)\n  expect(await response.json()).toEqual({ error: \"Name is required\" })\n})\n\ntest(\"hides unexpected error details\", async () => {\n  const response = errorResponse(new Error(\"database credential\"))\n  expect(response.status).toBe(500)\n  expect(await response.text()).not.toContain(\"credential\")\n})"
+  },
+  {
+    "path": "test/types.test.ts",
+    "lang": "ts",
+    "content": "import { expect, test } from \"bun:test\"\nimport type { Handler, Middleware, Request } from \"../src/types.ts\"\n\ntest(\"middleware and handlers share the route context\", async () => {\n  const request: Request = { method: \"GET\", path: \"/\", params: {}, query: {}, headers: new Headers(), raw: new globalThis.Request(\"http://localhost/\"), state: new Map() }\n  const handler: Handler = req => Response.json({ method: req.method })\n  const middleware: Middleware = async (req, next) => { req.state.set(\"visited\", true); return next() }\n  const response = await middleware(request, async () => handler(request))\n  expect(await response.json()).toEqual({ method: \"GET\" })\n  expect(request.state.get(\"visited\")).toBe(true)\n})"
+  },
+  {
+    "path": "test/index.test.ts",
+    "lang": "ts",
+    "content": "import { expect, test } from \"bun:test\"\nimport { Router, HttpError, cors, logger, jsonBody, body, parseQuery, buildQuery } from \"../src/index.ts\"\n\ntest(\"exports the public router and middleware\", () => {\n  expect([Router, HttpError, cors, logger, jsonBody, body].every(value => typeof value === \"function\")).toBe(true)\n})\n\ntest(\"exports compatible query helpers\", () => {\n  expect(parseQuery(buildQuery({ q: \"hello world\" }))).toEqual({ q: \"hello world\" })\n})"
+  },
+  {
+    "path": "docs/getting-started.md",
+    "lang": "md",
+    "content": "# Getting started\n\nA tinyhttp route takes a request context and returns a Web Response. Use Bun 1.2 or Node 22 with TypeScript support.\n\n```sh\nbun add tinyhttp\n```\n\n```ts\nimport { Router } from \"tinyhttp\"\nimport { serve } from \"tinyhttp/bun\"\n\nconst app = new Router()\napp.get(\"/users/:id\", req => Response.json({ id: req.params.id }))\nconst server = serve(app, { port: 3000 })\nconsole.info(server.url)\n```\n\nFor tests, call `await app.handle(\"GET\", \"/users/42?verbose=1\")` without opening a port. A missing path returns 404; a known path with another method returns 405 and an Allow header.\n\nSee [Routing](./routing.md) for matching rules and [Adapters](./adapters.md) for Node."
+  },
+  {
+    "path": "docs/routing.md",
+    "lang": "md",
+    "content": "# Routing\n\nRegister GET, POST, PUT, PATCH, and DELETE routes with their corresponding methods. Every registration returns the router.\n\n```ts\nconst app = new Router()\n  .get(\"/users/me\", () => Response.json({ id: \"me\" }))\n  .get(\"/users/:id\", req => Response.json({ id: req.params.id }))\n  .delete(\"/users/:id\", () => new Response(null, { status: 204 }))\n```\n\nStatic segments take precedence over named parameters. Routes with equal specificity keep registration order. Parameters decode percent escapes after matching; malformed escapes return 400. A parameter cannot be empty or appear twice in a route.\n\nA GET handler answers HEAD too, retaining status and headers but discarding the body. An explicit HEAD route may be registered through a custom adapter in a future version; the current public methods do not include head().\n\nBy default trailing slashes are ignored. Pass `{ strictSlash: true }` to distinguish them. Query values are strings, repeated keys use the last value, and plus signs decode as spaces. Empty values are tracked in [issue #11](https://github.com/maya/tinyhttp/issues/11)."
+  },
+  {
+    "path": "docs/middleware.md",
+    "lang": "md",
+    "content": "# Middleware\n\nMiddleware runs in registration order, wrapping the route handler. Call `next()` once to continue, or return a Response to finish early. Calling next twice is an error.\n\n```ts\nimport { Router, cors, logger, jsonBody, body } from \"tinyhttp\"\n\nconst app = new Router()\napp.use(logger(record => console.info(record)))\napp.use(cors({ origin: [\"https://app.example.test\"] }))\napp.use(jsonBody(64 * 1024))\napp.post(\"/items\", request => Response.json(body(request), { status: 201 }))\n```\n\nPut the logger first to include middleware time. Put CORS before authentication so preflight requests can complete. Limit JSON bytes before accepting the parsed body. The body helper returns unknown unless you supply a type; validate untrusted input before using it.\n\nUse explicit allowed origins with credentials. Browsers reject wildcard origins when credentials are enabled. The current CORS helper warns about this combination; stricter configuration validation is proposed in #33."
+  },
+  {
+    "path": "docs/adapters.md",
+    "lang": "md",
+    "content": "# Adapters\n\nThe router accepts a Web Request and returns a Web Response. Adapters translate that boundary for the server runtime.\n\n## Bun\n\n```ts\nimport { Router } from \"tinyhttp\"\nimport { serve } from \"tinyhttp/bun\"\nconst server = serve(new Router().get(\"/\", () => new Response(\"ok\")), { port: 3000 })\nawait server.stop(true)\n```\n\nThe Bun helper binds to 127.0.0.1 by default. Choose port 0 in integration tests to avoid collisions.\n\n## Node\n\n```ts\nimport { Router } from \"tinyhttp\"\nimport { createNodeServer } from \"tinyhttp/node\"\nconst server = createNodeServer(new Router().get(\"/\", () => new Response(\"ok\")))\nserver.listen(3000, \"127.0.0.1\")\n```\n\nNode requests stream into a Web Request with duplex set to half. Responses stream back without collecting their bodies first. Keep process shutdown in the host application. Client disconnect cancellation and streaming Set-Cookie handling are tracked separately."
+  },
+  {
+    "path": "docs/errors.md",
+    "lang": "md",
+    "content": "# Errors\n\nThrow an HttpError for an expected client failure. Its status and message become the response. Unexpected errors return a generic 500 without leaking the original message.\n\n```ts\nimport { Router, HttpError } from \"tinyhttp\"\n\nconst app = new Router()\napp.get(\"/users/:id\", request => {\n  if (!/^\\d+$/.test(request.params.id ?? \"\")) throw new HttpError(400, \"Use a numeric user id\")\n  return Response.json({ id: request.params.id })\n})\n```\n\nSupply onError in RouterOptions to integrate your own reporting. Never serialize unknown errors to a public response. Invalid path encoding and malformed query encoding return 400. An oversized JSON body returns 413, and malformed JSON returns 400.\n\nThe default response body is `{ \"error\": \"message\" }`. The logger records path and status without query strings or body values."
+  },
+  {
+    "path": "docs/recipes.md",
+    "lang": "md",
+    "content": "# Recipes\n\n## Request timing\n\n```ts\napp.use(async (_request, next) => {\n  const start = performance.now()\n  const response = await next()\n  const headers = new Headers(response.headers)\n  headers.set(\"server-timing\", `app;dur=${performance.now() - start}`)\n  return new Response(response.body, { status: response.status, headers })\n})\n```\n\n## A health check\n\n```ts\napp.get(\"/health\", () => Response.json({ status: \"ok\" }))\n```\n\n## JSON input\n\n```ts\napp.use(jsonBody(16 * 1024))\napp.post(\"/echo\", request => Response.json(body(request)))\n```\n\nThe examples directory contains a Bun hello server and a Node users API. Keep authorization, schema validation, and storage in your application; tinyhttp handles request routing."
+  },
+  {
+    "path": "README.md",
+    "lang": "md",
+    "content": "# tinyhttp\n\nA 400-line HTTP router for Bun and Node. Routes take params (`/users/:id`),\nthe query string parses into a plain object, and a handler returns a\n`Response`.\n\n## Use it\n\n```ts\nimport { Router } from \"./src/router.ts\"\n\nconst app = new Router()\napp.get(\"/users/:id\", (req) => Response.json({ id: req.params.id }))\n\nconst res = await app.handle(\"GET\", \"/users/42?verbose=1\")\n```\n\n## Test\n\n```sh\nbun test\n```\n\n31 tests cover routing, params, and query parsing.\n\n## Middleware\n\nUse `app.use(cors())`, `app.use(logger())`, and `app.use(jsonBody())` before registering handlers. Middleware runs in registration order.\n\n## Runtimes\n\nBun serves Web Requests directly. The Node adapter streams request and response bodies through node:http. Both use the same router and query parser.\n\n## Documentation\n\n- [Getting started](docs/getting-started.md)\n- [Routing](docs/routing.md)\n- [Middleware](docs/middleware.md)\n- [Adapters](docs/adapters.md)\n- [Errors](docs/errors.md)\n- [Recipes](docs/recipes.md)\n\n## Contributing\n\nRun `bun install`, `bun test`, and `bun run check`. Include a failing test with a bug report. Maya reviews release changes; Cora maintains the adapters.\n\n## License\n\nMIT. See [LICENSE](LICENSE)."
+  },
+  {
+    "path": "examples/hello.ts",
+    "lang": "ts",
+    "content": "import { Router, logger } from \"../src/index.ts\"\nimport { serve } from \"../src/adapters/bun.ts\"\n\nconst app = new Router().use(logger())\napp.get(\"/\", () => new Response(\"Hello from tinyhttp\"))\napp.get(\"/users/:id\", req => Response.json({ id: req.params.id }))\nconst server = serve(app, { port: 3000 })\nconsole.info(`Listening at ${server.url}`)"
+  },
+  {
+    "path": "examples/users.ts",
+    "lang": "ts",
+    "content": "import { Router, HttpError, jsonBody, body } from \"../src/index.ts\"\nimport { createNodeServer } from \"../src/adapters/node.ts\"\n\nconst users = new Map<string, { name: string }>()\nconst app = new Router().use(jsonBody(16 * 1024))\napp.get(\"/users/:id\", request => {\n  const user = users.get(request.params.id ?? \"\")\n  if (!user) throw new HttpError(404, \"User not found\")\n  return Response.json(user)\n})\napp.post(\"/users\", request => {\n  const input = body<unknown>(request)\n  if (!input || typeof input !== \"object\" || !(\"name\" in input) || typeof input.name !== \"string\") {\n    throw new HttpError(422, \"Name is required\")\n  }\n  const id = crypto.randomUUID()\n  users.set(id, { name: input.name })\n  return Response.json({ id, name: input.name }, { status: 201 })\n})\ncreateNodeServer(app).listen(3000, \"127.0.0.1\")"
+  },
+  {
+    "path": "package.json",
+    "lang": "json",
+    "content": "{\n  \"name\": \"tinyhttp\",\n  \"version\": \"0.4.2\",\n  \"description\": \"A 400-line HTTP router for Bun and Node.\",\n  \"type\": \"module\",\n  \"license\": \"MIT\",\n  \"exports\": {\n    \".\": \"./src/index.ts\",\n    \"./bun\": \"./src/adapters/bun.ts\",\n    \"./node\": \"./src/adapters/node.ts\"\n  },\n  \"files\": [\n    \"src\",\n    \"docs\",\n    \"README.md\",\n    \"LICENSE\"\n  ],\n  \"scripts\": {\n    \"test\": \"bun test\",\n    \"check\": \"tsc --noEmit\",\n    \"lint\": \"biome check .\"\n  },\n  \"devDependencies\": {\n    \"@biomejs/biome\": \"2.2.4\",\n    \"@types/bun\": \"1.2.23\",\n    \"@types/node\": \"22.18.8\",\n    \"typescript\": \"5.9.3\"\n  }\n}"
+  },
+  {
+    "path": "tsconfig.json",
+    "lang": "json",
+    "content": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\n      \"ES2022\",\n      \"DOM\",\n      \"DOM.Iterable\"\n    ],\n    \"module\": \"ESNext\",\n    \"moduleResolution\": \"bundler\",\n    \"allowImportingTsExtensions\": true,\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"noEmit\": true,\n    \"skipLibCheck\": true,\n    \"types\": [\n      \"bun\",\n      \"node\"\n    ]\n  },\n  \"include\": [\n    \"src\",\n    \"test\",\n    \"examples\"\n  ]\n}"
+  },
+  {
+    "path": "biome.json",
+    "lang": "json",
+    "content": "{\n  \"formatter\": {\n    \"enabled\": true,\n    \"indentStyle\": \"space\",\n    \"indentWidth\": 2\n  },\n  \"javascript\": {\n    \"formatter\": {\n      \"semicolons\": \"asNeeded\",\n      \"quoteStyle\": \"double\"\n    }\n  },\n  \"linter\": {\n    \"enabled\": true,\n    \"rules\": {\n      \"recommended\": true\n    }\n  },\n  \"files\": {\n    \"includes\": [\n      \"src/**\",\n      \"test/**\",\n      \"examples/**\"\n    ]\n  }\n}"
+  },
+  {
+    "path": "bunfig.toml",
+    "lang": "toml",
+    "content": "[test]\nroot = \"./test\"\ncoverage = true\ncoverageReporter = [\"text\", \"lcov\"]"
+  },
+  {
+    "path": "LICENSE",
+    "lang": "txt",
+    "content": "MIT License\n\nCopyright (c) 2026 Maya Okafor\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE."
+  },
+  {
+    "path": ".github/workflows/ci.yml",
+    "lang": "yaml",
+    "content": "name: CI\non:\n  push:\n    branches: [main]\n  pull_request:\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: oven-sh/setup-bun@v2\n        with:\n          bun-version: 1.2.23\n      - run: bun install\n      - run: bun run check\n      - run: bun test\n      - run: bun run lint"
+  },
+  {
+    "path": ".smithers/home.json",
+    "lang": "json",
+    "content": "{}"
+  },
+  {
+    "path": ".smithers/instructions.md",
+    "lang": "md",
+    "content": "# tinyhttp\n\nKeep the Web Request and Response boundary shared across Bun and Node. Add a regression test before changing routing or parsing. Use bun test and bun run check to verify a change.\n\nDo not log request bodies, authorization headers, or query values. Ask Maya before changing public behavior. Cora reviews adapter changes. A person reviews the diff and merges the pull request.\n\nWrite docs alongside public API changes. Keep release notes linked to the merged pull requests. Keep credentials in repository secrets, never in source or run logs."
+  },
+  {
+    "path": ".smithers/flows/implement-issue.tsx",
+    "lang": "tsx",
+    "content": "import { Action, Flow } from \"@smthrs/flow\"\nimport { Node } from \"@smthrs/plan\"\nimport { Schema } from \"effect\"\n\nconst Input = Schema.Struct({ issue: Schema.Number })\nconst Receipt = Schema.Struct({ url: Schema.String })\n\n/** The repository host supplies the proposal action and persists its stage receipts. */\nconst Propose = Action.make(\"implement-issue/propose\", {\n  implementationVersion: \"tinyhttp/implement-issue/v1\",\n  payload: Input,\n  success: Receipt,\n  error: Schema.String,\n  nondeterministic: true,\n})\n\n/** Implement an accepted issue. Maya reviews every proposed change. */\nexport default Flow.make(\"implement-issue\", {\n  description: \"Implement an accepted issue\",\n  capabilities: [\"fs:read:**\", \"fs:write:**\"],\n  effects: {\n    reads: [\"src/**\", \"test/**\", \"docs/**\", \".smithers/instructions.md\"],\n    writes: [\".smithers/proposals/**\"],\n    mode: \"expected\",\n    onConflict: \"serialize\",\n    tier: \"sealed\",\n  },\n  payload: Input,\n  success: Receipt,\n  error: Schema.String,\n  body: input => Node.capture(\n    { implementationVersion: \"tinyhttp/implement-issue/v1\" },\n    () => Propose.call(input),\n  ),\n})"
+  },
+  {
+    "path": ".smithers/flows/review-change.tsx",
+    "lang": "tsx",
+    "content": "import { Action, Flow } from \"@smthrs/flow\"\nimport { Node } from \"@smthrs/plan\"\nimport { Schema } from \"effect\"\n\nconst Input = Schema.Struct({ pull: Schema.Number })\nconst Receipt = Schema.Struct({ url: Schema.String })\n\n/** The repository host supplies the proposal action and persists its stage receipts. */\nconst Propose = Action.make(\"review-change/propose\", {\n  implementationVersion: \"tinyhttp/review-change/v1\",\n  payload: Input,\n  success: Receipt,\n  error: Schema.String,\n  nondeterministic: true,\n})\n\n/** Review a proposed change. Maya reviews every proposed change. */\nexport default Flow.make(\"review-change\", {\n  description: \"Review a proposed change\",\n  capabilities: [\"fs:read:**\", \"fs:write:**\"],\n  effects: {\n    reads: [\"src/**\", \"test/**\", \"docs/**\", \".smithers/instructions.md\"],\n    writes: [\".smithers/proposals/**\"],\n    mode: \"expected\",\n    onConflict: \"serialize\",\n    tier: \"sealed\",\n  },\n  payload: Input,\n  success: Receipt,\n  error: Schema.String,\n  body: input => Node.capture(\n    { implementationVersion: \"tinyhttp/review-change/v1\" },\n    () => Propose.call(input),\n  ),\n})"
+  },
+  {
+    "path": ".smithers/flows/triage.tsx",
+    "lang": "tsx",
+    "content": "import { Action, Flow } from \"@smthrs/flow\"\nimport { Node } from \"@smthrs/plan\"\nimport { Schema } from \"effect\"\n\nconst Input = Schema.Struct({ issue: Schema.Number })\nconst Receipt = Schema.Struct({ url: Schema.String })\n\n/** The repository host supplies the proposal action and persists its stage receipts. */\nconst Propose = Action.make(\"triage/propose\", {\n  implementationVersion: \"tinyhttp/triage/v1\",\n  payload: Input,\n  success: Receipt,\n  error: Schema.String,\n  nondeterministic: true,\n})\n\n/** Reproduce and classify incoming reports. Maya reviews every proposed change. */\nexport default Flow.make(\"triage\", {\n  description: \"Reproduce and classify incoming reports\",\n  capabilities: [\"fs:read:**\", \"fs:write:**\"],\n  effects: {\n    reads: [\"src/**\", \"test/**\", \"docs/**\", \".smithers/instructions.md\"],\n    writes: [\".smithers/proposals/**\"],\n    mode: \"expected\",\n    onConflict: \"serialize\",\n    tier: \"sealed\",\n  },\n  payload: Input,\n  success: Receipt,\n  error: Schema.String,\n  body: input => Node.capture(\n    { implementationVersion: \"tinyhttp/triage/v1\" },\n    () => Propose.call(input),\n  ),\n})"
+  },
+  {
+    "path": ".smithers/flows/release-notes.tsx",
+    "lang": "tsx",
+    "content": "import { Action, Flow } from \"@smthrs/flow\"\nimport { Node } from \"@smthrs/plan\"\nimport { Schema } from \"effect\"\n\nconst Input = Schema.Struct({ tag: Schema.String })\nconst Receipt = Schema.Struct({ url: Schema.String })\n\n/** The repository host supplies the proposal action and persists its stage receipts. */\nconst Propose = Action.make(\"release-notes/propose\", {\n  implementationVersion: \"tinyhttp/release-notes/v1\",\n  payload: Input,\n  success: Receipt,\n  error: Schema.String,\n  nondeterministic: true,\n})\n\n/** Draft notes from merged changes. Maya reviews every proposed change. */\nexport default Flow.make(\"release-notes\", {\n  description: \"Draft notes from merged changes\",\n  capabilities: [\"fs:read:**\", \"fs:write:**\"],\n  effects: {\n    reads: [\"src/**\", \"test/**\", \"docs/**\", \".smithers/instructions.md\"],\n    writes: [\".smithers/proposals/**\"],\n    mode: \"expected\",\n    onConflict: \"serialize\",\n    tier: \"sealed\",\n  },\n  payload: Input,\n  success: Receipt,\n  error: Schema.String,\n  body: input => Node.capture(\n    { implementationVersion: \"tinyhttp/release-notes/v1\" },\n    () => Propose.call(input),\n  ),\n})"
+  },
+  {
+    "path": ".smithers/flows/docs-sync.tsx",
+    "lang": "tsx",
+    "content": "import { Action, Flow } from \"@smthrs/flow\"\nimport { Node } from \"@smthrs/plan\"\nimport { Schema } from \"effect\"\n\nconst Input = Schema.Struct({ ref: Schema.String })\nconst Receipt = Schema.Struct({ url: Schema.String })\n\n/** The repository host supplies the proposal action and persists its stage receipts. */\nconst Propose = Action.make(\"docs-sync/propose\", {\n  implementationVersion: \"tinyhttp/docs-sync/v1\",\n  payload: Input,\n  success: Receipt,\n  error: Schema.String,\n  nondeterministic: true,\n})\n\n/** Refresh documentation after API changes. Maya reviews every proposed change. */\nexport default Flow.make(\"docs-sync\", {\n  description: \"Refresh documentation after API changes\",\n  capabilities: [\"fs:read:**\", \"fs:write:**\"],\n  effects: {\n    reads: [\"src/**\", \"test/**\", \"docs/**\", \".smithers/instructions.md\"],\n    writes: [\".smithers/proposals/**\"],\n    mode: \"expected\",\n    onConflict: \"serialize\",\n    tier: \"sealed\",\n  },\n  payload: Input,\n  success: Receipt,\n  error: Schema.String,\n  body: input => Node.capture(\n    { implementationVersion: \"tinyhttp/docs-sync/v1\" },\n    () => Propose.call(input),\n  ),\n})"
+  },
+  {
+    "path": "CHANGELOG.md",
+    "lang": "md",
+    "content": "# Changelog\n\n## 0.4.2 — 2026-10-17\n\n- Return 400 for malformed path encoding instead of 500 (#32, fixes #31).\n- Preserve response headers when answering HEAD requests (#30).\n\n## 0.4.0 — 2026-10-11\n\n- Add size-limited JSON middleware (#28).\n- Expand middleware and adapter documentation (#26).\n\n## 0.3.0 — 2026-09-30\n\n- Stream Web Responses through the Node adapter (#24).\n- Decode plus signs as spaces in query strings (#9).\n\n## 0.2.0 — 2026-09-11\n\n- Give static segments precedence over named parameters (#7, fixes #8).\n\n## 0.1.0 — 2026-08-11\n\n- Ship the first router and query parser."
+  }
+]

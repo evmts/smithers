@@ -1,0 +1,715 @@
+[
+  {
+    "path": ".smithers",
+    "kind": "dir",
+    "sha": "e814e5d1f01e679d6ff11d55f8776a5442829d68"
+  },
+  {
+    "path": ".smithers/flows",
+    "kind": "dir",
+    "sha": "e814e5d1f01e679d6ff11d55f8776a5442829d68"
+  },
+  {
+    "path": ".smithers/flows/convert",
+    "kind": "dir",
+    "sha": "e814e5d1f01e679d6ff11d55f8776a5442829d68"
+  },
+  {
+    "path": ".smithers/instructions",
+    "kind": "dir",
+    "sha": "903ba881c757cc9ce9b3a1215ac5258c6de4a405"
+  },
+  {
+    "path": "docs",
+    "kind": "dir",
+    "sha": "c13a02cec95070e965b1b408ada43ef866ae51c6"
+  },
+  {
+    "path": "docs/tools",
+    "kind": "dir",
+    "sha": "c13a02cec95070e965b1b408ada43ef866ae51c6"
+  },
+  {
+    "path": "docs/user",
+    "kind": "dir",
+    "sha": "9b8009838e036ca98865306c2ef24251ac0f26e3"
+  },
+  {
+    "path": "docs/user/src",
+    "kind": "dir",
+    "sha": "9b8009838e036ca98865306c2ef24251ac0f26e3"
+  },
+  {
+    "path": "docs/user/src/error-management",
+    "kind": "dir",
+    "sha": "16b9bf09dd6a125a420d28397d953c68b8933b9e"
+  },
+  {
+    "path": "docs/user/src/getting-started",
+    "kind": "dir",
+    "sha": "9b8009838e036ca98865306c2ef24251ac0f26e3"
+  },
+  {
+    "path": "docs/user/src/setup",
+    "kind": "dir",
+    "sha": "6198101d57ce492084f3cd1d57e7f80dc2e4f472"
+  },
+  {
+    "path": "examples",
+    "kind": "dir",
+    "sha": "a9f06f10550753a34c3d46e505dc9b6c68e60292"
+  },
+  {
+    "path": "examples/file-tree",
+    "kind": "dir",
+    "sha": "a9f06f10550753a34c3d46e505dc9b6c68e60292"
+  },
+  {
+    "path": "examples/file-tree/src",
+    "kind": "dir",
+    "sha": "a9f06f10550753a34c3d46e505dc9b6c68e60292"
+  },
+  {
+    "path": "packages",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": "packages/converter-worker",
+    "kind": "dir",
+    "sha": "5992d9cad8ed03b118263c5f82038529eff7534c"
+  },
+  {
+    "path": "packages/converter-worker/deploy",
+    "kind": "dir",
+    "sha": "5992d9cad8ed03b118263c5f82038529eff7534c"
+  },
+  {
+    "path": "packages/create-vibelang",
+    "kind": "dir",
+    "sha": "c9dbbb4d94efc5561832d76d132a1caab02f9441"
+  },
+  {
+    "path": "packages/ts-mapper",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": "scripts",
+    "kind": "dir",
+    "sha": "458a6ea2f8f5e5dd0fcbc29be9cf71f8458bffa9"
+  },
+  {
+    "path": "scripts/release",
+    "kind": "dir",
+    "sha": "458a6ea2f8f5e5dd0fcbc29be9cf71f8458bffa9"
+  },
+  {
+    "path": "templates",
+    "kind": "dir",
+    "sha": "687cebf9e584109df62287b323deb8db9b5c6514"
+  },
+  {
+    "path": "templates/app",
+    "kind": "dir",
+    "sha": "687cebf9e584109df62287b323deb8db9b5c6514"
+  },
+  {
+    "path": "templates/app/src",
+    "kind": "dir",
+    "sha": "687cebf9e584109df62287b323deb8db9b5c6514"
+  },
+  {
+    "path": "typescript",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": "typescript/vibelang",
+    "kind": "dir",
+    "sha": "4a4aca77add2ff969f18db1fc5cabc392cfa0eb1"
+  },
+  {
+    "path": "typescript/vibelang/lsp-fixture",
+    "kind": "dir",
+    "sha": "4a4aca77add2ff969f18db1fc5cabc392cfa0eb1"
+  },
+  {
+    "path": "typescript/vibelang/lsp-fixture/src",
+    "kind": "dir",
+    "sha": "4a4aca77add2ff969f18db1fc5cabc392cfa0eb1"
+  },
+  {
+    "path": "typescript/tsc",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": "typescript/tsc/internal",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": "typescript/tsc/internal/vibelangmapper",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": "README.md",
+    "kind": "file",
+    "sha": "903ba881c757cc9ce9b3a1215ac5258c6de4a405",
+    "size": 12429
+  },
+  {
+    "path": "LICENSE",
+    "kind": "file",
+    "sha": "a9f06f10550753a34c3d46e505dc9b6c68e60292",
+    "size": 1396
+  },
+  {
+    "path": ".smithers/home.json",
+    "kind": "file",
+    "sha": "9b300d0f8c2f69903a1eab760446301745f705d2",
+    "size": 599
+  },
+  {
+    "path": "packages/create-vibelang/package.json",
+    "kind": "file",
+    "sha": "c9dbbb4d94efc5561832d76d132a1caab02f9441",
+    "size": 476
+  },
+  {
+    "path": ".smithers/flows/convert/build-prompt.mjs",
+    "kind": "file",
+    "sha": "e814e5d1f01e679d6ff11d55f8776a5442829d68",
+    "size": 2546
+  },
+  {
+    "path": ".smithers/flows/convert/score.mjs",
+    "kind": "file",
+    "sha": "e814e5d1f01e679d6ff11d55f8776a5442829d68",
+    "size": 1952
+  },
+  {
+    "path": ".smithers/flows/convert/check-heldout.mjs",
+    "kind": "file",
+    "sha": "e814e5d1f01e679d6ff11d55f8776a5442829d68",
+    "size": 5268
+  },
+  {
+    "path": "docs/user/src/001-onboarding.md",
+    "kind": "file",
+    "sha": "141a95d91496b3e664f06327f10558016991a42b",
+    "size": 6297
+  },
+  {
+    "path": "docs/user/src/getting-started/002-why-effect.md",
+    "kind": "file",
+    "sha": "687cebf9e584109df62287b323deb8db9b5c6514",
+    "size": 2678
+  },
+  {
+    "path": "docs/user/src/getting-started/004-installation.md",
+    "kind": "file",
+    "sha": "9b8009838e036ca98865306c2ef24251ac0f26e3",
+    "size": 6347
+  },
+  {
+    "path": "docs/user/src/error-management/014-expected-errors.md",
+    "kind": "file",
+    "sha": "16b9bf09dd6a125a420d28397d953c68b8933b9e",
+    "size": 8043
+  },
+  {
+    "path": "docs/user/src/error-management/015-unexpected-errors.md",
+    "kind": "file",
+    "sha": "92291e9dc70585def463ad308d277947fdecd666",
+    "size": 4505
+  },
+  {
+    "path": "docs/user/src/setup/vibelang-cli.md",
+    "kind": "file",
+    "sha": "6198101d57ce492084f3cd1d57e7f80dc2e4f472",
+    "size": 3003
+  },
+  {
+    "path": "templates/app/src/greeting.vibe",
+    "kind": "file",
+    "sha": "a9f06f10550753a34c3d46e505dc9b6c68e60292",
+    "size": 141
+  },
+  {
+    "path": "templates/app/src/main.vibe",
+    "kind": "file",
+    "sha": "687cebf9e584109df62287b323deb8db9b5c6514",
+    "size": 423
+  },
+  {
+    "path": "templates/app/src/greeting.test.vibe",
+    "kind": "file",
+    "sha": "a9f06f10550753a34c3d46e505dc9b6c68e60292",
+    "size": 356
+  },
+  {
+    "path": "examples/file-tree/src/main.vibe",
+    "kind": "file",
+    "sha": "a9f06f10550753a34c3d46e505dc9b6c68e60292",
+    "size": 1430
+  },
+  {
+    "path": "typescript/vibelang/lsp-fixture/src/old-await.vibe",
+    "kind": "file",
+    "sha": "a9f06f10550753a34c3d46e505dc9b6c68e60292",
+    "size": 312
+  },
+  {
+    "path": "typescript/vibelang/lsp-fixture/src/hatch-outside.vibe",
+    "kind": "file",
+    "sha": "4a4aca77add2ff969f18db1fc5cabc392cfa0eb1",
+    "size": 295
+  },
+  {
+    "path": "packages/ts-mapper/prelude.d.ts",
+    "kind": "file",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93",
+    "size": 238797
+  },
+  {
+    "path": "typescript/tsc/internal/vibelangmapper/lambdas.go",
+    "kind": "file",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93",
+    "size": 14104
+  },
+  {
+    "path": "typescript/tsc/internal/vibelangmapper/plan.go",
+    "kind": "file",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93",
+    "size": 16252
+  },
+  {
+    "path": "packages/converter-worker/compile.mjs",
+    "kind": "file",
+    "sha": "ecff34c8f29950b07957184fde4eb1427965cf7c",
+    "size": 7941
+  },
+  {
+    "path": "scripts/release/repack.mjs",
+    "kind": "file",
+    "sha": "458a6ea2f8f5e5dd0fcbc29be9cf71f8458bffa9",
+    "size": 4356
+  },
+  {
+    "path": "docs/tools/check-landing.ts",
+    "kind": "file",
+    "sha": "c13a02cec95070e965b1b408ada43ef866ae51c6",
+    "size": 5495
+  },
+  {
+    "path": "docs/tools/render-hovers.ts",
+    "kind": "file",
+    "sha": "a7798b9a5dc79faa842c5f693f23fcf2f4e7ab3f",
+    "size": 7816
+  },
+  {
+    "path": "scripts/deploy-docs.sh",
+    "kind": "file",
+    "sha": "597d7986c10b0774705a915602966a3a1c17042c",
+    "size": 5692
+  },
+  {
+    "path": "packages/converter-worker/deploy/image.json",
+    "kind": "file",
+    "sha": "5992d9cad8ed03b118263c5f82038529eff7534c",
+    "size": 1255
+  },
+  {
+    "path": "docs/tools/check-snippets.ts",
+    "kind": "file",
+    "sha": "597d7986c10b0774705a915602966a3a1c17042c",
+    "size": 18403
+  },
+  {
+    "path": "scripts/release/rehearse.sh",
+    "kind": "file",
+    "sha": "458a6ea2f8f5e5dd0fcbc29be9cf71f8458bffa9",
+    "size": 3843
+  },
+  {
+    "path": ".smithers/instructions/app.md",
+    "kind": "file",
+    "sha": "903ba881c757cc9ce9b3a1215ac5258c6de4a405",
+    "size": 5382
+  },
+  {
+    "path": "typescript/tsc/internal/astnav",
+    "kind": "dir",
+    "sha": "8fadacb51dc15e706bf033af8878f8f4e9a2047d"
+  },
+  {
+    "path": "typescript/tsc/internal/astnav/vibelang.go",
+    "kind": "file",
+    "size": 3628,
+    "sha": "8fadacb51dc15e706bf033af8878f8f4e9a2047d"
+  },
+  {
+    "path": "examples/users",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": "examples/users/src",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": "examples/users/src/main.vibe",
+    "kind": "file",
+    "size": 1038,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/01-hero-batch-lookup",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/01-hero-batch-lookup/expected.vibe",
+    "kind": "file",
+    "size": 408,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/01-hero-batch-lookup/input.ts",
+    "kind": "file",
+    "size": 757,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/02-typed-error-fallback",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/02-typed-error-fallback/expected.vibe",
+    "kind": "file",
+    "size": 277,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/02-typed-error-fallback/input.ts",
+    "kind": "file",
+    "size": 435,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/03-service-and-layer",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/03-service-and-layer/expected.vibe",
+    "kind": "file",
+    "size": 190,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/03-service-and-layer/input.ts",
+    "kind": "file",
+    "size": 399,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/04-layer-with-setup",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/04-layer-with-setup/expected.vibe",
+    "kind": "file",
+    "size": 217,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/04-layer-with-setup/input.ts",
+    "kind": "file",
+    "size": 387,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/05-retry-recurs",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/05-retry-recurs/expected.vibe",
+    "kind": "file",
+    "size": 140,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/05-retry-recurs/input.ts",
+    "kind": "file",
+    "size": 226,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/06-timeout-fallback",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/06-timeout-fallback/expected.vibe",
+    "kind": "file",
+    "size": 145,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/06-timeout-fallback/input.ts",
+    "kind": "file",
+    "size": 202,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/07-foreach-concurrency",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/07-foreach-concurrency/expected.vibe",
+    "kind": "file",
+    "size": 146,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/07-foreach-concurrency/input.ts",
+    "kind": "file",
+    "size": 166,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/08-all-concurrent",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/08-all-concurrent/expected.vibe",
+    "kind": "file",
+    "size": 213,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/08-all-concurrent/input.ts",
+    "kind": "file",
+    "size": 274,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/09-schema-struct",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/09-schema-struct/expected.vibe",
+    "kind": "file",
+    "size": 86,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/09-schema-struct/input.ts",
+    "kind": "file",
+    "size": 256,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/10-option-methods",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/10-option-methods/expected.vibe",
+    "kind": "file",
+    "size": 108,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/10-option-methods/input.ts",
+    "kind": "file",
+    "size": 204,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/11-ref-counter",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/11-ref-counter/expected.vibe",
+    "kind": "file",
+    "size": 142,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/11-ref-counter/input.ts",
+    "kind": "file",
+    "size": 230,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/12-console-and-log",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/12-console-and-log/expected.vibe",
+    "kind": "file",
+    "size": 81,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/12-console-and-log/input.ts",
+    "kind": "file",
+    "size": 166,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/13-fork-join",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/13-fork-join/expected.vibe",
+    "kind": "file",
+    "size": 165,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/13-fork-join/input.ts",
+    "kind": "file",
+    "size": 307,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/14-race",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/14-race/expected.vibe",
+    "kind": "file",
+    "size": 188,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/14-race/input.ts",
+    "kind": "file",
+    "size": 219,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/15-ensuring-finally",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/15-ensuring-finally/expected.vibe",
+    "kind": "file",
+    "size": 88,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/15-ensuring-finally/input.ts",
+    "kind": "file",
+    "size": 123,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/16-config",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/16-config/expected.vibe",
+    "kind": "file",
+    "size": 61,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/16-config/input.ts",
+    "kind": "file",
+    "size": 151,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/17-stream-methods",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/17-stream-methods/expected.vibe",
+    "kind": "file",
+    "size": 128,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/17-stream-methods/input.ts",
+    "kind": "file",
+    "size": 220,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/18-catch-all",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/18-catch-all/expected.vibe",
+    "kind": "file",
+    "size": 239,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/18-catch-all/input.ts",
+    "kind": "file",
+    "size": 364,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/19-sync-and-try",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/19-sync-and-try/expected.vibe",
+    "kind": "file",
+    "size": 229,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/19-sync-and-try/input.ts",
+    "kind": "file",
+    "size": 319,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/20-schedule-repeat",
+    "kind": "dir",
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/20-schedule-repeat/expected.vibe",
+    "kind": "file",
+    "size": 82,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/20-schedule-repeat/input.ts",
+    "kind": "file",
+    "size": 123,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  }
+]

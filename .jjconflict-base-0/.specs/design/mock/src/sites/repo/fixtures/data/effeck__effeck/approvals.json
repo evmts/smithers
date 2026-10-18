@@ -1,0 +1,15 @@
+[
+  {
+    "id": "approval-release-followup",
+    "run": "run-release-review",
+    "title": "Publish the repacked 0.0.1 tarball?",
+    "question": "Platform payload checks pass. Publish the repacked tarball or keep it staged?",
+    "askedOf": "maya",
+    "asked": "2026-10-18T04:57:00Z",
+    "options": [
+      "Publish",
+      "Keep staged"
+    ],
+    "state": "waiting"
+  }
+]

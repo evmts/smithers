@@ -1,0 +1,406 @@
+/**
+ * The durable flow engine, as a tab sees it.
+ *
+ * The engine runs in one dedicated worker per origin, the leader's (see
+ * `BrowserRuntime`). {@link layer} starts this tab's worker, which waits its
+ * turn to lead, and gives the tab a {@link BrowserEngine} that sends start,
+ * poll, cancel and signal requests to whichever worker leads now, over the
+ * engine's `BroadcastChannel`, and receives the engine's events back. A tab
+ * whose own worker leads talks to it the same way.
+ *
+ * When the leader's tab closes, the next worker takes the lock, resumes due
+ * runs from the store and announces itself; every tab then sends its
+ * unanswered requests again. Requests are idempotent, so one the old leader
+ * handled before it died is safe to repeat.
+ *
+ * When the tab's own worker fails, because it threw while loading or its
+ * engine could not be built, the tab cannot lead, and no request of its waits
+ * for a leader that may never come: every pending and later request fails
+ * with {@link EngineUnavailable}, and {@link Service.unavailable} says why.
+ *
+ * @since 1.0.0
+ */
+
+import type { Flow as FlowTypes } from "@smthrs/flow"
+import { Flow } from "@smthrs/flow"
+import * as Context from "effect/Context"
+import * as Deferred from "effect/Deferred"
+import * as Effect from "effect/Effect"
+import type * as Exit from "effect/Exit"
+import * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
+import * as PubSub from "effect/PubSub"
+import * as Result from "effect/Result"
+import * as Schema from "effect/Schema"
+import type * as Scope from "effect/Scope"
+import * as Stream from "effect/Stream"
+import * as Protocol from "./internal/Protocol.ts"
+import { StoragePersistence } from "./StoragePersistence.ts"
+import * as StoragePersistenceLayer from "./StoragePersistence.ts"
+import { TabChannel } from "./TabChannel.ts"
+import * as TabChannelLayer from "./TabChannel.ts"
+
+/**
+ * The leader refused a request. `error` is the tag of what it failed with,
+ * such as `@smthrs/flow/FlowRuntime/FlowExecutionNotFound` for a poll of an
+ * execution the store does not hold.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class RequestRefused extends Schema.TaggedError<RequestRefused>()(
+  "@smthrs/platform-browser/RequestRefused",
+  {
+    request: Schema.String,
+    error: Schema.String
+  }
+) {}
+
+/**
+ * This tab's engine worker failed, so the tab has no engine: `reason` is
+ * `worker-failed` when the worker threw, as when its module fails to load, and
+ * `engine-failed` when the worker could not build the engine, as without
+ * OPFS. `error` is the failure's tag or name, never its message.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class EngineUnavailable extends Schema.TaggedError<EngineUnavailable>()(
+  "@smthrs/platform-browser/EngineUnavailable",
+  {
+    reason: Schema.Literals(["worker-failed", "engine-failed"]),
+    error: Schema.String
+  }
+) {}
+
+/**
+ * An event the engine committed for a run: a step started or finished, a
+ * timer was set, the run settled.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface RunEvent {
+  readonly executionId: string
+  readonly eventType: string
+}
+
+/**
+ * The slice of `Worker` this module uses: the tab's engine worker, which
+ * calls `BrowserRuntime.run`.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface WorkerLike {
+  terminate(): void
+  addEventListener(type: "error", listener: (event: ErrorEvent) => void): void
+  addEventListener(type: "message", listener: (event: MessageEvent) => void): void
+}
+
+/**
+ * What a tab needs of a flow to run it: its tag and its schemas. A whole flow
+ * is one, and so is a plain object holding just these four, so a tab can
+ * start, await, cancel and signal a flow without importing what its steps run
+ * on; only the worker that runs the flow needs its declaration.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type FlowReference = Pick<FlowTypes.Any, "_tag" | "payloadSchema" | "successSchema" | "errorSchema">
+
+/**
+ * What {@link layer} starts.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Options {
+  /** The engine's name; the worker passes the same one to `BrowserRuntime.run`. */
+  readonly name: string
+  /**
+   * Starts this tab's engine worker, such as
+   * `() => new Worker(new URL("./engine.worker.ts", import.meta.url), { type: "module" })`.
+   * The worker is terminated when the layer's scope closes.
+   */
+  readonly worker: () => WorkerLike
+}
+
+/**
+ * Engine operations.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Service {
+  /**
+   * Admits `executionId` with `payload` and returns once the leader recorded
+   * it; the run continues in the background. Starting the same execution
+   * again is a no-op.
+   */
+  readonly start: <F extends FlowReference>(
+    flow: F,
+    options: { readonly executionId: string; readonly payload: F["payloadSchema"]["Type"] }
+  ) => Effect.Effect<void, RequestRefused | Schema.SchemaError | EngineUnavailable>
+  /**
+   * Waits for `executionId` to settle and returns how it ended. A cancelled
+   * run ends interrupted.
+   */
+  readonly result: <F extends FlowReference>(
+    flow: F,
+    executionId: string
+  ) => Effect.Effect<
+    Exit.Exit<F["successSchema"]["Type"], F["errorSchema"]["Type"]>,
+    RequestRefused | Schema.SchemaError | EngineUnavailable
+  >
+  /** Requests cancellation of `executionId`. */
+  readonly cancel: (flow: FlowReference, executionId: string) => Effect.Effect<void, RequestRefused | EngineUnavailable>
+  /** Resolves `executionId`'s `WaitFor` point `name` with `value`. */
+  readonly signal: (
+    flow: FlowReference,
+    executionId: string,
+    name: string,
+    value: Schema.Json
+  ) => Effect.Effect<void, RequestRefused | EngineUnavailable>
+  /** Every event the leader's engine commits from now on, for every run. */
+  readonly events: Stream.Stream<RunEvent>
+  /**
+   * Completes with why, once this tab's engine worker failed; never while it
+   * runs. An app shows its engine-failure state from it instead of a hang.
+   */
+  readonly unavailable: Effect.Effect<EngineUnavailable>
+}
+
+/**
+ * Service tag for the tab's view of the engine.
+ *
+ * @category services
+ * @since 1.0.0
+ */
+export class BrowserEngine extends Context.Service<BrowserEngine, Service>()(
+  "@smthrs/platform-browser/BrowserEngine"
+) {}
+
+/**
+ * Requests this tab sent, by `request` and `outcome` (`replied` or `refused`).
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const requests = Metric.counter("smithers_browser_engine_requests", {
+  description: "Requests a tab sent to the browser engine's leader, by request and outcome",
+  incremental: true
+})
+
+/**
+ * Tabs whose engine worker failed, by `reason` (`worker-failed` or
+ * `engine-failed`).
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const unavailable = Metric.counter("smithers_browser_engine_unavailable", {
+  description: "Tabs whose engine worker failed, so they have no engine, by reason",
+  incremental: true
+})
+
+/**
+ * Persistent-storage answers, by `outcome` (`granted` or `denied`).
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const persistence = Metric.counter("smithers_browser_engine_storage", {
+  description: "Whether the origin holds persistent storage, asked once per tab",
+  incremental: true
+})
+
+type Reply = Extract<Protocol.Message, { readonly _tag: "Replied" | "Refused" }>
+type Notice = Extract<Protocol.Message, { readonly _tag: "Leader" | "RunChanged" }>
+type Body = Protocol.Request extends infer R ? R extends Protocol.Request ? Omit<R, "client" | "id"> : never : never
+
+/** The JSON codec of a flow's results. */
+const resultCodec = (flow: FlowReference) =>
+  Schema.toCodecJson(Flow.Result({ success: flow.successSchema, error: flow.errorSchema })) as unknown as Schema.Codec<
+    FlowTypes.Result<unknown, unknown>,
+    Schema.Json
+  >
+
+/**
+ * Builds the service: starts the tab's worker, asks for persistent storage,
+ * and opens the engine's channel, all closed with the scope.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const make = (options: Options): Effect.Effect<Service, never, TabChannel | StoragePersistence | Scope.Scope> =>
+  Effect.gen(function*() {
+    const port = yield* (yield* TabChannel).open(options.name)
+    const inbox = yield* port.subscribe
+    const notices = yield* Effect.acquireRelease(PubSub.unbounded<Notice>(), PubSub.shutdown)
+    const client = crypto.randomUUID()
+    const pending = new Map<
+      number,
+      { readonly message: Protocol.Request; readonly reply: Deferred.Deferred<Reply, EngineUnavailable> }
+    >()
+    let next = 0
+    const failed = yield* Deferred.make<EngineUnavailable>()
+    // Fails every waiting request and every later one, once, and records why.
+    const fail = (reason: EngineUnavailable["reason"], error: string) =>
+      Effect.gen(function*() {
+        const failure = new EngineUnavailable({ reason, error })
+        if (!(yield* Deferred.succeed(failed, failure))) return
+        yield* Metric.update(Metric.withAttributes(unavailable, { reason }), 1)
+        yield* Effect.logError("browser.engine.unavailable").pipe(Effect.annotateLogs({ reason, "error.type": error }))
+        for (const { reply } of pending.values()) yield* Deferred.fail(reply, failure)
+      })
+    const unavailableFailure = Effect.flatMap(Deferred.await(failed), Effect.fail)
+
+    yield* Stream.fromSubscription(inbox).pipe(
+      Stream.runForEach((input) =>
+        Effect.gen(function*() {
+          const message = Protocol.decode(input)
+          switch (message?._tag) {
+            case "Replied":
+            case "Refused": {
+              // A reply to a request already answered, by a leader that died
+              // after answering it, finds nothing waiting.
+              const waiting = message.client === client ? pending.get(message.id) : undefined
+              if (waiting !== undefined) yield* Deferred.succeed(waiting.reply, message)
+              return
+            }
+            case "Leader": {
+              for (const { message: request } of pending.values()) yield* port.post(Protocol.encode(request))
+              yield* PubSub.publish(notices, message)
+              return
+            }
+            case "RunChanged": {
+              yield* PubSub.publish(notices, message)
+              return
+            }
+          }
+        })
+      ),
+      Effect.forkScoped
+    )
+
+    yield* Effect.forkScoped(
+      (yield* StoragePersistence).persist.pipe(
+        Effect.tap((granted) => {
+          const outcome = granted ? "granted" : "denied"
+          return Metric.update(Metric.withAttributes(persistence, { outcome }), 1).pipe(
+            Effect.andThen(Effect.logInfo("browser.engine.storage").pipe(Effect.annotateLogs({ outcome })))
+          )
+        })
+      )
+    )
+
+    // The worker reports its failures outside any fiber: an error event when
+    // it throws, and `Stopped` when its engine could not be built.
+    const runFork = Effect.runForkWith(yield* Effect.context<never>())
+    yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        const worker = options.worker()
+        worker.addEventListener("error", (event) => {
+          runFork(fail("worker-failed", String((event.error as Error | null | undefined)?.name ?? "ErrorEvent")))
+        })
+        worker.addEventListener("message", (event) => {
+          const stopped = Protocol.decodeStopped(event.data)
+          if (stopped !== undefined) runFork(fail("engine-failed", stopped.error))
+        })
+        return worker
+      }),
+      (worker) => Effect.sync(() => worker.terminate())
+    )
+
+    const request = (
+      body: Body
+    ): Effect.Effect<Protocol.Message & { readonly _tag: "Replied" }, RequestRefused | EngineUnavailable> =>
+      Effect.gen(function*() {
+        const id = next++
+        const message = { ...body, client, id } as Protocol.Request
+        const reply = yield* Deferred.make<Reply, EngineUnavailable>()
+        pending.set(id, { message, reply })
+        // Registered first, so a failure from now on reaches it either way.
+        if (yield* Deferred.isDone(failed)) yield* Deferred.fail(reply, yield* Deferred.await(failed))
+        const answer = yield* port.post(Protocol.encode(message)).pipe(
+          Effect.andThen(Deferred.await(reply)),
+          Effect.ensuring(Effect.sync(() => pending.delete(id)))
+        )
+        const outcome = answer._tag === "Replied" ? "replied" : "refused"
+        yield* Metric.update(Metric.withAttributes(requests, { request: body._tag, outcome }), 1)
+        yield* Effect.annotateCurrentSpan({ "smithers.request.outcome": outcome })
+        if (answer._tag === "Refused") {
+          return yield* new RequestRefused({ request: body._tag, error: answer.error })
+        }
+        return answer
+      }).pipe(
+        Effect.withSpan("browser.engine.request", {
+          attributes: {
+            "smithers.request": body._tag,
+            "smithers.flow": body.flow,
+            "smithers.execution.id": body.executionId
+          }
+        })
+      )
+
+    const poll = (flow: FlowReference, executionId: string) =>
+      request({ _tag: "Poll", flow: flow._tag, executionId }).pipe(
+        Effect.flatMap((reply) =>
+          reply.result === null
+            ? Effect.succeed(undefined)
+            : Schema.decodeUnknownEffect(resultCodec(flow))(reply.result)
+        )
+      )
+
+    return BrowserEngine.of({
+      start: (flow, { executionId, payload }) =>
+        (Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))(payload) as Effect.Effect<
+          Schema.Json,
+          Schema.SchemaError
+        >).pipe(
+          Effect.flatMap((encoded) => request({ _tag: "Start", flow: flow._tag, executionId, payload: encoded })),
+          Effect.asVoid
+        ),
+      result: (flow, executionId) =>
+        Effect.scoped(Effect.gen(function*() {
+          // Subscribed before the first poll, so an event between the poll and
+          // the wait is not missed.
+          const changes = yield* PubSub.subscribe(notices)
+          while (true) {
+            const result = yield* poll(flow, executionId)
+            if (result !== undefined && result._tag === "Complete") return result.exit
+            let relevant = false
+            while (!relevant) {
+              const notice = yield* PubSub.take(changes)
+              relevant = notice._tag === "Leader" ||
+                (notice._tag === "RunChanged" && notice.executionId === executionId)
+            }
+          }
+        })).pipe(Effect.raceFirst(unavailableFailure)),
+      cancel: (flow, executionId) => Effect.asVoid(request({ _tag: "Cancel", flow: flow._tag, executionId })),
+      signal: (flow, executionId, name, value) =>
+        Effect.asVoid(request({ _tag: "Signal", flow: flow._tag, executionId, name, value })),
+      events: Stream.fromPubSub(notices).pipe(
+        Stream.filterMap((notice) =>
+          notice._tag === "RunChanged"
+            ? Result.succeed({ executionId: notice.executionId, eventType: notice.eventType })
+            : Result.failVoid
+        )
+      ),
+      unavailable: Deferred.await(failed)
+    })
+  })
+
+/**
+ * Provides the tab's {@link BrowserEngine} over the browser's own
+ * `BroadcastChannel` and `navigator.storage`: the one layer an app's tab
+ * composes.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layer = (options: Options): Layer.Layer<BrowserEngine> =>
+  Layer.effect(BrowserEngine, make(options)).pipe(
+    Layer.provide(Layer.mergeAll(TabChannelLayer.layer, StoragePersistenceLayer.layer))
+  )

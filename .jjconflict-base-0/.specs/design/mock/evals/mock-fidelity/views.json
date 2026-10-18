@@ -1,0 +1,508 @@
+[
+  {
+    "id": "code-home",
+    "view": "Code home",
+    "patterns": [
+      "smithers.sh/:owner/:repo"
+    ],
+    "purpose": "Understand the repo at a glance",
+    "primary": "Ask about this repo",
+    "powers": "README, file tree, latest commit and branch count. Code menu contains Run on a sandbox. Product .smithers/home.json blocks appear ABOVE the file table in this order: text, prompt, links, Fixed by agents, then member-only S.Home.App blocks; then Files; then README. Hide App blocks from signed-out visitors and nonmembers. Repos without blocks keep GitHub’s layout. The right sidebar holds Releases ONLY (PM d-59r9fj). The repo-header chip is the one sync surface on every view: Synced with GitHub, stale with its age, or failed with the reason, never a bare green Synced; members open Settings → GitHub sync from it, readers and signed-out visitors see plain text, not a link.",
+    "anatomy": "Repository header, branch picker and file table with last commit per row, README below, only Releases in the right sidebar; GitHub sync state in the repo-header chip. Tabs in order: Code, Issues, Pull requests, Runs, Flows, Wiki, declared tabs, Settings (members only). At most three declared tabs, configured by the repo; no Stack, Agents, Approvals or Releases top-level tab.",
+    "readyIds": [
+      "code-home-member",
+      "code-home-ready"
+    ],
+    "deniedIds": [
+      "code-home-denied"
+    ],
+    "held": true
+  },
+  {
+    "id": "tree-file",
+    "view": "Tree and file",
+    "patterns": [
+      "smithers.sh/:owner/:repo/tree/:ref",
+      "smithers.sh/:owner/:repo/tree/:ref/*",
+      "smithers.sh/:owner/:repo/blob/:ref/*"
+    ],
+    "purpose": "Read code",
+    "primary": "Copy permalink",
+    "powers": "Code intelligence: hover, definition, diagnostics through code.* flows; Ask about this file; line selection to ask or make a TODO. The blob shows the whole file up to and including 512 KiB; larger files show size and a raw link instead of partial source. The 16 KiB CARD_CONTENT_CAP is only for embedded chat file cards.",
+    "anatomy": "Branch picker, path breadcrumbs, directory rows with last commit, file toolbar, complete source with line numbers and selectable lines; directory and file are separate subjects. A blob must not truncate a file at 16 KiB; assess full-file evidence, not a truncated judge excerpt.",
+    "readyIds": [
+      "code-blob-router",
+      "code-file-ready",
+      "tree-file-ready"
+    ],
+    "deniedIds": [
+      "code-blob-reader"
+    ],
+    "held": true
+  },
+  {
+    "id": "blame",
+    "view": "Blame",
+    "patterns": [
+      "smithers.sh/:owner/:repo/blame/:ref/*"
+    ],
+    "purpose": "Who changed each line and why",
+    "primary": "Open the commit",
+    "powers": "Agent-authored lines marked by the commit's agent trailer; the mark links the originating run.",
+    "anatomy": "File breadcrumbs, line numbers and source aligned with grouped author, commit and date attribution; commit links beside the attributed ranges.",
+    "readyIds": [
+      "code-blame-router",
+      "blame-ready"
+    ],
+    "deniedIds": [],
+    "held": false,
+    "solid": false
+  },
+  {
+    "id": "commits",
+    "view": "Commits",
+    "patterns": [
+      "smithers.sh/:owner/:repo/commits/:ref",
+      "smithers.sh/:owner/:repo/commits/:ref/*"
+    ],
+    "purpose": "History of a branch",
+    "primary": "Open a commit",
+    "powers": "Agent commits marked; each links its run when the trailer carries one.",
+    "anatomy": "Branch selector and chronological commit list grouped by date, commit message, author, time and short SHA; pagination where needed.",
+    "readyIds": [
+      "history-commits-main",
+      "commits-ready"
+    ],
+    "deniedIds": [],
+    "held": false,
+    "solid": false
+  },
+  {
+    "id": "commit",
+    "view": "Commit",
+    "patterns": [
+      "smithers.sh/:owner/:repo/commit/:sha"
+    ],
+    "purpose": "One change, its diff and checks",
+    "primary": "Browse files at this commit",
+    "powers": "Linked run, review receipt, landing. A person reviews and merges.",
+    "anatomy": "Commit title, author, SHA and parents, checks, file change counts and per-file unified diffs with line anchors; browse files at this immutable revision.",
+    "readyIds": [
+      "history-commit-agent",
+      "commit-ready"
+    ],
+    "deniedIds": [],
+    "held": false
+  },
+  {
+    "id": "branches",
+    "view": "Branches",
+    "patterns": [
+      "smithers.sh/:owner/:repo/branches"
+    ],
+    "purpose": "Every line of work",
+    "primary": "Open a branch",
+    "powers": "Each branch's sandbox state (running, suspended), its run, Fork/Rebase/Archive through branch.*, Run on a sandbox through box.open.",
+    "anatomy": "Default branch, active and stale branch lists, last commit, comparison information and a branch search; branch controls stay beside their branch.",
+    "readyIds": [
+      "history-branches",
+      "branches-ready"
+    ],
+    "deniedIds": [
+      "history-branches-denied"
+    ],
+    "held": true,
+    "solid": false
+  },
+  {
+    "id": "issues",
+    "view": "Issues",
+    "patterns": [
+      "smithers.sh/:owner/:repo/issues",
+      "smithers.sh/:owner/:repo/issues/new",
+      "smithers.sh/:owner/:repo/issues/:n"
+    ],
+    "purpose": "The tracker",
+    "primary": "New issue",
+    "powers": "Make TODO / Implement (issue.implement) and Reproduce (issue.repro) on the issue; saved view Fixed by agents with the evidence strip. Missing input opens a form card. GitHub /labels and /milestones paths redirect to /issues.",
+    "anatomy": "Open/closed toggle, filters, labels and issue rows; detail has issue title and number, author, timeline/comments and right sidebar for labels and assignees.",
+    "readyIds": [
+      "issues-list-open",
+      "issues-ready"
+    ],
+    "deniedIds": [
+      "issues-detail-reader"
+    ],
+    "held": true
+  },
+  {
+    "id": "pulls-stack",
+    "view": "Pull requests and Stack",
+    "patterns": [
+      "smithers.sh/:owner/:repo/pulls",
+      "smithers.sh/:owner/:repo/pull/:n",
+      "smithers.sh/:owner/:repo/pull/:n/commits",
+      "smithers.sh/:owner/:repo/pull/:n/checks",
+      "smithers.sh/:owner/:repo/pull/:n/files",
+      "smithers.sh/:owner/:repo/stack"
+    ],
+    "purpose": "Changes waiting for a person",
+    "primary": "Open the next one to review",
+    "powers": "Landing requests for native repos in the same list; agent PRs show their run and review receipt. Stack beside Pull requests: the team's ordered work with answer, merge, reorder, retry. A person reviews and merges; hosted merge has an install-only state when held. The Stack is the canonical TODO list, so Add TODO is correct. A repo may rename it; only Smithers calls its Stack Landing queue and hides Add TODO. No agent approves, gives a merge verdict, merges or lands for the person. Checks passed. Your review is next. is acceptable draft copy.",
+    "anatomy": "Open/closed pull list, filters; pull tabs Conversation, Commits, Checks, Files changed; conversation timeline and right sidebar, per-file diffs and reviews. Stack is reachable from Pull requests, not a top-level repo tab.",
+    "readyIds": [
+      "pulls-list-open",
+      "pulls-ready"
+    ],
+    "deniedIds": [
+      "pulls-stack-reader",
+      "pulls-conversation-reader"
+    ],
+    "held": true
+  },
+  {
+    "id": "runs",
+    "view": "Runs",
+    "patterns": [
+      "smithers.sh/:owner/:repo/runs",
+      "smithers.sh/:owner/:repo/runs/:id",
+      "smithers.sh/:owner/:repo/approvals"
+    ],
+    "purpose": "What agents are doing and did",
+    "primary": "Open the run that needs you",
+    "powers": "Stage strip, flow graph, trace, needs-help and approvals inline; /approvals filters to waiting-on-you; resume after a closed tab; cost. Global Waiting on you inbox combines approvals asked of the person, Stack questions and reviews requested. The header inbox count equals the /approvals page count. /actions redirects to /runs.",
+    "anatomy": "Runs occupy the Actions habit: filterable chronological list of status, flow, branch and timing; run detail has stages, progress, trace/logs and inline human decisions. Approvals and agents reachable here, not additional repo tabs.",
+    "readyIds": [
+      "runs-all",
+      "runs-ready"
+    ],
+    "deniedIds": [
+      "runs-run-reader",
+      "runs-approvals-reader"
+    ],
+    "held": true
+  },
+  {
+    "id": "flows",
+    "view": "Flows",
+    "patterns": [
+      "smithers.sh/:owner/:repo/flows",
+      "smithers.sh/:owner/:repo/flows/:name",
+      "smithers.sh/:owner/:repo/agents"
+    ],
+    "purpose": "The repo's automation, as code",
+    "primary": "Run a flow",
+    "powers": "Run opens a form card. Flow source, graph, triggers and schedules (triggers.register), agents and models per role (/agents).",
+    "anatomy": "Repository automation list and selected flow detail with overview, source, graph and run history; schedules/triggers beside their flow; role/model configuration accessible through agents.",
+    "readyIds": [
+      "flows-overview",
+      "flows-ready",
+      "flows-list"
+    ],
+    "deniedIds": [
+      "flows-run-denied"
+    ],
+    "held": true
+  },
+  {
+    "id": "wiki",
+    "view": "Wiki",
+    "patterns": [
+      "smithers.sh/:owner/:repo/wiki",
+      "smithers.sh/:owner/:repo/wiki/:page"
+    ],
+    "purpose": "The repo's memory",
+    "primary": "Edit or ask",
+    "powers": "Provenance and revision per page; learning proposals from runs.",
+    "anatomy": "Wiki home and rendered page, page navigation sidebar, title, edit/history actions and revisions. Proposals link their originating run and need a person's decision.",
+    "readyIds": [
+      "wiki-home",
+      "wiki-ready"
+    ],
+    "deniedIds": [
+      "wiki-edit-denied"
+    ],
+    "held": false
+  },
+  {
+    "id": "releases",
+    "view": "Releases",
+    "patterns": [
+      "smithers.sh/:owner/:repo/releases",
+      "smithers.sh/:owner/:repo/releases/tag/:v",
+      "smithers.sh/:owner/:repo/releases/latest"
+    ],
+    "purpose": "What shipped",
+    "primary": "Open notes",
+    "powers": "Notes generated from landed changes; releases reachable from the Code home sidebar. /releases/latest redirects to the latest release, not the list or not-found.",
+    "anatomy": "Releases list and tagged notes with version, author/date, linked tag/commit and assets where provided. No invented top-level Releases tab.",
+    "readyIds": [
+      "releases-list",
+      "releases-ready",
+      "releases-home"
+    ],
+    "deniedIds": [],
+    "held": false,
+    "solid": false
+  },
+  {
+    "id": "settings",
+    "view": "Settings",
+    "patterns": [
+      "smithers.sh/:owner/:repo/settings",
+      "smithers.sh/:owner/:repo/settings/:section"
+    ],
+    "purpose": "Run the factory for this repo",
+    "primary": "Save",
+    "powers": "Members, Secrets, Model connections (Claude or Codex subscription), Environment images, Sandboxes (egress, services), Triggers, Webhooks, GitHub sync, Reporting policy (reporting: off | signed-in). Secret values never appear in cards, logs or diagnostics. Hosted model connection held behind the install flag. Effect has no Ownership settings section or Ownership screens.",
+    "anatomy": "Member-only Settings tab; section navigation in a left sidebar and labeled forms in the main pane; save is the one primary for the selected form.",
+    "readyIds": [
+      "settings-general-default",
+      "settings-ready"
+    ],
+    "deniedIds": [
+      "settings-reader-denied"
+    ],
+    "held": true
+  },
+  {
+    "id": "search",
+    "view": "Search",
+    "patterns": [
+      "smithers.sh/:owner/:repo/search"
+    ],
+    "purpose": "Find code, issues, runs, wiki",
+    "primary": "Open a result",
+    "powers": "One box across all subjects.",
+    "anatomy": "Search query box with q= in the URL, subject filters and relevant snippets linking directly to code, issues, runs and wiki pages.",
+    "readyIds": [
+      "search-results",
+      "search-ready",
+      "search-all",
+      "search-code"
+    ],
+    "deniedIds": [],
+    "held": false,
+    "solid": false
+  },
+  {
+    "id": "ask",
+    "view": "Ask",
+    "patterns": [
+      "smithers.sh/:owner/:repo"
+    ],
+    "screenIds": [
+      "ask",
+      "code-home-held",
+      "code-home-guest-limit"
+    ],
+    "purpose": "Ask or ask for work",
+    "primary": "Send",
+    "powers": "Context is the current view; answers render embedded; consequential acts confirm; every act has a slash form accepted by Ask. Ask is available on every repo view through the header and Command-K. Missing fields open exactly the needed form; signed-out guests respect caps.",
+    "anatomy": "Ask docked right, open at 1440 px and wider, collapsed to the header Ask button at 1280 px, a bottom sheet at 390 px. Desktop content never narrows below 720 px; phone never scrolls sideways. A person's tab click maximizes that view with composer adjacent; an agent-opened view embeds in Ask. Messages, current-view context, Send and keyboard/close access. Ask is not a repo tab.",
+    "readyIds": [
+      "code-home-ask-sample",
+      "ask-ready",
+      "ask-sample"
+    ],
+    "deniedIds": [
+      "ask-command-denied"
+    ],
+    "held": true,
+    "composer": true
+  },
+  {
+    "id": "terminal",
+    "view": "Terminal",
+    "patterns": [
+      "smithers.sh/:owner/:repo/branches/:b/terminal"
+    ],
+    "purpose": "Hands on a sandbox",
+    "primary": "Type",
+    "powers": "Watched by the agent; SSH; branch sandbox states and linked run.",
+    "anatomy": "Branch-specific terminal with command input/output, connection/sandbox status and SSH access; member-only hands-on sandbox, with truthful suspended and unavailable states.",
+    "readyIds": [
+      "history-terminal-running",
+      "terminal-ready"
+    ],
+    "deniedIds": [
+      "history-terminal-reader"
+    ],
+    "held": true
+  },
+  {
+    "id": "docs",
+    "view": "Declared Docs",
+    "patterns": [
+      "smithers.sh/:owner/:repo/docs",
+      "smithers.sh/:owner/:repo/docs/*"
+    ],
+    "purpose": "Read repository documentation",
+    "primary": "Ask about this page",
+    "powers": "Docs appears only when declared. Effeck docs and source code have type hovers. Effect docs retain ?package= scope and link to package source. Effect Generate docs is cut; a remaining Generate docs control or screen is a failure, not missing required evidence.",
+    "anatomy": "Docs index and page, navigation and source links; part of the shared repo frame, with truthful loading, error with Retry, empty, signed-out and denied acts.",
+    "readyIds": [
+      "ready"
+    ],
+    "deniedIds": [],
+    "held": false,
+    "declaration": {
+      "patterns": [
+        "smithers.sh/:owner/:repo/docs",
+        "smithers.sh/:owner/:repo/docs/*"
+      ]
+    }
+  },
+  {
+    "id": "smithers-evals",
+    "view": "Smithers Evals",
+    "patterns": [
+      "smithers.sh/:owner/:repo/evals",
+      "smithers.sh/:owner/:repo/evals/:suite"
+    ],
+    "purpose": "Compare eval suites against baselines",
+    "primary": "Run eval",
+    "powers": "The declared Evals tab shows smthrs eval suites against baselines, per-case scores and reasons; running asks for input/confirmation and observes member/hosted boundaries.",
+    "anatomy": "Suite list, suite detail, baseline comparison and case evidence; Evals follows Wiki and precedes Settings. No count on the declared tab. The suite list opens a suite; suite detail offers Run eval. A run-input form has its submission as primary; this does not require a Run eval button on every read-only list row.",
+    "readyIds": [
+      "ready"
+    ],
+    "deniedIds": [],
+    "held": true,
+    "declaration": {
+      "repo": "smithers-canary/smithers",
+      "patterns": [
+        "smithers.sh/:owner/:repo/evals",
+        "smithers.sh/:owner/:repo/evals/:suite"
+      ]
+    }
+  },
+  {
+    "id": "effeck-golden-set",
+    "view": "Effeck Golden set",
+    "patterns": [
+      "smithers.sh/:owner/:repo/evals",
+      "smithers.sh/:owner/:repo/evals/:suite"
+    ],
+    "purpose": "Inspect the converter gate",
+    "primary": "Run eval",
+    "powers": "Golden set is the converter 20-case gate, held out of the prompt. Show inputs, expected output, actual results and reasons without fabricating a passed gate. Type hovers belong in docs and code.",
+    "anatomy": "Declared Golden set tab after Wiki, before Settings; 20 cases and individual comparisons. A run requires a person and truthful held states. No count on the tab; it opens the golden-set suite directly, never a generic evals list.",
+    "readyIds": [
+      "ready"
+    ],
+    "deniedIds": [],
+    "held": true,
+    "declaration": {
+      "repo": "effeck/effeck",
+      "patterns": [
+        "smithers.sh/:owner/:repo/evals",
+        "smithers.sh/:owner/:repo/evals/:suite"
+      ]
+    }
+  },
+  {
+    "id": "effect-packages-scope",
+    "view": "Effect Packages and scope",
+    "patterns": [
+      "smithers.sh/:owner/:repo/packages",
+      "smithers.sh/:owner/:repo/packages/:slug",
+      "smithers.sh/:owner/:repo",
+      "smithers.sh/:owner/:repo/tree/:ref/*",
+      "smithers.sh/:owner/:repo/blob/:ref/*",
+      "smithers.sh/:owner/:repo/issues",
+      "smithers.sh/:owner/:repo/pulls",
+      "smithers.sh/:owner/:repo/runs",
+      "smithers.sh/:owner/:repo/flows",
+      "smithers.sh/:owner/:repo/wiki",
+      "smithers.sh/:owner/:repo/docs",
+      "smithers.sh/:owner/:repo/docs/*",
+      "smithers.sh/:owner/:repo/settings"
+    ],
+    "purpose": "Navigate the monorepo by package",
+    "primary": "Open a package",
+    "powers": "Package scope picker carried in ?package= across every tab, package list/detail with source, dependencies and docs; package changes preserve the shared repository UI. Scope is navigation, never authorization. Run affected and Check this package are cut; their controls and remaining screens are failures, never required acts or states. Ownership settings and Generate docs are also cut.",
+    "anatomy": "Packages declared view and picker in the common frame; index opens a package, package detail browses its files, other tabs keep their spec-table primary. Observe scoped AND unscoped screens. Package scope is navigation only: no Run affected, Check this package, Generate docs or Ownership settings.",
+    "readyIds": [
+      "ready"
+    ],
+    "deniedIds": [],
+    "held": false,
+    "declaration": {
+      "repo": "Effect-TS/effect",
+      "patterns": [
+        "smithers.sh/:owner/:repo/packages",
+        "smithers.sh/:owner/:repo/packages/:slug"
+      ]
+    }
+  },
+  {
+    "id": "effect-ci-matrix",
+    "view": "Effect CI matrix",
+    "patterns": [
+      "smithers.sh/:owner/:repo/runs/:id/matrix"
+    ],
+    "purpose": "Inspect package and runtime results",
+    "primary": "Open a failing result",
+    "powers": "Package scope is retained in ?package=. Matrix shows package/runtime results, skipped and missing states truthfully; failing cells link run logs.",
+    "anatomy": "CI matrix under a run at GitHub-shaped repository paths; preserves shared frame, Runs tab and package scope.",
+    "readyIds": [
+      "ready"
+    ],
+    "deniedIds": [],
+    "held": false,
+    "declaration": {
+      "repo": "Effect-TS/effect",
+      "patterns": [
+        "smithers.sh/:owner/:repo/runs/:id/matrix"
+      ]
+    }
+  },
+  {
+    "id": "effect-version-packages",
+    "view": "Effect Version packages",
+    "patterns": [
+      "smithers.sh/:owner/:repo/releases/plan"
+    ],
+    "purpose": "Prepare package versions for a person",
+    "primary": "Preview release",
+    "powers": "Version packages uses changesets and shows the complete impact even when scoped; preview, confirmation, existing PR, stale, running, failed and held states. Only a person reviews and merges the version PR.",
+    "anatomy": "Version packages at /releases/plan; shared frame and package picker, version preview followed by human confirmation. The initial plan primary is Preview release; a preview offers Prepare version PR, confirmation submits that act, and an existing PR offers Open version PR. Releases retains Open notes as its separate spec-table primary.",
+    "readyIds": [
+      "ready"
+    ],
+    "deniedIds": [],
+    "held": true,
+    "declaration": {
+      "repo": "Effect-TS/effect",
+      "patterns": [
+        "smithers.sh/:owner/:repo/releases/plan"
+      ]
+    }
+  },
+  {
+    "id": "fixed-by-agents",
+    "view": "Fixed by agents",
+    "patterns": [
+      "smithers.sh/:owner/:repo/issues"
+    ],
+    "purpose": "Inspect fixes with human acceptance and landing evidence",
+    "primary": "New issue",
+    "powers": "The saved Fixed by agents view shows closed issues with agent fix evidence and human acceptance and landing receipts; it never claims that an agent approved or merged.",
+    "anatomy": "Filtered issue list with evidence strip and direct issue links in the shared repository frame. This saved Issues list retains the Issues primary and access rules.",
+    "readyIds": [
+      "fixed-by-agents"
+    ],
+    "deniedIds": [],
+    "held": false,
+    "siteOnly": true,
+    "query": {
+      "q": "is:fixed-by-agents"
+    },
+    "declaration": {
+      "patterns": [
+        "smithers.sh/:owner/:repo/issues"
+      ]
+    }
+  }
+]

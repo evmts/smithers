@@ -1,0 +1,111 @@
+.repo-flows-list-header { display: flex; justify-content: space-between; gap: var(--sp-3); }
+.repo-flows-list-row { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-5); border-bottom: 1px solid var(--border); }
+.repo-flows-list-row:last-child { border-bottom: 0; }
+.repo-flows-list-row > svg { margin-top: 3px; flex-shrink: 0; color: var(--text-muted); }
+.repo-flows-row-main { flex: 1; min-width: 0; display: grid; gap: var(--sp-1); }
+.repo-flows-name { font-weight: 600; font-size: var(--fs-3); overflow-wrap: anywhere; }
+.repo-flows-row-main p { color: var(--text-muted); font-size: var(--fs-2); }
+.repo-flows-path { color: var(--text-muted); font: var(--fs-1)/1.6 var(--font-mono); overflow-wrap: anywhere; }
+.repo-flows-row-main .repo-flows-triggers-summary { margin-top: var(--sp-2); color: var(--text-faint); font-size: var(--fs-1); }
+.repo-flows-row-run { display: grid; gap: var(--sp-2); justify-items: end; font-size: var(--fs-2); padding-top: var(--sp-1); }
+.repo-flows-row-run a { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+.repo-flows-run-card { margin-bottom: var(--sp-5); max-width: 640px; }
+.repo-flows-form { padding: var(--sp-5); }
+.repo-flows-form-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.repo-flows-form-heading h2 { font-size: var(--fs-4); font-weight: 600; overflow-wrap: anywhere; }
+.repo-flows-form form { display: grid; gap: var(--sp-4); }
+.repo-flows-form label { display: grid; gap: var(--sp-2); font-size: var(--fs-2); font-weight: 500; }
+.repo-flows-form label .repo-ui-muted { font-weight: 400; }
+.repo-flows-held { display: grid; gap: var(--sp-2); font-size: var(--fs-2); }
+.repo-flows-held p { color: var(--text-muted); }
+.repo-flows-command { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); border: 1px solid var(--border); border-radius: var(--r-2); background: var(--code-bg); padding: var(--sp-2) var(--sp-3); }
+.repo-flows-command code { min-width: 0; font-size: var(--fs-1); overflow-wrap: anywhere; }
+.repo-flows-confirm { display: grid; gap: var(--sp-2); }
+.repo-flows-confirm dl { display: grid; gap: var(--sp-2); margin: var(--sp-3) 0; }
+.repo-flows-confirm dl div { display: flex; gap: var(--sp-3); font-size: var(--fs-2); }
+.repo-flows-confirm dt { min-width: 80px; color: var(--text-muted); }
+.repo-flows-confirm dd { min-width: 0; overflow-wrap: anywhere; }
+.repo-flows-back { display: inline-flex; font-size: var(--fs-2); margin-bottom: var(--sp-3); color: var(--text-muted); }
+.repo-flows-file-line { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); font-size: var(--fs-2); }
+.repo-flows-file-line > svg { flex-shrink: 0; color: var(--text-muted); }
+.repo-flows-file-line > a:first-of-type { min-width: 0; font: var(--fs-1)/1.5 var(--font-mono); overflow-wrap: anywhere; }
+.repo-flows-file-line > a:last-child { margin-left: auto; }
+.repo-flows-tab-content { padding-top: var(--sp-5); min-width: 0; }
+.repo-flows-overview { display: grid; gap: var(--sp-5); }
+.repo-flows-graph-scroll { overflow-x: auto; max-width: 100%; border-radius: var(--r-3); }
+.repo-flows-graph { position: relative; }
+.repo-flows-edges { position: absolute; inset: 0; fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
+.repo-flows-node { position: absolute; width: 144px; min-height: 60px; padding: var(--sp-2) var(--sp-3); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-2); }
+.repo-flows-node > div { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-2); font-weight: 500; overflow-wrap: anywhere; }
+.repo-flows-node > div > span { min-width: 0; }
+.repo-flows-node svg { flex-shrink: 0; }
+.repo-flows-node-agent svg { color: var(--text-muted); }
+.repo-flows-node-check { border-style: double; border-width: 3px; padding: calc(var(--sp-2) - 2px) calc(var(--sp-3) - 2px); }
+.repo-flows-node-approval { border-radius: var(--r-4); }
+.repo-flows-node small { display: block; padding-left: 24px; color: var(--text-muted); font-size: var(--fs-1); margin-top: 3px; }
+.repo-flows-node-after { display: none; }
+.repo-flows-details-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: var(--sp-5); }
+.repo-flows-input-table [role="cell"], .repo-flows-trigger > div { min-width: 0; overflow-wrap: anywhere; }
+.repo-flows-input-table > div { display: grid; grid-template-columns: minmax(130px, 1fr) 2fr; gap: var(--sp-4); padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--border); font-size: var(--fs-2); }
+.repo-flows-input-table > div:last-child { border: 0; }
+.repo-flows-input-table small { display: block; color: var(--text-muted); font-size: var(--fs-1); margin-top: var(--sp-1); }
+.repo-flows-trigger { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-4); border-bottom: 1px solid var(--border); }
+.repo-flows-trigger:last-child { border: 0; }
+.repo-flows-trigger strong { font-size: var(--fs-2); font-weight: 500; }
+.repo-flows-trigger code { display: block; font-size: var(--fs-1); color: var(--text-muted); margin-top: var(--sp-1); overflow-wrap: anywhere; }
+.repo-flows-switch { display: inline-flex; gap: var(--sp-2); align-items: center; flex-shrink: 0; border: 0; background: transparent; color: var(--text-muted); font-size: var(--fs-1); padding: 6px 0; }
+.repo-flows-switch > span { width: 28px; height: 16px; border: 1px solid var(--border-strong); background: var(--surface-3); border-radius: var(--r-4); position: relative; }
+.repo-flows-switch > span::after { content: ""; width: 10px; height: 10px; position: absolute; top: 2px; left: 2px; border-radius: var(--r-4); background: var(--text-muted); }
+.repo-flows-switch[aria-checked="true"] > span { background: var(--brand-soft); border-color: var(--brand-border); }
+.repo-flows-switch[aria-checked="true"] > span::after { left: 14px; background: var(--brand); }
+.repo-flows-switch:disabled { cursor: not-allowed; opacity: .6; }
+.repo-flows-role { display: grid; gap: var(--sp-2); padding: var(--sp-4); border-bottom: 1px solid var(--border); font-size: var(--fs-2); }
+.repo-flows-role:last-child { border: 0; }
+.repo-flows-role strong { font-weight: 500; }
+.repo-flows-role a { display: inline-flex; gap: var(--sp-2); align-items: center; }
+.repo-flows-role code { color: var(--text-muted); font-size: var(--fs-1); overflow-wrap: anywhere; }
+.repo-flows-run-row { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-4); border-bottom: 1px solid var(--border); }
+.repo-flows-run-row:last-child { border: 0; }
+.repo-flows-run-row > div { flex: 1; min-width: 0; font-size: var(--fs-2); overflow-wrap: anywhere; }
+.repo-flows-run-row small { display: block; color: var(--text-muted); margin-top: var(--sp-1); }
+.repo-flows-padding, .repo-flows-permission { padding: var(--sp-4); font-size: var(--fs-2); color: var(--text-muted); }
+.repo-flows-agents { display: grid; gap: var(--sp-4); }
+.repo-flows-agent-heading { display: flex; align-items: center; gap: var(--sp-2); }
+.repo-flows-agent-heading > svg { color: var(--text-muted); }
+.repo-flows-agent-heading h2 { min-width: 0; font-size: var(--fs-3); font-weight: 500; overflow-wrap: anywhere; }
+.repo-flows-agent-content { padding: var(--sp-4) var(--sp-5); }
+.repo-flows-agent-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4) var(--sp-6); font-size: var(--fs-2); }
+.repo-flows-agent-facts > div { min-width: 0; }
+.repo-flows-agent-facts dt { color: var(--text-muted); margin-bottom: var(--sp-2); }
+.repo-flows-agent-facts dd { min-width: 0; overflow-wrap: anywhere; }
+.repo-flows-agent-facts select { max-width: 290px; }
+.repo-flows-agent-links { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); }
+.repo-flows-agent-warning { display: flex; align-items: center; gap: var(--sp-3); flex-wrap:wrap; padding:16px; margin-bottom:16px; background: var(--warning-soft); color: var(--warning); font-size: var(--fs-2); }
+.repo-flows-agent-warning > svg { flex-shrink: 0; }
+.repo-flows-agent-warning > span { flex: 1; }
+.repo-flows-instructions { margin-top: var(--sp-4); border-top: 1px solid var(--border); padding-top: var(--sp-3); }
+.repo-flows-instructions summary { cursor: pointer; color: var(--text-muted); font-size: var(--fs-2); }
+.repo-flows-instructions .repo-ui-markdown { margin-top: var(--sp-3); }
+.repo-flows-form :focus-visible, .repo-flows-agent-card :focus-visible, .repo-flows-switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+@media (max-width: 767px) {
+  .repo-flows-list-row { flex-wrap: wrap; padding: var(--sp-4); }
+  .repo-flows-row-run { min-width: 0; flex-basis: calc(100% - 31px); justify-items: start; margin-left: 31px; }
+  .repo-flows-details-grid, .repo-flows-agent-facts { grid-template-columns: minmax(0, 1fr); }
+  .repo-flows-agent-warning { flex-wrap: wrap; }
+  .repo-flows-agent-warning > span { flex-basis: 80%; }
+  .repo-flows-graph-scroll { overflow: visible; }
+  .repo-flows-graph { display: grid; gap: var(--sp-3); width: auto !important; height: auto !important; padding: var(--sp-4); }
+  .repo-flows-edges { display: none; }
+  .repo-flows-node { position: relative; left: auto !important; top: auto !important; width: 100%; }
+  .repo-flows-node-after { display: block; color: var(--text-muted); font-size: var(--fs-1); padding-left: 24px; margin-top: var(--sp-2); overflow-wrap: anywhere; }
+  .repo-flows-input-table > div { grid-template-columns: minmax(0, 1fr); gap: var(--sp-2); }
+  .repo-flows-run-row { flex-wrap: wrap; }
+  .repo-flows-run-row > .repo-ui-time { margin-left: 30px; }
+  .repo-flows-file-line { flex-wrap: wrap; }
+  .repo-flows-file-line > a:first-of-type { flex: 1 1 calc(100% - 32px); }
+  .repo-flows-file-line > :is(a.repo-ui-btn, button) { margin-left: 24px; }
+  .repo-flows-confirm dl div { flex-direction: column; gap: var(--sp-1); }
+}
+
+.repo-flows-agent-warning > span { flex:1 1 140px; min-width:0; }
+.repo-flows-agent-warning > a { flex:0 0 auto; }

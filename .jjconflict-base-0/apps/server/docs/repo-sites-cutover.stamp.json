@@ -1,0 +1,83 @@
+{
+  "format": 1,
+  "producer": null,
+  "output": {
+    "path": "apps/server/docs/repo-sites-cutover.md",
+    "digest": "e2662141c3b83adbb56bc1ab6dcdff2d1755814c59cfbba48d3c293baed45024"
+  },
+  "closure": "57bcefccb3c95d47e95b1f0a8b9e5ad94aad30417c2160fede126f150c2e0d55",
+  "inputs": [
+    {
+      "path": "apps/server/docs/repo-sites-build-design.html",
+      "digest": "4d48d1452b62d0fdf3179cb97d7ceb1a426d8085959702021d960e6e0c0fe5d9"
+    },
+    {
+      "path": "apps/server/docs/repo-sites-prebuilt-design.html",
+      "digest": "7eb1c11ab506c70ff33611de43913bc93435eb15be7931c8ea7a7712b30b4d64"
+    },
+    {
+      "path": "apps/server/scripts/cutover/repository-sites-workerd.mjs",
+      "digest": "2f3640ca4062776569fc443ce6709e2d35ba391b83be11925734641c09e0c52a"
+    },
+    {
+      "path": "apps/server/src/RepositorySites.ts",
+      "digest": "a60c7ee19abf9caa89e4f8b6f40b053eabac76cdd07be51291922ea794b0f823"
+    },
+    {
+      "path": "apps/server/src/edge.ts",
+      "digest": "0de091f93ff57a33d0998f5bd2fbf85540ab2f4736fdc70ea89629700da94726"
+    },
+    {
+      "path": "packages/backend/internal/compose/repository_sites.go",
+      "digest": "2bd40f1031357df7d1a6c4aed6e3d03fe3b5f0b2ab3cbcc6fe3accaf94c50f1b"
+    },
+    {
+      "path": "packages/backend/internal/config/config.go",
+      "digest": "fb4936159b03f708fc0b3fc75de0e6dc22e8d4e01ca7590a7e4b360c4fe20725"
+    },
+    {
+      "path": "packages/backend/internal/middleware/repository_site.go",
+      "digest": "796b738b3be35682a9b10932820cba280163b4c474afa100ceb01808cbbcf260"
+    },
+    {
+      "path": "packages/backend/internal/routes/repository_sites.go",
+      "digest": "bc562291c87491e11eaee7c8a75569972a9c21f5c1b34715794e45ddc88e9b5f"
+    },
+    {
+      "path": "packages/backend/internal/routes/site_sign_in.go",
+      "digest": "8ca3153c7a2e8fe14a6deadfda375aa9bd87fc17238cfae6c62a19c52ed342e4"
+    },
+    {
+      "path": "packages/backend/internal/services/auth.go",
+      "digest": "887056785fc74b0a81c393224962744b852aa236ff7b6ba1ed1ebc9945d2c596"
+    },
+    {
+      "path": "packages/backend/reposites/cloudflare.go",
+      "digest": "0bba6e85f77799fc8b9fb9cd2c48ac1c81143e63119b59b5b23efe3b312d4267"
+    },
+    {
+      "path": "packages/backend/reposites/reserved.go",
+      "digest": "a4dc854dd20d88eae7b62852d02bb42001b6ba66ecdc71a1d8a2e1a4c895856b"
+    },
+    {
+      "path": "packages/backend/reposites/sites.go",
+      "digest": "e728729873f92cf068c7fd95733a6446f1151b0b49464bbe01f61e89565dc00d"
+    },
+    {
+      "path": "packages/backend/reposites/sites_http_test.go",
+      "digest": "cf6c7b38f18aa56942619466944d5e5919171609be347eeb10739d4ce3256115"
+    },
+    {
+      "path": "packages/backend/reposites/store.go",
+      "digest": "8a1d6c0028bc6f907ca5ad9d0b288ed7de7e474e6d6832e5ec0d5dd9fbcd9945"
+    },
+    {
+      "path": "packages/backend/reposites/transfer.go",
+      "digest": "06456b878352b8f10e03df3a9f819b4d0ec441c5496b9a26fe0cc7862e5be106"
+    },
+    {
+      "path": "packages/backend/reposites/transfer_http_test.go",
+      "digest": "c5f32ba637af811df467a58418ef65c7d9f20b94886d61f15f925ece7a374df0"
+    }
+  ]
+}

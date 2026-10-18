@@ -1,0 +1,119 @@
+{
+  "decision": "d-voicuo",
+  "date": "2026-10-18",
+  "launchDate": "2026-10-19",
+  "source": "PM Monday gap list, decision d-voicuo (2026-10-18)",
+  "activeIncrement": 2,
+  "cut": {
+    "views": [
+      "runs",
+      "approvals",
+      "blame",
+      "releases",
+      "wiki",
+      "terminal",
+      "stack"
+    ],
+    "tabs": [
+      "Runs",
+      "Approvals",
+      "Blame",
+      "Releases",
+      "Wiki",
+      "Terminal",
+      "Stack",
+      "Landing queue"
+    ],
+    "headerPieces": [
+      "waiting"
+    ],
+    "sidebarBlocks": [
+      "Releases"
+    ]
+  },
+  "tabs": [
+    {
+      "label": "Code",
+      "increment": 1
+    },
+    {
+      "label": "Issues",
+      "increment": 1
+    },
+    {
+      "label": "Pull requests",
+      "increment": 1
+    },
+    {
+      "label": "Flows",
+      "increment": 2
+    },
+    {
+      "label": "Docs",
+      "increment": 2,
+      "declaredOnly": true
+    },
+    {
+      "label": "Settings",
+      "increment": 2
+    }
+  ],
+  "keptViews": {
+    "code-home": {
+      "increment": 1,
+      "powers": "File table, latest commit, branch count and README. No Releases block; only sync state in the Monday sidebar."
+    },
+    "tree-file": {
+      "increment": 1,
+      "powers": "Maximized tree/blob; Copy permalink; whole files up to 512 KiB, otherwise size and raw link; branch or full SHA; selected lines can be asked about. Make TODO, tags and short SHA are hidden."
+    },
+    "issues": {
+      "increment": 1,
+      "powers": "Public signed-out list and threads; signed-in New issue form; truthful error, loading and empty states. Make TODO and Implement are hidden."
+    },
+    "pulls": {
+      "increment": 1,
+      "powers": "Public list and PR commits/checks/files; human review copy follows the claim rule. Merge is held with Merge on GitHub; Stack is hidden."
+    },
+    "ask": {
+      "increment": 1,
+      "powers": "Docked composer at 1440; collapsed at 1280; sheet on phone. Signed-out Ask goes to sign-in. Hosted agent acts show a held reason and copyable local CLI command."
+    },
+    "commits": {
+      "increment": 2,
+      "powers": "Public read-only history per ref, git SHAs and marked agent commits. No hosted run links."
+    },
+    "commit": {
+      "increment": 2,
+      "powers": "Public maximized SHA commit and diff; browse files at that commit. No hosted run or landing controls."
+    },
+    "branches": {
+      "increment": 2,
+      "powers": "Public read-only branch list. Fork, Rebase, Archive and Run on a sandbox are hidden."
+    },
+    "flows": {
+      "increment": 2,
+      "primary": "Held state and copyable smthrs flow start <name>",
+      "powers": "Read-only .smithers/flows list and blob source; held local CLI command. No graph, triggers or hosted execution."
+    },
+    "settings": {
+      "increment": 2,
+      "primary": "Read Models held text or GitHub sync state",
+      "powers": "Members only. Minimal Models held text and GitHub sync state. Model connections arrive with hosted runs; locally smthrs uses Claude Code or Codex login. No other settings or Save action."
+    },
+    "search": {
+      "increment": 2,
+      "powers": "Code and issue search with real results. Keep through increment 2; if cut at 20:00, add search to cut.views and search to cut.headerPieces."
+    }
+  },
+  "notes": "Set activeIncrement to 1 for the first live walk; Flows/Settings tabs appear with increment 2. Docs is required only for repositories whose live-routes.json declaredTabs includes Docs. Search stays in increment 2 unless explicitly cut at 20:00. Cut routes are excluded, not claimed verified absent; kept-page evidence checks visible cut tabs, header pieces, sidebar blocks and links.",
+  "viewAliases": {
+    "pulls-stack": "pulls"
+  },
+  "conditionalViews": {
+    "docs": {
+      "increment": 2,
+      "declaredTab": "Docs"
+    }
+  }
+}

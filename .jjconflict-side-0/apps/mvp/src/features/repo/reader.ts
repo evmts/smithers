@@ -1,0 +1,39 @@
+import { Effect, Layer } from "effect"
+import { RepoClient, type RepoRefused } from "./api"
+import { textOf } from "./contract"
+import { type FileRead, RepoNotFound, RepoReader, RepoReadsPaused, RepoReadUnavailable } from "./flows"
+
+// The device's `RepoReader` (src/features/repo/flows.ts): the agent's `repo/tree` and `repo/read` steps read through
+// RepoApi's GET routes, the same answers the view reads, which every cache keeps forever. The key stays on the server.
+
+/**
+ * What a refused read means to a step: gone (404, or a request RepoApi refused as invalid), the read budget spent
+ * (503 `capacity`), or worth trying again (anything else, after the server's `Retry-After` when it sent one).
+ */
+export const readFailure = (refused: RepoRefused): RepoNotFound | RepoReadsPaused | RepoReadUnavailable =>
+  refused.status === 404 || refused.status === 400
+    ? new RepoNotFound()
+    : refused.status === 503 && refused.code === "capacity"
+    ? new RepoReadsPaused()
+    : new RepoReadUnavailable(refused.retryAfterMillis === undefined ? {} : { retryAfterMillis: refused.retryAfterMillis })
+
+/** `RepoReader` over the browser's `RepoClient`. A file over RepoApi's limit reads as `too-large` with its size. */
+export const readerLayer = Layer.effect(
+  RepoReader,
+  Effect.map(RepoClient, (client) =>
+    RepoReader.of({
+      tree: (owner, name, sha) => client.tree(owner, name, sha).pipe(Effect.mapError(readFailure)),
+      read: (owner, name, sha, path) =>
+        client.blob(owner, name, sha, path).pipe(
+          Effect.map((blob): FileRead => {
+            const contents = textOf(blob.bytes)
+            const size = blob.bytes.byteLength
+            return contents === undefined ? { state: "binary", size } : { state: "text", contents, size }
+          }),
+          Effect.catchTag("RepoRefused", (refused) =>
+            refused.status === 413 && refused.size !== undefined
+              ? Effect.succeed<FileRead>({ state: "too-large", size: refused.size })
+              : Effect.fail(readFailure(refused))),
+        ),
+    })),
+)

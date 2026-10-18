@@ -1,0 +1,927 @@
+[
+  {
+    "n": 4265,
+    "title": "Deploy apps publishes a frontend that needs a newer backend than production runs (CSRF cookie rename)",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [
+      "bug",
+      "canary:deploy-compat"
+    ],
+    "opened": "2026-10-18T04:30:41Z",
+    "updated": "2026-10-18T04:30:41Z",
+    "body": "## What happened\n\nTag `v1.0.0-rc.13` (d846d39609cb) started \"Deploy apps\" (run 39096998556). That run would have published a frontend that the live backend cannot serve. The smithers.sh owner cancelled it before any job started.\n\n| Side | Commit | CSRF cookie name |\n| --- | --- | --- |\n| Candidate frontend (`packages/rpc/src/ApplicationAuth.ts`, read by `apps/app/src/mainview/runtime/ApplicationClient.ts` `browserCSRFToken`) | d846d396 | `__Host-smithers_csrf` |\n| Live backend (`/api/bootstrap` buildSha) | 8d95bc05 | `__csrf` (`packages/backend/internal/middleware/csrf.go:17`) |\n\nThe cookie rename landed in 55615878 (`fix(auth): isolate browser sessions and CSRF cookies by host`). With the new frontend and the old backend, the browser finds no `__Host-smithers_csrf` cookie, sends no `X-CSRF-Token`, and the backend answers 403 `csrf` on every browser mutation: chat send, repo import, sign-out.\n\n## Repro\n\n1. `curl -s https://smithers.sh/api/bootstrap | jq .buildSha` returns `8d95bc05…`.\n2. `jj file show -r 8d95bc05 packages/backend/internal/middleware/csrf.go | grep CSRFCookieName` prints `\"__csrf\"`.\n3. `gh api 'repos/smithersai/smithers/contents/packages/rpc/src/ApplicationAuth.ts?ref=d846d39609cb' -q .content | base64 -d | grep 'CSRF_COOKIE_NAME ='` prints `\"__Host-smithers_csrf\"`.\n4. `apps/server/scripts/deploy.ts`'s only backend check is `bootstrapCompatibility.ts` (schema decode). It passes, so publication proceeds.\n\n**Expected:** \"Deploy apps\" refuses to publish a fronten",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T04:30:41Z",
+        "label": "bug"
+      },
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T04:30:41Z",
+        "label": "canary:deploy-compat"
+      }
+    ],
+    "pulls": [],
+    "todo": "queue-4265"
+  },
+  {
+    "n": 4261,
+    "title": "Add a person-only local landing route: review and land an agent's change from the CLI",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [
+      "bug-bash-2026-10-17"
+    ],
+    "opened": "2026-10-18T03:50:09Z",
+    "updated": "2026-10-18T03:50:09Z",
+    "body": "First item after the Monday preview (CEO ruling 2026-10-17: the preview claims \"durable agent coding on your own subscription; you review the diff and land it yourself\").\n\nToday a CLI user cannot review or land an agent's change through Smithers on an ordinary project (bug bash, #4232 comment https://github.com/smithersai/smithers/issues/4232#issuecomment-6245002781):\n- `smthrs land create --title ... --repo ...` exits 1: \"Smithers API origin is not configured\". `packages/smithers/src/internal/backend/Local.ts:137` always POSTs to the backend's `/api/repos/.../landings`, and `:169-176` always PUT land and POST review there; `Client.ts:383-384` builds that route. There is no transport for a local or GitHub-only origin.\n- `smthrs stack` exposes only move and the backend stack display (`Commands.ts:74-76` excludes legacy stack land/submit/sync).\n- Hosted smithers.sh cannot land a change by any path either (in-app loop is install-only; chat to PR lacks command grants).\n\nBuild a person-only local landing route behind the same typed review and landing flows:\n- pinned expected commit (the change the person reviewed is the change that lands);\n- a durable verdict record (who reviewed, what, when);\n- person-only approval: no agent, run or system credential approves or lands;\n- compare-and-swap of the target main (refuse if main moved).\n\nAcceptance: a process test and a docs guide take a fresh project from `flow start` to a reviewed, person-landed commit on its origin main, twice from a",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T03:50:09Z",
+        "label": "bug-bash-2026-10-17"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4255,
+    "title": "Uncaptured flow bodies cannot resume after a host restart: plan_changed on the README and quickstart pattern",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-18T03:43:00Z",
+    "updated": "2026-10-18T03:43:00Z",
+    "body": "A flow whose body or continuation is an uncaptured function, registered with `Interpreter.layer` (the default `process-local` callback policy) on a durable host, cannot resume after its host restarts. The rebuilt plan carries new `sha256-source-ephemeral/v4` digests, so the recorded-plan check from #3906 refuses the run with `plan_changed` (\"start a new execution\"). The run is stranded.\n\nThis is the pattern every `@smthrs/flows` example teaches: the README's \"A flow that survives a restart\", `docs/quickstart.md`, `docs/guides/stand-up-a-node-runtime.md` and `docs/guides/change-a-flow-and-keep-the-work.md` all pass a plain arrow `body` (and `bindPlanned` continuation) to `Interpreter.layer` under `NodeRuntime.layerHost`.\n\nRelated to #4212 (typed catch filter identity in the TODO plan). This is the broader case: no catch, no schema filter; the flow body alone is enough.\n\n## Reproduction (main 68f1d8946e, workspace source)\n\n`one.ts`:\n\n```ts\nimport { Action, Flow, Interpreter } from \"@smthrs/flows\"\nimport * as NodeRuntime from \"@smthrs/flows/NodeRuntime\"\nimport * as Effect from \"effect/Effect\"\nimport * as Layer from \"effect/Layer\"\nimport * as Schema from \"effect/Schema\"\nconst D = process.env.STATE_DIR!\nconst A = Action.make(\"two/A\", { payload: { issue: Schema.String }, success: Schema.String })\nconst F = Flow.make(\"two/F\", { payload: { issue: Schema.String }, success: Schema.String,\n  body: (input) => A.call(input) })\nconst flows = Interpreter.layer(F).pipe(\n  Layer.provideMerge(",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 4254,
+    "title": "New issue on a GitHub-backed repo shows a CLI usage sentence instead of the form",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [
+      "bug-bash-2026-10-17"
+    ],
+    "opened": "2026-10-18T03:42:53Z",
+    "updated": "2026-10-18T03:42:53Z",
+    "body": "Found by the Product Manager's app walk for the 2026-10-17 bug bash (screenshot B39, `codeplanesmithers/canary-sandbox`, a GitHub-backed repository on smithers.sh).\n\nSteps\n1. Sign in to https://smithers.sh as a GitHub user and open a GitHub-backed repository.\n2. Start a new issue from the app (\"Open a GitHub issue\", flow `issue.new`, `apps/app/src/mainview/flows/entries/subjects.ts:109`).\n\nExpected\nThe issue form opens, and submitting it creates the GitHub issue (or the form says what is missing in plain words).\n\nActual\nA toast: \"Open a GitHub issue didn't run. Use Create an issue, or a private conversation with --kind conversation on Smithers Cloud.\" The person gets a CLI usage sentence (the `issues.create` summary from `apps/app/src/mainview/flows/entries/issues.ts:86`) instead of a form or a reason. No issue is created.\n\nSeverity: major. Creating an issue is the first step of the \"issue to reviewed change\" path the launch shows. The native-repository case (effeck/effeck) is being checked separately by effectscript-4a; this issue covers GitHub-backed repositories.\n",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T03:42:53Z",
+        "label": "bug-bash-2026-10-17"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4253,
+    "title": "flow plan hides why a flow body failed to load, even with --verbose",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [
+      "bug",
+      "in-progress"
+    ],
+    "opened": "2026-10-18T03:41:14Z",
+    "updated": "2026-10-18T03:41:14Z",
+    "body": "## Symptom\n\nWhen a flow module fails to import, `smthrs flow plan <name>` and the discovery warning report only a generic sentence. `--verbose` adds nothing:\n\n```text\nWARN discovered flow is not runnable on this host { code: 'body_unavailable', reason: 'the body of flow \"w\" could not be loaded from \"…/.smithers/flows/w/flow.ts\"' }\ncode: InvalidInput\nmessage: \"invalid_input issue=Cannot load flow w: the body of flow \\\"w\\\" could not be loaded from \\\"…/.smithers/flows/w/flow.ts\\\"\"\n```\n\nThe real cause is dropped. On the published rc.12 it was `ERR_MODULE_NOT_FOUND: Cannot find package '@smthrs/registry' imported from …/flows/w/.smithers-<digest>.mjs` (the MDX prompt's JSX runtime). Because the CLI hid it, the plue#836 spike and the #4231 bug bash both diagnosed `@smthrs/agent` from a direct `node` import, which is the wrong package.\n\n## Reproduce on main (556158785a)\n\nRun the CLI from a main checkout in an empty directory outside the repository:\n\n```sh\nmkdir w && cd w && git init -q\nsmthrs init\nsed -i '' '1i\\\nimport \"@smthrs/does-not-exist-probe\"\n' .smithers/flows/w/flow.ts\nsmthrs flow plan w --root \"$PWD\" --verbose\n```\n\nExpected: the error names `@smthrs/does-not-exist-probe`.\nActual: only the generic \"could not be loaded\" sentence, with or without `--verbose`.\n\n## Cause\n\n`packages/smithers/agent/registry/src/Executable.ts` keeps the import error as `cause` on the `body_unavailable` refusal. `packages/smithers/src/internal/NativeControl.ts` builds `refusedMessage` from `refusal.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T03:41:14Z",
+        "label": "bug"
+      },
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T03:41:14Z",
+        "label": "in-progress"
+      }
+    ],
+    "pulls": [],
+    "todo": "queue-4253"
+  },
+  {
+    "n": 4251,
+    "title": "Egress relay delays every streamed response event until the next upstream read",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-10-18T03:37:41Z",
+    "updated": "2026-10-18T03:37:41Z",
+    "body": "## Observed behavior\n\n`packages/backend/egressrelay` delays streamed responses from every host bound to an egress secret.\n\n1. **Masking holdback.** `maskingBody.Read` masks only up to `len(pending) - (longest-1)` and keeps the last `longest-1` bytes of every upstream read until the next read or EOF (`relay.go`, `maskingBody.Read`). An SSE event that ends a read reaches the guest one inter-event gap late. The last event of a stream arrives only at upstream EOF. A response shorter than `longest-1` bytes is held whole until EOF.\n2. **Plain-http path never flushes.** `Relay.ServeHTTP` copies a `Config.Local` response with `io.Copy(w, response.Body)` and no `Flush`, so the `net/http` write buffer batches events until it fills or the handler returns. This path serves plain-http local destinations, such as the Mac self-host backend at `127.0.0.1`/`localhost` (`apps/backend/isolation.go`).\n\nHosted Chat binds the model credential to the model origin (plue `apps/backend/internal/composition/chat.go`), and the worker routes credentialed guest requests to this relay (plue `internal/microsandbox/worker/egress_secrets.go`). The workspace provider pool binds its key the same way. Every hosted model stream goes through `maskingBody`.\n\n## Evidence (main `68f1d8946ed3`, 2026-10-17)\n\nGo tests added in the package through `go test -overlay` (no source change). Upstream writes one ~110-byte SSE event, flushes, and sleeps for the gap. The bound values are the test fixtures; no real secret is invol",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T03:37:41Z",
+        "label": "bug"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4250,
+    "title": "S.NodeModule.Bin resolves at plan time, before the Install target it depends on runs",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-18T03:14:08Z",
+    "updated": "2026-10-18T03:14:08Z",
+    "body": "`S.NodeModule.Bin(\"<tool>\")` resolves `node_modules/.bin/<tool>` when the target is planned, before any of the target's dependencies run. On a fresh checkout the Install target that would create `node_modules` is in the same plan, so planning refuses every such target:\n\n```\n//.smithers/effect:check  failed  0ms  node_modules binary not found: node_modules/.bin/tsc (from S.NodeModule.Bin(\"tsc\"))\n```\n\nwith `data: [install, ...]` declared, where `install` is the workspace's `S.Install` target. The same command passes once `node_modules` exists, so the first run on any fresh clone (a CI checkout, a mounted overlay from #4217) fails and the second succeeds.\n\nProposed fix: when a `NodeModule.Bin` reference is missing at plan time and the target depends on an Install target, defer resolution (and its executable identity) to execution, after the dependency settles; keep refusing when no dependency could provide it. Workaround in use: `bin: S.PackageManager.bin, args: [\"exec\", \"<tool>\", ...]`.\n",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 4249,
+    "title": "WORKSPACE.ts: a repository that builds nothing must still declare a toolchain",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-18T02:52:50Z",
+    "updated": "2026-10-18T02:52:50Z",
+    "body": "**Repro (1.0.0-rc.12).** A docs/ops repository (Markdown vault plus `.smithers/flows/`) declares `S.Workspace(\"x\", { repository, cache, discovery })`. `smthrs targets //...` fails: `Workspace requires the Node runtime/packageManager/nodeModules set, an environment, or toolchains`. Declaring only `runtime: S.Runtime.Node(...)` fails with `runtime, packageManager, and nodeModules must be declared together`, so the repo must add a `package.json` and name a lockfile it will never have.\n\n**Proposed fix.** Allow a workspace with no toolchain when it declares no build targets that need one (fail at the target that needs it, not at workspace load), or provide `S.Toolchain.None`.",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 4248,
+    "title": "The packaged native filesystem helper is not executable on macOS arm64",
+    "state": "open",
+    "author": "smithers-agent",
+    "assignees": [],
+    "labels": [
+      "bug-bash-2026-10-17"
+    ],
+    "opened": "2026-10-18T02:51:52Z",
+    "updated": "2026-10-18T02:51:52Z",
+    "body": "Severity: major. Lane bb-effeck-example. macOS arm64, Node v26.11.1, smthrs 1.0.0-rc.12.\n\nSteps: install `npm install -g smthrs@next` into a clean prefix. Download the published @smthrs/platform-node@1.0.0-rc.12 dist tarball; run `tar -tvf platform-node.tgz | rg darwin-arm64/smithers-jj-export`. Use that installed native helper as SMITHERS_WORKSPACE_JJ_EXPORT_BINARY with source-main CLI when following the approved #4231 workaround.\n\nExpected: [project/state docs](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/concepts/project-and-state.md) document the absolute helper override. The packaged native executable should execute.\n\nActual archive entry: `-rw-r--r-- 0 0 0 13505216 Oct 26 1985 package/bin/darwin-arm64/smithers-jj-export`. Planning exits 1: `descriptor-relative filesystem isolation failed closed: AtomicHelperError: smithers-jj-export is unusable at SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=...`. `chmod u+x` allows the same source-main flow to plan and complete (run-2 in effeck-example).\n\nDiagnosis: published @smthrs/platform-node/bin/darwin-arm64/smithers-jj-export has mode 0644. Inspect native staging/pack file modes and retain executable mode before pack; cover packed archive extraction through process spawn. This is a release artifact issue, not a proposed permission bypass. No helper or isolation checks weakened.\n",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "smithers-agent",
+        "date": "2026-10-18T02:51:52Z",
+        "label": "bug-bash-2026-10-17"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4245,
+    "title": "CLI help: `smthrs runs --help` hides signal/logs/resume, and `<group> <sub> --help` prints top-level help",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-18T02:50:26Z",
+    "updated": "2026-10-18T02:50:26Z",
+    "body": "**Repro (1.0.0-rc.12, inside a project).**\n- `smthrs runs --help` lists only `list` and `show`, but `runs signal`, `runs logs`, `runs resume`, `runs output` all work.\n- `smthrs runs list --help`, `smthrs memory set --help`, `smthrs memory notes --help` print the top-level product help (agent, branch, todo, ...), exit 0.\n- `smthrs flow start --help` works. Outside a project, `smthrs flow run --help` prints top-level help, and `smthrs approvals approve --schema` says \"not a command\".\n\n**Proposed fix.** Generate group and subcommand help from the one command manifest the dispatcher uses, with a drift test that every dispatchable verb appears in its group's help and that `<group> <sub> --help` never falls through to top-level help.",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 4240,
+    "title": "Reference links in the public GitHub docs send me to GitHub 404 pages",
+    "state": "open",
+    "author": "smithers-agent",
+    "assignees": [],
+    "labels": [
+      "in-progress",
+      "bug-bash-2026-10-17"
+    ],
+    "opened": "2026-10-18T02:46:33Z",
+    "updated": "2026-10-18T02:46:33Z",
+    "body": "Severity: major. Lane bb-docs.\n\nFollow https://smithers.sh/docs/installation/ → Install from npm → GitHub installation.md → Quickstart → Diagnose a run. On that GitHub-rendered guide click `smthrs runs` under See also; on installation.md click @smthrs/control under package dependencies.\n\nExpected: CLI/package reference. Actual: root-relative /cli/runs and /api/control resolve against github.com, giving https://github.com/cli/runs and https://github.com/api/control, both verified HTTP 404 with curl -sSL. This is independent of OS/Node, reproduced on macOS 26.6.2 arm64, Node v26.11.1 and smthrs 1.0.0-rc.12 during clean setup.\n\nSources: [installation.md](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#using-the-library) and [diagnose-a-run.md](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/diagnose-a-run.md#see-also).\n\nDiagnosis: packages/smithers/docs/installation.md:166 onward and guides/diagnose-a-run.md:306 onward retain website-root /api and /cli links, but the public site sends users to GitHub package docs. CLI reference README also has an empty Command pages section, so per-command pages cannot simply be linked relatively. The same convention spans package docs and generated references. Proposed repair: source-relative links to the real package docs/CLI reference and a GitHub-rendered-link contract in docs checks; regenerate projections. This requires a consistent documentation destination decision, n",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "smithers-agent",
+        "date": "2026-10-18T02:46:33Z",
+        "label": "in-progress"
+      },
+      {
+        "kind": "labeled",
+        "actor": "smithers-agent",
+        "date": "2026-10-18T02:46:33Z",
+        "label": "bug-bash-2026-10-17"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4238,
+    "title": "Evaluate a compatible version range for the effect peer instead of an exact pin",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [
+      "bug-bash-2026-10-17"
+    ],
+    "opened": "2026-10-18T02:45:17Z",
+    "updated": "2026-10-18T02:45:17Z",
+    "body": "Smithers publishes `effect` as an exact peer (rc.12: `4.0.4`). Any application that pins a different Effect patch cannot install the CLI or authoring packages in its own workspace. `npm install --save-dev @smthrs/cli@next @smthrs/targets@next` in a `create-effeck` app (which pins `effect@4.0.5` exactly) fails with `ERESOLVE ... peer effect@\"4.0.4\" from @smthrs/cli@1.0.0-rc.12` (see #4002, bug bash 2026-10-17).\n\nrc.13 moves Smithers to exactly `effect@4.0.5` (with matching `@effect/*`) as a stopgap approved by the CEO. That only moves the collision to the next patch: every Effect app is forced onto whatever exact patch Smithers last released.\n\nEvaluate, with tests:\n1. A compatible range (for example `>=4.0.5 <4.1.0` or `^4.0.5`) for the `effect` and `@effect/*` peers of the published packages, and what breaks across patches (schema identity, `Context` tags, runtime identity checks such as `declaration_dependency_mismatch`).\n2. Whether the CLI's declaration loader can accept a range as long as the CLI and the declarations resolve one physical copy, which is the property installation.md actually needs.\n3. The history: c5af304e4e removed exact pins; d40b1e7318df restored exact peers for rc.12. Record why, and what test would have caught the regression for an app pinning a newer patch.\n\nAcceptance: a test installs the published-shape packages into an app that pins a newer Effect patch than Smithers was built with and runs `smthrs targets` and `smthrs flow list`; the docs state the",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T02:45:17Z",
+        "label": "bug-bash-2026-10-17"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4235,
+    "title": "My first coding request waits for a model host without starting a change",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [
+      "bug-bash-2026-10-17"
+    ],
+    "opened": "2026-10-18T02:44:17Z",
+    "updated": "2026-10-18T02:44:17Z",
+    "body": "## Steps from a clean environment\n\n1. Open https://smithers.sh with a GitHub account that has access to codeplanesmithers/canary-sandbox. In this run the prescribed persistent Playwright profile already had a Smithers session; sign out using the app, then choose Continue with GitHub to perform the real OAuth round trip.\n2. Open the already imported codeplanesmithers/canary-sandbox repository and select main.\n3. In Chat, ask an agent to create a new branch from main, add CONTRIBUTING.md with the repository's actual test instructions, and open a new PR for review. Explicitly leave fixture issue #1 and PR #2 unchanged and do not merge.\n4. Wait for the response. Reload/reopen the same repository to check recovery.\n\n## Expected\n\nThe repository's [README](https://github.com/codeplanesmithers/canary-sandbox/blob/main/README.md) says: “Use Chat to request and review a small change.” The lane's S10 journey should produce an agent run, a reviewable diff, and a PR the test person can land. If launch cannot proceed, the app should give a specific recoverable failure with a next action.\n\n## Actual\n\nThe request is acknowledged, but no output or coding run is produced. The app says:\n\n```text\nWaiting for a model host · 49s\nWaiting for a model host · 1m 37s\nWaiting for a model host · 2m 22s\nSmithers is responding\n```\n\nThe same turn survives a browser restart with no duplicate launch. A read-only GET /api/conversations/main with X-Smithers-Chat-Trace: 1 returns HTTP 200, the turn state running",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T02:44:17Z",
+        "label": "bug-bash-2026-10-17"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4234,
+    "title": "The documented parked-plan exit code is 3, but flow execute returns 0",
+    "state": "open",
+    "author": "smithers-agent",
+    "assignees": [],
+    "labels": [
+      "bug-bash-2026-10-17"
+    ],
+    "opened": "2026-10-18T02:42:03Z",
+    "updated": "2026-10-18T02:42:03Z",
+    "body": "Severity: major. Lane bb-docs.\n\nClean macOS 26.6.2 arm64, Node v26.11.1, npm smthrs 1.0.0-rc.12; public rc plan fails first (#4231). To diagnose on main f53d5abfd8, use workspace CLI against an empty project and the native helper from the isolated npm prefix (set executable mode and SMITHERS_WORKSPACE_JJ_EXPORT_BINARY explicitly). Existing Codex Pro login read-only, SMITHERS_OPENAI_AUTH=chatgpt, no provider keys.\n\n```sh\nsmthrs init hello\n# Set both seat/model to openai:gpt-6.1-sol\napproval=\"$(smthrs flow plan hello --json | jq -c '.approval')\"\nsmthrs flow execute \"$approval\" --json\necho $?\n```\nExpected: [quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/quickstart.md#submit-it-and-watch-it-park) prints Parked and exits 3. Script the CLI branches on this contract.\nActual: Parked, status waiting-approval, exit **0**. After approval, execute prints Accepted/run-1 without a terminal status. Later runs show confirms completion on the subscription.\n\nDiagnosis: packages/smithers/src/cli/ControlCommands.ts:318-331 returns Bridge.launch directly; ControlBridge.ts launch returns rendered receipt without applying Output.exitCode. The canonical parser result path does not keep the legacy control-receipt exit contract. start has explicit --wait (default false), but docs promise attached waiting without it; execute has no wait option. Also output/exit guide promises one stderr failure sentence/no stdout while canonical refusals are structured on stdout.\n\nP",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "smithers-agent",
+        "date": "2026-10-18T02:42:03Z",
+        "label": "bug-bash-2026-10-17"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4233,
+    "title": "The quickstart next-step examples use a flow I was never given",
+    "state": "open",
+    "author": "smithers-agent",
+    "assignees": [],
+    "labels": [
+      "bug-bash-2026-10-17"
+    ],
+    "opened": "2026-10-18T02:39:35Z",
+    "updated": "2026-10-18T02:39:35Z",
+    "body": "Severity: major. Lane: bb-docs.\n\n## Reproduce\nClean macOS 26.6.2 arm64, Node v26.11.1, npm-installed smthrs 1.0.0-rc.12, no API keys, SMITHERS_OPENAI_AUTH=chatgpt and existing Codex Pro login. Follow installation + init hello. Open quickstart's linked Script the CLI and detached-run guide.\n\nExpected: runnable next steps after hello. [Script the CLI](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/script-the-cli.md#read-the-document-not-the-prose) says `smthrs flow plan deploy/status branch=main --json`; [detached guide](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/launch-a-detached-run.md#launch-it) says `smthrs flow start deploy/status --data '{\"branch\":\"main\"}' -d --json`.\nActual: no step creates deploy/status; only hello exists. These examples cannot work in the quickstart project. Also requirements name Node >=26.4 and doctor checks jj, but installation gives no Node installation link or jj installation command. The quickstart uses jq without listing it as a prerequisite.\n\nDiagnosis: packages/smithers/docs/guides/script-the-cli.md:17; launch-a-detached-run.md:15,27; installation.md:68 onward; quickstart.md:183. Reuse hello and its args schema in guide examples; document official Node installation and Homebrew jj/jq prerequisites. Need process-boundary regression for the linked commands.\n",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "smithers-agent",
+        "date": "2026-10-18T02:39:35Z",
+        "label": "bug-bash-2026-10-17"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4230,
+    "title": "Edge returns HTML 403 for some issue bodies, and smthrs reports it as a login problem",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-18T02:36:24Z",
+    "updated": "2026-10-18T02:36:24Z",
+    "body": "### Summary\n\nSmithers Cloud's edge refuses some legitimate issue bodies with an HTML 403 before the request reaches the backend, and `smthrs` reports that 403 as an authorization problem.\n\n### 1. Content-based 403 at the edge\n\n`POST https://api.jjhub.tech/api/repos/<owner>/<repo>/issues` with this JSON body field (title \"probe\") is refused:\n\n````\nExpected: `callerOfLong(): Effect<number, Gone, Needed>`, per docs/NOTES.md (\"A caller sees the contract, not the body\"; the `contracts` case lists \"a contract wider than the body\").\nActual: `Effect<number, never, never>`. No EK2002 fires when such a call sits under an `R = never` contract.\n````\n\nEvidence, from unauthenticated curl requests (so no auth involved and nothing created):\n- A harmless body (`\"body\":\"x\"`) gets `404` `application/json` from the backend (`repository not found` for a private repo), with `via: 1.1 google` and an `x-request-id`.\n- The paragraph above gets `403` `text/html` (134 bytes: `<!doctype html>...<title>403</title>403 Forbidden`), with no `via` header and no `x-request-id`, so the backend never saw it. The page and headers match Google Cloud's load balancer deny page, which points at a Cloud Armor policy, probably a preconfigured WAF rule such as SQLi or XSS detection on prose that contains quotes, semicolons and `=`.\n- Bisection: the same title with body `x` succeeds. Other paragraphs of the same report succeed. A rewording without the backticks, quotes and `R = never` succeeds. Authenticated requests be",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 4229,
+    "title": "Agent roles: unattended Explainer seat runs on the Kimi Code subscription (U4)",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [
+      "bug",
+      "needs-will"
+    ],
+    "opened": "2026-10-18T02:31:55Z",
+    "updated": "2026-10-18T02:31:55Z",
+    "body": "## Summary\nThe seeded Explainer seat defaults to the Kimi Code subscription model `kimi-for-coding/k3` through `opencode-kimi`. The Explainer runs unattended inside flows, and Kimi Code subscriptions are \"for personal interactive use only\". Unattended invocations must use the Moonshot API.\n\n## Evidence (main f53d5abfd8a4)\n- `packages/rpc/src/AgentRoles.ts:144`: Explainer `model: { provider: \"kimi-for-coding\", id: \"kimi-for-coding/k3\" }`, `harness: \"opencode-kimi\"`.\n- `AgentRoles.ts:180`: the UI seat uses the same subscription model.\n\n## Repro\n```sh\ngrep -n 'kimi-for-coding/k3' packages/rpc/src/AgentRoles.ts\n```\n\n## Expected\n- Seeded unattended seats (Explainer, and UI when a flow invokes it) use a `moonshot` API-key provider.\n- `kimi-for-coding` remains only for a person's interactive OpenCode session.\n\n## Why\nKimi Code community guidelines: \"Kimi Code subscriptions are for personal interactive use only.\" Kimi Model Use Agreement (2026-08-31) §4.6(e) forbids \"automated scripts… to achieve automated or bulk use.\" CEO ruling 2026-10-17 (mesh compliance default).\n",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T02:31:55Z",
+        "label": "bug"
+      },
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T02:31:55Z",
+        "label": "needs-will"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4228,
+    "title": "Provider connections: default Codex CLI client id and forwarded Originator impersonate Codex (U3)",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [
+      "bug",
+      "security",
+      "needs-will"
+    ],
+    "opened": "2026-10-18T02:31:53Z",
+    "updated": "2026-10-18T02:31:53Z",
+    "body": "## Summary\nSmithers presents itself to OpenAI as the Codex CLI: the default OAuth client id is Codex CLI's, and the pool forwards the guest's `Originator` header upstream.\n\n## Evidence (main f53d5abfd8a4)\n- `packages/backend/internal/config/config.go:568`: `v.SetDefault(\"provider_connections.codex_client_id\", \"app_EMoamEEZ73f0CkXaXp7hrann\")` (Codex CLI's client id), used by `compose/main.go:1117-1120` for token refresh.\n- `packages/backend/internal/routes/provider_pool.go:523-527` copies `Originator`, `Session_id`, `Version`, `Conversation_id` from the guest request onto the upstream ChatGPT request.\n\n## Repro\n```sh\ngrep -n codex_client_id packages/backend/internal/config/config.go\ngrep -n '\"Originator\"' packages/backend/internal/routes/provider_pool.go\n```\n\n## Expected\n- No default client id. Either register Smithers' own Sign in with ChatGPT client or leave the login inside the official binary.\n- Do not forward `Originator`.\n- Subscription connections stay hard-off in the cell and hosted compositions, with a composed-router test proving it.\n\n## Why\nThe Sign in with ChatGPT terms say \"Do not impersonate OpenAI, another application\". CEO ruling 2026-10-17 (mesh compliance default).\n",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T02:31:53Z",
+        "label": "bug"
+      },
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T02:31:53Z",
+        "label": "security"
+      },
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T02:31:53Z",
+        "label": "needs-will"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4227,
+    "title": "Provider pool: subscription usage limit rotates to the next account (U2)",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [
+      "bug",
+      "security",
+      "needs-will"
+    ],
+    "opened": "2026-10-18T02:31:51Z",
+    "updated": "2026-10-18T02:31:51Z",
+    "body": "## Summary\nOn a usage limit, `/provider-pool` records the limit and retries the request on the next connected account, up to 8 attempts. For subscription connections (ChatGPT/Codex sign-ins) that is account rotation to bypass usage limits. Failover must stay for API keys only; a subscription limit must reach the caller as a 429 with the reset time.\n\n## Evidence (main f53d5abfd8a4)\n- `packages/backend/internal/routes/provider_pool.go:26-36`: \"on a usage limit or a refused credential records it and tries the next account before anything reaches the caller.\"\n- `provider_pool.go:381` `modelPoolMaxAttempts = 8`; loop at `:413`.\n- Nothing limits a user to one active subscription connection per provider.\n\n## Repro\nConnect two Codex sign-ins for one user, make the fake provider answer the first with a usage-limit error, and POST `/provider-pool/chatgpt/codex/responses`: the request succeeds on the second account. `TestProviderPool_RotatesPastALimitedAccountBeforeAnyByteReachesTheCaller` (`packages/backend/internal/routes/provider_pool_test.go:181`) asserts exactly this:\n```sh\ncd packages/backend && go test ./internal/routes/ -run TestProviderPool_RotatesPastALimitedAccountBeforeAnyByteReachesTheCaller -v\n```\n\n## Expected\n- At most one active subscription connection per user and provider.\n- A subscription usage limit returns 429 `{type:\"pool_exhausted\", provider, retryAfterS, nextReset}`; no second subscription account is tried.\n- API-key connections keep failover.\n\n## Why\nOpenAI's Si",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T02:31:51Z",
+        "label": "bug"
+      },
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T02:31:51Z",
+        "label": "security"
+      },
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T02:31:51Z",
+        "label": "needs-will"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4226,
+    "title": "Provider pool: owner swap bills members' runs to the owner's ChatGPT subscription (U1)",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [
+      "bug",
+      "security",
+      "needs-will"
+    ],
+    "opened": "2026-10-18T02:31:49Z",
+    "updated": "2026-10-18T02:31:49Z",
+    "body": "## Summary\nOn a single-owner (self-host) install, `WithProviderPoolOwner` swaps every caller's user id for the install owner's before the pool resolves a connection. A member's coding run is then billed to the owner's ChatGPT subscription. Subscriptions must serve only their account holder; only API-key connections may serve an install's authorized users.\n\n## Evidence (main f53d5abfd8a4)\n- `packages/backend/internal/compose/main.go:1124-1128` wires `WithProviderPoolOwner` for every `config.IsSingleOwner` install.\n- `packages/backend/internal/services/provider_connection_pool.go:58-63` (`PickForModelCall`) and `:142-148` (`HasPool`) replace `userID` with the owner for all connection kinds.\n- The docstrings say the opposite: `provider_connection_pool.go:50-51` (\"a subscription serves only its account holder's own runs\") and `provider_connections.go:262-263` (\"Each connection serves only the connecting user's own runs\").\n- `packages/backend/internal/services/provider_connections_test.go:672-675` asserts the defect: `require.NotNil(t, resolved, \"member coding calls use the install owner sign-in\")` for user 99 resolving owner 7's `codex` subscription.\n- Only active when the owner turns on `models.chatgpt` (off by default, `install_setup.go:1034`); `docs/api/openapi/install.yaml:277` describes it as \"the owner ChatGPT subscription pool\".\n\n## Repro\n```sh\ncd packages/backend && go test ./internal/services/ -run TestProviderConnectionOwnerSettingGatesExistingSignIn -v\n```\nThe test pas",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T02:31:49Z",
+        "label": "bug"
+      },
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T02:31:49Z",
+        "label": "security"
+      },
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-18T02:31:49Z",
+        "label": "needs-will"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4225,
+    "title": "CLI reference names SMITHERS_TELEGRAM_API_BASE_URL and SMITHERS_LINEAR_API_BASE_URL, which nothing reads",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-18T02:29:30Z",
+    "updated": "2026-10-18T02:29:30Z",
+    "body": "The CLI reference says an integration entry may use the endpoint named by `SMITHERS_LINEAR_API_BASE_URL` or `SMITHERS_TELEGRAM_API_BASE_URL`. No code reads either variable. `smthrs integrations` accepts only the `github` provider, because #3389 deferred the Linear and Telegram adapters. That issue's acceptance criteria required \"docs ... agree\", and this paragraph was missed.\n\n## Where\n\n`packages/smithers/docs/reference/cli/README.md`, lines 259–264 at `main@origin` f53d5abf:\n\n> ... and only its provider's public API origin plus the one named by `SMITHERS_GITHUB_API_BASE_URL`, `SMITHERS_LINEAR_API_BASE_URL`, or `SMITHERS_TELEGRAM_API_BASE_URL`.\n\nThe code says otherwise. `packages/smithers/src/operator/Integrations.ts:30` has `const provider = z.enum([\"github\"])`, and the `authority` table holds only `github`. `rg SMITHERS_TELEGRAM_API_BASE_URL` and `rg SMITHERS_LINEAR_API_BASE_URL` find only this README line.\n\n## Repro (smthrs 1.0.0-rc.12)\n\n```sh\nd=$(mktemp -d) && mkdir \"$d/.smithers\"\necho '{\"version\":1,\"integrations\":[{\"id\":\"tg\",\"provider\":\"telegram\"}]}' > \"$d/.smithers/integrations.json\"\nsmthrs integrations list --root \"$d\"\n# code: operator_failed\n# message: \"Invalid integrations configuration: integrations.0.provider is invalid\"   (exit 1)\n```\n\nA reader of the reference page expects a Telegram integration to be configurable. We hit this on 2026-10-17 while setting up Telegram access for the ops org, and had to read the source to learn that Smithers has no Telegram support.",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 4224,
+    "title": "Push to a new org repo prints 'remote: error: cannot run : No such file or directory'",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-18T02:25:20Z",
+    "updated": "2026-10-18T02:25:20Z",
+    "body": "## What happened\n\nEvery push to a new org-owned repository prints `remote: error: cannot run : No such file or directory`. The push still lands: the bookmark shows up in `GET /api/repos/{owner}/{repo}/bookmarks`.\n\n## Repro (hosted, api.jjhub.tech, 2026-10-18 UTC)\n\n1. `POST /api/orgs` with `{\"name\":\"<org>\",\"visibility\":\"private\"}`.\n2. `POST /api/orgs/<org>/repos` with `{\"name\":\"<repo>\",\"private\":true,\"auto_init\":false,\"default_bookmark\":\"main\"}`.\n3. Push a branch over smart HTTP with a token: `git push https://api.jjhub.tech/<org>/<repo>.git main`, here through `jj git push`, with basic auth and the token as the password.\n4. The remote prints `remote: error: cannot run : No such file or directory`.\n\nExpected: a clean push with no error.\n\n## Likely cause (inference, not reproduced in a test)\n\nGit prints `cannot run <command>: No such file or directory` when it tries to execute a configured command. Here the command is empty. The backend passes `-c core.alternateRefsCommand=` (an empty value) to git in several places:\n\n- `packages/backend/hostexec/hostexec.go:153`\n- `packages/backend/internal/services/mythical_git.go:79`\n- `packages/backend/internal/services/repository_source_retention.go:441`\n\nIf receive-pack runs on a repository with alternates, git may try to execute that empty `alternateRefsCommand` while advertising the alternates' refs. The intent appears to be disabling it. That should be checked against git's behavior for an empty value, which may need `core.alternateRef",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 4223,
+    "title": "CLI: a login with SMITHERS_AUTH_FILE overwrites the default login's keychain token",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-18T02:25:18Z",
+    "updated": "2026-10-18T02:25:18Z",
+    "body": "## What happened\n\nA second `smthrs login` that sets `SMITHERS_AUTH_FILE` to a separate file replaced the default login's token. Afterwards the default record (`~/.config/smithers/auth.json`) signed in as the second user, and the first user's token was gone from the machine. On a shared Mac this silently moved automation from a narrow bot token to a person's broader token.\n\n## Repro (smthrs 1.0.0-rc.12, macOS)\n\n1. Sign in as user A in the default record: `smthrs login https://api.jjhub.tech`. `SMITHERS_API_ORIGIN=https://api.jjhub.tech smthrs auth status` shows A.\n2. Sign in as user B into another file: `SMITHERS_AUTH_FILE=/tmp/b-auth.json SMITHERS_API_ORIGIN=https://api.jjhub.tech smthrs login https://api.jjhub.tech`.\n3. Run `SMITHERS_API_ORIGIN=https://api.jjhub.tech smthrs auth status` again. It shows B.\n4. `security find-generic-password -s smithers-cli -a jjhub.tech` shows one item, modified at step 2.\n\nExpected: `SMITHERS_AUTH_FILE` isolates the whole credential, so the default record still resolves to A.\n\n## Cause\n\n- The keychain item is keyed only by service and host: `add-generic-password -U -s smithers-cli -a <host>` (`packages/smithers/src/internal/backend/Session.ts:403`, reads at `:405-411`).\n- `resolve()` reads that keychain item for any record bound to the origin, before the record's own token (`Session.ts:472-480`). Every auth file for one host therefore shares one keychain item, and `-U` overwrites it.\n\n## Suggested fix\n\n- Key the keychain item by the auth rec",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 4222,
+    "title": "Install flow recreates node_modules on every run for Effect's pnpm workspace",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-18T02:23:29Z",
+    "updated": "2026-10-18T02:23:29Z",
+    "body": "In the Effect overlay (#4217) every command that reaches the Install target prints `Recreating <root>/node_modules` and spends 15 to 25 seconds relinking 1,069 packages, even when nothing changed. The Install flow runs `pnpm fetch --frozen-lockfile` and then `pnpm install --offline`; the first step reports the recreate. Effect's `pnpm-workspace.yaml` sets `enableGlobalVirtualStore: false` and `verifyDepsBeforeRun: error`, so the likely cause is a settings mismatch between the two steps that makes pnpm discard the modules directory.\n\nExpected: an unchanged lockfile and workspace file leave `node_modules` in place, and the Install target settles in about a second.\n",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 4221,
+    "title": "smthrs install finds the Install target only in the root package",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-18T02:23:28Z",
+    "updated": "2026-10-18T02:23:28Z",
+    "body": "`smthrs install` selects the Install target only from the root package (`packagePath === \"\"`) and fails with `the root PACKAGE.ts declares no Install target` otherwise. An overlay mounted onto an upstream repository (#4217) holds only `.smithers/`, so it declares its Install target in a `.smithers/<name>/PACKAGE.ts` and cannot satisfy the verb. Targets that depend on the Install target still install through the graph; only the verb is unusable.\n\nProposed fix: when the root package declares no Install target, use the workspace's single Install target, and keep refusing when there are several.\n",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 4220,
+    "title": "pnpm 11 exec fails under the confined sandbox: store probe writes <root>/_tmp_*",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-18T02:23:27Z",
+    "updated": "2026-10-18T02:23:27Z",
+    "body": "Under the confined sandbox, pnpm 11's `pnpm exec` (and so `S.Typecheck`, `S.Vitest`, and every rule that renders `PackageManager.exec`) fails before the tool starts:\n\n```\n[ERROR] EPERM: operation not permitted, open '<workspace>/_tmp_57798_633f6b0a3f042e5187814ead58ec3682'\nsandbox: _tmp_… is outside the declared read set\n```\n\npnpm resolves its store location at startup. With no store directory configured it calls `storePathRelativeToHome`, which `touch`es `<lockfileDir>/_tmp_<pid>_<hash>` to probe the filesystem and does not catch EPERM. `--config.verify-deps-before-run=false` and `manage-package-manager-versions=false` do not avoid it. Setting `pnpm_config_store_dir` does (verified with `sandbox-exec` and a profile that denies `<root>/_tmp_*`).\n\nProposed fix: give every pnpm tool run the store directory the Install flow already passes as `--store-dir` (`<root>/.flows/store/pnpm`), through `pnpm_config_store_dir`, so exec never probes the workspace root. The Smithers repository does not see this because its workspace declares `default: S.Sandbox.None()`.\n\nFound while mounting the Effect overlay (#4217); pnpm 11.20.0, macOS seatbelt.\n",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 4219,
+    "title": "Confined Shell.Test cannot list directories that hold its declared inputs",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-18T02:23:26Z",
+    "updated": "2026-10-18T02:23:26Z",
+    "body": "A confined `Shell.Test` on macOS (the default seatbelt sandbox) cannot list the directories that hold its declared inputs, so a tool that discovers files by walking a directory finds nothing.\n\nReproduction (Effect overlay, #4217): with `data: [S.glob(\"//packages/effect/src/**/*.ts\"), ...]` declared,\n\n```ts\nS.Shell.Test({ bin: S.NodeModule.Bin(\"tsc\"), args: [\"-p\", \"packages/effect/tsconfig.json\", \"--noEmit\", ...], data })\n```\n\nfails with `error TS18003: No inputs were found in config file '.../packages/effect/tsconfig.json'. Specified 'include' paths were '[\"src\"]'`. The same command passes with `sandbox: \"none\"`. tsc's `include`, Vitest's `include`, and oxlint's path argument all list directories.\n\n`ProcessSandbox` grants `file-read*` on each declared file and, in strict mode, only `file-read-metadata` on their ancestors, so `readdir(packages/effect/src)` is denied.\n\nProposed fix: grant directory listing (`file-read-data` on the directory literal, not its subtree) for every directory between a declared glob's literal prefix and the files it matched. A listing reveals names, not contents, and only names under a prefix the target already declared.\n",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 4218,
+    "title": "pnpm's verify-deps flag is prepended to non-pnpm tools invoked with run",
+    "state": "closed",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-18T02:11:30Z",
+    "updated": "2026-10-18T03:16:55Z",
+    "body": "`PackagePlanner` prepends `--config.verifyDepsBeforeRun=false` to any planned argv whose second token is `exec` or `run` when the workspace manager is pnpm. It never checks that the first token is pnpm, so a workspace tool invoked as `run` receives pnpm's flag:\n\n```ts\nS.Shell.Test({ bin: S.NodeModule.Bin(\"vitest\"), args: [\"run\", \"--project\", \"effect\"] })\n```\n\nruns `node_modules/.bin/vitest --config.verifyDepsBeforeRun=false run --project effect`, and Vitest crashes parsing `--config.verifyDepsBeforeRun` (`TypeError: Cannot create property ...` in its cac parser).\n\nFix: prepend the flag only when argv[0] is the pnpm executable. Regression test in `packages/smithers/build/build-cli/test/WorkspaceToolchainExecution.test.ts` (\"package-manager flags\").\n\nFound while mounting the Effect overlay (#4217).\n",
+    "comments": [],
+    "events": [
+      {
+        "kind": "referenced",
+        "actor": "smithers-agent",
+        "date": "2026-10-18T01:42:15Z",
+        "sha": "24015c927059be421d59eeb545c72da2b3a2d732"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-18T03:16:55Z",
+        "reason": "completed"
+      }
+    ],
+    "pulls": [],
+    "receipt": {
+      "reported": {
+        "by": "maya",
+        "date": "2026-10-18T02:11:30Z"
+      },
+      "accepted": {
+        "by": "maya",
+        "date": "2026-10-18T02:11:30Z"
+      },
+      "working": {
+        "run": "run-land-24015c927059",
+        "date": "2026-10-18T02:11:30Z"
+      },
+      "landed": {
+        "sha": "24015c927059be421d59eeb545c72da2b3a2d732",
+        "date": "2026-10-18T03:16:55Z"
+      }
+    },
+    "todo": "queue-4218"
+  },
+  {
+    "n": 4217,
+    "title": "Mount an overlay's .smithers onto a pinned upstream repository",
+    "state": "closed",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-18T02:11:22Z",
+    "updated": "2026-10-18T03:17:02Z",
+    "body": "An overlay repository should automate an upstream repository without forking it. The overlay holds only `.smithers/`; its `.smithers/config.ts` default-exports `S.Mounts({ <name>: S.Mount({ repository, ref, track?, drift?, patches?, overlay? }) })`.\n\nEvery build-CLI command run from the overlay materializes the mount before it plans:\n\n1. read `track` with `git ls-remote` and apply the drift policy (`warn`, `refuse`, `follow`);\n2. fetch the pinned commit into `.mounts/<name>` and check it out detached;\n3. apply the declared patches as commits on the pin;\n4. lay the overlay's `.smithers/` over the checkout;\n5. plan against the checkout, so `//` labels and upstream configs resolve as if the overlay lived upstream.\n\nUpstream is only read. Edits in the checkout, edits to a laid file, and overlay files that collide with tracked upstream files are refused rather than discarded.\n\nFirst consumer: an overlay that mounts Effect 4 (Effect-TS/effect main) and runs `packages/effect` typecheck, tests, oxlint, and an agent lane over Effect's own written conventions.\n\nDesign: `packages/smithers/build/build-cli/docs/concepts/mounts.md`.\n",
+    "comments": [],
+    "events": [
+      {
+        "kind": "referenced",
+        "actor": "smithers-agent",
+        "date": "2026-10-18T03:06:38Z",
+        "sha": "7ce5c49675b840f044d333ce7532ea520fff4861"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-18T03:17:02Z",
+        "reason": "completed"
+      }
+    ],
+    "pulls": [],
+    "receipt": {
+      "reported": {
+        "by": "maya",
+        "date": "2026-10-18T02:11:22Z"
+      },
+      "accepted": {
+        "by": "maya",
+        "date": "2026-10-18T02:11:22Z"
+      },
+      "working": {
+        "run": "run-land-7ce5c49675b8",
+        "date": "2026-10-18T03:03:38Z"
+      },
+      "landed": {
+        "sha": "7ce5c49675b840f044d333ce7532ea520fff4861",
+        "date": "2026-10-18T03:17:02Z"
+      }
+    },
+    "todo": "queue-4217"
+  },
+  {
+    "n": 4216,
+    "title": "[eh-domains] Repository sites at <name>.smithers.sh and verified custom domains",
+    "state": "open",
+    "author": "smithers-agent",
+    "assignees": [],
+    "labels": [
+      "in-progress"
+    ],
+    "opened": "2026-10-18T02:06:56Z",
+    "updated": "2026-10-18T02:06:56Z",
+    "body": "Track the eh-domains lane authorized by Will’s CEO-agent ruling D1 on 2026-10-17.\n\nImplement repository sites before custom domains, preserving published static paths, repository-scoped app routes and /api forwarding. Add owner-authorized publication, unique names, versioning/rollback, verified Cloudflare custom hostnames, safe removal, allowed-origin updates and central sign-in with validated return URLs. Keep the routing portable to per-repository cells.\n\nRequired evidence: two colocated designs and selection, HTTP edge tests, fake-Cloudflare lifecycle test, sign-in/open-redirect regression, targeted builds/typechecks, deployment/rollback runbook. No live infrastructure changes or deployment by this lane. Effeck content/publication and guest chat are outside this lane.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "smithers-agent",
+        "date": "2026-10-18T02:06:56Z",
+        "label": "in-progress"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4215,
+    "title": "J5: a TODO whose prefix moves needs the native rebase while its run blocks in stack.propose",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-17T10:45:53Z",
+    "updated": "2026-10-17T10:45:53Z",
+    "body": "J5 row 15b (\"Repository copy executes D2\") still fails about one run in three on a Linux VM. TODO C's candidate is accepted, then TODO A's verified head moves C's prefix. Since a18b6c3bc9, `stack.propose` waits (202) for the stack's rebase of C's own candidate instead of refusing it. That fixes the plain-rebase case: the stack rebases within a second and the delivery re-captures and proposes (`reserved_candidate_rebased`, spec 10.4.1).\n\nIn the failing runs the rebase needs the branch daemon's native rewrite (`executeNativeRebase` in `branch_rebase_execution.go`). The item stays `integrating` / `rebase_pending` for the whole 3-minute window. My reading, not yet proven by a trace: the daemon refuses the native rewrite as `busy` because a writer session on C's machine is still open, and that session is C's TODO run, which is blocked inside the `stack.propose` call. That is a circular wait. After 180 s the native helper returns `workspace_busy`, the run ends as a `wait` outage, and the TODO is retried, which is too late for the row.\n\nSpec 10.4.1 describes the intended shape: after `stack.propose` the run waits for a stack event (\"clean rebase onto a new tip → candidate → check → stack.propose\"). The stack never signals the run when it rebases (no `rebased` signal exists), so the run cannot park, release its session and resume. Options: (a) refuse `stack.propose` quickly while a native rebase is blocked on this run's own session, and have the delivery park on a durable wait the st",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 4214,
+    "title": "Windows source-write refusal intermittently drops the declared generator output",
+    "state": "closed",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-17T10:16:13Z",
+    "updated": "2026-10-17T12:42:33Z",
+    "body": "Hosted Windows run39021226901/job117363287967 at main4127ca139adb newly fails `test/PackageExecution.test.ts > generators beside a live runtime > preserves concurrent WAL and logs on source`: allowed out.txt remains `before`, expected `after`. The SQLite entry count and both live-log byte assertions passed before this assertion; the target was expected to refuse its protected source write. The same case passed the prior hosted run39016376600 at c5644ba99359 and the full mini suite. This is a Windows follow-up to #4047; that issue's original bug remains closed.\n\nFind the actual target refusal/rollback diagnostic, reproduce its Windows cause, and retain the source-write, WAL and allowed-output assertions. Do not infer a fix from a mini pass. ci7-windows owns this investigation; no workaround or gate change is authorized.\n",
+    "comments": [],
+    "events": [
+      {
+        "kind": "referenced",
+        "actor": "smithers-agent",
+        "date": "2026-10-17T10:32:03Z",
+        "sha": "62de1621dee5c48cebf56fdad08eac0d5120eaf8"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-17T12:42:33Z",
+        "reason": "completed"
+      }
+    ],
+    "pulls": [],
+    "receipt": {
+      "reported": {
+        "by": "maya",
+        "date": "2026-10-17T10:16:13Z"
+      },
+      "accepted": {
+        "by": "maya",
+        "date": "2026-10-17T10:16:13Z"
+      },
+      "working": {
+        "run": "run-land-62de1621dee5",
+        "date": "2026-10-17T10:29:03Z"
+      },
+      "landed": {
+        "sha": "62de1621dee5c48cebf56fdad08eac0d5120eaf8",
+        "date": "2026-10-17T12:42:33Z"
+      }
+    },
+    "todo": "queue-4214"
+  },
+  {
+    "n": 4213,
+    "title": "GitHub sync can deadlock with stack requests on mythical_stacks and repositories (J7 HTTP 500)",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-17T10:10:16Z",
+    "updated": "2026-10-17T10:10:16Z",
+    "body": "`POST /api/github/sync` failed with HTTP 500 `deadlock detected (SQLSTATE 40P01)` in the J7 rehearsal (row \"16 main moves cleanly\"), on a Linux VM running 12 rehearsals at once. The same row passed in an earlier run on the same build, so it is intermittent and load-dependent.\n\nPostgreSQL's report: three transactions in a cycle. Two run `RequestMythicalStack` (`UPDATE mythical_stacks SET requested_generation = requested_generation + 1 ... WHERE repository_id = $1`, `packages/backend/internal/db/mythical_ext.go`), one runs `SELECT generation FROM mythical_stacks WHERE repository_id=$1 FOR UPDATE`. One of the UPDATEs waits while taking the foreign-key `FOR KEY SHARE` lock on the `repositories` row, so at least one transaction locks `repositories` (or a row whose FK check takes it) before `mythical_stacks`, and another in the opposite order.\n\n```\nProcess 814901 waits for ShareLock on transaction 305816; blocked by process 814905.\nProcess 814905 waits for ShareLock on transaction 305817; blocked by process 814896.\nProcess 814896 waits for AccessExclusiveLock on tuple (0,13) of relation mythical_stacks; blocked by process 814901.\n814901, 814905: UPDATE mythical_stacks SET requested_generation = requested_generation + 1 ... WHERE repository_id = $1\n814896: SELECT generation FROM mythical_stacks WHERE repository_id=$1 FOR UPDATE\nCONTEXT (814905): while locking tuple (0,2) in relation \"repositories\"\n  SELECT 1 FROM ONLY \"public\".\"repositories\" x WHERE \"id\" = $1 FOR KEY SHARE OF x\n```\n",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 4212,
+    "title": "Typed catch filters have process-local plan identity, so a TODO resumed after a host restart fails plan_changed",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-17T08:23:55Z",
+    "updated": "2026-10-17T08:23:55Z",
+    "body": "A typed `Node.catch({ error: SomeSchema, ... })` records `filterIdentity`, which `@smthrs/plan` (`internal/node.ts` `filterIdentity`) builds from every function in the schema AST. Those functions are unannotated, so the identity is `sha256-source-ephemeral/v4`: stable inside one process, different in every new process.\n\nConsequence: the durable interpreter records the plan digest (#3906) and refuses a resume whose rebuilt digest differs (`plan_changed`). The built-in TODO plan contains one typed catch (`coding/request-flow.ts`, `Node.catch({ error: CodingError, ... })`), so a TODO that parks (Needs you, Stop) and is resumed by a **restarted** host fails with \"The rebuilt plan differs from the recorded plan\". Same-process resumes now pass (every callback is captured in 642f333139).\n\nReproduction (two processes, same source):\n\n```\ncd .smithers/flows\n# print each FunctionIdentity digest in Graph.drafts(Graph.build(todo, payload)); run twice\n```\n\nOnly `...then.flow.then.then.filterIdentity` differs between the two runs; all 33 other callback identities match.\n\nOptions: give schema filters a stable identity (for example the schema's canonical JSON identity plus captured identities of declared checks), or let `Node.catch` take a captured filter. `.smithers/flows/test/coding-stable-plan.test.ts` currently excludes `filter` diagnostics with a comment pointing here; remove that exclusion when fixed.\n",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 4211,
+    "title": "New TurnLog owner-only file contract has no Windows ACL enforcement",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-17T08:21:38Z",
+    "updated": "2026-10-17T08:21:38Z",
+    "body": "Hosted Windows run39014085932 job117342476296: testing coverage is now100% unchanged, but TurnLog.test > appends each entry to an owner-only file as one JSON line, with messages when asked fails0666 versus0600. Introduced by1da73209 (ScriptedModel/BuiltinScript/TurnLog concurrent landing); no later TurnLog fix at main@origin. TurnLog appends with mode0600, which cannot enforce owner-only Windows ACLs. Owner action: provide native owner-only Windows log ACL enforcement; retain the privacy assertion rather than accepting0666. Related private storage boundaries #4199/#4206. ci7-windows #4040.",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  },
+  {
+    "n": 4210,
+    "title": "Selected Go SDK execution drops the Windows executable suffix",
+    "state": "closed",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-17T08:01:49Z",
+    "updated": "2026-10-17T12:43:14Z",
+    "body": "Hosted Windows job117330648732 GoExecution selected SDK test fails stat(GOROOT/bin/go); actual SDK uses go.exe. GoExec.resolveGo also hardcodes bin/go, so fixing only the assertion would leave production execution broken. Select go.exe on Windows, retain SDK byte identities, and prove the selected executable through an unconditional Windows SDK resolver regression plus actual hosted execution. ci7-windows #4040.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-17T12:43:14Z",
+        "reason": "completed"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4209,
+    "title": "Submodule source fixtures write Windows backslashes as invalid Git config escapes",
+    "state": "closed",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-17T08:00:33Z",
+    "updated": "2026-10-17T12:43:25Z",
+    "body": "Hosted Windows job117330648732 GitSubmoduleSources.test has5 failures fatal: bad config line3 in .gitmodules. The fixture interpolates native absolute Windows paths unquoted into the Git config URL value. Serialize Git config values with quotes/escaped backslashes and retain actual Git parsing plus source allow-list/security assertions. CI ci7-windows #4040.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "referenced",
+        "actor": "smithers-agent",
+        "date": "2026-10-17T08:05:49Z",
+        "sha": "a7407dfe7c550f9ce3e9846f014caeb0ddc721da"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-17T12:43:25Z",
+        "reason": "completed"
+      }
+    ],
+    "pulls": [],
+    "receipt": {
+      "reported": {
+        "by": "maya",
+        "date": "2026-10-17T08:00:33Z"
+      },
+      "accepted": {
+        "by": "maya",
+        "date": "2026-10-17T08:00:33Z"
+      },
+      "working": {
+        "run": "run-land-a7407dfe7c55",
+        "date": "2026-10-17T08:02:49Z"
+      },
+      "landed": {
+        "sha": "a7407dfe7c550f9ce3e9846f014caeb0ddc721da",
+        "date": "2026-10-17T12:43:25Z"
+      }
+    },
+    "todo": "queue-4209"
+  },
+  {
+    "n": 4208,
+    "title": "Service lane fixture loses Windows executable path separators in shell text",
+    "state": "closed",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-17T08:00:32Z",
+    "updated": "2026-10-17T12:44:04Z",
+    "body": "Hosted Windows job117330648732 LaneExecution services failures show /usr/bin/sh: C:hostedtoolcachewindowsnode26.5.0x64node.exe: command not found. serveDeclaration interpolates process.execPath and the server path unquoted into shell text. Quote the two literal shell words while preserving flags, real readiness, supervised cleanup and the declared sandbox policies. CI ci7-windows #4040.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-17T12:44:04Z",
+        "reason": "completed"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4207,
+    "title": "Docker push executor fixture inherits a missing Windows shell refusal",
+    "state": "closed",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-17T07:51:48Z",
+    "updated": "2026-10-17T12:44:18Z",
+    "body": "Hosted Windows job117330648732 has24 DockerPushExecution.test failures reporting dependency //:image did not succeed. The synthetic plan is seeded with Shell.Run(shell:true), while its PATH deliberately contains only Node. Windows planning resolves /bin/sh through PATH and stores a missing sh refusal on the seed; every synthetic node inherits that refusal before its explicit Node command runs. Seed the unit plan with the Node executable it actually uses, preserving sandbox:none already explicitly declared and all real ordering/cancellation/approval assertions. CI ci7-windows #4040.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-17T12:44:18Z",
+        "reason": "completed"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 4206,
+    "title": "Windows migrations cannot create owner-private backup directories",
+    "state": "open",
+    "author": "maya",
+    "assignees": [],
+    "labels": [],
+    "opened": "2026-10-17T07:45:08Z",
+    "updated": "2026-10-17T07:45:08Z",
+    "body": "CI baseline 38995668042 Windows job 117288702539 also fails //packages/smithers/migrate:test. Checkpoint.privateBackupDirectory opens each directory with O_DIRECTORY|O_NOFOLLOW then fchmod(0700); Windows cannot provide that directory-handle/permission contract. Hosted failures say could not prepare private backup directory and descendants fail before migration. No later implementation on main@origin. Owner action: provide a supported owner-only Windows ACL backup primitive, with no-follow identity protection; retain the fail-closed backup gate. Do not bypass chmod or replace privacy assertions with0666. ci7-windows #4040; retained21 names in cached baseline error tail, earlier names truncated.",
+    "comments": [],
+    "events": [],
+    "pulls": []
+  }
+]

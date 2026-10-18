@@ -1,0 +1,1442 @@
+[
+  {
+    "id": "run-4808",
+    "flow": "affected",
+    "title": "Run affected packages for the lockfile",
+    "state": "queued",
+    "trigger": {
+      "kind": "manual",
+      "by": "cora"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-18T04:14:00Z",
+    "duration": "6m",
+    "cost": {
+      "usd": 0.34,
+      "tokens": 24210
+    },
+    "stages": [
+      {
+        "id": "resolve",
+        "label": "Resolve changed paths",
+        "state": "queued",
+        "started": "2026-10-18T04:14:00Z",
+        "duration": "24s",
+        "summary": "Queued: shared lockfile expands validation to all mapped projects.",
+        "log": [
+          "Queued: shared lockfile expands validation to all mapped projects."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": []
+  },
+  {
+    "id": "run-4805",
+    "flow": "check",
+    "title": "Check workspace changes",
+    "state": "running",
+    "trigger": {
+      "kind": "pull",
+      "by": "cora",
+      "ref": "102"
+    },
+    "harness": "GitHub Actions · Check",
+    "started": "2026-10-18T04:05:00Z",
+    "duration": "6m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "stages": [
+      {
+        "id": "static-checks",
+        "label": "Static",
+        "state": "running",
+        "started": "2026-10-18T04:05:00Z",
+        "duration": "24s",
+        "summary": "Lint, circular dependencies, generated AI docs.",
+        "log": [
+          "Lint, circular dependencies, generated AI docs."
+        ]
+      },
+      {
+        "id": "types",
+        "label": "Types",
+        "state": "running",
+        "started": "2026-10-18T04:05:00Z",
+        "duration": "24s",
+        "summary": "TypeScript, Deno and public type assertions.",
+        "log": [
+          "TypeScript, Deno and public type assertions."
+        ]
+      },
+      {
+        "id": "build",
+        "label": "Build",
+        "state": "running",
+        "started": "2026-10-18T04:05:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "bundle",
+        "label": "Bundle",
+        "state": "running",
+        "started": "2026-10-18T04:05:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "test-node",
+        "label": "Test (Node)",
+        "state": "running",
+        "started": "2026-10-18T04:05:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "test-deno",
+        "label": "Test (Deno)",
+        "state": "running",
+        "started": "2026-10-18T04:05:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "test-bun",
+        "label": "Test (Bun)",
+        "state": "running",
+        "started": "2026-10-18T04:05:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "doctest",
+        "label": "Test (Documentation)",
+        "state": "running",
+        "started": "2026-10-18T04:05:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T04:05:00Z",
+        "stage": "static-checks",
+        "kind": "checkpoint",
+        "text": "Resolved workflow .github/workflows/check.yml and exact runtime projects."
+      },
+      {
+        "at": "2026-10-18T04:05:00Z",
+        "stage": "test-bun",
+        "kind": "message",
+        "text": "Runtime eligibility retained with each project result."
+      }
+    ],
+    "pull": 102,
+    "branch": "fix/atom-stale-dependencies"
+  },
+  {
+    "id": "run-4803",
+    "flow": "release-plan",
+    "title": "Preview two pending changesets",
+    "state": "waiting",
+    "trigger": {
+      "kind": "manual",
+      "by": "cora"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-18T03:20:00Z",
+    "duration": "6m",
+    "cost": {
+      "usd": 0.34,
+      "tokens": 24210
+    },
+    "stages": [
+      {
+        "id": "inputs",
+        "label": "Read changesets",
+        "state": "succeeded",
+        "started": "2026-10-18T03:20:00Z",
+        "duration": "24s",
+        "summary": "Two pending root changesets; 31 public fixed-group members.",
+        "log": [
+          "Two pending root changesets; 31 public fixed-group members."
+        ]
+      },
+      {
+        "id": "preview",
+        "label": "Preview versions",
+        "state": "waiting",
+        "started": "2026-10-18T03:20:00Z",
+        "duration": "24s",
+        "summary": "Waiting for maya to allow the isolated Changesets preview.",
+        "log": [
+          "Waiting for maya to allow the isolated Changesets preview."
+        ]
+      },
+      {
+        "id": "prepare",
+        "label": "Prepare version PR",
+        "state": "queued",
+        "started": "2026-10-18T03:20:00Z",
+        "duration": "24s",
+        "summary": "A person reviews and merges the resulting PR.",
+        "log": [
+          "A person reviews and merges the resulting PR."
+        ]
+      }
+    ],
+    "approvals": [
+      "approval-release"
+    ],
+    "trace": [
+      {
+        "at": "2026-10-18T03:20:00Z",
+        "stage": "inputs",
+        "kind": "checkpoint",
+        "text": "Read concrete-schema-brand-identifiers.md and workflow-reset-retry.md."
+      },
+      {
+        "at": "2026-10-18T03:20:00Z",
+        "stage": "preview",
+        "kind": "approval",
+        "text": "Exact next versions require the pinned Changesets CLI. No version has been guessed."
+      }
+    ]
+  },
+  {
+    "id": "run-4802",
+    "flow": "check",
+    "title": "Check PostgreSQL commit handling",
+    "state": "failed",
+    "trigger": {
+      "kind": "pull",
+      "by": "cora",
+      "ref": "101"
+    },
+    "harness": "GitHub Actions · Check",
+    "started": "2026-10-18T02:20:00Z",
+    "duration": "6m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "stages": [
+      {
+        "id": "static-checks",
+        "label": "Static",
+        "state": "succeeded",
+        "started": "2026-10-18T02:20:00Z",
+        "duration": "24s",
+        "summary": "Lint, circular dependencies, generated AI docs.",
+        "log": [
+          "Lint, circular dependencies, generated AI docs."
+        ]
+      },
+      {
+        "id": "types",
+        "label": "Types",
+        "state": "succeeded",
+        "started": "2026-10-18T02:20:00Z",
+        "duration": "24s",
+        "summary": "TypeScript, Deno and public type assertions.",
+        "log": [
+          "TypeScript, Deno and public type assertions."
+        ]
+      },
+      {
+        "id": "build",
+        "label": "Build",
+        "state": "succeeded",
+        "started": "2026-10-18T02:20:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "bundle",
+        "label": "Bundle",
+        "state": "succeeded",
+        "started": "2026-10-18T02:20:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "test-node",
+        "label": "Test (Node)",
+        "state": "succeeded",
+        "started": "2026-10-18T02:20:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "test-deno",
+        "label": "Test (Deno)",
+        "state": "succeeded",
+        "started": "2026-10-18T02:20:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "test-bun",
+        "label": "Test (Bun)",
+        "state": "failed",
+        "started": "2026-10-18T02:20:00Z",
+        "duration": "24s",
+        "summary": "@effect/sql-sqlite-bun: failed deferred COMMIT leaves the connection in a transaction; the next BEGIN fails.",
+        "log": [
+          "bun run --bun vitest run --max-concurrency=10",
+          "@effect/sql-sqlite-bun > Client > recovers a failed deferred commit without losing an in-memory database",
+          "packages/sql/sqlite-bun/test/Client.test.ts:83",
+          "SqlError: cannot start a transaction within a transaction",
+          "Expected the connection to roll back the failed COMMIT before reuse.",
+          "1 failed project; see the retained failing test and trace."
+        ]
+      },
+      {
+        "id": "doctest",
+        "label": "Test (Documentation)",
+        "state": "succeeded",
+        "started": "2026-10-18T02:20:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T02:20:00Z",
+        "stage": "static-checks",
+        "kind": "checkpoint",
+        "text": "Resolved workflow .github/workflows/check.yml and exact runtime projects."
+      },
+      {
+        "at": "2026-10-18T02:26:00Z",
+        "stage": "test-bun",
+        "kind": "error",
+        "text": "@effect/sql-sqlite-bun: failed deferred COMMIT leaves the connection in a transaction; the next BEGIN fails."
+      }
+    ],
+    "pull": 101,
+    "finished": "2026-10-18T02:26:00Z",
+    "branch": "fix/pg-aborted-commit",
+    "failure": {
+      "stage": "test-bun",
+      "reason": "@effect/sql-sqlite-bun: failed deferred COMMIT leaves the connection in a transaction; the next BEGIN fails."
+    }
+  },
+  {
+    "id": "run-4801",
+    "flow": "implement-issue",
+    "title": "PostgreSQL transaction succeeds after a caught statement error",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "pull",
+      "by": "cora",
+      "ref": "101"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-18T01:20:00Z",
+    "duration": "6m",
+    "cost": {
+      "usd": 0.34,
+      "tokens": 24210
+    },
+    "stages": [
+      {
+        "id": "reproduce",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-10-18T01:20:00Z",
+        "duration": "24s",
+        "summary": "Regression reproduced against the recorded base.",
+        "log": [
+          "Regression reproduced against the recorded base."
+        ]
+      },
+      {
+        "id": "change",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-10-18T01:20:00Z",
+        "duration": "24s",
+        "summary": "Source change and focused regression written.",
+        "log": [
+          "Source change and focused regression written."
+        ]
+      },
+      {
+        "id": "verify",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-10-18T01:20:00Z",
+        "duration": "24s",
+        "summary": "Focused checks completed; required CI is a separate run.",
+        "log": [
+          "Focused checks completed; required CI is a separate run."
+        ]
+      },
+      {
+        "id": "pull",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-10-18T01:20:00Z",
+        "duration": "24s",
+        "summary": "Pull request #101 updated. A person reviews and merges.",
+        "log": [
+          "Pull request #101 updated. A person reviews and merges."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-18T01:20:00Z",
+        "stage": "reproduce",
+        "kind": "checkpoint",
+        "text": "Saved base revision and reproduction."
+      },
+      {
+        "at": "2026-10-18T01:20:00Z",
+        "stage": "change",
+        "kind": "tool",
+        "text": "packages/sql/pg/src/PgClient.ts"
+      },
+      {
+        "at": "2026-10-18T01:26:00Z",
+        "stage": "pull",
+        "kind": "checkpoint",
+        "text": "Pull request #101 ready for human review."
+      }
+    ],
+    "issue": 42,
+    "pull": 101,
+    "finished": "2026-10-18T01:26:00Z",
+    "branch": "fix/pg-aborted-commit"
+  },
+  {
+    "id": "run-4804",
+    "flow": "docs-generate",
+    "title": "Generate @effect/sql-pg documentation",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "manual",
+      "by": "cora"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-17T23:20:00Z",
+    "duration": "6m",
+    "cost": {
+      "usd": 0.34,
+      "tokens": 24210
+    },
+    "stages": [
+      {
+        "id": "source",
+        "label": "Read source",
+        "state": "succeeded",
+        "started": "2026-10-17T23:20:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "generate",
+        "label": "Generate API preview",
+        "state": "succeeded",
+        "started": "2026-10-17T23:20:00Z",
+        "duration": "24s",
+        "summary": "Generated preview for PgClient, PgConnection and PgTypes.",
+        "log": [
+          "Generated preview for PgClient, PgConnection and PgTypes."
+        ]
+      },
+      {
+        "id": "accept",
+        "label": "Accept preview",
+        "state": "succeeded",
+        "started": "2026-10-17T23:20:00Z",
+        "duration": "24s",
+        "summary": "cora accepted the documentation preview.",
+        "log": [
+          "cora accepted the documentation preview."
+        ]
+      }
+    ],
+    "approvals": [
+      "approval-docs"
+    ],
+    "trace": [
+      {
+        "at": "2026-10-17T23:20:00Z",
+        "stage": "source",
+        "kind": "checkpoint",
+        "text": "Pinned source revision 7a13bb72e79ff883e62ca95f69eae180a242d6dd"
+      },
+      {
+        "at": "2026-10-17T23:26:00Z",
+        "stage": "accept",
+        "kind": "checkpoint",
+        "text": "cora accepted the preview; website deployment remains separate."
+      }
+    ],
+    "finished": "2026-10-17T23:26:00Z",
+    "resumed": {
+      "at": "2026-10-17T23:26:00Z",
+      "checkpoint": "docs-source-pinned"
+    }
+  },
+  {
+    "id": "run-4807",
+    "flow": "check",
+    "title": "Check previous PostgreSQL revision",
+    "state": "cancelled",
+    "trigger": {
+      "kind": "pull",
+      "by": "cora",
+      "ref": "101"
+    },
+    "harness": "GitHub Actions · Check",
+    "started": "2026-10-17T22:20:00Z",
+    "duration": "6m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "stages": [
+      {
+        "id": "static-checks",
+        "label": "Static",
+        "state": "cancelled",
+        "started": "2026-10-17T22:20:00Z",
+        "duration": "24s",
+        "summary": "Lint, circular dependencies, generated AI docs.",
+        "log": [
+          "Lint, circular dependencies, generated AI docs."
+        ]
+      },
+      {
+        "id": "types",
+        "label": "Types",
+        "state": "cancelled",
+        "started": "2026-10-17T22:20:00Z",
+        "duration": "24s",
+        "summary": "TypeScript, Deno and public type assertions.",
+        "log": [
+          "TypeScript, Deno and public type assertions."
+        ]
+      },
+      {
+        "id": "build",
+        "label": "Build",
+        "state": "cancelled",
+        "started": "2026-10-17T22:20:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "bundle",
+        "label": "Bundle",
+        "state": "cancelled",
+        "started": "2026-10-17T22:20:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "test-node",
+        "label": "Test (Node)",
+        "state": "cancelled",
+        "started": "2026-10-17T22:20:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "test-deno",
+        "label": "Test (Deno)",
+        "state": "cancelled",
+        "started": "2026-10-17T22:20:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "test-bun",
+        "label": "Test (Bun)",
+        "state": "cancelled",
+        "started": "2026-10-17T22:20:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "doctest",
+        "label": "Test (Documentation)",
+        "state": "cancelled",
+        "started": "2026-10-17T22:20:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-17T22:20:00Z",
+        "stage": "static-checks",
+        "kind": "checkpoint",
+        "text": "Resolved workflow .github/workflows/check.yml and exact runtime projects."
+      },
+      {
+        "at": "2026-10-17T22:26:00Z",
+        "stage": "test-bun",
+        "kind": "message",
+        "text": "Runtime eligibility retained with each project result."
+      }
+    ],
+    "pull": 101,
+    "finished": "2026-10-17T22:26:00Z",
+    "branch": "fix/pg-aborted-commit"
+  },
+  {
+    "id": "run-4809",
+    "flow": "implement-issue",
+    "title": "Bun SQLite connection remains in a transaction after failed COMMIT",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "pull",
+      "by": "cora",
+      "ref": "103"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-16T12:20:00Z",
+    "duration": "6m",
+    "cost": {
+      "usd": 0.34,
+      "tokens": 24210
+    },
+    "stages": [
+      {
+        "id": "reproduce",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-10-16T12:20:00Z",
+        "duration": "24s",
+        "summary": "Regression reproduced against the recorded base.",
+        "log": [
+          "Regression reproduced against the recorded base."
+        ]
+      },
+      {
+        "id": "change",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-10-16T12:20:00Z",
+        "duration": "24s",
+        "summary": "Source change and focused regression written.",
+        "log": [
+          "Source change and focused regression written."
+        ]
+      },
+      {
+        "id": "verify",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-10-16T12:20:00Z",
+        "duration": "24s",
+        "summary": "Focused checks completed; required CI is a separate run.",
+        "log": [
+          "Focused checks completed; required CI is a separate run."
+        ]
+      },
+      {
+        "id": "pull",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-10-16T12:20:00Z",
+        "duration": "24s",
+        "summary": "Pull request #103 updated. A person reviews and merges.",
+        "log": [
+          "Pull request #103 updated. A person reviews and merges."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-16T12:20:00Z",
+        "stage": "reproduce",
+        "kind": "checkpoint",
+        "text": "Saved base revision and reproduction."
+      },
+      {
+        "at": "2026-10-16T12:20:00Z",
+        "stage": "change",
+        "kind": "tool",
+        "text": "packages/effect/src/sql/SqlClient.ts"
+      },
+      {
+        "at": "2026-10-16T12:26:00Z",
+        "stage": "pull",
+        "kind": "checkpoint",
+        "text": "Pull request #103 ready for human review."
+      }
+    ],
+    "issue": 44,
+    "pull": 103,
+    "finished": "2026-10-16T12:26:00Z",
+    "branch": "fix/sqlite-failed-commit"
+  },
+  {
+    "id": "run-4816",
+    "flow": "triage",
+    "title": "Associate PostgreSQL report with packages",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "issue",
+      "by": "cora",
+      "ref": "42"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-16T02:20:00Z",
+    "duration": "6m",
+    "cost": {
+      "usd": 0.34,
+      "tokens": 24210
+    },
+    "stages": [
+      {
+        "id": "associate",
+        "label": "Associate packages",
+        "state": "succeeded",
+        "started": "2026-10-16T02:20:00Z",
+        "duration": "24s",
+        "summary": "Declared @effect/sql-pg and effect; requested cora and maya.",
+        "log": [
+          "Declared @effect/sql-pg and effect; requested cora and maya."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [],
+    "issue": 42,
+    "finished": "2026-10-16T02:26:00Z"
+  },
+  {
+    "id": "run-4806",
+    "flow": "check",
+    "title": "Check awaitAllChildren interruption",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "push",
+      "by": "maya",
+      "ref": "main"
+    },
+    "harness": "GitHub Actions · Check",
+    "started": "2026-10-15T23:20:00Z",
+    "duration": "6m",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "stages": [
+      {
+        "id": "static-checks",
+        "label": "Static",
+        "state": "succeeded",
+        "started": "2026-10-15T23:20:00Z",
+        "duration": "24s",
+        "summary": "Lint, circular dependencies, generated AI docs.",
+        "log": [
+          "Lint, circular dependencies, generated AI docs."
+        ]
+      },
+      {
+        "id": "types",
+        "label": "Types",
+        "state": "succeeded",
+        "started": "2026-10-15T23:20:00Z",
+        "duration": "24s",
+        "summary": "TypeScript, Deno and public type assertions.",
+        "log": [
+          "TypeScript, Deno and public type assertions."
+        ]
+      },
+      {
+        "id": "build",
+        "label": "Build",
+        "state": "skipped",
+        "started": "2026-10-15T23:20:00Z",
+        "duration": "24s",
+        "summary": "Runs only for pull_request events.",
+        "log": [
+          "Skipped: github.event_name is push."
+        ]
+      },
+      {
+        "id": "bundle",
+        "label": "Bundle",
+        "state": "skipped",
+        "started": "2026-10-15T23:20:00Z",
+        "duration": "24s",
+        "summary": "Runs only for pull_request events.",
+        "log": [
+          "Skipped: github.event_name is push."
+        ]
+      },
+      {
+        "id": "test-node",
+        "label": "Test (Node)",
+        "state": "succeeded",
+        "started": "2026-10-15T23:20:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "test-deno",
+        "label": "Test (Deno)",
+        "state": "succeeded",
+        "started": "2026-10-15T23:20:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "test-bun",
+        "label": "Test (Bun)",
+        "state": "succeeded",
+        "started": "2026-10-15T23:20:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      },
+      {
+        "id": "doctest",
+        "label": "Test (Documentation)",
+        "state": "succeeded",
+        "started": "2026-10-15T23:20:00Z",
+        "duration": "24s",
+        "summary": "Passed.",
+        "log": [
+          "Passed."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-15T23:20:00Z",
+        "stage": "static-checks",
+        "kind": "checkpoint",
+        "text": "Resolved workflow .github/workflows/check.yml and exact runtime projects."
+      },
+      {
+        "at": "2026-10-15T23:26:00Z",
+        "stage": "test-bun",
+        "kind": "message",
+        "text": "Runtime eligibility retained with each project result."
+      }
+    ],
+    "pull": 104,
+    "finished": "2026-10-15T23:26:00Z",
+    "branch": "main"
+  },
+  {
+    "id": "run-4810",
+    "flow": "implement-issue",
+    "title": "Move SQL imports to the current module exports",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "pull",
+      "by": "cora",
+      "ref": "105"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-14T08:20:00Z",
+    "duration": "6m",
+    "cost": {
+      "usd": 0.34,
+      "tokens": 24210
+    },
+    "stages": [
+      {
+        "id": "reproduce",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-10-14T08:20:00Z",
+        "duration": "24s",
+        "summary": "Regression reproduced against the recorded base.",
+        "log": [
+          "Regression reproduced against the recorded base."
+        ]
+      },
+      {
+        "id": "change",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-10-14T08:20:00Z",
+        "duration": "24s",
+        "summary": "Source change and focused regression written.",
+        "log": [
+          "Source change and focused regression written."
+        ]
+      },
+      {
+        "id": "verify",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-10-14T08:20:00Z",
+        "duration": "24s",
+        "summary": "Focused checks completed; required CI is a separate run.",
+        "log": [
+          "Focused checks completed; required CI is a separate run."
+        ]
+      },
+      {
+        "id": "pull",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-10-14T08:20:00Z",
+        "duration": "24s",
+        "summary": "Pull request #105 updated. A person reviews and merges.",
+        "log": [
+          "Pull request #105 updated. A person reviews and merges."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-14T08:20:00Z",
+        "stage": "reproduce",
+        "kind": "checkpoint",
+        "text": "Saved base revision and reproduction."
+      },
+      {
+        "at": "2026-10-14T08:20:00Z",
+        "stage": "change",
+        "kind": "tool",
+        "text": "packages/effect/package.json"
+      },
+      {
+        "at": "2026-10-14T08:26:00Z",
+        "stage": "pull",
+        "kind": "checkpoint",
+        "text": "Pull request #105 ready for human review."
+      }
+    ],
+    "issue": 46,
+    "pull": 105,
+    "finished": "2026-10-14T08:26:00Z",
+    "branch": "refactor/module-paths"
+  },
+  {
+    "id": "run-4811",
+    "flow": "implement-issue",
+    "title": "Scope close skips later finalizers after a synchronous throw",
+    "state": "failed",
+    "trigger": {
+      "kind": "pull",
+      "by": "cora",
+      "ref": "106"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-12T04:20:00Z",
+    "duration": "6m",
+    "cost": {
+      "usd": 0.34,
+      "tokens": 24210
+    },
+    "stages": [
+      {
+        "id": "reproduce",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-10-12T04:20:00Z",
+        "duration": "24s",
+        "summary": "Regression reproduced against the recorded base.",
+        "log": [
+          "Regression reproduced against the recorded base."
+        ]
+      },
+      {
+        "id": "change",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-10-12T04:20:00Z",
+        "duration": "24s",
+        "summary": "Source change and focused regression written.",
+        "log": [
+          "Source change and focused regression written."
+        ]
+      },
+      {
+        "id": "verify",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-10-12T04:20:00Z",
+        "duration": "24s",
+        "summary": "Focused checks completed; required CI is a separate run.",
+        "log": [
+          "Focused checks completed; required CI is a separate run."
+        ]
+      },
+      {
+        "id": "pull",
+        "label": "Open pull request",
+        "state": "failed",
+        "started": "2026-10-12T04:20:00Z",
+        "duration": "24s",
+        "summary": "Sandbox write approval denied.",
+        "log": [
+          "Sandbox write approval denied."
+        ]
+      }
+    ],
+    "approvals": [
+      "approval-scope"
+    ],
+    "trace": [
+      {
+        "at": "2026-10-12T04:20:00Z",
+        "stage": "reproduce",
+        "kind": "checkpoint",
+        "text": "Saved base revision and reproduction."
+      },
+      {
+        "at": "2026-10-12T04:20:00Z",
+        "stage": "change",
+        "kind": "tool",
+        "text": "packages/effect/src/Scope.ts"
+      },
+      {
+        "at": "2026-10-12T04:26:00Z",
+        "stage": "pull",
+        "kind": "error",
+        "text": "Human approval denied; retained the draft change."
+      }
+    ],
+    "issue": 47,
+    "pull": 106,
+    "finished": "2026-10-12T04:26:00Z",
+    "branch": "fix/scope-close",
+    "failure": {
+      "stage": "pull",
+      "reason": "maya denied the requested sandbox write scope."
+    }
+  },
+  {
+    "id": "run-4812",
+    "flow": "implement-issue",
+    "title": "Queue taker can miss an offer during registration",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "pull",
+      "by": "maya",
+      "ref": "107"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-08T22:20:00Z",
+    "duration": "6m",
+    "cost": {
+      "usd": 0.34,
+      "tokens": 24210
+    },
+    "stages": [
+      {
+        "id": "reproduce",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-10-08T22:20:00Z",
+        "duration": "24s",
+        "summary": "Regression reproduced against the recorded base.",
+        "log": [
+          "Regression reproduced against the recorded base."
+        ]
+      },
+      {
+        "id": "change",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-10-08T22:20:00Z",
+        "duration": "24s",
+        "summary": "Source change and focused regression written.",
+        "log": [
+          "Source change and focused regression written."
+        ]
+      },
+      {
+        "id": "verify",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-10-08T22:20:00Z",
+        "duration": "24s",
+        "summary": "Focused checks completed; required CI is a separate run.",
+        "log": [
+          "Focused checks completed; required CI is a separate run."
+        ]
+      },
+      {
+        "id": "pull",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-10-08T22:20:00Z",
+        "duration": "24s",
+        "summary": "Pull request #107 updated. A person reviews and merges.",
+        "log": [
+          "Pull request #107 updated. A person reviews and merges."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-08T22:20:00Z",
+        "stage": "reproduce",
+        "kind": "checkpoint",
+        "text": "Saved base revision and reproduction."
+      },
+      {
+        "at": "2026-10-08T22:20:00Z",
+        "stage": "change",
+        "kind": "tool",
+        "text": "packages/effect/src/Queue.ts"
+      },
+      {
+        "at": "2026-10-08T22:26:00Z",
+        "stage": "pull",
+        "kind": "checkpoint",
+        "text": "Pull request #107 ready for human review."
+      }
+    ],
+    "issue": 48,
+    "pull": 107,
+    "finished": "2026-10-08T22:26:00Z",
+    "branch": "fix/queue-wakeup"
+  },
+  {
+    "id": "run-4813",
+    "flow": "implement-issue",
+    "title": "Document Unicode string constraints",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "pull",
+      "by": "maya",
+      "ref": "108"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-10-05T03:20:00Z",
+    "duration": "6m",
+    "cost": {
+      "usd": 0.34,
+      "tokens": 24210
+    },
+    "stages": [
+      {
+        "id": "reproduce",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-10-05T03:20:00Z",
+        "duration": "24s",
+        "summary": "Regression reproduced against the recorded base.",
+        "log": [
+          "Regression reproduced against the recorded base."
+        ]
+      },
+      {
+        "id": "change",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-10-05T03:20:00Z",
+        "duration": "24s",
+        "summary": "Source change and focused regression written.",
+        "log": [
+          "Source change and focused regression written."
+        ]
+      },
+      {
+        "id": "verify",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-10-05T03:20:00Z",
+        "duration": "24s",
+        "summary": "Focused checks completed; required CI is a separate run.",
+        "log": [
+          "Focused checks completed; required CI is a separate run."
+        ]
+      },
+      {
+        "id": "pull",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-10-05T03:20:00Z",
+        "duration": "24s",
+        "summary": "Pull request #108 updated. A person reviews and merges.",
+        "log": [
+          "Pull request #108 updated. A person reviews and merges."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-10-05T03:20:00Z",
+        "stage": "reproduce",
+        "kind": "checkpoint",
+        "text": "Saved base revision and reproduction."
+      },
+      {
+        "at": "2026-10-05T03:20:00Z",
+        "stage": "change",
+        "kind": "tool",
+        "text": "packages/effect/src/Schema.ts"
+      },
+      {
+        "at": "2026-10-05T03:26:00Z",
+        "stage": "pull",
+        "kind": "checkpoint",
+        "text": "Pull request #108 ready for human review."
+      }
+    ],
+    "issue": 49,
+    "pull": 108,
+    "finished": "2026-10-05T03:26:00Z",
+    "branch": "docs/schema-brand"
+  },
+  {
+    "id": "run-4814",
+    "flow": "implement-issue",
+    "title": "Layer memo waiters hang after the initial build is interrupted",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "pull",
+      "by": "maya",
+      "ref": "109"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-09-30T06:20:00Z",
+    "duration": "6m",
+    "cost": {
+      "usd": 0.34,
+      "tokens": 24210
+    },
+    "stages": [
+      {
+        "id": "reproduce",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-09-30T06:20:00Z",
+        "duration": "24s",
+        "summary": "Regression reproduced against the recorded base.",
+        "log": [
+          "Regression reproduced against the recorded base."
+        ]
+      },
+      {
+        "id": "change",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-09-30T06:20:00Z",
+        "duration": "24s",
+        "summary": "Source change and focused regression written.",
+        "log": [
+          "Source change and focused regression written."
+        ]
+      },
+      {
+        "id": "verify",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-09-30T06:20:00Z",
+        "duration": "24s",
+        "summary": "Focused checks completed; required CI is a separate run.",
+        "log": [
+          "Focused checks completed; required CI is a separate run."
+        ]
+      },
+      {
+        "id": "pull",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-09-30T06:20:00Z",
+        "duration": "24s",
+        "summary": "Pull request #109 updated. A person reviews and merges.",
+        "log": [
+          "Pull request #109 updated. A person reviews and merges."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-09-30T06:20:00Z",
+        "stage": "reproduce",
+        "kind": "checkpoint",
+        "text": "Saved base revision and reproduction."
+      },
+      {
+        "at": "2026-09-30T06:20:00Z",
+        "stage": "change",
+        "kind": "tool",
+        "text": "packages/effect/src/Layer.ts"
+      },
+      {
+        "at": "2026-09-30T06:26:00Z",
+        "stage": "pull",
+        "kind": "checkpoint",
+        "text": "Pull request #109 ready for human review."
+      }
+    ],
+    "issue": 50,
+    "pull": 109,
+    "finished": "2026-09-30T06:26:00Z",
+    "branch": "fix/layer-memo"
+  },
+  {
+    "id": "run-4815",
+    "flow": "implement-issue",
+    "title": "MCP tool parameter failures omit later invalid fields",
+    "state": "succeeded",
+    "trigger": {
+      "kind": "pull",
+      "by": "cora",
+      "ref": "110"
+    },
+    "harness": "Codex · gpt-6.1-sol",
+    "started": "2026-09-25T09:20:00Z",
+    "duration": "6m",
+    "cost": {
+      "usd": 0.34,
+      "tokens": 24210
+    },
+    "stages": [
+      {
+        "id": "reproduce",
+        "label": "Reproduce",
+        "state": "succeeded",
+        "started": "2026-09-25T09:20:00Z",
+        "duration": "24s",
+        "summary": "Regression reproduced against the recorded base.",
+        "log": [
+          "Regression reproduced against the recorded base."
+        ]
+      },
+      {
+        "id": "change",
+        "label": "Implement",
+        "state": "succeeded",
+        "started": "2026-09-25T09:20:00Z",
+        "duration": "24s",
+        "summary": "Source change and focused regression written.",
+        "log": [
+          "Source change and focused regression written."
+        ]
+      },
+      {
+        "id": "verify",
+        "label": "Verify",
+        "state": "succeeded",
+        "started": "2026-09-25T09:20:00Z",
+        "duration": "24s",
+        "summary": "Focused checks completed; required CI is a separate run.",
+        "log": [
+          "Focused checks completed; required CI is a separate run."
+        ]
+      },
+      {
+        "id": "pull",
+        "label": "Open pull request",
+        "state": "succeeded",
+        "started": "2026-09-25T09:20:00Z",
+        "duration": "24s",
+        "summary": "Pull request #110 updated. A person reviews and merges.",
+        "log": [
+          "Pull request #110 updated. A person reviews and merges."
+        ]
+      }
+    ],
+    "approvals": [],
+    "trace": [
+      {
+        "at": "2026-09-25T09:20:00Z",
+        "stage": "reproduce",
+        "kind": "checkpoint",
+        "text": "Saved base revision and reproduction."
+      },
+      {
+        "at": "2026-09-25T09:20:00Z",
+        "stage": "change",
+        "kind": "tool",
+        "text": "packages/effect/src/Effect.ts"
+      },
+      {
+        "at": "2026-09-25T09:26:00Z",
+        "stage": "pull",
+        "kind": "checkpoint",
+        "text": "Pull request #110 ready for human review."
+      }
+    ],
+    "issue": 51,
+    "pull": 110,
+    "finished": "2026-09-25T09:26:00Z",
+    "branch": "fix/mcp-tool-errors"
+  }
+]

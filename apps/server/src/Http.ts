@@ -140,7 +140,7 @@ const readBoundedBytes = (
 }
 
 /** Read a body whole as text, under a byte ceiling. */
-const readBoundedText = (body: Request | Response, limit: number): Effect.Effect<string, BodyTooLarge | BodyUnreadable> =>
+export const readBoundedText = (body: Request | Response, limit: number): Effect.Effect<string, BodyTooLarge | BodyUnreadable> =>
   Effect.map(readBoundedBytes(body, limit), (bytes) => new TextDecoder().decode(bytes))
 
 /** Read a body whole as JSON, under a byte ceiling. */

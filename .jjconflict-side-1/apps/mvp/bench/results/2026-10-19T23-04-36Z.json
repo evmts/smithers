@@ -1,0 +1,749 @@
+{
+  "ok": true,
+  "env": {
+    "commit": "01ee9b8d789fdd70f0cfffc621adad2070adb51c",
+    "baseUrl": "http://localhost:1337",
+    "server": "vite-dev",
+    "machine": {
+      "model": "Mac15,8",
+      "cpu": "Apple M3 Max",
+      "cores": 16,
+      "memoryGiB": 64
+    },
+    "os": "macOS 26.2 (25C56), arm64",
+    "browser": "Chromium 151.0.7922.34 (headless)",
+    "playwright": "1.62.1",
+    "node": "v26.10.0",
+    "date": "2026-10-19T23:04:36.640Z",
+    "n": 10,
+    "suites": [
+      "load",
+      "cmdk",
+      "answer",
+      "sync"
+    ],
+    "conversationMessages": 306
+  },
+  "metrics": {
+    "load.cold.ttfb": {
+      "n": 10,
+      "p50": 7.2,
+      "p95": 13.2,
+      "min": 6.5,
+      "max": 15.9
+    },
+    "load.cold.fcp": {
+      "n": 10,
+      "p50": 230,
+      "p95": 242.2,
+      "min": 228,
+      "max": 244
+    },
+    "load.cold.lcp": {
+      "n": 10,
+      "p50": 712,
+      "p95": 718.2,
+      "min": 684,
+      "max": 720
+    },
+    "load.cold.usable": {
+      "n": 10,
+      "p50": 707.2,
+      "p95": 716.9,
+      "min": 697.2,
+      "max": 719.4
+    },
+    "load.cold.newest": {
+      "n": 10,
+      "p50": 997.8,
+      "p95": 1030.7,
+      "min": 992.8,
+      "max": 1032
+    },
+    "load.warm.ttfb": {
+      "n": 10,
+      "p50": 6.9,
+      "p95": 8,
+      "min": 6.1,
+      "max": 8.5
+    },
+    "load.warm.fcp": {
+      "n": 10,
+      "p50": 108,
+      "p95": 114.2,
+      "min": 104,
+      "max": 116
+    },
+    "load.warm.usable": {
+      "n": 10,
+      "p50": 424.6,
+      "p95": 428.1,
+      "min": 418.5,
+      "max": 430.1
+    },
+    "load.warm.newest": {
+      "n": 10,
+      "p50": 424.6,
+      "p95": 428.1,
+      "min": 418.5,
+      "max": 430.1
+    },
+    "cmdk.focus": {
+      "n": 10,
+      "p50": 1.6,
+      "p95": 3.8,
+      "min": 1.2,
+      "max": 5.5
+    },
+    "answer.question": {
+      "n": 10,
+      "p50": 25.1,
+      "p95": 27.3,
+      "min": 7.7,
+      "max": 27.5
+    },
+    "answer.first_text": {
+      "n": 10,
+      "p50": 618.4,
+      "p95": 1487.5,
+      "min": 323.8,
+      "max": 1661.4
+    },
+    "answer.complete": {
+      "n": 10,
+      "p50": 618.4,
+      "p95": 1487.5,
+      "min": 323.8,
+      "max": 1661.4
+    },
+    "sync.question": {
+      "n": 10,
+      "p50": 70.6,
+      "p95": 88.7,
+      "min": 54.5,
+      "max": 90
+    },
+    "sync.answer_delta": {
+      "n": 10,
+      "p50": 32.8,
+      "p95": 37.1,
+      "min": 17,
+      "max": 38
+    }
+  },
+  "notReported": {
+    "load.warm.lcp": 10
+  },
+  "checks": {
+    "passed": 71,
+    "failed": []
+  },
+  "comparison": {
+    "baseline": null,
+    "threshold": 0.25,
+    "floorMs": 5,
+    "regressions": []
+  },
+  "samples": {
+    "load.cold.ttfb": [
+      15.900000005960464,
+      7,
+      10,
+      6.5,
+      7.300000011920929,
+      7.800000011920929,
+      7.199999988079071,
+      6.800000011920929,
+      6.800000011920929,
+      7.199999988079071
+    ],
+    "load.cold.fcp": [
+      244,
+      228,
+      236,
+      228,
+      232,
+      228,
+      228,
+      240,
+      228,
+      240
+    ],
+    "load.cold.lcp": [
+      720,
+      704,
+      716,
+      708,
+      712,
+      704,
+      716,
+      716,
+      712,
+      684
+    ],
+    "load.cold.usable": [
+      713.8000000119209,
+      698.3000000119209,
+      710.4000000059605,
+      701.8000000119209,
+      705.8000000119209,
+      697.1999999880791,
+      710.9000000059605,
+      708.6000000238419,
+      704.7000000178814,
+      719.4000000059605
+    ],
+    "load.cold.newest": [
+      1029.1000000238419,
+      995.7000000178814,
+      998.0999999940395,
+      997.4000000059605,
+      992.8000000119209,
+      993.4000000059605,
+      997.0999999940395,
+      1005.3000000119209,
+      998.2000000178814,
+      1032
+    ],
+    "load.warm.ttfb": [
+      6.9000000059604645,
+      7.199999988079071,
+      8.5,
+      6.4000000059604645,
+      6.800000011920929,
+      6.799999982118607,
+      7.300000011920929,
+      7,
+      6.0999999940395355,
+      6.800000011920929
+    ],
+    "load.warm.fcp": [
+      112,
+      108,
+      116,
+      112,
+      108,
+      104,
+      112,
+      108,
+      108,
+      108
+    ],
+    "load.warm.usable": [
+      424.40000000596046,
+      424.69999998807907,
+      430.09999999403954,
+      425.69999998807907,
+      424.5,
+      418.5,
+      425.40000000596046,
+      424.90000000596046,
+      422.69999998807907,
+      423.10000002384186
+    ],
+    "load.warm.newest": [
+      424.40000000596046,
+      424.69999998807907,
+      430.09999999403954,
+      425.69999998807907,
+      424.5,
+      418.5,
+      425.40000000596046,
+      424.90000000596046,
+      422.69999998807907,
+      423.10000002384186
+    ],
+    "cmdk.focus": [
+      5.5,
+      1.800000011920929,
+      1.800000011920929,
+      1.4000000059604645,
+      1.199999988079071,
+      1.600000023841858,
+      1.4000000059604645,
+      1.5,
+      1.800000011920929,
+      1.4000000059604645
+    ],
+    "answer.question": [
+      27.5,
+      26,
+      16.800048828125,
+      27,
+      24.300048828125,
+      16.10009765625,
+      25.89990234375,
+      15,
+      7.699951171875,
+      26.400146484375
+    ],
+    "answer.first_text": [
+      1274.89990234375,
+      918.099853515625,
+      1661.39990234375,
+      997,
+      562.300048828125,
+      674.400146484375,
+      460.199951171875,
+      376.89990234375,
+      323.800048828125,
+      370.400146484375
+    ],
+    "answer.complete": [
+      1274.89990234375,
+      918.099853515625,
+      1661.39990234375,
+      997,
+      562.300048828125,
+      674.400146484375,
+      460.199951171875,
+      376.89990234375,
+      323.800048828125,
+      370.400146484375
+    ],
+    "sync.question": [
+      61.099853515625,
+      59.800048828125,
+      71.300048828125,
+      69.699951171875,
+      70.300048828125,
+      70.800048828125,
+      71.2998046875,
+      87.099853515625,
+      54.5,
+      90
+    ],
+    "sync.answer_delta": [
+      38,
+      34.300048828125,
+      31.2998046875,
+      29.60009765625,
+      19,
+      32.199951171875,
+      33.5,
+      17,
+      34.099853515625,
+      35.89990234375
+    ]
+  },
+  "details": {
+    "load": [
+      {
+        "iteration": 0,
+        "cold": {
+          "ttfb": 15.900000005960464,
+          "fcp": 244,
+          "lcp": 720,
+          "usable": 713.8000000119209,
+          "newest": 1029.1000000238419,
+          "messages": 306
+        },
+        "warm": {
+          "ttfb": 6.9000000059604645,
+          "fcp": 112,
+          "lcp": null,
+          "usable": 424.40000000596046,
+          "newest": 424.40000000596046,
+          "messages": 306
+        }
+      },
+      {
+        "iteration": 1,
+        "cold": {
+          "ttfb": 7,
+          "fcp": 228,
+          "lcp": 704,
+          "usable": 698.3000000119209,
+          "newest": 995.7000000178814,
+          "messages": 306
+        },
+        "warm": {
+          "ttfb": 7.199999988079071,
+          "fcp": 108,
+          "lcp": null,
+          "usable": 424.69999998807907,
+          "newest": 424.69999998807907,
+          "messages": 306
+        }
+      },
+      {
+        "iteration": 2,
+        "cold": {
+          "ttfb": 10,
+          "fcp": 236,
+          "lcp": 716,
+          "usable": 710.4000000059605,
+          "newest": 998.0999999940395,
+          "messages": 306
+        },
+        "warm": {
+          "ttfb": 8.5,
+          "fcp": 116,
+          "lcp": null,
+          "usable": 430.09999999403954,
+          "newest": 430.09999999403954,
+          "messages": 306
+        }
+      },
+      {
+        "iteration": 3,
+        "cold": {
+          "ttfb": 6.5,
+          "fcp": 228,
+          "lcp": 708,
+          "usable": 701.8000000119209,
+          "newest": 997.4000000059605,
+          "messages": 306
+        },
+        "warm": {
+          "ttfb": 6.4000000059604645,
+          "fcp": 112,
+          "lcp": null,
+          "usable": 425.69999998807907,
+          "newest": 425.69999998807907,
+          "messages": 306
+        }
+      },
+      {
+        "iteration": 4,
+        "cold": {
+          "ttfb": 7.300000011920929,
+          "fcp": 232,
+          "lcp": 712,
+          "usable": 705.8000000119209,
+          "newest": 992.8000000119209,
+          "messages": 306
+        },
+        "warm": {
+          "ttfb": 6.800000011920929,
+          "fcp": 108,
+          "lcp": null,
+          "usable": 424.5,
+          "newest": 424.5,
+          "messages": 306
+        }
+      },
+      {
+        "iteration": 5,
+        "cold": {
+          "ttfb": 7.800000011920929,
+          "fcp": 228,
+          "lcp": 704,
+          "usable": 697.1999999880791,
+          "newest": 993.4000000059605,
+          "messages": 306
+        },
+        "warm": {
+          "ttfb": 6.799999982118607,
+          "fcp": 104,
+          "lcp": null,
+          "usable": 418.5,
+          "newest": 418.5,
+          "messages": 306
+        }
+      },
+      {
+        "iteration": 6,
+        "cold": {
+          "ttfb": 7.199999988079071,
+          "fcp": 228,
+          "lcp": 716,
+          "usable": 710.9000000059605,
+          "newest": 997.0999999940395,
+          "messages": 306
+        },
+        "warm": {
+          "ttfb": 7.300000011920929,
+          "fcp": 112,
+          "lcp": null,
+          "usable": 425.40000000596046,
+          "newest": 425.40000000596046,
+          "messages": 306
+        }
+      },
+      {
+        "iteration": 7,
+        "cold": {
+          "ttfb": 6.800000011920929,
+          "fcp": 240,
+          "lcp": 716,
+          "usable": 708.6000000238419,
+          "newest": 1005.3000000119209,
+          "messages": 306
+        },
+        "warm": {
+          "ttfb": 7,
+          "fcp": 108,
+          "lcp": null,
+          "usable": 424.90000000596046,
+          "newest": 424.90000000596046,
+          "messages": 306
+        }
+      },
+      {
+        "iteration": 8,
+        "cold": {
+          "ttfb": 6.800000011920929,
+          "fcp": 228,
+          "lcp": 712,
+          "usable": 704.7000000178814,
+          "newest": 998.2000000178814,
+          "messages": 306
+        },
+        "warm": {
+          "ttfb": 6.0999999940395355,
+          "fcp": 108,
+          "lcp": null,
+          "usable": 422.69999998807907,
+          "newest": 422.69999998807907,
+          "messages": 306
+        }
+      },
+      {
+        "iteration": 9,
+        "cold": {
+          "ttfb": 7.199999988079071,
+          "fcp": 240,
+          "lcp": 684,
+          "usable": 719.4000000059605,
+          "newest": 1032,
+          "messages": 306
+        },
+        "warm": {
+          "ttfb": 6.800000011920929,
+          "fcp": 108,
+          "lcp": null,
+          "usable": 423.10000002384186,
+          "newest": 423.10000002384186,
+          "messages": 306
+        }
+      }
+    ],
+    "cmdk": [
+      {
+        "iteration": 0,
+        "focus": 5.5
+      },
+      {
+        "iteration": 1,
+        "focus": 1.800000011920929
+      },
+      {
+        "iteration": 2,
+        "focus": 1.800000011920929
+      },
+      {
+        "iteration": 3,
+        "focus": 1.4000000059604645
+      },
+      {
+        "iteration": 4,
+        "focus": 1.199999988079071
+      },
+      {
+        "iteration": 5,
+        "focus": 1.600000023841858
+      },
+      {
+        "iteration": 6,
+        "focus": 1.4000000059604645
+      },
+      {
+        "iteration": 7,
+        "focus": 1.5
+      },
+      {
+        "iteration": 8,
+        "focus": 1.800000011920929
+      },
+      {
+        "iteration": 9,
+        "focus": 1.4000000059604645
+      }
+    ],
+    "answer": [
+      {
+        "iteration": 0,
+        "word": "bench-mvfv3acg-a0",
+        "answer": "bench-mvfv3acg-a0",
+        "deltas": 1,
+        "question": 27.5,
+        "firstText": 1274.89990234375,
+        "complete": 1274.89990234375
+      },
+      {
+        "iteration": 1,
+        "word": "bench-mvfv3acg-a1",
+        "answer": "bench-mvfv3acg-a1",
+        "deltas": 1,
+        "question": 26,
+        "firstText": 918.099853515625,
+        "complete": 918.099853515625
+      },
+      {
+        "iteration": 2,
+        "word": "bench-mvfv3acg-a2",
+        "answer": "bench-mvfv3acg-a2",
+        "deltas": 1,
+        "question": 16.800048828125,
+        "firstText": 1661.39990234375,
+        "complete": 1661.39990234375
+      },
+      {
+        "iteration": 3,
+        "word": "bench-mvfv3acg-a3",
+        "answer": "bench-mvfv3acg-a3",
+        "deltas": 1,
+        "question": 27,
+        "firstText": 997,
+        "complete": 997
+      },
+      {
+        "iteration": 4,
+        "word": "bench-mvfv3acg-a4",
+        "answer": "bench-mvfv3acg-a4",
+        "deltas": 1,
+        "question": 24.300048828125,
+        "firstText": 562.300048828125,
+        "complete": 562.300048828125
+      },
+      {
+        "iteration": 5,
+        "word": "bench-mvfv3acg-a5",
+        "answer": "bench-mvfv3acg-a5",
+        "deltas": 1,
+        "question": 16.10009765625,
+        "firstText": 674.400146484375,
+        "complete": 674.400146484375
+      },
+      {
+        "iteration": 6,
+        "word": "bench-mvfv3acg-a6",
+        "answer": "bench-mvfv3acg-a6",
+        "deltas": 1,
+        "question": 25.89990234375,
+        "firstText": 460.199951171875,
+        "complete": 460.199951171875
+      },
+      {
+        "iteration": 7,
+        "word": "bench-mvfv3acg-a7",
+        "answer": "bench-mvfv3acg-a7",
+        "deltas": 1,
+        "question": 15,
+        "firstText": 376.89990234375,
+        "complete": 376.89990234375
+      },
+      {
+        "iteration": 8,
+        "word": "bench-mvfv3acg-a8",
+        "answer": "bench-mvfv3acg-a8",
+        "deltas": 1,
+        "question": 7.699951171875,
+        "firstText": 323.800048828125,
+        "complete": 323.800048828125
+      },
+      {
+        "iteration": 9,
+        "word": "bench-mvfv3acg-a9",
+        "answer": "bench-mvfv3acg-a9",
+        "deltas": 1,
+        "question": 26.400146484375,
+        "firstText": 370.400146484375,
+        "complete": 370.400146484375
+      }
+    ],
+    "sync": [
+      {
+        "iteration": 0,
+        "word": "bench-mvfv3acg-s0",
+        "answer": "bench-mvfv3acg-s0",
+        "question": 61.099853515625,
+        "deltas": [
+          38
+        ]
+      },
+      {
+        "iteration": 1,
+        "word": "bench-mvfv3acg-s1",
+        "answer": "bench-mvfv3acg-s1",
+        "question": 59.800048828125,
+        "deltas": [
+          34.300048828125
+        ]
+      },
+      {
+        "iteration": 2,
+        "word": "bench-mvfv3acg-s2",
+        "answer": "bench-mvfv3acg-s2",
+        "question": 71.300048828125,
+        "deltas": [
+          31.2998046875
+        ]
+      },
+      {
+        "iteration": 3,
+        "word": "bench-mvfv3acg-s3",
+        "answer": "bench-mvfv3acg-s3",
+        "question": 69.699951171875,
+        "deltas": [
+          29.60009765625
+        ]
+      },
+      {
+        "iteration": 4,
+        "word": "bench-mvfv3acg-s4",
+        "answer": "bench-mvfv3acg-s4",
+        "question": 70.300048828125,
+        "deltas": [
+          19
+        ]
+      },
+      {
+        "iteration": 5,
+        "word": "bench-mvfv3acg-s5",
+        "answer": "bench-mvfv3acg-s5",
+        "question": 70.800048828125,
+        "deltas": [
+          32.199951171875
+        ]
+      },
+      {
+        "iteration": 6,
+        "word": "bench-mvfv3acg-s6",
+        "answer": "bench-mvfv3acg-s6",
+        "question": 71.2998046875,
+        "deltas": [
+          33.5
+        ]
+      },
+      {
+        "iteration": 7,
+        "word": "bench-mvfv3acg-s7",
+        "answer": "bench-mvfv3acg-s7",
+        "question": 87.099853515625,
+        "deltas": [
+          17
+        ]
+      },
+      {
+        "iteration": 8,
+        "word": "bench-mvfv3acg-s8",
+        "answer": "bench-mvfv3acg-s8",
+        "question": 54.5,
+        "deltas": [
+          34.099853515625
+        ]
+      },
+      {
+        "iteration": 9,
+        "word": "bench-mvfv3acg-s9",
+        "answer": "bench-mvfv3acg-s9",
+        "question": 90,
+        "deltas": [
+          35.89990234375
+        ]
+      }
+    ]
+  }
+}

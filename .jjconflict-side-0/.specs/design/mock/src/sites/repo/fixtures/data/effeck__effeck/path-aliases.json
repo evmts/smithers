@@ -1,0 +1,10 @@
+{
+  "packages/create-effeck/package.json": "packages/create-vibelang/package.json",
+  "docs/user/src/setup/effeck-cli.md": "docs/user/src/setup/vibelang-cli.md",
+  "typescript/effeck/lsp-fixture/src/old-await.effeck": "typescript/vibelang/lsp-fixture/src/old-await.vibe",
+  "typescript/effeck/lsp-fixture/src/hatch-outside.effeck": "typescript/vibelang/lsp-fixture/src/hatch-outside.vibe",
+  "typescript/tsc/internal/effeckmapper/lambdas.go": "typescript/tsc/internal/vibelangmapper/lambdas.go",
+  "typescript/tsc/internal/effeckmapper/plan.go": "typescript/tsc/internal/vibelangmapper/plan.go",
+  "typescript/tsc/internal/astnav/effeck.go": "typescript/tsc/internal/astnav/vibelang.go",
+  "examples/users/src/main.effeck": "examples/users/src/main.vibe"
+}

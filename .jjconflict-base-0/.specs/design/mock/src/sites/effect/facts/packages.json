@@ -1,0 +1,879 @@
+{
+  "_about": "Read-only Effect-TS/effect-smol checkout snapshot, 2026-10-18T04:28:24Z (date -u). Sources: packages.json from every packages/**/package.json, package README first paragraphs, CHANGELOG existence, and file counts; changesets.json from .changeset/*.md except README, config.json fixed/linked, and exact pre.json; workflows.json from .github/workflows/*.yml (YAML 1.2; unnamed steps use literal uses/run, unnamed jobs are null); changelog.json from the newest three CHANGELOG releases in effect, platform/node, sql/pg, ai/openai (rc versions retained, contributor thanks removed); tree.json from filesystem listings (root direct children; two package levels; file sizes in bytes; build artifacts included; tracked status unknown); files.json from its eight source paths (only Effect.ts truncated to 400 lines); owners.json from CODEOWNERS search, with nothing inferred. Exclude node_modules/.git/.jj. Dependencies include workspace: entries in all dependency sections; exports cap at 12. files counts src/**/*.ts; tests counts *.test.*, *.spec.*, *.tst.* JS/TS files. Missing descriptions/READMEs are null; private defaults false.",
+  "packages": [
+    {
+      "name": "@effect/ai-anthropic",
+      "path": "packages/ai/anthropic",
+      "group": "ai",
+      "description": "An Anthropic provider integration for Effect AI SDK",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "An [Anthropic](https://www.anthropic.com) provider for the Effect AI modules. Includes a typed Anthropic API client, language model layers, tools, and telemetry helpers.",
+      "hasChangelog": true,
+      "files": 10,
+      "tests": 3
+    },
+    {
+      "name": "@effect/ai-openai",
+      "path": "packages/ai/openai",
+      "group": "ai",
+      "description": "An OpenAI provider integration for Effect AI SDK",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "An [OpenAI](https://openai.com) provider for the Effect AI modules. Includes a typed OpenAI API client, language model and embedding model layers, tools, and telemetry helpers.",
+      "hasChangelog": true,
+      "files": 13,
+      "tests": 5
+    },
+    {
+      "name": "@effect/ai-openai-compat",
+      "path": "packages/ai/openai-compat",
+      "group": "ai",
+      "description": "An OpenAI compat integration for Effect",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "Connects the Effect AI modules to any OpenAI-compatible API, with support for chat completions and embeddings.",
+      "hasChangelog": true,
+      "files": 9,
+      "tests": 4
+    },
+    {
+      "name": "@effect/ai-openrouter",
+      "path": "packages/ai/openrouter",
+      "group": "ai",
+      "description": "An OpenRouter provider integration for Effect AI SDK",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "An [OpenRouter](https://openrouter.ai) provider for the Effect AI modules. Includes a typed OpenRouter API client and language model layers.",
+      "hasChangelog": true,
+      "files": 10,
+      "tests": 6
+    },
+    {
+      "name": "@effect/ai-typesafe",
+      "path": "packages/ai/typesafe",
+      "group": "ai",
+      "description": "A TypeSafe DecisionModel provider for Effect",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "TypeSafe System One provider for Effect's `DecisionModel`. Supports classification, ordered ratings, and probabilities through Effect `HttpClient`.",
+      "hasChangelog": true,
+      "files": 6,
+      "tests": 4
+    },
+    {
+      "name": "@effect/atom-react",
+      "path": "packages/atom/react",
+      "group": "atom",
+      "description": "React bindings for the Effect Atom modules",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "[React](https://react.dev) bindings for Atom, the reactive state management modules for Effect. Includes hooks for reading and updating atoms, and helpers for server-side rendering hydration.",
+      "hasChangelog": true,
+      "files": 5,
+      "tests": 1
+    },
+    {
+      "name": "@effect/atom-solid",
+      "path": "packages/atom/solid",
+      "group": "atom",
+      "description": "SolidJS bindings for the Effect Atom modules",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "[SolidJS](https://www.solidjs.com) bindings for Atom, the reactive state management modules for Effect.",
+      "hasChangelog": true,
+      "files": 3,
+      "tests": 1
+    },
+    {
+      "name": "@effect/atom-vue",
+      "path": "packages/atom/vue",
+      "group": "atom",
+      "description": "Vue bindings for the Effect Atom modules",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "[Vue](https://vuejs.org) bindings for Atom, the reactive state management modules for Effect.",
+      "hasChangelog": true,
+      "files": 1,
+      "tests": 1
+    },
+    {
+      "name": "effect",
+      "path": "packages/effect",
+      "group": "effect",
+      "description": "The missing standard library for TypeScript, for writing production-grade software.",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [],
+      "exports": [
+        "./package.json",
+        ".",
+        "./testing",
+        "./ai",
+        "./cli",
+        "./cluster",
+        "./devtools",
+        "./encoding",
+        "./eventlog",
+        "./http",
+        "./http-api",
+        "./net"
+      ],
+      "readmeFirstParagraph": "Effect is a library for building robust, maintainable, type-safe, and production grade applications in TypeScript.",
+      "hasChangelog": true,
+      "files": 496,
+      "tests": 428
+    },
+    {
+      "name": "@effect/opentelemetry",
+      "path": "packages/opentelemetry",
+      "group": "opentelemetry",
+      "description": "OpenTelemetry integration for Effect",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "An [OpenTelemetry](https://opentelemetry.io) integration for Effect. Exports Effect tracing, metrics, and logs through the OpenTelemetry SDK, with `NodeSdk` and `WebSdk` layers for easy setup.",
+      "hasChangelog": true,
+      "files": 10,
+      "tests": 3
+    },
+    {
+      "name": "@effect/platform-browser",
+      "path": "packages/platform/browser",
+      "group": "platform",
+      "description": "Platform specific implementations for the browser",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "Browser implementations of the Effect platform services, including the HTTP client, workers, key-value storage, IndexedDB, clipboard, and geolocation.",
+      "hasChangelog": true,
+      "files": 18,
+      "tests": 12
+    },
+    {
+      "name": "@effect/platform-bun",
+      "path": "packages/platform/bun",
+      "group": "platform",
+      "description": "Platform specific implementations for the Bun runtime",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "@effect/platform-node-shared",
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "[Bun](https://bun.sh) implementations of the Effect platform services, including the file system, HTTP client and server, sockets, workers, and terminal.",
+      "hasChangelog": true,
+      "files": 23,
+      "tests": 6
+    },
+    {
+      "name": "@effect/platform-deno",
+      "path": "packages/platform/deno",
+      "group": "platform",
+      "description": "Platform specific implementations for the Deno runtime",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "@effect/platform-node-shared",
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "[Deno](https://deno.com) implementations of the Effect platform services, including the file system, HTTP client and server, sockets, workers, and terminal.",
+      "hasChangelog": true,
+      "files": 23,
+      "tests": 17
+    },
+    {
+      "name": "@effect/platform-node",
+      "path": "packages/platform/node",
+      "group": "platform",
+      "description": "Platform specific implementations for the Node.js runtime",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "@effect/platform-node-shared",
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "[Node.js](https://nodejs.org) implementations of the Effect platform services, including the file system, HTTP client and server, sockets, workers, and terminal.",
+      "hasChangelog": true,
+      "files": 26,
+      "tests": 27
+    },
+    {
+      "name": "@effect/platform-node-shared",
+      "path": "packages/platform/node-shared",
+      "group": "platform",
+      "description": "Unified interfaces for common platform-specific services",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "Effect platform services shared between Node.js-compatible runtimes. Used internally by `@effect/platform-node`, `@effect/platform-bun`, and `@effect/platform-deno`.",
+      "hasChangelog": true,
+      "files": 16,
+      "tests": 7
+    },
+    {
+      "name": "@effect/sql-clickhouse",
+      "path": "packages/sql/clickhouse",
+      "group": "sql",
+      "description": "A Clickhouse toolkit for Effect",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "@effect/platform-node",
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "An Effect SQL client for [ClickHouse](https://clickhouse.com), built on the [`@clickhouse/client`](https://clickhouse.com/docs/integrations/javascript) library.",
+      "hasChangelog": true,
+      "files": 3,
+      "tests": 2
+    },
+    {
+      "name": "@effect/sql-d1",
+      "path": "packages/sql/d1",
+      "group": "sql",
+      "description": "A Cloudflare D1 integration for Effect",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "An Effect SQL client for [Cloudflare D1](https://developers.cloudflare.com/d1/), for use in Cloudflare Workers.",
+      "hasChangelog": true,
+      "files": 2,
+      "tests": 2
+    },
+    {
+      "name": "@effect/sql-libsql",
+      "path": "packages/sql/libsql",
+      "group": "sql",
+      "description": "A libSQL toolkit for Effect",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "An Effect SQL client for [libSQL](https://turso.tech/libsql), built on the [`@libsql/client`](https://docs.turso.tech/sdk/ts) library.",
+      "hasChangelog": true,
+      "files": 3,
+      "tests": 2
+    },
+    {
+      "name": "@effect/sql-mssql",
+      "path": "packages/sql/mssql",
+      "group": "sql",
+      "description": "A Microsoft SQL Server toolkit for Effect",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "An Effect SQL client for Microsoft SQL Server, built on the [`tedious`](https://tediousjs.github.io/tedious/) library.",
+      "hasChangelog": true,
+      "files": 5,
+      "tests": 4
+    },
+    {
+      "name": "@effect/sql-mysql2",
+      "path": "packages/sql/mysql2",
+      "group": "sql",
+      "description": "A MySQL toolkit for Effect",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "An Effect SQL client for MySQL, built on the [`mysql2`](https://sidorares.github.io/node-mysql2/docs) library.",
+      "hasChangelog": true,
+      "files": 3,
+      "tests": 7
+    },
+    {
+      "name": "@effect/sql-pg",
+      "path": "packages/sql/pg",
+      "group": "sql",
+      "description": "A PostgreSQL toolkit for Effect",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "An Effect SQL client for PostgreSQL with a native wire-protocol driver.",
+      "hasChangelog": true,
+      "files": 11,
+      "tests": 16
+    },
+    {
+      "name": "@effect/sql-pglite",
+      "path": "packages/sql/pglite",
+      "group": "sql",
+      "description": "A PGlite toolkit for Effect",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "An Effect SQL client for [PGlite](https://pglite.dev), a WASM build of PostgreSQL that runs in the browser, Node.js, and Bun.",
+      "hasChangelog": true,
+      "files": 3,
+      "tests": 6
+    },
+    {
+      "name": "@effect/sql-sqlite-bun",
+      "path": "packages/sql/sqlite-bun",
+      "group": "sql",
+      "description": "A SQLite toolkit for Effect",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "@effect/platform-bun",
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "An Effect SQL client for SQLite on the [Bun](https://bun.sh) runtime, built on `bun:sqlite`.",
+      "hasChangelog": true,
+      "files": 3,
+      "tests": 1
+    },
+    {
+      "name": "@effect/sql-sqlite-do",
+      "path": "packages/sql/sqlite-do",
+      "group": "sql",
+      "description": "A SQLite toolkit for Effect",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "An Effect SQL client for the SQLite storage in [Cloudflare Durable Objects](https://developers.cloudflare.com/durable-objects/).",
+      "hasChangelog": true,
+      "files": 3,
+      "tests": 2
+    },
+    {
+      "name": "@effect/sql-sqlite-node",
+      "path": "packages/sql/sqlite-node",
+      "group": "sql",
+      "description": "A SQLite toolkit for Effect",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "@effect/platform-node",
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "An Effect SQL client for SQLite on Node.js, built on the built-in `node:sqlite` module.",
+      "hasChangelog": true,
+      "files": 3,
+      "tests": 9
+    },
+    {
+      "name": "@effect/sql-sqlite-react-native",
+      "path": "packages/sql/sqlite-react-native",
+      "group": "sql",
+      "description": "A SQLite toolkit for Effect",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "An Effect SQL client for SQLite in React Native applications, built on the [`@op-engineering/op-sqlite`](https://op-engineering.github.io/op-sqlite/) library.",
+      "hasChangelog": true,
+      "files": 3,
+      "tests": 1
+    },
+    {
+      "name": "@effect/sql-sqlite-wasm",
+      "path": "packages/sql/sqlite-wasm",
+      "group": "sql",
+      "description": "A SQLite toolkit for Effect",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "An Effect SQL client for SQLite compiled to WebAssembly, built on the [`@effect/wa-sqlite`](https://www.npmjs.com/package/@effect/wa-sqlite) library. Works in the browser and other WASM-capable environments.",
+      "hasChangelog": true,
+      "files": 6,
+      "tests": 2
+    },
+    {
+      "name": "@effect/ai-codegen",
+      "path": "packages/tools/ai-codegen",
+      "group": "tools",
+      "description": "Code generation framework for the Effect AI providers",
+      "version": "0.0.0",
+      "private": true,
+      "dependencies": [
+        "@effect/openapi-generator",
+        "@effect/platform-node",
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        "./*",
+        "./bin",
+        "./main"
+      ],
+      "readmeFirstParagraph": null,
+      "hasChangelog": false,
+      "files": 8,
+      "tests": 1
+    },
+    {
+      "name": "@effect/ai-docgen",
+      "path": "packages/tools/ai-docgen",
+      "group": "tools",
+      "description": "Generates docs for the clankers",
+      "version": "0.0.0",
+      "private": true,
+      "dependencies": [
+        "@effect/platform-node",
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        "./*",
+        "./bin",
+        "./main"
+      ],
+      "readmeFirstParagraph": null,
+      "hasChangelog": false,
+      "files": 2,
+      "tests": 0
+    },
+    {
+      "name": "@effect/api-diff",
+      "path": "packages/tools/api-diff",
+      "group": "tools",
+      "description": null,
+      "version": "0.0.0",
+      "private": true,
+      "dependencies": [
+        "@effect/platform-node",
+        "@effect/vitest",
+        "effect"
+      ],
+      "exports": [
+        ".",
+        "./*",
+        "./bin"
+      ],
+      "readmeFirstParagraph": "`@effect/api-diff` compares the consumer-visible TypeScript declarations emitted by two repository revisions. Its JSON output is canonical; the Markdown report is intended for migration review and does not make semantic-version compatibility claims.",
+      "hasChangelog": false,
+      "files": 13,
+      "tests": 9
+    },
+    {
+      "name": "@effect/bundle",
+      "path": "packages/tools/bundle",
+      "group": "tools",
+      "description": "Bundle size testing infrastructure for Effect packages",
+      "version": "0.0.0",
+      "private": true,
+      "dependencies": [
+        "@effect/platform-node",
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        "./*"
+      ],
+      "readmeFirstParagraph": "This package contains the internal bundle-size tooling used to measure Effect entrypoints with Rollup, minification, and gzip.",
+      "hasChangelog": false,
+      "files": 6,
+      "tests": 2
+    },
+    {
+      "name": "@effect/docgen",
+      "path": "packages/tools/docgen",
+      "group": "tools",
+      "description": "An opinionated documentation generator for Effect projects",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "@effect/platform-node",
+        "@effect/vitest",
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        "./schema.json",
+        ".",
+        "./*",
+        "./index",
+        "./bin"
+      ],
+      "readmeFirstParagraph": "An opinionated documentation generator for Effect projects.",
+      "hasChangelog": true,
+      "files": 10,
+      "tests": 4
+    },
+    {
+      "name": "@effect/doctest",
+      "path": "packages/tools/doctest",
+      "group": "tools",
+      "description": "Runs TypeScript documentation examples as Vitest tests",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "@effect/vitest",
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./index",
+        "./internal/*"
+      ],
+      "readmeFirstParagraph": "`@effect/doctest` extracts marked TypeScript examples from JSDoc comments, Markdown, and MDX files, then runs each example as an isolated Vitest module.",
+      "hasChangelog": true,
+      "files": 7,
+      "tests": 5
+    },
+    {
+      "name": "@effect/jsdocs",
+      "path": "packages/tools/jsdocs",
+      "group": "tools",
+      "description": "JSDoc extraction tools for Effect",
+      "version": "0.0.0",
+      "private": true,
+      "dependencies": [
+        "@effect/vitest",
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./bin"
+      ],
+      "readmeFirstParagraph": null,
+      "hasChangelog": false,
+      "files": 2,
+      "tests": 1
+    },
+    {
+      "name": "@effect/openapi-generator",
+      "path": "packages/tools/openapi-generator",
+      "group": "tools",
+      "description": "Generate Effect Schema types, HTTP clients, and HttpApi modules from OpenAPI specifications",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "@effect/platform-node",
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        "./*",
+        "./bin",
+        "./main"
+      ],
+      "readmeFirstParagraph": "Generates Effect `Schema` types, HTTP clients, and `HttpApi` modules from OpenAPI specifications.",
+      "hasChangelog": true,
+      "files": 9,
+      "tests": 7
+    },
+    {
+      "name": "@effect/oxc",
+      "path": "packages/tools/oxc",
+      "group": "tools",
+      "description": "Opinionated linting and formatting configuration for Effect",
+      "version": "0.0.0",
+      "private": true,
+      "dependencies": [],
+      "exports": [
+        "./package.json",
+        "./oxlint",
+        "./oxlint/rules/*",
+        "./oxlintrc.json"
+      ],
+      "readmeFirstParagraph": null,
+      "hasChangelog": false,
+      "files": 6,
+      "tests": 4
+    },
+    {
+      "name": "@effect/utils",
+      "path": "packages/tools/utils",
+      "group": "tools",
+      "description": "Build tools for the repositories following the Effect standard setup",
+      "version": "0.0.0",
+      "private": true,
+      "dependencies": [
+        "@effect/platform-node",
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        "./*",
+        "./commands/*",
+        "./bin"
+      ],
+      "readmeFirstParagraph": null,
+      "hasChangelog": false,
+      "files": 4,
+      "tests": 1
+    },
+    {
+      "name": "@effect/vitest",
+      "path": "packages/vitest",
+      "group": "vitest",
+      "description": "A set of helpers for testing Effects with vitest",
+      "version": "4.0.0-rc.118",
+      "private": false,
+      "dependencies": [
+        "effect"
+      ],
+      "exports": [
+        "./package.json",
+        ".",
+        "./*",
+        "./internal/*",
+        "./index",
+        "./*/index"
+      ],
+      "readmeFirstParagraph": "Helpers for testing Effect-based code with [Vitest](https://vitest.dev). Provides an enhanced `it` function with support for scoped tests, test services such as `TestClock`, shared layers, and property testing.",
+      "hasChangelog": true,
+      "files": 3,
+      "tests": 8
+    }
+  ]
+}

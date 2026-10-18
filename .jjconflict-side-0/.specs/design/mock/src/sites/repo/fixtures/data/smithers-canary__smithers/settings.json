@@ -1,0 +1,68 @@
+{
+  "members": [
+    {
+      "login": "maya",
+      "role": "owner",
+      "added": "2026-08-31T12:00:00Z"
+    },
+    {
+      "login": "lander",
+      "role": "member",
+      "added": "2026-08-31T12:00:00Z"
+    }
+  ],
+  "invites": [],
+  "secrets": [
+    {
+      "name": "NPM_TOKEN",
+      "updated": "2026-10-16T12:00:00Z",
+      "usedBy": [
+        "release"
+      ]
+    }
+  ],
+  "models": [
+    {
+      "provider": "claude",
+      "state": "connected",
+      "account": "maya",
+      "connected": "2026-10-16T12:00:00Z"
+    },
+    {
+      "provider": "codex",
+      "state": "connected",
+      "account": "maya",
+      "connected": "2026-10-16T12:00:00Z"
+    }
+  ],
+  "environment": [
+    {
+      "name": "Linux arm64",
+      "image": "node:26.4.0",
+      "updated": "2026-10-17T12:00:00Z",
+      "size": "4 CPU \u00b7 8 GB",
+      "isDefault": true
+    }
+  ],
+  "sandboxes": {
+    "egress": "allowlist",
+    "allow": [
+      "registry.npmjs.org",
+      "github.com"
+    ],
+    "services": [
+      "postgres"
+    ],
+    "maxRunning": 3,
+    "idleSuspendMinutes": 20
+  },
+  "webhooks": [],
+  "sync": {
+    "github": {
+      "state": "ok",
+      "lastSync": "2026-10-18T04:18:39Z",
+      "app": "Smithers"
+    }
+  },
+  "reporting": "signed-in"
+}

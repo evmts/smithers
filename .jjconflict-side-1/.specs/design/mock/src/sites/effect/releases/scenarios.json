@@ -1,0 +1,43 @@
+{
+  "origin": "mock-scenario",
+  "preview": {
+    "nextVersion": "4.0.0-rc.119",
+    "baseSha": "7a13bb72e79ff883e62ca95f69eae180a242d6dd",
+    "movedSha": "399df09b4bf4102f7e5be8feceffa9e5a33c8a8b"
+  },
+  "failure": "The version branch could not be pushed. Main is unchanged.",
+  "pull": {
+    "n": 111,
+    "title": "Version packages",
+    "state": "open",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "agent": { "run": "run-4803", "flow": "release-plan", "harness": "Codex · gpt-6.1-sol", "for": "maya" },
+    "base": "main",
+    "head": "changeset-release/main",
+    "opened": "2026-10-18T04:45:00Z",
+    "updated": "2026-10-18T04:45:00Z",
+    "body": "## Version packages\n\nRelease the 31 public packages as **4.0.0-rc.119** under the `rc` tag. Seven private tools are excluded.\n\n### Pending changesets\n\n- Restrict `Schema.brand` to one concrete identifier; compose brands with repeated calls.\n- Retry failed workflow resets before acknowledging deferred completion.\n\nA person reviews and merges this PR. The Release workflow publishes after merge.\n\n[Release plan](releases/plan) · [Preparation run](runs/run-4803)",
+    "reviewers": ["maya"],
+    "reviews": [],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [{ "name": "Check", "state": "pending", "detail": "Waiting for the version branch checks." }],
+    "commits": ["ec119ec119ec119ec119ec119ec119ec119ec119"],
+    "files": [],
+    "fixes": [],
+    "labels": []
+  },
+  "commit": {
+    "sha": "ec119ec119ec119ec119ec119ec119ec119ec119",
+    "title": "Version packages",
+    "author": "smithers-agent",
+    "agent": { "run": "run-4803", "flow": "release-plan", "harness": "Codex · gpt-6.1-sol", "for": "maya" },
+    "date": "2026-10-18T04:45:00Z",
+    "parents": ["7a13bb72e79ff883e62ca95f69eae180a242d6dd"],
+    "branches": ["changeset-release/main"],
+    "checks": [],
+    "verified": true,
+    "files": []
+  }
+}

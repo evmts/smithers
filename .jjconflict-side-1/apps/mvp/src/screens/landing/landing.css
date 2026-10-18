@@ -1,0 +1,26 @@
+/* Page layout only; components and colors come from @smthrs/ui. */
+.landing {
+  min-height: 100dvh;
+  padding: 2rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.landing-title { margin: 0 0 1.6rem; }
+
+.landing-tagline {
+  max-width: 52rem;
+  margin: 0 0 2.6rem;
+  font-size: clamp(1.25rem, 2.6vw, 1.8rem);
+  color: var(--text-muted);
+}
+
+.landing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.9rem;
+}

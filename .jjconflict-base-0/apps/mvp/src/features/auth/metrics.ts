@@ -1,0 +1,22 @@
+import { Metric } from "effect"
+
+// Usage metrics for sign-in, exported over OTLP with the rest of the browser's telemetry (docs/observability.md).
+// Labels carry outcomes, never who signed in.
+
+/** Presses of "Sign in with GitHub". */
+export const signInPresses = Metric.counter("smithers_web_sign_in_presses", {
+  description: "Times a person pressed Sign in with GitHub",
+  incremental: true,
+})
+
+/** Sign-outs, by `outcome`: `signed_out` or `failed`. */
+export const signOuts = Metric.counter("smithers_web_sign_outs", {
+  description: "Sign-outs from this tab, by outcome",
+  incremental: true,
+})
+
+/** Device wipes after a sign-out, by `outcome`: `wiped` or `failed`. */
+export const deviceWipes = Metric.counter("smithers_web_device_wipes", {
+  description: "Times a sign-out wiped this device's synced data and outbox, by outcome",
+  incremental: true,
+})

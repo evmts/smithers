@@ -1,0 +1,43 @@
+{
+  "defaultRepo": "smithers-canary/smithers",
+  "paths": {
+    "/tree/main/src": "/tree/main/packages",
+    "/tree/main/src/*": null,
+    "/blob/main/README.md": "/blob/main/README.md",
+    "/blob/main/src/router.ts": "/blob/main/packages/backend/process/repository_receipt.go",
+    "/blame/main/README.md": "/blame/main/README.md",
+    "/blame/main/src/router.ts": "/blame/main/packages/backend/process/repository_receipt.go",
+    "/commits/main/src/router.ts": "/commits/main/packages/backend/process/repository_receipt.go",
+    "/issues/31": null,
+    "/issues/*": null,
+    "/pull/*": null,
+    "/commit/*": null,
+    "/runs/*": null,
+    "/flows/*": null,
+    "/wiki/*": null,
+    "/branches/*": null,
+    "/releases/tag/*": null,
+    "/docs/*": null,
+    "/issues/new": "/issues/new"
+  },
+  "views": {},
+  "notes": {
+    "editing": "Targets are relative to LIVE_REPO. Exact paths win over /* prefixes. Null means not deployed, never score zero. Add verified live issue/PR/run/commit equivalents after deployment. Set views.<id> to null only when no equivalent is deployed; remove that entry once deployed.",
+    "fixtures": "File equivalents are candidates for both Smithers repositories, not verification. The upstream release issue 4022 maps only for smithersai/smithers; no canary issue equivalent is assumed. HTTP 404/410 remains not deployed.",
+    "repositories": "Defaults to smithers-canary/smithers. LIVE_REPO=smithersai/smithers retains upstream paths. Per-repo paths override shared paths. Add Docs to declaredTabs only when that live repository declares docs."
+  },
+  "repositories": {
+    "smithers-canary/smithers": {
+      "declaredTabs": [],
+      "paths": {
+        "/issues/31": null
+      }
+    },
+    "smithersai/smithers": {
+      "declaredTabs": [],
+      "paths": {
+        "/issues/31": "/issues/4022"
+      }
+    }
+  }
+}

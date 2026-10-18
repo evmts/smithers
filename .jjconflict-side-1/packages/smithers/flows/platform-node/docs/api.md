@@ -1,0 +1,1281 @@
+---
+title: "API reference"
+description: "Every export of @smthrs/platform-node: the NodeHost layers, the AtomicFileSystem adapter and its glob grammar, HostLiveness, ScopedProcess, FetchTransport, EgressHttpClient and its name resolver, ProcessReaper's lifecycle and refusals, NodeGarbageCollector for Microsandbox, NodeLanguageServer for @smthrs/std, and the durable flow runtime on Node: NodeRuntime, NativeRuntime, SandboxedFlow and TestNodeRuntime."
+---
+
+`@smthrs/platform-node` composes the closed five-tag Host surface for Node.
+`NodeHost.layer` provides all of it:
+
+```ts
+import { NodeHost } from "@smthrs/platform-node"
+import * as Effect from "effect/Effect"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+
+const program = Effect.gen(function*() {
+  const spawner = yield* ChildProcessSpawner
+  return yield* spawner.string(ChildProcess.make("printf", ["hello"]))
+}).pipe(Effect.provide(NodeHost.layer))
+```
+
+:::warning
+These adapters require host APIs such as `node:child_process`; they cannot run
+in a browser. Use [@smthrs/platform-browser](/api/platform-browser) for a browser
+host and [@smthrs/platform-bun](/api/platform-bun) for the Bun host bundle.
+`ScopedProcess` supports ordinary Node and Bun runtime executables.
+:::
+
+There is no shell service. Running a command is Effect's `ChildProcess` /
+`ChildProcessSpawner`; a wall-clock budget is `Effect.timeout` around the
+effect, and cancellation is fiber interruption, never an `AbortSignal`. There is
+no HTTP service either: an outgoing request is Effect's `HttpClient`, provided
+here as `EgressHttpClient.layer(environment)`. That layer is Undici through the egress proxy
+`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` name, and the plain
+`NodeHttpClient.layerUndici` pool when they name none. Undici installs no
+redirect interceptor either way, so every hop stays visible to
+[@smthrs/kernel](/api/kernel).
+
+The complete host bundles build without jj. Their `Jj` service probes
+`jj --version` on its first operation, through the runner its repository
+commands use, and fails that operation with `JjError` `not_installed` or
+`unsupported_version`. `Jj` operations need jj 0.39.0 or newer.
+
+## Requirements
+
+| Requirement                     | Why                                                                   |
+| ------------------------------- | --------------------------------------------------------------------- |
+| Node.js >=22.19.0               | the minimum this package's `engines` field declares                   |
+| the `smithers-jj-export` helper | `AtomicFileSystem` runs every guarded filesystem operation through it |
+| a POSIX host                    | Windows has none of those primitives and is unsupported               |
+
+The helper is a real prerequisite, not a soft one, and it fails LATE by
+design. `NodeHost.layer` builds cleanly on a host without it, because the
+executable is re-validated per request rather than once at construction: the
+file a path names can be replaced while a host runs, and a check that happened
+only at boot would be a check about a file that is no longer there. The
+consequence is that where no helper resolves, the layer builds, the run starts,
+and the first guarded filesystem call inside a flow body fails
+`PermissionDenied`. The package ships the helper for macOS, Linux, and Windows;
+to use another one, point the adapter at it. See
+[Configure the filesystem helper](./guides/configure-the-filesystem-helper.md).
+
+## Entry points
+
+| Import                                     | Source                                                                                                                                        | Platform   |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| `@smthrs/platform-node`                    | [src/index.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/index.ts)                           | Node       |
+| `@smthrs/platform-node/NodeHost`           | [src/NodeHost.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/NodeHost.ts)                     | Node       |
+| `@smthrs/platform-node/AtomicFileSystem`   | [src/AtomicFileSystem.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/AtomicFileSystem.ts)     | Node       |
+| `@smthrs/platform-node/HostLiveness`       | [src/HostLiveness.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/HostLiveness.ts)             | Node       |
+| `@smthrs/platform-node/ProcessReaper`      | [src/ProcessReaper.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/ProcessReaper.ts)           | Node       |
+| `@smthrs/platform-node/ScopedProcess`      | [src/ScopedProcess.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/ScopedProcess.ts)           | Node / Bun |
+| `@smthrs/platform-node/ProcessConfinement` | [src/ProcessConfinement.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/ProcessConfinement.ts) | Node / Bun |
+| `@smthrs/platform-node/ProcessSandbox`     | [src/ProcessSandbox.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/ProcessSandbox.ts)         | Node / Bun |
+
+The barrel exports `NodeHost`, `EgressHttpClient`, `FetchTransport`, `HostLiveness`,
+`ProcessReaper`, `ScopedProcess`, `ProcessConfinement`, `ProcessSandbox`,
+[`NodeGarbageCollector`](#nodegarbagecollector),
+[`NodeLanguageServer`](#nodelanguageserver), and the durable flow runtime:
+[`NodeRuntime`](#noderuntime), [`NativeRuntime`](#nativeruntime),
+[`SandboxedFlow`](#sandboxedflow), and [`TestNodeRuntime`](#testnoderuntime).
+`FetchTransport`, `NodeGarbageCollector`, `NodeLanguageServer` and the runtime
+modules have no subpath of their own; import them from the barrel.
+`AtomicFileSystem` is reached as `NodeHost.AtomicFileSystem` or through its own
+subpath, never from the barrel.
+
+`NodeHost` also re-exports the pieces it composes, so a program that wants one
+slot rather than the whole bundle needs no second dependency:
+
+| Re-export                          | What it is                                                       |
+| ---------------------------------- | ---------------------------------------------------------------- |
+| `NodeHost.AtomicFileSystem`        | this package's descriptor-relative filesystem, the bundle's slot |
+| `NodeHost.ProcessReaper`           | this package's containment sweep                                 |
+| `NodeHost.NodeCrypto`              | Effect's Node `Crypto`                                           |
+| `NodeHost.NodeFileSystem`          | Effect's raw Node filesystem, which carries NO atomic extension  |
+| `NodeHost.NodeChildProcessSpawner` | Effect's Node spawner                                            |
+| `NodeHost.NodeHttpClient`          | Effect's Undici-backed `HttpClient`                              |
+
+`NodeCrypto` is there for a different reason from the rest. `Crypto` is not a
+Host service, so it is not in the closed list, but every durable composition
+needs one and a program that already depends on this package for its host
+should not need a second dependency for the digest.
+
+`NodeHost.implementationIds` is a
+`Readonly<Record<HostServiceIds[number], string>>` naming the five raw bundle
+implementations. Contained factories replace the process runner with
+`ProcessReaper.layerSpawner`; the static identity table does not describe
+that substitution.
+
+## Layers
+
+| Layer                                       | Jj bound to           | Containment |
+| ------------------------------------------- | --------------------- | ----------- |
+| `NodeHost.layer`                            | the process directory | no          |
+| `NodeHost.layerAt(root)`                    | one absolute root     | no          |
+| `NodeHost.layerContained(options?)`         | the process directory | yes         |
+| `NodeHost.layerContainedAt(root, options?)` | one absolute root     | yes         |
+
+The contained pair is what [`NodeRuntime.layerHost`](#layerhost) composes. Each pipeline leg
+gets a prepared supervisor, a `SIGTERM`-then-`SIGKILL` deadline, and a
+`ProcessLedger` record before activation, `jj` runs
+through that same spawner rather than starting its own children, and
+`ProcessReaper.reap` sweeps the records a crashed incarnation left behind while
+the layer is built. The ledger is a requirement rather than a default: only the
+program knows whether it has a durable one.
+
+`NodeHost.ContainedOptions` is `graceMs` plus the reaper's `ownerPid` and
+`system`. It deliberately omits `ContainedSpawner.Options.platform`. The
+platform comes from the real `process.platform`, so the native process group
+and recorded identity agree. A caller cannot describe a Windows record for an
+owner that actually leads a POSIX group.
+
+## ScopedProcess
+
+A small scoped process API for transient CLI commands. It uses the same POSIX
+supervisor lifecycle as the contained hosts without requiring a filesystem,
+repository service, or durable process ledger.
+
+```ts
+interface Options extends ChildProcess.KillOptions {
+  readonly command: string
+  readonly args?: ReadonlyArray<string> | undefined
+  readonly cwd?: string | undefined
+  readonly env?: Readonly<Record<string, string | undefined>> | undefined
+  readonly stdin?: "ignore" | "pipe" | undefined
+  readonly windowsVerbatimArguments?: boolean | undefined
+  readonly windowsHide?: boolean | undefined
+}
+
+interface Handle extends ChildProcessHandle {
+  readonly targetPid: number
+}
+
+const spawn: (options: Options) => Effect.Effect<Handle, PlatformError, Scope>
+
+interface Status {
+  readonly code: number | null
+  readonly signal: ChildProcess.Signal | null
+}
+
+const status: (handle: ChildProcessHandle) => Effect.Effect<Status, PlatformError>
+```
+
+`spawn` runs the literal executable and argv with piped stdout/stderr and
+`stdin: "ignore"` by default. When `env` is provided it is the complete target
+environment; when omitted it inherits the host environment. The default
+termination policy is `SIGTERM`, then `SIGKILL` after 2,000 milliseconds.
+`windowsHide` defaults to true. Failed startup cleans up its child scope before
+returning an error.
+
+On POSIX, `handle.pid` identifies the live supervisor and `targetPid` identifies
+the native target for diagnostics. `exitCode` describes the target;
+`status(handle)` preserves a terminating signal as `{ code: null, signal }`.
+A missing or invalid target result remains a platform failure. Use the handle's
+`kill` for cleanup rather than signalling either numeric pid yourself.
+
+Drain stdout, stderr, stdin and status concurrently when using pipes. Keep the
+whole operation inside `Effect.scoped`; a target's natural exit also triggers
+cleanup of children holding those pipes open. The private parent connection
+requests cleanup on host loss, and the supervisor's group guardian kills the
+group on supervisor loss. This API has no durable ledger; use
+`NodeHost.layerContained` when a later host must reconcile retained records.
+
+## ProcessReaper.layerSpawner
+
+```ts
+type SpawnerOptions = Omit<ContainedSpawner.Options, "platform">
+
+const layerSpawner: (
+  options?: SpawnerOptions
+) => Layer.Layer<ChildProcessSpawner, never, ChildProcessSpawner | ProcessLedger>
+```
+
+Provides a contained spawner without the complete Node or Bun host. Supply a
+`ProcessLedger` and the underlying runtime spawner. On POSIX this factory uses
+the platform's prepared native adapter, whose pipe error listeners live until
+their descriptors close, including writes interrupted by owner loss. On
+Windows it retains the supplied raw runtime spawner. The platform always comes
+from `process.platform`; `graceMs` defaults to 2,000 milliseconds.
+
+The adapter supports the standard command's stdin/stdout/stderr options and
+additional descriptors named `fdN` for indices 3 through 65,535. Recognized
+indices outside that finite integer range fail before target execution; the
+operating system may impose a lower limit. Names Effect does not recognize
+are ignored. A missing target result fails status and pending I/O; it never
+proves successful cleanup.
+
+`NodeHost.layerContained`, `BunHost.layerContained`, and their rooted variants
+use this factory. It records new owners; `ProcessReaper.layer` separately
+reconciles records inherited from a previous incarnation.
+
+## ProcessReaper.processLifecycle
+
+```ts
+const processLifecycle: ContainedSpawner.Lifecycle
+```
+
+The lower-level Node/Bun platform hook for custom
+`ContainedSpawner.layer(options, lifecycle)` compositions. Prefer
+`ProcessReaper.layerSpawner` for the supplied native adapter as well as the
+lifecycle.
+It prepares a live supervisor, lets the kernel commit the owner identity with
+the original command digest, and activates the target only afterward. The
+supervisor keeps group ownership until cleanup completes, including after a
+natural target exit. Each pipeline leg gets its own owner and ledger record.
+
+The returned handle's `pid` is the supervisor's, while `exitCode` and
+`isRunning` describe the target. `unref` changes liveness references without
+relinquishing cleanup ownership. Scope close and repeated explicit kills share
+one cleanup result; the first accepted policy wins. Failed or unverified
+cleanup fails close and leaves `settled` false so the kernel retains its record.
+
+Default POSIX commands own a separate process group. With `detached: false`,
+the supervisor and target share the caller's group, and cleanup signals only
+the target: group cleanup is explicitly disabled. Explicit stopping of a live
+grouped target also attempts a revalidated ancestry sweep for descendants that
+moved to other groups. That positive-PID sweep is best effort; automatic
+cleanup after natural exit does not promise to reclaim deliberately escaped
+sessions. Windows remains unsupported best effort.
+
+The supervisor starts the current Node or Bun runtime. Compiled Bun
+applications and Node single-executable applications are refused before target
+execution because they do not implement the runtime's eval entry point.
+
+## Filesystem
+
+`AtomicFileSystem.layer` is `NodeHost`'s filesystem slot, and it is not Effect's
+`NodeFileSystem`. Node exposes no `openat(2)` or `renameat(2)`, so the adapter
+delegates each operation to a POSIX helper that opens the workspace root once,
+walks every component with `O_NOFOLLOW`, and performs the final syscall relative
+to a pinned parent descriptor. Under [@smthrs/kernel](/api/kernel)'s
+`FileSystem.layer` that is what makes a symlink swapped in after authorization
+unable to redirect the operation, and it is why the bundle returns
+`PermissionDenied` for an out-of-root path, a hard link, a symlink, or a special
+file rather than performing raw effects.
+
+An aliased workspace root and its canonical `realPath` spelling address the
+same pinned descriptor. Paths returned by `realPath` can therefore be used for
+subsequent reads, writes, and atomic sibling replacement. Capability resources
+remain rooted at the logical workspace name; child symlinks, sibling paths,
+and replacement of the pinned root retain the same refusal checks.
+
+| Constant or constructor               | What it is                                                            |
+| ------------------------------------- | --------------------------------------------------------------------- |
+| `AtomicFileSystem.layer`              | the adapter with every default                                        |
+| `AtomicFileSystem.layerWith(options)` | the same, with the helper and the ceilings configured                 |
+| `AtomicFileSystem.defaultExecutable`  | `/usr/local/bin/smithers-jj-export`, the last path searched           |
+| `AtomicFileSystem.defaultLimits`      | 16 MiB content, 24 MiB request, 24 MiB response, 64 KiB helper stderr |
+| `AtomicFileSystem.defaultConcurrency` | `os.availableParallelism()`                                           |
+| `AtomicFileSystem.defaultTimeoutMs`   | 300000                                                                |
+| `AtomicFileSystem.AtomicHelperError`  | the tagged configuration failure, below                               |
+
+**Configuration errors.** An option outside its bounds, a request that cannot
+be serialized, and a helper that is missing, unusable, or untrusted fail with
+`AtomicHelperError` (`_tag` `@smthrs/platform-node/AtomicHelperError`), never a
+bare `Error`. Classify one by `code`. A rejected option or request reaches an
+operation as `BadArgument` whose `cause` is the `AtomicHelperError`;
+`AtomicFileSystem.resolveHelper()` throws it directly.
+
+| `code`                          | Raised when                                                                 |
+| ------------------------------- | --------------------------------------------------------------------------- |
+| `limit_invalid`                 | a `limits` byte ceiling is not a positive safe integer within its bound     |
+| `concurrency_invalid`           | `concurrency` is not a positive integer                                     |
+| `timeout_invalid`               | `timeoutMs` is not a positive integer no greater than 2147483647            |
+| `request_not_serializable`      | JSON has no form for the request                                            |
+| `helper_missing`                | no helper exists at any searched location; the message carries install hint |
+| `helper_unusable`               | `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` names a helper that cannot run        |
+| `helper_path_invalid`           | the helper path is relative, ends in a separator, or loops through links    |
+| `helper_not_regular_file`       | the helper path is not a regular file                                       |
+| `helper_inside_workspace`       | the helper lives in, or appeared in, the confined workspace                 |
+| `staging_directory_not_private` | the per-user staging directory is a link or has another owner               |
+| `staging_unavailable`           | no location can hold a staged copy of the helper                            |
+
+**Protocol faults.** A helper that answers out of protocol, over a bound, or
+not at all fails closed: the operation fails with a `PlatformError` whose `cause`
+is an `AtomicHelperFault` (`_tag` `@smthrs/platform-node/AtomicHelperFault`).
+Classify one by `code`: `response_unframed`, `response_tag_unknown`,
+`response_length_invalid`, `response_length_mismatch`, `envelope_malformed`,
+`field_malformed`, `file_type_unknown`, `payload_malformed`,
+`read_limit_exceeded`, `entries_malformed`, `batch_malformed`,
+`digest_malformed`, `result_malformed`, `operation_unsupported`,
+`helper_timeout`, `response_limit_exceeded`, `helper_rejected`, `helper_exited`.
+An errno the helper itself reports is an `AtomicHelperRejection` with the native
+`code` and `syscall`.
+
+**Cost.** Every operation starts one helper process. Under the kernel's guarded
+layer, authorization adds two more, resolving the path before and after the
+grant decision. That is the price of descriptor-relative confinement on a runtime with no
+`openat`, and it is why the adapter carries a process ceiling: without one, an
+`Effect.forEach(files, read, { concurrency: "unbounded" })` over fifty entries
+would start fifty helpers at once. Batch a wide fan-out, or raise
+`concurrency` deliberately. A directory listing is one helper for the whole tree,
+so `readDirectory(root, { recursive: true })` costs far less than a read per
+entry.
+
+Every field of `Options` except `executable` is read once, when the layer is
+built, so the ceilings cannot change under a running host.
+
+**Glob.** The helper cannot call Node's globber, so it implements the grammar:
+`*` and `?` inside one segment, `[...]` classes with `!` or `^` negation, `**`
+across zero or more whole segments, `{a,b}` alternation, a trailing `/` for
+directory-only matching, and the dotfile rule, which keeps a wildcard out of a
+name beginning with `.` while letting a segment that spells the dot, `.*` or
+`[.]*`, match one. Exclusions prune the walk itself: excluding a directory
+excludes everything below it, and nothing under an excluded directory is listed,
+counted against the entry ceiling, or charged against the response ceiling. An
+exclusion that names the root stops before the walk begins. An absolute exclude
+is rewritten against the glob root so it applies to the same names the selecting
+pattern does. The selecting pattern prunes the walk too: a directory is entered
+only when a remaining segment or an open `**` can still name something below it,
+and only selected names are charged against the response ceiling. A trailing `**` spans zero segments, so it also names its own
+anchor: a directory always, and a non-directory only when every segment before it
+is literal, which is the shortcut the native globber takes when it can address
+the path directly rather than read a directory. `top.txt/**` names the file;
+`t*.txt/**` names nothing. A one-member class is the literal it spells, so `[.]`
+is a `.` path segment: the globber drops a SPELLED `.` before it parses and
+collapses `[.]` only afterwards, so this one survives and, as the last segment,
+names its anchor under the same rule. One addition: a `**` immediately before it
+addresses nothing, so `**/[.]` names nothing while `**/deep/[.]` names the
+directory. Anywhere but last, and in an exclusion, a `.` segment names an entry
+no directory holds. Matching aligns path segments with bounded dynamic programming; each segment
+uses globset’s compiled, non-backtracking matcher.
+
+Two grammar bounds are refusals rather than silent truncation: a pattern longer
+than 4096 UTF-8 bytes, and one whose braces expand past 64 alternatives, both
+fail as `BadArgument`. The byte limit is checked before expansion; the alternative
+limit is enforced during bounded expansion. Each resulting alternative is
+validated before filesystem walking, so
+an over-large pattern costs no listing and answers with the typed refusal rather
+than with a fail-closed transport error. So do the three constructs this grammar
+does not implement: extglob (`+(a|b)`), any `[:` opener inside a character
+class (including POSIX classes), and brace bodies containing `..` (including
+ranges such as `{1..3}` and sets containing that text). These checks conservatively
+reject unsupported syntax before filesystem access. Reading unsupported constructs
+as ordinary characters could answer a different question; an exclusion could
+then return the paths it was meant to remove. The refusal therefore covers the exclude list as well
+as the pattern, and it recognises a character class, so `[!(]*` is an ordinary
+negated class and not an extglob.
+
+Backslashes follow Node's POSIX rules instead: an absolute selector and every
+exclude drop them while leaving following wildcard magic active; a relative
+selector containing one matches nothing. The public filesystem path is
+absolute, and the direct atomic protocol preserves the relative empty answer.
+
+Three answers are pinned rather than copied, because the native globber gives no
+single answer to copy.
+
+1. **Case.** Matching is case-sensitive on every host. Node's globber passes
+   `nocase: isMacOS || isWindows` with `nocaseMagicOnly: true`. On a
+   case-insensitive host a magic segment folds case (`*.TXT` finds `upper.txt`),
+   a literal segment the matcher decides is compared exactly (`**/MID.txt`
+   misses `mid.txt`), and a literal segment Node addresses directly comes back
+   with the pattern's own spelling (`TOP.TXT` returns `TOP.TXT`), even though the
+   directory does not hold that spelling. The adapter returns only names its
+   walk found. A pattern whose meaning depends on which host reads it is worse
+   than one that means the same everywhere, and worst of all in an exclusion,
+   so the adapter keeps one rule everywhere.
+2. **A trailing `**` in an exclusion** removes what is under a directory and
+   leaves the directory entry itself. Node's own answer here depends on the
+   shape of the SELECTING pattern: `**/*` with `exclude: ["nested/**"]` keeps
+   `nested`, and `**` with the same exclusion drops it. The adapter gives one
+   answer for every selector. Consequently, the directory-only `**/` names
+   directories below its own anchor but not that anchor: with `exclude: ["**/"]`,
+   `**` keeps the root and its files while pruning every directory.
+   Node empties the answer instead.
+3. **A dotted segment after `**`.** Node 22 matched nothing for `**/.hidden`;
+   Node 24 and later match the dotfiles. The adapter follows the newer reading
+   for the dotfiles themselves, but a `**` never spans a hidden directory, so
+   Node's further step of walking into a hidden directory that the next segment
+   matches is refused. With `.hidden/.secret` and `.hidden/.nested/.wanted`
+   present, Node returns `.hidden/.secret` for `**/.*` and `.hidden/.nested` for
+   `**/.*/**`; the adapter returns `.hidden` alone for both. Only a segment that
+   names the hidden directory enters it: `.hidden/.*` returns `.hidden/.nested`
+   and `.hidden/.secret`.
+
+**Removal.** `remove(path, { recursive: true })` walks iteratively with an
+explicit descriptor stack: depth is bounded at 512 levels and the total number
+of entries visited at 100000, counted as each directory is read, so a hostile
+wide directory is refused after 100000 names rather than allocated whole. One
+directory's names are read before any of its entries is unlinked, because
+unlinking from a directory while iterating it is undefined; the entry ceiling
+is what bounds the names held across the whole walk. Progress is partial on
+refusal, since entries already unlinked stay unlinked. `force: true` succeeds
+for a path whose ancestors do not exist, exactly as `fs.rm` does.
+
+## Liveness and reaping
+
+`ProcessReaper.groupSnapshotFor(platform)` selects the live cleanup probe,
+returning `(pgid) => { ownGroup, members } | undefined`. Each member carries
+`pid`, `startedAtMs`, and `zombie`. Linux reads `/proc` directly and needs no
+`ps` binary for live cleanup; other POSIX hosts use `/bin/ps`. Unreadable or
+malformed process data returns `undefined`, so the snapshot cannot claim
+success. `ProcessReaper.groupVacant(pgid)` asks the kernel first with signal 0:
+only `ESRCH` returns `true`, which proves the group has no process at all and
+needs no `ps` fork. A live member, a zombie, or any other error returns `false`,
+and the snapshot decides. `ProcessReaper.processLifecycle` uses both probes for
+the current platform.
+
+`HostLiveness.isAlive({ hostId })` is the probe a durable engine consults before
+it takes a run whose recorded owner it is not: an owner on a different host reads
+as alive, and an owner on this host reads as alive exactly while its pid is
+signalable. `@smthrs/run-store`'s `Ownership.sameHostPidProbe` answers the same
+question differently for a foreign host, and the two are not interchangeable;
+the JSDoc on `isAlive` names both inputs on which they disagree.
+
+`ProcessReaper.reap` kills the process groups a crashed incarnation of the same
+`hostId` abandoned. It signals a record only when every guard holds: the numbers
+name something the platform can signal, the group is not this host's, the owner
+is gone, and the pid still names the process the record describes. Two of those
+guards are identity questions: this process's own group, and when the
+recorded pid started. On Linux, `systemFor` answers both from `/proc`
+(`procSystem`), so an image without `procps` can still reap; other POSIX hosts
+ask `ps` (`posixSystem`). Either can go unanswered, and an unanswered guard
+refuses, because a guard that did not run is not a guard that passed. No
+evidence never authorizes a `SIGKILL`.
+
+`ProcessReaper.layer` reports every sweep: one log line with the kill count and
+the count per refusal, at `Warning` when `identity-unverified`,
+`own-group-unknown`, or `kill-failed` left a process running, and the
+`flows_process_reaper_refusals` counter with a `refusal` attribute.
+
+`reap` returns one `Reaped` per inherited record. The two outcomes are a union
+discriminated by `killed`: a killed entry carries no reason, and a kept entry
+always carries the `Refusal` that produced it, so one check on `killed` is what
+makes `refusal` readable.
+
+A refusal also decides whether the record is retired. Retiring says in the
+journal that nothing was signalled and stops every later incarnation
+re-examining a number the operating system has moved on from, so only a refusal
+a later incarnation cannot answer differently is final.
+
+| Refusal               | Retired |
+| --------------------- | ------- |
+| `owner-alive`         | no      |
+| `identity-unverified` | no      |
+| `own-group-unknown`   | no      |
+| `no-group`            | yes     |
+| `own-group`           | yes     |
+| `invalid-record`      | yes     |
+| `pre-boot`            | yes     |
+| `process-gone`        | yes     |
+| `identity-mismatch`   | yes     |
+| `kill-failed`         | no      |
+
+Windows reaping is unsupported best-effort. Windows is an unsupported platform
+and `AtomicFileSystem` fails every operation closed there, but
+`systemFor("win32")` still reaches `taskkill /T /F` through the sweep rather than
+retiring every record unsignalled, because a feature that appears to work
+partially is worse than one that says what it does.
+
+## Conformance
+
+The package runs the shared suite from
+[`@smthrs/kernel/test/contract`](/api/kernel) twice: once with explicit
+expectations, and once taking every default the suite offers, against a loopback
+HTTP server so the `HttpClient` success path is actually asserted rather than
+only its refusal. On top of that, the atomic
+filesystem is compared against `@effect/platform-node`'s own adapter: open
+flags, errno classification, `stat` fields, and the glob grammar are asserted
+row by row against the native implementation rather than against a hand-written
+expectation. Containment is driven over real detached process groups.
+
+## NodeGarbageCollector
+
+```ts
+import { NodeGarbageCollector } from "@smthrs/platform-node"
+```
+
+Node's full garbage collection, as the `MicrosandboxSandbox.GarbageCollector`
+service `@smthrs/sandbox`'s Microsandbox provider gives finished command
+handles back to the guest with.
+[`MicrosandboxSandbox`](../../sandbox/docs/api.md#microsandboxsandbox) says
+why a machine needs it.
+
+| Export      | What it is                                                                                                                                                                    |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `collector` | The process's one collector. Its first collection sets V8's `--expose-gc` flag and takes `gc` from a fresh `node:vm` context, so the process needs no `--expose-gc` at start. |
+| `layer`     | Provides `collector` as `MicrosandboxSandbox.GarbageCollector`.                                                                                                               |
+
+Every provider in the process shares `collector`, so all their command starts
+count toward the same collections. Nothing runs before the first collection.
+
+## NodeLanguageServer
+
+```ts
+import { NodeLanguageServer } from "@smthrs/platform-node"
+```
+
+[src/NodeLanguageServer.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/NodeLanguageServer.ts)
+
+A host Language Server Protocol client over the permission-checked process
+spawner, speaking framed JSON-RPC on ordinary stdio pipes. It binds
+[`@smthrs/std`](/api/std)'s `LanguageServer` service, which the `lsp` flow and
+the file-writing flows call. Bun runs it unchanged.
+
+| Export                 | Type                                                                                                          | Meaning                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `Config`               | interface                                                                                                     | `command`, `args?`, `cwd`, `extensions?`, `environment?`, `initializationOptions?`, `timeoutMs?`, `settleMs?`, `quietMs?`. |
+| `MAX_QUEUED_FRAMES`    | `256`                                                                                                         | Frames buffered for the server's standard input.                                                                           |
+| `MAX_PENDING_REQUESTS` | `512`                                                                                                         | Concurrent in-flight requests.                                                                                             |
+| `make`                 | `(config: Config \| ReadonlyArray<Config>) => Effect<LanguageServer, StdError, ChildProcessSpawner \| Scope>` | Starts every server and routes each file by extension.                                                                     |
+| `makeLazy`             | `(config: Config \| ReadonlyArray<Config>) => Effect<LanguageServer, StdError, ChildProcessSpawner \| Scope>` | Starts each server on the first request for one of its files.                                                              |
+| `layer`                | `(config: Config \| ReadonlyArray<Config>) => Layer<LanguageServer, StdError, ChildProcessSpawner>`           | Provides `make`.                                                                                                           |
+| `layerLazy`            | `(config: Config \| ReadonlyArray<Config>) => Layer<LanguageServer, StdError, ChildProcessSpawner>`           | Provides `makeLazy`.                                                                                                       |
+
+`LanguageServer` and `StdError` are `@smthrs/std`'s. `make` sends `initialize`
+with `cwd` as the root URI and then `initialized`, so the service is ready when
+it resolves. `timeoutMs` defaults to 30,000 and bounds every request and every
+write. A frame body may be 8 MiB and its headers 8 KiB. The child receives the
+host environment allowlist plus `Config.environment`. `initializationOptions`
+is sent on `initialize` unchanged. An empty config list fails with
+`invalid_input`.
+
+With several configs, each file goes to the server whose `extensions` include
+its extension, or else to the server that declares none; a file no server
+claims fails with `unsupported`. `workspaceSymbols` asks every server and
+concatenates their answers. `diagnostics` pulls `textDocument/diagnostic`; a
+server that answers `MethodNotFound` is read from its published diagnostics,
+waiting up to `settleMs` (default 5,000) for the latest synced text and
+`quietMs` (default 300) for a later publish.
+
+The server runs on the host as the host user. `make` and `makeLazy` fail with
+`permission_denied`, before spawning, when the program it would execute lies
+under `cwd`: a relative or absolute command there, a bare name found through a
+`PATH` entry there, or a workspace symlink to a host binary. An argument, or
+the value after `=` in one, that names an existing file or directory under
+`cwd` is refused the same way; `node <dir>` runs that directory's `index.js` or
+package `main`. A launcher is refused outright, because its arguments are code
+or package names the file check cannot see: a shell (`sh -c`, `bash`, `zsh`),
+`env`, a package runner (`npx`, `pnpm`, `npm`, `yarn`, `bunx`, `bun x`,
+`deno`), or `node` and `bun` given inline code or a preload (`-e`, `--eval`,
+`-p`, `-r`, `--require`, `--import`, `--loader`). Name the server's own host
+binary, or an interpreter and a host script file. What the server loads after
+it starts is not checked: by default typescript-language-server runs the
+workspace's `node_modules/typescript`, tsserver with `--allowLocalPluginLoads`
+loads `tsconfig` plugins from the project, and rust-analyzer runs build scripts
+and proc macros. Pin those to host copies through `initializationOptions` or
+the server's own flags (for typescript-language-server,
+`{ tsserver: { path: "<host>/tsserver.js" } }`), or run the server in a
+sandbox.
+
+Request failures include `method`. JSON-RPC refusals retain `rpcError` with the
+server's numeric `code`, `message`, and optional `data`, bounded by the 8 MiB
+frame limit. Failures attach the latest stderr tail when present, capturing at
+most 64 KiB. On stdout closure or process exit, draining stderr gets a bounded
+100 ms grace before pending requests fail. A server that cannot start fails
+with `provider_unavailable`.
+
+[Run a language server](./guides/run-a-language-server.md) walks through the
+configuration, the diagnostics timing, and measured settle times.
+
+## NodeRuntime
+
+```ts
+import { NodeRuntime } from "@smthrs/platform-node"
+```
+
+The supported Node composition: [`@smthrs/flows`](../../docs/api.md#runtime)'
+platform-neutral `Runtime` bound to Node's SQLite driver and this package's
+host. It opens `node:sqlite` through `@smthrs/database/node/NodeDatabase`, which
+is why the browser-safe `@smthrs/flows` root does not hold it. Installing this
+package installs `@smthrs/flows` and `@effect/sql-sqlite-node` with it.
+
+Construction is ordered by layer dependency: the SQLite parent directory is
+created before the database opens, migrations finish before any store is built,
+the engine is built over those stores, and `registerFlows` finishes before the
+resulting services are exposed. A persisted run therefore cannot resume through
+a composition before its flow has been registered.
+
+### `Options`
+
+Configuration for `make` and `layer`.
+
+On native Node and Bun hosts, `filename` may be outside `workspaceRoot`.
+The host creates its parent directory even when the injected filesystem refuses
+that path. Keeping the database outside a served checkout prevents engine
+writes from changing the working-copy tree. `workspaceRoot` still confines
+flow file actions; the database path is trusted host configuration.
+
+| Field              | Type                                               | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `filename`         | `string`                                           | SQLite database filename. Resolved to an absolute path at the call; its parent directory is created recursively.                                                                                                                                                                                                                                                                                                                      |
+| `workspaceRoot`    | `string`                                           | The workspace file actions may read or mutate. Resolved to an absolute path at the call.                                                                                                                                                                                                                                                                                                                                              |
+| `owner`            | `{ hostId: string }`                               | Stable identity of this engine host. Give each machine its own: a pid probe reads this machine's process table for every owner recorded under the same `hostId`.                                                                                                                                                                                                                                                                      |
+| `isAlive`          | `Ownership.LivenessCheck`                          | Whether a previously recorded owner is still alive. Required, and a stub is not an answer: a check that returns `false` without asking makes the engine steal runs out of live processes. Receives the claim context as well as the owner.                                                                                                                                                                                            |
+| `canExecute`       | `(row) => Effect<boolean>` (optional)              | Routes shared-store runs to the host configured for their workspace. Checked before claiming a run, including automatic wakes.                                                                                                                                                                                                                                                                                                        |
+| `canActivate`      | `(row) => Effect<boolean>` (optional)              | Read-only admission rechecked inside the native activation transaction. Use captured store reads and synchronous local probes; keep module loading and external I/O in `canExecute`.                                                                                                                                                                                                                                                  |
+| `requestResume`    | `(executionId, reason) => Effect<void>` (optional) | Records that the engine has asked a PARKED execution to resume: `"deferred"`, `"clock"`, or `"parent"`. A control plane that refuses to re-enter a parked run nobody asked for reads it to tell an engine wake from its own heartbeat sweep.                                                                                                                                                                                          |
+| `cacheEnvironment` | `Action.CacheEnvironment`                          | Optional. The complete runtime environment a sealed step's recorded result may be reused under. Absent by default, which keeps every sealed key scoped to its own run.                                                                                                                                                                                                                                                                |
+| `sourceRevision`   | `string \| (() => string \| undefined)`            | Optional. The revision of the tree this host read its flows out of, which every recorded graph page carries beside the declaration sites, so a reader opens the declared file at that revision and not at whatever is on disk. A host that only learns the answer after this call declares a reader instead of a string; it is asked once per recorded page, and an answer that is not a revision records nothing. Absent by default. |
+| `sweep`            | `"process" \| { host: string }` (optional)         | Who wakes this runtime's runs. `"process"`, the default, is what a native host is. See [`Runtime.Options`](../../docs/api.md#options).                                                                                                                                                                                                                                                                                                |
+
+`Ownership.sameHostPidProbe` from [`@smthrs/run-store`](../../run-store/docs/api.md) probes
+the process table only for the claim context's host (`context.claimant.hostId`).
+It returns `false` (treated as dead) for an owner on another host, allowing
+takeover once that owner's lease has expired. A fresh heartbeat still blocks
+takeover, except for an owner on this host whose pid the probe finds gone,
+which is taken at once. To preserve foreign-host owners, use [`HostLiveness.isAlive({ hostId })`](#liveness-and-reaping),
+which returns `true` for
+foreign hosts, or supply a distributed liveness check. `HostLiveness.isAlive`
+is the `layerHost` default and refuses foreign-host takeover even after lease
+expiry. A multi-process deployment answers from its supervisor or lease system.
+
+#### Cross-run step cache reuse
+
+A sealed action that declares an idempotency key, an implementation version and
+a `hard` `fileBoundary` publishes its result to the step cache. Whether a later
+run can read that result back is decided by `cacheEnvironment`.
+
+While it is absent the engine folds the execution id into the step key, so each
+run records its result under an address no other run can spell and nothing is
+reused across runs. This is the default because the engine cannot derive the
+value: it names the semantic runtime layers and the effective capability groups
+a result was computed under, and only the host knows both. Declare it and a
+second run addresses the first run's row, replays the recorded outputs, and
+never enters the body again.
+
+Declare it only when every machine that shares this database would have
+produced the same bytes under the layers named. The engine still re-measures a
+step's declared read set before serving a hit and refuses one whose declaration
+no longer matches the host, but it cannot check a claim about a toolchain, a
+model route, or a code version that the layers failed to name. A host that
+cannot enumerate its environment leaves the field out. An incomplete value is
+refused with `RuntimeConfigurationError` at construction, because it is cache
+key material.
+
+### `RuntimeConfigurationError`
+
+`storage`, `make`, `layer`, and `layerHost` throw `@smthrs/flows`'
+[`Runtime.RuntimeConfigurationError`](../../docs/api.md#runtimeconfigurationerror)
+synchronously for invalid construction input, with `field` naming the option and
+`NodeRuntime` leading the message. Nothing is created before it is thrown.
+
+### `storage`
+
+```ts
+const storage: (filename: string, workspaceRoot?: string) => Layer<...>
+```
+
+Provides the migrated database, the durable stores (`SqlJournal`, `RunStore`,
+`AttemptStore`, `CacheStore`, `DurableEngineState`), the `OwnerIdentity` minter,
+the `Workspace`, and a filesystem `ArtifactStore`, and constructs no engine.
+
+`workspaceRoot` defaults to the database file's own directory. The journal queue
+is created with capacity 1,024 and `overflow: "reject"`. Artifacts live beside
+the database under `objects/`, so a database at `<root>/.flows/engine.db` stores
+blobs in `<root>/.flows/objects`.
+
+This is the lower-level seam for an integration that builds another
+engine-backed service over the same storage context. Application entry points
+normally use `layer` or `layerHost`.
+
+### `make`
+
+```ts
+const make: (
+  options: Options,
+  stepBoundary: Layer<StepBoundary.Service, E1, R1>,
+  workspaceSandbox: Layer<WorkspaceSandbox.Service, E2, R2>,
+  registerFlows: Layer<A, E3, R3>,
+  registry?: Layer<A4, E4, R4>
+) => Effect<Context<...>, ..., Crypto | FileSystem | Jj | Scope>
+```
+
+Builds the production service context in the current scope and returns it. The
+caller selects the filesystem boundary and workspace sandbox layers and supplies
+a registration layer, typically a merge of action implementation layers and
+`Interpreter.layer(flow)`. `Jj`, Effect's `FileSystem`, and Effect's `Crypto`
+remain requirements. Closing the surrounding scope closes the database, the
+journal writer, the sweeper, and the active engine fibers through their existing
+finalizers.
+
+### `layer`
+
+```ts
+const layer: (
+  options: Options,
+  stepBoundary: Layer<StepBoundary.Service, E1, R1>,
+  workspaceSandbox: Layer<WorkspaceSandbox.Service, E2, R2>,
+  registerFlows: Layer<A, E3, R3>,
+  registry?: Layer<A4, E4, R4>
+) => Layer<..., ..., Crypto | FileSystem | Jj>
+```
+
+The same composition as a scoped `Layer`. `registerFlows` is the final startup
+phase rather than a layer merged beside the engine, which serializes the
+durability-sensitive order. Shutdown is scope closure; this function installs no
+process or signal handlers.
+
+`registry` is the optional catalog the registration phase reads from. A host that
+discovers its flows rather than listing them passes
+[`@smthrs/registry`](../../../agent/registry/docs/api.md)'s `Registry.layerProject({ root })`, and
+builds `registerFlows` from `Executable.layer(...)`. The registry is provided
+beneath registration and above the engine, so every discovered flow is
+registered before the runtime accepts a launch. Omitting it is exactly the
+registry-free behavior.
+
+`make`, `layer`, and `layerHost` require the registry argument when its type
+parameters name a service, error, or requirement. Omitting it is valid only
+when all three registry types are `never`.
+
+### `HostOptions`
+
+Configuration for `layerHost`. Only `filename`, `workspaceRoot`, and `owner` are
+required.
+
+| Field               | Type                                               | Default                            | Meaning                                                                                                                                                                                                                          |
+| ------------------- | -------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `filename`          | `string`                                           | required                           | SQLite database filename. Its parent directory is created recursively.                                                                                                                                                           |
+| `workspaceRoot`     | `string`                                           | required                           | The project workspace, resolved once while the host is constructed. Every Jj operation stays bound to that root.                                                                                                                 |
+| `owner`             | `{ hostId: string }`                               | required                           | Stable identity of this engine host. Give each machine its own: the default probe reads this machine's process table for every owner recorded under the same `hostId`, and takes a run at once from one whose pid it finds gone. |
+| `isAlive`           | `Ownership.LivenessCheck`                          | `HostLiveness.isAlive({ hostId })` | Whether a recorded owner is still alive. The default answers from this machine's process table and never declares another host's owner dead.                                                                                     |
+| `rules`             | `GrantStore.MakeOptions["rules"]`                  | none                               | The capability rules this host grants without asking. The grant store is unattended, so a capability no rule allows is denied rather than escalated. Accepts a flat rule list or a list of rulesets.                             |
+| `signals`           | `ReadonlyArray<NodeJS.Signals>`                    | `["SIGINT", "SIGTERM"]`            | The signals that shut the runtime down. An empty list installs no handler at all.                                                                                                                                                |
+| `shutdownTimeoutMs` | `number`                                           | `defaultShutdownTimeoutMs`         | How long a graceful shutdown may take before the host leaves with the signal's own exit code.                                                                                                                                    |
+| `containment`       | `ContainedSpawner.Options & ProcessReaper.Options` | none                               | Process containment and reaping options for the host spawner.                                                                                                                                                                    |
+| `canExecute`        | `(row) => Effect<boolean>`                         | none                               | The same shared-store routing check as the runtime `Options` field.                                                                                                                                                              |
+| `canActivate`       | `(row) => Effect<boolean>`                         | none                               | The same read-only native activation fence as the runtime `Options` field.                                                                                                                                                       |
+| `cacheEnvironment`  | `Action.CacheEnvironment`                          | none                               | The same cross-run cache environment as the runtime `Options` field, provided under the engine.                                                                                                                                  |
+| `sourceRevision`    | `string \| (() => string \| undefined)`            | none                               | The same source revision declaration as the runtime `Options` field, recorded on every graph page.                                                                                                                               |
+
+Every option is validated and snapshotted at the call. Rule arrays, rule
+objects, signal lists, and containment callbacks are all copied, and relative
+paths are resolved against the working directory as it stood at the call, so
+mutating the options object afterward changes nothing.
+
+### `defaultShutdownTimeoutMs`
+
+```ts
+const defaultShutdownTimeoutMs: 30_000
+```
+
+How long a graceful shutdown may take before the host leaves anyway.
+
+### `maximumShutdownTimeoutMs`
+
+```ts
+const maximumShutdownTimeoutMs: 2_147_483_647
+```
+
+The largest delay Node accepts without truncating it to a one-millisecond timer,
+and the upper bound `shutdownTimeoutMs` is validated against.
+
+### `signalExitCode`
+
+```ts
+const signalExitCode: (signal: NodeJS.Signals) => number
+```
+
+The status a process ended by `signal` exits with, which is 128 plus the
+signal number: `130` for `SIGINT`, `143` for `SIGTERM`. A host that installs a handler
+owes its supervisor the answer the default behavior would have given.
+
+### `layerHost`
+
+```ts
+const layerHost: (
+  options: HostOptions,
+  registerFlows: Layer<A, E, R>,
+  registry?: Layer<A2, E2, R2>
+) => Layer<...>
+```
+
+Provides the whole Node host, storage, kernel, and engine from one call. The
+returned layer has no requirements of its own; the registration and registry
+arguments may still declare theirs.
+
+What it adds over `layer`:
+
+- The complete Node host, [`NodeHost.layerContainedAt`](#layers), with
+  process containment on. A spawned process gets its own process group, is
+  signalled and then killed when its action's scope closes, and is recorded in
+  the `ProcessLedger` so the next incarnation of this host reaps whatever a
+  crash left running.
+- The kernel's guarded `Host` surface over an unattended `GrantStore`, so an
+  action reaches the host through the capability check rather than around it.
+  Engine snapshot bookkeeping uses a distinct private `Jj` service, so it grants
+  no repository authority to the action context.
+- The default `StepBoundary` and the filesystem `WorkspaceSandbox`, the pairing
+  that makes a sealed action's result eligible for the step cache.
+- Signal handling. `SIGINT` or `SIGTERM` closes the runtime scope, releasing
+  every run this host owns for another host to reclaim. A second signal, or a
+  shutdown that outlasts `shutdownTimeoutMs`, leaves with the signal's own exit
+  code instead of waiting on a finalizer that is not coming back.
+
+A program that needs a different host, a different policy, or no signals at all
+composes `layer` itself; nothing here is reachable only through this function.
+
+## NativeRuntime
+
+```ts
+import { NativeRuntime } from "@smthrs/platform-node"
+```
+
+The native lifecycle `NodeRuntime` and `@smthrs/platform-bun`'s `BunRuntime`
+share: opening the database a filename or PostgreSQL URL names, keeping
+artifacts on disk beside it, confining file actions to a workspace root, guarding
+flow bodies behind the capability kernel, and installing the shutdown signal
+handlers. A program uses `NodeRuntime` or `BunRuntime`; this is the seam a
+native host binds.
+
+| Export        | Signature                                       | Meaning                                                                                                                      |
+| ------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `make`        | `(platform: Platform) => Api`                   | Binds the lifecycle to one platform. Its result is the `storage`, `make`, `layer`, `layerHost`, and signal API above.        |
+| `Platform`    | `{ name, database, host, crypto }`              | The name configuration errors carry, the driver a filename opens, the host bundle (`layerAt`, `layerContainedAt`), `Crypto`. |
+| `Options`     | `Runtime.Options & { filename, workspaceRoot }` | The [options](#options) `make` and `layer` take.                                                                             |
+| `HostOptions` | see [`HostOptions`](#hostoptions)               | What `layerHost` takes.                                                                                                      |
+| `Api`         | `ReturnType<typeof make>`                       | The bound API, the type of each `NodeRuntime` and `BunRuntime` export.                                                       |
+
+## SandboxedFlow
+
+```ts
+import { SandboxedFlow } from "@smthrs/platform-node"
+```
+
+Runs a child flow's own code inside a machine a `Sandbox.Provider` provisions.
+`Sandbox.layerHost` from [`@smthrs/sandbox`](../../sandbox/docs/api.md) places a body's side
+effects on a machine while its TypeScript keeps running in the engine host; this
+module is the tier above that, where the child's own code executes in the guest.
+It is Node-only: it bundles with esbuild, which this package installs, and it
+starts a guest runtime. The error tag keeps its original
+`@smthrs/flows/SandboxedFlowError` spelling, so recorded failures still decode.
+
+```ts
+const run = Effect.gen(function*() {
+  const result = yield* SandboxedFlow.execute(Child, { n: 31 }, {
+    provider,
+    session: "child-1",
+    entry: new URL("./child.ts", import.meta.url),
+    runtime: "node",
+    captureWork: true
+  })
+  // result.output is Child's success value, decoded through Child's own schema.
+  // result.work is the Sandbox.Work git patch the guest left in its checkout.
+  return result
+})
+```
+
+`provider` is a `Sandbox.Provider` value you pass in: there is no string
+registry, no lookup by name, and no environment variable default. The authoring
+is `Flow.make` and `Action.make`, so a sandboxed child is declared the same way
+every other flow is.
+
+The runner protocol, the guest composition, the image requirements, and the
+session key's exclusivity are on
+[The sandboxed runner protocol](../../docs/concepts/runner-protocol.md).
+
+### `SandboxedFlowError`
+
+```ts
+class SandboxedFlowError extends Schema.TaggedError("@smthrs/flows/SandboxedFlowError")({
+  code:
+    | "bundle_failed"
+    | "session_failed"
+    | "guest_failed"
+    | "flow_failed"
+    | "result_unreadable"
+    | "result_invalid"
+    | "result_overflow"
+    | "diff_overflow"
+    | "capture_failed"
+    | "deadline_exceeded"
+  message: string
+  cause?: unknown
+})
+```
+
+The failure type every protocol refusal in this module raises.
+
+| `code`              | Meaning                                                                                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bundle_failed`     | The entry module could not be bundled.                                                                                                                |
+| `session_failed`    | The provider could not acquire the machine, or a file or process operation on it failed.                                                              |
+| `guest_failed`      | The guest runtime exited non-zero, including exit 126 or 127 for a runtime the image does not contain.                                                |
+| `flow_failed`       | The child flow ran and reported a failure, including an entry that exports no flow of the requested tag.                                              |
+| `result_unreadable` | The guest exited 0 but wrote no result, or one that is not the protocol's JSON, belongs to another attempt, or echoes a different capability ceiling. |
+| `result_invalid`    | The result's `output` does not decode through the flow's success schema.                                                                              |
+| `result_overflow`   | The result file exceeds `Limits.resultBytes`.                                                                                                         |
+| `diff_overflow`     | The captured patch exceeds `Limits.diffBytes`.                                                                                                        |
+| `capture_failed`    | Git refused the capture. The message starts with `not_a_repository`, `base_unresolved`, or `capture_failed`, the `Sandbox.CaptureError` reason.       |
+| `deadline_exceeded` | The whole session outlived `ExecuteOptions.timeout`.                                                                                                  |
+
+Messages quote the tail of the guest's stdout and stderr where they help, cut at
+4 KiB and marked when they were cut. A child's typed error arrives as its tag and
+its own fields, not as a stack trace into the bundle.
+
+### `ExecuteError`
+
+```ts
+const ExecuteError: Schema.Union<[typeof SandboxedFlowError, typeof PermissionDenied]>
+type ExecuteError = SandboxedFlowError | PermissionDenied
+```
+
+Every typed failure of a sandboxed execution. A child that needed a capability
+the caller's ceiling does not hold fails with the kernel's own
+`PermissionDenied` from `@smthrs/capability/Permission`, the same typed error a
+local run of the child fails with.
+
+### `Limits` and `ResolvedLimits`
+
+```ts
+interface Limits {
+  readonly resultBytes?: number | undefined
+  readonly diffBytes?: number | undefined
+}
+
+interface ResolvedLimits {
+  readonly resultBytes: number
+  readonly diffBytes: number
+}
+```
+
+Bounds on what comes back from the guest. An omitted or `undefined` bound keeps
+its default. A bound must be a non-negative safe integer; `execute` dies with a
+`TypeError` that names the field before it acquires a machine when one is
+`NaN`, infinite, negative, or fractional.
+
+### `defaultLimits`
+
+```ts
+const defaultLimits: ResolvedLimits
+```
+
+| Bound         | Default | What it caps                     |
+| ------------- | ------- | -------------------------------- |
+| `resultBytes` | 5 MiB   | The result JSON the guest wrote. |
+| `diffBytes`   | 100 MiB | The captured patch.              |
+
+Limits are inclusive and count UTF-8 bytes, not characters. `resultBytes`
+includes the complete JSON envelope. Result metadata can reject an oversized
+file before transfer, and the read stops at the byte budget plus one. Native
+filesystem streams receive `bytesToRead`; other providers use guest `head -c`,
+which the image must supply. `diffBytes` bounds what the result carries into
+the journal; the capture reads the whole patch before the bound is checked.
+
+Guest stdout and stderr are drained concurrently with fixed-size diagnostic
+tails retaining at most 4 KiB each, plus a truncation marker. Redaction runs during collection; when a credential
+continues beyond a retained segment, the rest of that line is omitted. An
+overlong unfinished quoted credential suppresses the rest of that stream.
+
+### `ExecuteOptions`
+
+| Field         | Type               | Default         | Meaning                                                                                                                                                                                                                                                                        |
+| ------------- | ------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `provider`    | `Sandbox.Provider` | required        | The provider that provisions the machine. A value, never a name.                                                                                                                                                                                                               |
+| `session`     | `string`           | required        | The session key the machine is acquired under. An exclusive claim: two live executions with one key share a machine, and the first to finish tears it down under the other. Reusing a key is what resume looks like.                                                           |
+| `entry`       | `URL \| string`    | required        | The module to bundle: a `file:` URL or an absolute path. It must export the flow being executed, under any name, and may export `layer`, an Effect `Layer` providing the implementations of the actions the flow's body names.                                                 |
+| `runtime`     | `string`           | `"node"`        | The guest executable that runs the bundle: `"node"`, `"bun"`, or an executable path. Each path is quoted as one shell word. Use a wrapper script for flags.                                                                                                                    |
+| `captureWork` | `boolean`          | `false`         | Whether to capture the workdir's changes as a `Sandbox.Work`. The workdir must be the top of a git work tree with `git` on the guest's `PATH`.                                                                                                                                 |
+| `limits`      | `Limits`           | `defaultLimits` | Bounds on the result and the patch.                                                                                                                                                                                                                                            |
+| `timeout`     | `Duration.Input`   | 10 minutes      | The wall-clock budget for the whole session, acquisition through result readback. Uses platform timers, including chunked timers for long finite budgets. `Duration.infinity` disables the deadline; a negative duration dies with a `TypeError` before a machine is acquired. |
+
+### `Result`
+
+```ts
+interface Result<A> {
+  readonly output: A
+  /** The workspace's work, or null when captureWork was off. */
+  readonly work: Sandbox.Work | null
+  /** The ceiling the guest enforced, as normalized any-of groups. No groups is unrestricted; null is no receipt. */
+  readonly capabilityCeiling: ReadonlyArray<ReadonlyArray<CapabilityPattern>> | null
+}
+
+const CapturedWork: Schema.NullOr<typeof Sandbox.Work> // decodes a missing key as null
+const EnforcedCeiling: Schema.NullOr<Schema.Array<Schema.Array<typeof CapabilityPattern>>> // decodes a missing key as null
+```
+
+`work` is `Sandbox.Work` from [`@smthrs/sandbox`](../../sandbox/docs/api.md): `Changed`
+with a `git diff --binary` patch from `base`, or `Unchanged`. It is plain
+tagged JSON, so the journal records it, and `SandboxMerge.apply` lands it on
+the host.
+`capabilityCeiling` is the receipt of the authority the child ran under. A
+result journaled before ceilings crossed the machine boundary has no receipt
+and decodes as `null`, which is not a claim of unrestricted authority.
+
+### `resultSchema` and `ResultSchema`
+
+```ts
+type ResultSchema<Success extends Schema.Top> = Schema.Struct<{
+  readonly output: Success
+  readonly work: typeof CapturedWork
+  readonly capabilityCeiling: typeof EnforcedCeiling
+}>
+
+const resultSchema: <Success extends Schema.Top>(success: Success) => ResultSchema<Success>
+```
+
+Builds the `Result` schema over a flow's success schema. This is what a parent
+flow declares as its own `success` when its body is one sandboxed call.
+
+### `execute`
+
+```ts
+const execute: <Tag, Payload, Success, Error, Requires>(
+  flow: Flow.Flow<Tag, Payload, Success, Error, Requires>,
+  payload: Payload["Type"],
+  options: ExecuteOptions
+) => Effect<Result<Success["Type"]>, ExecuteError>
+```
+
+Runs `flow` with `payload` inside a machine `options.provider` provisions. The
+session is acquired for the duration of the call and released when it returns,
+so a normal completion tears the machine down and only a host crash leaves one
+behind for a later execution with the same session key to reattach.
+
+`payload` is the decoded payload, encoded through the flow's payload schema for
+the wire. A value the schema's own JSON codec refuses is a programmer error and
+dies, the same posture `Flow.executionId` takes.
+
+The guest runs the child under the caller's current capability authority
+intersected with the child's own declaration, and can only narrow it. See
+[capability ceilings](../../docs/concepts/runner-protocol.md#capability-ceilings).
+
+With `captureWork`, the base is the workdir's `HEAD`, resolved with
+`Sandbox.resolveBase` as soon as the session is acquired, and the work is
+captured with `Sandbox.capture` before the session is released. A workdir that
+is not a git repository fails with `capture_failed` before the guest runs; this
+replaces the stat snapshot that once listed changed files in any directory. See
+[Capture the work a sandboxed child did](../../docs/guides/collect-a-workspace-diff.md).
+
+### `SandboxedAction` and `action`
+
+```ts
+type SandboxedAction<Tag, Payload, Success> = Action.Declared<
+  Tag,
+  Payload,
+  ResultSchema<Success>,
+  typeof ExecuteError
+>
+
+function action<Tag, Payload, Success, Error, Requires, const Name extends string>(
+  flow: Flow.Flow<Tag, Payload, Success, Error, Requires>,
+  options: { readonly name: Name }
+): SandboxedAction<Name, Payload, Success>
+function action<Tag, Payload, Success, Error, Requires, const Name extends string = never>(
+  flow: Flow.Flow<Tag, Payload, Success, Error, Requires>,
+  options?: { readonly name?: Name | undefined }
+): SandboxedAction<Name | `${Tag}/sandboxed`, Payload, Success>
+```
+
+Declares the durable action a parent flow calls to run `flow` in a sandbox. Its
+payload schema is the flow's, its success schema is `resultSchema` over the
+flow's, and its error schema is `ExecuteError`. The tag is
+`<flow tag>/sandboxed` unless `options.name` says otherwise. Both forms preserve
+the literal name, so providing one declaration's implementation cannot satisfy
+a differently named declaration. An optional name retains both possible tags.
+
+From the parent's point of view the whole sandboxed execution is one action: the
+engine journals one attempt, applies one retry policy, and replays one recorded
+result.
+
+### `ExecuteContext`
+
+```ts
+interface ExecuteContext<Payload> {
+  readonly payload: Payload
+  readonly executionId: string
+  readonly callId: string
+}
+```
+
+What `toLayer` hands an options function: the decoded payload, the parent
+execution's id, and the engine's invocation key as `callId`. Combine `executionId`
+and `callId` for a session key exclusive to this call, including parallel calls
+with identical payloads. `callId` is preserved across retries and resume.
+A runtime that supplies no `Action.CurrentInvocationKey` is refused as a defect
+before acquiring a session.
+
+### `toLayer`
+
+```ts
+const toLayer: <ActionTag, Tag, Payload, Success, Error, Requires>(
+  declared: SandboxedAction<ActionTag, Payload, Success>,
+  flow: Flow.Flow<Tag, Payload, Success, Error, Requires>,
+  options: ExecuteOptions | ((context: ExecuteContext<Payload["Type"]>) => ExecuteOptions)
+) => Layer<Action.Requirement<ActionTag>, never, FlowRuntime | ...>
+```
+
+Implements an `action` declaration with `execute`. `options` is either the
+placement itself or a function of the call's `ExecuteContext`:
+
+```ts
+SandboxedFlow.toLayer(RunChild, Child, ({ executionId, callId }) => ({
+  provider,
+  session: `child:${executionId}:${callId}`,
+  entry: new URL("./child.ts", import.meta.url)
+}))
+```
+
+Compose the returned layer beside `Interpreter.layer(parent)` over one
+`Action.layerImplementations`, exactly as any other action implementation.
+
+## TestNodeRuntime
+
+```ts
+import { TestNodeRuntime } from "@smthrs/platform-node"
+```
+
+[src/TestNodeRuntime.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/TestNodeRuntime.ts)
+
+A durable Node engine over one SQLite file, for tests and examples. The
+examples in `@smthrs/flows`, `@smthrs/agent` and `@smthrs/mcp` run on it.
+
+| Export          | Signature                                          | Meaning                                                                                                                       |
+| --------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `durableEngine` | `(filename: string, hostId: string) => Layer<...>` | `NodeRuntime.layer` over `filename`, owned as `hostId`, with the production step boundary and sandbox and the stores exposed. |
+| `requirements`  | `(filename: string) => Layer<...>`                 | The same stores, boundary, and sandbox without an engine, for reading a run back or driving a private engine.                 |
+| `stubJj`        | `Layer<Jj>`                                        | A Jujutsu service that records nothing. A sealed action never asks for it; a compensable one needs a real service.            |
+
+It is not a host: it grants no capabilities and its `Jj` restores nothing. A
+program uses [`NodeRuntime.layerHost`](#noderuntime).
+
+## Reading next
+
+[@smthrs/kernel](/api/kernel) owns the closed list and decorates these same tags
+with capability checks. [@smthrs/platform-bun](/api/platform-bun) and
+[@smthrs/platform-browser](/api/platform-browser) are the sibling bundles.
+
+## Pinned web connections
+
+`EgressHttpClient.layer(environment)` supplies the kernel destination-pinning
+contract, and it provides the name resolver that contract checks against. Web requests get a fresh dispatcher using only their authorized IP
+addresses. Host and TLS server name retain the requested hostname; TLS
+verification stays enabled. `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`
+select the route by hostname. Proxied requests use CONNECT to the approved IP,
+including plain HTTP, so the proxy cannot resolve the destination again.
+A proxy must support IP tunnels; refusal never falls back to direct access.
+Dispatchers close after their response body and are destroyed on failure or
+cancellation. Ordinary requests without the web destination policy retain the
+shared dispatcher, including local model connections.
+
+A request whose pinned addresses include none of the family Undici asks for
+fails with a `TransportError` whose `cause` is an `EgressAddressError` (`_tag`
+`@smthrs/platform-node/EgressAddressError`, `code` `no_approved_address`).
+
+Pinned web requests support HTTP and HTTPS proxies only. Other proxy schemes
+fail closed. The transport sets Host from the URL and discards caller-supplied
+proxy authorization and connection framing headers.
+
+### Name resolution
+
+`EgressHttpClient.resolveHost(hostname)` returns every address the system
+resolver answers for a name: `getaddrinfo` through `node:dns`, the lookup Node
+itself makes for a connection. A name the resolver does not know fails.
+
+```ts
+import { EgressHttpClient } from "@smthrs/platform-node"
+import { Effect } from "effect"
+
+const addresses = await Effect.runPromise(EgressHttpClient.resolveHost("localhost"))
+```
+
+`EgressHttpClient.layer(environment)` provides it as
+[`@smthrs/kernel`](/api/kernel)'s `HttpClient.ResolveHost`, beside the pinning
+client. The web tools in [`@smthrs/std`](/api/std) look each name up through
+that reference, check every address, and hand the checked addresses to the
+pinning client, so the addresses checked are the addresses the connection
+uses. `NodeHost` and `@smthrs/platform-bun`'s `BunHost` install the layer, so
+both get the resolver. The kernel's default `ResolveHost` refuses every name
+with `HttpClient.ResolveHostUnavailable`; a composition that installs a pinning
+client without this layer gets that refusal, which the web tools report as
+`unsupported`.
+
+## FetchTransport
+
+`FetchTransport.observe(origin)` reports how far each `fetch` to one origin got
+on the wire. It reads Node's own `undici` diagnostics channels, so it is Node
+only. It is not a Host service: like `NodeCrypto`, it carries no host authority,
+so it sits beside `NodeHost` rather than in the closed list.
+`@smthrs/model-host` takes it as its `CallbackTransportObserver`, and the Node
+model host passes it so a journal callback that never answers names its phase.
+
+```ts
+import { FetchTransport } from "@smthrs/platform-node"
+
+const observer = FetchTransport.observe("https://journal.example")
+const attempt = observer.begin()
+await attempt.run(() => fetch("https://journal.example/commit", { method: "POST" }))
+attempt.fields() // { transport: "received", reusedSocket: false, connectBegan: 1, connectEnded: 1 }
+observer.close()
+```
+
+| Member             | What it does                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| `observe(origin)`  | subscribes to the channels and returns an `Observer` for that origin                  |
+| `Observer.begin()` | starts one `Attempt`; after `close` it returns an attempt that reports `{}`           |
+| `Observer.runtime` | `{ node, platform, arch }` of this process, the build that fixes the bundled `undici` |
+| `Observer.close()` | stops observing; observers share one subscription, and a second `close` is ignored    |
+| `Attempt.run(fn)`  | runs one request so the dispatcher's records are attributed to this attempt           |
+| `Attempt.fields()` | ends the attempt and returns its `Fields`                                             |
+
+`fields()` always carries `transport`, the `Phase` the attempt reached:
+
+| Phase       | Meaning                                                                   |
+| ----------- | ------------------------------------------------------------------------- |
+| `none`      | the dispatcher never took the request                                     |
+| `created`   | the dispatcher took it and has not written it to a socket                 |
+| `sent`      | the request's headers are on a socket and the origin has answered nothing |
+| `responded` | the origin's response headers arrived and its body has not ended          |
+| `received`  | the response body ended                                                   |
+
+It adds `reusedSocket`, the connection counts `connectBegan`, `connectEnded` and
+`connectFailed` with `connectCode`, the resolution counts `lookupBegan` and
+`lookupEnded` with `lookupCode`, and a failure's `errorName` and `errorCode`,
+each only when there is something to report. Nothing names a path, header, body
+or destination. One attempt claims one request to its own origin; another
+origin's requests, and requests made outside any attempt, are attributed to
+nothing. A dial that a forward proxy carried records no resolution, because the
+name the socket resolved is the proxy's.
+
+## ProcessConfinement
+
+`ProcessConfinement.layer(options?)` provides the kernel's process confinement.
+Compose it as an input to `@smthrs/kernel/ChildProcessSpawner.layer`, alongside
+the same `GrantStore` and `Workspace` used for filesystem authorization. The
+kernel checks approval, snapshots effective grants, and confines every pipeline
+stage before spawning any stage. All `NodeHost` bundles supply this service;
+a guarded spawner without it refuses execution.
+
+`make(options?)` returns the same service directly. Options are:
+
+| Option               | Default                | Behavior                                                                                |
+| -------------------- | ---------------------- | --------------------------------------------------------------------------------------- |
+| `unavailable`        | `"refuse"`             | Refuse a missing mechanism; `"unconfined"` explicitly permits execution with a warning. |
+| `temporaryDirectory` | OS temporary directory | Parent for private, scope-owned temporary storage.                                      |
+| `host`               | Real host probes       | Injectable mechanism selection and filesystem probes.                                   |
+
+Linux needs `bwrap`; macOS needs `/usr/bin/sandbox-exec`. An installed mechanism
+that fails to start never falls back to unconfined execution. A shell request
+runs inside the wrapper, including its redirections and subprocesses. Streams,
+exit codes, and cancellation retain Effect's process contract.
+
+The profile accepts writable directory trees without broadening file grants to
+their parents. A writable tree also needs read authority and write authority
+for its directory entry because a writable bind exposes existing data and
+metadata. Unsupported globs, partial ceilings, and ambiguous deny regions
+stay closed. Networking opens only for unrestricted grants across all network
+actions. Closed networking blocks socket creation. Native agent commands keep
+host Unix sockets closed when IP networking opens, except the fixed macOS
+system DNS resolver endpoint.
+The launcher receives a minimal environment; the command's environment is
+restored inside confinement without putting its values in launcher arguments.
+macOS also denies delegation through host IPC services. Runtime paths and
+private temporary storage are bootstrap permissions;
+known host credential locations stay masked. Workspace links do not grant
+reads of their external targets. This boundary does not isolate trusted host
+JavaScript or supply a remote sandbox provider.
+
+## ProcessSandbox
+
+The build graph and `ProcessConfinement` share this mechanism implementation.
+`select(request, host)`, `plan(request, location, host)`, and `wrap(plan, argv,
+environment, host?)` resolve a request into an enforced command.
+`seatbelt`, `bubblewrap`, and `docker` render each supported mechanism;
+`host`, `validateWrites`, `environment`, `diagnose`, `isUnenforceable`, and
+`unenforceable` expose its host probes, validation, environment, diagnostics,
+and refusals. Requests name `network`, `reads`, and writable directory `writes`,
+with optional `mechanism`, `writeFiles`, `readOnly`, `externalReads`, `strict`,
+and `unixSockets`. Native agent confinement uses a strict process and IPC
+policy and closes Unix sockets; build tools retain their declared policy. Build
+output files may open a parent directory; agent permission profiles never use
+that build-specific option.

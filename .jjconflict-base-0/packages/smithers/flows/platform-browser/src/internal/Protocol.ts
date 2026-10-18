@@ -1,0 +1,169 @@
+/**
+ * The messages the engine's leader and its followers exchange over the
+ * engine's `BroadcastChannel`.
+ *
+ * - A follower posts a request (`Start`, `Poll`, `Cancel`, `Signal`) under its
+ *   own client id and a request number; only the leader answers, with
+ *   `Replied` or `Refused` addressed to that client and number.
+ * - A worker that becomes leader posts `Leader`, and every follower posts its
+ *   unanswered requests again. Every request is idempotent, so a request the
+ *   previous leader handled before it died is safe to handle twice.
+ * - The leader posts `RunChanged` for every event its engine commits.
+ *
+ * Payloads, values and results travel as JSON, encoded with the flow's own
+ * schemas. Nothing on the channel is logged.
+ *
+ * @since 1.0.0
+ */
+
+import * as Option from "effect/Option"
+import * as Schema from "effect/Schema"
+
+const addressed = {
+  client: Schema.String,
+  id: Schema.Number
+}
+
+const execution = {
+  ...addressed,
+  flow: Schema.String,
+  executionId: Schema.String
+}
+
+/**
+ * Admit `executionId` with `payload` and drive it in the background.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const Start = Schema.TaggedStruct("Start", { ...execution, payload: Schema.Json })
+
+/**
+ * Read `executionId`'s result, or `null` while it has none.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const Poll = Schema.TaggedStruct("Poll", execution)
+
+/**
+ * Request cancellation of `executionId`.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const Cancel = Schema.TaggedStruct("Cancel", execution)
+
+/**
+ * Resolve `executionId`'s `WaitFor` point `name` with `value`.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const Signal = Schema.TaggedStruct("Signal", { ...execution, name: Schema.String, value: Schema.Json })
+
+/**
+ * Any request a follower sends.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const Request = Schema.Union([Start, Poll, Cancel, Signal])
+
+/**
+ * The value form of {@link Request}.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export type Request = typeof Request.Type
+
+/**
+ * The leader handled the request. `result` is the encoded flow result a
+ * `Poll` read, and `null` for every other request.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const Replied = Schema.TaggedStruct("Replied", { ...addressed, result: Schema.NullOr(Schema.Json) })
+
+/**
+ * The leader refused the request. `error` is the failure's tag, never its
+ * message.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const Refused = Schema.TaggedStruct("Refused", { ...addressed, error: Schema.String })
+
+/**
+ * A worker took the lock and serves requests from now on.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const Leader = Schema.TaggedStruct("Leader", {})
+
+/**
+ * The leader's engine committed an event of `eventType` for `executionId`.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const RunChanged = Schema.TaggedStruct("RunChanged", { executionId: Schema.String, eventType: Schema.String })
+
+/**
+ * Every message on the channel.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const Message = Schema.Union([Start, Poll, Cancel, Signal, Replied, Refused, Leader, RunChanged])
+
+/**
+ * The value form of {@link Message}.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export type Message = typeof Message.Type
+
+/**
+ * Decodes a channel message, or `undefined` for anything else posted there.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const decode = (input: unknown): Message | undefined => Option.getOrUndefined(decodeMessage(input))
+
+const decodeMessage = Schema.decodeUnknownOption(Message)
+
+/**
+ * Encodes a message for `postMessage`.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const encode: (message: Message) => unknown = Schema.encodeSync(Message)
+
+/**
+ * Posted by an engine worker to its own tab, never on the channel: its engine
+ * could not be built, and `error` is the failure's tag. The tab then has no
+ * engine.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const Stopped = Schema.TaggedStruct("@smthrs/platform-browser/EngineStopped", { error: Schema.String })
+
+const decodeStoppedMessage = Schema.decodeUnknownOption(Stopped)
+
+/**
+ * Decodes a worker's message to its tab as {@link Stopped}, or `undefined`
+ * for anything else the worker posts.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const decodeStopped = (input: unknown): typeof Stopped.Type | undefined =>
+  Option.getOrUndefined(decodeStoppedMessage(input))

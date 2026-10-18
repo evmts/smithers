@@ -1,0 +1,64 @@
+[
+  {
+    "id": "approval-cors",
+    "run": "run-511",
+    "title": "Choose the CORS configuration policy",
+    "question": "When credentials is true and origin is *, should middleware construction throw or should credentials be disabled?",
+    "askedOf": "maya",
+    "asked": "2026-10-17T20:36:00.000Z",
+    "options": [
+      "Throw a configuration error",
+      "Disable credentials and warn"
+    ],
+    "state": "waiting"
+  },
+  {
+    "id": "approval-repro",
+    "run": "run-506",
+    "title": "Confirm the disconnect reproduction",
+    "question": "Does this node:http socket test reproduce the production stream that stays active after the client closes?",
+    "askedOf": "cora",
+    "asked": "2026-10-15T20:20:00.000Z",
+    "options": [
+      "Yes, accept the reproduction",
+      "Needs a streaming response example"
+    ],
+    "state": "waiting"
+  },
+  {
+    "id": "approval-body",
+    "run": "run-504",
+    "title": "Keep the default JSON limit at 1 MiB",
+    "question": "Use a 1 MiB default and allow each application to choose a smaller limit?",
+    "askedOf": "maya",
+    "asked": "2026-10-10T02:15:48.000Z",
+    "options": [
+      "Use 1 MiB",
+      "Use 64 KiB"
+    ],
+    "state": "approved",
+    "decided": {
+      "by": "maya",
+      "date": "2026-10-10T02:17:48.000Z",
+      "option": "Use 1 MiB"
+    }
+  },
+  {
+    "id": "approval-benchmark",
+    "run": "run-508",
+    "title": "Allow an external benchmark upload",
+    "question": "May the experiment upload route timings to benchmarks.example.test? Local results can be kept in the run instead.",
+    "askedOf": "maya",
+    "asked": "2026-10-16T20:51:00.000Z",
+    "options": [
+      "Allow this upload",
+      "Keep results local"
+    ],
+    "state": "denied",
+    "decided": {
+      "by": "maya",
+      "date": "2026-10-16T20:52:00.000Z",
+      "option": "Keep results local"
+    }
+  }
+]

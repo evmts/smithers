@@ -1,0 +1,91 @@
+[
+  {
+    "name": "main",
+    "head": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93",
+    "author": "maya",
+    "updated": "2026-10-18T04:17:44Z",
+    "ahead": 0,
+    "behind": 0,
+    "isDefault": true,
+    "protected": true
+  },
+  {
+    "name": "converter/heldout-gate",
+    "head": "e814e5d1f01e679d6ff11d55f8776a5442829d68",
+    "author": "maya",
+    "updated": "2026-10-18T04:57:00Z",
+    "ahead": 0,
+    "behind": 9,
+    "protected": false,
+    "pull": 102,
+    "run": "run-followup-102",
+    "sandbox": {
+      "state": "suspended",
+      "id": "box-golden",
+      "since": "2026-10-18T03:40:00Z"
+    }
+  },
+  {
+    "name": "docs/hover-types",
+    "head": "a7798b9a5dc79faa842c5f693f23fcf2f4e7ab3f",
+    "author": "maya",
+    "updated": "2026-10-18T04:57:00Z",
+    "ahead": 0,
+    "behind": 3,
+    "protected": false,
+    "pull": 103,
+    "run": "run-doc-hovers-live",
+    "sandbox": {
+      "state": "running",
+      "id": "box-doc-hovers",
+      "since": "2026-10-18T04:40:00Z",
+      "ports": [
+        5173
+      ]
+    }
+  },
+  {
+    "name": "release/optional-packages",
+    "head": "458a6ea2f8f5e5dd0fcbc29be9cf71f8458bffa9",
+    "author": "maya",
+    "updated": "2026-10-18T04:57:00Z",
+    "ahead": 0,
+    "behind": 1,
+    "protected": false,
+    "pull": 104,
+    "run": "run-release-review"
+  },
+  {
+    "name": "mapper/region-completions",
+    "head": "c0b768b0b5e69328fa1683d0d2ab0608258ed15f",
+    "author": "maya",
+    "updated": "2026-10-18T04:57:00Z",
+    "ahead": 0,
+    "behind": 6,
+    "protected": false,
+    "pull": 107,
+    "run": "run-followup-107"
+  },
+  {
+    "name": "mapper/lambda-forms",
+    "head": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93",
+    "author": "maya",
+    "updated": "2026-10-18T04:57:00Z",
+    "ahead": 0,
+    "behind": 0,
+    "protected": false,
+    "pull": 108,
+    "run": "run-followup-108"
+  },
+  {
+    "name": "mock/review-example",
+    "head": "f2a9585cf2e375d2d5982da42a589cdc5c219479",
+    "author": "smithers-agent",
+    "updated": "2026-10-18T04:59:00Z",
+    "ahead": 1,
+    "behind": 0,
+    "protected": false,
+    "pull": 9001,
+    "run": "run-review-example"
+  }
+]

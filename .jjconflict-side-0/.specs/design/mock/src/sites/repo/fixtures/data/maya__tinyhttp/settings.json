@@ -1,0 +1,113 @@
+{
+  "members": [
+    {
+      "login": "maya",
+      "role": "owner",
+      "added": "2026-08-08T21:00:00.000Z"
+    },
+    {
+      "login": "cora",
+      "role": "member",
+      "added": "2026-08-23T21:00:00.000Z"
+    }
+  ],
+  "invites": [
+    {
+      "login": "dev-ahn",
+      "role": "member",
+      "sent": "2026-10-16T21:00:00.000Z"
+    }
+  ],
+  "secrets": [
+    {
+      "name": "NPM_TOKEN",
+      "updated": "2026-10-12T21:00:00.000Z",
+      "usedBy": [
+        "release-notes"
+      ]
+    },
+    {
+      "name": "CI_REPORT_TOKEN",
+      "updated": "2026-10-05T21:00:00.000Z",
+      "usedBy": [
+        "implement-issue",
+        "review-change"
+      ]
+    },
+    {
+      "name": "DOCS_PREVIEW_TOKEN",
+      "updated": "2026-10-14T21:00:00.000Z",
+      "usedBy": [
+        "docs-sync"
+      ]
+    },
+    {
+      "name": "BUG_REPORT_SALT",
+      "updated": "2026-09-26T21:00:00.000Z",
+      "usedBy": [
+        "triage"
+      ]
+    }
+  ],
+  "models": [
+    {
+      "provider": "claude",
+      "state": "connected",
+      "account": "maya",
+      "plan": "Max",
+      "connected": "2026-09-17T21:00:00.000Z"
+    },
+    {
+      "provider": "codex",
+      "state": "none"
+    }
+  ],
+  "environment": [
+    {
+      "name": "Bun + Node 22",
+      "image": "ghcr.io/maya/tinyhttp-worker:2026.10.15",
+      "updated": "2026-10-15T21:00:00.000Z",
+      "size": "1.2 GB",
+      "isDefault": true
+    },
+    {
+      "name": "Node 22 minimal",
+      "image": "ghcr.io/maya/tinyhttp-node:22.18.0",
+      "updated": "2026-10-12T21:00:00.000Z",
+      "size": "680 MB"
+    }
+  ],
+  "sandboxes": {
+    "egress": "allowlist",
+    "allow": [
+      "registry.npmjs.org",
+      "github.com"
+    ],
+    "services": [
+      "http:3000"
+    ],
+    "maxRunning": 2,
+    "idleSuspendMinutes": 30
+  },
+  "webhooks": [
+    {
+      "url": "https://hooks.example.test/tinyhttp",
+      "events": [
+        "run.completed",
+        "pull.opened"
+      ],
+      "lastDelivery": {
+        "date": "2026-10-17T19:57:00.000Z",
+        "status": 204
+      }
+    }
+  ],
+  "sync": {
+    "github": {
+      "state": "ok",
+      "lastSync": "2026-10-17T20:56:00.000Z",
+      "app": "Smithers"
+    }
+  },
+  "reporting": "signed-in"
+}

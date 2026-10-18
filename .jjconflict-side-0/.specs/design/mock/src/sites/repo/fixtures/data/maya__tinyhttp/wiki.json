@@ -1,0 +1,228 @@
+[
+  {
+    "slug": "home",
+    "title": "Home",
+    "body": "# tinyhttp wiki\n\nA 400-line HTTP router for Bun and Node, with middleware, query helpers, and small runtime adapters.\n\n- [Architecture](wiki:architecture): the request boundary and route matching.\n- [Middleware order](wiki:middleware-order): what runs before a handler.\n- [Adapters](wiki:adapters): Bun and Node streaming behavior.\n- [Release process](wiki:release-process): checks, notes, and a person’s merge.\n- [Glossary](wiki:glossary): terms used in this repository.\n\nPublic API guides live in docs/. This wiki records decisions and observations tied to source or run evidence.",
+    "updated": "2026-10-17T16:12:00.000Z",
+    "author": "maya",
+    "revision": 8,
+    "provenance": {
+      "source": "person"
+    },
+    "revisions": [
+      {
+        "n": 8,
+        "date": "2026-10-17T16:12:00.000Z",
+        "author": "maya",
+        "summary": "Refresh source references and examples"
+      },
+      {
+        "n": 7,
+        "date": "2026-10-13T21:00:00.000Z",
+        "author": "cora",
+        "summary": "Clarify the public request and response boundary"
+      },
+      {
+        "n": 6,
+        "date": "2026-10-08T21:00:00.000Z",
+        "author": "maya",
+        "summary": "Create the repository guide"
+      }
+    ]
+  },
+  {
+    "slug": "architecture",
+    "title": "Architecture",
+    "body": "# Architecture\n\nThe Router owns a sorted array of routes and an ordered middleware list. Registration sorts routes by their count of static segments; equal scores retain registration order. Request matching compares segment counts and decodes named values only after a candidate matches.\n\nThe shared boundary is Router.fetch(Request): Promise<Response>. Router.handle builds a Web Request for tests and embedded use. Bun forwards its native Request; Node converts its incoming stream into the same shape.\n\nQuery parsing stays in src/query.ts. Expected failures use HttpError; unexpected exceptions become a generic 500. See src/router.ts and src/errors.ts.\n\nA radix tree experiment was closed without merging in #22. Collect reproducible measurements in #42 before changing the matcher.\n\nSee [Adapters](wiki:adapters) and [Middleware order](wiki:middleware-order).",
+    "updated": "2026-10-16T16:12:00.000Z",
+    "author": "smithers-agent",
+    "revision": 12,
+    "provenance": {
+      "source": "run",
+      "run": "run-498",
+      "confidence": "high"
+    },
+    "revisions": [
+      {
+        "n": 12,
+        "date": "2026-10-16T16:12:00.000Z",
+        "author": "smithers-agent",
+        "summary": "Refresh source references and examples",
+        "agent": {
+          "run": "run-498",
+          "flow": "implement-issue",
+          "harness": "Claude Code · claude-opus-5-5",
+          "for": "maya"
+        }
+      },
+      {
+        "n": 11,
+        "date": "2026-10-12T21:00:00.000Z",
+        "author": "cora",
+        "summary": "Clarify the public request and response boundary"
+      },
+      {
+        "n": 10,
+        "date": "2026-10-07T21:00:00.000Z",
+        "author": "maya",
+        "summary": "Create the repository guide"
+      }
+    ]
+  },
+  {
+    "slug": "release-process",
+    "title": "Release process",
+    "body": "# Release process\n\n1. A person reviews and merges the release’s pull requests.\n2. Run bun test, bun run check, and bun run lint on main.\n3. Update package.json and CHANGELOG.md together.\n4. Create the version tag on the tested main commit.\n5. Run release-notes with that existing tag, review the generated draft, and publish.\n\nRelease notes cite merged pull requests. A completed agent run alone is not evidence that a change landed. Check the merged commit on main before listing a fix.\n\nThe v0.4.2 notes include #32 and #30. A missing v0.4.3 tag caused run-510 to stop before generating notes; create the tag or use v0.4.2 and retry.",
+    "updated": "2026-10-15T16:12:00.000Z",
+    "author": "maya",
+    "revision": 6,
+    "provenance": {
+      "source": "person"
+    },
+    "revisions": [
+      {
+        "n": 6,
+        "date": "2026-10-15T16:12:00.000Z",
+        "author": "maya",
+        "summary": "Require an existing tag before drafting notes"
+      },
+      {
+        "n": 5,
+        "date": "2026-10-11T21:00:00.000Z",
+        "author": "cora",
+        "summary": "Clarify the public request and response boundary"
+      },
+      {
+        "n": 4,
+        "date": "2026-10-06T21:00:00.000Z",
+        "author": "maya",
+        "summary": "Create the repository guide"
+      }
+    ]
+  },
+  {
+    "slug": "middleware-order",
+    "title": "Middleware order",
+    "body": "# Middleware order\n\nMiddleware wraps the route handler in registration order. On the way back, later middleware completes before earlier middleware.\n\n```text\nlogger → cors → jsonBody → handler\nlogger ← cors ← jsonBody ← response\n```\n\nPut logging first so elapsed time includes CORS and body parsing. Put CORS before authentication so a browser preflight can finish without credentials. Set the JSON size limit before a handler reads body(request).\n\nA middleware may return early without calling next. Calling next more than once throws. The default logger records pathname, status, and elapsed time; it excludes query strings and body data.\n\nEvidence: src/router.ts dispatch, src/middleware/logger.ts, and run-503.",
+    "updated": "2026-10-14T16:12:00.000Z",
+    "author": "smithers-agent",
+    "revision": 5,
+    "provenance": {
+      "source": "run",
+      "run": "run-503",
+      "confidence": "high"
+    },
+    "revisions": [
+      {
+        "n": 5,
+        "date": "2026-10-14T16:12:00.000Z",
+        "author": "smithers-agent",
+        "summary": "Refresh source references and examples",
+        "agent": {
+          "run": "run-503",
+          "flow": "docs-sync",
+          "harness": "Codex · gpt-6.1-sol",
+          "for": "maya"
+        }
+      },
+      {
+        "n": 4,
+        "date": "2026-10-10T21:00:00.000Z",
+        "author": "cora",
+        "summary": "Clarify the public request and response boundary"
+      },
+      {
+        "n": 3,
+        "date": "2026-10-05T21:00:00.000Z",
+        "author": "maya",
+        "summary": "Create the repository guide"
+      }
+    ],
+    "proposals": [
+      {
+        "run": "run-511",
+        "date": "2026-10-17T20:35:00.000Z",
+        "summary": "Require an explicit CORS origin when credentials are enabled.",
+        "diff": "@@ -10,1 +10,2 @@\n Put CORS before authentication so browser preflight can finish.\n+Credentials require an explicit origin; wildcard origins are rejected at construction."
+      }
+    ]
+  },
+  {
+    "slug": "adapters",
+    "title": "Adapters",
+    "body": "# Adapters\n\nBun passes a native Web Request directly to Router.fetch. The helper binds to loopback by default and accepts port 0 for integration tests.\n\nNode builds a Web Request from node:http, converting the incoming stream with Readable.toWeb and duplex: half. The response uses Readable.fromWeb and waits for the outgoing response to finish.\n\nThe adapter creates an unbound Node server. The application owns listen(), shutdown, and process signals. Streaming cancellation on client disconnect remains open in #38; the current successful-response test does not prove cancellation.\n\nEvidence: src/adapters/bun.ts, src/adapters/node.ts, test/node.test.ts, and run-499.\n\nSee [Architecture](wiki:architecture).",
+    "updated": "2026-10-13T16:12:00.000Z",
+    "author": "smithers-agent",
+    "revision": 9,
+    "provenance": {
+      "source": "run",
+      "run": "run-499",
+      "confidence": "medium"
+    },
+    "revisions": [
+      {
+        "n": 9,
+        "date": "2026-10-13T16:12:00.000Z",
+        "author": "smithers-agent",
+        "summary": "Separate verified streaming from unverified cancellation",
+        "agent": {
+          "run": "run-499",
+          "flow": "implement-issue",
+          "harness": "Codex · gpt-6.1-sol",
+          "for": "maya"
+        }
+      },
+      {
+        "n": 8,
+        "date": "2026-10-09T21:00:00.000Z",
+        "author": "cora",
+        "summary": "Clarify the public request and response boundary"
+      },
+      {
+        "n": 7,
+        "date": "2026-10-04T21:00:00.000Z",
+        "author": "maya",
+        "summary": "Create the repository guide"
+      }
+    ],
+    "proposals": [
+      {
+        "run": "run-506",
+        "date": "2026-10-15T20:20:00.000Z",
+        "summary": "Add a tested recipe for stream cancellation after a client disconnects.",
+        "diff": "@@ -7,1 +7,2 @@\n The application owns listen(), shutdown, and process signals.\n+Cancel the response producer when the client socket closes; verify with a real socket."
+      }
+    ]
+  },
+  {
+    "slug": "glossary",
+    "title": "Glossary",
+    "body": "# Glossary\n\n- **Route**: a method, path pattern, and handler.\n- **Handler**: a function returning a Web Response, synchronously or asynchronously.\n- **Middleware**: a function around the next middleware or handler; it may finish early.\n- **Parameter**: a named path segment such as :id, decoded after matching.\n- **Adapter**: the bridge between a runtime’s HTTP server and Web Request/Response.\n- **Run**: a durable execution of a repository flow with logs and checkpoints.\n- **Stack item**: one ordered change, from a queued TODO through a person’s merge.\n- **Landed**: the merged commit exists on the default branch. A closed issue or finished run alone does not prove this.\n\nSee [Release process](wiki:release-process) for the evidence used to publish a fix.",
+    "updated": "2026-10-12T16:12:00.000Z",
+    "author": "cora",
+    "revision": 4,
+    "provenance": {
+      "source": "person"
+    },
+    "revisions": [
+      {
+        "n": 4,
+        "date": "2026-10-12T16:12:00.000Z",
+        "author": "cora",
+        "summary": "Refresh source references and examples"
+      },
+      {
+        "n": 3,
+        "date": "2026-10-08T21:00:00.000Z",
+        "author": "cora",
+        "summary": "Clarify the public request and response boundary"
+      },
+      {
+        "n": 2,
+        "date": "2026-10-03T21:00:00.000Z",
+        "author": "maya",
+        "summary": "Create the repository guide"
+      }
+    ]
+  }
+]

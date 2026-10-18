@@ -1,0 +1,126 @@
+/**
+ * The frame runtime: the only script a generated view's frame runs.
+ *
+ * It is trusted code, written by the page and pinned by its hash in the
+ * frame's CSP. It never runs anything a model wrote. It:
+ *
+ * 1. asks the page for the view with `ui/initialize`, carrying the nonce the
+ *    page wrote on the frame's `<html>` element, and takes the `MessagePort`
+ *    the answer transfers;
+ * 2. shows the view's HTML through the sanitizer, and applies the theme, again
+ *    on each `ui/notifications/host-context-changed`;
+ * 3. reports the content's height with `ui/notifications/size-changed`;
+ * 4. turns a real click on a `data-event` element, or Enter in a field of a
+ *    `data-event` form, into `smithers/interaction` with the form's values.
+ *
+ * It reads every page object it needs once, before any view content exists,
+ * so an element named or identified like a document property cannot shadow
+ * one.
+ */
+import { sanitize } from "./sanitize";
+
+/** The attribute on the frame's `<html>` that carries the nonce; `ViewCsp.nonceAttribute`. */
+export const nonceAttribute = "data-smithers-nonce";
+
+/** The id of the frame's one `ui/initialize` request. */
+export const initializeId = "smithers-frame";
+
+type FieldValue = string | number | boolean;
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
+
+/** The values of a form's named, enabled fields: booleans for checkboxes, numbers for number and range inputs. */
+export const formValues = (form: HTMLFormElement): Record<string, FieldValue> => {
+  const values: Record<string, FieldValue> = {};
+  for (const field of Array.from(form.elements) as Array<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) {
+    if (!field.name || field.disabled || field.type === "submit" || field.type === "button" || field.type === "reset") {
+      continue;
+    }
+    if (field.type === "checkbox") values[field.name] = (field as HTMLInputElement).checked;
+    else if (field.type === "radio") {
+      if ((field as HTMLInputElement).checked) values[field.name] = field.value;
+    } else if (field.type === "number" || field.type === "range") {
+      const number = Number(field.value);
+      values[field.name] = field.value !== "" && Number.isFinite(number) ? number : field.value;
+    } else if (field.type === "select-multiple") {
+      values[field.name] = Array.from((field as HTMLSelectElement).selectedOptions, (option) => option.value).join(",");
+    } else values[field.name] = field.value;
+  }
+  return values;
+};
+
+/** A frame's window, with its own constructors. */
+export type FrameWindow = Window & typeof globalThis;
+
+/** Starts the runtime in a frame's window. */
+export const startFrame = (frame: FrameWindow): void => {
+  const document = frame.document;
+  const html = document.documentElement;
+  const parent = frame.parent;
+  const nonce = html.getAttribute(nonceAttribute) ?? "";
+  const parser = new frame.DOMParser();
+  const root = document.createElement("div");
+  root.setAttribute("data-smithers-view", "");
+  document.body.appendChild(root);
+  let port: MessagePort | undefined;
+  let reported = -1;
+
+  const report = () => {
+    const height = Math.ceil(root.getBoundingClientRect().height);
+    if (port === undefined || height === reported) return;
+    reported = height;
+    port.postMessage({ jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { height } });
+  };
+
+  const apply = (context: Record<string, unknown>) => {
+    if (context.theme === "light" || context.theme === "dark") html.setAttribute("data-theme", context.theme);
+    if (typeof context.html === "string") root.replaceChildren(sanitize(context.html, document, parser));
+    report();
+  };
+
+  const send = (attribute: string, form: HTMLFormElement | null) => {
+    const at = attribute.indexOf(":");
+    const params: Record<string, unknown> = at === -1
+      ? { event: attribute }
+      : { event: attribute.slice(0, at), arg: attribute.slice(at + 1) };
+    if (form !== null) params.values = formValues(form);
+    port?.postMessage({ jsonrpc: "2.0", method: "smithers/interaction", params });
+  };
+
+  frame.addEventListener("message", (event: MessageEvent) => {
+    if (port !== undefined || event.source !== parent) return;
+    const data: unknown = event.data;
+    if (!isRecord(data) || data.id !== initializeId || !isRecord(data.result) || event.ports.length !== 1) return;
+    port = event.ports[0]!;
+    port.onmessage = (message: MessageEvent) => {
+      const notification: unknown = message.data;
+      if (
+        isRecord(notification) && notification.method === "ui/notifications/host-context-changed" &&
+        isRecord(notification.params)
+      ) apply(notification.params);
+    };
+    apply(data.result);
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!event.isTrusted || !(event.target instanceof frame.Element)) return;
+    const target = event.target.closest("[data-event], button[type=submit], input[type=submit]");
+    if (target === null || !root.contains(target) || target.getAttribute("aria-disabled") === "true") return;
+    const form = target.closest("form");
+    const attribute = target.getAttribute("data-event") ?? form?.getAttribute("data-event") ?? null;
+    if (attribute === null) return;
+    event.preventDefault();
+    send(attribute, form);
+  }, true);
+
+  document.addEventListener("keydown", (event) => {
+    if (!event.isTrusted || event.key !== "Enter" || !(event.target instanceof frame.HTMLInputElement)) return;
+    const form = event.target.closest("form[data-event]");
+    if (form === null || !root.contains(form)) return;
+    event.preventDefault();
+    send(form.getAttribute("data-event")!, form as HTMLFormElement);
+  }, true);
+
+  if (typeof frame.ResizeObserver === "function") new frame.ResizeObserver(report).observe(root);
+  parent.postMessage({ jsonrpc: "2.0", id: initializeId, method: "ui/initialize", params: { nonce } }, "*");
+};

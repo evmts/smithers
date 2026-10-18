@@ -1,0 +1,42 @@
+[
+  {
+    "name": "bug",
+    "tone": "danger",
+    "description": "Reproducible incorrect behavior."
+  },
+  {
+    "name": "compiler",
+    "tone": "brand",
+    "description": "Syntax, inferred contracts and language tools."
+  },
+  {
+    "name": "mapper",
+    "tone": "info",
+    "description": "TypeScript 7 content mapper."
+  },
+  {
+    "name": "docs",
+    "tone": "neutral",
+    "description": "Guides and examples."
+  },
+  {
+    "name": "converter",
+    "tone": "brand",
+    "description": "Effect TypeScript to VibeLang."
+  },
+  {
+    "name": "release",
+    "tone": "neutral",
+    "description": "Packaging and installation."
+  },
+  {
+    "name": "accepted",
+    "tone": "success",
+    "description": "Accepted by maya."
+  },
+  {
+    "name": "fixed-by-agents",
+    "tone": "success",
+    "description": "Agent-authored fix reviewed and landed by maya."
+  }
+]

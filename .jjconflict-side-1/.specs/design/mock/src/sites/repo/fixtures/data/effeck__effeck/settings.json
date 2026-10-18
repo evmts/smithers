@@ -1,0 +1,63 @@
+{
+  "members": [
+    {
+      "login": "maya",
+      "role": "owner",
+      "added": "2026-09-30T18:00:00Z"
+    }
+  ],
+  "invites": [],
+  "secrets": [
+    {
+      "name": "NPM_TOKEN",
+      "updated": "2026-10-16T18:00:00Z",
+      "usedBy": [
+        "release"
+      ]
+    }
+  ],
+  "models": [
+    {
+      "provider": "claude",
+      "state": "connected",
+      "account": "maya",
+      "plan": "Max",
+      "connected": "2026-10-16T18:00:00Z"
+    },
+    {
+      "provider": "codex",
+      "state": "connected",
+      "account": "maya",
+      "plan": "Pro",
+      "connected": "2026-10-16T18:00:00Z"
+    }
+  ],
+  "environment": [
+    {
+      "name": "compiler-linux",
+      "image": "ubuntu-24.04",
+      "updated": "2026-10-17T18:00:00Z",
+      "size": "4 CPU · 8 GiB",
+      "isDefault": true
+    }
+  ],
+  "sandboxes": {
+    "egress": "allowlist",
+    "allow": [
+      "registry.npmjs.org"
+    ],
+    "services": [],
+    "maxRunning": 2,
+    "idleSuspendMinutes": 30
+  },
+  "webhooks": [],
+  "sync": {
+    "github": {
+      "state": "ok",
+      "lastSync": "2026-10-18T04:17:44Z",
+      "app": "Smithers",
+      "detail": "Private upstream mirror; source and issues are read on smithers.sh."
+    }
+  },
+  "reporting": "signed-in"
+}

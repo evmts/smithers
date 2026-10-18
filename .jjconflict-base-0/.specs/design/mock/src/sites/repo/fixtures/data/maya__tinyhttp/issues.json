@@ -1,0 +1,1002 @@
+[
+  {
+    "n": 45,
+    "title": "Release notes fail when the selected tag is missing",
+    "state": "open",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-10-15T21:00:00.000Z",
+    "updated": "2026-10-17T20:40:00.000Z",
+    "body": "Choosing v0.4.3 before creating the tag leaves the notes run without a source revision. Keep the draft and let me choose an existing tag.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "bug"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 44,
+    "title": "Document how to shut down a Node server gracefully",
+    "state": "open",
+    "author": "cora",
+    "assignees": [
+      "cora"
+    ],
+    "labels": [
+      "docs",
+      "good first issue"
+    ],
+    "opened": "2026-10-13T23:24:00.000Z",
+    "updated": "2026-10-17T20:40:00.000Z",
+    "body": "The adapter returns a Node server, but the guide does not show how to stop accepting requests and wait for active responses. Add a short SIGTERM example.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "docs"
+      },
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "good first issue"
+      }
+    ],
+    "pulls": [
+      35
+    ]
+  },
+  {
+    "n": 43,
+    "title": "Expose an optional method filter in inspect()",
+    "state": "open",
+    "author": "dev-ahn",
+    "assignees": [
+      "dev-ahn"
+    ],
+    "labels": [
+      "enhancement"
+    ],
+    "opened": "2026-10-12T01:48:00.000Z",
+    "updated": "2026-10-17T20:40:00.000Z",
+    "body": "I use inspect() to generate a route table. Filtering by method in the router would avoid copying the matching rules into the script.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "enhancement"
+      }
+    ],
+    "pulls": [
+      36
+    ]
+  },
+  {
+    "n": 42,
+    "title": "Measure route lookup with 500 static paths",
+    "state": "open",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "perf"
+    ],
+    "opened": "2026-10-10T04:12:00.000Z",
+    "updated": "2026-10-17T17:04:00.000Z",
+    "body": "Before considering a new route data structure, collect median and p95 lookup times for 10, 100, and 500 routes. Keep the benchmark input and runtime version beside the results.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "perf"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 41,
+    "title": "Add a request id example without logging headers",
+    "state": "open",
+    "author": "cora",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "docs"
+    ],
+    "opened": "2026-10-08T06:36:00.000Z",
+    "updated": "2026-10-17T13:28:00.000Z",
+    "body": "Show middleware that accepts or creates a request id and places it on the response. Do not print authorization headers, cookies, bodies, or query values.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "docs"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 40,
+    "title": "Should duplicate query keys become arrays?",
+    "state": "open",
+    "author": "dev-ahn",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "question"
+    ],
+    "opened": "2026-10-06T09:00:00.000Z",
+    "updated": "2026-10-17T09:52:00.000Z",
+    "body": "`?tag=a&tag=b` currently returns `{ tag: \"b\" }`. Is keeping the last value intentional? I need repeated filters and want to understand the API before wrapping it.",
+    "comments": [
+      {
+        "author": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "body": "Keeping the last value is the current contract. If we add arrays, use an opt-in helper so existing request.query code keeps its type."
+      }
+    ],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "question"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 39,
+    "title": "Explain the 405 Allow header in the routing guide",
+    "state": "open",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "docs",
+      "good first issue"
+    ],
+    "opened": "2026-10-04T11:24:00.000Z",
+    "updated": "2026-10-17T06:16:00.000Z",
+    "body": "Add a concrete GET-only route followed by a POST request and show the resulting 405 status and Allow header.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "docs"
+      },
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "good first issue"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 38,
+    "title": "Abort a streaming response when a Node client disconnects",
+    "state": "open",
+    "author": "cora",
+    "assignees": [
+      "cora"
+    ],
+    "labels": [
+      "bug",
+      "accepted"
+    ],
+    "opened": "2026-10-11T21:00:00.000Z",
+    "updated": "2026-10-17T02:40:00.000Z",
+    "body": "A client that closes its connection while a response is streaming can leave the producer running. Connect the Node response close event to stream cancellation and test with a real socket.",
+    "comments": [
+      {
+        "author": "cora",
+        "date": "2026-10-16T21:00:00.000Z",
+        "body": "Use a real socket and a stream with a cancellation spy. The existing adapter test only covers successful completion."
+      }
+    ],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "bug"
+      },
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "accepted"
+      },
+      {
+        "kind": "todo",
+        "actor": "cora",
+        "date": "2026-10-16T21:00:00.000Z",
+        "run": "run-506"
+      }
+    ],
+    "pulls": [],
+    "todo": "todo-38",
+    "receipt": {
+      "reported": {
+        "by": "cora",
+        "date": "2026-10-11T21:00:00.000Z"
+      },
+      "accepted": {
+        "by": "maya",
+        "date": "2026-10-15T21:00:00.000Z"
+      }
+    }
+  },
+  {
+    "n": 37,
+    "title": "Keep Set-Cookie headers separate in the Node adapter",
+    "state": "open",
+    "author": "dev-ahn",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug",
+      "needs-repro"
+    ],
+    "opened": "2026-09-30T16:12:00.000Z",
+    "updated": "2026-10-16T23:04:00.000Z",
+    "body": "Two cookies set on a Web Response appear as a single header after crossing the Node adapter. I will attach a reproduction with two cookies and no commas in their values.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "bug"
+      },
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "needs-repro"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 33,
+    "title": "Reject wildcard CORS origins when credentials are enabled",
+    "state": "open",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug",
+      "accepted"
+    ],
+    "opened": "2026-10-13T21:00:00.000Z",
+    "updated": "2026-10-16T19:28:00.000Z",
+    "body": "Browsers reject `Access-Control-Allow-Origin: *` with credentials. The helper accepts this combination and the request fails only in the browser.\n\n```ts\napp.use(cors({ credentials: true }))\n```\n\nReject the configuration before serving, or require an explicit origin. Which behavior should be the default?",
+    "comments": [
+      {
+        "author": "cora",
+        "date": "2026-10-17T20:32:00.000Z",
+        "body": "Please reject the configuration when the middleware is constructed. Silently dropping credentials would hide the mistake."
+      },
+      {
+        "author": "smithers-agent",
+        "date": "2026-10-17T20:34:00.000Z",
+        "body": "The constructor guard is ready. Maya’s choice is pending before I finish the compatibility note.",
+        "agent": {
+          "run": "run-511",
+          "flow": "implement-issue",
+          "harness": "Codex · gpt-6.1-sol",
+          "for": "maya"
+        }
+      }
+    ],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "bug"
+      },
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "accepted"
+      }
+    ],
+    "pulls": [
+      34
+    ],
+    "receipt": {
+      "reported": {
+        "by": "maya",
+        "date": "2026-10-13T21:00:00.000Z"
+      },
+      "accepted": {
+        "by": "cora",
+        "date": "2026-10-15T21:00:00.000Z"
+      },
+      "working": {
+        "run": "run-511",
+        "date": "2026-10-17T20:13:00.000Z"
+      },
+      "review": {
+        "pull": 34,
+        "date": "2026-10-17T20:29:00.000Z"
+      }
+    }
+  },
+  {
+    "n": 31,
+    "title": "Malformed percent escapes in route params return 500",
+    "state": "closed",
+    "author": "dev-ahn",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug",
+      "accepted"
+    ],
+    "opened": "2026-10-05T21:00:00.000Z",
+    "updated": "2026-10-15T20:55:12.000Z",
+    "body": "A malformed URL parameter reaches decodeURIComponent and becomes an internal error. This is client input and should return 400.\n\n```ts\nconst app = new Router()\napp.get(\"/users/:id\", req => Response.json(req.params))\nconst response = await app.handle(\"GET\", \"/users/%ZZ\")\nconsole.log(response.status) // 500; expected 400\n```\n\nA valid `%20` must continue to decode to a space. Please keep the original error private and use a safe response message.",
+    "comments": [
+      {
+        "author": "maya",
+        "date": "2026-10-12T21:00:00.000Z",
+        "body": "Accepted. Add a regression for malformed escapes and keep valid encoded params working."
+      },
+      {
+        "author": "smithers-agent",
+        "date": "2026-10-15T20:43:12.000Z",
+        "body": "Reproduced with `/users/%ZZ`. The fix returns 400 with a safe message, and the valid `%20` regression still passes. Ready for Maya’s review in #32.",
+        "agent": {
+          "run": "run-507",
+          "flow": "implement-issue",
+          "harness": "Codex · gpt-6.1-sol",
+          "for": "maya"
+        }
+      },
+      {
+        "author": "maya",
+        "date": "2026-10-15T20:55:12.000Z",
+        "body": "Reviewed the diff, ran the regression, and merged #32."
+      }
+    ],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-12T21:00:00.000Z",
+        "label": "accepted"
+      },
+      {
+        "kind": "run",
+        "actor": "maya",
+        "date": "2026-10-15T20:15:12.000Z",
+        "run": "run-507",
+        "state": "running"
+      },
+      {
+        "kind": "referenced",
+        "actor": "smithers-agent",
+        "date": "2026-10-15T20:43:12.000Z",
+        "pull": 32,
+        "sha": "0d96451d52dbbc3567593b74fa12638d7b7de262"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-15T20:55:12.000Z",
+        "reason": "completed",
+        "pull": 32,
+        "sha": "0d96451d52dbbc3567593b74fa12638d7b7de262"
+      }
+    ],
+    "pulls": [
+      32
+    ],
+    "receipt": {
+      "reported": {
+        "by": "dev-ahn",
+        "date": "2026-10-05T21:00:00.000Z"
+      },
+      "accepted": {
+        "by": "maya",
+        "date": "2026-10-12T21:00:00.000Z"
+      },
+      "working": {
+        "run": "run-507",
+        "date": "2026-10-15T20:15:12.000Z"
+      },
+      "review": {
+        "pull": 32,
+        "date": "2026-10-15T20:43:12.000Z"
+      },
+      "landed": {
+        "sha": "0d96451d52dbbc3567593b74fa12638d7b7de262",
+        "date": "2026-10-15T20:55:12.000Z"
+      }
+    }
+  },
+  {
+    "n": 29,
+    "title": "Describe trailing slash behavior with a route example",
+    "state": "open",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "docs"
+    ],
+    "opened": "2026-09-24T23:24:00.000Z",
+    "updated": "2026-10-16T12:16:00.000Z",
+    "body": "The strictSlash option is in the type but the readme does not show its effect. Show `/items` and `/items/` with both settings.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "docs"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 27,
+    "title": "Preflight should respect an explicit allowed header list",
+    "state": "open",
+    "author": "cora",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "enhancement"
+    ],
+    "opened": "2026-09-23T01:48:00.000Z",
+    "updated": "2026-10-16T08:40:00.000Z",
+    "body": "When a browser asks for x-request-id and content-type, document which headers the helper will accept. Add a test where the requested header is absent from the configured list.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "enhancement"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 25,
+    "title": "Support an explicit HEAD route helper",
+    "state": "open",
+    "author": "dev-ahn",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "enhancement"
+    ],
+    "opened": "2026-09-21T04:12:00.000Z",
+    "updated": "2026-10-16T05:04:00.000Z",
+    "body": "GET handles HEAD today. I would like a head() helper to return cheaper metadata for a large streamed resource. Keep the GET fallback when no explicit handler is registered.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "enhancement"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 23,
+    "title": "Mount a router under a path prefix",
+    "state": "open",
+    "author": "dev-ahn",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "enhancement"
+    ],
+    "opened": "2026-09-19T06:36:00.000Z",
+    "updated": "2026-10-16T01:28:00.000Z",
+    "body": "Can a router be mounted under `/api/v1` without copying each route? A small group helper may be enough; nested middleware and path params need a clear contract first.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "enhancement"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 21,
+    "title": "Publish the minimum supported Node version",
+    "state": "open",
+    "author": "cora",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "docs",
+      "good first issue"
+    ],
+    "opened": "2026-09-17T09:00:00.000Z",
+    "updated": "2026-10-15T21:52:00.000Z",
+    "body": "The Node adapter uses Web Request and stream conversion. State the minimum Node version in package metadata and in the adapter page.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "docs"
+      },
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "good first issue"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 22,
+    "title": "Add an integration test for slow request bodies",
+    "state": "open",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "enhancement"
+    ],
+    "opened": "2026-09-15T11:24:00.000Z",
+    "updated": "2026-10-15T18:16:00.000Z",
+    "body": "Exercise a request body delivered in several chunks through node:http. The response must wait for valid JSON and reject the body when the byte limit is crossed.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "enhancement"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 20,
+    "title": "Should HttpError include an application error code?",
+    "state": "open",
+    "author": "dev-ahn",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "question"
+    ],
+    "opened": "2026-09-13T13:48:00.000Z",
+    "updated": "2026-10-15T14:40:00.000Z",
+    "body": "A stable error code would help clients distinguish validation errors without parsing messages. Could this be a field in the JSON response rather than an additional class hierarchy?",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "question"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 18,
+    "title": "Add a websocket implementation to the router",
+    "state": "closed",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "enhancement"
+    ],
+    "opened": "2026-09-11T16:12:00.000Z",
+    "updated": "2026-09-26T01:28:00.000Z",
+    "body": "A websocket server needs upgrade, connection lifetime, and backpressure APIs beyond the current request-response boundary. Keep the runtime-specific upgrade handler in the host application.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "enhancement"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-09-26T01:28:00.000Z",
+        "reason": "not_planned"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 17,
+    "title": "Explain how middleware can return early",
+    "state": "open",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "docs"
+    ],
+    "opened": "2026-09-09T18:36:00.000Z",
+    "updated": "2026-10-15T07:28:00.000Z",
+    "body": "Add an authentication example that returns 401 before next(). The example should demonstrate the control flow without including a real token or an authentication service.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "docs"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 15,
+    "title": "JSON body reads can ignore an absent content-length",
+    "state": "closed",
+    "author": "cora",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-09-07T21:00:00.000Z",
+    "updated": "2026-10-10T02:40:48.000Z",
+    "body": "A chunked request can exceed the configured size limit. Count the bytes read from the stream instead of trusting only the content-length header.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "bug"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-10T02:40:48.000Z",
+        "reason": "completed",
+        "pull": 28,
+        "sha": "add79458e71099fc31f5fbdca035bd407fb8f079"
+      }
+    ],
+    "pulls": [
+      28
+    ]
+  },
+  {
+    "n": 13,
+    "title": "Logger includes query values in its path field",
+    "state": "closed",
+    "author": "cora",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-09-05T23:24:00.000Z",
+    "updated": "2026-10-08T04:36:00.000Z",
+    "body": "Request URLs can contain private search text. Log only the pathname, status, and elapsed time, without query strings or headers.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "bug"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-08T04:36:00.000Z",
+        "reason": "completed",
+        "pull": 26,
+        "sha": "21251d9b9eac689352c88840d0180212370791ce"
+      }
+    ],
+    "pulls": [
+      26
+    ]
+  },
+  {
+    "n": 11,
+    "title": "Empty query values (?a=) parse to undefined instead of an empty string",
+    "state": "open",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug",
+      "accepted"
+    ],
+    "opened": "2026-10-14T21:00:00.000Z",
+    "updated": "2026-10-14T20:58:00.000Z",
+    "body": "`parseQuery(\"?a=\")` returns `{}` — the `a` key is dropped. A form that submits an empty field cannot be told apart from one that never sent it.\n\nExpected: `{ a: \"\" }`.\n\n```ts\nparseQuery(\"?a=&b=2\")\n// expected { a: \"\", b: \"2\" }\n```\n\nA bare key such as `?a` should still be ignored. Preserve plus-to-space decoding and values containing equals signs.",
+    "comments": [
+      {
+        "author": "smithers-agent",
+        "date": "2026-10-17T20:58:00.000Z",
+        "body": "The regression fails on main. I have a patch on `smithers/empty-query-values`; the verification stage is still running.",
+        "agent": {
+          "run": "run-512",
+          "flow": "implement-issue",
+          "harness": "Claude Code · claude-opus-5-5",
+          "for": "maya"
+        }
+      }
+    ],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "bug"
+      },
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "accepted"
+      },
+      {
+        "kind": "todo",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "run": "run-512"
+      },
+      {
+        "kind": "run",
+        "actor": "maya",
+        "date": "2026-10-17T20:57:00.000Z",
+        "run": "run-512",
+        "state": "running"
+      }
+    ],
+    "pulls": [
+      12
+    ],
+    "todo": "todo-11",
+    "receipt": {
+      "reported": {
+        "by": "maya",
+        "date": "2026-10-14T21:00:00.000Z"
+      },
+      "accepted": {
+        "by": "maya",
+        "date": "2026-10-16T21:00:00.000Z"
+      },
+      "working": {
+        "run": "run-512",
+        "date": "2026-10-17T20:57:00.000Z"
+      }
+    }
+  },
+  {
+    "n": 10,
+    "title": "Error responses expose the original exception message",
+    "state": "closed",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-09-02T04:12:00.000Z",
+    "updated": "2026-10-12T23:48:00.000Z",
+    "body": "An unexpected exception must not expose implementation details to a client. Return a generic 500 response while keeping HttpError messages safe and explicit.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "bug"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-12T23:48:00.000Z",
+        "reason": "completed",
+        "sha": "b5742dcad2ac42c6e58b5c26fcca3bd5c2bf9fcf"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 8,
+    "title": "Router matched /users before /users/:id",
+    "state": "closed",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-08-31T06:36:00.000Z",
+    "updated": "2026-09-10T08:26:24.000Z",
+    "body": "Registration order decided ties; the static route lost to the param route registered first.\n\n```ts\napp.get(\"/users/:id\", () => new Response(\"param\"))\napp.get(\"/users/me\", () => new Response(\"static\"))\n```\n\nGET /users/me should return static regardless of registration order.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "bug"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-09-10T08:26:24.000Z",
+        "reason": "completed",
+        "pull": 7,
+        "sha": "348c26c818202c7ac3d26e04bda367f5cad831b5"
+      }
+    ],
+    "pulls": [
+      7
+    ]
+  },
+  {
+    "n": 6,
+    "title": "Node adapter buffers an entire response",
+    "state": "closed",
+    "author": "cora",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "perf"
+    ],
+    "opened": "2026-08-29T09:00:00.000Z",
+    "updated": "2026-09-23T19:00:00.000Z",
+    "body": "A streamed response was collected before sending its first byte. Pipe the Web ReadableStream to the outgoing response and wait for completion.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "perf"
+      },
+      {
+        "kind": "closed",
+        "actor": "cora",
+        "date": "2026-09-23T19:00:00.000Z",
+        "reason": "completed",
+        "pull": 24,
+        "sha": "7b91372170bdd8507e09c9a9cccb4eee425bcce4"
+      }
+    ],
+    "pulls": [
+      24
+    ]
+  },
+  {
+    "n": 4,
+    "title": "Plus signs are not decoded as spaces in query values",
+    "state": "closed",
+    "author": "maya",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-08-27T11:24:00.000Z",
+    "updated": "2026-09-29T13:14:24.000Z",
+    "body": "`parseQuery(\"q=hello+world\")` returned a literal plus sign. Form-style query encoding uses plus for a space; `%2B` must still mean a literal plus.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "bug"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-09-29T13:14:24.000Z",
+        "reason": "completed",
+        "pull": 9,
+        "sha": "b52d0e73884c8fec77cb691d79c944f3bb240068"
+      }
+    ],
+    "pulls": [
+      9
+    ]
+  },
+  {
+    "n": 2,
+    "title": "Tests need to run against the public package entry",
+    "state": "closed",
+    "author": "dev-ahn",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "enhancement"
+    ],
+    "opened": "2026-08-25T13:48:00.000Z",
+    "updated": "2026-08-31T18:02:24.000Z",
+    "body": "Add a small test that imports Router and the query helpers from src/index.ts so renaming an internal module cannot silently break the public entry.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "maya",
+        "date": "2026-10-16T21:00:00.000Z",
+        "label": "enhancement"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-08-31T18:02:24.000Z",
+        "reason": "completed",
+        "sha": "8a18e166222c561f74442cf0fdb91da04e998636"
+      }
+    ],
+    "pulls": []
+  }
+]

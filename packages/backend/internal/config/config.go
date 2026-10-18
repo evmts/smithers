@@ -16,17 +16,29 @@ import (
 )
 
 // Config holds all configuration for the API server.
+// RepositorySitesConfig stays off until the host-isolated cookie cutover is deployed.
+type RepositorySitesConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Suffix  string `mapstructure:"suffix"`
+	// FirstPartyOrgIDs are operator-pinned local organization IDs, never slugs.
+	FirstPartyOrgIDs []string `mapstructure:"first_party_org_ids"`
+	CNAME            string   `mapstructure:"cname"`
+	CloudflareZone   string   `mapstructure:"cloudflare_zone"`
+	CloudflareToken  string   `mapstructure:"cloudflare_token"`
+}
+
 type Config struct {
-	Install  InstallConfig  `mapstructure:"install"`
-	Agents   AgentsConfig   `mapstructure:"agents"`
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	RepoHost RepoHostConfig `mapstructure:"repo_host"`
-	Sandbox  SandboxConfig  `mapstructure:"sandbox"`
-	SSH      SSHConfig      `mapstructure:"ssh"`
-	Auth     AuthConfig     `mapstructure:"auth"`
-	Billing  BillingConfig  `mapstructure:"billing"`
-	Webhook  WebhookConfig  `mapstructure:"webhook"`
+	Sites    RepositorySitesConfig `mapstructure:"sites"`
+	Install  InstallConfig         `mapstructure:"install"`
+	Agents   AgentsConfig          `mapstructure:"agents"`
+	Server   ServerConfig          `mapstructure:"server"`
+	Database DatabaseConfig        `mapstructure:"database"`
+	RepoHost RepoHostConfig        `mapstructure:"repo_host"`
+	Sandbox  SandboxConfig         `mapstructure:"sandbox"`
+	SSH      SSHConfig             `mapstructure:"ssh"`
+	Auth     AuthConfig            `mapstructure:"auth"`
+	Billing  BillingConfig         `mapstructure:"billing"`
+	Webhook  WebhookConfig         `mapstructure:"webhook"`
 	// ProviderConnections names the Claude and Codex OAuth token endpoints
 	// the bring-your-own-subscription refresh loop calls (RFD-003).
 	ProviderConnections ProviderConnectionsConfig `mapstructure:"provider_connections"`
@@ -580,6 +592,12 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("ssh.idle_timeout", "")            // empty means derive from pack timeouts
 	v.SetDefault("ssh.max_timeout", "")             // empty means use package default (2h)
 	v.SetDefault("ssh.max_sessions_per_conn", 0)    // 0 means use package default (10)
+	v.SetDefault("sites.enabled", false)
+	v.SetDefault("sites.suffix", "smithers.sh")
+	v.SetDefault("sites.first_party_org_ids", "")
+	v.SetDefault("sites.cname", "sites.smithers.sh")
+	v.SetDefault("sites.cloudflare_zone", "")
+	v.SetDefault("sites.cloudflare_token", "")
 	v.SetDefault("auth.mode", "")
 	v.SetDefault("auth.session_duration", "720h")
 	v.SetDefault("auth.session_refresh_window", "168h")
@@ -789,6 +807,12 @@ func Load(configFile string) (*Config, error) {
 		{"auth.github_oauth_base_url", "SMITHERS_AUTH_GITHUB_OAUTH_BASE_URL"},
 		{"auth.github_api_base_url", "SMITHERS_AUTH_GITHUB_API_BASE_URL"},
 		{"auth.mode", "SMITHERS_AUTH_MODE"},
+		{"sites.enabled", "SMITHERS_SITES_ENABLED"},
+		{"sites.suffix", "SMITHERS_SITES_SUFFIX"},
+		{"sites.first_party_org_ids", "SMITHERS_SITES_FIRST_PARTY_ORG_IDS"},
+		{"sites.cname", "SMITHERS_SITES_CNAME"},
+		{"sites.cloudflare_zone", "SMITHERS_SITES_CLOUDFLARE_ZONE"},
+		{"sites.cloudflare_token", "SMITHERS_SITES_CLOUDFLARE_TOKEN"},
 		{"auth.auth0_domain", "SMITHERS_AUTH_AUTH0_DOMAIN"},
 		{"auth.auth0_client_id", "SMITHERS_AUTH_AUTH0_CLIENT_ID"},
 		{"auth.auth0_client_secret", "SMITHERS_AUTH_AUTH0_CLIENT_SECRET"},
@@ -999,6 +1023,7 @@ func Load(configFile string) (*Config, error) {
 	cfg.Server.AllowedOrigins = splitCommaSeparatedList(cfg.Server.AllowedOrigins)
 	cfg.Server.PublicMirrors = splitCommaSeparatedList(cfg.Server.PublicMirrors)
 	cfg.Guest.Repositories = splitCommaSeparatedList(cfg.Guest.Repositories)
+	cfg.Sites.FirstPartyOrgIDs = splitCommaSeparatedList(cfg.Sites.FirstPartyOrgIDs)
 	// A malformed list refuses startup: a guessed list could bill an unlisted
 	// organization to the machine service user (plue#839).
 	servicePayerOrgIDs, err := sandbox.ParseServicePayerOrgIDs(v.GetStringSlice("billing.service_payer_org_ids")...)

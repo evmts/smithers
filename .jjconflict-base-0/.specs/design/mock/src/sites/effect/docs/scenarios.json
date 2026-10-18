@@ -1,0 +1,12 @@
+{
+  "generated": {
+    "run": "run-4804",
+    "label": "r-4804",
+    "sourceRef": "7a13bb72e79ff883e62ca95f69eae180a242d6dd",
+    "stalePage": "sql-pg/PgConnection"
+  },
+  "guideSources": {
+    "guides/schema": "ai-docs/src/01_effect/02_schema/index.md",
+    "guides/schema-basics": "ai-docs/src/01_effect/02_schema/10_schema-basics.ts"
+  }
+}

@@ -1,0 +1,134 @@
+[
+  {
+    "name": "main",
+    "head": "7a13bb72e79ff883e62ca95f69eae180a242d6dd",
+    "author": "maya",
+    "updated": "2026-10-17T15:20:00Z",
+    "ahead": 0,
+    "behind": 0,
+    "isDefault": true,
+    "protected": true
+  },
+  {
+    "name": "fix/pg-aborted-commit",
+    "head": "399df09b4bf4102f7e5be8feceffa9e5a33c8a8b",
+    "author": "smithers-agent",
+    "updated": "2026-10-18T01:23:36Z",
+    "ahead": 1,
+    "behind": 0,
+    "pull": 101,
+    "run": "run-4801",
+    "sandbox": {
+      "state": "running",
+      "id": "box-pg-42",
+      "since": "2026-10-18T00:20:00Z",
+      "ports": [
+        5432
+      ]
+    }
+  },
+  {
+    "name": "fix/atom-stale-dependencies",
+    "head": "88cd29ba6767f6aa6b8dd50d926847a906fa353e",
+    "author": "dev-ahn",
+    "updated": "2026-10-17T02:20:00Z",
+    "ahead": 1,
+    "behind": 1,
+    "pull": 102
+  },
+  {
+    "name": "fix/sqlite-failed-commit",
+    "head": "6bedb2254a0072eb3fa23826573da32c7790d31d",
+    "author": "smithers-agent",
+    "updated": "2026-10-16T12:23:36Z",
+    "ahead": 1,
+    "behind": 1,
+    "pull": 103,
+    "run": "run-4809"
+  },
+  {
+    "name": "fix/await-children",
+    "head": "6e80deace8bd2909c86e711cc2adf991fcfa6ba3",
+    "author": "cora",
+    "updated": "2026-10-16T00:20:00Z",
+    "ahead": 0,
+    "behind": 1,
+    "pull": 104
+  },
+  {
+    "name": "refactor/module-paths",
+    "head": "747533f391a40e1b11be2c7f4a3d4d5d401f0a3b",
+    "author": "smithers-agent",
+    "updated": "2026-10-14T08:23:36Z",
+    "ahead": 1,
+    "behind": 4,
+    "pull": 105,
+    "run": "run-4810"
+  },
+  {
+    "name": "fix/scope-close",
+    "head": "d6f5fe56cae946bb69695c9a9abbfa497761dd9a",
+    "author": "smithers-agent",
+    "updated": "2026-10-12T04:23:36Z",
+    "ahead": 1,
+    "behind": 7,
+    "pull": 106,
+    "run": "run-4811"
+  },
+  {
+    "name": "fix/queue-wakeup",
+    "head": "ea2466ebdff386990eb7fcc4a56be720dd58bda0",
+    "author": "smithers-agent",
+    "updated": "2026-10-08T22:23:36Z",
+    "ahead": 0,
+    "behind": 12,
+    "pull": 107,
+    "run": "run-4812"
+  },
+  {
+    "name": "docs/schema-brand",
+    "head": "8029bf27825c324af71956b7db404efb93b894c5",
+    "author": "smithers-agent",
+    "updated": "2026-10-05T03:23:36Z",
+    "ahead": 1,
+    "behind": 19,
+    "pull": 108,
+    "run": "run-4813"
+  },
+  {
+    "name": "fix/layer-memo",
+    "head": "a7284fdef41d8680bcc8d3b2a580dd191f137e32",
+    "author": "smithers-agent",
+    "updated": "2026-09-30T06:23:36Z",
+    "ahead": 0,
+    "behind": 27,
+    "pull": 109,
+    "run": "run-4814"
+  },
+  {
+    "name": "fix/mcp-tool-errors",
+    "head": "d76482f6eb53670e397915f9f8d60a94eb33f8dc",
+    "author": "smithers-agent",
+    "updated": "2026-09-25T09:23:36Z",
+    "ahead": 1,
+    "behind": 36,
+    "pull": 110,
+    "run": "run-4815"
+  },
+  {
+    "name": "v4/next-minor",
+    "head": "6efa8e3ed922949e5f6c7b7e21df5c89175f0089",
+    "author": "maya",
+    "updated": "2026-09-29T05:20:00Z",
+    "ahead": 0,
+    "behind": 29
+  },
+  {
+    "name": "v4/next-major",
+    "head": "68069b1903f8b92ec100cab01328324d97e86264",
+    "author": "maya",
+    "updated": "2026-09-22T04:20:00Z",
+    "ahead": 0,
+    "behind": 41
+  }
+]

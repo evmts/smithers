@@ -1,0 +1,52 @@
+[
+  {
+    "label": "Get started",
+    "items": [
+      {
+        "slug": "docs"
+      },
+      {
+        "slug": "docs/quickstart"
+      }
+    ]
+  },
+  {
+    "label": "On your own Mac",
+    "items": [
+      {
+        "slug": "docs/local-quickstart"
+      },
+      {
+        "slug": "docs/self-host"
+      },
+      {
+        "slug": "docs/installation"
+      }
+    ]
+  },
+  {
+    "label": "Flows",
+    "items": [
+      {
+        "slug": "docs/flows"
+      }
+    ]
+  },
+  {
+    "label": "Reference",
+    "items": [
+      {
+        "label": "HTTP and RPC API",
+        "slug": "docs/reference/http-api"
+      },
+      {
+        "label": "CLI",
+        "slug": "docs/reference/cli"
+      },
+      {
+        "label": "Library API",
+        "slug": "docs/reference/api"
+      }
+    ]
+  }
+]

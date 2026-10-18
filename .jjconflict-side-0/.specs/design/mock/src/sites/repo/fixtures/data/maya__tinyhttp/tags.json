@@ -1,0 +1,50 @@
+[
+  {
+    "name": "v0.4.2",
+    "sha": "a41c9e0b0a300d7b3206e3e41b5393fdf22f6a75",
+    "date": "2026-10-17T19:00:00.000Z",
+    "release": true
+  },
+  {
+    "name": "v0.4.1",
+    "sha": "b5742dcad2ac42c6e58b5c26fcca3bd5c2bf9fcf",
+    "date": "2026-10-12T23:48:00.000Z",
+    "release": false
+  },
+  {
+    "name": "v0.4.0",
+    "sha": "ab8abb7e50ba4bdd3ccd506633ae0b145d93e8a7",
+    "date": "2026-10-11T01:43:12.000Z",
+    "release": true
+  },
+  {
+    "name": "v0.3.1",
+    "sha": "0ab3e123c0a7925c6c52fd9ae25e2d7c7a2e0052",
+    "date": "2026-10-02T10:21:36.000Z",
+    "release": false
+  },
+  {
+    "name": "v0.3.0",
+    "sha": "3e0d27b03ae1535281c28e9b46bfc023701ba0e4",
+    "date": "2026-09-30T12:16:48.000Z",
+    "release": true
+  },
+  {
+    "name": "v0.2.2",
+    "sha": "56a72b39cb0cf5464a11c3ac9b5b65703b1c7213",
+    "date": "2026-09-12T06:31:12.000Z",
+    "release": false
+  },
+  {
+    "name": "v0.2.0",
+    "sha": "c366f190a8b30c01065c687c4429651ecb545245",
+    "date": "2026-09-11T07:28:48.000Z",
+    "release": true
+  },
+  {
+    "name": "v0.1.0",
+    "sha": "cfb0aadd3e3816bcbefd87d79098d27773fce50f",
+    "date": "2026-08-11T14:12:00.000Z",
+    "release": false
+  }
+]

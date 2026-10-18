@@ -1,0 +1,52 @@
+[
+  {
+    "slug": "Architecture",
+    "title": "Architecture",
+    "body": "# Architecture\n\nVibeLang gives Effect a language syntax while keeping the TypeScript ecosystem. An inferred contract tracks success A, expected failures E and requirements R.\n\nThe native compiler checks .vibe and .ts together. The runtime supplies continuations, services and regions. The TypeScript 7 mapper is a separate checking projection; its executable rendering is unfinished.\n\nSources: [README.md](smithers.sh/effeck/effeck/blob/main/README.md?L=42), [typescript/tsc/internal/vibelangmapper/plan.go](smithers.sh/effeck/effeck/blob/main/typescript/tsc/internal/vibelangmapper/plan.go?L=14).\n\n[Compiler pipeline](wiki:Compiler-pipeline) · [Release](wiki:Release)",
+    "updated": "2026-10-18T04:17:44Z",
+    "author": "maya",
+    "revision": 5,
+    "provenance": {
+      "source": "person"
+    }
+  },
+  {
+    "slug": "Compiler-pipeline",
+    "title": "Compiler pipeline",
+    "body": "# Compiler pipeline\n\nParse VibeLang, resolve lambda and argument forms, record semantic edits, then render virtual TypeScript for checking. Verbatim source spans retain language-service mapping. Checking and executable renderings share one edit plan.\n\nA resolver choice reports EK9100. A block owns its fork’s Scope; an expression-body fork retains Scope in R. Completion records carry returns across regions.\n\nSources: [typescript/tsc/internal/vibelangmapper/lambdas.go](smithers.sh/effeck/effeck/blob/main/typescript/tsc/internal/vibelangmapper/lambdas.go?L=47), [typescript/tsc/internal/vibelangmapper/plan.go](smithers.sh/effeck/effeck/blob/main/typescript/tsc/internal/vibelangmapper/plan.go?L=270).\n\n[Architecture](wiki:Architecture)",
+    "updated": "2026-10-18T04:17:44Z",
+    "author": "smithers-agent",
+    "revision": 8,
+    "provenance": {
+      "source": "run",
+      "run": "run-8eb9c4ae",
+      "confidence": "high"
+    }
+  },
+  {
+    "slug": "Golden-set",
+    "title": "Golden set",
+    "body": "# Golden set\n\nThe converter is off for Monday. Enabling it needs a real run where at least 16 of 20 model outputs compile, including the hero. The illustrative 14/20 expected-source validation is excluded from gate history; no model execution receipt is available. The gate records model, prompt, compiler and dependency digests.\n\nThe pinned prompt builder uses separate examples. The earlier illustrative snapshot had an invalid holdout; no new model execution receipt is available. score.mjs checks expected outputs, not model-generated conversions. Passing expected outputs does not pass the converter gate or measure held-out accuracy.\n\n[Golden set](smithers.sh/effeck/effeck/evals/convert-golden)\n\n[Release](wiki:Release)",
+    "updated": "2026-10-18T04:04:43Z",
+    "author": "smithers-agent",
+    "revision": 3,
+    "provenance": {
+      "source": "run",
+      "run": "run-e814e5d1",
+      "confidence": "high"
+    }
+  },
+  {
+    "slug": "Release",
+    "title": "Release",
+    "body": "# Release\n\ncreate-vibelang is 0.0.1. Pin vibelang, vibelang-runtime and vibelang-vite together. Effect and platform packages stay at 4.0.5.\n\nRepack the existing tarball, verify platform payloads and permissions, scaffold a clean app, then exercise npm ci. The docs deploy checks snippets with the released compiler and runtime. A person authorizes publishing.\n\nSources: [packages/create-vibelang/package.json](smithers.sh/effeck/effeck/blob/main/packages/create-vibelang/package.json?L=3), [scripts/release/repack.mjs](smithers.sh/effeck/effeck/blob/main/scripts/release/repack.mjs?L=41), [scripts/deploy-docs.sh](smithers.sh/effeck/effeck/blob/main/scripts/deploy-docs.sh?L=36).\n\n[Golden set](wiki:Golden-set)",
+    "updated": "2026-10-18T04:24:30Z",
+    "author": "smithers-agent",
+    "revision": 4,
+    "provenance": {
+      "source": "run",
+      "run": "run-458a6ea2",
+      "confidence": "high"
+    }
+  }
+]

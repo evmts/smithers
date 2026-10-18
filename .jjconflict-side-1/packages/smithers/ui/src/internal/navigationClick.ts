@@ -1,0 +1,12 @@
+import type { MouseEvent } from "react";
+
+/**
+ * Whether a click on a link is a plain primary-button click the host may turn
+ * into in-app navigation. A modified click (⌘, Ctrl, Shift, Alt), a middle or
+ * right click, or a click something else already handled keeps the browser's
+ * own behavior, so "open in a new tab" still works on every link.
+ */
+export function isPlainNavigationClick(event: MouseEvent<HTMLAnchorElement>): boolean {
+  return !event.defaultPrevented && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey &&
+    !event.altKey;
+}

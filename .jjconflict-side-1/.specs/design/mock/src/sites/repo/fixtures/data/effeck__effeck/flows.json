@@ -1,0 +1,362 @@
+[
+  {
+    "name": "convert-golden",
+    "file": ".smithers/flows/convert/score.mjs",
+    "description": "Held-out 20-case model gate: inputs → model conversions → compile actual outputs → record model, prompt, compiler and dependency digests. Required: 16/20 plus the hero. Not wired; score.mjs validates expected source only.",
+    "inputs": [
+      {
+        "name": "ref",
+        "type": "string",
+        "required": true,
+        "description": "Source revision to check."
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "manual",
+        "spec": "convert-golden",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "verifier",
+        "agent": "codex"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "stage-1",
+          "label": "Held-out inputs",
+          "kind": "step"
+        },
+        {
+          "id": "stage-2",
+          "label": "Model conversions",
+          "kind": "agent"
+        },
+        {
+          "id": "stage-3",
+          "label": "Compile actual outputs",
+          "kind": "check"
+        },
+        {
+          "id": "stage-4",
+          "label": "Record gate + digests",
+          "kind": "step"
+        }
+      ],
+      "edges": [
+        [
+          "stage-1",
+          "stage-2"
+        ],
+        [
+          "stage-2",
+          "stage-3"
+        ],
+        [
+          "stage-3",
+          "stage-4"
+        ]
+      ]
+    },
+    "runs": [
+      "run-convert-golden-eval",
+      "run-followup-102",
+      "run-golden-cancelled",
+      "run-5992d9ca",
+      "run-ecff34c8",
+      "run-e814e5d1",
+      "run-bca9fdc7"
+    ]
+  },
+  {
+    "name": "docs-sync",
+    "file": "docs/tools/check-snippets.ts",
+    "description": "Compile guide examples with the released compiler and refresh the docs.",
+    "inputs": [
+      {
+        "name": "ref",
+        "type": "string",
+        "required": true,
+        "description": "Source revision to check."
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "push",
+        "spec": "main",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "verifier",
+        "agent": "claude"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "stage-1",
+          "label": "Read changed pages",
+          "kind": "step"
+        },
+        {
+          "id": "stage-2",
+          "label": "Compile snippets",
+          "kind": "check"
+        },
+        {
+          "id": "stage-3",
+          "label": "Build docs",
+          "kind": "step"
+        },
+        {
+          "id": "stage-4",
+          "label": "Check links",
+          "kind": "step"
+        }
+      ],
+      "edges": [
+        [
+          "stage-1",
+          "stage-2"
+        ],
+        [
+          "stage-2",
+          "stage-3"
+        ],
+        [
+          "stage-3",
+          "stage-4"
+        ]
+      ]
+    },
+    "runs": [
+      "run-docs-examples-eval",
+      "run-doc-hovers-live",
+      "run-c13a02ce",
+      "run-a7798b9a",
+      "run-c9b1c2d9",
+      "run-9b300d0f",
+      "run-174160aa",
+      "run-4a84bff7",
+      "run-bd2c46b5",
+      "run-71776a91",
+      "run-ead3c5dc",
+      "run-e169ed6a",
+      "run-9b800983",
+      "run-6198101d",
+      "run-ecb2b019",
+      "run-141a95d9",
+      "run-e8d94db1",
+      "run-74d063f9",
+      "run-e3900749",
+      "run-b09f6a1f",
+      "run-a9b15617",
+      "run-16b9bf09",
+      "run-630d09a5",
+      "run-6dd36bc6",
+      "run-92291e9d",
+      "run-499d0e5f",
+      "run-a9f06f10",
+      "run-8fae36f6"
+    ]
+  },
+  {
+    "name": "implement-issue",
+    "file": ".smithers/instructions/app.md",
+    "description": "Reproduce an accepted issue and prepare a change for maya.",
+    "inputs": [
+      {
+        "name": "issue",
+        "type": "number",
+        "required": true,
+        "description": "Accepted issue number."
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "issue-label",
+        "spec": "accepted",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "implementer",
+        "agent": "claude"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "stage-1",
+          "label": "Read sources",
+          "kind": "agent"
+        },
+        {
+          "id": "stage-2",
+          "label": "Reproduce",
+          "kind": "step"
+        },
+        {
+          "id": "stage-3",
+          "label": "Implement",
+          "kind": "agent"
+        },
+        {
+          "id": "stage-4",
+          "label": "Verify",
+          "kind": "check"
+        },
+        {
+          "id": "stage-5",
+          "label": "Open review",
+          "kind": "agent"
+        }
+      ],
+      "edges": [
+        [
+          "stage-1",
+          "stage-2"
+        ],
+        [
+          "stage-2",
+          "stage-3"
+        ],
+        [
+          "stage-3",
+          "stage-4"
+        ],
+        [
+          "stage-4",
+          "stage-5"
+        ]
+      ]
+    },
+    "runs": [
+      "run-followup-107",
+      "run-followup-108",
+      "run-8eb9c4ae",
+      "run-c0b768b0",
+      "run-084f7b7b",
+      "run-0daa7b92",
+      "run-d2be48af",
+      "run-553baec9",
+      "run-fa627d5f",
+      "run-2c52ba8c",
+      "run-c2ec9a23",
+      "run-2466402a",
+      "run-60d5ef2b",
+      "run-1742d881",
+      "run-86caed9b",
+      "run-cb28fc14",
+      "run-85c3371b",
+      "run-e1f3c65c",
+      "run-8fadacb5",
+      "run-19c4d0e5",
+      "run-1c8422b6",
+      "run-575f17ee",
+      "run-4c0993ea",
+      "run-9a366312",
+      "run-455d204b",
+      "run-cac799ef",
+      "run-32587117",
+      "run-8c04bef9",
+      "run-cb4d14b5",
+      "run-a6188cf1",
+      "run-373475d0",
+      "run-68577c39",
+      "run-2b3851bf",
+      "run-0cfa7a18",
+      "run-687cebf9",
+      "run-1ea2695b",
+      "run-4a0cc810",
+      "run-d8bbf7f2",
+      "run-4a4aca77",
+      "run-b8189d42",
+      "run-3af3b4fd",
+      "run-review-example"
+    ]
+  },
+  {
+    "name": "release",
+    "file": "scripts/release/rehearse.sh",
+    "description": "Repack platform binaries, scaffold an app and ask maya to publish.",
+    "inputs": [
+      {
+        "name": "ref",
+        "type": "string",
+        "required": true,
+        "description": "Source revision to check."
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "manual",
+        "spec": "release",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "verifier",
+        "agent": "codex"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "stage-1",
+          "label": "Pack native binaries",
+          "kind": "step"
+        },
+        {
+          "id": "stage-2",
+          "label": "Scaffold app",
+          "kind": "step"
+        },
+        {
+          "id": "stage-3",
+          "label": "Install and test",
+          "kind": "step"
+        },
+        {
+          "id": "stage-4",
+          "label": "Ask owner",
+          "kind": "approval"
+        }
+      ],
+      "edges": [
+        [
+          "stage-1",
+          "stage-2"
+        ],
+        [
+          "stage-2",
+          "stage-3"
+        ],
+        [
+          "stage-3",
+          "stage-4"
+        ]
+      ]
+    },
+    "runs": [
+      "run-release-review",
+      "run-scaffold-failed",
+      "run-458a6ea2",
+      "run-597d7986",
+      "run-60e304d2",
+      "run-86d247fa",
+      "run-b6d13fdb",
+      "run-87887b1b",
+      "run-0e0974e0",
+      "run-057b0d9e"
+    ]
+  }
+]
