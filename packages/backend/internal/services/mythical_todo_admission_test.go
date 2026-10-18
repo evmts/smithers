@@ -61,14 +61,24 @@ func newTodoAdmission(t *testing.T) (*mythicalOrchestration, context.Context) {
 }
 
 func TestTodoAdmissionRepositoryStackLockOrder(t *testing.T) {
-	for _, operation := range []string{"amend", "answer"} {
+	for _, operation := range []string{"file", "amend", "answer"} {
 		t.Run(operation, func(t *testing.T) {
 			ctx := context.Background()
 			var o *mythicalOrchestration
 			var session context.Context
 			var item db.MythicalItem
 			var call func() error
-			if operation == "amend" {
+			if operation == "file" {
+				o, session = newTodoAdmission(t)
+				call = func() error {
+					view, err := o.service.FileTodo(session, o.repoID, o.userID, MythicalTodoInput{
+						Title: "Ordered creation", Prompt: "Respect lock order", Request: "ordered-file"})
+					if err == nil {
+						item = o.byID(view.ID)
+					}
+					return err
+				}
+			} else if operation == "amend" {
 				o, session = newTodoAdmission(t)
 				o.service.SetTodoFlow(func(context.Context, int64, string) (string, error) { return todoPinOne, nil })
 				o.service.todoSteering = true
