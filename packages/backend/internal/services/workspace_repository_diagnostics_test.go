@@ -79,6 +79,7 @@ func TestWorkspaceRepositoryStepRefusalIsDiagnosableWithoutItsOutput(t *testing.
 	require.Equal(t, "verify_repository_step", logged[0].attrs["stage"])
 	require.Equal(t, workspaceRepositoryAdvertisementStep, logged[0].attrs["step"])
 	require.Equal(t, string(workspaceRepositoryExitFatal), logged[0].attrs["exit_class"])
+	require.Equal(t, "none", logged[0].attrs["proxy_status"], "the remote refused, not the egress proxy")
 	require.Equal(t, "false", logged[0].attrs["output_truncated"])
 	require.Equal(t, "1", logged[0].attrs["attempts"])
 	require.Equal(t, "false", logged[0].attrs["retry_budget_exhausted"])
@@ -226,10 +227,11 @@ func TestWorkspaceRepositoryStepOutcomeRendersOnlyFiniteLabels(t *testing.T) {
 		attempts:  4,
 		retryable: true,
 	}
-	require.Equal(t, "repository step advertisement unverified (fatal, attempts=4)", outcome.Error())
+	require.Equal(t, "repository step advertisement unverified (fatal, proxy_status=none, attempts=4)", outcome.Error())
 
 	args := outcome.logArgs("ws-advertisement-render")
-	require.Len(t, args, 14)
+	require.Len(t, args, 16)
+	require.Equal(t, []any{"proxy_status", "none"}, args[8:10], "an outcome without a proxy reading stays in the vocabulary")
 	require.Equal(t, "workspace", args[0])
 	require.Equal(t, workspaceCorrelationToken("ws-advertisement-render"), args[1])
 	require.NotEqual(t, "ws-advertisement-render", args[1])

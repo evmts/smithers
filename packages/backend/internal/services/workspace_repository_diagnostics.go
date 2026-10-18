@@ -2,6 +2,7 @@ package services
 
 import (
 	"log/slog"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -103,15 +104,46 @@ const (
 	// workspaceRepositoryExitEgressQuota: the sandbox egress proxy refused
 	// the guest's CONNECT with 429 because the payer's daily egress is spent.
 	workspaceRepositoryExitEgressQuota workspaceRepositoryExitClass = "egress_quota_exhausted"
+	// workspaceRepositoryExitEgressUnavailable: the sandbox egress proxy
+	// refused the guest's CONNECT with 503 because it could not meter the
+	// connection. It is retried; see retryableWorkspaceTransfer.
+	workspaceRepositoryExitEgressUnavailable workspaceRepositoryExitClass = "egress_unavailable"
 )
 
 // workspaceEgressQuotaExhaustedMessage is the verdict for a repository step the
 // sandbox egress proxy refused for quota.
 const workspaceEgressQuotaExhaustedMessage = "sandbox egress quota exhausted for today; it resets at 00:00 UTC"
 
-// workspaceEgressQuotaRefusal is curl's fixed report of the egress proxy's
-// quota refusal. It carries no URL, header or credential.
-const workspaceEgressQuotaRefusal = "CONNECT tunnel failed, response 429"
+// workspaceProxyStatus is the closed vocabulary of the sandbox egress proxy's
+// answer to a guest's CONNECT. A refusal that never reached the proxy, or a
+// proxy that let the tunnel open, reads none.
+type workspaceProxyStatus string
+
+const (
+	workspaceProxyStatusNone        workspaceProxyStatus = "none"
+	workspaceProxyStatusQuota       workspaceProxyStatus = "429"
+	workspaceProxyStatusUnavailable workspaceProxyStatus = "503"
+	workspaceProxyStatusOther       workspaceProxyStatus = "other"
+)
+
+// workspaceProxyRefusalPhrase is curl's fixed report of a proxy that refused
+// CONNECT ("CONNECT tunnel failed, response 429"). The outcome reads nothing
+// else from stderr, and the phrase carries no URL, header or credential.
+var workspaceProxyRefusalPhrase = regexp.MustCompile(`CONNECT tunnel failed, response ([0-9]{3})(?:[^0-9]|$)`)
+
+func workspaceProxyStatusFor(stderr string) workspaceProxyStatus {
+	match := workspaceProxyRefusalPhrase.FindStringSubmatch(stderr)
+	switch {
+	case match == nil:
+		return workspaceProxyStatusNone
+	case match[1] == "429":
+		return workspaceProxyStatusQuota
+	case match[1] == "503":
+		return workspaceProxyStatusUnavailable
+	default:
+		return workspaceProxyStatusOther
+	}
+}
 
 func workspaceRepositoryExitClassFor(result workspaceapi.CommandResult) workspaceRepositoryExitClass {
 	if result.OutputTruncated {
@@ -120,8 +152,10 @@ func workspaceRepositoryExitClassFor(result workspaceapi.CommandResult) workspac
 	switch {
 	case result.ExitCode == 0:
 		return workspaceRepositoryExitOK
-	case result.ExitCode == 128 && strings.Contains(result.Stderr, workspaceEgressQuotaRefusal):
+	case result.ExitCode == 128 && workspaceProxyStatusFor(result.Stderr) == workspaceProxyStatusQuota:
 		return workspaceRepositoryExitEgressQuota
+	case result.ExitCode == 128 && workspaceProxyStatusFor(result.Stderr) == workspaceProxyStatusUnavailable:
+		return workspaceRepositoryExitEgressUnavailable
 	case result.ExitCode == 128:
 		return workspaceRepositoryExitFatal
 	case result.ExitCode == 129:
@@ -152,14 +186,19 @@ func workspaceRepositoryExitClassFor(result workspaceapi.CommandResult) workspac
 type workspaceRepositoryStepOutcome struct {
 	step      string
 	exitClass workspaceRepositoryExitClass
-	truncated bool
-	attempts  int
+	// proxyStatus is the egress proxy's answer to the guest's CONNECT, the
+	// one cause a `fatal` cannot otherwise tell apart from an authentication,
+	// DNS or TLS failure.
+	proxyStatus workspaceProxyStatus
+	truncated   bool
+	attempts    int
 	// retryable reports whether the FINAL result still matched
 	// retryableWorkspaceTransfer. True means the retry budget ran out on a
-	// 503/504 admission refusal; false means the refusal was never retryable
-	// — an authentication failure, a truncated answer or a command that
-	// changes the checkout — and separating those is the whole question when
-	// an advertisement cannot be verified.
+	// 503/504 admission refusal or an egress proxy's 503; false means the
+	// refusal was never retryable — an authentication failure, a spent egress
+	// quota, a truncated answer or a command that changes the checkout — and
+	// separating those is the whole question when an advertisement cannot be
+	// verified.
 	retryable bool
 }
 
@@ -169,7 +208,16 @@ type workspaceRepositoryStepOutcome struct {
 // Unwrap, so this changes no errors.Is or errors.As reading anywhere.
 func (o workspaceRepositoryStepOutcome) Error() string {
 	return "repository step " + o.step + " unverified (" + string(o.exitClass) +
-		", attempts=" + strconv.Itoa(o.attempts) + ")"
+		", proxy_status=" + string(o.proxyStatusLabel()) + ", attempts=" + strconv.Itoa(o.attempts) + ")"
+}
+
+// proxyStatusLabel keeps an outcome built without a proxy reading inside the
+// vocabulary.
+func (o workspaceRepositoryStepOutcome) proxyStatusLabel() workspaceProxyStatus {
+	if o.proxyStatus == "" {
+		return workspaceProxyStatusNone
+	}
+	return o.proxyStatus
 }
 
 // logArgs renders the outcome for slog, with the owner row identified by a
@@ -180,6 +228,7 @@ func (o workspaceRepositoryStepOutcome) logArgs(workspaceID string) []any {
 		"stage", "verify_repository_step",
 		"step", o.step,
 		"exit_class", string(o.exitClass),
+		"proxy_status", string(o.proxyStatusLabel()),
 		"output_truncated", o.truncated,
 		"attempts", o.attempts,
 		"retry_budget_exhausted", o.retryable,

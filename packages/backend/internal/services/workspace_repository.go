@@ -624,13 +624,18 @@ func (s *WorkspaceService) runRuntimeRepositoryCommand(ctx context.Context, row 
 	return &workspaceRepositoryPreparationFailure{err: pkgerrors.Internal(fmt.Sprintf("initialize workspace repository (%s) failed with status %d: %s", step, result.ExitCode, detail))}
 }
 
-// Git reports an HTTP refusal in stderr. Do not retry authentication errors,
-// truncated evidence, transport uncertainty, or commands that change checkout.
+// Git reports an HTTP refusal in stderr. Retry the remote's 503/504 admission
+// refusal and the egress proxy's 503 (its ledger is unavailable; it sends
+// Retry-After: 1). Do not retry the proxy's 429 (the payer's daily egress is
+// spent until 00:00 UTC), authentication errors, truncated evidence,
+// transport uncertainty, or commands that change checkout.
 func retryableWorkspaceTransfer(command workspaceapi.Command, result workspaceapi.CommandResult) bool {
 	if len(command.Args) < 2 || command.Args[0] != "git" || (command.Args[1] != "fetch" && command.Args[1] != "clone" && command.Args[1] != "ls-remote") || result.ExitCode == 0 || result.OutputTruncated {
 		return false
 	}
-	return strings.Contains(result.Stderr, "The requested URL returned error: 503") || strings.Contains(result.Stderr, "The requested URL returned error: 504")
+	return strings.Contains(result.Stderr, "The requested URL returned error: 503") ||
+		strings.Contains(result.Stderr, "The requested URL returned error: 504") ||
+		workspaceProxyStatusFor(result.Stderr) == workspaceProxyStatusUnavailable
 }
 
 // runtimeRepositoryCommandOutput reads a repository check's output, and
@@ -648,11 +653,12 @@ func (s *WorkspaceService) runtimeRepositoryCommandOutput(ctx context.Context, r
 	}
 	if result.ExitCode != 0 || result.OutputTruncated {
 		outcome := workspaceRepositoryStepOutcome{
-			step:      workspaceRepositoryStepLabel(step),
-			exitClass: workspaceRepositoryExitClassFor(result),
-			truncated: result.OutputTruncated,
-			attempts:  attempts,
-			retryable: retryableWorkspaceTransfer(command, result),
+			step:        workspaceRepositoryStepLabel(step),
+			exitClass:   workspaceRepositoryExitClassFor(result),
+			proxyStatus: workspaceProxyStatusFor(result.Stderr),
+			truncated:   result.OutputTruncated,
+			attempts:    attempts,
+			retryable:   retryableWorkspaceTransfer(command, result),
 		}
 		outcome.record(row.ID)
 		if outcome.exitClass == workspaceRepositoryExitEgressQuota {
