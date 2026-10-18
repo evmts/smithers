@@ -248,6 +248,38 @@ export interface HostState {
 
 /** A composition's host state before its executor registers anything. */
 const emptyHost = (): HostState => ({ catalog: undefined, revision: undefined, executor: undefined })
+
+/**
+ * The `Cannot load flow` issue for a flow whose body this host could not load.
+ *
+ * The underlying cause leads: what the module imported and could not find, a
+ * syntax error, or what its top level threw. The registry's own sentence only
+ * says the body did not load, and it follows. Ordered the other way, the
+ * reporter's `Failure.fieldValueLimit` bound cut the cause off, and two
+ * investigations blamed the wrong package (#4253). Only the first line of an
+ * `Error` or a thrown string travels, redacted and bounded; a flow's top level
+ * can throw any text, and its stack is not an operator's answer. A
+ * `PlatformError` keeps its designed remedy instead.
+ */
+const loadIssue = (
+  flow: string,
+  refusal: { readonly message: string; readonly cause?: unknown } | undefined
+): string => {
+  const cause = refusal?.cause
+  const sentence = (cause instanceof PlatformError.PlatformError
+    ? cause.reason.description ?? refusal?.message
+    : refusal?.message) ?? "No registered executable on this host"
+  const line = cause instanceof PlatformError.PlatformError ? "" : (() => {
+    try {
+      const text = cause instanceof Error ? String(cause) : typeof cause === "string" ? cause : ""
+      return [...Failure.causeLine(text)].slice(0, Failure.fieldValueLimit).join("")
+    } catch {
+      return ""
+    }
+  })()
+  return `Cannot load flow ${flow.slice(0, 256)}: ${(line === "" ? sentence : `${line}; ${sentence}`).slice(0, 800)}`
+}
+
 /** Existing executable registration input to the native runtime final phase.
  * @since 1.0.0
  * @private
@@ -889,9 +921,6 @@ export const make = (
     // program that registers it: it plans with no nodes and is accepted pending,
     // where every other refusal (an unreadable body) is refused before admission.
     const refusal = host.catalog?.refused.find((entry) => entry.flow === descriptor.name)
-    const refusedMessage = (refusal?.cause instanceof PlatformError.PlatformError
-      ? refusal.cause.reason.description ?? refusal.message
-      : refusal?.message) ?? "No registered executable on this host"
     const decodeInput = (loaded: Executable.Executable, input: unknown) =>
       loaded.input === undefined ? Effect.succeed(input) : Effect.try({
         try: () => loaded.input!.make(input),
@@ -904,11 +933,7 @@ export const make = (
       })
     const retryLoad = executable === undefined && refusal?.code === "load_timeout" && host.catalog?.load !== undefined
       ? host.catalog.load(descriptor.name).pipe(
-        Effect.mapError((cause) =>
-          new ControlError.InvalidInput({
-            issue: `Cannot load flow ${descriptor.name.slice(0, 256)}: ${cause.message.slice(0, 800)}`
-          })
-        ),
+        Effect.mapError((cause) => new ControlError.InvalidInput({ issue: loadIssue(descriptor.name, cause) })),
         Effect.flatMap((loaded) =>
           Descriptor.executionDigest(loaded.descriptor) === Descriptor.executionDigest(descriptor)
             ? Effect.succeed(loaded)
@@ -941,9 +966,7 @@ export const make = (
           ? {
             plan: () =>
               Effect.fail(
-                new ControlError.InvalidInput({
-                  issue: `Cannot load flow ${descriptor.name.slice(0, 256)}: ${refusedMessage.slice(0, 800)}`
-                })
+                new ControlError.InvalidInput({ issue: loadIssue(descriptor.name, refusal) })
               )
           }
           : {}
