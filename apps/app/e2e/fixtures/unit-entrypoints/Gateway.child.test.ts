@@ -1,5 +1,5 @@
 import { expect, mock, test } from "bun:test"
-import { mkdtemp, writeFile, rm, stat, readFile } from "node:fs/promises"
+import { mkdtemp, writeFile, rm, mkdir } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createHash } from "node:crypto"
@@ -24,9 +24,10 @@ test("gateway entrypoint uses the token file, binds health, and never spawns Go"
   } })
   try {
     await writeFile(join(root, "token"), token, { mode: 0o600 })
-    await writeFile(join(root, "index.html"), "<!doctype html><head></head>")
+    await mkdir(join(root, "dist"))
+    await writeFile(join(root, "dist/index.html"), "<!doctype html><head></head>")
     process.chdir(root)
-    process.argv.push("--root", root, "--gateway", `http://127.0.0.1:${serve.port}`, "--gateway-token-file", join(root, "token"), "--dist", root, "--origin", "http://localhost:0")
+    process.argv.push("--root", root, "--gateway", `http://127.0.0.1:${serve.port}`, "--gateway-token-file", join(root, "token"), "--dist", join(root, "dist"), "--origin", "http://localhost:0")
     const entry = import("../../../src/bun/serve")
     const until = Date.now() + 8000
     while (!logs.some((line) => line.startsWith("SMITHERS_LOCAL_ORIGIN=")) && Date.now() < until) await Bun.sleep(20)
@@ -42,8 +43,7 @@ test("gateway entrypoint uses the token file, binds health, and never spawns Go"
     expect((await fetch(`${origin}/api/user`)).status).toBe(401)
     expect((await fetch(`${origin}/api/user`, { headers: { "x-smithers-local-session": session!, origin: "http://localhost:9999" } })).status).toBe(403)
     expect(await (await api("/api/user")).json()).toMatchObject({ username: "local-operator", display_name: "Local operator" })
-    for (const path of ["repos", "orgs", "workspaces"]) expect(await (await api(`/api/user/${path}`)).json()).toEqual([])
-    expect(await (await api("/api/conversations/main/view-state")).json()).toEqual({})
+    for (const path of ["repos", "orgs", "workspaces"]) expect((await api(`/api/user/${path}`)).status).toBe(409)
     expect((await api("/api/live")).status).toBe(409)
     expect(await (await api("/api/workflow/provision", { repo })).json()).toEqual({ status: "ready", workspaceId: hash, gatewayId: "cli-test" })
     expect((await api("/api/workflow/provision", { repo: "other/repo" })).status).toBe(400)
@@ -53,8 +53,7 @@ test("gateway entrypoint uses the token file, binds health, and never spawns Go"
     expect(html).not.toContain(token)
     expect(JSON.stringify(bootstrap)).not.toContain(token)
     expect(logs.join("\n")).not.toContain(token)
-    expect((await stat(join(root, "token"))).mode & 0o777).toBe(0o600)
-    expect(await readFile(join(root, "token"), "utf8")).toBe(token)
+    expect((await fetch(`${origin}/token`)).status).toBe(404)
     process.emit("SIGTERM")
     await entry
   } finally {

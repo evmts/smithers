@@ -93,7 +93,7 @@ export const createLocalWorkflowRelay = (
         method: "POST", redirect: "error", signal,
         headers: {
           "content-type": "application/json",
-          ...(config.operatorToken === undefined ? {} : { authorization: `Bearer ${config.operatorToken}` })
+          authorization: `Bearer ${config.operatorToken}`
         },
         body: JSON.stringify({ _tag: "Request", id: 1, tag: body.procedure, payload: body.payload, headers: [] }) + "\n"
       })
@@ -107,8 +107,8 @@ export const createLocalWorkflowRelay = (
       const exit = record(frame?.exit)
       if (exit._tag === "Success") return json({ ok: true, payload: exit.value })
       if (exit._tag === "Failure") {
-        // Preserve the typed cause; the existing browser seam classifies it.
-        return json({ ok: false, error: { message: "The local gateway refused the call.", detail: exit.cause } })
+        // Only typed failures cross the browser boundary; defects stay on the host.
+        return json({ ok: false, error: { message: "The local gateway refused the call.", detail: Array.isArray(exit.cause) ? exit.cause.filter(entry => record(entry)._tag === "Fail") : [] } })
       }
       return jsonError("internal", "The local gateway returned an unreadable RPC result.")
     } catch {
@@ -122,8 +122,6 @@ export const localGatewayApi = async (config: LocalWorkflowGateway, request: Req
   const path = new URL(request.url).pathname
   if (request.method === "GET") {
     if (path === "/api/user") return json({ id: 0, username: "local-operator", display_name: "Local operator", is_admin: false })
-    if (["/api/user/repos", "/api/user/orgs", "/api/user/workspaces"].includes(path)) return json([])
-    if (path === "/api/conversations/main/view-state") return json({})
     const prefix = `/api/repos/${config.repo}`
     if (path === `${prefix}/contents/.smithers/factory.json`) {
       try {
@@ -135,7 +133,6 @@ export const localGatewayApi = async (config: LocalWorkflowGateway, request: Req
           : jsonError("internal", "The local flow catalog could not be read.")
       }
     }
-    if (path === `${prefix}/home`) return json({ kind: "none" })
   }
   return json({ message: "Not available in local mode." }, 409)
 }
