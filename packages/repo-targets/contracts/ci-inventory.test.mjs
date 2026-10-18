@@ -292,11 +292,14 @@ test("nightly faults resolve through the public CLI to every declared serial run
 })
 
 test("public project copy keeps the support contract out of the short description", () => {
-  const description = "Smithers maintains your codebase. It turns issues into reviewed, tested changes and, when enabled, keeps the project wiki current. Flows beside your code define how."
+  const description = "Smithers maintains your codebase. It turns issues into tested changes for you to review and, when enabled, keeps the project wiki current. Flows beside your code define how."
   const project = JSON.parse(readFileSync(join(root, "apps/site/src/data/project.json"), "utf8"))
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))
   assert.equal(project.description, description)
   assert.equal(manifest.description, description)
+  for (const text of [project.description, manifest.description]) {
+    assert.doesNotMatch(text, /\breviewed\b|ready to merge/i, "the public description never says a change was reviewed or is ready to merge for the user")
+  }
   assert.deepEqual(project.support, {
     summary: "The release candidate's required platform is Linux with Node 26.4.0."
   })
