@@ -3569,10 +3569,11 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           if (transition.flows.length === 0 && transition.home === undefined && transition.catalog !== "unreadable") {
             if (existing !== undefined) collections.repositoryFlows.delete(transition.repo)
           } else if (existing === undefined) {
-            collections.repositoryFlows.insert({ id: transition.repo, flows: [...transition.flows], home: transition.home, catalog: transition.catalog, loadedAt: createdAt })
+            collections.repositoryFlows.insert({ id: transition.repo, flows: [...transition.flows], home: transition.home, declaredTabs: transition.declaredTabs, catalog: transition.catalog, loadedAt: createdAt })
           } else {
             collections.repositoryFlows.update(transition.repo, (draft) => {
               draft.flows = [...transition.flows]
+              draft.declaredTabs = transition.declaredTabs
               draft.home = transition.home
               draft.catalog = transition.catalog
               draft.loadedAt = createdAt

@@ -1,0 +1,282 @@
+package services
+
+import (
+	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+)
+
+// The typed reason a TODO failed (#2783): which step failed (its kind) and
+// whose fault it was, read from the item's typed fault and state only. Its
+// sentence is built from those types, never from an error's text, so every
+// surface (the app, the TUI, the CLI and the API) shows the same words and
+// none shows a raw internal error.
+
+// The steps a TODO fails at.
+const (
+	// mythicalFailProvisioning: a lane or its run could not be set up.
+	mythicalFailProvisioning = "provisioning"
+	// mythicalFailRuntime: the run failed on Smithers' runtime or a service
+	// it depends on other than a model provider.
+	mythicalFailRuntime = "runtime"
+	// mythicalFailModel: the model provider failed or rate limited the run.
+	mythicalFailModel = "model"
+	// mythicalFailChecks: the repository's checks or its pull request's CI
+	// failed on the result.
+	mythicalFailChecks = "checks"
+	// mythicalFailPlan: the attempt produced no working change.
+	mythicalFailPlan = "plan"
+	// mythicalFailLanding: the pull request could not be opened, followed or
+	// merged, or it closed without merging.
+	mythicalFailLanding = "landing"
+	// mythicalFailReview: the review of the pull request's head did not finish.
+	mythicalFailReview = "review"
+	// mythicalFailStopped: a person, a bound or a defect stopped it.
+	mythicalFailStopped = "stopped"
+)
+
+// MythicalFailureView is why an item failed: its kind (the step) and fault
+// (the failure registry's class: whose fault it was). The item's reason is
+// the sentence for them.
+type MythicalFailureView struct {
+	Kind  string `json:"kind"`
+	Fault string `json:"fault"`
+}
+
+// mythicalLaneFailedCode is the flow runtime's refusal of a launch on a lane
+// whose provisioning failed for good (mythicalLaneNotRunning), and
+// mythicalLaneFailed the tag of the TODO's fault: an infra stop at
+// provisioning, which a person's Retry lifts on a new lane.
+const (
+	mythicalLaneFailedCode = "runtime_workspace_failed"
+	mythicalLaneFailed     = "lane_failed"
+)
+
+// mythicalOutcomeFault types a failed run's outcome (mythicalFailedOutcome)
+// at a step whose own failure is failed (plan or checks).
+func mythicalOutcomeFault(failed, outcome string) mythicalFault {
+	switch {
+	case outcome == mythicalCancelled:
+		return mythicalFault{Class: "user", Tag: "cancelled", Kind: mythicalFailStopped}
+	case strings.HasPrefix(outcome, mythicalStopped):
+		class, tag, _ := strings.Cut(strings.TrimPrefix(outcome, mythicalStopped), ": ")
+		if tag == "coding/Error/check_configuration" {
+			return mythicalFault{Class: class, Tag: tag, Kind: mythicalFailChecks}
+		}
+		if tag == mythicalLaneFailed {
+			return mythicalFault{Class: class, Tag: tag, Kind: mythicalFailProvisioning}
+		}
+		return mythicalFault{Class: class, Tag: tag, Kind: mythicalFailStopped}
+	case strings.HasPrefix(outcome, mythicalOutage):
+		class, tag, _ := strings.Cut(strings.TrimPrefix(outcome, mythicalOutage), ": ")
+		return mythicalFault{Class: class, Tag: tag, Kind: mythicalOutageKind(class, tag)}
+	}
+	return mythicalFault{Class: "factory", Tag: strings.TrimPrefix(outcome, "failed: "), Kind: failed}
+}
+
+// mythicalOutageKind is the step an outage failed: a model provider's (a
+// wait or dependency fault of a model error) or the runtime's.
+func mythicalOutageKind(class, tag string) string {
+	if (class == "wait" || class == "dependency") && strings.Contains(tag, "/model/") {
+		return mythicalFailModel
+	}
+	return mythicalFailRuntime
+}
+
+// kind is the fault's step; a fault recorded before kinds were is read
+// from its class and tag.
+func (f mythicalFault) kind() string {
+	switch {
+	case f.Tag == "coding/Error/check_configuration":
+		return mythicalFailChecks
+	case f.Kind != "":
+		return f.Kind
+	case f.Tag == "launch":
+		return mythicalFailProvisioning
+	case f.Tag == "github":
+		return mythicalFailLanding
+	case f.Class == "factory":
+		return mythicalFailPlan
+	case f.Class == "user" || f.Class == "bug" || f.Class == "policy" && f.Tag != "outages":
+		return mythicalFailStopped
+	}
+	return mythicalOutageKind(f.Class, f.Tag)
+}
+
+// fault is whose fault the failure was: an outage past its bound stays the
+// fault of what failed, not the bound's.
+func (f mythicalFault) fault() string {
+	if f.Class != "policy" || f.Tag != "outages" {
+		return f.Class
+	}
+	if f.kind() == mythicalFailModel {
+		return "dependency"
+	}
+	return "infra"
+}
+
+// sentence is the fault in a person's words.
+func (f mythicalFault) sentence() string {
+	if f.Class == "interrupted" {
+		return "Interrupted"
+	}
+	var sentence string
+	switch f.kind() {
+	case mythicalFailProvisioning:
+		sentence = "Smithers could not set up a lane"
+	case mythicalFailRuntime:
+		sentence = "Smithers could not run this attempt"
+	case mythicalFailModel:
+		sentence = "The model provider did not answer"
+	case mythicalFailChecks:
+		switch f.Tag {
+		case "coding/Error/check_configuration":
+			sentence = "No checks found"
+		case "ci":
+			sentence = "CI failed on the pull request"
+		case "ci_wait":
+			sentence = "CI on the pull request did not finish"
+		default:
+			sentence = "Checks failed"
+		}
+	case mythicalFailLanding:
+		sentence = "GitHub did not answer"
+		if f.Tag == "merge" {
+			sentence = "GitHub refused the merge"
+		}
+	case mythicalFailPlan:
+		sentence = "This attempt did not produce a working change"
+		if f.Tag == "very_hard" {
+			sentence = "Every plan failed"
+		}
+	default:
+		switch {
+		case f.Tag == "cancelled":
+			sentence = "The run was cancelled"
+		case f.Tag == "launch_bound":
+			sentence = "It reached its run limit"
+		case f.Tag == "protected_paths":
+			sentence = "It changes protected paths"
+		case f.Tag == "placement":
+			sentence = "No machine matches what this repository declares"
+		case f.Class == "bug":
+			sentence = "Smithers hit a defect"
+		case f.Class == "user":
+			sentence = "The run was stopped"
+		default:
+			sentence = "A repository policy stopped it"
+		}
+	}
+	if f.Class == "policy" && f.Tag == "outages" {
+		sentence += " after repeated tries"
+	}
+	return sentence
+}
+
+// mythicalFailureOf is the item's typed failure and its sentence, or nil
+// while it has none: a stop or a retry after a typed fault, a pull request
+// closed without merging, or a review a person may retry.
+func mythicalFailureOf(item db.MythicalItem) (*MythicalFailureView, string) {
+	switch item.State {
+	case "rejected":
+		return &MythicalFailureView{Kind: mythicalFailLanding, Fault: "user"}, "The pull request closed without merging"
+	case "landed", "cancelled", "declined", "skipped":
+		return nil, ""
+	}
+	if item.Source == "issue" && mythicalReviewHeld(item) {
+		return &MythicalFailureView{Kind: mythicalFailReview, Fault: mythicalReviewFault(item)}, "The review did not finish"
+	}
+	fault := mythicalChecksOf(item).Fault
+	if fault == nil {
+		return nil, ""
+	}
+	return &MythicalFailureView{Kind: fault.kind(), Fault: fault.fault()}, fault.sentence()
+}
+
+// todoFailure is a failed TODO's card failure {step, class, message,
+// retryable} (spec §14.3): the step its typed fault names, whose fault it
+// was, and its sentence. A person may Retry every failed TODO, so it is
+// retryable; a TODO that is not failed has none.
+func todoFailure(item db.MythicalItem) map[string]any {
+	if todoState(item) != "failed" {
+		return nil
+	}
+	failure, sentence := mythicalFailureOf(item)
+	if failure == nil {
+		return map[string]any{"step": mythicalFailStopped, "class": "factory", "message": "Smithers stopped this TODO", "retryable": true}
+	}
+	step := failure.Kind
+	checks := mythicalChecksOf(item)
+	if recorded := checks.FailureStep; recorded != nil && recorded.Attempt == item.Attempt && recorded.Run == item.RequestRunID && checks.Fault != nil && recorded.Tag == checks.Fault.Tag && (checks.Fault.Tag != "coding/Error/check_configuration" || todoCheckFailureAction(recorded.Action)) {
+		step = recorded.Action
+	}
+	if checks := mythicalChecksOf(item); checks.RunLaunched && !checks.RunAttached && failure.Kind != mythicalFailProvisioning {
+		// The host never attached: no coding step started, even when the
+		// underlying interruption is classified as a runtime failure.
+		step = "start"
+	}
+	result := map[string]any{"step": step, "class": failure.Fault, "message": sentence, "retryable": true}
+	if checks.Fault != nil && checks.Fault.Tag == "coding/Error/check_configuration" {
+		result["check_configuration"] = true
+		result["label"] = "Ran checks"
+	}
+	if tool := mythicalChecksOf(item).MissingTool; tool != nil {
+		result["missing_tool"] = map[string]string{"name": tool.Name, "file": tool.File}
+	}
+	return result
+}
+
+// mythicalSentence starts an authored reason as a sentence.
+func mythicalSentence(reason string) string {
+	if reason == "" {
+		return ""
+	}
+	first, size := utf8.DecodeRuneInString(reason)
+	return string(unicode.ToUpper(first)) + reason[size:]
+}
+
+// mythicalReviewFault is whose fault a held review was, by its verdict: a
+// person's cancel, a stop's own class, the review's failure (factory), or
+// the outages it could not run through (infra).
+func mythicalReviewFault(item db.MythicalItem) string {
+	review := mythicalChecksOf(item).Review
+	switch {
+	case review == nil || !mythicalReviewCurrent(review, item):
+		return "infra"
+	case review.Verdict == mythicalCancelled:
+		return "user"
+	case strings.HasPrefix(review.Verdict, mythicalStopped):
+		class, _, _ := strings.Cut(strings.TrimPrefix(review.Verdict, mythicalStopped), ": ")
+		return class
+	case strings.HasPrefix(review.Verdict, mythicalOutage):
+		class, _, _ := strings.Cut(strings.TrimPrefix(review.Verdict, mythicalOutage), ": ")
+		return class
+	case strings.HasPrefix(review.Verdict, "failed"):
+		return "factory"
+	}
+	return "infra"
+}
+
+// mythicalDiagnostic reports whether a stored reason is a failure's
+// diagnostic, which only its typed sentence stands for on any surface.
+func mythicalDiagnostic(reason string) bool {
+	return strings.Contains(reason, mythicalOutage)
+}
+
+// Automatic retries keep the actionable stored cause without exposing runtime
+// tags or command diagnostics on the person's card.
+func todoRetryReason(item db.MythicalItem) string {
+	if strings.HasPrefix(item.Reason, mythicalOutage+"infra: the previous lane could not be retired:") {
+		return "The previous machine could not be retired"
+	}
+	if mythicalDiagnostic(item.Reason) {
+		_, sentence := mythicalFailureOf(item)
+		if sentence != "" {
+			return sentence
+		}
+		return "Smithers could not run this attempt"
+	}
+	return mythicalSentence(item.Reason)
+}

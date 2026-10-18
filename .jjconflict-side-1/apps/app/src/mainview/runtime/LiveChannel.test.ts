@@ -1,0 +1,505 @@
+import { describe, expect, test } from "bun:test"
+import { LiveChannel, type LiveSocket } from "./LiveChannel"
+
+class Socket implements LiveSocket {
+  readyState = 0
+  onopen: (() => void) | null = null
+  onclose: (() => void) | null = null
+  onmessage: ((event: { data: unknown }) => void) | null = null
+  frames: unknown[] = []
+  closed = false
+  send(raw: string) { this.frames.push(JSON.parse(raw)) }
+  close() { this.closed = true }
+  open() { this.readyState = 1; this.onopen?.() }
+  drop() { this.readyState = 3; this.onclose?.() }
+  receive(frame: unknown) { this.onmessage?.({ data: JSON.stringify(frame) }) }
+}
+const harness = (project?: (topic: string, previous: unknown, delta: unknown) => unknown, documentFrames = false) => {
+  const sockets: Socket[] = []
+  const timers: { run: () => void; ms: number; cancelled: boolean }[] = []
+  const channel = new LiveChannel({ documentFrames,
+    socket: () => { const socket = new Socket(); sockets.push(socket); return socket },
+    random: () => 1, project,
+    schedule: (run, ms) => { const timer = { run, ms, cancelled: false }; timers.push(timer); return timer },
+    cancel: timer => { (timer as typeof timers[number]).cancelled = true }
+  })
+  return { channel, sockets, timers }
+}
+
+describe("live channel", () => {
+  // Spec §7.1.1: a gap ends only this subscription. The channel resubscribes
+  // with its client id; edits wait, and the assignment restarts sync step 1.
+  test("a document gap resubscribes instead of reusing the closed stream", () => {
+    const { channel, sockets } = harness(undefined, true)
+    const events: string[] = []
+    const doc = channel.subscribeDocument("doc:code:12:retry.ts", event => events.push(event.kind))
+    const home = channel.subscribe("home", () => {})
+    sockets[0]!.open()
+    expect(sockets[0]!.frames).toEqual([{ t: "sub", id: 1, topic: "doc:code:12:retry.ts" }, { t: "sub", id: 2, topic: "home" }])
+    const epoch = "00112233445566778899aabbccddeeff"
+    sockets[0]!.receive({ t: "snap", id: 1, cursor: 0, data: { epoch, client_id: 42 } })
+    expect(events).toEqual(["assigned"])
+    sockets[0]!.receive({ t: "gap", id: 1 })
+    expect(events).toEqual(["assigned", "offline"])
+    expect(sockets[0]!.frames.at(-1)).toEqual({ t: "sub", id: 1, topic: "doc:code:12:retry.ts", client_id: 42 })
+    doc.send(1, new Uint8Array([2, 0]))
+    expect(sockets[0]!.frames).toHaveLength(3)
+    sockets[0]!.receive({ t: "gap", id: 1 })
+    expect(sockets[0]!.frames).toHaveLength(3)
+    sockets[0]!.receive({ t: "snap", id: 1, cursor: 0, data: { epoch, client_id: 42 } })
+    expect(events).toEqual(["assigned", "offline", "assigned"])
+    expect(channel.getSnapshot("home")).toEqual({ topic: "home" })
+    doc.release(); home(); channel.dispose()
+  })
+  test("an admitted document retries temporary restart refusal without reopening other topics", () => {
+    const { channel, sockets, timers } = harness(undefined, true)
+    const topic = "doc:code:12:retry.ts"
+    const events: string[] = []
+    const doc = channel.subscribeDocument(topic, event => events.push(event.kind))
+    const home = channel.subscribe("home", () => {})
+    const socket = sockets[0]!
+    socket.open()
+    socket.receive({ t: "snap", id: 1, cursor: 0, data: { epoch: "00112233445566778899aabbccddeeff", client_id: 42 } })
+    socket.receive({ t: "gap", id: 1 })
+    socket.receive({ t: "err", id: 1, code: "unsupported" })
+    const before = socket.frames.length
+    doc.send(1, new Uint8Array([2, 0]))
+    expect(socket.frames).toHaveLength(before)
+    expect(events.at(-1)).toBe("refused")
+    expect(timers[0]!.ms).toBe(250)
+    timers[0]!.run()
+    expect(socket.frames.at(-1)).toEqual({ t: "sub", id: 1, topic, client_id: 42 })
+    socket.receive({ t: "err", id: 1, code: "unsupported" })
+    expect(timers[1]!.ms).toBe(500)
+    timers[1]!.run()
+    socket.receive({ t: "err", id: 1, code: "unsupported" })
+    socket.receive({ t: "snap", id: 1, cursor: 0, data: { epoch: "ffeeddccbbaa99887766554433221100", client_id: 43 } })
+    expect(timers[2]!.cancelled).toBe(true)
+    expect(events.at(-1)).toBe("assigned")
+    expect(channel.getSnapshot("home")).toEqual({ topic: "home" })
+    expect(sockets).toHaveLength(1)
+    socket.receive({ t: "err", id: 1, code: "unsupported" })
+    socket.receive({ t: "err", id: 1, code: "forbidden" })
+    expect(timers[3]!.cancelled).toBe(true)
+    doc.release(); home(); channel.dispose()
+  })
+  test("document retry backs off to five seconds and stops after a fresh assignment", () => {
+    const { channel, sockets, timers } = harness(undefined, true)
+    const doc = channel.subscribeDocument("doc:code:12:retry.ts", () => {})
+    const socket = sockets[0]!
+    socket.open()
+    socket.receive({ t: "snap", id: 1, cursor: 0, data: { epoch: "00112233445566778899aabbccddeeff", client_id: 42 } })
+    for (const [index, delay] of [250, 500, 1000, 2000, 4000, 5000, 5000].entries()) {
+      socket.receive({ t: "err", id: 1, code: "unsupported" })
+      socket.receive({ t: "err", id: 1, code: "unsupported" })
+      expect(timers).toHaveLength(index + 1)
+      expect(timers[index]!.ms).toBe(delay)
+      timers[index]!.run()
+    }
+    socket.receive({ t: "snap", id: 1, cursor: 0, data: { epoch: "ffeeddccbbaa99887766554433221100", client_id: 43 } })
+    expect(channel.getSnapshot("doc:code:12:retry.ts")?.error).toBeUndefined()
+    socket.receive({ t: "err", id: 1, code: "unsupported" })
+    expect(timers[7]!.ms).toBe(250)
+    doc.release(); channel.dispose()
+  })
+  test.each(["release", "disable", "dispose"])("document restart retry is cancelled on %s", stop => {
+    const { channel, sockets, timers } = harness(undefined, true)
+    const doc = channel.subscribeDocument("doc:code:12:retry.ts", () => {})
+    sockets[0]!.open()
+    sockets[0]!.receive({ t: "snap", id: 1, cursor: 0, data: { epoch: "00112233445566778899aabbccddeeff", client_id: 42 } })
+    sockets[0]!.receive({ t: "err", id: 1, code: "unsupported" })
+    if (stop === "release") doc.release()
+    if (stop === "disable") channel.setEnabled(false)
+    if (stop === "dispose") channel.dispose()
+    expect(timers[0]!.cancelled).toBe(true)
+    const before = sockets[0]!.frames.length
+    timers[0]!.run()
+    expect(sockets[0]!.frames).toHaveLength(before)
+    channel.dispose()
+  })
+  test("a supplied client id does not retry an unadmitted document", () => {
+    const { channel, sockets, timers } = harness(undefined, true)
+    const doc = channel.subscribeDocument("doc:code:12:retry.ts", () => {}, 42)
+    sockets[0]!.open()
+    sockets[0]!.receive({ t: "err", id: 1, code: "unsupported" })
+    expect(timers).toHaveLength(0)
+    doc.release(); channel.dispose()
+  })
+  // ADR 0003 ruling: a host restart drops the socket; the reconnect
+  // resubscribes with the client id and typing waits, as after a gap.
+  test("a dropped socket keeps document typing pending and resubscribes with its client id", () => {
+    const { channel, sockets, timers } = harness(undefined, true)
+    const events: string[] = []
+    const doc = channel.subscribeDocument("doc:code:12:retry.ts", event => events.push(event.kind))
+    sockets[0]!.open()
+    sockets[0]!.receive({ t: "snap", id: 1, cursor: 0, data: { epoch: "00112233445566778899aabbccddeeff", client_id: 42 } })
+    sockets[0]!.drop()
+    expect(events).toEqual(["assigned", "offline"])
+    doc.send(1, new Uint8Array([2, 0]))
+    timers[0]!.run(); sockets[1]!.open()
+    expect(sockets[1]!.frames).toEqual([{ t: "sub", id: 1, topic: "doc:code:12:retry.ts", client_id: 42 }])
+    doc.release(); channel.dispose()
+  })
+  test("private confirmations disappear on disconnect and await a fresh authorized snapshot", () => {
+    const { channel, sockets, timers } = harness()
+    const release = channel.subscribe("confirmations:17", () => {})
+    sockets[0]!.open()
+    sockets[0]!.receive({ t: "snap", id: 1, cursor: 8, data: [{ id: "private", state: "pending" }] })
+    expect(channel.getSnapshot("confirmations:17")?.data).toEqual([{ id: "private", state: "pending" }])
+    sockets[0]!.drop()
+    expect(channel.getSnapshot("confirmations:17")).toEqual({ topic: "confirmations:17" })
+    timers[0]!.run(); sockets[1]!.open()
+    expect(sockets[1]!.frames[0]).toEqual({ t: "sub", id: 1, topic: "confirmations:17" })
+    sockets[1]!.receive({ t: "err", id: 1, code: "forbidden" })
+    expect(channel.getSnapshot("confirmations:17")?.data).toBeUndefined()
+    release(); channel.dispose()
+  })
+  // T-COL-08 Scope In: unavailable real-stack providers must fail closed.
+  test("dark code documents refuse without opening a socket or sending a subscription", () => {
+    const { channel, sockets, timers } = harness()
+    let notified = 0
+    const release = channel.subscribe("doc:code:12:retry.ts", () => notified++)
+    expect(channel.getSnapshot("doc:code:12:retry.ts")).toEqual({ topic: "doc:code:12:retry.ts", error: "unsupported" })
+    expect(channel.getSnapshot("doc:code:12:retry.ts")?.error).toBe("unsupported")
+    expect(notified).toBe(1)
+    expect(sockets).toHaveLength(0)
+    expect(timers).toHaveLength(0)
+    release(); release()
+    expect(channel.getSnapshot("doc:code:12:retry.ts")).toBeUndefined()
+    expect(channel.getSnapshot("doc:code:12:retry.ts")).toBeUndefined()
+    channel.dispose()
+  })
+  test("dark documents never subscribe on a shared socket or reconnect and do not keep it alive", () => {
+    const { channel, sockets, timers } = harness()
+    const releaseDoc = channel.subscribe("doc:code:12:retry.ts", () => {})
+    const releaseHome = channel.subscribe("home", () => {})
+    sockets[0]!.open()
+    sockets[0]!.receive({ t: "snap", id: 1, cursor: 1, data: "premature document" })
+    sockets[0]!.receive({ t: "gap", id: 1 })
+    expect(channel.getSnapshot("doc:code:12:retry.ts")?.error).toBe("unsupported")
+    expect(channel.getSnapshot("doc:code:12:retry.ts")?.data).toBeUndefined()
+    expect(sockets[0]!.frames).toEqual([{ t: "sub", id: 2, topic: "home" }])
+    sockets[0]!.drop(); timers[0]!.run(); sockets[1]!.open()
+    expect(sockets[1]!.frames).toEqual([{ t: "sub", id: 2, topic: "home" }])
+    releaseHome()
+    expect(sockets[1]!.closed).toBe(true)
+    releaseDoc()
+    expect(sockets[1]!.frames).toEqual([{ t: "sub", id: 2, topic: "home" }, { t: "unsub", id: 2 }])
+    channel.dispose()
+  })
+  test("a code document opened on an active connection stays refused for every reader", () => {
+    const { channel, sockets } = harness()
+    channel.subscribe("home", () => {})
+    sockets[0]!.open()
+    let notifications = 0
+    const listener = () => notifications++
+    const first = channel.subscribe("doc:code:12:retry.ts", listener)
+    const held = channel.getSnapshot("doc:code:12:retry.ts")
+    const second = channel.subscribe("doc:code:12:retry.ts", listener)
+    expect(channel.getSnapshot("doc:code:12:retry.ts")).toBe(held)
+    expect(notifications).toBe(1)
+    expect(sockets[0]!.frames).toEqual([{ t: "sub", id: 1, topic: "home" }])
+    first(); first()
+    expect(channel.getSnapshot("doc:code:12:retry.ts")?.error).toBe("unsupported")
+    second()
+    expect(channel.getSnapshot("doc:code:12:retry.ts")).toBeUndefined()
+    expect(sockets[0]!.closed).toBe(false)
+    channel.dispose()
+    expect(() => channel.subscribe("doc:code:12:retry.ts", listener)).toThrow("disposed")
+  })
+  test("two Container subscriptions share one socket and one topic; last release unsubscribes", () => {
+    const { channel, sockets } = harness()
+    let first = 0, second = 0
+    const releaseA = channel.subscribe("home", () => first++)
+    const releaseB = channel.subscribe("home", () => second++)
+    expect(sockets).toHaveLength(1)
+    sockets[0]!.open()
+    expect(sockets[0]!.frames).toEqual([{ t: "sub", id: 1, topic: "home" }])
+    sockets[0]!.receive({ t: "snap", id: 1, cursor: 10, data: { items: [12] } })
+    expect([first, second]).toEqual([1, 1])
+    expect(channel.getSnapshot("home")?.data).toEqual({ items: [12] })
+    releaseA(); releaseA()
+    expect(sockets[0]!.frames).toHaveLength(1)
+    releaseB()
+    expect(sockets[0]!.frames[1]).toEqual({ t: "unsub", id: 1 })
+    expect(sockets[0]!.closed).toBe(true)
+    channel.dispose()
+  })
+  test("reconnect resubscribes all active topics with applied cursors and ignores stale sockets", () => {
+    const { channel, sockets, timers } = harness((_topic, old, delta) => [...old as number[], ...delta as number[]])
+    channel.subscribe("home", () => {})
+    channel.subscribe("todo:12", () => {})
+    sockets[0]!.open()
+    sockets[0]!.receive({ t: "snap", id: 1, cursor: 10, data: [12] })
+    sockets[0]!.receive({ t: "delta", id: 1, cursor: 11, data: [13] })
+    sockets[0]!.receive({ t: "snap", id: 2, cursor: 20, data: {} })
+    sockets[0]!.drop()
+    expect(timers[0]!.ms).toBe(250)
+    timers[0]!.run(); sockets[1]!.open()
+    expect(sockets[1]!.frames).toEqual([{ t: "sub", id: 1, topic: "home", cursor: 11 }, { t: "sub", id: 2, topic: "todo:12", cursor: 20 }])
+    sockets[0]!.receive({ t: "snap", id: 1, cursor: 100, data: [] })
+    sockets[1]!.receive({ t: "delta", id: 1, cursor: 12, data: [14] })
+    expect(channel.getSnapshot("home")?.data).toEqual([12, 13, 14])
+    channel.dispose()
+  })
+  test("gap retains snapshot, rejects deltas until fresh snapshot and omits cursor", () => {
+    const { channel, sockets } = harness((_topic, _old, delta) => delta)
+    channel.subscribe("home", () => {})
+    const socket = sockets[0]!
+    socket.open(); socket.receive({ t: "snap", id: 1, cursor: 10, data: "old" })
+    socket.receive({ t: "gap", id: 1 })
+    expect(socket.frames.at(-1)).toEqual({ t: "sub", id: 1, topic: "home" })
+    socket.receive({ t: "delta", id: 1, cursor: 11, data: "guessed" })
+    expect(channel.getSnapshot("home")?.data).toBe("old")
+    expect(channel.getSnapshot("home")?.cursor).toBeUndefined()
+    socket.receive({ t: "snap", id: 1, cursor: 10, data: "fresh" })
+    expect(channel.getSnapshot("home")?.data).toBe("fresh")
+    channel.dispose()
+  })
+  test("duplicate and reordered deltas are ignored", () => {
+    const { channel, sockets } = harness((_topic, old, delta) => [...old as number[], delta])
+    let updates = 0
+    channel.subscribe("home", () => updates++)
+    const socket = sockets[0]!
+    socket.open(); socket.receive({ t: "snap", id: 1, cursor: 10, data: [] })
+    for (const cursor of [11, 11, 9, 12]) socket.receive({ t: "delta", id: 1, cursor, data: cursor })
+    expect(channel.getSnapshot("home")?.data).toEqual([11, 12])
+    expect(updates).toBe(3)
+    channel.dispose()
+  })
+  test("reconnects after a served socket dropped stay between 250ms and 5s; final release cancels retry", () => {
+    const { channel, sockets, timers } = harness()
+    const release = channel.subscribe("home", () => {})
+    // The first socket opens, so the channel knows this host serves /api/live.
+    sockets[0]!.open()
+    for (let i = 0; i < 9; i++) { sockets[i]!.drop(); timers[i]!.run() }
+    expect(timers.map(timer => timer.ms)).toEqual([250, 500, 1000, 2000, 4000, 5000, 5000, 5000, 5000])
+    sockets[9]!.drop(); release()
+    expect(timers[9]!.cancelled).toBe(true)
+    timers[9]!.run()
+    expect(sockets).toHaveLength(10)
+    channel.dispose()
+  })
+  // A hosted, many-owner deployment installs no /api/live (backend
+  // compose/router.go gates it on a single-owner install), so every handshake
+  // is refused with 404. On the five-second ladder a signed-in tab logged a
+  // failed handshake about every three seconds for as long as it stayed open.
+  // A socket that never opened ramps to a minute instead.
+  test("reconnects that never opened ramp to a minute instead of hammering every few seconds", () => {
+    const { channel, sockets, timers } = harness()
+    channel.subscribe("home", () => {})
+    for (let i = 0; i < 10; i++) { sockets[i]!.drop(); timers[i]!.run() }
+    expect(timers.map(timer => timer.ms)).toEqual([250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000])
+    // One minute of a fresh tab's life costs at most three refused handshakes.
+    const withinFirstMinute = timers.reduce(
+      (held, timer) => held.total + timer.ms > 60000 ? held : { total: held.total + timer.ms, count: held.count + 1 },
+      { total: 0, count: 0 }
+    )
+    expect(withinFirstMinute.count).toBeLessThanOrEqual(8)
+    channel.dispose()
+  })
+  test("a socket that opened once keeps the fast ladder for later drops", () => {
+    const { channel, sockets, timers } = harness()
+    channel.subscribe("home", () => {})
+    // Refused twice, so the slow ladder is in force...
+    sockets[0]!.drop(); timers[0]!.run()
+    sockets[1]!.drop(); timers[1]!.run()
+    expect(timers.map(timer => timer.ms)).toEqual([250, 500])
+    // ...then the route appears and the next drop recovers on the fast one.
+    sockets[2]!.open()
+    sockets[2]!.drop(); timers[2]!.run()
+    expect(timers[2]!.ms).toBe(250)
+    for (let i = 3; i < 9; i++) { sockets[i]!.drop(); timers[i]!.run() }
+    expect(timers.slice(2).map(timer => timer.ms)).toEqual([250, 500, 1000, 2000, 4000, 5000, 5000])
+    channel.dispose()
+  })
+  test("unknown deltas request a snapshot; malformed frames and unowned ids change nothing", () => {
+    const { channel, sockets } = harness()
+    channel.subscribe("home", () => {})
+    const socket = sockets[0]!
+    socket.open(); socket.receive({ t: "snap", id: 1, cursor: 1, data: "held" })
+    for (const frame of [null, { t: "snap", id: 99, cursor: 2 }, { t: "snap", id: 1, cursor: -1 }, { t: "delta", id: 1, cursor: 2, data: "unknown" }]) socket.receive(frame)
+    socket.onmessage?.({ data: "invalid json" })
+    socket.onmessage?.({ data: new ArrayBuffer(0) })
+    expect(channel.getSnapshot("home")?.data).toBe("held")
+    expect(channel.getSnapshot("home")?.cursor).toBe(1)
+    expect(socket.frames.at(-1)).toEqual({ t: "sub", id: 1, topic: "home" })
+    channel.dispose()
+  })
+  test("gap followed by reconnect still requests a fresh snapshot without a cursor", () => {
+    const { channel, sockets, timers } = harness()
+    channel.subscribe("home", () => {})
+    sockets[0]!.open()
+    sockets[0]!.receive({ t: "snap", id: 1, cursor: 10, data: "held" })
+    sockets[0]!.receive({ t: "gap", id: 1 })
+    sockets[0]!.drop(); timers[0]!.run(); sockets[1]!.open()
+    expect(sockets[1]!.frames).toEqual([{ t: "sub", id: 1, topic: "home" }])
+    expect(channel.getSnapshot("home")?.data).toBe("held")
+    channel.dispose()
+  })
+  test("topic owners register one delta projector and reducer failures retain committed state", () => {
+    const { channel, sockets } = harness()
+    const projector = (old: unknown, delta: unknown) => {
+      if (delta === "bad") throw new Error("invalid delta")
+      return Number(old) + Number(delta)
+    }
+    channel.registerProjection("home", projector)
+    channel.registerProjection("home", projector)
+    expect(() => channel.registerProjection("home", () => 99)).toThrow("already registered")
+    channel.subscribe("home", () => {})
+    sockets[0]!.open()
+    sockets[0]!.receive({ t: "snap", id: 1, cursor: 1, data: 10 })
+    sockets[0]!.receive({ t: "delta", id: 1, cursor: 2, data: 2 })
+    expect(channel.getSnapshot("home")?.data).toBe(12)
+    sockets[0]!.receive({ t: "delta", id: 1, cursor: 3, data: "bad" })
+    expect(channel.getSnapshot("home")?.cursor).toBe(2)
+    expect(sockets[0]!.frames.at(-1)).toEqual({ t: "sub", id: 1, topic: "home" })
+    channel.dispose()
+  })
+  test.each(["forbidden", "permission", "internal", "future_refusal"])("%s clears retained data and rejects deltas until recovery", code => {
+    const { channel, sockets } = harness()
+    channel.subscribe("home", () => {})
+    const socket = sockets[0]!
+    socket.open()
+    socket.receive({ t: "snap", id: 1, cursor: 1, data: "private" })
+    socket.receive({ t: "err", id: 1, code: 42 })
+    expect(channel.getSnapshot("home")?.data).toBe("private")
+    socket.receive({ t: "err", id: 1, code })
+    expect(channel.getSnapshot("home")).toEqual({ topic: "home", error: code })
+    socket.receive({ t: "delta", id: 1, cursor: 2, data: "stale" })
+    expect(channel.getSnapshot("home")).toEqual({ topic: "home", error: code })
+    socket.receive({ t: "snap", id: 1, cursor: 3, data: "authorized" })
+    expect(channel.getSnapshot("home")).toEqual({ topic: "home", cursor: 3, data: "authorized" })
+    channel.dispose()
+  })
+  test("subscription refusal stays on its topic and the socket remains open", () => {
+    const { channel, sockets } = harness()
+    channel.subscribe("home", () => {})
+    sockets[0]!.open(); sockets[0]!.receive({ t: "err", id: 1, code: "forbidden" })
+    expect(channel.getSnapshot("home")?.error).toBe("forbidden")
+    expect(sockets[0]!.closed).toBe(false)
+    channel.dispose()
+    expect(() => channel.subscribe("home", () => {})).toThrow("disposed")
+  })
+})
+
+
+test("revoked topic discards cached data and cursor, ignores deltas, and reconnects without private state", () => {
+  const { channel, sockets, timers } = harness((_topic, _old, delta) => delta)
+  channel.subscribe("conversation:main", () => {})
+  channel.subscribe("view:Ben:main", () => {})
+  const socket = sockets[0]!
+  socket.open()
+  socket.receive({ t: "snap", id: 1, cursor: 5, data: "shared" })
+  socket.receive({ t: "snap", id: 2, cursor: 8, data: "private view" })
+  socket.receive({ t: "err", id: 2, code: "forbidden" })
+  expect(channel.getSnapshot("view:Ben:main")).toEqual({ topic: "view:Ben:main", error: "forbidden" })
+  expect(channel.getSnapshot("view:Ben:main")?.data).toBeUndefined()
+  expect(channel.getSnapshot("view:Ben:main")?.cursor).toBeUndefined()
+  expect(channel.getSnapshot("view:Ben:main")?.error).toBe("forbidden")
+  socket.receive({ t: "delta", id: 2, cursor: 9, data: "stale" })
+  expect(channel.getSnapshot("view:Ben:main")?.data).toBeUndefined()
+  expect(channel.getSnapshot("conversation:main")?.data).toBe("shared")
+  socket.drop(); timers[0]!.run(); sockets[1]!.open()
+  expect(sockets[1]!.frames).toEqual([{ t: "sub", id: 1, topic: "conversation:main", cursor: 5 }, { t: "sub", id: 2, topic: "view:Ben:main" }])
+  sockets[1]!.receive({ t: "snap", id: 2, cursor: 1, data: "reauthorized" })
+  expect(channel.getSnapshot("view:Ben:main")?.data).toBe("reauthorized")
+  expect(channel.getSnapshot("view:Ben:main")?.cursor).toBe(1)
+  expect(channel.getSnapshot("view:Ben:main")?.error).toBeUndefined()
+  channel.dispose()
+})
+
+
+test("a retention snapshot replaces an invalid former cursor", () => {
+  const { channel, sockets, timers } = harness()
+  channel.subscribe("home", () => {})
+  sockets[0]!.open()
+  sockets[0]!.receive({ t: "snap", id: 1, cursor: 100, data: "before" })
+  sockets[0]!.drop(); timers[0]!.run(); sockets[1]!.open()
+  sockets[1]!.receive({ t: "snap", id: 1, cursor: 2, data: "committed" })
+  expect(channel.getSnapshot("home")).toEqual({ topic: "home", cursor: 2, data: "committed" })
+  channel.dispose()
+})
+
+test("presence uses one socket, an independent frame id, the latest location, and stops at last close", () => {
+  const { channel, sockets, timers } = harness()
+  const closeTopic = channel.subscribe("branch:b1", () => {})
+  const first = channel.trackPresence({ branch: "b1" })
+  sockets[0]!.open()
+  expect(sockets[0]!.frames).toEqual([
+    { t: "sub", id: 1, topic: "branch:b1" },
+    { t: "presence", id: 2, where: { branch: "b1" } }
+  ])
+  first.move({ branch: "b1", path: "retry.ts", line: 12 })
+  expect(sockets[0]!.frames.at(-1)).toEqual({ t: "presence", id: 2, where: { branch: "b1", path: "retry.ts", line: 12 } })
+  expect(timers[0]!.ms).toBe(10000)
+  timers[0]!.run()
+  expect(sockets[0]!.frames.at(-1)).toEqual({ t: "presence", id: 2, where: { branch: "b1", path: "retry.ts", line: 12 } })
+  const second = channel.trackPresence({ branch: "b1", terminal: "terminal-2" })
+  second.release(); second.release()
+  expect(sockets[0]!.frames.at(-1)).toEqual({ t: "presence", id: 2, where: { branch: "b1", path: "retry.ts", line: 12 } })
+  // A provider's presence refusal cannot discard the card's topic subscription.
+  sockets[0]!.receive({ t: "err", id: 2, code: "unsupported" })
+  expect(channel.getSnapshot("branch:b1")?.error).toBeUndefined()
+  first.release()
+  expect(sockets[0]!.frames.at(-1)).toEqual({ t: "presence", id: 2, where: { branch: "" } })
+  expect(timers.at(-1)!.cancelled).toBe(true)
+  const count = sockets[0]!.frames.length
+  timers.at(-1)!.run(); first.move({ branch: "b2" })
+  expect(sockets[0]!.frames).toHaveLength(count)
+  closeTopic(); channel.dispose()
+})
+
+test("presence reconnects with the latest move and disposal cancels all heartbeats", () => {
+  const { channel, sockets, timers } = harness()
+  channel.subscribe("branch:b1", () => {})
+  const lease = channel.trackPresence({ branch: "b1" })
+  sockets[0]!.open(); sockets[0]!.drop()
+  lease.move({ branch: "b1", run: "run-1", step: "verify" })
+  timers.find(timer => timer.ms === 250)!.run()
+  sockets[1]!.open()
+  expect(sockets[1]!.frames).toEqual([
+    { t: "sub", id: 1, topic: "branch:b1" },
+    { t: "presence", id: 2, where: { branch: "b1", run: "run-1", step: "verify" } }
+  ])
+  channel.dispose()
+  const count = sockets[1]!.frames.length
+  for (const timer of timers) if (timer.ms === 10000) timer.run()
+  lease.move({ branch: "b2" }); lease.release()
+  expect(sockets[1]!.frames).toHaveLength(count)
+})
+
+test("members reconnect requests a fresh snapshot, retains the roster and notifies at an unchanged cursor", () => {
+  const { channel, sockets, timers } = harness()
+  let notices = 0
+  channel.subscribe("members", () => notices++)
+  sockets[0]!.open()
+  sockets[0]!.receive({ t: "snap", id: 1, cursor: 10, data: { members: ["will"] } })
+  sockets[0]!.drop()
+  expect(notices).toBe(2) // Lost authority notifies before the replacement roster.
+  expect(channel.getSnapshot("members")?.data).toEqual({ members: ["will"] })
+  timers[0]!.run(); sockets[1]!.open()
+  expect(sockets[1]!.frames).toEqual([{ t: "sub", id: 1, topic: "members" }])
+  sockets[1]!.receive({ t: "snap", id: 1, cursor: 10, data: { members: ["will"] } })
+  expect(notices).toBe(3)
+  channel.dispose()
+})
+
+test("signed-out subscriptions wait for identity and reconnect after sign-in", () => {
+  const { channel, sockets, timers } = harness()
+  channel.setEnabled(false)
+  const release = channel.subscribe("members", () => {})
+  expect(sockets).toHaveLength(0)
+  channel.setEnabled(true)
+  expect(sockets).toHaveLength(1)
+  sockets[0]!.open()
+  expect(sockets[0]!.frames).toEqual([{ t: "sub", id: 1, topic: "members" }])
+  sockets[0]!.drop()
+  channel.setEnabled(false)
+  expect(timers[0]!.cancelled).toBe(true)
+  timers[0]!.run()
+  expect(sockets).toHaveLength(1)
+  channel.setEnabled(true)
+  expect(sockets).toHaveLength(2)
+  release(); channel.dispose()
+})

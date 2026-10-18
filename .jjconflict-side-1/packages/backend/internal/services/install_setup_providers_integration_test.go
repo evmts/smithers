@@ -1,0 +1,643 @@
+package services
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
+	"errors"
+	"fmt"
+	"io/fs"
+	"net/http"
+	"net/url"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/githubfake"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/webhook"
+	"github.com/smithersai/smithers/packages/backend/jobs"
+	"github.com/smithersai/smithers/packages/backend/microsandbox"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
+	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
+	"github.com/stretchr/testify/require"
+)
+
+// Literal fixtures: the GitHub account that owns the repository (the fake's
+// owner login and the owner's username), the GitHub slug the owner chose, the
+// local name the importer published and main's resolved commit.
+const (
+	setupGitHubOwner = "acme"
+	setupGitHubSlug  = "acme/app"
+	setupLocalName   = "app-mirror"
+	setupMainCommit  = "89abcdef0123456789abcdef0123456789abcdef"
+)
+
+type setupFixture struct {
+	pool  *pgxpool.Pool
+	store *jobs.Store
+	svc   *InstallSetupService
+	owner db.User
+	repo  int64
+	// app and connections are the providers' App store and installation
+	// lookups (newProviderFixture).
+	app         *GitHubAppCredentialStore
+	connections *RepoConnectionService
+	// skew moves the service clock past a step's expires_at; the job store's
+	// leases keep PostgreSQL time.
+	skew atomic.Int64
+}
+
+// newSetupFixture seeds an owner, the chosen repository, its published mirror
+// and every step before stepID as done, as the earlier steps leave them.
+func newSetupFixture(t *testing.T, stepID string) *setupFixture {
+	t.Helper()
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	ctx := t.Context()
+	q := db.New(pool)
+	owner, err := q.CreateUser(ctx, db.CreateUserParams{Username: setupGitHubOwner, LowerUsername: setupGitHubOwner})
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO self_host_owners(user_id) VALUES($1)`, owner.ID)
+	require.NoError(t, err)
+	var repo int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(user_id,name,lower_name,default_bookmark) VALUES ($1,$2,$2,'main') RETURNING id`, owner.ID, setupLocalName).Scan(&repo))
+	store, err := jobs.NewStore(pool)
+	require.NoError(t, err)
+	f := &setupFixture{pool: pool, store: store, owner: owner, repo: repo}
+	f.svc = &InstallSetupService{Pool: pool, Jobs: store, Now: func() time.Time { return time.Now().Add(time.Duration(f.skew.Load())) }}
+	require.NoError(t, f.svc.Initialize(ctx))
+	slug, _ := json.Marshal(setupGitHubSlug)
+	require.NoError(t, q.UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "repository", Value: slug}))
+	for _, id := range InstallStepIDs[:installStepIndex(stepID)] {
+		_, err = pool.Exec(ctx, `UPDATE install_settings SET value=jsonb_set(value,'{status}','"done"') WHERE key=$1`, "setup.step."+id)
+		require.NoError(t, err)
+	}
+	return f
+}
+
+func (f *setupFixture) run(t *testing.T, operation string) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		done <- f.store.RunWorker(ctx, jobs.WorkerConfig{WorkerID: "setup-" + operation, Capacity: 1, Lease: 5 * time.Second, PollInterval: 10 * time.Millisecond,
+			Operations: []string{"install.setup." + operation}}, f.svc.Handle)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		require.NoError(t, <-done)
+	})
+}
+
+func (f *setupFixture) step(t *testing.T, id string) InstallStep {
+	t.Helper()
+	step, err := f.svc.readStep(t.Context(), db.New(f.pool), id)
+	require.NoError(t, err)
+	return step
+}
+
+func (f *setupFixture) awaitStep(t *testing.T, id string, status InstallStepState) InstallStep {
+	t.Helper()
+	var step InstallStep
+	require.Eventually(t, func() bool {
+		step = f.step(t, id)
+		return step.Status == status
+	}, 15*time.Second, 20*time.Millisecond, "step %s never reached %s", id, status)
+	return step
+}
+
+func (f *setupFixture) stacks(t *testing.T) []db.MythicalStack {
+	t.Helper()
+	stack, err := db.New(f.pool).GetMythicalStack(t.Context(), f.repo)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	require.NoError(t, err)
+	return []db.MythicalStack{stack}
+}
+
+func (f *setupFixture) setting(t *testing.T, key string) map[string]any {
+	t.Helper()
+	row, err := db.New(f.pool).GetInstallSetting(t.Context(), key)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	require.NoError(t, err)
+	var value map[string]any
+	if json.Unmarshal(row.Value, &value) != nil {
+		value = map[string]any{"value": string(row.Value)}
+	}
+	return value
+}
+
+// newSourceFixture binds the source step to the real owner verifier (Members
+// against the GitHub fake, which installs the App on repositories) and the
+// real stack service. The importer is the fake below: the durable importer
+// needs the repository host's native engine, which the composed J1 rehearsal
+// exercises end to end.
+func newSourceFixture(t *testing.T, imports *sourceImports, repositories ...githubfake.Repository) *setupFixture {
+	t.Helper()
+	f, _ := newProviderFixture(t, "source", imports, repositories...)
+	return f
+}
+
+// newProviderFixture binds the repository and source steps to the real
+// access service, installation lookups, owner verifier and stack service
+// against the GitHub fake, whose owner signs in with the OAuth code
+// setupOAuthCode (signInOwner).
+func newProviderFixture(t *testing.T, stepID string, imports *sourceImports, repositories ...githubfake.Repository) (*setupFixture, *githubfake.Server) {
+	t.Helper()
+	f := newSetupFixture(t, stepID)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	credentials := GitHubAppCredentials{ID: 42, Slug: "smithers-setup", OwnerLogin: setupGitHubOwner, OwnerKind: "user", ClientID: "Iv1.setup", ClientSecret: "client-secret", WebhookSecret: "webhook-secret", PEM: string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))}
+	fake, err := githubfake.New(githubfake.Config{AppID: credentials.ID, Slug: credentials.Slug, OwnerLogin: credentials.OwnerLogin, OwnerKind: credentials.OwnerKind, PrivateKeyPEM: credentials.PEM, ClientID: credentials.ClientID, ClientSecret: credentials.ClientSecret, ConversionCode: "manifest-code", OAuthCode: setupOAuthCode, Installations: []githubfake.Installation{{ID: 91, Repositories: repositories}}})
+	require.NoError(t, err)
+	t.Cleanup(fake.Close)
+	t.Setenv("SMITHERS_GITHUB_APP_API_BASE_URL", fake.URL)
+	codec, err := webhook.NewSecretCodec("install-key")
+	require.NoError(t, err)
+	app := NewGitHubAppCredentialStore(f.pool, codec)
+	require.NoError(t, app.Save(t.Context(), credentials))
+	access := NewGitHubUserReposService(db.New(f.pool), testGitHubImportDecrypter{token: setupOwnerToken}, WithGitHubUserReposCredentialStore(app))
+	// Installation tokens are cached per process; another test's fake minted
+	// the cached one for installation 91.
+	invalidateCachedInstallationToken(91)
+	t.Cleanup(func() { invalidateCachedInstallationToken(91) })
+	connections := NewRepoConnectionService(f.pool, app)
+	connections.SetGitHubRepoAccessVerifier(access)
+	f.app, f.connections = app, connections
+	f.svc.BindRepositoryProviders(access, app, connections, imports, &Members{Pool: f.pool, Credentials: app, Minter: connections}, NewMythicalService(f.pool, nil))
+	return f, fake
+}
+
+const (
+	setupOAuthCode  = "owner-code"
+	setupOwnerToken = "ghu_githubfake_owner"
+)
+
+// signInOwner completes the fake's manifest conversion and the owner's OAuth
+// exchange, as setup's earlier steps do, and links the owner's GitHub
+// account, so the owner's credential reads the repository.
+func (f *setupFixture) signInOwner(t *testing.T, fake *githubfake.Server) {
+	t.Helper()
+	post := func(path string, form url.Values) {
+		res, err := http.Post(fake.URL+path, "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
+		require.NoError(t, err)
+		require.NoError(t, res.Body.Close())
+		require.Less(t, res.StatusCode, 300, path)
+	}
+	post("/app-manifests/manifest-code/conversions", nil)
+	post("/login/oauth/access_token", url.Values{"code": {setupOAuthCode}, "client_id": {"Iv1.setup"}, "client_secret": {"client-secret"}, "redirect_uri": {"http://install.test/callback"}})
+	_, err := db.New(f.pool).CreateOAuthAccount(t.Context(), db.CreateOAuthAccountParams{UserID: f.owner.ID, Provider: "github", ProviderUserID: "7", AccessTokenEncrypted: []byte("sealed"), ProfileData: json.RawMessage(`{}`)})
+	require.NoError(t, err)
+}
+
+// sourceImports is the durable importer's contract: the first lookup reports
+// the mirror still cloning, later lookups the published local mirror or the
+// configured status.
+type sourceImports struct {
+	mu      sync.Mutex
+	started []ImportGitHubRepoInput
+	lookups int
+	status  string
+}
+
+func (i *sourceImports) StartImport(_ context.Context, input ImportGitHubRepoInput) (ImportJob, error) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.started = append(i.started, input)
+	return ImportJob{ImportJobID: fmt.Sprintf("import-%d", len(i.started))}, nil
+}
+
+func (i *sourceImports) GetImportJob(context.Context, int64, string) (ImportJob, error) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.lookups++
+	if i.lookups == 1 {
+		return ImportJob{Status: "cloning"}, nil
+	}
+	if i.status != "" {
+		return ImportJob{Status: i.status}, nil
+	}
+	return ImportJob{Status: "ready", RepoOwner: setupGitHubOwner, RepoName: setupLocalName}, nil
+}
+
+func (i *sourceImports) setStatus(status string) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.status = status
+}
+
+func (i *sourceImports) starts() []ImportGitHubRepoInput {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return append([]ImportGitHubRepoInput(nil), i.started...)
+}
+
+var installedApp = githubfake.Repository{ID: 100, FullName: setupGitHubSlug}
+
+// Spec §16.2: an install binds only a repository whose GitHub default branch
+// is main. Through the real access service against the GitHub fake, the
+// repository step blocks on a trunk default with GitHub's settings page as
+// its fix and records neither the installation nor the repository; a main
+// default completes the step.
+func TestInstallRepositoryStepRefusesANonMainDefaultBranchPostgres(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		defaultBranch string
+		status        InstallStepState
+	}{
+		{name: "trunk", defaultBranch: "trunk", status: "blocked"},
+		{name: "main", status: InstallReady},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, fake := newProviderFixture(t, "repository", &sourceImports{}, githubfake.Repository{ID: 100, FullName: setupGitHubSlug, DefaultBranch: tc.defaultBranch})
+			f.signInOwner(t, fake)
+			_, err := f.pool.Exec(t.Context(), `DELETE FROM install_settings WHERE key='repository'`)
+			require.NoError(t, err)
+			_, err = f.svc.Admit(t.Context(), "repository", "repository-1", json.RawMessage(`{"repository":"`+setupGitHubSlug+`"}`))
+			require.NoError(t, err)
+			f.run(t, "repository")
+			step := f.awaitStep(t, "repository", tc.status)
+			if tc.status == InstallReady {
+				require.Nil(t, step.Blocked)
+				require.Equal(t, map[string]any{"value": `"` + setupGitHubSlug + `"`}, f.setting(t, "repository"))
+				return
+			}
+			require.Equal(t, &InstallSetupBlock{Line: "Rename the default branch to main on GitHub ↗", FixURL: "https://github.com/" + setupGitHubSlug + "/settings"}, step.Blocked)
+			require.Nil(t, f.setting(t, "repository"), "a trunk default was recorded as the install's repository")
+		})
+	}
+}
+
+// Spec §8.6.3: Source ready means the mirror holds main. The step waits out
+// the clone, binds the mirror to the verified owner, asks the stack service
+// for the repository's stack once, and completes without a machine and
+// without waiting for the stack to become active.
+func TestInstallSourceReadyRequestsStackWithoutWaitingPostgres(t *testing.T) {
+	imports := &sourceImports{}
+	f := newSourceFixture(t, imports, installedApp)
+	ctx := t.Context()
+	_, err := f.svc.Admit(ctx, "source", "source-1", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	f.run(t, "source")
+
+	step := f.awaitStep(t, "source", InstallReady)
+	require.Nil(t, step.Error)
+	require.Equal(t, []ImportGitHubRepoInput{{UserID: f.owner.ID, Owner: setupGitHubOwner, Repo: "app", Branch: "main", setupOperationID: step.OperationID}}, imports.starts(), "one import per operation, across the clone's deferral")
+	stacks := f.stacks(t)
+	require.Len(t, stacks, 1, "the stack was requested")
+	require.Equal(t, "bootstrapping", stacks[0].State, "Source ready does not wait for the stack worker")
+	require.EqualValues(t, 1, stacks[0].RequestedGeneration, "one stack request")
+	require.Equal(t, map[string]any{"owner_login": setupGitHubOwner, "repository_name": "app", "repository_id": float64(f.repo)}, f.setting(t, "github.repository"))
+	access := f.setting(t, "owner.access")
+	require.Equal(t, float64(f.repo), access["repository_id"])
+	require.Equal(t, float64(91), access["installation_id"])
+	var permission string
+	require.NoError(t, f.pool.QueryRow(ctx, `SELECT permission FROM collaborators WHERE repository_id=$1 AND user_id=$2`, f.repo, f.owner.ID).Scan(&permission))
+	require.Equal(t, "admin", permission)
+	require.Equal(t, map[string]any{"value": `"` + setupGitHubOwner + "/" + setupLocalName + `"`}, f.setting(t, "setup.source.repository"), "the importer's local slug is pinned for Machine ready")
+	var machines int
+	require.NoError(t, f.pool.QueryRow(ctx, `SELECT count(*) FROM workspaces`).Scan(&machines))
+	require.Zero(t, machines, "Source ready provisions no machine")
+	operation, err := f.store.Get(ctx, jobs.Scope{TenantID: "install", PrincipalID: "owner"}, step.OperationID)
+	require.NoError(t, err)
+	require.Equal(t, jobs.StateCompleted, operation.State)
+	require.Equal(t, InstallPending, f.step(t, "machine").Status, "Machine ready is its own step")
+}
+
+// An owner the GitHub App cannot verify on the repository fails Source after
+// the mirror, before the stack is requested or the local slug is pinned.
+func TestInstallSourceRefusesUnverifiedOwnerBeforeStackPostgres(t *testing.T) {
+	f := newSourceFixture(t, &sourceImports{}, githubfake.Repository{ID: 101, FullName: setupGitHubOwner + "/other"})
+	_, err := f.svc.Admit(t.Context(), "source", "source-1", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	f.run(t, "source")
+	step := f.awaitStep(t, "source", InstallFailed)
+	require.Equal(t, "install_setup_failed", step.Error.Code)
+	require.Empty(t, f.stacks(t))
+	require.Nil(t, f.setting(t, "setup.source.repository"))
+	require.Nil(t, f.setting(t, "owner.access"))
+}
+
+// A failed mirror fails Source without asking for a stack; Retry is a new
+// operation that starts a new import and requests the stack once.
+func TestInstallSourceImportFailureAndRetryPostgres(t *testing.T) {
+	imports := &sourceImports{status: "failed"}
+	f := newSourceFixture(t, imports, installedApp)
+	ctx := t.Context()
+	first, err := f.svc.Admit(ctx, "source", "source-1", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	f.run(t, "source")
+	step := f.awaitStep(t, "source", InstallFailed)
+	require.Equal(t, &InstallReadinessError{Code: "source_import_failed", Class: "github", Message: "Repository mirror failed"}, step.Error)
+	require.Empty(t, f.stacks(t))
+
+	imports.setStatus("")
+	retry, err := f.svc.Admit(ctx, "source", "source-retry", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	require.NotEqual(t, first.OperationID, retry.OperationID)
+	step = f.awaitStep(t, "source", InstallReady)
+	require.Equal(t, retry.OperationID, step.OperationID)
+	require.Len(t, imports.starts(), 2)
+	stacks := f.stacks(t)
+	require.Len(t, stacks, 1)
+	require.EqualValues(t, 1, stacks[0].RequestedGeneration)
+}
+
+type machineSources struct{ err error }
+
+func (s machineSources) ResolveSourceRevision(_ context.Context, repository, revision string) (string, error) {
+	if repository != setupGitHubOwner+"/"+setupLocalName || revision != "main" {
+		return "", fmt.Errorf("unexpected source %s@%s", repository, revision)
+	}
+	return setupMainCommit, s.err
+}
+func (machineSources) ReadSourceFile(context.Context, workspaceapi.WorkspaceSource, string) ([]byte, error) {
+	return nil, fs.ErrNotExist
+}
+
+// machineImages blocks each build until the test releases it with a result.
+type machineImages struct {
+	started chan workspaceapi.WorkspaceSpec
+	results chan machineImageResult
+}
+type machineImageResult struct {
+	layer microsandbox.Layer
+	err   error
+}
+
+func (m machineImages) ResolveWorkspaceLayer(ctx context.Context, spec workspaceapi.WorkspaceSpec) (microsandbox.Layer, error) {
+	m.started <- spec
+	select {
+	case result := <-m.results:
+		return result.layer, result.err
+	case <-ctx.Done():
+		return microsandbox.Layer{}, ctx.Err()
+	}
+}
+
+func newMachineFixture(t *testing.T, sources machineSources) (*setupFixture, machineImages) {
+	t.Helper()
+	f := newSetupFixture(t, "machine")
+	pinned, _ := json.Marshal(setupGitHubOwner + "/" + setupLocalName)
+	require.NoError(t, db.New(f.pool).UpsertInstallSetting(t.Context(), db.UpsertInstallSettingParams{Key: "setup.source.repository", Value: pinned}))
+	images := machineImages{started: make(chan workspaceapi.WorkspaceSpec, 4), results: make(chan machineImageResult, 4)}
+	f.svc.BindMachineProvider(sources, images)
+	return f, images
+}
+
+func projectedSteps(t *testing.T, f *setupFixture) map[string]map[string]any {
+	t.Helper()
+	status, err := f.svc.Status(t.Context())
+	require.NoError(t, err)
+	raw, err := json.Marshal(status["steps"])
+	require.NoError(t, err)
+	var steps []map[string]any
+	require.NoError(t, json.Unmarshal(raw, &steps))
+	byID := map[string]map[string]any{}
+	for _, step := range steps {
+		byID[step["id"].(string)] = step
+	}
+	return byID
+}
+
+// Spec §8.6.3 and T-INS-06: Machine ready means main's first image is built.
+// While it builds, GET shows source done and machine running with its pct; a
+// concurrent POST starts nothing; done commits only after the verified layer.
+func TestInstallMachineReadyBuildsMainImagePostgres(t *testing.T) {
+	f, images := newMachineFixture(t, machineSources{})
+	ctx := t.Context()
+	receipt, err := f.svc.Admit(ctx, "machine", "machine-1", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	f.run(t, "machine")
+	var spec workspaceapi.WorkspaceSpec
+	select {
+	case spec = <-images.started:
+	case <-time.After(15 * time.Second):
+		t.Fatal("the machine image build never started")
+	}
+	require.Equal(t, &workspaceapi.WorkspaceSource{Repository: setupGitHubOwner + "/" + setupLocalName, Revision: setupMainCommit}, spec.Source)
+	steps := projectedSteps(t, f)
+	require.Equal(t, map[string]any{"id": "source", "state": "done", "pct": float64(100)}, steps["source"])
+	require.Equal(t, map[string]any{"id": "machine", "state": "running", "pct": float64(0)}, steps["machine"])
+	_, err = f.svc.Admit(ctx, "machine", "machine-2", json.RawMessage(`{}`))
+	var conflict *pkgerrors.APIError
+	require.ErrorAs(t, err, &conflict, "a second POST during the build starts nothing")
+	require.Equal(t, pkgerrors.CodeConflict, conflict.Code)
+	require.Equal(t, receipt.OperationID, f.step(t, "machine").OperationID)
+
+	images.results <- machineImageResult{layer: microsandbox.Layer{Snapshot: "layer-snapshot", Key: "verified-layer-key"}}
+	step := f.awaitStep(t, "machine", InstallReady)
+	require.Equal(t, setupMainCommit, step.Revision)
+	require.Equal(t, "verified-layer-key", step.LayerKey)
+	require.Nil(t, step.Error)
+	require.Equal(t, map[string]any{"id": "machine", "state": "done", "pct": float64(100)}, projectedSteps(t, f)["machine"])
+	operation, err := f.store.Get(ctx, jobs.Scope{TenantID: "install", PrincipalID: "owner"}, receipt.OperationID)
+	require.NoError(t, err)
+	require.Equal(t, jobs.StateCompleted, operation.State)
+	raw, err := json.Marshal(projectedSteps(t, f))
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "verified-layer-key", "receipts stay out of the projection")
+}
+
+// A recipe refusal fails Machine with its class and fix, keeps Source done, and
+// Retry rebuilds under a new attempt that fences the earlier one.
+func TestInstallMachineRecipeFailureAndRetryPostgres(t *testing.T) {
+	f, images := newMachineFixture(t, machineSources{})
+	ctx := t.Context()
+	_, err := f.svc.Admit(ctx, "machine", "machine-1", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	f.run(t, "machine")
+	<-images.started
+	images.results <- machineImageResult{err: &microsandbox.RecipeError{Code: "missing_machine_tool", Class: "user", Message: "cargo is not installed", Fix: "rust-toolchain.toml"}}
+	step := f.awaitStep(t, "machine", InstallFailed)
+	require.Equal(t, &InstallReadinessError{Code: "missing_machine_tool", Class: "user", Message: "cargo is not installed", Fix: "rust-toolchain.toml"}, step.Error)
+	require.Equal(t, InstallReady, f.step(t, "source").Status)
+	require.Equal(t, map[string]any{"code": "missing_machine_tool", "class": "user", "message": "cargo is not installed", "fix": "rust-toolchain.toml"}, projectedSteps(t, f)["machine"]["error"])
+	first := step.ReadinessAttempt
+
+	retry, err := f.svc.Admit(ctx, "machine", "machine-retry", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	<-images.started
+	images.results <- machineImageResult{layer: microsandbox.Layer{Key: "retried-layer"}}
+	step = f.awaitStep(t, "machine", InstallReady)
+	require.Equal(t, retry.OperationID, step.OperationID)
+	require.Equal(t, first+1, step.ReadinessAttempt)
+	require.Equal(t, "retried-layer", step.LayerKey)
+	require.Nil(t, step.Error)
+}
+
+// When main cannot be resolved, Source is no longer ready: both steps fail and
+// no image build starts.
+func TestInstallMachineWithoutMainFailsSourcePostgres(t *testing.T) {
+	f, images := newMachineFixture(t, machineSources{err: errors.New("bookmark \"main\" is not found")})
+	ctx := t.Context()
+	_, err := f.svc.Admit(ctx, "machine", "machine-1", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	f.run(t, "machine")
+	step := f.awaitStep(t, "machine", InstallFailed)
+	require.Equal(t, "source_main_unavailable", step.Error.Code)
+	source := f.step(t, "source")
+	require.Equal(t, InstallFailed, source.Status)
+	require.Equal(t, "source_main_unavailable", source.Error.Code)
+	require.Empty(t, images.started)
+}
+
+// Only the operation holding the machine step writes readiness; a superseded
+// operation's write changes neither step.
+func TestInstallReadinessStepsRefuseAnotherOperationPostgres(t *testing.T) {
+	f, _ := newMachineFixture(t, machineSources{})
+	ctx := t.Context()
+	receipt, err := f.svc.Admit(ctx, "machine", "machine-1", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	claim, err := f.store.ClaimForOperations(ctx, "readiness-worker", time.Minute, []string{"install.setup.machine"})
+	require.NoError(t, err)
+	require.Equal(t, receipt.OperationID, claim.OperationID)
+	before := []InstallStep{f.step(t, "source"), f.step(t, "machine")}
+	called := false
+	_, err = installReadinessSteps{setup: f.svc, claim: jobs.Claim{OperationID: "superseded-operation"}}.Update(ctx, "ignored", func(current InstallReadiness) (InstallReadiness, error) {
+		called = true
+		current.Machine = InstallReadinessStep{State: InstallReady, Pct: 100}
+		return current, nil
+	})
+	require.ErrorIs(t, err, jobs.ErrClaimLost)
+	require.False(t, called)
+	require.Equal(t, before, []InstallStep{f.step(t, "source"), f.step(t, "machine")})
+
+	next, err := installReadinessSteps{setup: f.svc, claim: claim}.Update(ctx, "ignored", func(current InstallReadiness) (InstallReadiness, error) {
+		require.Equal(t, InstallReady, current.Source.State)
+		require.Equal(t, InstallRunning, current.Machine.State)
+		current.Attempt++
+		current.Machine = InstallReadinessStep{State: InstallPending}
+		return current, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, InstallPending, next.Machine.State)
+	machine := f.step(t, "machine")
+	require.Equal(t, InstallRunning, machine.Status, "the held step never reads as pending")
+	require.EqualValues(t, 1, machine.ReadinessAttempt)
+}
+
+// Step 6 holds one heartbeated job lease for the whole image build, which
+// outlasts the step's one-minute expires_at. While the worker holds it, GET
+// shows the step running and a POST starts nothing.
+func TestInstallMachineBuildPastExpiryStaysRunningPostgres(t *testing.T) {
+	f, images := newMachineFixture(t, machineSources{})
+	ctx := t.Context()
+	receipt, err := f.svc.Admit(ctx, "machine", "machine-1", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	f.run(t, "machine")
+	<-images.started
+	f.skew.Store(int64(2 * time.Minute))
+	require.Equal(t, map[string]any{"id": "machine", "state": "running", "pct": float64(0)}, projectedSteps(t, f)["machine"])
+	_, err = f.svc.Admit(ctx, "machine", "machine-2", json.RawMessage(`{}`))
+	var conflict *pkgerrors.APIError
+	require.ErrorAs(t, err, &conflict)
+	require.Equal(t, "setup worker lease is active", conflict.Message)
+	images.results <- machineImageResult{layer: microsandbox.Layer{Key: "slow-layer"}}
+	step := f.awaitStep(t, "machine", InstallReady)
+	require.Equal(t, receipt.OperationID, step.OperationID)
+	require.Equal(t, "slow-layer", step.LayerKey)
+}
+
+// A step whose handler deferred its next pass (the source step while the
+// mirror clones) is still worked after expires_at lapses: GET shows it running
+// and POST starts nothing. A step no worker ever claimed is recoverable: GET
+// shows it pending and POST resumes the same operation under a new attempt.
+func TestInstallLapsedStepIsPendingOnlyWithoutWorkPostgres(t *testing.T) {
+	f := newSourceFixture(t, &sourceImports{}, installedApp)
+	ctx := t.Context()
+	receipt, err := f.svc.Admit(ctx, "source", "source-1", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	f.skew.Store(int64(2 * time.Minute))
+	require.Equal(t, map[string]any{"id": "source", "state": "pending"}, projectedSteps(t, f)["source"], "nothing worked the lapsed step")
+	recovered, err := f.svc.Admit(ctx, "source", "source-2", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	require.Equal(t, receipt.OperationID, recovered.OperationID)
+	require.Equal(t, 2, f.step(t, "source").Attempt)
+	require.Equal(t, "running", projectedSteps(t, f)["source"]["state"])
+
+	claim, err := f.store.ClaimForOperations(ctx, "setup-test", 5*time.Second, []string{"install.setup.source"})
+	require.NoError(t, err)
+	require.Equal(t, receipt.OperationID, claim.OperationID)
+	_, err = f.store.BeginExternal(ctx, claim, json.RawMessage(`{"phase":"setup"}`))
+	require.NoError(t, err)
+	require.NoError(t, f.store.Park(ctx, claim, json.RawMessage(`{"import_id":"import-1"}`), time.Hour))
+	f.skew.Store(int64(4 * time.Minute))
+	require.Equal(t, "running", projectedSteps(t, f)["source"]["state"], "a deferred pass is scheduled")
+	_, err = f.svc.Admit(ctx, "source", "source-3", json.RawMessage(`{}`))
+	var conflict *pkgerrors.APIError
+	require.ErrorAs(t, err, &conflict)
+	require.Equal(t, "setup worker lease is active", conflict.Message)
+	require.Equal(t, 2, f.step(t, "source").Attempt)
+}
+
+// Without a bound image builder (the install bundle, T-INS-06 R4) step 6
+// answers 503 and admits no job.
+func TestInstallMachineUnboundAnswersUnavailablePostgres(t *testing.T) {
+	f := newSetupFixture(t, "machine")
+	_, err := f.svc.Admit(t.Context(), "machine", "machine-1", json.RawMessage(`{}`))
+	var unavailable *pkgerrors.APIError
+	require.ErrorAs(t, err, &unavailable)
+	require.Equal(t, pkgerrors.CodeServiceUnavailable, unavailable.Code)
+	var jobsAdmitted int
+	require.NoError(t, f.pool.QueryRow(t.Context(), `SELECT count(*) FROM product_job_requests`).Scan(&jobsAdmitted))
+	require.Zero(t, jobsAdmitted)
+	require.Equal(t, InstallPending, f.step(t, "machine").Status)
+}
+
+// Recovery keeps operation identity, but every progress/completion mutation must
+// still be fenced by the current job generation, token, worker and expiry.
+func TestInstallReadinessStepsFenceRecoveredWorkerPostgres(t *testing.T) {
+	f, _ := newMachineFixture(t, machineSources{})
+	ctx := t.Context()
+	receipt, err := f.svc.Admit(ctx, "machine", "machine-fence", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	old, err := f.store.ClaimForOperations(ctx, "old-machine-worker", time.Minute, []string{"install.setup.machine"})
+	require.NoError(t, err)
+	_, err = f.store.BeginExternal(ctx, old, json.RawMessage(`{"phase":"setup"}`))
+	require.NoError(t, err)
+	_, err = f.pool.Exec(ctx, `UPDATE product_job_dispatches SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE operation_id=$1`, receipt.OperationID)
+	require.NoError(t, err)
+	before := []InstallStep{f.step(t, "source"), f.step(t, "machine")}
+	called := false
+	mutate := func(current InstallReadiness) (InstallReadiness, error) {
+		called = true
+		current.Machine = InstallReadinessStep{State: InstallReady, Pct: 100}
+		current.LayerKey = "stale-layer"
+		return current, nil
+	}
+	// Expiry alone fences progress, even before another worker claims it.
+	_, err = (installReadinessSteps{setup: f.svc, claim: old}).Update(ctx, "ignored", mutate)
+	require.ErrorIs(t, err, jobs.ErrClaimLost)
+	require.False(t, called)
+	require.Equal(t, before, []InstallStep{f.step(t, "source"), f.step(t, "machine")})
+	recovered, err := f.store.RecoverExpiredForOperations(ctx, []string{"install.setup.machine"}, 1)
+	require.NoError(t, err)
+	require.Equal(t, 1, recovered)
+	fresh, err := f.store.ClaimForOperations(ctx, "new-machine-worker", time.Minute, []string{"install.setup.machine"})
+	require.NoError(t, err)
+	require.Equal(t, old.OperationID, fresh.OperationID)
+	require.Greater(t, fresh.Generation, old.Generation)
+	_, err = (installReadinessSteps{setup: f.svc, claim: fresh}).Update(ctx, "ignored", func(current InstallReadiness) (InstallReadiness, error) {
+		current.Machine = InstallReadinessStep{State: InstallRunning, Pct: 35}
+		current.LayerKey = "current-layer"
+		return current, nil
+	})
+	require.NoError(t, err)
+	before = []InstallStep{f.step(t, "source"), f.step(t, "machine")}
+	_, err = (installReadinessSteps{setup: f.svc, claim: old}).Update(ctx, "ignored", mutate)
+	require.ErrorIs(t, err, jobs.ErrClaimLost)
+	require.False(t, called)
+	require.Equal(t, before, []InstallStep{f.step(t, "source"), f.step(t, "machine")})
+}

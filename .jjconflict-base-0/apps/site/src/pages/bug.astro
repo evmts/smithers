@@ -1,0 +1,9 @@
+---
+import { bugReportUrl } from "../../../app/src/mainview/BugReport"
+
+return Astro.redirect(bugReportUrl({
+  repository: "smithersai/smithers",
+  build: import.meta.env.SMITHERS_BUILD_SHA ?? "unknown",
+  pathname: "/bug"
+}))
+---

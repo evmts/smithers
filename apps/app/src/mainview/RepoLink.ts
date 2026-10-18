@@ -146,10 +146,11 @@ export const signInReturnTo = (location: Pick<Location, "pathname" | "search">):
   return new TextEncoder().encode(withSearch).byteLength > RETURN_TO_MAX_BYTES ? location.pathname : withSearch
 }
 
-/** The same location without the repo parameter; other parameters and the fragment stay. */
-export const withoutRepoParam = (location: Pick<Location, "pathname" | "search" | "hash">): string => {
+/** Remove consumed entry parameters; the subject query and fragment stay. */
+export const withoutRepoParam = (location: Pick<Location, "pathname" | "search" | "hash">, consumed: ReadonlyArray<string> = []): string => {
   const params = new URLSearchParams(location.search)
   params.delete(REPO_PARAM)
+  for (const key of consumed) params.delete(key)
   const search = queryString(params)
   return `${location.pathname}${search === "" ? "" : `?${search}`}${location.hash}`
 }

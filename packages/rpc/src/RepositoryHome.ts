@@ -99,3 +99,36 @@ export const RepositoryHomeSchema = z.discriminatedUnion("kind", [
  * @since 1.0.0
  */
 export type RepositoryHome = z.infer<typeof RepositoryHomeSchema>
+
+/** Repository-owned navigation declarations.
+ * @category schemas
+ * @since 0.1.0
+ */
+export const RepositoryTabSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("docs"), title, root: path, index: path, nav: path.optional() }),
+  z.object({
+    type: z.literal("eval"),
+    title,
+    suite: z.string().regex(/^[a-z0-9_-]+$/),
+    cases: path,
+    command: z.string().min(1).max(4096)
+  })
+])
+/** Unknown tab kinds belong to newer readers and are ignored.
+ * @category schemas
+ * @since 0.1.0
+ */
+export const RepositoryTabsSchema = z.object({
+  tabs: z.array(z.object({ type: z.string() }).passthrough()).transform((tabs) =>
+    tabs.filter((tab) => tab.type === "docs" || tab.type === "eval")
+  ).pipe(z.array(RepositoryTabSchema).max(3)).refine((tabs) =>
+    tabs.filter((tab) => tab.type === "docs").length <= 1 &&
+    new Set(tabs.flatMap((tab) => tab.type === "eval" ? [tab.suite] : [])).size ===
+      tabs.filter((tab) => tab.type === "eval").length
+  )
+})
+/** A declared repository tab.
+ * @category models
+ * @since 0.1.0
+ */
+export type RepositoryTab = z.infer<typeof RepositoryTabSchema>
