@@ -1,3 +1,4 @@
+import { isOpenPull } from "./cards/GithubParts"
 import { PullViews } from "./repository/PullViews"
 import { IssueViews } from "./repository/IssueViews"
 import { RepoFrame } from "./repository/RepoFrame"
@@ -769,9 +770,9 @@ function AppContent() {
   if (!rootRoute && !codeRoute && !issueMatch && !pullMatch) return chat
   const issueKey = issueMatch?.[1] ? `issue-github-${bootRepository}-${Number(issueMatch[1])}` : JSON.stringify(["issues", bootRepository, "all", "all", null])
   const pullKey = pullMatch?.[2] ? JSON.stringify(["pr", bootRepository, Number(pullMatch[2])]).slice(0, -1) + "," : `prs-${bootRepository}`
-  const issueCard = [...cardRows].reverse().find(card => card.viewRepo?.toLowerCase() === bootRepository.toLowerCase() && card.viewKey?.toLowerCase() === issueKey.toLowerCase())
+  const issueCard = [...cardRows].reverse().find(card => card.viewRepo?.toLowerCase() === bootRepository.toLowerCase() && (card.viewKey?.toLowerCase() === issueKey.toLowerCase() || (issueMatch?.[1] !== undefined && card.viewKey?.toLowerCase() === `issue-${bootRepository}-${Number(issueMatch[1])}`.toLowerCase())))
   const pullCard = [...cardRows].reverse().find(card => card.viewRepo?.toLowerCase() === bootRepository.toLowerCase() && (pullMatch?.[2] ? card.viewKey?.toLowerCase().startsWith(pullKey.toLowerCase()) : card.viewKey?.toLowerCase() === pullKey.toLowerCase()))
-  return <RepoFrame pullCount={pullCard?.kind === "pr-list" ? pullCard.payload.landings.filter(row => ["open", "draft"].includes(row.state)).length : undefined} issueCount={issueCard?.kind === "issue-list" && !issueCard.payload.github?.refusal ? issueCard.payload.issues.filter(row => row.state === "open").length : undefined} repo={bootRepository} publicRepo={repository?.catalog === true}
+  return <RepoFrame pullCount={pullCard?.kind === "pr-list" ? pullCard.payload.landings.filter(row => isOpenPull(row.state)).length : undefined} issueCount={issueCard?.kind === "issue-list" ? issueCard.payload.issues.filter(row => row.state === "open").length : undefined} repo={bootRepository} publicRepo={repository?.catalog === true}
     login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
     member={identity?.state === "signed-in" && repository !== undefined && repository.catalog !== true}
     onAsk={() => controller.runCommand("chat.open")} onSignIn={() => controller.runCommand("sign-in")} ask={chat}>

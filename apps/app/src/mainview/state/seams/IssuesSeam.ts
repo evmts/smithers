@@ -3,7 +3,7 @@ import { invalidatePreparedViews,preparedView,type ViewAction,type ViewResult } 
 import { Data } from "effect"
 import { presentAppFailure } from "../controller/AppFailure"
 import { readRepositoryDetail } from "../RepositoryReadReceipts"
-import { readRepositoryListError,repositoryListRead,type RepositoryForm } from "./RepositoryListSeam"
+import { repositoryMetadataNotice,readRepositoryListError,repositoryListRead,type RepositoryForm } from "./RepositoryListSeam"
 
 import type { Card } from "../AppState"
 import type { FieldOption } from "@smthrs/ui/flow-form"
@@ -752,7 +752,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     }
     // A source 404 too: the repo is nowhere — the plain honest error, no card.
     if (!response.ok) {
-      return ctx.store.collections.identitySessions.get("identity")?.state === "signed-out"
+      return ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in"
         ? readErrorMessage(response, `Listing issues for ${repo} failed (${response.status})`)
         : readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
     }
@@ -789,11 +789,13 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
   const readGithubIssue = async (repo: string, number: number): Promise<ViewResult> => {
     const listPath = githubSourceIssuesPath(repo, "all")
     let issue: Record<string, unknown> | undefined
+    let notice: string | undefined
     for (let page = 1; page <= 50; page += 1) {
       let response: Response
       try { response = await ctx.http(`${listPath}&per_page=100&page=${page}`) }
       catch (error) { return unreachable(`load GitHub issue #${number} in ${repo}`, error) }
       if (!response.ok) return readErrorMessage(response, `Loading GitHub issue #${number} failed (${response.status})`)
+      notice = repositoryMetadataNotice(response) ?? notice
       const rows: unknown = await response.json().catch(() => null)
       if (!Array.isArray(rows)) return `GitHub answered issues for ${repo} with an unreadable payload`
       issue = rows.find((row): row is Record<string, unknown> => isRecord(row) && row.number === number && !("pull_request" in row))
@@ -809,13 +811,15 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       try { response = await ctx.http(`${commentsPath}?per_page=100&page=${page}`) }
       catch (error) { return unreachable(`load comments for GitHub issue #${number} in ${repo}`, error) }
       if (!response.ok) return readErrorMessage(response, `Loading GitHub issue comments failed (${response.status})`)
+      notice = repositoryMetadataNotice(response) ?? notice
       const rows: unknown = await response.json().catch(() => null)
       if (!Array.isArray(rows)) return `GitHub answered comments for #${number} with an unreadable payload`
       comments.push(...rows.flatMap(githubCommentOf))
       if (!/rel="?next"?/.test(response.headers.get("link") ?? "")) break
       if (page === 50) return `GitHub issue #${number} has more comments than could be loaded. Open it on GitHub to read the full conversation.`
     }
-    return githubIssueCard(repo, number, issue, comments)
+    const result = githubIssueCard(repo, number, issue, comments)
+    return typeof result === "string" ? result : { ...result, card: { ...result.card, body: notice } }
   }
 
   /** The GitHub issue card and its model value, from GitHub's issue shape and its comments. */
@@ -843,7 +847,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     } catch (error) {
       return unreachable(`list issues for ${repo}`, error)
     }
-    if (!response.ok) return ctx.store.collections.identitySessions.get("identity")?.state === "signed-out"
+    if (!response.ok) return ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in"
         ? readErrorMessage(response, `Listing issues for ${repo} failed (${response.status})`)
         : readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
     const body: unknown = await response.json().catch(() => null)
@@ -985,6 +989,21 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     }
   }
 
+  /** The admitted repository document, rather than its name, declares a mirror. */
+  const declaredGithubSource = async (repo: string): Promise<boolean | string> => {
+    try {
+      const response = await ctx.http(`${ctx.baseUrl}/api/repos/${repo.split("/").map(encodeURIComponent).join("/")}`)
+      const body: unknown = response.ok ? await response.json().catch(() => null) : null
+      if (isRecord(body) && typeof body.full_name === "string" && body.full_name.toLowerCase() === repo.toLowerCase()) {
+        if (body.github_source_unavailable === true || body.github_source_ambiguous === true) return "The repository's issue source could not be checked."
+        if (body.github_source === undefined) return false
+        if (isRecord(body.github_source) && typeof body.github_source.owner === "string" && typeof body.github_source.repo === "string"
+          && /^[A-Za-z0-9_.-]+$/.test(body.github_source.owner) && /^[A-Za-z0-9_.-]+$/.test(body.github_source.repo)) return true
+      }
+    } catch { /* The native rows remain readable even when source discovery fails. */ }
+    return "The repository's issue source could not be checked."
+  }
+
   /**
    * One list read, mounting nothing: the repository's own tracker, an
    * install's GitHub-App door, or the GitHub source a repository that is not
@@ -1012,9 +1031,13 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       // the GitHub-source list instead of surfacing a broken 404. A named
       // view 404s when it is not declared: that is the answer, not a fallback.
       if (response.status === 404 && named !== undefined) return readRepositoryListError(response, `Listing the ${named} view of ${repo} failed (${response.status})`)
-      if (response.status === 404) return listFromGithubSource(repo, filter)
-      if (response.status === 401) ctx.dispatch({ type: "card.removed", actor: ctx.actor(), id: `issues-${repo}` })
-      return ctx.store.collections.identitySessions.get("identity")?.state === "signed-out"
+      if (response.status === 404) {
+        const source = await declaredGithubSource(repo)
+        if (source === true) return listFromGithubSource(repo, filter)
+        if (typeof source === "string") return source
+        return readErrorMessage(response, `Listing issues for ${repo} failed (404)`)
+      }
+      return ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in"
         ? readErrorMessage(response, `Listing issues for ${repo} failed (${response.status})`)
         : readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
     }
@@ -1035,9 +1058,15 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
      * linked, not mirrored) is stated, never a silent absence.
      */
     // Read before GitHub: a GitHub 401 re-probes the session, and the view must settle in the scope it started in.
-    const views = ctx.store.collections.identitySessions.get("identity")?.state === "signed-out" ? [] : await readIssueViews(repo)
+    const views = ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in" ? [] : await readIssueViews(repo)
     // Conversations and saved views live in Smithers' own tracker; GitHub's rows join the unfiltered and issues lists.
-    const github = kind === "conversation" || named !== undefined ? { issues: [], meta: undefined } : await readGithubIssues(repo, filter)
+    const github = await (async () => {
+      if (kind === "conversation" || named !== undefined) return { issues: [], meta: undefined }
+      const source = await declaredGithubSource(repo)
+      if (source === false) return { issues: [], meta: undefined }
+      if (source === true) return readGithubIssues(repo, filter)
+      return { issues: [], meta: { source: "refused", syncedAt: null, stale: false, syncError: null, refusal: source } }
+    })()
     const issues = [...native, ...github.issues]
     const card: Card = {
       id: `issues-${repo}`,

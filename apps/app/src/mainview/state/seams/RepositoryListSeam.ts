@@ -1,3 +1,4 @@
+import { ageLabel } from "../../Timestamps"
 import type { FormsController } from "../controller/forms"
 import { presentAppFailure } from "../controller/AppFailure"
 import { resolveTargetRepo } from "../RepoContext"
@@ -47,4 +48,11 @@ export async function repositoryListRead(
     ctx.promptSignIn(`read ${kind === "issues" ? "issues" : "pull requests"} on ${repo}`)
     return readResult("The sign-in step is rendered in the chat.")
   }
+}
+
+/** Keep stale mirror reads visibly dated across repository issue and pull views. */
+export const repositoryMetadataNotice = (response: Response): string | undefined => {
+  if (response.headers.get("x-metadata-stale") !== "true") return undefined
+  const syncedAt = response.headers.get("x-metadata-synced-at")
+  return syncedAt ? `Stale · synced ${ageLabel(syncedAt)}` : "Stale"
 }

@@ -1,6 +1,6 @@
 import { preparedView, type ViewAction, type ViewResult, invalidatePreparedViews } from "../PreparedView"
 import { readRepositoryDetail } from "../RepositoryReadReceipts"
-import { readRepositoryListError, repositoryListRead, type RepositoryForm } from "./RepositoryListSeam"
+import { repositoryMetadataNotice,readRepositoryListError, repositoryListRead, type RepositoryForm } from "./RepositoryListSeam"
 /*
  * The landings seam ("PRs"): /api/repos/{owner}/{repo}/landings* through the
  * product Worker's platform proxy. Landing a PR QUEUES it (202 Accepted) — the
@@ -918,6 +918,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     const card: Card = {
       id: `pr-${repo}-${number}`,
       kind: "pr",
+      body: repositoryMetadataNotice(response),
       title: `#${number} ${landing.title} · ${repo}`,
       status: "active",
       createdAt: Date.now(),
@@ -951,7 +952,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
         return `Pull requests for ${repo} couldn't be listed — the platform didn't answer.`
       }
       if (!response.ok) {
-        return ctx.store.collections.identitySessions.get("identity")?.state === "signed-out"
+        return ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in"
           ? readErrorMessage(response, `Pull requests for ${repo} couldn't be listed (HTTP ${response.status}).`)
           : readRepositoryListError(response, `Pull requests for ${repo} couldn't be listed.`)
       }
@@ -966,6 +967,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       const card: Card = {
         id: `prs-${repo}`,
         kind: "pr-list",
+        body: repositoryMetadataNotice(response),
         title: `Pull requests · ${repo}`,
         status: "active",
         createdAt: Date.now(),
