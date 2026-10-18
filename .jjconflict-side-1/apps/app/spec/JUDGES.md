@@ -5,6 +5,12 @@ snapshot and screenshot bytes. The browser must mask journey-declared volatile
 regions before taking the screenshot. Literal volatile text values are replaced
 before hashing; counts are retained unless the journey explicitly marks them.
 No raw DOM, hidden text, credentials or page scripts enter the observation.
+Capture waits for lazy resources to finish and the app boot skeleton to disappear, then requires two identical
+observations (text, accessibility and screenshot) within five seconds. An
+unsettled page fails capture; content and image differences are never ignored.
+The runner pins software rendering, sRGB, scalar Skia and device scale 2 so
+rotated tooltip edges reproduce between browser contexts. No pixels are masked
+unless the journey declares them volatile. Cross-platform replay needs verification.
 
 `record` runs Rubric.make three times through a supplied Evaluator. The real
 seat adapter uses Evaluator.layerFromSeat; node

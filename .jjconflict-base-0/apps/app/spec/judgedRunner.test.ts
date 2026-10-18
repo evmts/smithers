@@ -164,6 +164,76 @@ test("canonical capture waits for a view that is still rendering", async () => {
   } finally { await context.close() }
 })
 
+test("page observation waits for the app loading view and captures the rendered page", async () => {
+  const context = await browser.newContext()
+  try {
+    const page = await context.newPage()
+    await page.setContent('<div role="status" aria-label="Loading view">Starting</div><main>Loading</main>')
+    await page.evaluate(() => { setTimeout(() => { document.querySelector('[role="status"]')!.remove(); document.querySelector("main")!.textContent = "People review and merge." }, 150) })
+    const captured = await captureObservation(page, "page")
+    expect(captured.blocks[0]?.text).toBe("People review and merge.")
+    expect(captured.accessibility).not.toContain("Loading view")
+  } finally { await context.close() }
+})
+
+test("observation retries when the rendered image changes during capture", async () => {
+  const context = await browser.newContext()
+  try {
+    const page = await context.newPage()
+    await page.setContent('<main data-view="reply">Old reply</main>')
+    const screenshot = page.screenshot.bind(page)
+    let captures = 0
+    page.screenshot = async (options) => {
+      const image = await screenshot(options)
+      if (++captures === 1) await page.locator("main").evaluate(node => { node.textContent = "People review and merge." })
+      return image
+    }
+    const captured = await captureObservation(page, "reply")
+    expect(captured.blocks[0]?.text).toBe("People review and merge.")
+    expect(captures).toBeGreaterThanOrEqual(3)
+  } finally { await context.close() }
+})
+
+
+
+test("a continuously changing observation fails closed at its settling deadline", async () => {
+  const context = await browser.newContext()
+  try {
+    const page = await context.newPage()
+    await page.setContent('<main data-view="reply">0</main>')
+    const screenshot = page.screenshot.bind(page)
+    let captures = 0
+    page.screenshot = async (options) => {
+      const image = await screenshot(options)
+      await page.locator("main").evaluate((node, value) => { node.textContent = String(value) }, ++captures)
+      return image
+    }
+    await expect(captureObservation(page, "reply")).rejects.toThrow("Observation did not settle")
+    expect(captures).toBeGreaterThan(0)
+  } finally { await context.close() }
+}, 30000)
+
+
+test("a boot skeleton appearing during capture cannot be returned as stable evidence", async () => {
+  const context = await browser.newContext()
+  try {
+    const page = await context.newPage()
+    await page.setContent('<main>Starting</main>')
+    const screenshot = page.screenshot.bind(page)
+    let captures = 0
+    page.screenshot = async options => {
+      if (++captures === 1) await page.evaluate(() => {
+        document.body.innerHTML = '<div role="status" aria-label="Loading view">Starting</div>'
+        setTimeout(() => { document.body.innerHTML = '<main>People review and merge.</main>' }, 200)
+      })
+      return screenshot(options)
+    }
+    const captured = await captureObservation(page, "page")
+    expect(captured.blocks[0]?.text).toBe("People review and merge.")
+    expect(captured.accessibility).not.toContain("Loading view")
+  } finally { await context.close() }
+})
+
 test("judge --record CLI persists inconclusive results and exits 5 under a one-call budget", async () => {
   await browser.close()
   const policyFile = join(directory, "one-call-policy.json")

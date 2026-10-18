@@ -212,7 +212,7 @@ export const main = async (argv: string[]): Promise<number> => {
   }
   let mockUnavailable: string | undefined
   const server = mode === "mock" && !process.env.SPEC_MOCK_URL ? await (await import("./staticServer")).staticServer(resolve(import.meta.dirname, "../dist-spec")).catch(error => { mockUnavailable = `Spec build unavailable: ${String(error)}`; return undefined }) : undefined
-  const browser = await chromium.launch({ headless: true }).catch(async error => { await server?.close(); throw error })
+  const browser = await chromium.launch({ headless: true, args: ["--disable-gpu", "--force-color-profile=srgb", "--disable-skia-runtime-opts"] }).catch(async error => { await server?.close(); throw error })
   const runs: RunResult[] = []
   const siteHosts = new Map<string, NonNullable<typeof server>>()
   try {
@@ -246,7 +246,7 @@ export const main = async (argv: string[]): Promise<number> => {
         ? file.replace(/(?:\.journey)?\.ts$/, ".judgments.json")
         : resolve(output, "live-judgments", `${definition.id}.judgments.json`)
       if (recording) await mkdir(dirname(sidecar), { recursive: true })
-      const context = await browser.newContext({ serviceWorkers: "block" })
+      const context = await browser.newContext({ serviceWorkers: "block", deviceScaleFactor: 2 })
       try {
         let testedRevision = revision
         const stamp = await context.request.get(new URL("/__build.json", origin).href).then(response => response.json()).catch(() => null) as { gitSha?: unknown } | null
