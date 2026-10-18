@@ -1,0 +1,2578 @@
+paths:
+  /api/user/connections/{id}:
+    delete:
+      summary: DELETE /api/user/connections/{id}
+      operationId: delete_api_user_connections_id
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/devices:
+    delete:
+      summary: DELETE /api/user/devices
+      operationId: delete_api_user_devices
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: POST /api/user/devices
+      operationId: post_api_user_devices
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/emails/{id}:
+    delete:
+      summary: DELETE /api/user/emails/{id}
+      operationId: delete_api_user_emails_id
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/keys/{id}:
+    delete:
+      summary: DELETE /api/user/keys/{id}
+      operationId: delete_api_user_keys_id
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      summary: GET /api/user/keys/{id}
+      operationId: get_api_user_keys_id
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSHKey'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/provider-connections/{id}:
+    delete:
+      summary: DELETE /api/user/provider-connections/{id}
+      operationId: delete_api_user_provider_connections_id
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      summary: GET /api/user/provider-connections/{id}
+      operationId: get_api_user_provider_connections_id
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/provider-connections/{id}/grants/{grantID}:
+    delete:
+      summary: DELETE /api/user/provider-connections/{id}/grants/{grantID}
+      operationId: delete_api_user_provider_connections_id_grants_grantid
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: grantID
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/sessions/{id}:
+    delete:
+      summary: DELETE /api/user/sessions/{id}
+      operationId: delete_api_user_sessions_id
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/tokens/{id}:
+    delete:
+      summary: DELETE /api/user/tokens/{id}
+      operationId: delete_api_user_tokens_id
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user:
+    get:
+      summary: GET /api/user
+      operationId: get_api_user
+      tags:
+        - User
+      parameters: []
+      x-smithers-client-contract: multi-v1
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      summary: PATCH /api/user
+      operationId: patch_api_user
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/connections:
+    get:
+      summary: GET /api/user/connections
+      operationId: get_api_user_connections
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/emails:
+    get:
+      summary: GET /api/user/emails
+      operationId: get_api_user_emails
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: POST /api/user/emails
+      operationId: post_api_user_emails
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/emails/verify-token:
+    get:
+      summary: GET /api/user/emails/verify-token
+      operationId: get_api_user_emails_verify_token
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: POST /api/user/emails/verify-token
+      operationId: post_api_user_emails_verify_token
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/github-access/{owner}/{repo}:
+    get:
+      summary: GET /api/user/github-access/{owner}/{repo}
+      operationId: get_api_user_github_access_owner_repo
+      tags:
+        - User
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/github-app/installations:
+    get:
+      summary: GET /api/user/github-app/installations
+      description: The caller's GitHub repositories the GitHub App verifiably covers, from the repository inventory (100 per page, at most 10 pages, most recently pushed first) and each repository's access diagnosis. An installation id filters the result; it never grants access. With no verified repository and a blocking verdict it answers 409 with that verdict's detail; an inventory over 900 repositories answers 503.
+      operationId: get_api_user_github_app_installations
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Verified repositories.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [repos, install_url]
+                properties:
+                  install_url:
+                    type: string
+                    description: Stored App installation URL, empty until configured.
+                  repos:
+                    type: array
+                    items:
+                      type: object
+                      required: [fullName, pushedAt, installationId]
+                      properties:
+                        fullName:
+                          type: string
+                        pushedAt:
+                          type: string
+                        installationId:
+                          type: integer
+                          format: int64
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/user/github-app/installations/{installationId}:
+    get:
+      summary: GET /api/user/github-app/installations/{installationId}
+      description: The caller's GitHub repositories the GitHub App verifiably covers, from the repository inventory (100 per page, at most 10 pages, most recently pushed first) and each repository's access diagnosis. An installation id filters the result; it never grants access. With no verified repository and a blocking verdict it answers 409 with that verdict's detail; an inventory over 900 repositories answers 503.
+      operationId: get_api_user_github_app_installations_installation_id
+      tags:
+        - User
+      parameters:
+        - name: installationId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[1-9][0-9]*$'
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Verified repositories.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [repos, install_url]
+                properties:
+                  install_url:
+                    type: string
+                    description: Stored App installation URL, empty until configured.
+                  repos:
+                    type: array
+                    items:
+                      type: object
+                      required: [fullName, pushedAt, installationId]
+                      properties:
+                        fullName:
+                          type: string
+                        pushedAt:
+                          type: string
+                        installationId:
+                          type: integer
+                          format: int64
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/user/github-repo-requests/{id}:
+    get:
+      x-composition: plue
+      summary: Read a GitHub repository creation request
+      description: What became of one of the caller's own GitHub repository creations. A completed request names the repository GitHub itself answered on the readback; an uncertain one names no repository, records the attempt and is never retried.
+      operationId: get_api_user_github_repo_requests_id
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 128}
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The request's durable state
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [operation_id, state]
+                properties:
+                  operation_id: {type: string}
+                  state: {type: string, enum: [accepted, dispatching, running, waiting, completed, failed, cancelled, uncertain]}
+                  stage: {type: string, enum: [resolve-actor, create, readback]}
+                  code:
+                    type: string
+                    enum: [repository_exists, reauthorize_github, github_permission, rate_limited, actor_changed, readback_mismatch, invalid_request, github_create_uncertain]
+                  full_name: {type: string}
+                  repository_id: {type: integer, format: int64}
+                  external_attempt: {type: integer}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: The repository creation store is not wired
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+  /api/user/github-pull-review-requests/{id}:
+    get:
+      summary: Read a GitHub pull request review request
+      description: >-
+        What became of one of the caller's own pull request reviews. A
+        completed request names the review GitHub itself answered on the
+        readback, bound to the submitted text, head and verdict under this
+        credential's own GitHub user id. An uncertain one names no review,
+        records the attempt and is never retried: the pull request may already
+        carry the review, so it is re-read rather than submitted again. The
+        answer survives a browser reload, because the operation lives in the
+        durable store rather than in the page.
+      operationId: get_api_user_github_pull_review_requests_id
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 128}
+      x-required-token-scope: read:repository
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The request's durable state
+          headers:
+            Cache-Control:
+              description: Always `private, no-store`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [operation_id, state, verified]
+                properties:
+                  operation_id: {type: string}
+                  state: {type: string, enum: [accepted, dispatching, running, waiting, completed, failed, cancelled, uncertain]}
+                  stage: {type: string, enum: [resolve-actor, fence, submit, readback]}
+                  code:
+                    type: string
+                    enum: [reauthorize_github, github_permission, actor_changed, review_head_moved, pull_request_not_open, pull_request_mismatch, github_rejected_review, rate_limited, invalid_request, github_review_uncertain, readback_mismatch]
+                  review_id: {type: integer, format: int64}
+                  review_state: {type: string, enum: [APPROVED, CHANGES_REQUESTED, COMMENTED]}
+                  commit_id: {type: string}
+                  verified: {type: boolean}
+                  external_attempt: {type: integer}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: The review store is not wired
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+  /api/user/github-repos:
+    get:
+      summary: GET /api/user/github-repos
+      operationId: get_api_user_github_repos
+      tags:
+        - User
+      parameters: []
+      x-smithers-client-contract: multi-v1
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      x-composition: plue
+      summary: Create a repository on the caller's GitHub account
+      description: Admits one real GitHub repository create, made with the signed-in person's own GitHub credential, and answers without waiting on GitHub. The body names only the repository name; the owner is the account the server's own credential resolution names, and the idempotency key is derived from that actor and this intent, so a repeated request joins the one operation instead of creating a second repository. An ambiguous reply leaves the operation uncertain and is never blindly retried. Creating the repository neither imports it into Smithers nor installs the GitHub App.
+      operationId: post_api_user_github_repos
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                  description: The repository name, without an owner.
+                private:
+                  type: boolean
+                  default: true
+                  description: Absent means private.
+      responses:
+        '202':
+          description: Durable admission; the repository exists only once the operation completes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [operationId, requestId, kind, state, acceptedAt]
+                properties:
+                  operationId: {type: string}
+                  requestId: {type: string}
+                  kind: {type: string}
+                  state: {type: string, enum: [accepted, dispatching, running, waiting, completed, failed, cancelled, uncertain]}
+                  acceptedAt: {type: string, format: date-time}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: No GitHub credential is linked to this account
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: The idempotency key names a different repository, or this name has been refused too often
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '503':
+          description: The repository creation store is not wired
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+  /api/user/github-repos/{owner}/{repo}:
+    get:
+      summary: GET /api/user/github-repos/{owner}/{repo}
+      operationId: get_api_user_github_repos_owner_repo
+      tags:
+        - User
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/github-repos/{owner}/{repo}/issues:
+    get:
+      summary: GET /api/user/github-repos/{owner}/{repo}/issues
+      operationId: get_api_user_github_repos_owner_repo_issues
+      tags:
+        - User
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/github-repos/{owner}/{repo}/issues/{number}/comments:
+    get:
+      summary: GET /api/user/github-repos/{owner}/{repo}/issues/{number}/comments
+      operationId: get_api_user_github_repos_owner_repo_issues_number_comments
+      tags:
+        - User
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: number
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/github-repos/{owner}/{repo}/pulls:
+    get:
+      summary: GET /api/user/github-repos/{owner}/{repo}/pulls
+      operationId: get_api_user_github_repos_owner_repo_pulls
+      tags:
+        - User
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/github-repos/{owner}/{repo}/pulls/{number}:
+    get:
+      summary: Get one GitHub pull request
+      description: Requires read:repository and a user credential that is not repository-restricted. Reads one pull request through the signed-in user's own GitHub credential, live from GitHub, so a number that is not on the first page of the list still resolves. The repository need not be imported. The body is GitHub's pull request object passed through unchanged; the fields below are the ones clients rely on.
+      operationId: get_api_user_github_repos_owner_repo_pulls_number
+      tags:
+        - User
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: number
+          in: path
+          required: true
+          description: Pull request number, a positive integer.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 9007199254740991
+      x-required-token-scope: read:repository
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: GitHub pull request object.
+          headers:
+            Cache-Control:
+              description: Always `private, no-store`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                required:
+                  - number
+                  - state
+                  - title
+                properties:
+                  number:
+                    type: integer
+                    format: int64
+                  state:
+                    type: string
+                    enum:
+                      - open
+                      - closed
+                  title:
+                    type: string
+                  body:
+                    type: string
+                    nullable: true
+                  draft:
+                    type: boolean
+                  merged:
+                    type: boolean
+                  html_url:
+                    type: string
+                    format: uri
+                  user:
+                    type: object
+                    additionalProperties: true
+                    properties:
+                      login:
+                        type: string
+                  head:
+                    type: object
+                    additionalProperties: true
+                    properties:
+                      ref:
+                        type: string
+                      sha:
+                        type: string
+                  base:
+                    type: object
+                    additionalProperties: true
+                    properties:
+                      ref:
+                        type: string
+                      sha:
+                        type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/github-repos/{owner}/{repo}/pulls/{number}/reviews:
+    post:
+      summary: Submit one review to a GitHub pull request
+      description: >-
+        Requires write:repository and a user credential that is not
+        repository-restricted; a session write also carries the browser CSRF
+        token. Admits one durable review operation and answers without waiting
+        on GitHub. The review is submitted ONCE, on the shared worker, with the
+        signed-in person's own GitHub credential, so GitHub attributes it to
+        that person. The request names no actor: the catalog command
+        (github.account-review) is person-only and agent never, so an agent's
+        review analysis can return findings but can never submit someone's
+        verdict here. The idempotency key is derived from that actor and this
+        intent (repository, number, verdict, text and reviewed head), so a
+        repeated request joins the one operation instead of recording a second
+        review. commit_id is the head commit the person reviewed; the worker
+        refuses before any write if the pull request has moved to another head,
+        is no longer open, or is not the named number. What became of the
+        operation is read at /api/user/github-pull-review-requests/{id}: only a
+        completed operation names a review, and it names one only because
+        GitHub's own answer carried this intent's text, head and verdict under
+        this credential's own GitHub user id. An ambiguous reply leaves the
+        operation uncertain and is never blindly retried.
+      operationId: create_api_user_github_repos_owner_repo_pulls_number_reviews
+      tags:
+        - User
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: number
+          in: path
+          required: true
+          description: Pull request number, a positive integer.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 9007199254740991
+      x-required-token-scope: write:repository
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - event
+                - commit_id
+              properties:
+                event:
+                  type: string
+                  description: The verdict. REQUEST_CHANGES and COMMENT require body text.
+                  enum:
+                    - APPROVE
+                    - REQUEST_CHANGES
+                    - COMMENT
+                body:
+                  type: string
+                  maxLength: 65536
+                commit_id:
+                  type: string
+                  description: The head commit the person reviewed, a 40-character SHA.
+                  pattern: '^[0-9a-fA-F]{40}$'
+      responses:
+        '202':
+          description: >-
+            Durable admission; the review reaches GitHub only once the
+            operation runs.
+          headers:
+            Cache-Control:
+              description: Always `private, no-store`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [operationId, requestId, kind, state, acceptedAt]
+                properties:
+                  operationId: {type: string}
+                  requestId: {type: string}
+                  kind: {type: string}
+                  state: {type: string, enum: [accepted, dispatching, running, waiting, completed, failed, cancelled, uncertain]}
+                  acceptedAt: {type: string, format: date-time}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: The review store is not wired
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+  /api/user/github-repos/{owner}/{repo}/pulls/{number}/diff:
+    get:
+      summary: GET /api/user/github-repos/{owner}/{repo}/pulls/{number}/diff
+      operationId: get_api_user_github_repos_owner_repo_pulls_number_diff
+      tags:
+        - User
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: number
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/github-repos/{owner}/{repo}/pulls/{number}/commits:
+    get:
+      summary: List one GitHub pull request's commits
+      description: Requires read:repository and a user credential that is not repository-restricted. Reads one page of the pull request's own commits through the signed-in user's GitHub credential, live from GitHub. Paged with per_page (100 maximum) and page; GitHub's Link header rides back unchanged. GitHub serves at most 250 commits for one pull request however it is paged, so comparing rows against the pull request object's own commits count is the only way to know a longer stack was cut short. The body is GitHub's commit array passed through unchanged; the fields below are the ones clients rely on.
+      operationId: list_api_user_github_repos_owner_repo_pulls_number_commits
+      tags:
+        - User
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: number
+          in: path
+          required: true
+          description: Pull request number, a positive integer.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 9007199254740991
+        - name: per_page
+          in: query
+          required: false
+          description: Rows per page, 1 to 100 (GitHub's own maximum, and the default here).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: page
+          in: query
+          required: false
+          description: Which page of rows to read, counting from 1. A validated page number on this fixed path is the only way a later page is requested; the upstream URLs in GitHub's Link header are never followed with the caller's credential.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+      x-required-token-scope: read:repository
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: GitHub commit array for this pull request.
+          headers:
+            Cache-Control:
+              description: Always `private, no-store`.
+              schema:
+                type: string
+            Link:
+              description: GitHub's pagination header, present when more pages exist.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                  required:
+                    - sha
+                    - commit
+                  properties:
+                    sha:
+                      type: string
+                    commit:
+                      type: object
+                      additionalProperties: true
+                      properties:
+                        message:
+                          type: string
+                        author:
+                          type: object
+                          additionalProperties: true
+                          properties:
+                            name:
+                              type: string
+                            date:
+                              type: string
+                              format: date-time
+                    author:
+                      type: object
+                      additionalProperties: true
+                      nullable: true
+                      properties:
+                        login:
+                          type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/github-repos/{owner}/{repo}/commits/{sha}/check-runs:
+    get:
+      summary: List the check runs reported against one GitHub commit
+      description: Requires read:repository and a user credential that is not repository-restricted. Reads one page of the check runs GitHub reports against one commit — a pull request's head commit is what its Checks tab shows — through the signed-in user's GitHub credential. Paged with per_page (100 maximum) and page, and total_count in the body is how many runs the ref has. GitHub requires checks:read on a fine-grained token or App installation, or the repo scope on a classic token for a private repository; pull_requests:read does NOT cover check runs, and a credential without the access is answered 403 rather than an empty list. The ref must be a hexadecimal commit id; a branch name or any other ref is refused with 400. The body is GitHub's check-runs object passed through unchanged.
+      operationId: list_api_user_github_repos_owner_repo_commits_sha_check_runs
+      tags:
+        - User
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sha
+          in: path
+          required: true
+          description: Commit id, 7 to 64 hexadecimal characters.
+          schema:
+            type: string
+            pattern: '^[0-9a-fA-F]{7,64}$'
+        - name: per_page
+          in: query
+          required: false
+          description: Rows per page, 1 to 100 (GitHub's own maximum, and the default here).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: page
+          in: query
+          required: false
+          description: Which page of rows to read, counting from 1. A validated page number on this fixed path is the only way a later page is requested; the upstream URLs in GitHub's Link header are never followed with the caller's credential.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+      x-required-token-scope: read:repository
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: GitHub check-runs object for this commit.
+          headers:
+            Cache-Control:
+              description: Always `private, no-store`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                required:
+                  - check_runs
+                properties:
+                  total_count:
+                    type: integer
+                  check_runs:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                      required:
+                        - name
+                        - status
+                      properties:
+                        name:
+                          type: string
+                        status:
+                          type: string
+                          enum:
+                            - queued
+                            - in_progress
+                            - completed
+                        conclusion:
+                          type: string
+                          nullable: true
+                        started_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        completed_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/github/repos:
+    get:
+      summary: GET /api/user/github/repos
+      operationId: list_user_github_repos
+      tags:
+        - User
+      parameters: []
+      x-smithers-client-contract: multi-v1
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/keys:
+    get:
+      summary: GET /api/user/keys
+      operationId: get_api_user_keys
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The signed-in user's keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SSHKey'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: POST /api/user/keys
+      operationId: post_api_user_keys
+      tags:
+        - User
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, key]
+              properties:
+                title:
+                  type: string
+                key:
+                  type: string
+                  description: An OpenSSH public key line.
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '201':
+          description: The added key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSHKey'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/orgs:
+    get:
+      summary: GET /api/user/orgs
+      operationId: get_api_user_orgs
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/provider-connections:
+    get:
+      summary: GET /api/user/provider-connections
+      operationId: get_api_user_provider_connections
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: POST /api/user/provider-connections
+      operationId: post_api_user_provider_connections
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/readable-repos:
+    get:
+      summary: GET /api/user/readable-repos
+      operationId: get_api_user_readable_repos
+      tags:
+        - User
+      parameters: []
+      x-smithers-client-contract: multi-v1
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/repos:
+    get:
+      summary: GET /api/user/repos
+      operationId: get_api_user_repos
+      tags:
+        - User
+      parameters: []
+      x-smithers-client-contract: multi-v1
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: POST /api/user/repos
+      operationId: post_api_user_repos
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/sessions:
+    get:
+      summary: GET /api/user/sessions
+      operationId: get_api_user_sessions
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/settings/notifications:
+    get:
+      summary: GET /api/user/settings/notifications
+      operationId: get_api_user_settings_notifications
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      summary: PUT /api/user/settings/notifications
+      operationId: put_api_user_settings_notifications
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/settings/signup:
+    get:
+      summary: GET /api/user/settings/signup
+      description: Reads the session user's signup account claim and poll answers.
+      operationId: get_api_user_settings_signup
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The session user's signup profile; `profile` is null when none is saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - profile
+                properties:
+                  profile:
+                    nullable: true
+                    type: object
+                    required:
+                      - name
+                      - account
+                      - stage
+                      - question
+                      - answers
+                    properties:
+                      name:
+                        type: string
+                        maxLength: 200
+                      account:
+                        type: string
+                        pattern: '^[a-z0-9][a-z0-9-]{0,37}[a-z0-9]$'
+                      stage:
+                        type: string
+                        enum:
+                          - poll
+                          - ready
+                          - done
+                      question:
+                        type: integer
+                        minimum: 0
+                        maximum: 64
+                      answers:
+                        type: object
+                        maxProperties: 32
+                        additionalProperties:
+                          oneOf:
+                            - type: string
+                              maxLength: 2000
+                            - type: array
+                              maxItems: 32
+                              items:
+                                type: string
+                                maxLength: 2000
+                      repo:
+                        type: string
+                        maxLength: 200
+                  updated_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: profile_unavailable. The profile store failed; nothing was changed and the same request may be retried.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+    put:
+      summary: PUT /api/user/settings/signup
+      description: Replaces the session user's signup account claim and poll answers.
+      operationId: put_api_user_settings_signup
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - account
+                - stage
+                - question
+                - answers
+              properties:
+                name:
+                  type: string
+                  maxLength: 200
+                account:
+                  type: string
+                  pattern: '^[a-z0-9][a-z0-9-]{0,37}[a-z0-9]$'
+                stage:
+                  type: string
+                  enum:
+                    - poll
+                    - ready
+                    - done
+                question:
+                  type: integer
+                  minimum: 0
+                  maximum: 64
+                answers:
+                  type: object
+                  maxProperties: 32
+                  additionalProperties:
+                    oneOf:
+                      - type: string
+                        maxLength: 2000
+                      - type: array
+                        maxItems: 32
+                        items:
+                          type: string
+                          maxLength: 2000
+                repo:
+                  type: string
+                  maxLength: 200
+      responses:
+        '200':
+          description: The session user's signup profile; `profile` is null when none is saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - profile
+                properties:
+                  profile:
+                    nullable: true
+                    type: object
+                    required:
+                      - name
+                      - account
+                      - stage
+                      - question
+                      - answers
+                    properties:
+                      name:
+                        type: string
+                        maxLength: 200
+                      account:
+                        type: string
+                        pattern: '^[a-z0-9][a-z0-9-]{0,37}[a-z0-9]$'
+                      stage:
+                        type: string
+                        enum:
+                          - poll
+                          - ready
+                          - done
+                      question:
+                        type: integer
+                        minimum: 0
+                        maximum: 64
+                      answers:
+                        type: object
+                        maxProperties: 32
+                        additionalProperties:
+                          oneOf:
+                            - type: string
+                              maxLength: 2000
+                            - type: array
+                              maxItems: 32
+                              items:
+                                type: string
+                                maxLength: 2000
+                      repo:
+                        type: string
+                        maxLength: 200
+                  updated_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: profile_unavailable. The profile store failed; nothing was changed and the same request may be retried.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+  /api/user/tokens:
+    get:
+      description: Token summaries include derived kind and via. Install PATs are delegated/cli without a stored kind column.
+      summary: GET /api/user/tokens
+      operationId: get_api_user_tokens
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      description: On an install, mint a delegated credential with via cli and a 30-day expiry. Approval scopes are removed; public inputs cannot select host turn or terminal profiles. The response includes derived kind and via.
+      summary: POST /api/user/tokens
+      operationId: post_api_user_tokens
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/workflow-runs/active-count:
+    get:
+      summary: GET /api/user/workflow-runs/active-count
+      operationId: get_api_user_workflow_runs_active_count
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/workspaces:
+    get:
+      summary: GET /api/user/workspaces
+      operationId: get_api_user_workspaces
+      tags:
+        - User
+      parameters: []
+      x-smithers-client-contract: multi-v1
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/emails/{id}/verify:
+    post:
+      summary: POST /api/user/emails/{id}/verify
+      operationId: post_api_user_emails_id_verify
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/provider-connections/{id}/grants:
+    post:
+      summary: POST /api/user/provider-connections/{id}/grants
+      operationId: post_api_user_provider_connections_id_grants
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/provider-connections/{id}/refresh:
+    post:
+      summary: POST /api/user/provider-connections/{id}/refresh
+      operationId: post_api_user_provider_connections_id_refresh
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/provider-connections/codex/device:
+    post:
+      summary: POST /api/user/provider-connections/codex/device
+      operationId: post_api_user_provider_connections_codex_device
+      tags:
+        - User
+      parameters: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/provider-connections/codex/device/{id}:
+    post:
+      summary: POST /api/user/provider-connections/codex/device/{id}
+      operationId: post_api_user_provider_connections_codex_device_id
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/provider-connections/order:
+    put:
+      summary: PUT /api/user/provider-connections/order
+      operationId: put_api_user_provider_connections_order
+      tags:
+        - User
+      parameters: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'

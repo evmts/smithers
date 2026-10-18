@@ -1,0 +1,191 @@
+package hostbackup
+
+import (
+	"context"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+type restoreAuthorityFixture struct {
+	calls   []string
+	fail    string
+	dump    string
+	version Version
+	onStart func(string)
+}
+
+func (a *restoreAuthorityFixture) step(name string) error {
+	a.calls = append(a.calls, name)
+	if name == a.fail {
+		return errors.New(name)
+	}
+	return nil
+}
+func (a *restoreAuthorityFixture) CheckStopped(context.Context) error { return a.step("stopped") }
+func (a *restoreAuthorityFixture) CheckRetainedIsolation(context.Context, Manifest) error {
+	return a.step("isolation")
+}
+func (a *restoreAuthorityFixture) RestoreDatabase(_ context.Context, root *os.Root, r io.Reader, version Version) error {
+	if err := a.step("database"); err != nil {
+		return err
+	}
+	bytes, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	a.version = version
+	a.dump = string(bytes)
+	if err := root.Mkdir("postgres", 0700); err != nil {
+		return err
+	}
+	return root.WriteFile("postgres/restored", bytes, 0600)
+}
+func (a *restoreAuthorityFixture) StartRestored(_ context.Context, bundle string) error {
+	if a.onStart != nil {
+		a.onStart(bundle)
+	}
+	return a.step("start")
+}
+func restoreFixture(t *testing.T) string {
+	state := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(state, "secret"), []byte("backup secret"), 0600))
+	dir, err := Backup(t.Context(), BackupConfig{FreeSpaceFloor: testFreeSpaceFloor, State: state, Version: Version{"1.2.3", 2, 18}, Authority: &backupAuthorityFixture{at: time.Date(2026, 10, 7, 1, 2, 3, 0, time.UTC)}, Cloner: backupCopyFixture{}})
+	require.NoError(t, err)
+	return dir
+}
+func TestRestoreStagesBeforeMovingLiveTrees(t *testing.T) {
+	backup := restoreFixture(t)
+	state := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(state, "secret"), []byte("live secret"), 0600))
+	a := &restoreAuthorityFixture{}
+	at, err := Restore(t.Context(), RestoreConfig{State: state, Backup: backup, Version: Version{"1.3.0", 3, 18}, Authority: a, Cloner: backupCopyFixture{}})
+	require.NoError(t, err)
+	require.Equal(t, time.Date(2026, 10, 7, 1, 2, 3, 0, time.UTC), at)
+	require.Equal(t, []string{"stopped", "isolation", "database", "start"}, a.calls)
+	require.Equal(t, "seeded database rows", a.dump)
+	require.Equal(t, Version{"1.2.3", 2, 18}, a.version)
+	bytes, err := os.ReadFile(filepath.Join(state, "secret"))
+	require.NoError(t, err)
+	require.Equal(t, "backup secret", string(bytes))
+	retained, err := filepath.Glob(filepath.Join(state, "backups/pre-restore-*/secret"))
+	require.NoError(t, err)
+	require.Len(t, retained, 1)
+	bytes, err = os.ReadFile(retained[0])
+	require.NoError(t, err)
+	require.Equal(t, "live secret", string(bytes))
+	require.NoFileExists(t, filepath.Join(state, ".upgrade-incomplete"))
+}
+func TestRestoreRefusalsPreserveLiveState(t *testing.T) {
+	for _, fail := range []string{"stopped", "isolation", "database", "capture"} {
+		t.Run(fail, func(t *testing.T) {
+			backup := restoreFixture(t)
+			state := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(state, "secret"), []byte("live"), 0600))
+			a := &restoreAuthorityFixture{fail: fail}
+			_, err := Restore(t.Context(), RestoreConfig{State: state, Backup: backup, Version: Version{"1.3.0", 3, 18}, Authority: a, Cloner: backupCopyFixture{fail: fail == "capture"}})
+			require.Error(t, err)
+			require.NotContains(t, a.calls, "start")
+			bytes, err := os.ReadFile(filepath.Join(state, "secret"))
+			require.NoError(t, err)
+			require.Equal(t, "live", string(bytes))
+			retained, err := filepath.Glob(filepath.Join(state, "backups/pre-restore-*"))
+			require.NoError(t, err)
+			require.Empty(t, retained)
+		})
+	}
+}
+
+func TestRestoreStartupFailureRetainsRecoveryMarker(t *testing.T) {
+	backup := restoreFixture(t)
+	state := t.TempDir()
+	a := &restoreAuthorityFixture{fail: "start"}
+	_, err := Restore(t.Context(), RestoreConfig{State: state, Backup: backup, Version: Version{"1.3.0", 3, 18}, Authority: a, Cloner: backupCopyFixture{}})
+	require.ErrorContains(t, err, "start")
+	marker, err := os.ReadFile(filepath.Join(state, ".upgrade-incomplete"))
+	require.NoError(t, err)
+	require.Equal(t, backup+"\n", string(marker))
+	retained, err := filepath.Glob(filepath.Join(state, "backups/pre-restore-*"))
+	require.NoError(t, err)
+	require.Len(t, retained, 1)
+}
+
+func TestRestoreKeepsGuardUntilReadyAndUsesContainedBackupBundle(t *testing.T) {
+	oldState, state := t.TempDir(), t.TempDir()
+	bundle := filepath.Join(t.TempDir(), "release")
+	require.NoError(t, os.Mkdir(bundle, 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(bundle, "backend"), []byte("verified old binary"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(oldState, "secret"), []byte("backup secret"), 0600))
+	backup, err := Backup(t.Context(), BackupConfig{FreeSpaceFloor: testFreeSpaceFloor, State: oldState, Bundle: bundle, Version: Version{"1.2.3", 2, 18}, Authority: &backupAuthorityFixture{at: time.Date(2026, 10, 7, 1, 2, 3, 0, time.UTC)}, Cloner: recursiveCopyFixture{}})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(state, ".upgrade-incomplete"), []byte("previous failed upgrade"), 0600))
+	a := &restoreAuthorityFixture{onStart: func(selected string) {
+		marker, e := os.ReadFile(filepath.Join(state, ".upgrade-incomplete"))
+		require.NoError(t, e)
+		require.Equal(t, backup+"\n", string(marker))
+		require.Equal(t, filepath.Join(state, "bundle"), selected)
+		bytes, e := os.ReadFile(filepath.Join(selected, "backend"))
+		require.NoError(t, e)
+		require.Equal(t, "verified old binary", string(bytes))
+		// Recovery no longer needs the source bundle's bytes.
+		require.NoError(t, os.RemoveAll(bundle))
+	}}
+	_, err = Restore(t.Context(), RestoreConfig{State: state, Backup: backup, Version: Version{"1.3.0", 3, 18}, Authority: a, Cloner: recursiveCopyFixture{}})
+	require.NoError(t, err)
+	require.NoFileExists(t, filepath.Join(state, ".upgrade-incomplete"))
+	require.Equal(t, Version{"1.2.3", 2, 18}, a.version)
+}
+
+func TestRestoreFreshAccountState(t *testing.T) {
+	backup := restoreFixture(t)
+	parent := t.TempDir()
+	state := filepath.Join(parent, "Smithers")
+	a := &restoreAuthorityFixture{}
+	at, err := Restore(t.Context(), RestoreConfig{State: state, Backup: backup, Version: Version{"1.3.0", 3, 18}, Authority: a, Cloner: backupCopyFixture{}})
+	require.NoError(t, err)
+	require.Equal(t, time.Date(2026, 10, 7, 1, 2, 3, 0, time.UTC), at)
+	info, err := os.Stat(state)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0700), info.Mode().Perm())
+	bytes, err := os.ReadFile(filepath.Join(state, "secret"))
+	require.NoError(t, err)
+	require.Equal(t, "backup secret", string(bytes))
+	require.Equal(t, []string{"stopped", "isolation", "database", "start"}, a.calls)
+	require.NoFileExists(t, filepath.Join(state, ".upgrade-incomplete"))
+}
+
+func TestRestoreFreshStateRefusesBeforeCreating(t *testing.T) {
+	for _, fail := range []string{"stopped", "isolation"} {
+		t.Run(fail, func(t *testing.T) {
+			state := filepath.Join(t.TempDir(), "Smithers")
+			_, err := Restore(t.Context(), RestoreConfig{State: state, Backup: restoreFixture(t), Version: Version{"1.3.0", 3, 18}, Authority: &restoreAuthorityFixture{fail: fail}, Cloner: backupCopyFixture{}})
+			require.EqualError(t, err, fail)
+			require.NoDirExists(t, state)
+		})
+	}
+}
+
+func TestRestoreFreshStateRejectsLinkedParent(t *testing.T) {
+	parent, outside := t.TempDir(), t.TempDir()
+	link := filepath.Join(parent, "linked")
+	require.NoError(t, os.Symlink(outside, link))
+	_, err := Restore(t.Context(), RestoreConfig{State: filepath.Join(link, "Smithers"), Backup: restoreFixture(t), Version: Version{"1.3.0", 3, 18}, Authority: &restoreAuthorityFixture{}, Cloner: backupCopyFixture{}})
+	require.ErrorContains(t, err, "unsafe_path")
+	require.NoDirExists(t, filepath.Join(outside, "Smithers"))
+}
+
+func TestRestoreCanceledFreshStateDoesNotCreate(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "Smithers")
+	a := &restoreAuthorityFixture{}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := Restore(ctx, RestoreConfig{State: state, Backup: restoreFixture(t), Version: Version{"1.3.0", 3, 18}, Authority: a, Cloner: backupCopyFixture{}})
+	require.ErrorIs(t, err, context.Canceled)
+	require.Empty(t, a.calls)
+	require.NoDirExists(t, state)
+}

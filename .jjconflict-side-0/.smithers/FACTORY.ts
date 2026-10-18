@@ -95,6 +95,13 @@ export const factory = S.Factory({
   // an issue is a TODO only when a maintainer labels it (agents file GitHub
   // issues under the maintainer's account). The factory's lanes spend at
   // most dailyTokens a day.
+  judges: S.Judge.Policy({
+    engines: { rubric: { engine: "claude", model: "claude-opus-5-5" }, fuzzy: { engine: "claude", model: "claude-opus-5-5" } },
+    budget: { perRun: { modelCalls: 150, promptTokens: 2_000_000, wallMs: 1_800_000 }, perDay: { modelCalls: 600 } },
+    trials: 3, maxAge: "30d", promote: { minLabels: 20, minAgreement: 0.9, seededDefectsFail: true },
+    blocking: { exact: true, shape: true, rubric: "promoted", fuzzy: false, visual: false, agent: false }
+  }),
+  spec: { live: { default: "https://smithers.sh", effeck: "https://effeck.smithers.sh", effect: null }, aheadMaxDays: 14 },
   github: S.Github.Policy({
     mirror: "pull",
     issues: "two-way",
