@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
@@ -74,8 +75,10 @@ func TestMemberRoutesAuthorizeByRolePostgres(t *testing.T) {
 	ownerToken := mintToken(owner)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "smithers_local_session"
+	cfg.Auth.SessionCookieName = config.LocalSessionCookieName
+	// Match the HTTP install composition before the auth loader selects cookies.
 	router := chi.NewRouter()
+	router.Use(middleware.EffectiveOrigin(middleware.FixedOrigins("http://example.com")))
 	router.Use(authLoader(q, cfg.Auth))
 	router.Use(memberCommands(q))
 	downgradeAfterDecision := false
@@ -141,7 +144,7 @@ func TestMemberRoutesAuthorizeByRolePostgres(t *testing.T) {
 		}
 		req := httptest.NewRequest(method, path, body)
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: config.LocalSessionCookieName, Value: cookie})
 		}
 		if bearer != "" {
 			req.Header.Set("Authorization", "Bearer "+bearer)

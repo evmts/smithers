@@ -16,7 +16,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/smithersai/smithers/packages/backend/internal/auth"
+	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
@@ -70,7 +72,7 @@ func TestDeadCredentialRepoRoutesComposedInstallPostgres(t *testing.T) {
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
 	cfg.Auth.SessionSecret = "fixture-secret"
-	cfg.Auth.SessionCookieName = "smithers_local_session"
+	cfg.Auth.SessionCookieName = config.LocalSessionCookieName
 	svc := services.NewAuthService(q, cfg.Auth, nil, auth.NewGitHubClient(ownerOAuthCredentials{"client", "secret"}, "", provider.URL, provider.URL))
 	svc.InstallSetup = &services.InstallSetupSessions{Pool: pool}
 	svc.Members = members
@@ -115,8 +117,8 @@ func TestDeadCredentialRepoRoutesComposedInstallPostgres(t *testing.T) {
 		req.Header.Set("Origin", origin)
 		if c.cookie != "" {
 			req.Header.Set("X-CSRF-Token", "csrf-fixture")
-			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf-fixture"})
-			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: c.cookie})
+			req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieNameForSecure(false), Value: "csrf-fixture"})
+			req.AddCookie(&http.Cookie{Name: config.LocalSessionCookieName, Value: c.cookie})
 		}
 		if c.bearer != "" {
 			req.Header.Set("Authorization", "Bearer "+c.bearer)
@@ -280,7 +282,7 @@ func TestDeadCredentialRepoRoutesComposedInstallPostgres(t *testing.T) {
 	state := strings.Split(strings.Split(start.Header.Get("Location"), "state=")[1], "&")[0]
 	callback, err := http.NewRequest("GET", origin+"/api/auth/github/callback?code=fixture-code&state="+state, nil)
 	require.NoError(t, err)
-	callback.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: stale.cookie})
+	callback.AddCookie(&http.Cookie{Name: config.LocalSessionCookieName, Value: stale.cookie})
 	for _, cookie := range start.Cookies() {
 		callback.AddCookie(cookie)
 	}
@@ -289,7 +291,7 @@ func TestDeadCredentialRepoRoutesComposedInstallPostgres(t *testing.T) {
 	require.NoError(t, err)
 	fresh := ""
 	for _, cookie := range signedIn.Cookies() {
-		if cookie.Name == "session" && cookie.Value != "" {
+		if cookie.Name == config.LocalSessionCookieName && cookie.Value != "" {
 			fresh = cookie.Value
 		}
 	}

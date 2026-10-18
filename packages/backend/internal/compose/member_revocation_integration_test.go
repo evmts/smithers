@@ -17,6 +17,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/stretchr/testify/assert"
@@ -76,7 +77,7 @@ func exerciseMemberRevocation(t *testing.T, pool *pgxpool.Pool, origin string, w
 		require.Eventually(t, func() bool { return !bus.IsUserDisabled(writer.ID) }, 3*time.Second, 10*time.Millisecond)
 		dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		conn, _, err := websocket.Dial(dialCtx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"session=" + cookie}}})
+		conn, _, err := websocket.Dial(dialCtx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {config.LocalSessionCookieName + "=" + cookie}}})
 		require.NoError(t, err)
 		t.Cleanup(func() { conn.CloseNow() })
 		return conn
