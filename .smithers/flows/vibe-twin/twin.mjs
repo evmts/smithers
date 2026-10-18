@@ -15,7 +15,7 @@
  * and the twin run has no failure the TypeScript run lacks.
  */
 import { spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
@@ -341,7 +341,7 @@ const vitest = (pkg, config, outputFile) => {
   if (config) args.push("--config", config)
   const vitestBin = bin(pkg, "vitest")
   if (!vitestBin) return { ran: false, pass: 0, fail: 0, skip: 0, failed: ["(no vitest in the package or the root)"] }
-  const child = spawnSync(vitestBin, args, { cwd: pkg, encoding: "utf8", env: { ...process.env, CI: "1" }, maxBuffer: 64 * 1024 * 1024 })
+  const child = spawnLogged(vitestBin, args, { cwd: pkg, env: { ...process.env, CI: "1" } }, outputFile)
   if (!existsSync(outputFile)) return noReport(child, "vitest")
   const report = JSON.parse(readFileSync(outputFile, "utf8"))
   const tests = report.testResults.flatMap((file) =>
@@ -639,6 +639,36 @@ export const affectedTests = (pkg, folders, twinned, mode = "transitive") => {
     .map((file) => relative(pkg, file))
 }
 
+/**
+ * Runs a test process with its output in a log file beside the report, not in memory: a large
+ * suite's output overflowed spawnSync's buffer and killed it (ENOBUFS, apps/app).
+ */
+const spawnLogged = (command, args, options, outputFile) => {
+  const log = `${outputFile}.log`
+  const fd = openSync(log, "w")
+  let child
+  try {
+    child = spawnSync(command, args, { ...options, stdio: ["ignore", fd, fd] })
+  } finally {
+    closeSync(fd)
+  }
+  // Keep only the tail: apps/app's suite writes hundreds of megabytes.
+  const size = statSync(log).size
+  const tail = Buffer.alloc(Math.min(size, 4000))
+  const read = openSync(log, "r")
+  try {
+    readSync(read, tail, 0, tail.length, size - tail.length)
+  } finally {
+    closeSync(read)
+  }
+  rmSync(log, { force: true })
+  return { ...child, stdout: tail.toString("utf8"), stderr: "" }
+}
+
+/** A regular expression source that matches exactly one of these paths. */
+export const exactPathPattern = (paths) =>
+  `^(?:${paths.map((path) => path.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")).join("|")})$`
+
 /** A test process that wrote no report: keep its status, signal and output tail as evidence (F-4). */
 const noReport = (child, tool) => ({
   ran: false,
@@ -655,7 +685,7 @@ const noReport = (child, tool) => ({
 /** `bun test <args>`, with an optional preload, read from its JUnit report. */
 const bunTest = (pkg, args, preload, outputFile) => {
   const argv = ["test", ...(preload ? ["--preload", preload] : []), "--reporter=junit", `--reporter-outfile=${outputFile}`, ...args]
-  const child = spawnSync("bun", argv, { cwd: pkg, encoding: "utf8", env: { ...process.env, CI: "1" }, maxBuffer: 64 * 1024 * 1024 })
+  const child = spawnLogged("bun", argv, { cwd: pkg, env: { ...process.env, CI: "1" } }, outputFile)
   // A bunfig.toml [test.reporter] junit path wins over --reporter-outfile (apps/app, F-1).
   const bunfig = join(pkg, "bunfig.toml")
   const configured = existsSync(bunfig) ? readFileSync(bunfig, "utf8").match(/^\s*junit\s*=\s*"([^"]+)"/m)?.[1] : undefined
@@ -672,7 +702,7 @@ const nodeTest = (pkg, args, register, outputFile) => {
   // hook too (E-8), so it also goes in NODE_OPTIONS.
   const nodeOptions = register ? [process.env.NODE_OPTIONS, `--import=${register}`].filter(Boolean).join(" ") : process.env.NODE_OPTIONS
   const env = { ...process.env, CI: "1", ...(nodeOptions ? { NODE_OPTIONS: nodeOptions } : {}) }
-  const child = spawnSync(process.execPath, argv, { cwd: pkg, encoding: "utf8", env, maxBuffer: 64 * 1024 * 1024 })
+  const child = spawnLogged(process.execPath, argv, { cwd: pkg, env }, outputFile)
   return existsSync(outputFile)
     ? { ...parseJunit(readFileSync(outputFile, "utf8"), pkg), status: child.status, signal: child.signal, error: child.error?.message }
     : noReport(child, "node --test")
@@ -807,14 +837,26 @@ export default mergeConfig(base, {
   if (suiteList.some((suite) => suite.kind === "bun")) {
     writeFileSync(
       preload,
-      `import { mock } from "bun:test"
-import { createRequire } from "node:module"
-const require = createRequire(import.meta.url)
-const pairs = ${JSON.stringify(twinned.map((rel) => [
-        ["ts", "tsx", "mts"].map((x) => join(pkg, sourceRoot(pkg), `${rel}.${x}`)).find(existsSync),
-        join(twinOutDir(pkg), `${rel}.js`)
-      ]))}
-for (const [src, twin] of pairs) mock.module(src, () => require(twin))
+      `import { plugin } from "bun"
+// Each twinned src/ file loads as a re-export of its twin. mock.module snapshotted a twin's
+// exports while an import cycle back through its src/ path was still evaluating it, so later
+// exports were missing (apps/app); an ES re-export keeps live bindings, so cycles resolve.
+const twins = new Map(${JSON.stringify(twinned.map((rel) => {
+        const src = ["ts", "tsx", "mts"].map((x) => join(pkg, sourceRoot(pkg), `${rel}.${x}`)).find(existsSync)
+        const hasDefault = src !== undefined && /^\s*export\s+default\b/m.test(readFileSync(src, "utf8"))
+        return [src, { twin: join(twinOutDir(pkg), `${rel}.js`), hasDefault }]
+      }).filter(([src]) => src !== undefined))})
+plugin({
+  name: "vibe-twin",
+  setup(build) {
+    if (twins.size === 0) return
+    build.onLoad({ filter: new RegExp(${JSON.stringify(exactPathPattern(twinned.map((rel) => ["ts", "tsx", "mts"].map((x) => join(pkg, sourceRoot(pkg), `${rel}.${x}`)).find(existsSync)).filter(Boolean)))}) }, (args) => {
+      const { twin, hasDefault } = twins.get(args.path)
+      const from = JSON.stringify(twin)
+      return { contents: \`export * from \${from}\\n\${hasDefault ? \`export { default } from \${from}\\n\` : ""}\`, loader: "js" }
+    })
+  }
+})
 `
     )
   }

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { fallbackFor, localNames, normalizeDts, parseDts, quality, sameReferencedLocals, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
+import { exactPathPattern, fallbackFor, localNames, normalizeDts, parseDts, quality, sameReferencedLocals, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
 
 test("declarations that differ only in relative import extensions are equal", () => {
   const ts = `import { type A } from "./ErrorCode.ts";\nexport { B } from "../x/y.ts";\nexport declare const c: import("./z.ts").Z;\n`
@@ -160,4 +160,12 @@ test("identical export text passes unless a private name it mentions changed (B-
   assert.equal(sameReferencedLocals("export declare const answer: Hidden;", ts, vb), false, "Hidden changed")
   assert.equal(sameReferencedLocals("export interface Page<A> { items: ReadonlyArray<A>; run: Effect.Effect<A> }", ts, vb), true, "only Effect is mentioned, and it matches")
   assert.equal(sameReferencedLocals("export declare const x: HiddenThing;", ts, vb), true, "a longer name is not Hidden")
+})
+
+test("the Bun twin filter matches exactly the twinned paths", () => {
+  const re = new RegExp(exactPathPattern(["/a/b.c/x.ts", "/a/(y)+.tsx"]))
+  assert.ok(re.test("/a/b.c/x.ts"))
+  assert.ok(re.test("/a/(y)+.tsx"))
+  assert.ok(!re.test("/a/bXc/x.ts"), "a dot is literal")
+  assert.ok(!re.test("/a/b.c/x.ts.bak"))
 })
