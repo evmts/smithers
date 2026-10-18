@@ -150,7 +150,7 @@ for (const failure of ["chunk", "page"] as const) {
   test(`an explicit entry keeps the install action when its app ${failure} fails`, async ({ page }) => {
     await signedOutVisitor(page)
     let aborted = 0
-    const route = failure === "chunk" ? /\/_astro\/AppIsland\.[^/]+\.js$/ : /\/smithersai\/smithers\/$/
+    const route = failure === "chunk" ? /\/__smithers\/AppIsland\.[^/]+\.js$/ : /\/smithersai\/smithers\/$/
     await page.route(route, request => { aborted++; return request.abort() })
     await page.goto("/?tutorial")
     await expect.poll(() => aborted).toBeGreaterThan(0)
@@ -167,7 +167,7 @@ for (const failure of ["chunk", "page"] as const) {
 test("an authentication return keeps the install action if its island fails", async ({ page }) => {
   await signedOutVisitor(page)
   let aborted = 0
-  await page.route(/\/_astro\/AppIsland\.[^/]+\.js$/, request => { aborted++; return request.abort() })
+  await page.route(/\/__smithers\/AppIsland\.[^/]+\.js$/, request => { aborted++; return request.abort() })
   await page.goto("/?signed-in")
   await expect.poll(() => aborted).toBeGreaterThan(0)
   await expect(page.getByRole("button", { name: "Copy", exact: true })).toBeVisible()
