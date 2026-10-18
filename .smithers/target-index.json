@@ -45140,6 +45140,10 @@
       },
       {
         "kind": "file",
+        "path": "evals/docs/package.json"
+      },
+      {
+        "kind": "file",
         "path": "packages/backend/modelhost/recommend-eval/package.json"
       },
       {
@@ -45555,6 +45559,10 @@
       {
         "kind": "file",
         "path": "evals/authoring/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "evals/docs/package.json"
       },
       {
         "kind": "file",
@@ -46994,6 +47002,10 @@
       },
       {
         "kind": "file",
+        "path": "evals/docs/package.json"
+      },
+      {
+        "kind": "file",
         "path": "packages/backend/modelhost/recommend-eval/package.json"
       },
       {
@@ -47776,6 +47788,122 @@
     "dependencies": [],
     "source": {
       "file": "evals/authoring/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//evals/docs:check",
+    "package": "evals/docs",
+    "name": "check",
+    "rule": "Typecheck",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "evals/docs/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "evals/docs/evals/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "evals/docs/fixtures/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "evals/docs/*.json",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/docs/toc.ts"
+      },
+      {
+        "kind": "file",
+        "path": "tsconfig.base.json"
+      },
+      {
+        "kind": "file",
+        "path": "evals/docs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "evals/docs/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//apps/app:docsImages",
+      "//apps/app:docsInputs"
+    ],
+    "source": {
+      "file": "evals/docs/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//evals/docs:test",
+    "package": "evals/docs",
+    "name": "test",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "evals/docs/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "evals/docs/evals/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "evals/docs/fixtures/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "evals/docs/*.json",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/docs/toc.ts"
+      },
+      {
+        "kind": "file",
+        "path": "tsconfig.base.json"
+      },
+      {
+        "kind": "file",
+        "path": "evals/docs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//apps/app:docsImages",
+      "//apps/app:docsInputs"
+    ],
+    "source": {
+      "file": "evals/docs/PACKAGE.ts"
     }
   },
   {
@@ -50199,6 +50327,7 @@
       "//packages/repo-targets:repositoryInputs_617070732f73697465",
       "//packages/repo-targets:repositoryInputs_617070732f747569",
       "//packages/repo-targets:repositoryInputs_6576616c732f617574686f72696e67",
+      "//packages/repo-targets:repositoryInputs_6576616c732f646f6373",
       "//packages/repo-targets:repositoryInputs_7061636b616765732f6261636b656e64",
       "//packages/repo-targets:repositoryInputs_7061636b616765732f6261636b656e642f636865636b732f432d53504b2d3032",
       "//packages/repo-targets:repositoryInputs_7061636b616765732f6261636b656e642f6d6f64656c686f73742f7265636f6d6d656e642d6576616c",
@@ -50591,6 +50720,26 @@
       {
         "kind": "glob",
         "pattern": "evals/authoring/**/*",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/repo-targets/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/repo-targets:repositoryInputs_6576616c732f646f6373",
+    "package": "packages/repo-targets",
+    "name": "repositoryInputs_6576616c732f646f6373",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "evals/docs/**/*",
         "exclude": []
       }
     ],

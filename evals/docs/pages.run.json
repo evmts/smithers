@@ -1,0 +1,834 @@
+{
+  "version": 1,
+  "runId": "docs-pages-20261019-eval4",
+  "suite": "docs-pages",
+  "cases": [
+    {
+      "case": "welcome",
+      "observations": [
+        {
+          "case": "welcome",
+          "scorer": "2430304236b16502c8fd8afc6d9dbc68739e23166b5034666d83aea5989ada14",
+          "scorerName": "images-resolve",
+          "stepKey": "docs/welcome/9eec632febe2de87d50f6ecf3f4771e9c363c31d9a7a6fa6c91e35cb6c1a37ea",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "welcome",
+          "scorer": "30c78ab5b8e512e3d9491ae0ed7375ebd11906b583f450635017eb31a49df861",
+          "scorerName": "steps-have-shots",
+          "stepKey": "docs/welcome/9eec632febe2de87d50f6ecf3f4771e9c363c31d9a7a6fa6c91e35cb6c1a37ea",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "welcome",
+          "scorer": "fad2e21ab397fbb883495fd28f043e3b975d790d34b96f5fb482405a4ea8ab00",
+          "scorerName": "anatomy",
+          "stepKey": "docs/welcome/9eec632febe2de87d50f6ecf3f4771e9c363c31d9a7a6fa6c91e35cb6c1a37ea",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "welcome",
+          "scorer": "abe0faafbb7eed4e058deedf5bb4f65fdb3e349e214a667cf130bd0629bf9ab4",
+          "scorerName": "fresh-captures",
+          "stepKey": "docs/welcome/9eec632febe2de87d50f6ecf3f4771e9c363c31d9a7a6fa6c91e35cb6c1a37ea",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "welcome",
+          "scorer": "cf4f6262e1c6c62e66b48a1fc1bd78c562d91ace4415e389756e38f5c957628a",
+          "scorerName": "journey",
+          "stepKey": "docs/welcome/9eec632febe2de87d50f6ecf3f4771e9c363c31d9a7a6fa6c91e35cb6c1a37ea",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "no journey receipt",
+          "kind": "score",
+          "score": 0
+        },
+        {
+          "case": "welcome",
+          "scorer": "fe27001ec0dc9eb4e87d485ecc7e8485f19059786c1299dbc9e26b55ff6221e3",
+          "scorerName": "rubric",
+          "stepKey": "docs/welcome/9eec632febe2de87d50f6ecf3f4771e9c363c31d9a7a6fa6c91e35cb6c1a37ea",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "Text-only judge; task-complete=5, matches-build=5, screenshots-cover-steps=5, plain-words=2",
+          "meta": {
+            "scores": {
+              "task-complete": 5,
+              "matches-build": 5,
+              "screenshots-cover-steps": 5,
+              "plain-words": 2
+            },
+            "pass": false,
+            "reason": "Text-only judge; task-complete=5, matches-build=5, screenshots-cover-steps=5, plain-words=2"
+          },
+          "kind": "score",
+          "score": 0.8125
+        }
+      ],
+      "trials": {
+        "n": 1,
+        "passes": 0,
+        "rate": 0,
+        "passAt1": 0,
+        "passAtK": 0,
+        "passHatK": 0,
+        "stderr": 0
+      }
+    },
+    {
+      "case": "quickstart",
+      "observations": [
+        {
+          "case": "quickstart",
+          "scorer": "2430304236b16502c8fd8afc6d9dbc68739e23166b5034666d83aea5989ada14",
+          "scorerName": "images-resolve",
+          "stepKey": "docs/quickstart/1d1300226a1131e82bb48edf650777e5a2bf221a35eca003fccd5d94611e0d68",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "quickstart",
+          "scorer": "30c78ab5b8e512e3d9491ae0ed7375ebd11906b583f450635017eb31a49df861",
+          "scorerName": "steps-have-shots",
+          "stepKey": "docs/quickstart/1d1300226a1131e82bb48edf650777e5a2bf221a35eca003fccd5d94611e0d68",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "quickstart",
+          "scorer": "fad2e21ab397fbb883495fd28f043e3b975d790d34b96f5fb482405a4ea8ab00",
+          "scorerName": "anatomy",
+          "stepKey": "docs/quickstart/1d1300226a1131e82bb48edf650777e5a2bf221a35eca003fccd5d94611e0d68",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "quickstart",
+          "scorer": "abe0faafbb7eed4e058deedf5bb4f65fdb3e349e214a667cf130bd0629bf9ab4",
+          "scorerName": "fresh-captures",
+          "stepKey": "docs/quickstart/1d1300226a1131e82bb48edf650777e5a2bf221a35eca003fccd5d94611e0d68",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "quickstart",
+          "scorer": "cf4f6262e1c6c62e66b48a1fc1bd78c562d91ace4415e389756e38f5c957628a",
+          "scorerName": "journey",
+          "stepKey": "docs/quickstart/1d1300226a1131e82bb48edf650777e5a2bf221a35eca003fccd5d94611e0d68",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "no journey receipt",
+          "kind": "score",
+          "score": 0
+        },
+        {
+          "case": "quickstart",
+          "scorer": "fe27001ec0dc9eb4e87d485ecc7e8485f19059786c1299dbc9e26b55ff6221e3",
+          "scorerName": "rubric",
+          "stepKey": "docs/quickstart/1d1300226a1131e82bb48edf650777e5a2bf221a35eca003fccd5d94611e0d68",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "Text-only judge; task-complete=5, matches-build=5, screenshots-cover-steps=5, plain-words=5",
+          "meta": {
+            "scores": {
+              "task-complete": 5,
+              "matches-build": 5,
+              "screenshots-cover-steps": 5,
+              "plain-words": 5
+            },
+            "pass": true,
+            "reason": "Text-only judge; task-complete=5, matches-build=5, screenshots-cover-steps=5, plain-words=5"
+          },
+          "kind": "score",
+          "score": 1
+        }
+      ],
+      "trials": {
+        "n": 1,
+        "passes": 0,
+        "rate": 0,
+        "passAt1": 0,
+        "passAtK": 0,
+        "passHatK": 0,
+        "stderr": 0
+      }
+    },
+    {
+      "case": "local-quickstart",
+      "observations": [
+        {
+          "case": "local-quickstart",
+          "scorer": "2430304236b16502c8fd8afc6d9dbc68739e23166b5034666d83aea5989ada14",
+          "scorerName": "images-resolve",
+          "stepKey": "docs/local-quickstart/ec86c492d941e6dbe7c02b7bacc982201a7af41a7e5ca15d80a4e960764fce1e",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "local-quickstart",
+          "scorer": "30c78ab5b8e512e3d9491ae0ed7375ebd11906b583f450635017eb31a49df861",
+          "scorerName": "steps-have-shots",
+          "stepKey": "docs/local-quickstart/ec86c492d941e6dbe7c02b7bacc982201a7af41a7e5ca15d80a4e960764fce1e",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "local-quickstart",
+          "scorer": "fad2e21ab397fbb883495fd28f043e3b975d790d34b96f5fb482405a4ea8ab00",
+          "scorerName": "anatomy",
+          "stepKey": "docs/local-quickstart/ec86c492d941e6dbe7c02b7bacc982201a7af41a7e5ca15d80a4e960764fce1e",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "local-quickstart",
+          "scorer": "abe0faafbb7eed4e058deedf5bb4f65fdb3e349e214a667cf130bd0629bf9ab4",
+          "scorerName": "fresh-captures",
+          "stepKey": "docs/local-quickstart/ec86c492d941e6dbe7c02b7bacc982201a7af41a7e5ca15d80a4e960764fce1e",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "local-quickstart",
+          "scorer": "cf4f6262e1c6c62e66b48a1fc1bd78c562d91ace4415e389756e38f5c957628a",
+          "scorerName": "journey",
+          "stepKey": "docs/local-quickstart/ec86c492d941e6dbe7c02b7bacc982201a7af41a7e5ca15d80a4e960764fce1e",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "no journey receipt",
+          "kind": "score",
+          "score": 0
+        },
+        {
+          "case": "local-quickstart",
+          "scorer": "fe27001ec0dc9eb4e87d485ecc7e8485f19059786c1299dbc9e26b55ff6221e3",
+          "scorerName": "rubric",
+          "stepKey": "docs/local-quickstart/ec86c492d941e6dbe7c02b7bacc982201a7af41a7e5ca15d80a4e960764fce1e",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "Text-only judge; task-complete=5, matches-build=1, screenshots-cover-steps=5, plain-words=5",
+          "meta": {
+            "scores": {
+              "task-complete": 5,
+              "matches-build": 1,
+              "screenshots-cover-steps": 5,
+              "plain-words": 5
+            },
+            "pass": false,
+            "reason": "Text-only judge; task-complete=5, matches-build=1, screenshots-cover-steps=5, plain-words=5"
+          },
+          "kind": "score",
+          "score": 0.75
+        }
+      ],
+      "trials": {
+        "n": 1,
+        "passes": 0,
+        "rate": 0,
+        "passAt1": 0,
+        "passAtK": 0,
+        "passHatK": 0,
+        "stderr": 0
+      }
+    },
+    {
+      "case": "self-host",
+      "observations": [
+        {
+          "case": "self-host",
+          "scorer": "2430304236b16502c8fd8afc6d9dbc68739e23166b5034666d83aea5989ada14",
+          "scorerName": "images-resolve",
+          "stepKey": "docs/self-host/a10d4fa1e44d967c90e6026f3cd043d5c4b0b20bbf749e09f4c1011b483eed75",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "self-host",
+          "scorer": "30c78ab5b8e512e3d9491ae0ed7375ebd11906b583f450635017eb31a49df861",
+          "scorerName": "steps-have-shots",
+          "stepKey": "docs/self-host/a10d4fa1e44d967c90e6026f3cd043d5c4b0b20bbf749e09f4c1011b483eed75",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "self-host",
+          "scorer": "fad2e21ab397fbb883495fd28f043e3b975d790d34b96f5fb482405a4ea8ab00",
+          "scorerName": "anatomy",
+          "stepKey": "docs/self-host/a10d4fa1e44d967c90e6026f3cd043d5c4b0b20bbf749e09f4c1011b483eed75",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "self-host",
+          "scorer": "abe0faafbb7eed4e058deedf5bb4f65fdb3e349e214a667cf130bd0629bf9ab4",
+          "scorerName": "fresh-captures",
+          "stepKey": "docs/self-host/a10d4fa1e44d967c90e6026f3cd043d5c4b0b20bbf749e09f4c1011b483eed75",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "self-host",
+          "scorer": "cf4f6262e1c6c62e66b48a1fc1bd78c562d91ace4415e389756e38f5c957628a",
+          "scorerName": "journey",
+          "stepKey": "docs/self-host/a10d4fa1e44d967c90e6026f3cd043d5c4b0b20bbf749e09f4c1011b483eed75",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "no journey receipt",
+          "kind": "score",
+          "score": 0
+        },
+        {
+          "case": "self-host",
+          "scorer": "fe27001ec0dc9eb4e87d485ecc7e8485f19059786c1299dbc9e26b55ff6221e3",
+          "scorerName": "rubric",
+          "stepKey": "docs/self-host/a10d4fa1e44d967c90e6026f3cd043d5c4b0b20bbf749e09f4c1011b483eed75",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "Text-only judge; task-complete=5, matches-build=1, screenshots-cover-steps=1, plain-words=5",
+          "meta": {
+            "scores": {
+              "task-complete": 5,
+              "matches-build": 1,
+              "screenshots-cover-steps": 1,
+              "plain-words": 5
+            },
+            "pass": false,
+            "reason": "Text-only judge; task-complete=5, matches-build=1, screenshots-cover-steps=1, plain-words=5"
+          },
+          "kind": "score",
+          "score": 0.5
+        }
+      ],
+      "trials": {
+        "n": 1,
+        "passes": 0,
+        "rate": 0,
+        "passAt1": 0,
+        "passAtK": 0,
+        "passHatK": 0,
+        "stderr": 0
+      }
+    },
+    {
+      "case": "flows",
+      "observations": [
+        {
+          "case": "flows",
+          "scorer": "2430304236b16502c8fd8afc6d9dbc68739e23166b5034666d83aea5989ada14",
+          "scorerName": "images-resolve",
+          "stepKey": "docs/flows/b83adeea0129f1b7094e3cb9eaf239728e909b4140f2e11722abf8b02c771cdd",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "flows",
+          "scorer": "30c78ab5b8e512e3d9491ae0ed7375ebd11906b583f450635017eb31a49df861",
+          "scorerName": "steps-have-shots",
+          "stepKey": "docs/flows/b83adeea0129f1b7094e3cb9eaf239728e909b4140f2e11722abf8b02c771cdd",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "flows",
+          "scorer": "fad2e21ab397fbb883495fd28f043e3b975d790d34b96f5fb482405a4ea8ab00",
+          "scorerName": "anatomy",
+          "stepKey": "docs/flows/b83adeea0129f1b7094e3cb9eaf239728e909b4140f2e11722abf8b02c771cdd",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "flows",
+          "scorer": "abe0faafbb7eed4e058deedf5bb4f65fdb3e349e214a667cf130bd0629bf9ab4",
+          "scorerName": "fresh-captures",
+          "stepKey": "docs/flows/b83adeea0129f1b7094e3cb9eaf239728e909b4140f2e11722abf8b02c771cdd",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "ok",
+          "kind": "score",
+          "score": 1
+        },
+        {
+          "case": "flows",
+          "scorer": "cf4f6262e1c6c62e66b48a1fc1bd78c562d91ace4415e389756e38f5c957628a",
+          "scorerName": "journey",
+          "stepKey": "docs/flows/b83adeea0129f1b7094e3cb9eaf239728e909b4140f2e11722abf8b02c771cdd",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "no journey receipt",
+          "kind": "score",
+          "score": 0
+        },
+        {
+          "case": "flows",
+          "scorer": "fe27001ec0dc9eb4e87d485ecc7e8485f19059786c1299dbc9e26b55ff6221e3",
+          "scorerName": "rubric",
+          "stepKey": "docs/flows/b83adeea0129f1b7094e3cb9eaf239728e909b4140f2e11722abf8b02c771cdd",
+          "at": "2026-10-19T08:17:38.054Z",
+          "reason": "Text-only judge; task-complete=5, matches-build=1, screenshots-cover-steps=1, plain-words=4",
+          "meta": {
+            "scores": {
+              "task-complete": 5,
+              "matches-build": 1,
+              "screenshots-cover-steps": 1,
+              "plain-words": 4
+            },
+            "pass": false,
+            "reason": "Text-only judge; task-complete=5, matches-build=1, screenshots-cover-steps=1, plain-words=4"
+          },
+          "kind": "score",
+          "score": 0.4375
+        }
+      ],
+      "trials": {
+        "n": 1,
+        "passes": 0,
+        "rate": 0,
+        "passAt1": 0,
+        "passAtK": 0,
+        "passHatK": 0,
+        "stderr": 0
+      }
+    }
+  ],
+  "observations": [
+    {
+      "case": "welcome",
+      "scorer": "2430304236b16502c8fd8afc6d9dbc68739e23166b5034666d83aea5989ada14",
+      "scorerName": "images-resolve",
+      "stepKey": "docs/welcome/9eec632febe2de87d50f6ecf3f4771e9c363c31d9a7a6fa6c91e35cb6c1a37ea",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "welcome",
+      "scorer": "30c78ab5b8e512e3d9491ae0ed7375ebd11906b583f450635017eb31a49df861",
+      "scorerName": "steps-have-shots",
+      "stepKey": "docs/welcome/9eec632febe2de87d50f6ecf3f4771e9c363c31d9a7a6fa6c91e35cb6c1a37ea",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "welcome",
+      "scorer": "fad2e21ab397fbb883495fd28f043e3b975d790d34b96f5fb482405a4ea8ab00",
+      "scorerName": "anatomy",
+      "stepKey": "docs/welcome/9eec632febe2de87d50f6ecf3f4771e9c363c31d9a7a6fa6c91e35cb6c1a37ea",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "welcome",
+      "scorer": "abe0faafbb7eed4e058deedf5bb4f65fdb3e349e214a667cf130bd0629bf9ab4",
+      "scorerName": "fresh-captures",
+      "stepKey": "docs/welcome/9eec632febe2de87d50f6ecf3f4771e9c363c31d9a7a6fa6c91e35cb6c1a37ea",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "welcome",
+      "scorer": "cf4f6262e1c6c62e66b48a1fc1bd78c562d91ace4415e389756e38f5c957628a",
+      "scorerName": "journey",
+      "stepKey": "docs/welcome/9eec632febe2de87d50f6ecf3f4771e9c363c31d9a7a6fa6c91e35cb6c1a37ea",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "no journey receipt",
+      "kind": "score",
+      "score": 0
+    },
+    {
+      "case": "welcome",
+      "scorer": "fe27001ec0dc9eb4e87d485ecc7e8485f19059786c1299dbc9e26b55ff6221e3",
+      "scorerName": "rubric",
+      "stepKey": "docs/welcome/9eec632febe2de87d50f6ecf3f4771e9c363c31d9a7a6fa6c91e35cb6c1a37ea",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "Text-only judge; task-complete=5, matches-build=5, screenshots-cover-steps=5, plain-words=2",
+      "meta": {
+        "scores": {
+          "task-complete": 5,
+          "matches-build": 5,
+          "screenshots-cover-steps": 5,
+          "plain-words": 2
+        },
+        "pass": false,
+        "reason": "Text-only judge; task-complete=5, matches-build=5, screenshots-cover-steps=5, plain-words=2"
+      },
+      "kind": "score",
+      "score": 0.8125
+    },
+    {
+      "case": "quickstart",
+      "scorer": "2430304236b16502c8fd8afc6d9dbc68739e23166b5034666d83aea5989ada14",
+      "scorerName": "images-resolve",
+      "stepKey": "docs/quickstart/1d1300226a1131e82bb48edf650777e5a2bf221a35eca003fccd5d94611e0d68",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "quickstart",
+      "scorer": "30c78ab5b8e512e3d9491ae0ed7375ebd11906b583f450635017eb31a49df861",
+      "scorerName": "steps-have-shots",
+      "stepKey": "docs/quickstart/1d1300226a1131e82bb48edf650777e5a2bf221a35eca003fccd5d94611e0d68",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "quickstart",
+      "scorer": "fad2e21ab397fbb883495fd28f043e3b975d790d34b96f5fb482405a4ea8ab00",
+      "scorerName": "anatomy",
+      "stepKey": "docs/quickstart/1d1300226a1131e82bb48edf650777e5a2bf221a35eca003fccd5d94611e0d68",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "quickstart",
+      "scorer": "abe0faafbb7eed4e058deedf5bb4f65fdb3e349e214a667cf130bd0629bf9ab4",
+      "scorerName": "fresh-captures",
+      "stepKey": "docs/quickstart/1d1300226a1131e82bb48edf650777e5a2bf221a35eca003fccd5d94611e0d68",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "quickstart",
+      "scorer": "cf4f6262e1c6c62e66b48a1fc1bd78c562d91ace4415e389756e38f5c957628a",
+      "scorerName": "journey",
+      "stepKey": "docs/quickstart/1d1300226a1131e82bb48edf650777e5a2bf221a35eca003fccd5d94611e0d68",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "no journey receipt",
+      "kind": "score",
+      "score": 0
+    },
+    {
+      "case": "quickstart",
+      "scorer": "fe27001ec0dc9eb4e87d485ecc7e8485f19059786c1299dbc9e26b55ff6221e3",
+      "scorerName": "rubric",
+      "stepKey": "docs/quickstart/1d1300226a1131e82bb48edf650777e5a2bf221a35eca003fccd5d94611e0d68",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "Text-only judge; task-complete=5, matches-build=5, screenshots-cover-steps=5, plain-words=5",
+      "meta": {
+        "scores": {
+          "task-complete": 5,
+          "matches-build": 5,
+          "screenshots-cover-steps": 5,
+          "plain-words": 5
+        },
+        "pass": true,
+        "reason": "Text-only judge; task-complete=5, matches-build=5, screenshots-cover-steps=5, plain-words=5"
+      },
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "local-quickstart",
+      "scorer": "2430304236b16502c8fd8afc6d9dbc68739e23166b5034666d83aea5989ada14",
+      "scorerName": "images-resolve",
+      "stepKey": "docs/local-quickstart/ec86c492d941e6dbe7c02b7bacc982201a7af41a7e5ca15d80a4e960764fce1e",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "local-quickstart",
+      "scorer": "30c78ab5b8e512e3d9491ae0ed7375ebd11906b583f450635017eb31a49df861",
+      "scorerName": "steps-have-shots",
+      "stepKey": "docs/local-quickstart/ec86c492d941e6dbe7c02b7bacc982201a7af41a7e5ca15d80a4e960764fce1e",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "local-quickstart",
+      "scorer": "fad2e21ab397fbb883495fd28f043e3b975d790d34b96f5fb482405a4ea8ab00",
+      "scorerName": "anatomy",
+      "stepKey": "docs/local-quickstart/ec86c492d941e6dbe7c02b7bacc982201a7af41a7e5ca15d80a4e960764fce1e",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "local-quickstart",
+      "scorer": "abe0faafbb7eed4e058deedf5bb4f65fdb3e349e214a667cf130bd0629bf9ab4",
+      "scorerName": "fresh-captures",
+      "stepKey": "docs/local-quickstart/ec86c492d941e6dbe7c02b7bacc982201a7af41a7e5ca15d80a4e960764fce1e",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "local-quickstart",
+      "scorer": "cf4f6262e1c6c62e66b48a1fc1bd78c562d91ace4415e389756e38f5c957628a",
+      "scorerName": "journey",
+      "stepKey": "docs/local-quickstart/ec86c492d941e6dbe7c02b7bacc982201a7af41a7e5ca15d80a4e960764fce1e",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "no journey receipt",
+      "kind": "score",
+      "score": 0
+    },
+    {
+      "case": "local-quickstart",
+      "scorer": "fe27001ec0dc9eb4e87d485ecc7e8485f19059786c1299dbc9e26b55ff6221e3",
+      "scorerName": "rubric",
+      "stepKey": "docs/local-quickstart/ec86c492d941e6dbe7c02b7bacc982201a7af41a7e5ca15d80a4e960764fce1e",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "Text-only judge; task-complete=5, matches-build=1, screenshots-cover-steps=5, plain-words=5",
+      "meta": {
+        "scores": {
+          "task-complete": 5,
+          "matches-build": 1,
+          "screenshots-cover-steps": 5,
+          "plain-words": 5
+        },
+        "pass": false,
+        "reason": "Text-only judge; task-complete=5, matches-build=1, screenshots-cover-steps=5, plain-words=5"
+      },
+      "kind": "score",
+      "score": 0.75
+    },
+    {
+      "case": "self-host",
+      "scorer": "2430304236b16502c8fd8afc6d9dbc68739e23166b5034666d83aea5989ada14",
+      "scorerName": "images-resolve",
+      "stepKey": "docs/self-host/a10d4fa1e44d967c90e6026f3cd043d5c4b0b20bbf749e09f4c1011b483eed75",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "self-host",
+      "scorer": "30c78ab5b8e512e3d9491ae0ed7375ebd11906b583f450635017eb31a49df861",
+      "scorerName": "steps-have-shots",
+      "stepKey": "docs/self-host/a10d4fa1e44d967c90e6026f3cd043d5c4b0b20bbf749e09f4c1011b483eed75",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "self-host",
+      "scorer": "fad2e21ab397fbb883495fd28f043e3b975d790d34b96f5fb482405a4ea8ab00",
+      "scorerName": "anatomy",
+      "stepKey": "docs/self-host/a10d4fa1e44d967c90e6026f3cd043d5c4b0b20bbf749e09f4c1011b483eed75",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "self-host",
+      "scorer": "abe0faafbb7eed4e058deedf5bb4f65fdb3e349e214a667cf130bd0629bf9ab4",
+      "scorerName": "fresh-captures",
+      "stepKey": "docs/self-host/a10d4fa1e44d967c90e6026f3cd043d5c4b0b20bbf749e09f4c1011b483eed75",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "self-host",
+      "scorer": "cf4f6262e1c6c62e66b48a1fc1bd78c562d91ace4415e389756e38f5c957628a",
+      "scorerName": "journey",
+      "stepKey": "docs/self-host/a10d4fa1e44d967c90e6026f3cd043d5c4b0b20bbf749e09f4c1011b483eed75",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "no journey receipt",
+      "kind": "score",
+      "score": 0
+    },
+    {
+      "case": "self-host",
+      "scorer": "fe27001ec0dc9eb4e87d485ecc7e8485f19059786c1299dbc9e26b55ff6221e3",
+      "scorerName": "rubric",
+      "stepKey": "docs/self-host/a10d4fa1e44d967c90e6026f3cd043d5c4b0b20bbf749e09f4c1011b483eed75",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "Text-only judge; task-complete=5, matches-build=1, screenshots-cover-steps=1, plain-words=5",
+      "meta": {
+        "scores": {
+          "task-complete": 5,
+          "matches-build": 1,
+          "screenshots-cover-steps": 1,
+          "plain-words": 5
+        },
+        "pass": false,
+        "reason": "Text-only judge; task-complete=5, matches-build=1, screenshots-cover-steps=1, plain-words=5"
+      },
+      "kind": "score",
+      "score": 0.5
+    },
+    {
+      "case": "flows",
+      "scorer": "2430304236b16502c8fd8afc6d9dbc68739e23166b5034666d83aea5989ada14",
+      "scorerName": "images-resolve",
+      "stepKey": "docs/flows/b83adeea0129f1b7094e3cb9eaf239728e909b4140f2e11722abf8b02c771cdd",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "flows",
+      "scorer": "30c78ab5b8e512e3d9491ae0ed7375ebd11906b583f450635017eb31a49df861",
+      "scorerName": "steps-have-shots",
+      "stepKey": "docs/flows/b83adeea0129f1b7094e3cb9eaf239728e909b4140f2e11722abf8b02c771cdd",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "flows",
+      "scorer": "fad2e21ab397fbb883495fd28f043e3b975d790d34b96f5fb482405a4ea8ab00",
+      "scorerName": "anatomy",
+      "stepKey": "docs/flows/b83adeea0129f1b7094e3cb9eaf239728e909b4140f2e11722abf8b02c771cdd",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "flows",
+      "scorer": "abe0faafbb7eed4e058deedf5bb4f65fdb3e349e214a667cf130bd0629bf9ab4",
+      "scorerName": "fresh-captures",
+      "stepKey": "docs/flows/b83adeea0129f1b7094e3cb9eaf239728e909b4140f2e11722abf8b02c771cdd",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "ok",
+      "kind": "score",
+      "score": 1
+    },
+    {
+      "case": "flows",
+      "scorer": "cf4f6262e1c6c62e66b48a1fc1bd78c562d91ace4415e389756e38f5c957628a",
+      "scorerName": "journey",
+      "stepKey": "docs/flows/b83adeea0129f1b7094e3cb9eaf239728e909b4140f2e11722abf8b02c771cdd",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "no journey receipt",
+      "kind": "score",
+      "score": 0
+    },
+    {
+      "case": "flows",
+      "scorer": "fe27001ec0dc9eb4e87d485ecc7e8485f19059786c1299dbc9e26b55ff6221e3",
+      "scorerName": "rubric",
+      "stepKey": "docs/flows/b83adeea0129f1b7094e3cb9eaf239728e909b4140f2e11722abf8b02c771cdd",
+      "at": "2026-10-19T08:17:38.054Z",
+      "reason": "Text-only judge; task-complete=5, matches-build=1, screenshots-cover-steps=1, plain-words=4",
+      "meta": {
+        "scores": {
+          "task-complete": 5,
+          "matches-build": 1,
+          "screenshots-cover-steps": 1,
+          "plain-words": 4
+        },
+        "pass": false,
+        "reason": "Text-only judge; task-complete=5, matches-build=1, screenshots-cover-steps=1, plain-words=4"
+      },
+      "kind": "score",
+      "score": 0.4375
+    }
+  ],
+  "trials": {
+    "cases": 5,
+    "passAt1": 0,
+    "passAtK": 0,
+    "passHatK": 0,
+    "allPass": 0,
+    "perCase": {
+      "welcome": {
+        "n": 1,
+        "passes": 0,
+        "rate": 0,
+        "passAt1": 0,
+        "passAtK": 0,
+        "passHatK": 0,
+        "stderr": 0
+      },
+      "quickstart": {
+        "n": 1,
+        "passes": 0,
+        "rate": 0,
+        "passAt1": 0,
+        "passAtK": 0,
+        "passHatK": 0,
+        "stderr": 0
+      },
+      "local-quickstart": {
+        "n": 1,
+        "passes": 0,
+        "rate": 0,
+        "passAt1": 0,
+        "passAtK": 0,
+        "passHatK": 0,
+        "stderr": 0
+      },
+      "self-host": {
+        "n": 1,
+        "passes": 0,
+        "rate": 0,
+        "passAt1": 0,
+        "passAtK": 0,
+        "passHatK": 0,
+        "stderr": 0
+      },
+      "flows": {
+        "n": 1,
+        "passes": 0,
+        "rate": 0,
+        "passAt1": 0,
+        "passAtK": 0,
+        "passHatK": 0,
+        "stderr": 0
+      }
+    }
+  },
+  "k": 1
+}
