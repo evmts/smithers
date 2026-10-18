@@ -3,6 +3,7 @@ package admission
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -16,9 +17,13 @@ import (
 type WorkspaceBillingResolver struct {
 	queries      *db.Queries
 	serviceOwner int64
+	// servicePayerOrgs are the organizations the machine service pays for.
+	servicePayerOrgs []int64
 }
 
-func NewWorkspaceBillingResolver(ctx context.Context, conn DBTX) (*WorkspaceBillingResolver, error) {
+// NewWorkspaceBillingResolver reads the machine service owner. servicePayerOrgs
+// is the deployment's billing.service_payer_org_ids (plue#839).
+func NewWorkspaceBillingResolver(ctx context.Context, conn DBTX, servicePayerOrgs ...int64) (*WorkspaceBillingResolver, error) {
 	if conn == nil {
 		return nil, errors.New("workspace billing database is required")
 	}
@@ -27,7 +32,7 @@ func NewWorkspaceBillingResolver(ctx context.Context, conn DBTX) (*WorkspaceBill
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
-	return &WorkspaceBillingResolver{queries: q, serviceOwner: id}, nil
+	return &WorkspaceBillingResolver{queries: q, serviceOwner: id, servicePayerOrgs: slices.Clone(servicePayerOrgs)}, nil
 }
 
 func (r *WorkspaceBillingResolver) Resolve(ctx context.Context, workspaceID string, grant sandbox.BillingOwner) (sandbox.BillingOwner, error) {
@@ -39,8 +44,9 @@ func (r *WorkspaceBillingResolver) Resolve(ctx context.Context, workspaceID stri
 	if err != nil {
 		// A trusted standalone placement keeps its explicit account, and a CI
 		// task guest, named by its task number, its repository payer. A
-		// placement that names nothing never falls back to the machine service.
-		if service && workspaceID == "" {
+		// placement that names nothing never falls back to the machine
+		// service, and no placement does when it pays for no organization.
+		if service && (workspaceID == "" || len(r.servicePayerOrgs) == 0) {
 			return sandbox.BillingOwner{}, errors.New("workspace billing owner unavailable")
 		}
 		return grant, nil
@@ -57,10 +63,12 @@ func (r *WorkspaceBillingResolver) Resolve(ctx context.Context, workspaceID stri
 	if err != nil {
 		return sandbox.BillingOwner{}, err
 	}
-	// Until organizations have plans (mvp.md M-09), the product grants a free
-	// organization's machines to the machine service user (plue#839); the
-	// grant it wrote at create time stands.
-	if owner.OrgID.Valid {
+	// Until organizations have plans (mvp.md M-09), the product grants a
+	// listed free organization's machines to the machine service user
+	// (plue#839), and that grant stands. Every other grant bills the
+	// repository's owner, an unlisted organization included (Security
+	// s-6tctk6).
+	if service && owner.OrgID.Valid && slices.Contains(r.servicePayerOrgs, owner.OrgID.Int64) {
 		return grant, nil
 	}
 	return billingstore.RepositorySandboxOwner(db.Repository{UserID: owner.UserID, OrgID: owner.OrgID})

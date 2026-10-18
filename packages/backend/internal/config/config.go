@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
+
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // Config holds all configuration for the API server.
@@ -439,6 +441,12 @@ type BillingConfig struct {
 	TeamAnnualPriceID        string `mapstructure:"team_annual_price_id"`
 	EnterpriseMonthlyPriceID string `mapstructure:"enterprise_monthly_price_id"`
 	EnterpriseAnnualPriceID  string `mapstructure:"enterprise_annual_price_id"`
+	// ServicePayerOrgIDs are the organizations whose repositories' machines
+	// the smithers-machines service user pays for until organizations have
+	// plans (mvp.md M-09, plue#839). Load parses billing.service_payer_org_ids
+	// (SMITHERS_BILLING_SERVICE_PAYER_ORG_IDS), a comma-separated list of
+	// positive organization IDs. Empty, the default, grants no organization.
+	ServicePayerOrgIDs []int64 `mapstructure:"-"`
 }
 
 type CleanupConfig struct {
@@ -548,6 +556,7 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("auth.auth0_redirect_url", "http://localhost:4000/api/auth/auth0/callback")
 	v.SetDefault("auth.auth0_connection", "github")
 	v.SetDefault("billing.mode", "unlimited")
+	v.SetDefault("billing.service_payer_org_ids", "")
 	v.SetDefault("billing.stripe_secret_key", "")
 	v.SetDefault("billing.stripe_webhook_secret", "")
 	v.SetDefault("billing.portal_return_url", "")
@@ -738,6 +747,7 @@ func Load(configFile string) (*Config, error) {
 		{"auth.worker_exchange_token", "SMITHERS_AUTH_WORKER_EXCHANGE_TOKEN"},
 		{"billing.mode", "SMITHERS_BILLING_MODE"},
 		{"billing.stripe_secret_key", "SMITHERS_BILLING_STRIPE_SECRET_KEY"},
+		{"billing.service_payer_org_ids", "SMITHERS_BILLING_SERVICE_PAYER_ORG_IDS"},
 		{"billing.stripe_webhook_secret", "SMITHERS_BILLING_STRIPE_WEBHOOK_SECRET"},
 		{"billing.portal_return_url", "SMITHERS_BILLING_PORTAL_RETURN_URL"},
 		{"billing.checkout_success_url", "SMITHERS_BILLING_CHECKOUT_SUCCESS_URL"},
@@ -933,6 +943,13 @@ func Load(configFile string) (*Config, error) {
 	cfg.Server.AllowedOrigins = splitCommaSeparatedList(cfg.Server.AllowedOrigins)
 	cfg.Server.PublicMirrors = splitCommaSeparatedList(cfg.Server.PublicMirrors)
 	cfg.Guest.Repositories = splitCommaSeparatedList(cfg.Guest.Repositories)
+	// A malformed list refuses startup: a guessed list could bill an unlisted
+	// organization to the machine service user (plue#839).
+	servicePayerOrgIDs, err := sandbox.ParseServicePayerOrgIDs(v.GetStringSlice("billing.service_payer_org_ids")...)
+	if err != nil {
+		return nil, fmt.Errorf("billing.service_payer_org_ids: %w", err)
+	}
+	cfg.Billing.ServicePayerOrgIDs = servicePayerOrgIDs
 	if err := normalizeAgentAvailability(&cfg); err != nil {
 		return nil, err
 	}

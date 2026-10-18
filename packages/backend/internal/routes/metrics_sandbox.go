@@ -34,6 +34,12 @@ type SandboxLegacyMetrics struct {
 	// HoursMeteringErrorsTotal counts owners whose sandbox-hours metering the
 	// running-workspace sweep could not read; their workspaces kept running.
 	HoursMeteringErrorsTotal prometheus.Counter
+
+	// PayerUsageRatio is the machine service payer's use of its plan, by
+	// resource (plue#839, Security s-6tctk6). payer is the fixed "service"
+	// and resource is "concurrency" or "egress"; no user or organization ID
+	// reaches a label.
+	PayerUsageRatio *prometheus.GaugeVec
 }
 
 // NewSandboxLegacyMetrics creates a new SandboxLegacyMetrics instance and registers all
@@ -97,6 +103,13 @@ func NewSandboxLegacyMetrics(reg prometheus.Registerer) *SandboxLegacyMetrics {
 				Help: "Owners whose sandbox-hours metering the daily-cap sweep could not read; their running workspaces were left running.",
 			},
 		),
+		PayerUsageRatio: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "smithers_sandbox_payer_usage_ratio",
+				Help: "The machine service payer's use of its plan: running sandboxes over concurrent sandboxes (resource=concurrency) and today's charged egress bytes over daily egress bytes (resource=egress). Zero when the plan sets no limit.",
+			},
+			[]string{"payer", "resource"},
+		),
 	}
 
 	if reg != nil {
@@ -109,6 +122,7 @@ func NewSandboxLegacyMetrics(reg prometheus.Registerer) *SandboxLegacyMetrics {
 			m.APIErrorsTotal,
 			m.AgentSecretDeliveryTotal,
 			m.HoursMeteringErrorsTotal,
+			m.PayerUsageRatio,
 		)
 	}
 

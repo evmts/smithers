@@ -166,7 +166,7 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 		projectors = append(projectors, mythical, flowLoad, mythical.LearningRuntime())
 	}
 	// Every host starts through this one configuration, on every resolver.
-	hosts := flowHostConfiguration{boxes: boxes, queries: db.New(pool), policy: policy}
+	hosts := flowHostConfiguration{boxes: boxes, queries: db.New(pool), policy: policy, servicePayerOrgs: cfg.Billing.ServicePayerOrgIDs}
 	if invoked != nil {
 		hosts.targets = invoked
 	}

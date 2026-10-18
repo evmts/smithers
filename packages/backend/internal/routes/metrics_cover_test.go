@@ -108,6 +108,7 @@ func TestMetrics_Cov_ConvenienceRecordersExposeAndRecordMetrics(t *testing.T) {
 	m.ObserveSandboxVMCreate("covvm", "ready", 0.12)
 	m.AddSandboxActiveVMs("covvm", 2)
 	m.ObserveSandboxVMSuspend(0.13)
+	m.SetSandboxPayerUsageRatio("service", "egress", 0.8)
 	m.ObserveHTTPGitOperation("upload-pack", "ok", 0.14)
 	m.ObserveOAuth2TokenOperation("cov_issue")
 	m.IncValidationRejection("Repo", "name")
@@ -170,4 +171,5 @@ func TestMetrics_Cov_ConvenienceRecordersExposeAndRecordMetrics(t *testing.T) {
 	assert.Contains(t, output, "smithers_mirror_clone_bytes_count 1")
 	assert.Contains(t, output, "smithers_mirror_clone_duration_seconds_count 1")
 	assert.Contains(t, output, "smithers_mirror_poll_latency_seconds_count 1")
+	assert.Contains(t, output, `smithers_sandbox_payer_usage_ratio{payer="service",resource="egress"} 0.8`)
 }

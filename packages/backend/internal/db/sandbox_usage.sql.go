@@ -8,6 +8,8 @@ package db
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const closeOrphanedSandboxUsageIntervals = `-- name: CloseOrphanedSandboxUsageIntervals :exec
@@ -57,9 +59,9 @@ SELECT
   (
     SELECT COUNT(*) FROM workspaces w
     WHERE w.repository_id IN (SELECT r.id FROM repositories r WHERE
-      ($1::text='user' AND (r.user_id=$2::bigint OR (r.org_id IS NOT NULL AND EXISTS (SELECT 1 FROM users m WHERE m.id=$2::bigint AND m.lower_username='smithers-machines' AND m.user_type='service' AND m.prohibit_login AND m.deleted_at IS NULL)))) OR ($1::text='org' AND r.org_id=$2::bigint)) AND w.deleted_at IS NULL
+      ($1::text='user' AND (r.user_id=$2::bigint OR (r.org_id = ANY($3::bigint[]) AND EXISTS (SELECT 1 FROM users m WHERE m.id=$2::bigint AND m.lower_username='smithers-machines' AND m.user_type='service' AND m.prohibit_login AND m.deleted_at IS NULL)))) OR ($1::text='org' AND r.org_id=$2::bigint)) AND w.deleted_at IS NULL
       AND w.status IN ('pending', 'starting', 'running')
-      AND NOT (w.id = $3::uuid AND w.vm_id = $4::text AND w.status = 'running')
+      AND NOT (w.id = $4::uuid AND w.vm_id = $5::text AND w.status = 'running')
   ) + (
     SELECT COUNT(*) FROM agent_sessions a
     WHERE $1::text='user' AND a.user_id = $2::bigint AND a.status = 'active'
@@ -68,24 +70,25 @@ SELECT
         SELECT 1 FROM workspaces w
         WHERE (w.id = a.workspace_id OR w.agent_session_id = a.id)
           AND w.repository_id IN (SELECT r.id FROM repositories r WHERE
-      ($1::text='user' AND (r.user_id=$2::bigint OR (r.org_id IS NOT NULL AND EXISTS (SELECT 1 FROM users m WHERE m.id=$2::bigint AND m.lower_username='smithers-machines' AND m.user_type='service' AND m.prohibit_login AND m.deleted_at IS NULL)))) OR ($1::text='org' AND r.org_id=$2::bigint)) AND w.deleted_at IS NULL
+      ($1::text='user' AND (r.user_id=$2::bigint OR (r.org_id = ANY($3::bigint[]) AND EXISTS (SELECT 1 FROM users m WHERE m.id=$2::bigint AND m.lower_username='smithers-machines' AND m.user_type='service' AND m.prohibit_login AND m.deleted_at IS NULL)))) OR ($1::text='org' AND r.org_id=$2::bigint)) AND w.deleted_at IS NULL
           AND w.status IN ('pending', 'starting', 'running')
       )
   ) AS others,
   EXISTS (
     SELECT 1 FROM workspaces w
-    WHERE w.id = $3::uuid AND w.repository_id IN (SELECT r.id FROM repositories r WHERE
-      ($1::text='user' AND (r.user_id=$2::bigint OR (r.org_id IS NOT NULL AND EXISTS (SELECT 1 FROM users m WHERE m.id=$2::bigint AND m.lower_username='smithers-machines' AND m.user_type='service' AND m.prohibit_login AND m.deleted_at IS NULL)))) OR ($1::text='org' AND r.org_id=$2::bigint))
-      AND w.vm_id = $4::text AND w.deleted_at IS NULL
+    WHERE w.id = $4::uuid AND w.repository_id IN (SELECT r.id FROM repositories r WHERE
+      ($1::text='user' AND (r.user_id=$2::bigint OR (r.org_id = ANY($3::bigint[]) AND EXISTS (SELECT 1 FROM users m WHERE m.id=$2::bigint AND m.lower_username='smithers-machines' AND m.user_type='service' AND m.prohibit_login AND m.deleted_at IS NULL)))) OR ($1::text='org' AND r.org_id=$2::bigint))
+      AND w.vm_id = $5::text AND w.deleted_at IS NULL
       AND w.status IN ('running', 'suspended')
   ) AS matches
 `
 
 type CountOtherActiveSandboxesForWorkspaceResumeRawParams struct {
-	OwnerType   string `json:"owner_type"`
-	UserID      int64  `json:"user_id"`
-	WorkspaceID string `json:"workspace_id"`
-	VmID        string `json:"vm_id"`
+	OwnerType          string  `json:"owner_type"`
+	UserID             int64   `json:"user_id"`
+	ServicePayerOrgIds []int64 `json:"service_payer_org_ids"`
+	WorkspaceID        string  `json:"workspace_id"`
+	VmID               string  `json:"vm_id"`
 }
 
 type CountOtherActiveSandboxesForWorkspaceResumeRawRow struct {
@@ -96,17 +99,37 @@ type CountOtherActiveSandboxesForWorkspaceResumeRawRow struct {
 // Check the exact owned VM and all other product reservations in one statement. A
 // suspended workspace no longer occupies a slot and is not excluded. Until
 // organizations have plans (mvp.md M-09), the machine service user pays for
-// organization repositories' machines (plue#839).
+// the machines of the organizations in service_payer_org_ids (plue#839).
 func (q *Queries) CountOtherActiveSandboxesForWorkspaceResumeRaw(ctx context.Context, arg CountOtherActiveSandboxesForWorkspaceResumeRawParams) (CountOtherActiveSandboxesForWorkspaceResumeRawRow, error) {
 	row := q.db.QueryRow(ctx, countOtherActiveSandboxesForWorkspaceResumeRaw,
 		arg.OwnerType,
 		arg.UserID,
+		arg.ServicePayerOrgIds,
 		arg.WorkspaceID,
 		arg.VmID,
 	)
 	var i CountOtherActiveSandboxesForWorkspaceResumeRawRow
 	err := row.Scan(&i.Others, &i.Matches)
 	return i, err
+}
+
+const getSandboxEgressDailyBytes = `-- name: GetSandboxEgressDailyBytes :one
+SELECT COALESCE((SELECT u.bytes FROM sandbox_egress_daily_usage u
+  WHERE u.scope = $1::text AND u.day = $2::date), 0)::bigint AS bytes
+`
+
+type GetSandboxEgressDailyBytesParams struct {
+	Scope string      `json:"scope"`
+	Day   pgtype.Date `json:"day"`
+}
+
+// One payer scope's charged egress on one UTC day ("user:<id>" or "org:<id>",
+// egressusage.Charge); zero before the scope's first charge that day.
+func (q *Queries) GetSandboxEgressDailyBytes(ctx context.Context, arg GetSandboxEgressDailyBytesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getSandboxEgressDailyBytes, arg.Scope, arg.Day)
+	var bytes int64
+	err := row.Scan(&bytes)
+	return bytes, err
 }
 
 const openSandboxUsageInterval = `-- name: OpenSandboxUsageInterval :exec

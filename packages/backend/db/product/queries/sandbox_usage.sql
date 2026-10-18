@@ -41,12 +41,12 @@ WHERE usage.ended_at IS NULL AND (
 -- Check the exact owned VM and all other product reservations in one statement. A
 -- suspended workspace no longer occupies a slot and is not excluded. Until
 -- organizations have plans (mvp.md M-09), the machine service user pays for
--- organization repositories' machines (plue#839).
+-- the machines of the organizations in service_payer_org_ids (plue#839).
 SELECT
   (
     SELECT COUNT(*) FROM workspaces w
     WHERE w.repository_id IN (SELECT r.id FROM repositories r WHERE
-      (sqlc.arg(owner_type)::text='user' AND (r.user_id=sqlc.arg(user_id)::bigint OR (r.org_id IS NOT NULL AND EXISTS (SELECT 1 FROM users m WHERE m.id=sqlc.arg(user_id)::bigint AND m.lower_username='smithers-machines' AND m.user_type='service' AND m.prohibit_login AND m.deleted_at IS NULL)))) OR (sqlc.arg(owner_type)::text='org' AND r.org_id=sqlc.arg(user_id)::bigint)) AND w.deleted_at IS NULL
+      (sqlc.arg(owner_type)::text='user' AND (r.user_id=sqlc.arg(user_id)::bigint OR (r.org_id = ANY(sqlc.arg(service_payer_org_ids)::bigint[]) AND EXISTS (SELECT 1 FROM users m WHERE m.id=sqlc.arg(user_id)::bigint AND m.lower_username='smithers-machines' AND m.user_type='service' AND m.prohibit_login AND m.deleted_at IS NULL)))) OR (sqlc.arg(owner_type)::text='org' AND r.org_id=sqlc.arg(user_id)::bigint)) AND w.deleted_at IS NULL
       AND w.status IN ('pending', 'starting', 'running')
       AND NOT (w.id = sqlc.arg(workspace_id)::uuid AND w.vm_id = sqlc.arg(vm_id)::text AND w.status = 'running')
   ) + (
@@ -57,14 +57,14 @@ SELECT
         SELECT 1 FROM workspaces w
         WHERE (w.id = a.workspace_id OR w.agent_session_id = a.id)
           AND w.repository_id IN (SELECT r.id FROM repositories r WHERE
-      (sqlc.arg(owner_type)::text='user' AND (r.user_id=sqlc.arg(user_id)::bigint OR (r.org_id IS NOT NULL AND EXISTS (SELECT 1 FROM users m WHERE m.id=sqlc.arg(user_id)::bigint AND m.lower_username='smithers-machines' AND m.user_type='service' AND m.prohibit_login AND m.deleted_at IS NULL)))) OR (sqlc.arg(owner_type)::text='org' AND r.org_id=sqlc.arg(user_id)::bigint)) AND w.deleted_at IS NULL
+      (sqlc.arg(owner_type)::text='user' AND (r.user_id=sqlc.arg(user_id)::bigint OR (r.org_id = ANY(sqlc.arg(service_payer_org_ids)::bigint[]) AND EXISTS (SELECT 1 FROM users m WHERE m.id=sqlc.arg(user_id)::bigint AND m.lower_username='smithers-machines' AND m.user_type='service' AND m.prohibit_login AND m.deleted_at IS NULL)))) OR (sqlc.arg(owner_type)::text='org' AND r.org_id=sqlc.arg(user_id)::bigint)) AND w.deleted_at IS NULL
           AND w.status IN ('pending', 'starting', 'running')
       )
   ) AS others,
   EXISTS (
     SELECT 1 FROM workspaces w
     WHERE w.id = sqlc.arg(workspace_id)::uuid AND w.repository_id IN (SELECT r.id FROM repositories r WHERE
-      (sqlc.arg(owner_type)::text='user' AND (r.user_id=sqlc.arg(user_id)::bigint OR (r.org_id IS NOT NULL AND EXISTS (SELECT 1 FROM users m WHERE m.id=sqlc.arg(user_id)::bigint AND m.lower_username='smithers-machines' AND m.user_type='service' AND m.prohibit_login AND m.deleted_at IS NULL)))) OR (sqlc.arg(owner_type)::text='org' AND r.org_id=sqlc.arg(user_id)::bigint))
+      (sqlc.arg(owner_type)::text='user' AND (r.user_id=sqlc.arg(user_id)::bigint OR (r.org_id = ANY(sqlc.arg(service_payer_org_ids)::bigint[]) AND EXISTS (SELECT 1 FROM users m WHERE m.id=sqlc.arg(user_id)::bigint AND m.lower_username='smithers-machines' AND m.user_type='service' AND m.prohibit_login AND m.deleted_at IS NULL)))) OR (sqlc.arg(owner_type)::text='org' AND r.org_id=sqlc.arg(user_id)::bigint))
       AND w.vm_id = sqlc.arg(vm_id)::text AND w.deleted_at IS NULL
       AND w.status IN ('running', 'suspended')
   ) AS matches;
@@ -75,3 +75,9 @@ SELECT COALESCE(FLOOR(SUM(EXTRACT(EPOCH FROM
  FROM sandbox_usage_intervals
  WHERE billing_owner_type=sqlc.arg(owner_type)::text AND billing_owner_id=sqlc.arg(owner_id)::bigint
  AND started_at < now() AND LEAST(COALESCE(ended_at,now()),now()) > GREATEST(started_at,sqlc.arg(since)::timestamptz);
+
+-- name: GetSandboxEgressDailyBytes :one
+-- One payer scope's charged egress on one UTC day ("user:<id>" or "org:<id>",
+-- egressusage.Charge); zero before the scope's first charge that day.
+SELECT COALESCE((SELECT u.bytes FROM sandbox_egress_daily_usage u
+  WHERE u.scope = sqlc.arg(scope)::text AND u.day = sqlc.arg(day)::date), 0)::bigint AS bytes;
