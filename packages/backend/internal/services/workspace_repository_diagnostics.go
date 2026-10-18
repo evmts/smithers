@@ -79,7 +79,8 @@ func workspaceRepositoryStepLabel(step string) string {
 // workspaceRepositoryExitClass is the closed vocabulary a completed
 // repository command's result is reported in. The raw exit status is a
 // number the guest chose, so it is classified rather than carried, and no
-// stdout, stderr, URL, header or environment value is read at all.
+// stdout, stderr, URL, header or environment value is carried at all. Only
+// curl's fixed proxy-refusal phrase is matched in stderr.
 type workspaceRepositoryExitClass string
 
 const (
@@ -99,7 +100,18 @@ const (
 	workspaceRepositoryExitSignaled workspaceRepositoryExitClass = "signaled"
 	// workspaceRepositoryExitFailed: any other nonzero status.
 	workspaceRepositoryExitFailed workspaceRepositoryExitClass = "failed"
+	// workspaceRepositoryExitEgressQuota: the sandbox egress proxy refused
+	// the guest's CONNECT with 429 because the payer's daily egress is spent.
+	workspaceRepositoryExitEgressQuota workspaceRepositoryExitClass = "egress_quota_exhausted"
 )
+
+// workspaceEgressQuotaExhaustedMessage is the verdict for a repository step the
+// sandbox egress proxy refused for quota.
+const workspaceEgressQuotaExhaustedMessage = "sandbox egress quota exhausted for today; it resets at 00:00 UTC"
+
+// workspaceEgressQuotaRefusal is curl's fixed report of the egress proxy's
+// quota refusal. It carries no URL, header or credential.
+const workspaceEgressQuotaRefusal = "CONNECT tunnel failed, response 429"
 
 func workspaceRepositoryExitClassFor(result workspaceapi.CommandResult) workspaceRepositoryExitClass {
 	if result.OutputTruncated {
@@ -108,6 +120,8 @@ func workspaceRepositoryExitClassFor(result workspaceapi.CommandResult) workspac
 	switch {
 	case result.ExitCode == 0:
 		return workspaceRepositoryExitOK
+	case result.ExitCode == 128 && strings.Contains(result.Stderr, workspaceEgressQuotaRefusal):
+		return workspaceRepositoryExitEgressQuota
 	case result.ExitCode == 128:
 		return workspaceRepositoryExitFatal
 	case result.ExitCode == 129:

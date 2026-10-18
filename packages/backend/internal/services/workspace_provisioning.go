@@ -446,12 +446,19 @@ func (s *WorkspaceService) inheritOutsiderMark(ctx context.Context, child, sourc
 // bake) binds nothing so the baked disk never carries a repository's secrets.
 func (s *WorkspaceService) workspaceEgressProxy(ctx context.Context, repositoryID int64, workspaceID string) (*sandbox.EgressProxyPolicy, error) {
 	policy := &sandbox.EgressProxyPolicy{Enabled: true}
-	if s.billing != nil && workspaceID != "" {
-		workspace, err := s.q.GetWorkspace(ctx, workspaceID)
-		if err != nil {
-			return nil, err
+	// A CI task guest has no workspace; its repository's payer is billed all
+	// the same. The controller refuses every grant to a guest without a quota
+	// but the golden bake, which binds no repository (plue#839).
+	if s.billing != nil && (workspaceID != "" || repositoryID > 0) {
+		userID, billedRepository := int64(0), repositoryID
+		if workspaceID != "" {
+			workspace, err := s.q.GetWorkspace(ctx, workspaceID)
+			if err != nil {
+				return nil, err
+			}
+			userID, billedRepository = workspace.UserID, workspace.RepositoryID
 		}
-		billingCtx, owner, err := s.workspaceBillingContext(ctx, workspace.UserID, workspace.RepositoryID)
+		billingCtx, owner, err := s.workspaceBillingContext(ctx, userID, billedRepository)
 		if err != nil {
 			return nil, err
 		}

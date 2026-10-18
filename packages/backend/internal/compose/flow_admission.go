@@ -15,6 +15,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/modelproxy"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 )
 
@@ -83,7 +84,18 @@ func (l *admittedFlowLauncher) StartFlowHost(ctx context.Context, launch flowhos
 			return flowhost.Connection{}, errors.New("Flow workspace authority changed before launch")
 		}
 	}
-	if err := l.policy.AuthorizeCountedSandboxResume(ctx, workspace.UserID, workspace.ID, workspace.VmID); err != nil {
+	// The machine service owns a branch machine; its repository's payer is
+	// admitted, and the payer's exact-VM check names this machine (#3756,
+	// plue#839).
+	repo, err := l.queries.GetRepoByID(ctx, workspace.RepositoryID)
+	if err != nil {
+		return flowhost.Connection{}, err
+	}
+	payer, err := services.RepositorySandboxPayer(ctx, repo, l.policy, l.queries)
+	if err != nil {
+		return flowhost.Connection{}, err
+	}
+	if err := l.policy.AuthorizeCountedSandboxResume(sandbox.WithBillingOwner(ctx, payer), payer.ID, workspace.ID, workspace.VmID); err != nil {
 		return flowhost.Connection{}, err
 	}
 	return l.Launcher.StartFlowHost(ctx, launch)

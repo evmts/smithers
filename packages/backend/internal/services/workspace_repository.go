@@ -655,6 +655,9 @@ func (s *WorkspaceService) runtimeRepositoryCommandOutput(ctx context.Context, r
 			retryable: retryableWorkspaceTransfer(command, result),
 		}
 		outcome.record(row.ID)
+		if outcome.exitClass == workspaceRepositoryExitEgressQuota {
+			return "", pkgerrors.QuotaExceeded(workspaceEgressQuotaExhaustedMessage).WithCause(outcome)
+		}
 		// WithCause, never concatenation: the sentence IS the persisted
 		// verdict (see workspaceRepositoryStepUnverifiedMessage), so the
 		// Message must stay these bytes exactly.

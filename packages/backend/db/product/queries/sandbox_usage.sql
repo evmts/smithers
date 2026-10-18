@@ -39,12 +39,14 @@ WHERE usage.ended_at IS NULL AND (
 
 -- name: CountOtherActiveSandboxesForWorkspaceResumeRaw :one
 -- Check the exact owned VM and all other product reservations in one statement. A
--- suspended workspace no longer occupies a slot and is not excluded.
+-- suspended workspace no longer occupies a slot and is not excluded. Until
+-- organizations have plans (mvp.md M-09), the machine service user pays for
+-- organization repositories' machines (plue#839).
 SELECT
   (
     SELECT COUNT(*) FROM workspaces w
     WHERE w.repository_id IN (SELECT r.id FROM repositories r WHERE
-      (sqlc.arg(owner_type)::text='user' AND r.user_id=sqlc.arg(user_id)::bigint) OR (sqlc.arg(owner_type)::text='org' AND r.org_id=sqlc.arg(user_id)::bigint)) AND w.deleted_at IS NULL
+      (sqlc.arg(owner_type)::text='user' AND (r.user_id=sqlc.arg(user_id)::bigint OR (r.org_id IS NOT NULL AND EXISTS (SELECT 1 FROM users m WHERE m.id=sqlc.arg(user_id)::bigint AND m.lower_username='smithers-machines' AND m.user_type='service' AND m.prohibit_login AND m.deleted_at IS NULL)))) OR (sqlc.arg(owner_type)::text='org' AND r.org_id=sqlc.arg(user_id)::bigint)) AND w.deleted_at IS NULL
       AND w.status IN ('pending', 'starting', 'running')
       AND NOT (w.id = sqlc.arg(workspace_id)::uuid AND w.vm_id = sqlc.arg(vm_id)::text AND w.status = 'running')
   ) + (
@@ -55,14 +57,14 @@ SELECT
         SELECT 1 FROM workspaces w
         WHERE (w.id = a.workspace_id OR w.agent_session_id = a.id)
           AND w.repository_id IN (SELECT r.id FROM repositories r WHERE
-      (sqlc.arg(owner_type)::text='user' AND r.user_id=sqlc.arg(user_id)::bigint) OR (sqlc.arg(owner_type)::text='org' AND r.org_id=sqlc.arg(user_id)::bigint)) AND w.deleted_at IS NULL
+      (sqlc.arg(owner_type)::text='user' AND (r.user_id=sqlc.arg(user_id)::bigint OR (r.org_id IS NOT NULL AND EXISTS (SELECT 1 FROM users m WHERE m.id=sqlc.arg(user_id)::bigint AND m.lower_username='smithers-machines' AND m.user_type='service' AND m.prohibit_login AND m.deleted_at IS NULL)))) OR (sqlc.arg(owner_type)::text='org' AND r.org_id=sqlc.arg(user_id)::bigint)) AND w.deleted_at IS NULL
           AND w.status IN ('pending', 'starting', 'running')
       )
   ) AS others,
   EXISTS (
     SELECT 1 FROM workspaces w
     WHERE w.id = sqlc.arg(workspace_id)::uuid AND w.repository_id IN (SELECT r.id FROM repositories r WHERE
-      (sqlc.arg(owner_type)::text='user' AND r.user_id=sqlc.arg(user_id)::bigint) OR (sqlc.arg(owner_type)::text='org' AND r.org_id=sqlc.arg(user_id)::bigint))
+      (sqlc.arg(owner_type)::text='user' AND (r.user_id=sqlc.arg(user_id)::bigint OR (r.org_id IS NOT NULL AND EXISTS (SELECT 1 FROM users m WHERE m.id=sqlc.arg(user_id)::bigint AND m.lower_username='smithers-machines' AND m.user_type='service' AND m.prohibit_login AND m.deleted_at IS NULL)))) OR (sqlc.arg(owner_type)::text='org' AND r.org_id=sqlc.arg(user_id)::bigint))
       AND w.vm_id = sqlc.arg(vm_id)::text AND w.deleted_at IS NULL
       AND w.status IN ('running', 'suspended')
   ) AS matches;
