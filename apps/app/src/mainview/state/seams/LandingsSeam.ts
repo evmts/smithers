@@ -189,7 +189,7 @@ const repoApiRoot = (repo: string): string => {
 
 type PullSource =
   | { readonly kind: "native" }
-  | { readonly kind: "github"; readonly repo: string }
+  | { readonly kind: "github"; readonly repo: string; readonly publicReadRoot?: string }
   | { readonly error: string }
 
 /** A ready import in the repository response is the only source mapping. */
@@ -215,7 +215,7 @@ const pullSource = async (ctx: Pick<SeamContext, "http" | "baseUrl">, repo: stri
     || !/^[A-Za-z0-9_.-]+$/.test(source.owner) || !/^[A-Za-z0-9_.-]+$/.test(source.repo)) {
     return { error: `The GitHub source of ${repo} could not be verified.` }
   }
-  return { kind: "github", repo: `${source.owner}/${source.repo}` }
+  return { kind: "github", repo: `${source.owner}/${source.repo}`, ...(body.is_public === true ? { publicReadRoot: `${ctx.baseUrl}${repoApiRoot(repo)}/github/metadata/pulls` } : {}) }
 }
 
 const githubRepoRoot = (ctx: Pick<SeamContext, "baseUrl">, sourceRepo: string): string => {
@@ -450,7 +450,7 @@ export const readLandingOptions = async (
   const source = await pullSource(ctx, repo)
   if ("error" in source) return { options: [], error: source.error }
   const url = source.kind === "github"
-    ? `${githubPullsRoot(ctx, source.repo)}?state=open&per_page=100`
+    ? `${source.publicReadRoot ?? githubPullsRoot(ctx, source.repo)}?state=open&per_page=100`
     : `${ctx.baseUrl}${repoApiRoot(repo)}/landings?limit=100`
   let response: Response
   try {
@@ -850,7 +850,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     if ("error" in source) return source.error
     let response: Response
     try {
-      response = await ctx.http(source.kind === "github" ? `${githubPullsRoot(ctx, source.repo)}/${number}` : `${landingsUrl(repo)}/${number}`)
+      response = await ctx.http(source.kind === "github" ? `${source.publicReadRoot ?? githubPullsRoot(ctx, source.repo)}/${number}` : `${landingsUrl(repo)}/${number}`)
     } catch {
       return `Pull request #${number} couldn't be read — the platform didn't answer.`
     }
@@ -931,7 +931,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       try {
         // One bounded page. Omitting `state` lists every lifecycle state —
         // plue has no "all" filter value and 422s an unknown one.
-        response = await ctx.http(source.kind === "github" ? `${githubPullsRoot(ctx, source.repo)}?state=all&per_page=100` : `${landingsUrl(repo)}?limit=100`)
+        response = await ctx.http(source.kind === "github" ? `${source.publicReadRoot ?? githubPullsRoot(ctx, source.repo)}?state=all&per_page=100` : `${landingsUrl(repo)}?limit=100`)
       } catch {
         return `Pull requests for ${repo} couldn't be listed — the platform didn't answer.`
       }
