@@ -1473,6 +1473,25 @@
       "flows": []
     },
     {
+      "id": "quality",
+      "description": "Import 26 UTC weeks of request lead time and source coverage; use main red time when paperwork exceeds 40%.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/quality/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:.flows/quality/**",
+        "proc:spawn:node *",
+        "proc:spawn:jj *",
+        "net:get:https://api.github.com/**",
+        "net:post:https://api.github.com/graphql"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
       "id": "release",
       "description": "Prepare a Smithers release or validate, build, smoke-test and publish its exact npm tarballs with durable human approval.",
       "summary": null,

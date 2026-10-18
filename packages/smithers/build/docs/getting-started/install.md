@@ -29,8 +29,8 @@ root. Both packages take `effect` as an exact `4.0.5` peer and are on npm under 
 ```json
 {
   "devDependencies": {
-    "@smthrs/build-cli": "1.0.0-rc.12",
-    "@smthrs/targets": "1.0.0-rc.12",
+    "@smthrs/build-cli": "1.0.0-rc.13",
+    "@smthrs/targets": "1.0.0-rc.13",
     "effect": "4.0.5"
   }
 }
