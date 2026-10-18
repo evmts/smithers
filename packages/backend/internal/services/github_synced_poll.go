@@ -89,9 +89,14 @@ func (s *GitHubSyncedRepoService) dueInstallStreams(row db.GithubSyncedRepo) []g
 // stream commits independently, so one refusal does not suppress other reads.
 func (s *GitHubSyncedRepoService) backfillInstallStreams(ctx context.Context, row db.GithubSyncedRepo, fetch gitHubSyncedRepoPageFetcher, plans []gitHubStreamPlan) error {
 	var runErrors []error
-	if err := s.refreshSourceVisibility(ctx, row, fetch); err != nil {
-		s.recordSyncError(row.ID, err)
-		return err
+	// Visibility is a prerequisite for writes, but shares the admitted streams'
+	// pauses. A restored pause must not mint a token or refresh the repository.
+	var visibilityErr error
+	for _, plan := range plans {
+		if !s.installPollRetryAt(row, plan.resource, metadataBudgetStream(plan.resource)).After(s.now()) {
+			visibilityErr = s.refreshSourceVisibility(ctx, row, fetch)
+			break
+		}
 	}
 	for _, plan := range plans {
 		if err := ctx.Err(); err != nil {
@@ -122,11 +127,15 @@ func (s *GitHubSyncedRepoService) backfillInstallStreams(ctx context.Context, ro
 		delete(s.install.requested, key)
 		s.install.streams[key] = state
 		s.install.mu.Unlock()
-		var err error
-		if plan.resource == gitHubIssueEvents {
-			err = s.backfillIssueEvents(ctx, row, fetch)
-		} else {
-			err = s.backfillResource(ctx, row, plan.resource, fetch)
+		err := visibilityErr
+		// Preserve failure and quota receipts without writing discussions
+		// whose source visibility could not be confirmed.
+		if err == nil {
+			if plan.resource == gitHubIssueEvents {
+				err = s.backfillIssueEvents(ctx, row, fetch)
+			} else {
+				err = s.backfillResource(ctx, row, plan.resource, fetch)
+			}
 		}
 		retryAt := s.budget.StreamRetryAt(row.InstallationID.Int64, stream)
 		s.install.mu.Lock()
@@ -414,6 +423,10 @@ func (s *GitHubSyncedRepoService) restorePollHealth() error {
 
 func (s *GitHubSyncedRepoService) installPollRetryAt(row db.GithubSyncedRepo, resource, budgetStream string) time.Time {
 	pause := s.budget.StreamRetryAt(row.InstallationID.Int64, budgetStream)
+	// Every metadata stream depends on the repository visibility read.
+	if visibilityPause := s.budget.StreamRetryAt(row.InstallationID.Int64, landingGitHubRepoPath(row.OwnerLogin, row.RepoName)); visibilityPause.After(pause) {
+		pause = visibilityPause
+	}
 	s.install.mu.Lock()
 	stored := s.install.streams[syncedStreamKey(row, resource)].retryAt
 	s.install.mu.Unlock()

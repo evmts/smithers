@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
@@ -110,4 +111,52 @@ func TestGitHubSyncWritesSourceVisibilityHosted(t *testing.T) {
 		require.True(t, current.GithubPrivate.Valid)
 		require.Equal(t, value, current.GithubPrivate.Bool)
 	}
+}
+
+func TestGitHubSyncPausedUnknownVisibilitySendsNoRequests(t *testing.T) {
+	f := newInstallPollFixture(t)
+	f.service.install.mu.Lock()
+	key := syncedStreamKey(f.row, "issues/comments")
+	state := f.service.install.streams[key]
+	state.retryAt = f.service.now().Add(time.Minute)
+	f.service.install.streams[key] = state
+	f.service.install.mu.Unlock()
+	require.Error(t, f.service.backfillInstallStreams(t.Context(), f.row, nil, []gitHubStreamPlan{{resource: "issues/comments", scheduled: true}}))
+	f.mu.Lock()
+	require.Empty(t, f.paths, "paused sync must not refresh visibility or mint a token")
+	f.mu.Unlock()
+	var visibility *bool
+	require.NoError(t, f.pool.QueryRow(t.Context(), `SELECT github_private FROM github_synced_repos WHERE id=$1`, f.row.ID).Scan(&visibility))
+	require.Nil(t, visibility, "unknown visibility must stay closed")
+}
+
+func TestGitHubSyncVisibilityRateLimitPersistsPause(t *testing.T) {
+	f := newInstallPollFixture(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/acme/app" {
+			w.Header().Set("Retry-After", "50")
+			http.Error(w, "secondary rate limit", http.StatusTooManyRequests)
+			return
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("metadata read after visibility refusal: %s", r.URL.Path)
+		}
+		f.upstream.Handler().ServeHTTP(w, r)
+	}))
+	defer server.Close()
+	t.Setenv(envGitHubAppAPIBaseURL, server.URL)
+	f.service.reconcileOnce(t.Context())
+	fresh := NewGitHubSyncedRepoService(db.New(f.pool))
+	require.NoError(t, fresh.ConfigureInstallSync(f.pool))
+	fresh.now = f.service.now
+	for _, resource := range fresh.installResources() {
+		receipt := fresh.syncStreamObservation(f.row, resource, metadataBudgetStream(resource))
+		require.NotNil(t, receipt.RetryAt, resource)
+		require.Equal(t, f.service.now().Add(50*time.Second), *receipt.RetryAt)
+		require.Nil(t, receipt.LastSuccessAt)
+	}
+	require.Empty(t, fresh.dueInstallStreams(f.row))
+	var visibility *bool
+	require.NoError(t, f.pool.QueryRow(t.Context(), `SELECT github_private FROM github_synced_repos WHERE id=$1`, f.row.ID).Scan(&visibility))
+	require.Nil(t, visibility)
 }
