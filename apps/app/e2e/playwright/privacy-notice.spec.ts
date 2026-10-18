@@ -5,6 +5,11 @@ for (const key of ["Enter", "Space"]) test(`a Chat refusal survives account clea
   await signedOutVisitor(page)
   let signedIn = true
   await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", route => identityRoute(signedIn ? SCOPED_TEST_USER.login : null)(route))
+  // smithersai/smithers is the signed-in user's own repository. No public
+  // catalog admits it: signed-out catalog admission ended with guest chat (68f1d894).
+  await page.route(url => url.pathname === "/api/user/repos", route => route.fulfill({ json: { repos: signedIn ? [{
+    owner: "smithersai", name: "smithers", full_name: "smithersai/smithers", default_bookmark: "main", owner_type: "Organization"
+  }] : [] } }))
   // Hold the real SQLite commit while the account privacy barrier is active.
   // No application debug API or replacement persistence implementation.
   await page.addInitScript(() => {
