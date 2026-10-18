@@ -65,38 +65,6 @@ const chatTurnResourceKind = "chat_turn"
 // a fault of the host, the provider or the request.
 const codeHostNoCapacity = "host_no_capacity"
 
-// capacityRefusalDelay backs off a rerun of a turn the fleet had no room for.
-//
-// A full fleet is a transient deferral the product already answers that way
-// elsewhere: the workspace pool defers and stays resumable, and the error
-// registry publishes one RetryAfter for no_capacity, which is what clients are
-// told to wait. A turn refused for capacity is otherwise rerun on the
-// host-failure ladder, which starts at a second, and is then sealed failed
-// while the only thing wrong is that the fleet is busy.
-//
-// Measured on turn f413964a, where the fleet had room for exactly one chat
-// guest: each refused attempt took ~17 s by itself, which is the provider
-// adapter's own create ladder, and the dispatcher's ladder added 1 s after
-// generation 1 and 2 s after generation 2. So the five attempts a turn gets
-// covered about ninety seconds of shortage, almost none of it chosen here,
-// and two of them were spent in the thirty-six seconds while generation 1's
-// slot was still held. The registry's interval raises that cover to roughly
-// three and a half minutes, at the price of up to this long between a slot
-// freeing and the next attempt noticing: in that turn the slot freed within
-// seconds of generation 3's refusal, so the same turn would have answered
-// about half a minute later than it did. Coverage is the side worth buying,
-// because the alternative is a verdict on a host that never started.
-//
-// The interval is flat because a deferral has no escalating fault to back off
-// from: each rerun asks the same question of a fleet whose headroom changes on
-// its own.
-func capacityRefusalDelay(int64) time.Duration {
-	if entry, ok := pkgerrors.Lookup(pkgerrors.CodeNoCapacity); ok && entry.RetryAfter > 0 {
-		return time.Duration(entry.RetryAfter) * time.Second
-	}
-	return 30 * time.Second
-}
-
 type Host interface {
 	RunTurn(context.Context, ProducerGrant) error
 }
@@ -115,9 +83,6 @@ type Dispatcher struct {
 	metrics *metrics
 	// backoff is the rerun delay for a generation. Tests shorten it.
 	backoff func(generation int64) time.Duration
-	// capacityBackoff is the rerun delay for a turn the fleet had no room for.
-	// Tests shorten it.
-	capacityBackoff func(generation int64) time.Duration
 	// scan is the recovery and interruption poll interval.
 	scan time.Duration
 	// silence is how long a dispatched host may make no progress before the
@@ -131,7 +96,7 @@ func NewDispatcher(store *Store, host Host, queueSize int, lease time.Duration) 
 	if store == nil || host == nil || queueSize <= 0 || lease <= 0 {
 		return nil, errors.New("invalid chat dispatcher configuration")
 	}
-	d := &Dispatcher{store: store, host: host, lease: lease, queue: make(chan Candidate, queueSize), logger: slog.Default(), backoff: retryDelay, capacityBackoff: capacityRefusalDelay, scan: time.Second, silence: DefaultHostSilence, running: map[string]runningTurn{}}
+	d := &Dispatcher{store: store, host: host, lease: lease, queue: make(chan Candidate, queueSize), logger: slog.Default(), backoff: retryDelay, scan: time.Second, silence: DefaultHostSilence, running: map[string]runningTurn{}}
 	d.metrics = newMetrics(func() float64 { return float64(len(d.queue)) })
 	return d, nil
 }
@@ -250,9 +215,6 @@ func (d *Dispatcher) retry(ctx context.Context, grant ProducerGrant, code string
 	d.metrics.failures.WithLabelValues(code).Inc()
 	if retrying {
 		message := "chat turn will rerun after its host failed before the provider started"
-		if code == codeHostNoCapacity {
-			message = "chat turn deferred: no sandbox host had room for it, and it will rerun"
-		}
 		d.logger.Warn(message, "turn_id", grant.TurnID, "generation", grant.Generation, "code", code, "delay_ms", delay.Milliseconds(), "error", cause)
 		return
 	}
@@ -310,6 +272,15 @@ func (d *Dispatcher) runOne(parent context.Context, candidate Candidate) {
 	defer d.metrics.running.Dec()
 	ctx, cancel := context.WithCancel(parent)
 	progress := newTurnProgress(grant, d.logger)
+	progress.record = func(record ProgressRecord) {
+		writeCtx := ctx
+		if record.Stage == "refused" {
+			writeCtx = context.WithoutCancel(parent)
+		}
+		if err := d.store.recordProgress(writeCtx, grant, record); err != nil && !errors.Is(err, ErrProducerFenced) {
+			d.logger.Error("chat stage was not persisted", "turn_id", grant.TurnID, "run_id", grant.RunID, "stage", record.Stage, "code", errorCode(err))
+		}
+	}
 	ctx = ports.WithChatProgress(ctx, progress.observe)
 	// Every sandbox this attempt asks the fleet for is this turn's, including
 	// the ones the fleet refuses: a refusal that names the turn is the only
@@ -347,29 +318,33 @@ func (d *Dispatcher) runOne(parent context.Context, candidate Candidate) {
 		// An explicit user cancel has already committed its terminal batch
 		// before interrupting this host, so the store leaves it unchanged.
 		if errors.Is(err, errCommandAPIUnavailable) {
+			progress.refused("credential_issuer_unavailable")
 			d.fail(detached, grant, "credential_issuer_unavailable", err)
 			return
 		}
 		if errors.Is(err, ports.ErrModelCredentialMissing) {
+			progress.refused("credential_missing")
 			d.fail(detached, grant, "credential_missing", err)
 			return
 		}
 		// The provider answered with a refusal: a rerun meets the same one.
 		if refusal := (*ProviderRefusal)(nil); errors.As(err, &refusal) {
+			progress.refused(refusal.Code)
 			d.fail(detached, grant, refusal.Code, err)
+			return
+		}
+		// A typed capacity refusal is already conclusive. End this request
+		// immediately; only the person may choose to send it again.
+		var allocation *pkgerrors.APIError
+		if sandbox.IsNoCapacity(err) || errors.As(err, &allocation) && allocation.Code == pkgerrors.CodeNoCapacity {
+			progress.refused(codeHostNoCapacity)
+			d.fail(detached, grant, codeHostNoCapacity, errors.New("model host allocation refused: no capacity"))
 			return
 		}
 		if progress.silent() {
 			// The host was interrupted for making no progress. A started
 			// provider seals the turn; a sandbox that never reached one reruns.
 			d.retry(detached, grant, "host_stalled", d.backoff(grant.Generation), err)
-			return
-		}
-		// No sandbox host had room: the launch was refused before anything of
-		// the turn ran, so it is deferred under its own name rather than
-		// recorded as a host that failed.
-		if sandbox.IsNoCapacity(err) {
-			d.retry(detached, grant, codeHostNoCapacity, d.capacityBackoff(grant.Generation), err)
 			return
 		}
 		d.retry(detached, grant, "host_failed", d.backoff(grant.Generation), err)

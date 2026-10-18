@@ -20,6 +20,7 @@ import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { Card } from "./state/AppState"
 import type { SharedConversationSeam } from "./state/seams/SharedConversationSeam"
 import { TranscriptOrder } from "./state/TranscriptOrder"
+import { RunTraceBody } from "./cards/RunTraceCard"
 
 /* A live turn re-renders its line each second: an external clock
  * subscription, never a lifecycle effect. */
@@ -54,11 +55,7 @@ function TurnElapsed({ state, startedAt, finishedAt, produced }: { state: string
  */
 type DoneFrame = Extract<AgentTurnFrame, { type: "done" }>
 const SHARED_TURN_FAILED = { fault: "infra", sentence: "Smithers could not finish that. Not your fault.", actions: [] } as const
-/* The fleet refused the launch before anything ran, so nothing of theirs is gone. */
-const HOST_NO_CAPACITY = { fault: "infra", sentence: "Every model host is busy. Nothing here was lost; send it again in a moment.", actions: [] } as const
-const sharedTurnFailure = (failure: DoneFrame & { error: string }) => failure.code === "host_no_capacity"
-  ? describedFailure("HostNoCapacity", HOST_NO_CAPACITY, failure.error)
-  : describedFailure("SharedTurnFailed", SHARED_TURN_FAILED, failure.error)
+const sharedTurnFailure = (failure: DoneFrame & { error: string }) => describedFailure("SharedTurnFailed", SHARED_TURN_FAILED, failure.error)
 
 /** Output only: no tool-call frame can invoke a browser command. */
 export function SharedConversation({ source, localCardIds, localEntries = [] }: { source: SharedConversationSeam; localCardIds?: ReadonlySet<string>; localEntries?: readonly { id: string; content: ReactNode }[] }) {
@@ -110,6 +107,14 @@ export function SharedConversation({ source, localCardIds, localEntries = [] }: 
       // The sender is Smithers; the reply quote, not the name, attributes the prompt (M-34).
       const answer = { kind: "agent" as const, id: turn.runId, agent: "smithers" as const, avatar_url: PlaceholderAvatarUrl, color_index: color }
       const reply = <blockquote className="turn-reply" data-reply-to={`${turn.id}:prompt`}><span className="turn-reply-author">{person.name}</span><span className="turn-reply-text">{turn.prompt}</span></blockquote>
+      const capacityRefused = failure?.type === "done" && failure.code === "host_no_capacity"
+      const progressCard: Extract<Card, { kind: "run-trace" }> | undefined = turn.progress?.length || capacityRefused ? {
+        id: `chat-run:${turn.id}`, kind: "run-trace", title: "Run", status: "active", ordinal: 0, createdAt: turn.startedAt ?? 0,
+        payload: { repo: "", runId: turn.runId, workflow: "chat", phase: failure?.type === "done" && failure.code === "host_no_capacity" ? "no-capacity"
+          : turn.state === "accepted" ? "launching" : turn.state === "uncertain" ? "failed" : turn.state,
+          error: failure?.type === "done" ? failure.error : undefined, steps: [], result: null, lastSeq: turn.progress?.length ?? 0,
+          events: (turn.progress ?? []).map((record, index) => ({ sequence: index + 1, kind: "chat.turn.progress", occurredAt: record.at, payload: record })) }
+      } : undefined
       const renderCard = (id: string) => {
         const card = sharedCards.get(id)
         if (!card || localCardIds?.has(id) || renderedCards.has(id)) return null
@@ -128,7 +133,7 @@ export function SharedConversation({ source, localCardIds, localEntries = [] }: 
       return <div key={turn.id} data-shared-turn={turn.id} data-state={turn.state}>
         {turn.subject ? null : <>
           <MessageScrollerItem style={{ contentVisibility: "visible" }} messageId={`${turn.id}:prompt`}><EntryRow kind="prompt" author={{ kind: "person", ...person, color_index: color }} title="" tone="quiet" card={<div data-composer-prompt={sessions[0]?.requests?.find(row => row.turnId === turn.id)?.id ?? turn.id}><Markdown content={turn.prompt} /></div>} onAction={() => {}} /></MessageScrollerItem>
-          <MessageScrollerItem style={{ contentVisibility: "visible" }} messageId={`${turn.id}:answer`}><EntryRow kind="answer" author={answer} title="" tone="quiet" action={inspect.actions[0]} contextActions={turn.context ? contextActions(turn.context, (tag, input) => controller.runCommand(tag, JSON.stringify(input)), contextOpenAction) : undefined} context={turn.context ? { count: turn.context.length, items: turn.context } : undefined} card={<>{reply}<TurnElapsed state={turn.state} startedAt={turn.startedAt} finishedAt={turn.finishedAt} produced={frames.length > 0 || turn.authorLogin !== owner} />{trace}{answers && answers.actions.length > 0 ? <div className="message-answer-actions">{answers.actions.map(action => <DiffAction key={action.tag} action={action} onAction={answers.onAction} />)}</div> : null}<span className="message-actions"><CopyMessageButton text={text} onCopy={value => controller.runCommandForResult("chat.copy-message", value)} /></span>{failure?.type === "done" && failure.error ? <FailureNotice role="status" failure={sharedTurnFailure({ ...failure, error: failure.error })} /> : null}</>} onAction={inspect.onAction} /></MessageScrollerItem>
+          <MessageScrollerItem style={{ contentVisibility: "visible" }} messageId={`${turn.id}:answer`}><EntryRow kind="answer" author={answer} title="" tone="quiet" action={inspect.actions[0]} contextActions={turn.context ? contextActions(turn.context, (tag, input) => controller.runCommand(tag, JSON.stringify(input)), contextOpenAction) : undefined} context={turn.context ? { count: turn.context.length, items: turn.context } : undefined} card={<>{reply}{progressCard ? <RunTraceBody card={progressCard} onRunCommand={(name, args) => controller.runCommand(name, args)} /> : <TurnElapsed state={turn.state} startedAt={turn.startedAt} finishedAt={turn.finishedAt} produced={frames.length > 0 || turn.authorLogin !== owner} />}{trace}{answers && answers.actions.length > 0 ? <div className="message-answer-actions">{answers.actions.map(action => <DiffAction key={action.tag} action={action} onAction={answers.onAction} />)}</div> : null}<span className="message-actions"><CopyMessageButton text={text} onCopy={value => controller.runCommandForResult("chat.copy-message", value)} /></span>{failure?.type === "done" && failure.error && !(progressCard && failure.code === "host_no_capacity") ? <FailureNotice role="status" failure={sharedTurnFailure({ ...failure, error: failure.error })} /> : null}</>} onAction={inspect.onAction} /></MessageScrollerItem>
         </>}
         {turn.subject ? frames.flatMap(frame => frame.type === "card" ? [renderCard(frame.card.id)] : []) : null}
       </div>

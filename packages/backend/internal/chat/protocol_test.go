@@ -97,7 +97,7 @@ func TestEmbeddedSchemaIsProductMigrations(t *testing.T) {
 		if strings.Contains(string(body), "ALTER TABLE chat_turns ADD COLUMN conversation_id") {
 			conversationSchema = strings.Split(string(body), "ALTER TABLE collaborators")[0]
 		}
-		if strings.Contains(string(body), "ALTER TABLE chat_turns ADD COLUMN entry_seq") || strings.Contains(string(body), "ALTER TABLE chat_turns ADD COLUMN summary text") || strings.Contains(string(body), "ALTER TABLE chat_turns ADD COLUMN entry_subject") {
+		if strings.Contains(string(body), "ALTER TABLE chat_turns ADD COLUMN entry_seq") || strings.Contains(string(body), "ALTER TABLE chat_turns ADD COLUMN summary text") || strings.Contains(string(body), "ALTER TABLE chat_turns ADD COLUMN entry_subject") || strings.Contains(string(body), "ALTER TABLE chat_turns ADD COLUMN progress") {
 			derivedSchema += "\n" + string(body)
 		}
 	}
