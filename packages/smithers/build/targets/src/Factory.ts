@@ -568,6 +568,32 @@ const decodeIssueTransitions = (value: unknown): ReadonlyArray<IssueTransition> 
 }
 
 /**
+ * Explicit repository policy for artifact tests. Every field is required;
+ * absent policy preserves ordinary blocking and selection behavior.
+ * @category schemas
+ * @since 1.0.0
+ */
+export const LifecyclePolicy = Schema.Struct({
+  tests: Schema.Struct({
+    artifact: Schema.Struct({ blocking: Schema.Boolean, run: Schema.Literals(["ci", "never"]) })
+  })
+})
+
+/**
+ * Artifact lifecycle policy constructors.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const Lifecycle = Object.freeze({
+  Policy: (options: typeof LifecyclePolicy.Type): typeof LifecyclePolicy.Type => {
+    const plain = Home.plainOptions("Lifecycle.Policy", options, new Set(["tests"]))
+    const tests = Home.plainOptions("Lifecycle.Policy tests", plain["tests"], new Set(["artifact"]))
+    Home.plainOptions("Lifecycle.Policy tests.artifact", tests["artifact"], new Set(["blocking", "run"]))
+    return Home.freezeDeep(Home.decode("Lifecycle.Policy", LifecyclePolicy, plain))
+  }
+})
+
+/**
  * The factory declaration `.smithers/FACTORY.ts` exports as `factory`.
  *
  * @category schemas
@@ -582,6 +608,7 @@ export const Declaration = Schema.TaggedStruct("FactoryDeclaration", {
   on: On,
   /** Who writes `main` and how Changes and issues move. */
   github: GithubPolicy,
+  lifecycle: Schema.optionalKey(LifecyclePolicy),
   /** The machine the factory's TODO lanes need, when declared. */
   machine: Schema.optionalKey(Machine),
   /** The saved issue views, in declaration order, when declared. */
@@ -634,6 +661,7 @@ export interface FactoryOptions {
   readonly flows?: ReadonlyArray<Flow.Declaration> | undefined
   readonly on?: Readonly<Record<string, RuleOptions>> | undefined
   readonly github?: GithubPolicy | undefined
+  readonly lifecycle?: typeof LifecyclePolicy.Type | undefined
   readonly machine?: Machine | undefined
   readonly issueViews?: ReadonlyArray<IssueView> | undefined
   readonly issueTransitions?: ReadonlyArray<IssueTransition> | undefined
@@ -674,7 +702,7 @@ export const Factory = (options: FactoryOptions): Declaration => {
   const plain = Home.plainOptions(
     "Factory",
     options,
-    new Set(["summary", "flows", "on", "github", "machine", "issueViews", "issueTransitions"])
+    new Set(["summary", "flows", "on", "github", "lifecycle", "machine", "issueViews", "issueTransitions"])
   )
   const flows = plain["flows"] ?? []
   if (!Array.isArray(flows)) throw new TypeError("Factory flows must be an array of Smithers.Flow declarations")
@@ -720,6 +748,7 @@ export const Factory = (options: FactoryOptions): Declaration => {
     flows,
     on,
     github,
+    ...(plain["lifecycle"] === undefined ? {} : { lifecycle: plain["lifecycle"] }),
     ...(machine === undefined ? {} : { machine }),
     ...(issueViews === undefined ? {} : { issueViews }),
     ...(issueTransitions === undefined ? {} : { issueTransitions })
@@ -802,6 +831,7 @@ export const Projection = Schema.Struct({
   flows: Schema.Array(FlowCatalog.Row),
   on: Schema.Array(Rule),
   github: GithubProjection,
+  lifecycle: Schema.optionalKey(LifecyclePolicy),
   machine: Schema.optionalKey(Machine),
   issueViews: Schema.optionalKey(Schema.Array(IssueView)),
   issueTransitions: Schema.optionalKey(Schema.Array(IssueTransition))
@@ -849,6 +879,7 @@ export const renderProjection = (declaration: Declaration, catalog: ReadonlyArra
           ...(declaration.github.todoSince === undefined ? {} : { todoSince: declaration.github.todoSince }),
           ...(declaration.github.dailyTokens === undefined ? {} : { dailyTokens: declaration.github.dailyTokens })
         },
+        ...(declaration.lifecycle === undefined ? {} : { lifecycle: declaration.lifecycle }),
         ...(declaration.machine === undefined ? {} : { machine: declaration.machine }),
         ...(declaration.issueViews === undefined || declaration.issueViews.length === 0 ?
           {}

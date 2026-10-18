@@ -4,11 +4,14 @@
  * @since 1.0.0
  */
 
+import { openPackageIndex } from "@smthrs/build-cli/Cli"
+import { findWorkspaceRoot } from "@smthrs/build-cli/PackageDiscovery"
 import { Control as ControlService } from "@smthrs/control"
 import * as ResolveJj from "@smthrs/jj/node/resolveJjBinary"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import type * as Registry from "@smthrs/registry/Registry"
 import * as RegistryError from "@smthrs/registry/RegistryError"
+import * as Target from "@smthrs/targets/Target"
 import { Effect, type Layer } from "effect"
 import * as Doctor from "../Doctor.ts"
 import * as NodeControl from "../NodeControl.ts"
@@ -33,7 +36,8 @@ export interface DiscoveryFailed {
  */
 export const report = (
   catalog: Pick<FlowCatalog.FlowPage, "items" | "warnings"> | DiscoveryFailed,
-  globals: Globals.Options
+  globals: Globals.Options,
+  inspectLifecycle = true
 ): Effect.Effect<Doctor.Report> =>
   Effect.gen(function*() {
     // Doctor owns the unsupported-backend check. The shared guard would fail
@@ -42,7 +46,7 @@ export const report = (
     yield* Globals.notices(globals)
     const environment = globals.environment ?? process.env
     const projectRoot = yield* Project.ProjectRoot
-    return Doctor.inspect({
+    const inspected = Doctor.inspect({
       root: projectRoot,
       environment: globals.backend === undefined ? environment : { ...environment, SMITHERS_BACKEND: globals.backend },
       jj: ResolveJj.resolveJjBinary(),
@@ -54,6 +58,26 @@ export const report = (
           discoveryWarnings: catalog.warnings
         })
     })
+    const lifecycle = yield* Effect.promise(async (): Promise<ReadonlyArray<Doctor.Check>> => {
+      if (!inspectLifecycle || await findWorkspaceRoot(projectRoot) === undefined) return []
+      try {
+        const index = await openPackageIndex({ workspace: projectRoot })
+        if (index.factory?.factory.lifecycle !== undefined) return []
+        const artifacts = index.resolve("//...").filter((row) => Target.metadata(row.target).lifecycle === "artifact")
+        return artifacts.length === 0 ? [] : [{
+          name: "artifact lifecycle",
+          level: "warn",
+          detail: `${artifacts.length} artifact targets declared without a lifecycle policy in FACTORY.ts`
+        }]
+      } catch {
+        return [{
+          name: "artifact lifecycle",
+          level: "warn",
+          detail: "Cannot inspect target lifecycle; run smthrs index //... for declaration diagnostics"
+        }]
+      }
+    })
+    return { ...inspected, checks: [...inspected.checks, ...lifecycle] }
   })
 
 /**
@@ -113,5 +137,5 @@ export const fromRegistry = (
 export const fromControl = (globals: Globals.Options) =>
   Effect.gen(function*() {
     const control = yield* ControlService.Control
-    return yield* report(yield* FlowCatalog.read(control), globals)
+    return yield* report(yield* FlowCatalog.read(control), globals, false)
   })

@@ -170,6 +170,7 @@ export const build = async (
       ...(metadata.target === "LlmLint" ? { reviewPolicy: JSON.stringify(metadata.attrs) } : {}),
       kinds: await RepoResolution.effectiveKinds(resolver, row.target, signal),
       ...(metadata.summary === undefined ? {} : { summary: metadata.summary }),
+      ...(metadata.lifecycle === "artifact" ? { lifecycle: "artifact" as const } : {}),
       ...(metadata.featured ? { featured: true as const } : {}),
       ...(typeof mode === "string" ? { mode } : {}),
       ...(Target.isExclusive(metadata.attrs) ? { exclusive: true as const } : {}),
@@ -221,9 +222,9 @@ export const text = (listing: Listing, style: Ansi.Palette = Ansi.none): string 
     const star = row.featured ? ` ${style.bold("*")}` : ""
     const outputs = row.outputs.length === 0 ? "" : `  ${style.dim(`-> ${row.outputs.join(" ")}`)}`
     const refusal = row.refusal === undefined ? "" : `  ${style.dim(`(refused: ${row.refusal})`)}`
-    return `${row.label.padEnd(labelWidth)}  ${
-      style.dim(row.rule.padEnd(ruleWidth))
-    }  ${kinds}${star}${outputs}${refusal}`
+    return `${row.label.padEnd(labelWidth)}  ${style.dim(row.rule.padEnd(ruleWidth))}  ${kinds}${star}${
+      row.lifecycle === "artifact" ? "  lifecycle: artifact" : ""
+    }${outputs}${refusal}`
   })
   return [header, ...lines].join("\n")
 }
