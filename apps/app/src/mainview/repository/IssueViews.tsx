@@ -34,7 +34,7 @@ export function IssueViews({ repo, number, card, signedIn, run }: { repo: string
       <div className="repo-issues-detail-layout"><div className="repo-issues-timeline">
         {[{ author: item.author, commentBody: item.issueBody, createdAt: item.createdAt }, ...item.comments].map((comment, i) => <article className="repo-issues-comment" key={i}>{comment.author && <span className="repo-issues-comment-avatar"><PersonChip login={comment.author} compact/></span>}<div className="repo-ui-box"><div className="repo-ui-box-header repo-issues-comment-heading"><strong>{comment.author}</strong><span>{i === 0 ? "opened" : "commented"} <RelTime date={comment.createdAt}/></span></div><div className="repo-issues-comment-body"><RepositoryMarkdown content={comment.commentBody}/></div></div></article>)}
         {signedIn ? <button className="repo-ui-btn" onClick={() => { openAsk?.(); run("issues.comment", JSON.stringify({ repo, number, source: "github" })) }}>Comment</button> : <button className="repo-ui-btn" onClick={() => run("sign-in")}>Sign in to comment</button>}
-      </div><aside className="repo-ui-sidebar" aria-label="Issue details"><section><h2>Assignees</h2>{item.assignees?.map(person => <PersonChip key={person.login} login={person.login}/>)}</section><section><h2>Labels</h2>{item.labels.map(name => <LabelChip key={name} name={name}/>)}</section></aside></div>
+      </div><aside className="repo-ui-sidebar" aria-label="Issue details"><section className="repo-ui-sidebar-section"><h2>Assignees</h2>{item.assignees?.map(person => <PersonChip key={person.login} login={person.login}/>)}</section><section className="repo-ui-sidebar-section"><h2>Labels</h2>{item.labels.map(name => <LabelChip key={name} name={name}/>)}</section></aside></div>
     </section>
   }
   if (card.kind !== "issue-list") return <ReadState card={card} what="issues" retry={retry}/>
@@ -42,7 +42,25 @@ export function IssueViews({ repo, number, card, signedIn, run }: { repo: string
   if (data.github?.refusal) return <ReadState card={{ ...card, body: data.github.refusal }} what="issues" retry={retry}/>
   const query = new URLSearchParams(window.location.search).get("q") ?? "is:open"
   const closed = query.includes("is:closed")
-  const rows = data.issues.filter(row => (closed ? row.state !== "open" : row.state === "open") && (!query.replace(/is:(open|closed)/g, "").trim() || row.title.toLowerCase().includes(query.replace(/is:(open|closed)/g, "").trim().toLowerCase())))
+  const tokens = query.match(/(?:[^\s"]+|"[^"]*")+/g) ?? []
+  const rows = data.issues.filter(row => tokens.every(token => {
+    const [key, ...parts] = token.split(":")
+    const value = parts.join(":").replace(/^"|"$/g, "")
+    if (key === "is" && value === "open") return row.state === "open"
+    if (key === "is" && value === "closed") return row.state !== "open"
+    if (key === "author") return row.author === value
+    if (key === "label") return row.labels?.includes(value) === true
+    if (key === "assignee") return row.assignees?.some(person => person.login === value) === true
+    if (key === "sort") return true
+    return `${row.number} ${row.title}`.toLowerCase().includes(token.toLowerCase())
+  })).sort((a, b) => {
+    if (query.includes("sort:comments-desc")) return b.comments - a.comments
+    const time = (value?: string | null) => value ? Date.parse(value) : 0
+    if (query.includes("sort:updated-desc")) return time(b.updatedAt) - time(a.updatedAt)
+    const order = time(b.createdAt) - time(a.createdAt) || b.number - a.number
+    return query.includes("sort:created-asc") ? -order : order
+  })
+
   return <section className="repo-issues-list-page" aria-label="Issues"><nav className="repo-issues-saved" aria-label="Saved issue views"><a href={base} aria-current={!closed ? "page" : undefined}>Open</a></nav><div className="repo-issues-toolbar"><form className="repo-issues-search" action={base}><Search size={16} aria-hidden="true"/><label className="repo-ui-sr" htmlFor="repo-issues-query">Filter issues</label><input className="repo-ui-input" id="repo-issues-query" name="q" defaultValue={query} placeholder="Search all issues"/></form>{write}</div>
     <div className="repo-ui-box repo-issues-list"><div className="repo-ui-box-header repo-issues-list-heading"><nav className="repo-issues-status-toggle" aria-label="Issue state">{[false, true].map(value => <a key={String(value)} href={`${base}?q=is:${value ? "closed" : "open"}`} aria-current={closed === value ? "page" : undefined}><StateIcon state={value ? "closed" : "open"}/>{value ? "Closed" : "Open"} <Counter count={data.issues.filter(row => (row.state !== "open") === value).length}/></a>)}</nav></div>
       {rows.length ? <div role="list" aria-label="Issues">{rows.map(item => <div className="repo-ui-row repo-issues-list-row" role="listitem" key={`${item.source}-${item.number}`}><div className="repo-issues-row-top"><StateIcon state={item.state}/><div className="repo-issues-row-content"><div className="repo-issues-row-title"><a href={`${base}/${item.number}`}>{item.title}</a>{item.labels?.map(name => <LabelChip key={name} name={name}/>)}</div><div className="repo-issues-row-meta">#{item.number} opened <RelTime date={item.createdAt}/>{item.author && ` by ${item.author}`}</div></div><div className="repo-issues-row-counts"><span aria-label={`${item.comments} comments`}>{item.comments}</span></div></div></div>)}</div> : <div className="repo-frame-state"><h2>{data.issues.length ? "No issues match your filters" : "No issues yet"}</h2></div>}
