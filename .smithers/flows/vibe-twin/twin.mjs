@@ -251,6 +251,9 @@ const tsconfig = (pkg, file, compilerOptions, include, exclude = []) => {
 }
 
 const common = {
+  // D261: Smithers' own TypeScript packages are trusted, so a call into a sibling package that
+  // isn't twinned yet is a plain call (no EK4401) whose exceptions are defects.
+  vibelang: { trustedPackages: ["@smthrs/*", "@smithers/*"] },
   noEmit: false,
   noEmitOnError: false,
   composite: false,
