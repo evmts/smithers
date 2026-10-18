@@ -8,11 +8,12 @@ export interface FixtureRoute {
   readonly schema: z.ZodType
   readonly handle: (req: FixtureRequest, w: World) => FixtureResponse
   readonly transition?: (req: FixtureRequest, w: World) => World
-  /** Bootstrap and identity establish the world before data reads can fail. */
+  /** Bootstrap, identity and repository addressing establish the read target. */
   readonly control?: boolean
 }
 export const route = (value: FixtureRoute): FixtureRoute => value
 export const matchRoute = (pattern: string, path: string): Readonly<Record<string, string>> | undefined => {
+  try {
   const expected = pattern.split("/")
   const actual = path.split("/")
   const params: Record<string, string> = {}
@@ -24,4 +25,5 @@ export const matchRoute = (pattern: string, path: string): Readonly<Record<strin
     else if (part !== actual[i]) return undefined
   }
   return actual.length === expected.length ? params : undefined
+  } catch { return undefined }
 }

@@ -94,6 +94,7 @@ const check = Smithers.Typecheck({
     harnessSources,
     suiteSources,
     proofSources,
+    Smithers.glob("spec/**/*"),
     lintSources,
     ...buildConfigs,
     Smithers.file("playwright.config.ts"),
@@ -153,6 +154,36 @@ const unitTests = Smithers.NodeTest({
   cwd
 })
 
+/** The static spec is built from the real application; fixtures decode before Vite runs. */
+const specInputs = [sources, componentSources, styleSources, harnessSources,
+    Smithers.glob("spec/**/*"), Smithers.glob("src/mainview/public/**/*"),
+    Smithers.file("src/mainview/index.html"), ...buildConfigs,
+    Smithers.file("playwright.spec.config.ts"), Smithers.file("package.json"),
+    Smithers.file("//pnpm-lock.yaml")]
+const specSources = Smithers.Filegroup({ srcs: specInputs, cwd })
+const specSite = Smithers.Shell.Build({
+  shell: "cd apps/app && pnpm exec vite build --configLoader runner --mode spec",
+  data: [specSources], outDirs: ["//apps/app/dist-spec"],
+  sandbox: "none", cache: false, timeout: "5m"
+})
+/** Module graph and sentinel checks use a fresh production build and remove it afterward. */
+const specProductionExclusion = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("spec/productionExclusion.ts")),
+  srcs: specInputs, deps: [], cache: false, timeout: "5m", cwd
+})
+const specFixtures = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.testSuite(["spec/world.test.ts"]),
+  srcs: specInputs, deps: [rpcPackage.check], cache: false, cwd
+})
+/** CI shard 1 runs this serial browser proof before the ordinary browser tier. */
+const specTransport = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("spec/browserTests.ts")),
+  srcs: specInputs, deps: [specSite], cache: false, timeout: "5m", cwd
+})
+
 /**
  * The conformance lint: the literal pin under `lint/conformance/`.
  *
@@ -188,7 +219,7 @@ const conformance = Smithers.NodeTest({
     Smithers.file("//packages/repo-targets/contracts/require-toolchain.mjs")
   ],
   // Globs cannot cross PACKAGE.ts boundaries; dependency keys carry these sources.
-  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check, harnessDetectPackage.check],
+  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check, harnessDetectPackage.check, specProductionExclusion, specFixtures],
   cwd
 })
 
@@ -215,7 +246,7 @@ const browserTier = (shard?: string) => Smithers.NodeTest({
     Smithers.file("playwright.showcase.config.ts"), Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml"),
     // `bun test` steps preload the toolchain floor.
     Smithers.file("bunfig.toml"), Smithers.file("//package.json"), Smithers.file("//packages/repo-targets/contracts/require-toolchain.mjs")],
-  deps: [],
+  deps: shard === "1" ? [specTransport] : [],
   env: { SMITHERS_CHAT_STUB: "1" },
   exclusive: true,
   cwd
@@ -631,5 +662,5 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { crateInputs, proofProductInputs, proofMockInputs, docsInputs, serverBundle, solidCodegenInputs, check, unitTests, conformance, browserE2e, browserE2eShard1, browserE2eShard2, browserE2eShard3, installE2e, viewStories, journeyJ1Activation, journeyJ1Release, journeyKeyboard, journeyFreshRepository, journeyWikiGeneratedRefresh, journeyWikiCoedit, journeySetup, journeyWikiObsidian, journeyTodoFromIssue, journeyTodoNeedsYou, journeyTodoEvidence, journeyTodoMerge, journeyAskRepository, journeyTodoStackActions, journeyGitHubMerge, journeyGitHubMergeContinuation, journeyGitHubPRShape, journeyFlowSourceRun, journeyWikiDecisionFollow, journeyBranchPresence, journeyDuplicateLaunch, journeyFileCoedit, journeyHome, journeyTodoMergeOrder, journeyTodoPlacement, journeyTodoSteer, journeyFlowActivation, journeyLearning, journeyAgentTerminal, journeyTerminalSignin, journeyFileGone, journeyGitHubSyncHealth, journeyForkAddToStack, journeySshBranch, journeyInstallOrigins, journeyFileIntelligence, journeyForkDropInstall, journeyGitHubForeignPush, journeyGitHubMainMovedRebase, proofRecord, proofPage, webSources, ...securityReview }
+  targets: { specSite, specProductionExclusion, specFixtures, specTransport, specSources, crateInputs, proofProductInputs, proofMockInputs, docsInputs, serverBundle, solidCodegenInputs, check, unitTests, conformance, browserE2e, browserE2eShard1, browserE2eShard2, browserE2eShard3, installE2e, viewStories, journeyJ1Activation, journeyJ1Release, journeyKeyboard, journeyFreshRepository, journeyWikiGeneratedRefresh, journeyWikiCoedit, journeySetup, journeyWikiObsidian, journeyTodoFromIssue, journeyTodoNeedsYou, journeyTodoEvidence, journeyTodoMerge, journeyAskRepository, journeyTodoStackActions, journeyGitHubMerge, journeyGitHubMergeContinuation, journeyGitHubPRShape, journeyFlowSourceRun, journeyWikiDecisionFollow, journeyBranchPresence, journeyDuplicateLaunch, journeyFileCoedit, journeyHome, journeyTodoMergeOrder, journeyTodoPlacement, journeyTodoSteer, journeyFlowActivation, journeyLearning, journeyAgentTerminal, journeyTerminalSignin, journeyFileGone, journeyGitHubSyncHealth, journeyForkAddToStack, journeySshBranch, journeyInstallOrigins, journeyFileIntelligence, journeyForkDropInstall, journeyGitHubForeignPush, journeyGitHubMainMovedRebase, proofRecord, proofPage, webSources, ...securityReview }
 })

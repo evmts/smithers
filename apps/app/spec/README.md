@@ -13,7 +13,8 @@ The production build remains `pnpm exec vite build --configLoader runner`.
 
 Open `/maya/tinyhttp`, `/smithers-canary/smithers`, or `/effeck/effeck`.
 Choose `?as=out|member&data=full|empty&net=ok|slow|error`.
-Bootstrap and identity establish the world; net variants affect every data read.
+Bootstrap, identity, repository metadata, guest admission and bookmarks establish
+the read target; net variants affect every content, home, issue and inventory read.
 Slow reads take 750 ms. Error reads return 503 with a named fixture error.
 The converter is off; no spec-only capabilities are advertised (`ahead` is empty).
 
