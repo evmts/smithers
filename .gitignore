@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+dist-spec/
 out/
 packages/*/dist/
 packages/*/dist-chrome/
