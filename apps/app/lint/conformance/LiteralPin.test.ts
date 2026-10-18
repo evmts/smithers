@@ -545,11 +545,6 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     reason: "the scratch directory `BridgedEngineRun` mkdtemps its two SQLite files into, which this suite counts under its own TMPDIR and asserts removed when the host stops; a directory prefix, never a card id"
   },
   {
-    literal: "main.home",
-    file: "e2e/site/landing-start.spec.ts",
-    reason: "CSS selector for the Astro landing's main.home in apps/site/src/pages/index.astro, outside the app vocabulary; the browser assertion requires the element to be visible"
-  },
-  {
     literal: "stub-call-",
     file: "e2e/support/ChatStub.ts",
     reason: "the call_id the chat stub invents for its own tool_call frame; the app keys the card by its record id (`toolcall-`), never by call_id"

@@ -1,5 +1,5 @@
 import { expect,test } from "@playwright/test"
-import { identityRoute } from "../playwright/identity"
+import { identityRoute, signedOutVisitor } from "../playwright/identity"
 import { fillComposer } from "../playwright/composer"
 
 async function hostedAccount(page: import("@playwright/test").Page) {
@@ -115,89 +115,76 @@ test("the default root with an empty cloud account never displays demo activity,
   }
 })
 
-test("the default root mounts the real island in place, with no press and no address change", async ({ page }) => {
+// 88068440 keeps the install landing signed out and resumes known identities.
+test("the signed-in root mounts the real island in place and survives reload", async ({ page }) => {
   const errors: string[] = []
   page.on("pageerror", error => errors.push(error.message))
-  page.on("console", message => { if (message.type() === "error") errors.push(message.text()) })
-  await page.route("**/api/bootstrap", route => route.fulfill({ json: {
-    apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: [], authFlow: "none", sandbox: null,
-  } }))
-  // This row asserts a clean console, so every read the root launcher makes
-  // (#4022) has to answer here: an unrouted one logs the browser's own status
-  // line, and the releases source is a real unauthenticated GitHub endpoint
-  // whose rate limit is not this row's subject.
-  await page.route("**/api/public/repos", route => route.fulfill({ json: [] }))
-  await page.route("https://api.github.com/repos/smithersai/smithers/releases*", route => route.fulfill({ json: [] }))
+  await hostedAccount(page)
   await page.goto("/")
   await expect(page.getByTestId("composer-input")).toBeAttached()
-  // The launcher is what `/` is (#4041): it is not rewritten to `/?tutorial` to stay reloadable.
   await expect(page).toHaveURL("/")
-  await expect(page.locator("#start-error")).toHaveCount(0)
-  await expect(page.getByRole("link", { name: "Get started for free", exact: true })).toHaveCount(0)
+  await expect(page.locator("#landing")).toHaveCount(0)
   await page.reload()
   await expect(page.locator(".app-shell")).toBeVisible()
   expect(errors).toEqual([])
 })
 
-test("the default root swaps to the app before the boot answers", async ({ page }) => {
-  await page.route("**/api/bootstrap", async route => {
-    await new Promise(resolve => setTimeout(resolve, 3000))
-    await route.fulfill({ json: {
-      apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: [], authFlow: "none", sandbox: null,
-    } })
+test("the signed-out root keeps its install action while identity is unresolved", async ({ page }) => {
+  await signedOutVisitor(page)
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  await page.route("**/api/user", async route => {
+    await held
+    await identityRoute(null)(route)
   })
-  await page.goto("/")
-  await expect(page.locator(".session-shell")).toBeVisible({ timeout: 10_000 })
-  await expect(page).toHaveURL("/")
-  await expect(page.locator("#start")).toHaveCount(0)
-  await expect(page.getByTestId("composer-input")).toBeAttached()
+  try {
+    await page.goto("/", { waitUntil: "domcontentloaded" })
+    await expect(page.getByRole("button", { name: "Copy", exact: true })).toBeVisible()
+    await expect(page.locator(".landing-command")).toContainText("npm i -g smthrs@next")
+    await expect(page.getByTestId("composer-input")).toHaveCount(0)
+    await expect(page).toHaveURL("/")
+  } finally { release() }
 })
 
 for (const failure of ["chunk", "page"] as const) {
-  test(`the default root reports an aborted app ${failure} and Reload reloads the document`, async ({ page }) => {
+  test(`an explicit entry keeps the install action when its app ${failure} fails`, async ({ page }) => {
+    await signedOutVisitor(page)
     let aborted = 0
     const route = failure === "chunk" ? /\/_astro\/AppIsland\.[^/]+\.js$/ : /\/smithersai\/smithers\/$/
     await page.route(route, request => { aborted++; return request.abort() })
-    await page.goto("/")
-    const start = page.getByRole("link", { name: "Get started for free", exact: true })
-    // The entry needed no press, so its failure needs none either.
-    await expect(page.getByRole("alert")).toHaveText("Smithers couldn't load. Reload to try again.")
-    expect(aborted).toBeGreaterThan(0)
-    await expect(start).toBeHidden()
-    await expect(page.locator("#start")).not.toHaveAttribute("aria-busy")
+    await page.goto("/?tutorial")
+    await expect.poll(() => aborted).toBeGreaterThan(0)
+    await expect(page.getByRole("button", { name: "Copy", exact: true })).toBeVisible()
+    await expect(page.locator(".landing-command")).toContainText("npm i -g smthrs@next")
+    await expect(page.getByRole("link", { name: "Sign in", exact: true })).toBeVisible()
     await expect(page.locator(".app-shell")).toHaveCount(0)
-    await expect(page).toHaveURL("/")
-    const reload = page.getByRole("button", { name: "Reload", exact: true })
-    await expect(reload).toBeVisible()
-    // Arriving never takes the visitor's focus; the alert says what happened.
-    expect(await page.evaluate(() => document.activeElement?.id ?? "")).toBe("")
-    await page.screenshot({ path: test.info().outputPath("load-error.png") })
-    await Promise.all([
-      page.waitForEvent("request", request => request.isNavigationRequest() && request.frame() === page.mainFrame()),
-      reload.press("Enter"),
-    ])
-    await page.waitForLoadState()
-    expect(await page.evaluate(() => (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming).type)).toBe("reload")
+    await page.reload()
+    await expect.poll(() => aborted).toBeGreaterThan(1)
+    await expect(page.getByRole("button", { name: "Copy", exact: true })).toBeVisible()
   })
 }
 
-test("a returning entry reveals the landing error if its preloaded island fails", async ({ page }) => {
-  await page.route(/\/_astro\/AppIsland\.[^/]+\.js$/, request => request.abort())
-  // Only an authentication return resumes instantly; saved storage leaves Get started for free visible.
+test("an authentication return keeps the install action if its island fails", async ({ page }) => {
+  await signedOutVisitor(page)
+  let aborted = 0
+  await page.route(/\/_astro\/AppIsland\.[^/]+\.js$/, request => { aborted++; return request.abort() })
   await page.goto("/?signed-in")
-  await expect(page.getByRole("alert")).toHaveText("Smithers couldn't load. Reload to try again.")
-  await expect(page.getByRole("button", { name: "Reload", exact: true })).toBeVisible()
-  await expect(page.locator("main.home")).toHaveCSS("visibility", "visible")
+  await expect.poll(() => aborted).toBeGreaterThan(0)
+  await expect(page.getByRole("button", { name: "Copy", exact: true })).toBeVisible()
+  await expect(page.locator("#landing")).toBeVisible()
 })
 
 test.describe("touch landing", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 844, height: 390 } })
-  test("the root's failure door shows no physical key chip on a coarse pointer", async ({ page }) => {
-    await page.route(/\/smithersai\/smithers\/$/, request => request.abort())
+  test("the install action remains usable on a coarse pointer without loading the app", async ({ page }) => {
+    await signedOutVisitor(page)
+    let appReads = 0
+    await page.route(/\/smithersai\/smithers\/$/, request => { appReads++; return request.abort() })
     await page.goto("/")
     expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true)
-    await expect(page.getByRole("button", { name: "Reload", exact: true })).toBeVisible()
-    await expect(page.locator("#start kbd")).toBeHidden()
+    await expect(page.getByRole("button", { name: "Copy", exact: true })).toBeVisible()
+    await expect(page.locator("#landing kbd")).toHaveCount(0)
+    expect(appReads).toBe(0)
   })
 })
 
