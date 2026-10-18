@@ -10,6 +10,7 @@
  * never writes under the lint verb, and carries the loaded declarations the
  * planner fills rather than anything a `PACKAGE.ts` wrote.
  */
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as Factory from "../src/Factory.ts"
 import * as Flow from "../src/Flow.ts"
@@ -646,5 +647,110 @@ describe("Lifecycle.Policy", () => {
         { tests: { artifact: { blocking: false, run: "ci" } }, docs: {} }
       ]
     ) expect(() => Smithers.Lifecycle.Policy(value as never)).toThrow(/Lifecycle.Policy/)
+  })
+})
+
+describe("Factory judge and spec policy", () => {
+  const options = {
+    engines: {
+      rubric: { engine: "claude" as const, model: "claude-opus-5-5" },
+      fuzzy: { engine: "claude" as const, model: "claude-opus-5-5" }
+    },
+    budget: { perRun: { modelCalls: 150, promptTokens: 2_000_000, wallMs: 1_800_000 }, perDay: { modelCalls: 600 } },
+    trials: 3,
+    maxAge: "30d",
+    promote: { minLabels: 20, minAgreement: 0.9, seededDefectsFail: true },
+    blocking: { exact: true, shape: true, rubric: "promoted" as const, fuzzy: false, visual: false, agent: false }
+  }
+  const spec = { live: { default: "https://example.com", effect: null }, aheadMaxDays: 14 }
+
+  it("authorizes no judges without an explicit policy, including in the public projection", () => {
+    const factory = Smithers.Factory({ summary: "Checks" })
+    expect(Factory.judgePolicyOf(factory)).toBeUndefined()
+    const projected = JSON.parse(Factory.renderProjection(factory, []))
+    expect(projected).not.toHaveProperty("judges")
+    expect(Smithers.judgePolicyOf(projected)).toBeUndefined()
+  })
+
+  it("projects every explicit field and freezes policy configuration", () => {
+    const judges = Smithers.Judge.Policy(options)
+    const factory = Smithers.Factory({ summary: "Checks", judges, spec })
+    const projected = JSON.parse(Factory.renderProjection(factory, []))
+    expect(projected.judges).toEqual(options)
+    expect(projected.spec).toEqual(spec)
+    expect(Factory.judgePolicyOf(factory)).toEqual(judges)
+    expect(Object.isFrozen(factory.judges?.budget.perRun)).toBe(true)
+    expect(Object.isFrozen(factory.spec?.live)).toBe(true)
+  })
+
+  it.each(["judges", "spec"] as const)("refuses an unknown %s key by name with a typed error", (key) => {
+    const value = key === "judges" ? { ...options, typo: true } : { ...spec, typo: true }
+    const construct = () => Smithers.Factory({ summary: "Checks", [key]: value } as never)
+    expect(construct).toThrow(TypeError)
+    expect(construct).toThrow(/unknown option "typo"/)
+  })
+
+  it.each([
+    { ...options, engines: { ...options.engines, typo: {} } },
+    { ...options, engines: { ...options.engines, rubric: { ...options.engines.rubric, typo: true } } },
+    { ...options, budget: { ...options.budget, typo: true } },
+    { ...options, budget: { ...options.budget, perRun: { ...options.budget.perRun, typo: true } } },
+    { ...options, budget: { ...options.budget, perDay: { modelCalls: 600, typo: true } } },
+    { ...options, promote: { ...options.promote, typo: true } },
+    { ...options, blocking: { ...options.blocking, typo: true } }
+  ])("refuses nested unknown policy keys", (value) => {
+    expect(() => Smithers.Judge.Policy(value as never)).toThrow(/unknown option "typo"/)
+    expect(() => Smithers.Factory({ summary: "Checks", judges: value as never })).toThrow(TypeError)
+  })
+
+  it.each([
+    { ...options, trials: 0 },
+    { ...options, trials: 1.5 },
+    { ...options, maxAge: "tomorrow" },
+    { ...options, promote: { ...options.promote, minAgreement: 1.01 } },
+    { ...options, promote: { ...options.promote, minAgreement: -0.01 } },
+    { ...options, budget: { ...options.budget, perRun: { modelCalls: 0 } } },
+    { ...options, budget: { ...options.budget, perDay: { modelCalls: -1 } } },
+    { ...options, engines: { ...options.engines, rubric: { engine: "claude" as const, model: "" } } }
+  ])("refuses invalid limits and unpinned empty models", (value) => {
+    expect(() => Smithers.Judge.Policy(value)).toThrow(TypeError)
+  })
+
+  it.each([0, 1])("accepts agreement boundary %s and boolean rubric policy", (minAgreement) => {
+    expect(
+      Smithers.Judge.Policy({
+        ...options,
+        promote: { ...options.promote, minAgreement },
+        blocking: { ...options.blocking, rubric: false }
+      }).blocking.rubric
+    ).toBe(false)
+  })
+
+  it.each([
+    { ...spec, aheadMaxDays: 0 },
+    { ...spec, aheadMaxDays: 1.5 },
+    { ...spec, live: { default: "file:///tmp/app" } },
+    { ...spec, live: { default: "not a url" } }
+  ])("refuses invalid spec limits and live URLs", (value) => {
+    expect(() => Smithers.Factory({ summary: "Checks", spec: value })).toThrow(TypeError)
+  })
+})
+
+it("keeps Smithers' checked-in policy aligned with the accepted design", () => {
+  const projected = JSON.parse(readFileSync(new URL("../../../../../.smithers/factory.json", import.meta.url), "utf8"))
+  expect(projected.judges).toEqual({
+    engines: {
+      rubric: { engine: "claude", model: "claude-opus-5-5" },
+      fuzzy: { engine: "claude", model: "claude-opus-5-5" }
+    },
+    budget: { perRun: { modelCalls: 150, promptTokens: 2_000_000, wallMs: 1_800_000 }, perDay: { modelCalls: 600 } },
+    trials: 3,
+    maxAge: "30d",
+    promote: { minLabels: 20, minAgreement: 0.9, seededDefectsFail: true },
+    blocking: { exact: true, shape: true, rubric: "promoted", fuzzy: false, visual: false, agent: false }
+  })
+  expect(projected.spec).toEqual({
+    live: { default: "https://smithers.sh", effeck: "https://effeck.smithers.sh", effect: null },
+    aheadMaxDays: 14
   })
 })

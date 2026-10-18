@@ -1,0 +1,406 @@
+package services
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/jobs"
+)
+
+// The install's issue list and discussion read the shared synchronized GitHub
+// projections through the guarded fetch boundary. Readers are authorized by
+// install membership and use the GitHub App, without a personal GitHub token.
+// Hosted compositions retain their existing reader adapter.
+
+// Issue snapshots authorize Draft admission for one day.
+const todoIssueReceiptTTL = 24 * time.Hour
+
+const (
+	// installIssuesPerPage keeps one page of issue bodies (at most 64 KiB
+	// each) under the 4 MiB GitHub response bound.
+	installIssuesPerPage = 50
+	// installIssueCommentPages bounds one issue card to 1,000 comments.
+	installIssueCommentPages = 10
+)
+
+// InstallIssuePerson is a GitHub account as the issue cards show it.
+type InstallIssuePerson struct {
+	Login     string `json:"login"`
+	AvatarURL string `json:"avatar_url,omitempty"`
+}
+
+// InstallIssueLabel is one label on an issue.
+type InstallIssueLabel struct {
+	Name  string `json:"name"`
+	Color string `json:"color,omitempty"`
+}
+
+// InstallIssue is one GitHub issue as the issue cards read it, in GitHub's
+// own field names.
+type InstallIssue struct {
+	ViaApp    *json.RawMessage     `json:"performed_via_github_app,omitempty"`
+	Number    int64                `json:"number"`
+	Title     string               `json:"title"`
+	Body      string               `json:"body"`
+	State     string               `json:"state"`
+	HTMLURL   string               `json:"html_url"`
+	User      *InstallIssuePerson  `json:"user"`
+	Labels    []InstallIssueLabel  `json:"labels"`
+	Assignees []InstallIssuePerson `json:"assignees"`
+	// Comments is how many comments the issue has.
+	Comments  int64      `json:"comments"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+}
+
+// InstallIssueComment is one comment on an issue.
+type InstallIssueComment struct {
+	ID        int64               `json:"id"`
+	Body      string              `json:"body"`
+	User      *InstallIssuePerson `json:"user"`
+	CreatedAt *time.Time          `json:"created_at,omitempty"`
+}
+
+// InstallIssueThread is one issue and its comments, oldest first.
+type InstallIssueThread struct {
+	IssueDigest     string                `json:"issue_digest,omitempty"`
+	MakeTodoAllowed *bool                 `json:"make_todo_allowed,omitempty"`
+	Issue           InstallIssue          `json:"issue"`
+	Comments        []InstallIssueComment `json:"comments"`
+}
+
+// gitHubListedIssue is an entry of GitHub's issues API, which lists pull
+// requests too; pull_request marks them.
+type gitHubListedIssue struct {
+	InstallIssue
+	PullRequest *json.RawMessage `json:"pull_request"`
+}
+
+func (i gitHubListedIssue) pull() bool {
+	return i.PullRequest != nil && string(*i.PullRequest) != "null"
+}
+
+// normalized gives absent lists their empty value, so the cards read [].
+func (i InstallIssue) normalized() InstallIssue {
+	if i.Labels == nil {
+		i.Labels = []InstallIssueLabel{}
+	}
+	if i.Assignees == nil {
+		i.Assignees = []InstallIssuePerson{}
+	}
+	return i
+}
+
+// mythicalIssueReader reads the repository's issues as the issue cards show
+// them; mythicalGitHubAPI implements it.
+type mythicalIssueReader interface {
+	IssuePage(ctx context.Context, gh mythicalGitHubRepo, state string, page int) ([]InstallIssue, error)
+	IssueThread(ctx context.Context, gh mythicalGitHubRepo, number int64) (InstallIssueThread, bool, error)
+}
+
+// IssuePage reads one page of the repository's issues in state, newest
+// first, without its pull requests.
+func (g *mythicalGitHubAPI) IssuePage(ctx context.Context, gh mythicalGitHubRepo, state string, page int) ([]InstallIssue, error) {
+	query := url.Values{"state": {state}, "per_page": {strconv.Itoa(installIssuesPerPage)}, "page": {strconv.Itoa(page)}}
+	var listed []gitHubListedIssue
+	status, err := g.api.request(ctx, gh.Token, http.MethodGet, landingGitHubRepoPath(gh.Owner, gh.Name)+"/issues?"+query.Encode(), nil, &listed)
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, landingGitHubStatusError(status, gh.Owner, gh.Name, "read issues")
+	}
+	out := []InstallIssue{}
+	for _, issue := range listed {
+		if !issue.pull() {
+			out = append(out, issue.normalized())
+		}
+	}
+	return out, nil
+}
+
+// IssueThread reads one issue and its comments; found is false for a
+// number that is no issue (absent, or a pull request).
+func (g *mythicalGitHubAPI) IssueThread(ctx context.Context, gh mythicalGitHubRepo, number int64) (InstallIssueThread, bool, error) {
+	path := landingGitHubRepoPath(gh.Owner, gh.Name) + "/issues/" + strconv.FormatInt(number, 10)
+	var issue gitHubListedIssue
+	status, err := g.api.request(ctx, gh.Token, http.MethodGet, path, nil, &issue)
+	switch {
+	case err != nil:
+		return InstallIssueThread{}, false, err
+	case status == http.StatusNotFound || status == http.StatusGone || status == http.StatusOK && issue.pull():
+		return InstallIssueThread{}, false, nil
+	case status != http.StatusOK:
+		return InstallIssueThread{}, false, landingGitHubStatusError(status, gh.Owner, gh.Name, "read issues")
+	}
+	comments := []InstallIssueComment{}
+	for page := 1; page <= installIssueCommentPages; page++ {
+		var rows []InstallIssueComment
+		status, err := g.api.request(ctx, gh.Token, http.MethodGet, path+"/comments?per_page=100&page="+strconv.Itoa(page), nil, &rows)
+		if err != nil {
+			return InstallIssueThread{}, false, err
+		}
+		if status != http.StatusOK {
+			return InstallIssueThread{}, false, landingGitHubStatusError(status, gh.Owner, gh.Name, "read issue comments")
+		}
+		comments = append(comments, rows...)
+		if len(rows) < 100 {
+			break
+		}
+	}
+	return InstallIssueThread{Issue: issue.normalized(), Comments: comments}, true, nil
+}
+
+// issuesUnavailable is the refusal of a read GitHub did not answer.
+func issuesUnavailable() error {
+	return &TodoControlError{http.StatusServiceUnavailable, "github_unavailable", "infra", "Could not read issues from GitHub"}
+}
+
+// The fences that refuse an install issues read before GitHub is reached.
+// They are a closed set of names, never a message, a credential, a payload, a
+// URL or an upstream status.
+const (
+	issuesClosedNoService     = "no_issue_service"
+	issuesClosedNoReader      = "reader_is_not_an_issue_reader"
+	issuesClosedNoDestination = "no_stack_github_destination"
+	issuesClosedNoSync        = "no_install_sync"
+	issuesClosedNoSyncedRepo  = "no_synced_repository_row"
+	issuesClosedNoFetcher     = "no_fetcher"
+	issuesClosedBudgetPaused  = "metadata_budget_paused"
+)
+
+// issuesClosed answers the unchanged refusal and records which fence produced
+// it. Every branch below used to return the same opaque 503, several of them
+// with no record at all, so an install that could not list its issues was
+// indistinguishable from six other installs that could not either.
+func (s *MythicalService) issuesClosed(fence string) error {
+	if s != nil && s.logger != nil {
+		s.logger.Warn("install.issues_closed", "fence", fence)
+	}
+	return issuesUnavailable()
+}
+
+// installIssueReader resolves the repository's GitHub destination as the
+// stack's actor and the reader that reads it.
+func (s *MythicalService) installIssueReader(ctx context.Context, repositoryID int64) (mythicalIssueReader, mythicalGitHubRepo, error) {
+	if s == nil || s.store == nil || s.github == nil {
+		return nil, mythicalGitHubRepo{}, s.issuesClosed(issuesClosedNoService)
+	}
+	reader, ok := s.github.(mythicalIssueReader)
+	if !ok {
+		return nil, mythicalGitHubRepo{}, s.issuesClosed(issuesClosedNoReader)
+	}
+	gh, err := s.stackGitHub(ctx, repositoryID)
+	if err != nil {
+		s.logger.Warn("install.issues_unavailable", "repository_id", repositoryID, "error", err)
+		return nil, mythicalGitHubRepo{}, s.issuesClosed(issuesClosedNoDestination)
+	}
+	return reader, gh, nil
+}
+
+// InstallIssues answers one page of the repository's issues in state (open,
+// closed or all), newest first, without pull requests.
+func (s *MythicalService) InstallIssues(ctx context.Context, repositoryID int64, state string, page int) ([]InstallIssue, error) {
+	if state != "open" && state != "closed" && state != "all" || page < 1 || page > 1000 {
+		return nil, &TodoControlError{http.StatusBadRequest, "invalid_issue_query", "user", "state is open, closed or all, and page 1 to 1000"}
+	}
+	reader, gh, err := s.installIssueReader(ctx, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	var issues []InstallIssue
+	if s.installGitHubPolling {
+		issues, err = s.projectedInstallIssues(ctx, gh, state, page)
+	} else {
+		issues, err = reader.IssuePage(ctx, gh, state, page)
+	}
+	if err != nil {
+		s.logger.Warn("install.issues_unavailable", "repository_id", repositoryID, "error", err)
+		return nil, issuesUnavailable()
+	}
+	return issues, nil
+}
+
+// InstallIssue answers issue number with its comments.
+func (s *MythicalService) InstallIssue(ctx context.Context, repositoryID, number int64) (InstallIssueThread, error) {
+	if number <= 0 {
+		return InstallIssueThread{}, &TodoControlError{http.StatusBadRequest, "invalid_issue_query", "user", "Invalid issue number"}
+	}
+	reader, gh, err := s.installIssueReader(ctx, repositoryID)
+	if err != nil {
+		return InstallIssueThread{}, err
+	}
+	var thread InstallIssueThread
+	var found bool
+	if s.installGitHubPolling {
+		thread, found, err = s.projectedInstallIssue(ctx, gh, number)
+	} else {
+		thread, found, err = reader.IssueThread(ctx, gh, number)
+	}
+	if err != nil {
+		s.logger.Warn("install.issues_unavailable", "repository_id", repositoryID, "issue", number, "error", err)
+		return InstallIssueThread{}, issuesUnavailable()
+	}
+	if !found {
+		return InstallIssueThread{}, &TodoControlError{http.StatusNotFound, "not_found", "user", fmt.Sprintf("Issue #%d was not found", number)}
+	}
+	if info := middleware.AuthInfoFromContext(ctx); info != nil && info.User != nil {
+		decision, err := Authorize(ctx, s.queries(), "issue.read")
+		if err != nil {
+			return InstallIssueThread{}, err
+		}
+		issue := mythicalIssue{Number: number, Title: thread.Issue.Title, Body: thread.Issue.Body, URL: thread.Issue.HTMLURL, State: thread.Issue.State, ViaApp: thread.Issue.ViaApp != nil && string(*thread.Issue.ViaApp) != "null"}
+		issue.AppID = gitHubAppID(thread.Issue.ViaApp)
+		team, err := s.todoIssueTeamText(ctx, repositoryID, gh, issue)
+		if err != nil {
+			return InstallIssueThread{}, err
+		}
+		thread.IssueDigest = todoIssueSnapshotDigest(thread)
+		allowed := team || decision.Role.rank() >= InstallMaintainer.rank()
+		thread.MakeTodoAllowed = &allowed
+		{
+			now := s.now().UTC()
+			metadata, _ := json.Marshal(map[string]any{"issue": number, "digest": thread.IssueDigest, "outsider": !team, "read_at": now})
+			payload, _ := json.Marshal(map[string]any{"issue": number, "digest": thread.IssueDigest, "thread": thread, "outsider": !team, "read_at": now})
+			scope := jobs.Scope{TenantID: strconv.FormatInt(repositoryID, 10), PrincipalID: fmt.Sprintf("issue-read:%d", info.User.ID)}
+			err = pgx.BeginFunc(ctx, s.store, func(tx pgx.Tx) error {
+				// Serialize repeated views of the same person's snapshot.
+				if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, scope.TenantID+":"+scope.PrincipalID); err != nil {
+					return err
+				}
+				// Receipts are ephemeral authorization inputs, not TODO facts.
+				// Remove the request copies with the expired snapshots too.
+				if _, err := tx.Exec(ctx, `WITH expired AS (
+                  DELETE FROM product_job_events WHERE event_type='issue.read' AND recorded_at <= $1 RETURNING operation_id
+                ) DELETE FROM product_job_requests WHERE operation='issue.read' AND id IN (SELECT operation_id FROM expired)`, now.Add(-todoIssueReceiptTTL)); err != nil {
+					return err
+				}
+				var exists bool
+				if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM product_job_events WHERE tenant_id=$1 AND principal_id=$2 AND event_type='issue.read' AND state='completed' AND data->>'digest'=$3 AND data->>'outsider'=$4)`, scope.TenantID, scope.PrincipalID, thread.IssueDigest, strconv.FormatBool(!team)).Scan(&exists); err != nil {
+					return err
+				}
+				if exists {
+					return nil
+				}
+				_, err := jobs.RecordProjectedFactInTx(ctx, tx, scope, uuid.NewString(), "issue.read", "completed", metadata, payload)
+				return err
+			})
+			if err != nil {
+				return InstallIssueThread{}, err
+			}
+		}
+	}
+	return thread, nil
+}
+
+func todoIssueSnapshotDigest(thread InstallIssueThread) string {
+	snapshot, _ := json.Marshal(struct {
+		Issue    InstallIssue
+		Comments []InstallIssueComment
+	}{thread.Issue, thread.Comments})
+	sum := sha256.Sum256(snapshot)
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *MythicalService) todoLabelMember(ctx context.Context, repositoryID int64, gh mythicalGitHubRepo, actor gitHubActor) (string, error) {
+	if !gitHubPerson(&actor) {
+		return "", nil
+	}
+	if actor.ID <= 0 {
+		api, ok := s.github.(*mythicalGitHubAPI)
+		if !ok {
+			return "", issueTodoUnavailable()
+		}
+		var account gitHubActor
+		status, err := api.api.request(ctx, gh.Token, http.MethodGet, "/users/"+url.PathEscape(actor.Login), nil, &account)
+		if err != nil {
+			return "", err
+		}
+		if status == http.StatusNotFound {
+			return "", nil
+		}
+		if status != http.StatusOK || account.ID <= 0 {
+			return "", errGitHubIssueTextUnavailable
+		}
+		actor.ID = account.ID
+	}
+	// Resolve identity only here; InstallRoleOf owns the active-membership predicate.
+	var userID int64
+	err := s.store.QueryRow(ctx, `SELECT user_id FROM oauth_accounts WHERE provider IN ('github','workos') AND provider_user_id=$2::text
+ UNION SELECT user_id FROM collaborators WHERE repository_id=$1 AND github_id=$2::bigint AND user_id IS NOT NULL`, repositoryID, strconv.FormatInt(actor.ID, 10)).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	role, err := InstallRoleOf(ctx, s.queries(), userID)
+	if err != nil || role == "" {
+		return "", err
+	}
+	push, err := s.github.MaintainerNow(ctx, gh, actor)
+	if err != nil || !push {
+		return "", err
+	}
+	return string(role), nil
+}
+
+func (s *MythicalService) todoIssueWriter(ctx context.Context, repositoryID int64, gh mythicalGitHubRepo, actor gitHubActor) (bool, error) {
+	if !gitHubPerson(&actor) {
+		if api, ok := s.github.(*mythicalGitHubAPI); ok && api.credentials != nil {
+			app, err := api.credentials.Load(ctx)
+			if err != nil {
+				return false, err
+			}
+			return strings.EqualFold(actor.Login, app.Slug+"[bot]"), nil
+		}
+		return false, nil
+	}
+	role, err := s.todoLabelMember(ctx, repositoryID, gh, actor)
+	return role != "", err
+}
+
+func (s *MythicalService) todoIssueTeamText(ctx context.Context, repositoryID int64, gh mythicalGitHubRepo, issue mythicalIssue) (bool, error) {
+	if issue.ViaApp {
+		api, ok := s.github.(*mythicalGitHubAPI)
+		if !ok || api.credentials == nil || issue.AppID <= 0 {
+			return false, nil
+		}
+		app, err := api.credentials.Load(ctx)
+		if err != nil {
+			return false, err
+		}
+		if issue.AppID != app.ID {
+			return false, nil
+		}
+	}
+	text, err := s.github.IssueText(ctx, gh, issue.Number)
+	if err != nil {
+		return false, err
+	}
+	if text.Title != issue.Title || text.Body != issue.Body {
+		return false, errGitHubIssueTextUnavailable
+	}
+	for _, writer := range []*gitHubActor{text.Author, text.TitleWriter, text.BodyWriter} {
+		if writer == nil {
+			return false, nil
+		}
+		trusted, err := s.todoIssueWriter(ctx, repositoryID, gh, *writer)
+		if err != nil || !trusted {
+			return false, err
+		}
+	}
+	return true, nil
+}

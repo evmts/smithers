@@ -1,0 +1,108 @@
+paths:
+  /api/terminals:
+    post:
+      x-composition: install
+      summary: Open a branch terminal
+      description: Requests a signed-in terminal as the authenticated member on the branch. Retained terminal WebSocket attachments authorize branch.join; only the owner types. Refuses without owner-uid machine session providers.
+      operationId: post_api_terminals
+      tags:
+        - Terminals
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              additionalProperties: false
+              properties:
+                branch:
+                  type: string
+      responses:
+        '202':
+          description: Terminal requested. The pending receipt is not a running terminal.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, workspace_id, user_id, status]
+                properties:
+                  id: {type: string, format: uuid}
+                  workspace_id: {type: string, format: uuid}
+                  user_id: {type: integer, format: int64}
+                  status: {type: string, enum: [pending, running, failed, closed]}
+        '400':
+          description: Invalid terminal request
+        '401':
+          description: Authentication required
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '503':
+          description: Owner-uid terminal providers unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, class, message]
+                properties:
+                  code:
+                    type: string
+                    enum: [terminal_unavailable]
+                  class:
+                    type: string
+                    enum: [infra]
+                  message:
+                    type: string
+                    enum: [Terminal is unavailable]
+  /api/terminals/{id}/commands:
+    post:
+      x-composition: install
+      summary: Append a TODO from the member's terminal
+      operationId: post_api_terminals_id_commands
+      tags:
+        - Terminals
+      security: [{sessionCookie: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 256}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [command, payload]
+              properties:
+                command: {type: string, enum: [todo.new]}
+                payload:
+                  allOf:
+                    - $ref: '#/components/schemas/PostAPITodosBody'
+                    - type: object
+                      required: [place]
+                      properties:
+                        place:
+                          type: object
+                          required: [mode]
+                          properties:
+                            mode: {type: string, enum: [append]}
+      responses:
+        '202': {$ref: '#/components/responses/TodoCreateAccepted'}
+        '400': {description: Invalid terminal command or TODO payload}
+        '401': {description: A live member session is required}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404': {description: Terminal not found}
+        '409': {description: Terminal unavailable or idempotency mismatch}
+        '503': {description: Terminal or stack service unavailable}
