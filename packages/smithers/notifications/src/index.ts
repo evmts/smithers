@@ -45,3 +45,9 @@ export * as Projection from "./Projection.ts"
  * @since 0.1.0
  */
 export * as SteerPayload from "./SteerPayload.ts"
+
+/**
+ * @category services
+ * @since 1.0.0
+ */
+export * as Mailbox from "./Mailbox.ts"

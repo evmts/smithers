@@ -137,6 +137,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
   ])],
   ["cli", new Map([
     ["/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/docs"],
+    ["/concepts/agent-messages/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/concepts/agent-messages.md"],
     ["/concepts/command-surface/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/concepts/command-surface.md"],
     ["/concepts/local-and-remote/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/concepts/local-and-remote.md"],
     ["/concepts/output-and-exit-codes/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/concepts/output-and-exit-codes.md"],

@@ -45,6 +45,7 @@ import * as NodeControl from "./NodeControl.ts"
 import { createCredentialsCli } from "./operator/Credentials.ts"
 import { createIntegrationsCli } from "./operator/Integrations.ts"
 import { createMemoryCli } from "./operator/Memory.ts"
+import { createMessagesCli } from "./operator/Messages.ts"
 import { localRoot } from "./operator/Store.ts"
 import { createTriggersCli } from "./operator/Triggers.ts"
 import * as Project from "./Project.ts"
@@ -135,6 +136,7 @@ export const makeCli = (
     .command(createApprovalsCli(config))
     .command(createGenerateCli(config))
     .command(createMemoryCli())
+    .command(createMessagesCli())
     .command(mcp)
     .command(createCredentialsCli())
     .command(createTokenCli(config))
@@ -433,6 +435,9 @@ export const makeCli = (
   // Appendix B.6 is an explicit discovery allowlist. Other public library
   // commands remain callable, but do not enter install help, skills or MCP.
   const doors = [
+    "msg send",
+    "msg pull",
+    "msg ack",
     ...catalogCommands.filter((row) =>
       row.actors.includes("external_agent") && row.agent !== "never" &&
       (row.visibility === "core" || row.visibility === "advanced")

@@ -342,3 +342,43 @@ it(
     }
   }
 )
+
+it("two agents exchange a message through msg tools", { timeout: 180_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "smthrs-msg-mcp-"))
+  const host = await install()
+  const environment = { ...hostEnvironment(root, host.origin), SMITHERS_MESSAGES_DB: join(root, "messages.db") }
+  const claude = await serve(root, { ...environment, SMITHERS_AGENT: "claude-seat" })
+  const codex = await serve(root, { ...environment, SMITHERS_AGENT: "codex-seat" })
+  const anonymous = await serve(root, { ...environment, SMITHERS_AGENT: "" })
+  const transcript: Array<unknown> = []
+  const call = async (server: typeof claude, name: string, args: unknown) => {
+    const result = await server.call("call_write_tool", { name, arguments: args })
+    transcript.push({ name, result })
+    expect(result?.isError, JSON.stringify(result)).not.toBe(true)
+    return JSON.parse(result?.content?.[0]?.text.split("\n\n")[0] ?? "{}")
+  }
+  try {
+    for (const name of ["msg_send", "msg_pull", "msg_ack"]) {
+      expect((await claude.call("get_tool_details", { name }))?.isError).not.toBe(true)
+    }
+    const nonce = `ping-${Date.now()}`
+    const sent = await call(claude, "msg_send", { to: "codex-seat", text: nonce })
+    expect(sent.id).toMatch(/^m-[0-9a-z]{16}$/)
+    const batch = await call(codex, "msg_pull", {})
+    expect(batch.messages).toEqual([expect.objectContaining({ text: nonce, from: "claude-seat" })])
+    expect((await codex.call("call_read_tool", { name: "msg_pull", arguments: {} }))?.isError).toBe(true)
+    await call(codex, "msg_send", { to: "claude-seat", text: "pong", re: sent.id })
+    await call(codex, "msg_ack", { receipt: batch.receipt })
+    const reply = await call(claude, "msg_pull", {})
+    expect(reply.messages).toEqual([expect.objectContaining({ from: "codex-seat", re: sent.id, thread: sent.id })])
+    const refused = await anonymous.call("call_write_tool", { name: "msg_pull", arguments: {} })
+    expect(refused?.isError).toBe(true)
+    expect(JSON.stringify(refused)).toContain("agent_unknown")
+    process.stdout.write(`MESSAGING_TRANSCRIPT ${JSON.stringify(transcript)}\n`)
+    expect(host.seen).toEqual([])
+  } finally {
+    await Promise.all([claude.stop(), codex.stop(), anonymous.stop()])
+    await host.close()
+    await rm(root, { recursive: true, force: true })
+  }
+})

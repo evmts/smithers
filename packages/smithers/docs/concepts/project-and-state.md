@@ -125,6 +125,8 @@ Anything outside it is not read, including the 0.x `SMITHERS_HOME`,
 | `SMITHERS_SANDBOX_IMAGE` | The image a flow's `sandbox: {provider: container}` runs in, through `docker`. Unset refuses such flows. |
 | `SMITHERS_BASH_CONTAINER` | The one container `bash` and `test` may reach, through the `docker` CLI and the host's `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG`, `DOCKER_TLS_VERIFY`, and `DOCKER_CERT_PATH`. Any other `bash` call fails with `outside_container`. The file flows (`read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep`) act on the container's files through the same transport, under `SMITHERS_TEST_CWD`; without it the host offers no file flow. No flow reads or writes the host's files. Unset, the CLI reaches no container. |
 | `SMITHERS_ASKS` | `park` or `refuse`, what an in-run `ask` does. Unset is `park`: the run waits for `smthrs approvals approve`. `refuse` is for a host nobody answers, such as a benchmark or CI lane: the ask fails at once with `ApprovalUnavailable` and the run continues. Any other value refuses to start. |
+| `SMITHERS_AGENT` | Agent mailbox identity; a host label, not authentication. |
+| `SMITHERS_MESSAGES_DB` | Shared agent messages SQLite file; defaults to `~/.smithers/messages.db`. |
 | `SMITHERS_MEMORY_DB` | Path of a separate SQLite file for the memory store. Runs that name the same file share one memory bank, and only then does the supervisor write accepted sentences to it. Without it, the bank is named after the workspace and the supervisor writes nothing. |
 | `SMITHERS_SUPERVISOR_STANCE` | `careful` or `paranoid`, the stance a judged run is taught. Unset is `careful`; any other value refuses to start. |
 | `SMITHERS_BUG_ENDPOINT` | Where `smthrs bug` posts its report. |

@@ -81,6 +81,7 @@ The commands group by the job they do:
 | Read what happened | `runs list`, `runs show`, `runs logs`, `runs output`                  |
 | Set a project up   | `init`, `suggest`, `doctor`, `migrate`                                |
 | Host and integrate | `serve`, `mcp`                                                        |
+| Message            | `msg send`, `msg pull`, `msg ack` |
 | Maintain           | `gc`, `memory`, `update`, `bug`, `completions`                        |
 
 Smithers 0.x spellings that were removed refuse with one sentence and a
@@ -150,6 +151,7 @@ line.
 - [Quickstart](./quickstart.md): one project from `init` to a settled run.
 - Concepts: [the command surface](./concepts/command-surface.md),
   [the project and its state](./concepts/project-and-state.md),
+  [agent messages](./concepts/agent-messages.md),
   [local and remote control planes](./concepts/local-and-remote.md), and
   [output and exit codes](./concepts/output-and-exit-codes.md).
 - Guides: [script the CLI](./guides/script-the-cli.md),

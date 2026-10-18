@@ -36,6 +36,8 @@ describe("the environment contract", () => {
       "SMITHERS_ASKS",
       "SMITHERS_BACKEND",
       "SMITHERS_MEMORY_DB",
+      "SMITHERS_AGENT",
+      "SMITHERS_MESSAGES_DB",
       "SMITHERS_SUPERVISOR_STANCE",
       "SMITHERS_BUG_ENDPOINT",
       "SMITHERS_JJ_PATH",

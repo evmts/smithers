@@ -23,6 +23,7 @@ The root entry point exports these namespaces; each is also importable from `@sm
 
 | Module              | Description                                                                               |
 | ------------------- | ----------------------------------------------------------------------------------------- |
+| `Mailbox`           | Agent send, pull, and ack with durable batch receipts.                                    |
 | `Alerts`            | Turns run conditions that outlive a delay into coalesced, at-least-once alerts.           |
 | `Notification`      | Defines notification schemas, admission classes, and coalescing keys.                     |
 | `NotificationEvent` | Defines journal notification events and decodes them from journal entries.                |
