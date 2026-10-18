@@ -1,0 +1,6 @@
+import { permissionMetaSnapshotImpl } from "./permissionMetaSnapshotImpl.ts"
+/**
+ * @since 0.1.0
+ * @private
+ */
+export const permissionMetaSnapshot = permissionMetaSnapshotImpl

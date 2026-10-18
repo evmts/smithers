@@ -1,0 +1,12 @@
+// D-2: Model.make is a plain synchronous sibling-package constructor.
+import * as Model from "@smthrs/model/Model"
+import * as Stream from "effect/Stream"
+import type { Options } from "./ScriptedModel.vibe"
+import { respond } from "./scriptedModelBody.vibe"
+export const makeImpl = (options: Options): Model.Model => {
+  const usage = options.usage ?? { inputTokens: 100, outputTokens: 100 }
+  return Model.make({
+    ...(options.fallback?.providerName === undefined ? {} : { providerName: options.fallback.providerName }),
+    stream: (request) => Stream.unwrap(respond(options, usage, request))
+  })
+}

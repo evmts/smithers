@@ -1,0 +1,43 @@
+// A-1/B-4: refuse oversized path declarations synchronously, including user refusal callbacks.
+import type * as Effects from "../Effects.vibe"
+import { isGlob, maximumPathLength, maximumGlobs } from "./effects.vibe"
+export const copyPaths = (
+  paths: ReadonlyArray<string>,
+  limit: number,
+  refuse: () => Error
+): Array<string> => {
+  const copy: Array<string> = []
+  let globs = 0
+  const admit = (path: string): void => {
+    if (path.length > maximumPathLength) throw refuse()
+    if (isGlob(path) && ++globs > maximumGlobs) throw refuse()
+    copy.push(path)
+  }
+  if (Array.isArray(paths)) {
+    const length = paths.length
+    if (length > limit) throw refuse()
+    for (let index = 0; index < length; index++) admit(paths[index])
+    return copy
+  }
+  for (const path of paths) {
+    if (copy.length >= limit) throw refuse()
+    admit(path)
+  }
+  return copy
+}
+
+export const boundedEffects = (
+  declaration: Effects.Declaration,
+  limit: number,
+  refuse: () => Error
+): Effects.Declaration => {
+  const reads = copyPaths(declaration.reads, limit, refuse)
+  const writes = copyPaths(declaration.writes, limit - reads.length, refuse)
+  return {
+    reads,
+    writes,
+    mode: declaration.mode,
+    onConflict: declaration.onConflict,
+    ...(declaration.tier === undefined ? {} : { tier: declaration.tier })
+  }
+}

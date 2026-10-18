@@ -1,0 +1,22 @@
+// D-2: preserve plain type refinements calling the sibling record refinement.
+import { isRecord } from "@smthrs/canonical/Record"
+import type { ExecutionResult, JournalEntryLike } from "../EngineSubject.vibe"
+export const isWellFormedEntry = (value: unknown): value is JournalEntryLike =>
+  isRecord(value) &&
+  typeof value.index === "number" &&
+  Number.isInteger(value.index) && value.index >= 0 &&
+  typeof value.stepKey === "string" && value.stepKey.length > 0 &&
+  typeof value.kind === "string" && value.kind.length > 0 &&
+  (value.outcome === "completed" || value.outcome === "aborted" ||
+    value.outcome === "failed" || value.outcome === "suspended")
+
+export const isExecutionResult = (value: unknown): value is ExecutionResult =>
+  isRecord(value) &&
+  typeof value.executionId === "string" &&
+  (value.status === "completed" || value.status === "aborted" ||
+    value.status === "failed" || value.status === "suspended")
+
+export const isJournal = (value: unknown): value is ReadonlyArray<JournalEntryLike> =>
+  Array.isArray(value) &&
+  value.every((entry, index) => isWellFormedEntry(entry) && entry.index === index)
+

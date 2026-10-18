@@ -1,0 +1,36 @@
+/**
+ * The inert JSON mirror of a value: what `JSON.stringify` would see, as data.
+ *
+ * The AST stores payloads this way, the plan compiler stores key material this
+ * way, and a plan diff compares declarations this way, so all three share the
+ * one walk. A planned value is the only member with no JSON meaning of its
+ * own, and each caller decides what it becomes.
+ *
+ * @since 0.1.0
+ * @private
+ */
+
+import type * as Planned from "../Planned.vibe"
+import { jsonMirror as jsonMirrorImpl } from "./json-mirror-hatch.ts"
+
+/**
+ * Clones the JSON mirror of the input, so {@link module:StepKey.content} over
+ * the clone and the input produce the same key and the clone holds only inert
+ * JSON data. The walk uses an explicit stack, memoizes shared references and
+ * cycles, honors callable `toJSON`, omits object members without a JSON
+ * representation, and writes `null` for those values in arrays.
+ *
+ * `toJSON` receives the key canonical serialization passes it: the member
+ * name, the array index, or `""` at the root. Its replacement is therefore
+ * memoized per source and key, since one shared source may serialize
+ * differently at two positions. A source met again inside its own
+ * replacement reuses that replacement, so a cycle through `toJSON` clones as
+ * a cycle whatever key it recurs at.
+ *
+ * A planned value becomes whatever `plannedValue` returns for it. Refusals
+ * throw a {@link GraphBuildError} naming the member's path.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const jsonMirror: (input: unknown, plannedValue: (value: unknown, reference: Planned.Reference) => unknown) => unknown = jsonMirrorImpl

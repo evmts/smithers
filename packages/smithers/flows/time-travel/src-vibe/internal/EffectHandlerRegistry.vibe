@@ -1,0 +1,238 @@
+/**
+ * Immutable registry for effect-specific compensation handlers.
+ *
+ * @since 0.1.0
+ */
+
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
+import * as HashMap from "effect/HashMap"
+import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
+import * as Schema from "effect/Schema"
+import { Assessment, Classification, type Handler } from "../CompensationHandlers.vibe"
+import { EffectRecord, EffectTier } from "../EffectBoundary.vibe"
+import { error, type TimeTravelError } from "../TimeTravelError.vibe"
+
+export {
+  /**
+   * The public preflight schemas, re-exported for the machinery that consumes
+   * them. `CompensationHandlers` owns them because a handler author writes
+   * against them.
+   *
+   * @since 0.1.0
+   * @category models
+   */
+  Assessment,
+  Classification,
+  /**
+   * The handler shape, re-exported for the same reason. There is ONE handler
+   * type: the registry validates and resolves exactly what a contributor
+   * wrote, so a second shape here could only drift from it.
+   *
+   * @since 0.1.0
+   * @category models
+   */
+  type Handler
+}
+
+/**
+ * Durable evidence produced after one handler reverses an effect.
+ *
+ * The receipt contains everything the same handler needs to reverse its
+ * compensation during rewind rollback or startup recovery.
+ *
+ * @since 0.1.0
+ * @category models
+ */
+export const RollbackReceipt = Schema.Struct({
+  id: Schema.NonEmptyString,
+  effect: EffectRecord,
+  data: Schema.Unknown
+})
+/**
+ * The value form of {@link RollbackReceipt}.
+ *
+ * @since 0.1.0
+ * @category models
+ */
+export type RollbackReceipt = typeof RollbackReceipt.Type
+
+/**
+ * Immutable effect-handler lookup and execution operations.
+ *
+ * @since 0.1.0
+ * @category models
+ */
+export interface Service {
+  readonly resolve: (kind: string) => Handler | undefined
+  readonly assess: (effect: EffectRecord) => Effect.Effect<Assessment, TimeTravelError>
+  readonly revert: (effect: EffectRecord) => Effect.Effect<RollbackReceipt, TimeTravelError>
+  readonly rollback: (receipt: RollbackReceipt) => Effect.Effect<void, TimeTravelError>
+}
+
+/**
+ * Layer-provided immutable effect-handler registry.
+ *
+ * @since 0.1.0
+ * @category services
+ */
+export class EffectHandlerRegistry extends Context.Service<EffectHandlerRegistry, Service>()(
+  "@smthrs/time-travel/EffectHandlerRegistry"
+) {}
+
+const duplicate = (kind: string): TimeTravelError => error("unknown", `effect handler ${kind} is already registered`)
+
+const missing = (kind: string): TimeTravelError =>
+  error("irreversible", `no compensation handler is registered for effect kind ${kind}`)
+
+/**
+ * What a registration must declare before the registry accepts it.
+ *
+ * The public `Handler` is a TypeScript interface, so a composition assembled
+ * from untyped configuration can hand over an empty kind, an unknown tier, or
+ * a non-boolean flag; each of those would silently resolve nothing or resolve
+ * the wrong thing at rewind time, which is the worst moment to learn it.
+ */
+const Declaration = Schema.Struct({
+  kind: Schema.NonEmptyString,
+  tier: EffectTier,
+  requiresIdempotencyKey: Schema.optional(Schema.Boolean),
+  compensation: Schema.optional(Schema.NonEmptyString)
+})
+
+function validate(handler: Handler): Handler!TimeTravelError {
+  try {
+    Schema.decodeUnknownEffect(Declaration)({
+      kind: handler.kind, tier: handler.tier,
+      requiresIdempotencyKey: handler.requiresIdempotencyKey,
+      compensation: handler.compensation
+    })
+  } catch (cause) { throw error("invalid", "effect handler declaration is invalid", cause) }
+  for (const member of ["residue", "revert", "rollback"] as const) {
+    if (typeof handler[member] !== "function") {
+      throw error("invalid", `effect handler ${handler.kind} has no ${member} function`)
+    }
+  }
+  return handler
+}
+
+/**
+ * Why a handler is not the one that owns an effect's recorded compensation.
+ *
+ * An effect that recorded no descriptor resolves by kind alone, because the
+ * producer that wrote it had nothing more to say. An effect that recorded one
+ * is owned by exactly the handler declaring it: the descriptor exists so a
+ * handler replaced after a restart cannot compensate evidence another
+ * implementation left behind.
+ */
+const descriptorMismatch = (handler: Handler, effect: EffectRecord): string | undefined => {
+  if (effect.compensation === undefined || handler.compensation === effect.compensation) return undefined
+  return handler.compensation === undefined
+    ? `Effect ${effect.id} recorded compensation ${effect.compensation}, which handler ${handler.kind} does not declare.`
+    : `Effect ${effect.id} recorded compensation ${effect.compensation}, but handler ${handler.kind} implements ${handler.compensation}.`
+}
+
+const missingKey = (handler: Handler, effect: EffectRecord): string | undefined =>
+  handler.requiresIdempotencyKey && effect.idempotencyKey === undefined
+    ? `Effect ${effect.id} recorded no idempotency key, which handler ${handler.kind} requires.`
+    : undefined
+
+const fromHandlers = (handlers: HashMap.HashMap<string, Handler>): Service => {
+  const resolve = (kind: string): Handler | undefined => Option.getOrUndefined(HashMap.get(handlers, kind))
+  function assess(effect: EffectRecord): Assessment!TimeTravelError {
+    const handler = resolve(effect.kind)
+    if (handler === undefined) return {
+      classification: "blocking" as const,
+      reason: `No compensation handler is registered for ${effect.kind}.`,
+      residue: effect.residue ?? `The ${effect.kind} effect remains outside the journal.`
+    }
+    const blocking = (reason: string): Assessment => ({
+      classification: "blocking", reason, residue: handler.residue(effect)
+    })
+    if (handler.tier !== effect.tier) return blocking(`Handler ${effect.kind} is registered for ${handler.tier}, not ${effect.tier}.`)
+    if (effect.status !== "succeeded") return blocking(`Effect ${effect.id} has ${effect.status} completion state.`)
+    const refusal = descriptorMismatch(handler, effect) ?? missingKey(handler, effect)
+    if (refusal !== undefined) return blocking(refusal)
+    if (handler.assess === undefined) return {
+      classification: "revertible" as const,
+      reason: `Handler ${effect.kind} can compensate the recorded effect.`,
+      residue: handler.residue(effect)
+    }
+    const verdict = handler.assess(effect)
+    return Schema.decodeUnknownEffect(Assessment)(verdict)
+      catch (issue) => blocking(`Handler ${effect.kind} returned a malformed assessment: ${issue.message}`)
+  }
+  function revert(effect: EffectRecord): RollbackReceipt!TimeTravelError {
+    const handler = resolve(effect.kind)
+    if (handler === undefined) throw missing(effect.kind)
+    if (handler.tier !== effect.tier) {
+      throw error("irreversible", `handler ${effect.kind} cannot compensate ${effect.tier} effect ${effect.id}`)
+    }
+    const refusal = descriptorMismatch(handler, effect) ?? missingKey(handler, effect)
+    if (refusal !== undefined) throw error("irreversible", `handler ${effect.kind} cannot compensate ${effect.id}: ${refusal}`)
+    try {
+      const data = handler.revert(effect)
+      return { id: `${effect.id}:rollback`, effect, data }
+    } catch (cause) {
+      throw error("compensation_failed", `handler ${effect.kind} could not revert ${effect.id}`, cause)
+    }
+  }
+  function rollback(receipt: RollbackReceipt): void!TimeTravelError {
+    const effect = receipt.effect
+    const handler = resolve(effect.kind)
+    if (handler === undefined) throw missing(effect.kind)
+    const refusal = handler.tier !== effect.tier
+      ? `handler ${effect.kind} is registered for ${handler.tier}, and the receipt records ${effect.tier}`
+      : descriptorMismatch(handler, effect)
+    if (refusal !== undefined) throw error("compensation_failed", `handler ${effect.kind} cannot roll back ${effect.id}: ${refusal}`)
+    try { handler.rollback(effect, receipt.data) }
+    catch (cause) {
+      throw error("compensation_failed", `handler ${effect.kind} could not roll back compensation for ${effect.id}`, cause)
+    }
+  }
+  return EffectHandlerRegistry.of({ resolve, assess, revert, rollback })
+}
+
+/**
+ * Constructs an immutable registry, validating every declaration and
+ * rejecting duplicate effect kinds before exposing it.
+ *
+ * @since 0.1.0
+ * @category constructors
+ */
+export function make(handlers: Iterable<Handler> = []): Service!TimeTravelError {
+  let registry = HashMap.empty<string, Handler>()
+  for (const handler of handlers) {
+    const valid = validate(handler)
+    if (HashMap.has(registry, valid.kind)) throw duplicate(valid.kind)
+    registry = HashMap.set(registry, valid.kind, valid)
+  }
+  return fromHandlers(registry)
+}
+
+/**
+ * Constructs an empty immutable registry.
+ *
+ * @since 0.1.0
+ * @category constructors
+ */
+export const makeNoop = (): Service => fromHandlers(HashMap.empty())
+
+/**
+ * Provides an immutable registry after validating all registrations.
+ *
+ * @since 0.1.0
+ * @category layers
+ */
+export const layer = (
+  handlers: Iterable<Handler> = []
+): Layer.Layer<EffectHandlerRegistry, TimeTravelError> => Layer.effect(EffectHandlerRegistry) { return make(handlers) }
+
+/**
+ * Provides an empty immutable registry.
+ *
+ * @since 0.1.0
+ * @category layers
+ */
+export const layerNoop: Layer.Layer<EffectHandlerRegistry> = Layer.succeed(EffectHandlerRegistry, makeNoop())

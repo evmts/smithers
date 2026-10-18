@@ -1,0 +1,22 @@
+/**
+ * Total SHA-256 digests over JavaScript strings.
+ *
+ * @since 0.1.0
+ */
+/**
+ * Replaces every unpaired UTF-16 surrogate with U+FFFD.
+ *
+ * @category normalization
+ * @since 0.1.0
+ */
+export declare const wellFormed: (value: string) => string;
+/**
+ * Returns the full lowercase SHA-256 digest of a JavaScript string.
+ *
+ * Unpaired UTF-16 surrogates are replaced with U+FFFD before delegating to
+ * `Digest.digest`, making this helper total for every JavaScript string.
+ *
+ * @category hashing
+ * @since 0.1.0
+ */
+export declare const digest: (text: string) => string;

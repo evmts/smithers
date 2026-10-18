@@ -1,0 +1,50 @@
+import type * as Model from "@smthrs/model/Model"
+import type * as ModelEvent from "@smthrs/model/ModelEvent"
+import type { ModelRequest } from "@smthrs/model/ModelRequest"
+import { ModelError } from "@smthrs/model/ModelError"
+import { Effect, Stream } from "effect"
+import type { Options } from "./ScriptedModel.vibe"
+import { UnscriptedModelError } from "./TestingError.vibe"
+const answer = (text: string, usage: NonNullable<Options["usage"]>) =>
+  Stream.fromIterable([
+    { type: "text-start" as const, id: "scripted" },
+    { type: "text-delta" as const, id: "scripted", text },
+    { type: "text-end" as const, id: "scripted" },
+    { type: "settle" as const, stopReason: "stop" as const },
+    // After the settle, as OpenAI sends it: the choice-less usage chunk.
+    {
+      type: "usage" as const,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      totalTokens: usage.inputTokens + usage.outputTokens
+    }
+  ])
+
+const unscripted = (request: ModelRequest) =>
+  Stream.die(
+    new UnscriptedModelError({
+      modelId: request.modelId,
+      messageCount: request.messages.length,
+      toolNames: request.tools.map((tool) => tool.name)
+    })
+  )
+
+
+export function respond(options: Options, usage: NonNullable<Options["usage"]>, request: ModelRequest): Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure>!ModelError {
+  const reply = try((script, input) => script(input), (error) => new ModelError({
+    code: "invalid_request",
+    message: `The script refused the request: ${error instanceof Error ? error.message : String(error)}`,
+    httpStatus: 400
+  }), options.script, request)
+  if (options.log !== undefined) {
+    options.log.chat(request, reply?.name ?? "unscripted", {
+      ...reply?.detail,
+      ...(reply?.hold === undefined ? {} : { hold: reply.hold })
+    })
+  }
+  if (reply === undefined) {
+    return sync((fallback, input) => fallback?.stream(input), options.fallback, request) ?? unscripted(request)
+  }
+  if (reply.hold !== undefined && options.gate !== undefined) options.gate.hold(reply.hold)
+  return answer(reply.text, usage)
+}

@@ -1,0 +1,85 @@
+/**
+ * Digest-safe RFC 8785 serialization internals.
+ *
+ * Date remains governed by its inherited `toJSON`. Map, Set, WeakMap,
+ * WeakSet, ArrayBuffer, typed arrays, RegExp, Error, and other non-plain
+ * instances are rejected: their `{}` or index-keyed `JSON.stringify` forms
+ * can collide with empty collections or ordinary objects in a digest library.
+ *
+ * @since 0.1.0
+ */
+
+import { describe } from "./describe.vibe"
+
+/**
+ * Maximum supported nesting below the root value.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const MAX_CANONICAL_DEPTH = 10_000
+
+/**
+ * Stable canonicalization failure identifiers.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type CanonicalErrorCode =
+  | "canonical_bigint"
+  | "canonical_circular"
+  | "canonical_depth_exceeded"
+  | "canonical_getter_threw"
+  | "canonical_lone_surrogate"
+  | "canonical_nan"
+  | "canonical_non_finite"
+  | "canonical_tojson_threw"
+  | "canonical_unsupported_value"
+
+/**
+ * A stable, located canonicalization failure.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class CanonicalError extends TypeError {
+  readonly code: CanonicalErrorCode
+  readonly path: string
+  constructor(code: CanonicalErrorCode, detail: string, path: string, options?: ErrorOptions) {
+    super(`${code}: ${detail} at ${path}`, options)
+    this.name = "CanonicalError"
+    this.code = code
+    this.path = path
+  }
+}
+
+/**
+ * Serializes a value into RFC 8785 canonical JSON.
+ *
+ * This matches `JSON.stringify` for JSON values, `toJSON(key)`, boxed
+ * primitives, sparse arrays, and omission/null substitution. It rejects
+ * non-finite numbers, BigInt, lone surrogates, cycles, and non-plain built-ins
+ * whose lossy stringify forms could collide in a digest. The iterative walk
+ * supports 10,000 nested levels below the root. Only depth is bounded: a value
+ * reachable twice is serialized twice, so bound width and repeated references
+ * with `BoundedJson.admitStrict` first when the value is not the caller's own.
+ *
+ * `loneSurrogates: "escape"` preserves legacy sorted-JSON formats that accepted
+ * unpaired UTF-16 code units. It emits their JSON escapes; this opt-in format
+ * is not RFC 8785. Strict canonicalization remains the default.
+ *
+ * Two deliberate divergences favor digest determinism over byte parity: a
+ * `toJSON` result is canonicalized recursively (stringify serializes it
+ * as-is, so a chained `toJSON` stops after one level there), and a boxed
+ * primitive unboxes from its internal slot (stringify consults overridden
+ * `toString`/`valueOf`, letting a mutated wrapper change the bytes).
+ *
+ * @param input - Value to serialize using the documented JSON reduction rules.
+ * @param options - Optional legacy lone-surrogate escaping; defaults to strict RFC 8785.
+ * @returns Sorted canonical JSON text, or legacy sorted JSON when escaping is enabled.
+ * @throws CanonicalError with a stable code and field path when serialization is refused.
+ * @category constructors
+ * @since 0.1.0
+ */
+export const canonicalize: (input: unknown, options?: { readonly loneSurrogates?: "escape" }) => string = canonicalizeImpl
+import { canonicalizeImpl } from "./canonicalize-hatch.ts"

@@ -1,0 +1,217 @@
+import type * as JsonSchema from "effect/JsonSchema"
+import * as Schema from "effect/Schema"
+import type * as SchemaAST from "effect/SchemaAST"
+import * as SchemaRepresentation from "effect/SchemaRepresentation"
+import type { Document, Options } from "./SchemaIdentity.vibe"
+import { representationIdentity, SchemaIdentityError } from "./SchemaIdentity.vibe"
+export /** @private */
+type Fragment = JsonSchema.JsonSchema
+
+export /** @private */
+type Path = ReadonlyArray<string | number>
+
+export /** @private */
+type Representation = SchemaRepresentation.Representation
+
+export /** @private */
+type Check = SchemaRepresentation.Check
+
+export /** @private */
+type CheckInput = SchemaRepresentation.ToJsonSchema.CheckInput
+
+export /**
+ * What a built-in check prints: its payload and the JSON type it refines in,
+ * a fragment out. `null` is a check that prints nothing.
+ *
+ * @private
+ */
+type BuiltinCheck = ((id: string, payload: unknown, input: CheckInput) => Fragment) | null
+
+export /** @private */
+type NumberType = "number" | "integer"
+export /** @private */
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+export /**
+ * Assigns an own property, `__proto__` included: a struct may declare a field
+ * by that name, and plain assignment would set the prototype instead.
+ *
+ * @private
+ */
+const assignProperty = (target: Record<string, unknown>, key: string, value: unknown): void => {
+  if (key === "__proto__") {
+    Object.defineProperty(target, key, { value, writable: true, enumerable: true, configurable: true })
+  } else {
+    target[key] = value
+  }
+}
+
+export /**
+ * Whether a value is JSON: finite numbers, plain objects, no cycles. An
+ * annotation that is not JSON never reaches the document.
+ *
+ * @private
+ */
+const isJson = (value: unknown, path: ReadonlySet<object> = new Set()): boolean => {
+  if (typeof value !== "object" || value === null) {
+    return value === null || typeof value === "string" || typeof value === "boolean" ||
+      (typeof value === "number" && Number.isFinite(value))
+  }
+  if (path.has(value)) return false
+  const members = Array.isArray(value) ? Array.from<unknown>(value) : plainValues(value)
+  if (members === undefined) return false
+  const inner = new Set(path).add(value)
+  return members.every((member) => isJson(member, inner))
+}
+
+export /** @private */
+const plainValues = (value: object): ReadonlyArray<unknown> | undefined => {
+  const prototype: unknown = Object.getPrototypeOf(value)
+  // A plain object from another realm has a different `Object.prototype`,
+  // but that prototype still has a null prototype.
+  return prototype === null || prototype === Object.prototype || Object.getPrototypeOf(prototype) === null
+    ? Object.values(value)
+    : undefined
+}
+
+export /** @private */
+const escapeRegExp = (text: string): string => text.replace(/[/\\^$*+?.()|[\]{}]/g, "\\$&")
+
+export /** @private */
+const unescapeToken = (token: string): string => token.replace(/~1/g, "/").replace(/~0/g, "~")
+
+export /** @private */
+const definitionReference = (key: string): string =>
+  `#/$defs/${encodeURI(key.replace(/~/g, "~0").replace(/\//g, "~1")).replace(/#/g, "%23")}`
+
+export /** @private */
+const finitePattern = "[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?"
+
+export /** @private */
+const stringPattern = "[\\s\\S]*?"
+
+export /** @private */
+const bigIntPattern = "^-?\\d+$"
+
+export /** @private */
+const symbolPattern = "^Symbol\\(([\\s\\S]*)\\)$"
+
+export /** @private */
+const uuidPattern = (version: number | null): string =>
+  version === null
+    ? "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|" +
+      "00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+    : `^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-${version}[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$`
+
+export /** @private */
+const isNumber = (value: unknown): value is number => typeof value === "number"
+
+export /** @private */
+const isString = (value: unknown): value is string => typeof value === "string"
+
+export /** @private */
+const isVersion = (value: unknown): value is number | null => value === null || typeof value === "number"
+
+export /** @private */
+const isFlag = (value: unknown): value is boolean | undefined => value === undefined || typeof value === "boolean"
+
+export /** @private */
+const pattern = (source: string): BuiltinCheck => () => ({ pattern: source })
+
+export /** @private */
+const empty: BuiltinCheck = () => ({})
+
+export /** @private */
+const isCheckCallback = (value: unknown): value is SchemaRepresentation.ToJsonSchema.Check =>
+  typeof value === "function"
+
+export /** @private */
+const isApproximate = (
+  output: SchemaRepresentation.ToJsonSchema.CheckOutput
+): output is readonly [schema: Fragment, approximate: true] => Array.isArray(output)
+
+export // Keep this allowlist closed: applicators and dependent keywords can change meaning when moved across schema objects.
+/** @private */
+const inlineableCheckKeywords =
+  "|type|format|pattern|multipleOf|minimum|maximum|exclusiveMinimum|exclusiveMaximum|minLength|maxLength|minItems|maxItems|uniqueItems|minProperties|maxProperties|propertyNames|"
+
+export // `format` and `content*` can affect validation, so they are not treated as pure annotations.
+/** @private */
+const promotableAnnotationKeywords = "|title|description|default|examples|readOnly|writeOnly|"
+
+export /** @private */
+const inlineableAnnotatedCheckKeywords = inlineableCheckKeywords + promotableAnnotationKeywords
+
+export /** @private */
+const hasOnlyKeywords = (schema: Fragment, allowed: string): boolean =>
+  Object.keys(schema).every((key) => allowed.includes(`|${key}|`))
+
+export /** @private */
+const hasNoCollisions = (left: Fragment, rightKeys: ReadonlyArray<string>): boolean =>
+  typeof left["$ref"] !== "string" && rightKeys.every((key) => !Object.hasOwn(left, key))
+
+export /** @private */
+const jsonSchemaTypes: ReadonlySet<unknown> = new Set([
+  "string",
+  "number",
+  "boolean",
+  "array",
+  "object",
+  "null",
+  "integer"
+])
+
+export /** @private */
+const isJsonSchemaType = (input: unknown): input is JsonSchema.Type => jsonSchemaTypes.has(input)
+
+export /** @private */
+const neverSchema: Fragment = { not: {} }
+
+export /**
+ * The six built-in checks `effect` renamed after `4.0.0-rc.115`, from the id
+ * a later release writes to the id rc.115 wrote. Their payloads and
+ * annotations did not change.
+ *
+ * @private
+ */
+const rc115CheckIds: ReadonlyMap<string, string> = new Map([
+  ["effect/schema/isStartingWith", "effect/schema/isStartsWith"],
+  ["effect/schema/isEndingWith", "effect/schema/isEndsWith"],
+  ["effect/schema/isIncluding", "effect/schema/isIncludes"],
+  ["effect/schema/isBetweenLength", "effect/schema/isLengthBetween"],
+  ["effect/schema/isBetweenSize", "effect/schema/isSizeBetween"],
+  ["effect/schema/isBetweenProperties", "effect/schema/isPropertiesLengthBetween"]
+])
+
+export /**
+ * A copy of an encoded representation with every renamed check id written
+ * back as rc.115 wrote it. Only an element of a `checks` array is a check.
+ * `annotations` and `payload` hold an author's data, which may have any
+ * shape, so they are copied as they are. Key order is kept, so the bytes
+ * match.
+ *
+ * @private
+ */
+const withRc115CheckIds = (value: Schema.Json, isCheck = false): Schema.Json => {
+  if (Array.isArray(value)) return value.map((member) => withRc115CheckIds(member, isCheck))
+  if (!isObject(value)) return value
+  const out: Record<string, Schema.Json> = {}
+  for (const [key, member] of Object.entries(value as Readonly<Record<string, Schema.Json>>)) {
+    if (key === "annotations" || key === "payload") {
+      assignProperty(out, key, member)
+      continue
+    }
+    const renamed = isCheck && key === "representation" && isObject(member) && typeof member["id"] === "string"
+      ? rc115CheckIds.get(member["id"])
+      : undefined
+    assignProperty(
+      out,
+      key,
+      renamed === undefined
+        ? withRc115CheckIds(member, key === "checks")
+        : withRc115CheckIds({ ...(member as Readonly<Record<string, Schema.Json>>), id: renamed })
+    )
+  }
+  return out
+}

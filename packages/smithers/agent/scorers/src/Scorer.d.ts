@@ -1,0 +1,126 @@
+/**
+ * Flow-native scorer declarations and result validation.
+ *
+ * A scorer is a *declaration-only* flow: it carries the input and output
+ * schemas so a caller can read its contract, and its execution entry point is
+ * {@link Scorer.score}, never a flow body. {@link MakeOptions} therefore omits
+ * `body`, `model`, and `flows` as well as `input` and `output`, so a scorer
+ * cannot declare two implementations that disagree.
+ *
+ * Package documentation: `packages/smithers/agent/scorers/docs/api.md`.
+ *
+ * @since 0.1.0
+ */
+import type * as Effects from "@smthrs/core/Effects";
+import type * as Flow from "@smthrs/core/Flow";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import { ScorerError } from "./ScorerError.ts";
+/**
+ * Input supplied to a scorer flow.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export declare const Input: Schema.Struct<{
+    readonly input: Schema.Unknown;
+    readonly output: Schema.Unknown;
+    readonly groundTruth: Schema.optionalKey<Schema.Unknown>;
+    readonly context: Schema.optionalKey<Schema.Unknown>;
+    readonly latencyMs: Schema.optionalKey<Schema.Finite>;
+}>;
+/**
+ * Input supplied to a scorer flow.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Input = typeof Input.Type;
+/**
+ * Successful scorer output.
+ *
+ * The inclusive `[0, 1]` range lives in the schema, so the declared flow output
+ * and {@link validate} enforce one contract. They used to disagree: the schema
+ * accepted any finite score while `validate` rejected anything outside the
+ * range, so ordinary flow output validation and runner validation gave
+ * different answers for the same declaration.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export declare const Result: Schema.Struct<{
+    readonly score: Schema.Finite;
+    readonly reason: Schema.optionalKey<Schema.String>;
+    readonly meta: Schema.optionalKey<Schema.Unknown>;
+}>;
+/**
+ * Successful scorer output.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Result = typeof Result.Type;
+/**
+ * A scorer is an ordinary flow with an independent declaration identity.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Scorer<E = never> extends Pick<Flow.Flow<typeof Input, typeof Result>, "name" | "description" | "input" | "output" | "error" | "capabilities" | "effects"> {
+    readonly scorerKey: string;
+    readonly score: (input: Input) => Effect.Effect<Result, E | ScorerError>;
+}
+/**
+ * Options accepted by {@link make}.
+ *
+ * `input` and `output` are owned by this module. `body`, `model`, and `flows`
+ * are omitted and rejected at runtime so `score` is the single implementation.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type MakeOptions<E = never> = {
+    readonly name?: string | undefined;
+    readonly description?: string | undefined;
+    readonly capabilities?: ReadonlyArray<string> | undefined;
+    readonly effects?: Effects.Declaration | undefined;
+    readonly error?: typeof Schema.Never | undefined;
+} & {
+    /** Stable module-owned scorer identity. */
+    readonly id: string;
+    /** Stable scorer contract/configuration version. */
+    readonly version: string;
+    /** Canonical, inert configuration that changes scoring semantics. */
+    readonly config?: unknown;
+    readonly score: (input: Input) => Effect.Effect<Result, E | ScorerError>;
+};
+/**
+ * Declares a scorer flow and derives its scorer key from its own declaration.
+ *
+ * This is a plan-time constructor and it *throws*, because a bad declaration is
+ * a programming error with no run to fail. Every throw is a `ScorerError` with
+ * code `invalid_declaration`: a `body`, `model`, or `flows` option (even if
+ * `undefined`), a non-string or blank `id` or `version`, a
+ * `config` carrying a member canonical JSON would drop, a `config` nested more
+ * than 1,000 levels, a non-enumerable property, or a `toJSON` member, and a
+ * `config` the canonical encoder refuses outright. These cases are rejected
+ * because `scorerKey` is the durable identity written into every stored
+ * observation: two configurations differing only in lost data would otherwise
+ * be one scorer forever. Calling `toJSON` here to inspect its replacement would
+ * execute caller code a second time with no promise that both calls agree.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export declare const make: <E = never>(options: MakeOptions<E>) => Scorer<E>;
+/**
+ * Decodes a scorer result against {@link Result}.
+ *
+ * The failure names the offending score and carries the schema issue, which
+ * reports the failing path, as its cause. It never retains the whole result:
+ * a scorer result can hold a model response body.
+ *
+ * @category validation
+ * @since 0.1.0
+ */
+export declare const validate: (value: unknown) => Effect.Effect<Result, ScorerError>;

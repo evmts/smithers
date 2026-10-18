@@ -1,0 +1,6 @@
+// D-2: preserve the synchronous foreign record refinement.
+import { isRecord } from "@smthrs/canonical/Record"
+import type { JournalEntryLike } from "./EngineSubject.vibe"
+export const idempotencyKeyOf = (entry: JournalEntryLike): unknown =>
+  isRecord(entry.value) ? entry.value.idempotencyKey : undefined
+

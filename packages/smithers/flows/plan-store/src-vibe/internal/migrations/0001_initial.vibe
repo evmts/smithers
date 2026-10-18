@@ -1,0 +1,30 @@
+/**
+ * Initial persisted plan schema.
+ *
+ * This package owns `flows_plans`, `flows_plan_nodes`, and `flows_plan_edges`
+ * and reserves migration id block `4000`, so this migration is id `4001` — see
+ * `@smthrs/database`'s `Migrations` for how the blocks compose (the journal,
+ * run store, step cache, and engine store hold `0`, `1000`, `2000`, `3000`).
+ *
+ * **Append-only is enforced in the schema, not by convention.**
+ * A plan with dynamic nodes is not invalidated by elaboration, it *grows*; the triggers below make a rewritten or deleted
+ * node row an error the database raises rather than a rule a caller can
+ * forget. The `flows_plans` row itself moves forward — a generation and a
+ * digest advance as subgraphs land — so it accepts an UPDATE, but only one
+ * that raises the generation and leaves the approved base digest alone.
+ *
+ * @since 0.1.0
+ */
+
+import * as Effect from "effect/Effect"
+import * as SqlClient from "effect/sql/SqlClient"
+import { value } from "./0001_initial-value.ts"
+
+/**
+ * Creates the plan tables and the triggers that make them append-only.
+ *
+ * @private
+ * @since 0.1.0
+ * @slop
+ */
+export const initial: Effect.Effect<void, unknown, SqlClient.SqlClient> = value
