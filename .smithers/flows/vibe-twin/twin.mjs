@@ -807,28 +807,32 @@ for (const [src, twin] of pairs) mock.module(src, () => require(twin))
   }
   const register = join(work, "node-register.mjs")
   if (suiteList.some((suite) => suite.kind === "node")) {
-    writeFileSync(join(work, "node-hooks.mjs"), `import { fileURLToPath, pathToFileURL } from "node:url"
+    // module.registerHooks runs in-thread and prints nothing; module.register is deprecated in
+    // Node 26 and writes DEP0205 to stderr, which changes what subprocess tests see (E-11).
+    writeFileSync(register, `import { registerHooks } from "node:module"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { fallbackFor, twinFor } from ${JSON.stringify(fileURLToPath(import.meta.url))}
 const pkg = ${JSON.stringify(pkg)}
-export async function resolve(specifier, context, next) {
-  const parent = context.parentURL?.startsWith("file:") ? fileURLToPath(context.parentURL) : undefined
-  if (parent === undefined) {
-    // An entry point, such as a spawned \`node src/x.ts\`: run its twin instead.
-    const resolved = await next(specifier, context)
+registerHooks({
+  resolve(specifier, context, next) {
+    const parent = context.parentURL?.startsWith("file:") ? fileURLToPath(context.parentURL) : undefined
+    if (parent === undefined) {
+      // An entry point, such as a spawned node src/x.ts: run its twin instead.
+      const resolved = next(specifier, context)
+      const twin = resolved.url.startsWith("file:") ? twinFor(fileURLToPath(resolved.url), pkg) : undefined
+      return twin ? { ...resolved, url: pathToFileURL(twin).href, shortCircuit: true } : resolved
+    }
+    if (!parent.startsWith(pkg) || parent.includes("/node_modules/")) return next(specifier, context)
+    if (parent.includes("/.vibe-twin/out/")) {
+      const fallback = fallbackFor(specifier, parent, pkg)
+      return fallback ? next(pathToFileURL(fallback).href, context) : next(specifier, context)
+    }
+    const resolved = next(specifier, context)
     const twin = resolved.url.startsWith("file:") ? twinFor(fileURLToPath(resolved.url), pkg) : undefined
     return twin ? { ...resolved, url: pathToFileURL(twin).href, shortCircuit: true } : resolved
   }
-  if (!parent.startsWith(pkg) || parent.includes("/node_modules/")) return next(specifier, context)
-  if (parent.includes("/.vibe-twin/out/")) {
-    const fallback = fallbackFor(specifier, parent, pkg)
-    return fallback ? next(pathToFileURL(fallback).href, context) : next(specifier, context)
-  }
-  const resolved = await next(specifier, context)
-  const twin = resolved.url.startsWith("file:") ? twinFor(fileURLToPath(resolved.url), pkg) : undefined
-  return twin ? { ...resolved, url: pathToFileURL(twin).href, shortCircuit: true } : resolved
-}
+})
 `)
-    writeFileSync(register, `import { register } from "node:module"\nregister(${JSON.stringify(pathToFileURL(join(work, "node-hooks.mjs")).href)})\n`)
   }
   if (tests.affectedOnly) {
     tests.affected = 0
