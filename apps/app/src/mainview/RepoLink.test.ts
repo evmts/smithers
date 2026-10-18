@@ -938,3 +938,109 @@ test("an unreadable signed-out repository returns after sign-in to its prefilled
     expect(missingRepositoryOffer(repo, store.collections.githubAppStatuses.get(repo)).action).toEqual({ flow: "repos.import", args: repo, label: "Import" })
   } finally { await store.dispose?.() }
 })
+
+describe("authenticated repository document admission (#4313)", () => {
+  test("a readable private repository absent from the own-repository inventory opens without a catalog grant", async () => {
+    const { store, controller, ran } = await fixture()
+    let inventoryReads = 0
+    controller.loadRepositories = async () => { inventoryReads++ }
+    try {
+      await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "reader", admin: false, scopesPlain: null }).isPersisted.promise
+      expect(await openRequestedRepo(controller, async () => jsonResponse({
+        full_name: "smithersai/smithers", is_public: false, default_bookmark: "main", description: "A readable repository."
+      }), "smithersai/smithers")).toBeUndefined()
+      expect(store.session().repositoryEntry?.phase).toBe("ready")
+      expect(store.session().activeRepoKey).toBe("smithersai/smithers")
+      expect(store.collections.repositories.get("smithersai/smithers")).toMatchObject({ id: "smithersai/smithers", catalog: false, head: { bookmark: "main" } })
+      expect(inventoryReads).toBe(0)
+      expect(store.session().repositoryEntry?.diagnostics).toMatchObject({ stage: "complete", documentStatus: 200, source: "member-document" })
+      await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [] }).isPersisted.promise
+      expect(store.collections.repositories.get("smithersai/smithers")?.documentOwner).toBe("reader")
+      expect(ran).toEqual(['files {"operation":"tree","copy":"shared:smithersai/smithers"}'])
+    } finally { await store.dispose?.() }
+  })
+
+  for (const answer of [
+    { status: 200, signedIn: false, body: { full_name: "smithersai/smithers", is_public: false } },
+    { status: 200, signedIn: true, body: { full_name: "another/repository", is_public: false } },
+    { status: 200, signedIn: true, body: { is_public: false } },
+    { status: 200, signedIn: true, body: { full_name: "smithersai/smithers" } },
+    ...[401, 403, 404].map(status => ({ status, signedIn: true, body: { full_name: "smithersai/smithers", is_public: false } }))
+  ]) test(`an unadmitted document grants no repository (${JSON.stringify(answer)})`, async () => {
+    const { store, controller } = await fixture()
+    try {
+      if (answer.signedIn) await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "reader", admin: false, scopesPlain: null }).isPersisted.promise
+      await openRequestedRepo(controller, async () => new Response(JSON.stringify(answer.body), {
+        status: answer.status, headers: { "content-type": "application/json", "x-request-id": "backend/request-123" }
+      }), "smithersai/smithers")
+      expect(store.session().repositoryEntry?.phase).toBe("failed")
+      expect(store.collections.repositories.size).toBe(0)
+      expect(store.session().activeRepoKey ?? null).toBeNull()
+      expect(store.session().repositoryEntry?.diagnostics).toMatchObject({ documentStatus: answer.status, documentRequestId: "backend/request-123" })
+      expect(JSON.stringify(store.session().repositoryEntry?.diagnostics)).not.toContain("full_name")
+    } finally { await store.dispose?.() }
+  })
+
+  for (const change of ["sign-out", "account-switch", "entry-switch"] as const) test(`a private document cannot publish across ${change}`, async () => {
+    const { store, controller } = await fixture()
+    const response = Promise.withResolvers<Response>()
+    try {
+      await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "reader", admin: false, scopesPlain: null }).isPersisted.promise
+      const opening = openRequestedRepo(controller, async () => response.promise, "smithersai/smithers")
+      if (change === "entry-switch") beginRepositoryEntry(store, "another/repository")
+      else await store.dispatch({ type: "identity.session.loaded", actor: "system", state: change === "sign-out" ? "signed-out" : "signed-in", login: change === "sign-out" ? null : "different", admin: false, scopesPlain: null }).isPersisted.promise
+      response.resolve(jsonResponse({ full_name: "smithersai/smithers", is_public: false }))
+      await opening
+      expect(store.collections.repositories.size).toBe(0)
+      expect(store.session().activeRepoKey ?? null).toBeNull()
+    } finally { response.resolve(jsonResponse({}, 404)); await store.dispose?.() }
+  })
+
+  test("an earlier private document cannot override a fresh denied read and empty own inventory", async () => {
+    const { store, controller } = await fixture()
+    try {
+      await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "reader", admin: false, scopesPlain: null }).isPersisted.promise
+      await openRequestedRepo(controller, async () => jsonResponse({ full_name: "smithersai/smithers", is_public: false }), "smithersai/smithers")
+      controller.loadRepositories = async () => { await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [] }).isPersisted.promise }
+      expect(await openRequestedRepo(controller, async () => jsonResponse({}, 404), "smithersai/smithers")).toBe("smithersai/smithers is not available publicly.")
+      expect(store.session().repositoryEntry).toMatchObject({ phase: "failed", diagnostics: { documentStatus: 404, inventory: "missing" } })
+    } finally { await store.dispose?.() }
+  })
+
+  test("identity settling during a private boot read rechecks that document under the confirmed account", async () => {
+    const { store, controller } = await fixture()
+    const first = Promise.withResolvers<Response>()
+    let reads = 0
+    try {
+      const opening = openRequestedRepo(controller, async () => ++reads === 1 ? first.promise : jsonResponse({ full_name: "smithersai/smithers", is_public: false }), "smithersai/smithers")
+      await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "reader", admin: false, scopesPlain: null }).isPersisted.promise
+      first.resolve(jsonResponse({ full_name: "smithersai/smithers", is_public: false }))
+      await opening
+      expect(reads).toBe(2)
+      expect(store.session().repositoryEntry?.phase).toBe("ready")
+      expect(store.collections.repositories.get("smithersai/smithers")?.documentOwner).toBe("reader")
+    } finally { first.resolve(jsonResponse({}, 404)); await store.dispose?.() }
+  })
+
+  test.each(["x".repeat(161), "unstructured header text"])("admission diagnostics drop an unbounded or unstructured request ID (%s)", async requestId => {
+    const { store, controller } = await fixture()
+    try {
+      await openRequestedRepo(controller, async () => new Response("{}", { status: 404, headers: { "x-request-id": requestId } }), "smithersai/smithers")
+      expect(store.session().repositoryEntry?.diagnostics).toEqual({ stage: "document", documentStatus: 404 })
+    } finally { await store.dispose?.() }
+  })
+
+  test("a same-owner identity outage does not strand an authorized private read", async () => {
+    const { store, controller } = await fixture()
+    const response = Promise.withResolvers<Response>()
+    try {
+      await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "reader", admin: false, scopesPlain: null }).isPersisted.promise
+      const opening = openRequestedRepo(controller, async () => response.promise, "smithersai/smithers")
+      await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "unavailable", login: null, admin: false, scopesPlain: null }).isPersisted.promise
+      response.resolve(jsonResponse({ full_name: "smithersai/smithers", is_public: false }))
+      await opening
+      expect(store.session().repositoryEntry?.phase).toBe("ready")
+      expect(store.collections.repositories.get("smithersai/smithers")?.documentOwner).toBe("reader")
+    } finally { response.resolve(jsonResponse({}, 404)); await store.dispose?.() }
+  })
+})

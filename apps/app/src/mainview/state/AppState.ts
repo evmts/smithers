@@ -290,6 +290,8 @@ export const CloudRepositorySchema = z.object({
    * Absent on the signed-in inventory.
    */
   catalog: z.boolean().optional(),
+  /** Account that directly read this repository; its own-repository list is not an access inventory. */
+  documentOwner: z.string().optional(),
   /** Server admission for the fixed guest flow; the cookie stays HttpOnly. */
   guest: z.object({ sessionId: z.string(), landingId:z.string(), revision: z.string() }).optional(),
   /**
@@ -924,6 +926,14 @@ export const RepositoryEntrySchema = z.object({
   repo: z.string(),
   phase: z.enum(["pending", "ready", "failed"]),
   failureKind: z.enum(["unavailable", "not-public"]).optional(),
+  /** Bounded admission receipts only: never response bodies, credentials, or file contents. */
+  diagnostics: z.object({
+    stage: z.enum(["document", "inventory", "selection", "complete"]),
+    documentStatus: z.number().int().min(100).max(599).optional(),
+    documentRequestId: z.string().regex(/^[\w/.-]{1,160}$/).optional(),
+    inventory: z.enum(["missing", "matched", "unavailable"]).optional(),
+    source: z.enum(["public-document", "member-document", "inventory"]).optional()
+  }).optional(),
   /** Alternatives from this entry's live catalog receipt, never a build-time roster. */
   publicRepositories: z.array(z.string()).optional(),
   error: z.string().optional()
@@ -2023,7 +2033,7 @@ type AppTransitionBody =
   | {
     type: "repository.upserted"
     actor: "system"
-    repository: Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "summary" | "issueTracker" | "guest">
+    repository: Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "documentOwner" | "summary" | "issueTracker" | "guest">
   }
   | {
     type: "workingcopies.workspaces.loaded"

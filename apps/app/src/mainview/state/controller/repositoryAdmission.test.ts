@@ -653,7 +653,7 @@ test("a retry resolving to not-public renders the sign-in gate and never loops t
 })
 
 // C-J11-03 flake: a URL entry paints before the identity answer, so the public catalog can refuse first.
-test("a URL refused by the public catalog before a signed-in answer reopens once from the member's inventory", async () => {
+test("a URL refused before sign-in reopens from its authorized repository document", async () => {
   let catalogReads = 0, inventoryReads = 0
   const h = await setup(undefined, async input => {
     const path = String(input)
@@ -672,7 +672,7 @@ test("a URL refused by the public catalog before a signed-in answer reopens once
     expect(h.store.session().repositoryEntry?.repo).toBe(repo)
     expect(h.store.session().activeRepoKey).toBe(repo)
     expect(h.store.collections.repositories.get(repo)?.catalog).not.toBe(true)
-    expect([catalogReads, inventoryReads]).toEqual([2, 1])
+    expect([catalogReads, inventoryReads]).toEqual([2, 0])
   } finally { await h.close() }
 })
 
@@ -804,5 +804,63 @@ for (const error of [undefined, "Catalog remains unavailable"] as const) test(`a
     expect(h.store.session().draft).toBe("Continue chatting")
     expect(hits).toEqual([])
     expect((await h.store.eventHistory()).events.filter(event => event.type === "command.ran")).toEqual([])
+  } finally { await h.close() }
+})
+
+// #4313: admission failure is not missing command input. The URL already names this repo.
+test("a missing file path keeps the refused URL repository and its admission boundary", async () => {
+  let fileReads = 0
+  const h = await setup(undefined, async input => {
+    if (String(input).includes("/contents/README.md")) fileReads++
+    return json(404, {})
+  })
+  try {
+    await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", admin: false, scopesPlain: null }).isPersisted.promise
+    await openRequestedRepo(h.controller, async () => json(404, {}), repo, h.store.session().repositoryEntry!.requestId)
+    expect((await h.controller.commands.run("file")).status).toBe("form")
+    const card = h.store.collections.cards.get("form-file")
+    expect(card?.kind).toBe("flow-form")
+    if (card?.kind !== "flow-form") throw new Error("Expected missing-path form")
+    expect(card.payload.fields.map(field => field.name)).toEqual(["path"])
+    expect(card.payload.given.repo).toBe(repo)
+    await h.controller.setFormField(card.id, "path", "README.md")
+    await h.controller.submitForm(card.id)
+    expect(h.store.session().repositoryEntry?.phase).toBe("failed")
+    expect(h.store.collections.cards.get(`file-${repo}-README.md`)).toMatchObject({ status: "error", kind: "status" })
+    expect(fileReads).toBe(1)
+  } finally { await h.close() }
+})
+
+test("an authorized private URL outside the own-repository inventory serves file, directory and GitHub commands", async () => {
+  const hits: string[] = []
+  const h = await setup(undefined, async input => {
+    const path = String(input); hits.push(path)
+    if (path === DOCUMENT) return json(200, { full_name: repo, is_public: false, default_bookmark: "main" })
+    if (path.endsWith("/github-app-status")) return json(200, { github_app_installed: true, github_app_configured: true })
+    if (path.endsWith(`/api/repos/${repo}/contents/README.md`)) return json(200, { path: "README.md", content: "AUTHORIZED PRIVATE CONTENT", encoding: "utf-8", type: "file" })
+    if (path.endsWith(`/api/repos/${repo}/contents`)) return json(200, [{ path: "README.md", type: "file" }])
+    return json(200, [])
+  })
+  try {
+    await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", admin: false, scopesPlain: null }).isPersisted.promise
+    await openRequestedRepo(h.controller, async () => json(200, { full_name: repo, is_public: false, default_bookmark: "main" }), repo, h.store.session().repositoryEntry!.requestId)
+    expect(h.store.session().repositoryEntry?.phase).toBe("ready")
+    await h.controller.commands.run("file", "README.md")
+    await until(() => h.store.collections.cards.get(`file-${repo}-README.md`)?.status === "active")
+    const file = h.store.collections.cards.get(`file-${repo}-README.md`)
+    expect(file?.kind === "file" && file.payload.content).toContain("AUTHORIZED PRIVATE CONTENT")
+    await h.controller.commands.run("files")
+    await until(() => h.store.collections.cards.get(`files-${repo}-/`)?.status === "active")
+    await h.store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "alice", expiresAt: null, scopes: null }).isPersisted.promise
+    // This fixture has design data enabled; app-status exercises the real seam.
+    expect((await h.controller.commands.run("github", JSON.stringify({ operation: "app-status" }))).status).toBe("executed")
+    expect(h.store.collections.githubAppStatuses.get(repo)?.configured).toBe(true)
+    expect(h.store.collections.repositories.get(repo)?.catalog).toBe(false)
+    expect(h.store.collections.repositories.get(repo)?.guest).toBeUndefined()
+    expect(hits.some(path => path.endsWith("/guest"))).toBe(false)
+    await h.store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [] }).isPersisted.promise
+    expect(h.store.collections.repositories.get(repo)?.documentOwner).toBe("alice")
+    await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, admin: false, scopesPlain: null }).isPersisted.promise
+    expect(h.store.collections.repositories.get(repo)).toBeUndefined()
   } finally { await h.close() }
 })

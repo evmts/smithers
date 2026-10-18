@@ -359,7 +359,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     if (request.via === "agent" && (entry ?? ctx.commands.find(request.name))?.metadata.confirm !== undefined) fields = fields.filter(field => field.kind !== "write-only")
     if (request.name === "file" && given.operation !== "workspace" && given.branch === undefined && given.revision === undefined) {
       /* Keep the selected repository and ask only for what is actually missing. */
-      const repo = typeof given["repo"] === "string" ? given["repo"] : fileTargetKey(store)
+      const repo = typeof given["repo"] === "string" ? given["repo"] : fileTargetKey(store) ?? store.session().repositoryEntry?.repo
       given = { ...given, ...(repo === undefined ? {} : { repo }) }
       fields = fields.map(field => field.name === "path" ? { ...field, optionsFrom: "files" as const } :
         field.name === "repo" ? { ...field, required: true } : field)

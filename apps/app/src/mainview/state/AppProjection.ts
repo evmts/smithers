@@ -3236,19 +3236,23 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
 
         case "repositories.loaded": {
           /*
-           * The private inventory replaces private rows; public catalog rows
-           * have their own authority and survive a late inventory read. A row
+           * The own-repository inventory replaces its rows; catalog rows and
+           * this account's direct read receipts have separate authority and
+           * survive a late inventory read. A row
            * keeps its fresher head when the new answer carries none (the
            * per-repo bookmarks call failed this round): an absent answer is
            * not a fact about the repo.
            */
           const next = new Set(transition.repositories.map((repository) => repository.id))
-          const stale = [...collections.repositories.values()].filter((repo) => !next.has(repo.id) && repo.catalog !== true).map(repo => repo.id)
+          const identity = collections.identitySessions.get("identity")
+          const stale = [...collections.repositories.values()].filter((repo) => !next.has(repo.id) && repo.catalog !== true &&
+            !(identity?.state === "signed-in" && repo.documentOwner === identity.login)).map(repo => repo.id)
           if (stale.length > 0) collections.repositories.delete(stale)
           for (const repository of transition.repositories) {
             const existing = collections.repositories.get(repository.id)
             const row: CloudRepository = {
               ...repository,
+              documentOwner: undefined,
               head: repository.head ?? existing?.head ?? null,
               updatedAt: createdAt,
               revision

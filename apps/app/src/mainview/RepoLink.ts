@@ -5,7 +5,8 @@ import type { RepositorySubject } from "@smthrs/rpc/RepositorySubjectPath"
 import { appCoverageRow, readRepoAccess } from "./RepositoryEntryOffer"
 import type { AppController } from "./state/AppController"
 import type { AppStore } from "./state/AppStore"
-import { parseRepoSelection,repoTreeRowId,sharedCopyIdOf } from "./state/AppState"
+import { accountOwnerOf } from "./state/AccountOwner"
+import { parseRepoSelection,repoTreeRowId,sharedCopyIdOf, type RepositoryEntry } from "./state/AppState"
 import { randomUuid } from "./runtime/RandomUuid"
 
 /*
@@ -274,8 +275,8 @@ export const beginRepositoryEntry = (store: AppStore, requested: string | null):
 }
 
 /**
- * Select the requested repository from the signed-in inventory or its public API. The
- * public row joins the repositories collection beside whatever the cloud
+ * Select the requested repository from its authorized document or the signed-in inventory. The
+ * admitted row joins the repositories collection beside whatever the cloud
  * inventory already loaded, then `repo.select` makes it the active one.
  * The repository's shared read-only copy (WorkspaceViews.ts)
  * opens its root in the sidebar on this first paint, and the mirror's
@@ -292,12 +293,21 @@ export const openRequestedRepo = async (
   options: { readonly activate?: boolean; readonly isCurrent?: () => boolean; readonly scope?: "command" } = {}
 ): Promise<string | void> => {
   const entry = () => options.scope === "command" ? controller.store.session().repositoryCommandEntry : controller.store.session().repositoryEntry
-  const current = () => entry()?.requestId === requestId && (options.isCurrent?.() ?? true)
+  const identityAtStart = controller.store.collections.identitySessions.get("identity")
+  const sameAccount = () => {
+    const identity = controller.store.collections.identitySessions.get("identity")
+    return (identity?.state === "signed-in" || identity?.state === "unavailable") && accountOwnerOf(identity) === identityAtStart?.login &&
+      identity.provider === identityAtStart?.provider && identity.ownerRevision === identityAtStart?.ownerRevision
+  }
+  const current = () => entry()?.requestId === requestId && (options.isCurrent?.() ?? true) &&
+    (identityAtStart?.state !== "signed-in" || sameAccount())
+  const diagnostics: NonNullable<RepositoryEntry["diagnostics"]> = { stage: "document" }
   const finish = (error?: string, failureKind: "unavailable" | "not-public" = "unavailable", publicRepositories?: ReadonlyArray<string>): string | void => {
     if (!current()) return
+    if (error === undefined) diagnostics.stage = "complete"
     const result = {
       requestId, repo: requested, phase: error === undefined ? "ready" : "failed", ...(error === undefined ? {} : { error, failureKind }),
-      ...(publicRepositories === undefined ? {} : { publicRepositories: [...publicRepositories] })
+      ...(publicRepositories === undefined ? {} : { publicRepositories: [...publicRepositories] }), diagnostics
     } as const
     if (options.scope === "command") {
       const owned = controller.store.session().repositoryCommandEntry
@@ -306,15 +316,36 @@ export const openRequestedRepo = async (
     return error
   }
   let catalog: unknown
+  let memberDocument: { full_name: string; description?: unknown; default_bookmark?: unknown } | undefined
   let guest: { sessionId: string; landingId:string; revision: string } | undefined
   try {
     const path = `/api/repos/${requested.split("/").map(encodeURIComponent).join("/")}`
     const response = await http(path, { headers: { accept: "application/json" }, credentials: "same-origin" })
     if (!current()) return
+    diagnostics.documentStatus = response.status
+    const backendRequestId = response.headers.get("x-request-id")
+    if (backendRequestId !== null && /^[\w/.-]{1,160}$/.test(backendRequestId)) diagnostics.documentRequestId = backendRequestId
     if (!response.ok && ![401, 403, 404].includes(response.status)) return finish(`Repository unavailable (HTTP ${response.status}).`)
-    const document = response.ok ? await response.json() as { is_public?: unknown; description?: unknown; full_name?:unknown } : undefined
+    const document = response.ok ? await response.json() as { is_public?: unknown; description?: unknown; full_name?:unknown; default_bookmark?: unknown } : undefined
+    if (!current()) return
     const canonical = typeof document?.full_name === "string" && document.full_name.toLowerCase() === requested.toLowerCase() ? document.full_name : requested
     catalog = { repos: document?.is_public === true ? [{ name: canonical, summary: document.description }] : [] }
+    if (document?.is_public === false && typeof document.full_name === "string" &&
+      document.full_name.toLowerCase() === requested.toLowerCase() && identityAtStart?.state !== "signed-in" &&
+      controller.store.collections.identitySessions.get("identity")?.state === "signed-in") {
+      // Identity may settle while the boot read is in flight. Re-read under
+      // that confirmed account instead of attributing an earlier response to it.
+      return openRequestedRepo(controller, http, requested, requestId, options)
+    }
+    if (document?.is_public === false && typeof document.full_name === "string" &&
+      document.full_name.toLowerCase() === requested.toLowerCase() && identityAtStart?.state === "signed-in" &&
+      typeof identityAtStart.login === "string" && sameAccount() &&
+      catalogRepository({ repos: [{ name: document.full_name }] }, requested) !== null) {
+      // This exact repository read already passed backend authorization. The
+      // account's own-repository inventory need not include an organization or
+      // collaborator repository; absence there cannot revoke a successful read.
+      memberDocument = { ...document, full_name: document.full_name }
+    }
     if (document?.is_public === true) {
       // Public readability alone never authorizes sponsored compute.
       const admission = await http(`/api/repos/${canonical.split("/").map(encodeURIComponent).join("/")}/guest`, { credentials: "same-origin", headers: { accept: "application/json" } }).catch(() => undefined)
@@ -328,16 +359,38 @@ export const openRequestedRepo = async (
     return finish("Repository unavailable.")
   }
   if (!current()) return
-  
+  if (memberDocument !== undefined) {
+    diagnostics.source = "member-document"
+    const member = catalogRepository({ repos: [{ name: memberDocument.full_name, summary: memberDocument.description }] }, requested)!
+    const existing = controller.store.collections.repositories.get(member.id)
+    const bookmark = typeof memberDocument.default_bookmark === "string" && memberDocument.default_bookmark !== "" ? memberDocument.default_bookmark : undefined
+    controller.store.dispatch({ type: "repository.upserted", actor: "system", repository: {
+      ...existing, ...member, ownerKind: existing?.ownerKind ?? "user", catalog: false, guest: undefined,
+      documentOwner: identityAtStart!.login!,
+      head: bookmark === undefined || existing?.head?.bookmark === bookmark ? existing?.head ?? null : { bookmark, changeId: null, commitId: null }
+    } })
+    if (options.activate === false || options.scope === "command") return finish()
+    diagnostics.stage = "selection"
+    const refusal = await controller.selectRepo(selectionForRepo(controller, member.id))
+    if (!current()) return
+    if (refusal !== undefined) return finish(refusal)
+    diagnostics.stage = "complete"
+    finish()
+    openRepositoryTree(controller, member.id)
+    return
+  }
   const repository = catalogRepository(catalog, requested)
   if (repository === null) {
-    // A URL grants no access. A signed-in user's inventory is the authority
-    // for repositories outside the public catalog; wait for that read before selecting.
+    // A URL grants no access. If its document supplied no admission, fall
+    // back to the signed-in account's loaded repository inventory.
     if (controller.store.collections.identitySessions.get("identity")?.state === "signed-in") {
+      diagnostics.stage = "inventory"
       const failure = await controller.loadRepositories()
       if (!current()) return
-      const own = [...controller.store.collections.repositories.values()].find((repo) => repo.id.toLowerCase() === requested.toLowerCase() && repo.catalog !== true)
+      const own = [...controller.store.collections.repositories.values()].find((repo) => repo.id.toLowerCase() === requested.toLowerCase() && repo.catalog !== true && repo.documentOwner === undefined)
+      diagnostics.inventory = failure !== undefined ? "unavailable" : own === undefined ? "missing" : "matched"
       if (failure === undefined && own !== undefined) {
+        diagnostics.source = "inventory"
         if (options.activate === false || options.scope === "command") return finish()
         const refusal = await controller.selectRepo(selectionForRepo(controller, own.id))
         if (!current()) return
@@ -371,6 +424,7 @@ export const openRequestedRepo = async (
     return finish(`${requested} is not available publicly.`, "not-public",
       catalogRepositories(catalog).map(repo => repo.id).filter(id => id.toLowerCase() !== requested.toLowerCase()))
   }
+  diagnostics.source = "public-document"
   const { repositories } = controller.store.collections
   const existing = repositories.get(repository.id)
   if (existing?.catalog !== true || JSON.stringify(existing.guest) !== JSON.stringify(guest)) {
