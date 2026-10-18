@@ -42,6 +42,9 @@ type Spend struct {
 	ID, SessionHash, IPHash, Key, LandingID, Revision string
 	RepositoryID                                      int64
 	Now                                               func() time.Time
+	// ReservationNanos optionally holds a fixed action allowance. The priced
+	// model maximum must fit inside it; settlement still uses verified usage.
+	ReservationNanos int64
 }
 
 const poolLock = "smithers.guest.spend.v1"
@@ -77,6 +80,12 @@ func (s *Spend) Execute(ctx context.Context, caller modelproxy.Caller, call mode
 	bound, err := modelprice.CostNanos(price, price.Maximum(call.Maximum.PromptTokens(), call.Maximum.OutputTokens))
 	if err != nil || bound <= 0 {
 		return Refusal("guest_unpriced")
+	}
+	if s.ReservationNanos > 0 {
+		if bound > s.ReservationNanos {
+			return Refusal("guest_request_cap")
+		}
+		bound = s.ReservationNanos
 	}
 	now := time.Now().UTC()
 	if s.Now != nil {
@@ -157,27 +166,7 @@ func (s *Spend) Execute(ctx context.Context, caller modelproxy.Caller, call mode
 	}
 	// A persisted reservation is never retried, even if the process dies now.
 	// Polling fences active calls on every replica after an operator switch.
-	callCtx, cancel := context.WithCancel(ctx)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		timer := time.NewTicker(100 * time.Millisecond)
-		defer timer.Stop()
-		for {
-			select {
-			case <-callCtx.Done():
-				return
-			case <-timer.C:
-				check, stop := context.WithTimeout(callCtx, time.Second)
-				disabled, err := Suspended(check, s.DB)
-				stop()
-				if err != nil || disabled {
-					cancel()
-					return
-				}
-			}
-		}
-	}()
+	callCtx, stopGuard := watchSuspension(ctx, s.DB)
 	disabled, checkErr := Suspended(callCtx, s.DB)
 	var result modelproxy.Result
 	var spendErr error
@@ -186,11 +175,14 @@ func (s *Spend) Execute(ctx context.Context, caller modelproxy.Caller, call mode
 	} else {
 		result, spendErr = spend(callCtx)
 	}
-	cancel()
-	<-done
+	stopGuard()
 	charge, state := bound, "uncertain"
 	if result.Outcome == credits.ModelSucceeded {
-		if actual, err := modelprice.CostNanos(price, result.Usage); err == nil && actual <= bound {
+		if s.ReservationNanos > 0 {
+			// No authoritative worker-price settlement exists. Retain the whole
+			// conversion allowance, including compile, rather than undercount.
+			state = "completed"
+		} else if actual, err := modelprice.CostNanos(price, result.Usage); err == nil && actual <= bound {
 			charge, state = actual, "completed"
 		}
 	}
@@ -201,4 +193,31 @@ func (s *Spend) Execute(ctx context.Context, caller modelproxy.Caller, call mode
 	}
 	logger.Info("guest reservation settled", "stage", state, "charged_nanos", charge, "duration_ms", time.Since(started).Milliseconds())
 	return spendErr
+}
+
+// watchSuspension applies the same kill fence to model transport and compiler
+// transport. A storage outage cancels active work, preserving its reservation.
+func watchSuspension(ctx context.Context, pool *pgxpool.Pool) (context.Context, func()) {
+	guarded, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		timer := time.NewTicker(100 * time.Millisecond)
+		defer timer.Stop()
+		for {
+			select {
+			case <-guarded.Done():
+				return
+			case <-timer.C:
+				check, stop := context.WithTimeout(guarded, time.Second)
+				disabled, err := Suspended(check, pool)
+				stop()
+				if err != nil || disabled {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return guarded, func() { cancel(); <-done }
 }

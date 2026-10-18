@@ -990,6 +990,16 @@ type GithubWebhookJob struct {
 	UpdatedAt          time.Time          `json:"updated_at"`
 }
 
+type GuestConversion struct {
+	RepositoryID int64     `json:"repository_id"`
+	SessionHash  string    `json:"session_hash"`
+	RequestKey   string    `json:"request_key"`
+	ID           string    `json:"id"`
+	Revision     string    `json:"revision"`
+	Result       []byte    `json:"result"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
 type GuestReservation struct {
 	ID           string             `json:"id"`
 	RepositoryID int64              `json:"repository_id"`

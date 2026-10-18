@@ -622,6 +622,7 @@ func Load(configFile string) (*Config, error) {
 		"ip_secret": "", "disabled": false, "request_nanos": int64(100_000_000),
 		"daily_nanos": int64(100_000_000_000), "window_nanos": int64(500_000_000_000),
 		"window_start": "", "window_end": "", "requests_per_ip": 10, "output_tokens": 1024,
+		"compile_endpoint": "", "receipt_seed": "", "proxy_origin": "", "proxy_secret": "",
 	} {
 		v.SetDefault("guest."+key, value)
 		_ = v.BindEnv("guest."+key, "SMITHERS_GUEST_"+strings.ToUpper(key))

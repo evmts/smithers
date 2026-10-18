@@ -38,6 +38,14 @@ export const chatFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     }
   }
   return [
+  flow({ name: "convert", summary: "Convert Effect code", args: "<source>", agent: "run",
+    grammar: args => {
+      if (args?.trim().startsWith("{")) { try { return { payload: JSON.parse(args) } } catch { return { error: "Invalid conversion input" } } }
+      return { payload: args?.trim() ? { source: args } : {} }
+    },
+    input: Schema.Struct({ source: Schema.String, idempotencyKey: Schema.optional(Schema.String),
+      sourceLabel: Schema.optional(Schema.Literals(["hn", "x", "discord", "telegram", "share", "direct", "other"])) }),
+    handler: input => actions.convert(input) }),
   flow({ name: "guest.chat", summary: "Ask this repository", args: "<text>",
     agent: "run", input: Schema.Struct({ text: Schema.String }),
     handler: async ({ text }) => { await actions.askGuest(text) } }),

@@ -44,6 +44,8 @@ type Handler struct {
 	Client       *http.Client
 	CookieSecure bool
 	Now          func() time.Time
+	// CompileTimeout may shorten the fixed 15-second worker limit in tests.
+	CompileTimeout time.Duration
 }
 
 // Validate refuses partially configured sponsored compute before serving it.
@@ -79,6 +81,9 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/repos/{owner}/{repo}/guest", h.Boot)
 	r.Post("/api/repos/{owner}/{repo}/guest/chat", h.Chat)
 	r.Get("/api/repos/{owner}/{repo}/guest/runs/{run}", h.Run)
+	r.Post("/api/repos/{owner}/{repo}/guest/conversions", h.Convert)
+	r.Get("/api/repos/{owner}/{repo}/guest/conversions/key", h.ConversionKey)
+	r.Get("/api/repos/{owner}/{repo}/guest/conversions/{key}", h.Conversion)
 }
 
 func (h *Handler) digest(domain, value string) string {
@@ -87,6 +92,9 @@ func (h *Handler) digest(domain, value string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 func (h *Handler) repository(r *http.Request) (Repository, error) {
+	return h.repositoryAccess(r, true)
+}
+func (h *Handler) repositoryAccess(r *http.Request, admission bool) (Repository, error) {
 	name := chi.URLParam(r, "owner") + "/" + chi.URLParam(r, "repo")
 	allowed := false
 	for _, candidate := range h.Config.Repositories {
@@ -95,18 +103,20 @@ func (h *Handler) repository(r *http.Request) (Repository, error) {
 	if !allowed {
 		return Repository{}, Refusal("guest_not_allowed")
 	}
-	if h.Config.Disabled {
+	if admission && h.Config.Disabled {
 		return Repository{}, Refusal("guest_disabled")
 	}
 	if err := h.Validate(); err != nil {
 		return Repository{}, Refusal("guest_unavailable")
 	}
-	disabled, err := Suspended(r.Context(), h.DB)
-	if err != nil {
-		return Repository{}, Refusal("guest_unavailable")
-	}
-	if disabled {
-		return Repository{}, Refusal("guest_disabled")
+	if admission {
+		disabled, err := Suspended(r.Context(), h.DB)
+		if err != nil {
+			return Repository{}, Refusal("guest_unavailable")
+		}
+		if disabled {
+			return Repository{}, Refusal("guest_disabled")
+		}
 	}
 	repository, err := h.Source.ReadGuestRepository(r.Context(), chi.URLParam(r, "owner"), chi.URLParam(r, "repo"))
 	if err != nil || repository.ID <= 0 || repository.Revision == "" || len(repository.Instructions) > 64*1024 || strings.ContainsRune(repository.Instructions, 0) {
@@ -204,21 +214,11 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 		refuse(w, Refusal("guest_invalid_request"))
 		return
 	}
-	ip := r.RemoteAddr
-	if host, _, err := net.SplitHostPort(ip); err == nil {
-		ip = host
-	}
-	address := net.ParseIP(ip)
-	if address == nil {
-		refuse(w, Refusal("guest_unavailable"))
+	ipHash, err := h.ipHash(r)
+	if err != nil {
+		refuse(w, err)
 		return
 	}
-	// IPv6 privacy addresses share their /64 bucket. Ignore caller-supplied
-	// forwarding headers; the composition's trusted RealIP middleware owns it.
-	if address.To4() == nil {
-		address = address.Mask(net.CIDRMask(64, 128))
-	}
-	ipHash := h.digest("ip", address.String())
 	log = log.With("landing_id", input.LandingID, "repository_id", repository.ID, "revision", repository.Revision, "ip_hash", ipHash)
 	log.Info("guest interaction", "stage", "landing")
 	instructions := ports.BuiltinAppInstructions
@@ -284,4 +284,21 @@ func (h *Handler) Switch(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Warn("guest operator switch", "stage", "switch", "disabled", *input.Disabled)
 	writeJSON(w, 200, map[string]bool{"disabled": *input.Disabled})
+}
+
+// ipHash is shared by chat and conversions, including IPv6 privacy buckets.
+// Only the trusted composition or authenticated Worker sets RemoteAddr.
+func (h *Handler) ipHash(r *http.Request) (string, error) {
+	ip := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(ip); err == nil {
+		ip = host
+	}
+	address := net.ParseIP(ip)
+	if address == nil {
+		return "", Refusal("guest_unavailable")
+	}
+	if address.To4() == nil {
+		address = address.Mask(net.CIDRMask(64, 128))
+	}
+	return h.digest("ip", address.String()), nil
 }

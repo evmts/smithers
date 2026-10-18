@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
@@ -21,6 +22,23 @@ type guestRepositorySource struct {
 		GetBookmark(context.Context, string, string, string) (repohost.Bookmark, error)
 		GetFileAtCommit(context.Context, string, string, string, string) (repohost.FileContent, error)
 	}
+}
+
+// ReadConversion reads data only, at the already admitted main revision. A
+// repository cannot replace the fixed guest implementation with executable code.
+func (s guestRepositorySource) ReadConversion(ctx context.Context, owner, name, revision string) (string, error) {
+	read := func(path string, limit int) (string, error) {
+		file, err := s.host.GetFileAtCommit(ctx, owner, name, revision, ".smithers/flows/convert/"+path)
+		if err != nil || file.TooLarge || file.Encoding == "base64" || len(file.Content) > limit {
+			return "", errors.New("conversion declaration unavailable")
+		}
+		return file.Content, nil
+	}
+	declaration, err := read("flow.ts", 8*1024)
+	if err != nil || strings.TrimSpace(declaration) != strings.TrimSpace(guest.ConversionFlowDeclaration) {
+		return "", errors.New("conversion declaration unavailable")
+	}
+	return read("prompt.md", 24*1024)
 }
 
 func (s guestRepositorySource) ReadGuestRepository(ctx context.Context, owner, name string) (guest.Repository, error) {
@@ -74,10 +92,11 @@ func mountGuestPublic(router chi.Router, h *guest.Handler, queries *db.Queries, 
 			})
 		})
 		r.Use(middleware.JSONAllowContentType("application/json"))
-		r.Use(middleware.MaxBodySize(16 * 1024))
+		r.Use(middleware.MaxBodySize(64 * 1024))
 		r.Use(apiCSRFMiddleware)
 		h.Mount(r)
 	})
+	h.MountProxy(router)
 	router.Group(func(r chi.Router) {
 		r.Use(authLoader(queries, cfg.Auth))
 		r.Use(apiCSRFMiddleware)

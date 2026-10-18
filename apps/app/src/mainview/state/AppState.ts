@@ -645,7 +645,14 @@ const MessageActionSchema = MessageActionBaseSchema.transform(currentAction)
   .transform(action => action.flow === "chat.dictate" ? undefined : action)
 const AnsweredActionSchema = MessageActionBaseSchema.extend({ answer: z.string(), answeredAt: z.number() }).transform(currentAction)
 
+/** A persisted converter request and its terminal server receipt.
+ * @category schemas
+ * @since 0.1.0
+ */
+export const ConversionRequestSchema = z.object({ repo: z.string(), key: z.string(), source: z.string(), sourceLabel: z.enum(["hn", "x", "discord", "telegram", "share", "direct", "other"]), result: z.string().optional() }).strict()
+
 export const MessageSchema = z.object({
+  conversion: ConversionRequestSchema.optional(),
   id: z.string(),
   /** Imported identities are data only, never executable Smithers turns. */
   origin: z.enum(["smithers", "external"]).optional(),
@@ -719,7 +726,7 @@ export const MessageSchema = z.object({
       actor.id !== message.participant_id || actor.session_id !== message.session_id || !actor.for_member?.login.trim())) {
     ctx.addIssue({ code: "custom", message: "Incomplete external conversation identity" })
   }
-  if (message.turnId !== undefined || message.action !== undefined || message.answeredAction !== undefined ||
+  if (message.turnId !== undefined || message.action !== undefined || message.answeredAction !== undefined || message.conversion !== undefined ||
     message.disclosed !== undefined) {
     ctx.addIssue({ code: "custom", message: "External conversations cannot carry executable turns or actions" })
   }
@@ -1968,6 +1975,7 @@ type AppTransitionBody =
   | {
     /* A complete one-line Smithers message (admin results, honest states, auth replies). */
     type: "message.appended"
+    conversion?: z.infer<typeof ConversionRequestSchema>
     /** The initiator of this app-authored reply, independently of its transcript role. */
     actor: "system" | "user" | "smithers"
     text: string
@@ -1979,6 +1987,7 @@ type AppTransitionBody =
     /** What the answer read ({@link Message.context}). */
     context?: Message["context"]
   }
+  | { type: "conversion.settled"; actor: "system"; id: string; result: string }
   | { type: "confirmation.cancelled"; actor: "user"; id: string; revision: string }
   /* The card tabs (docs/LOCAL-APP.md "Cards"). */
   | { type: "tab.opened"; actor: Actor; tab: Tab }

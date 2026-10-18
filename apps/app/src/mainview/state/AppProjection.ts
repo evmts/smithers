@@ -297,6 +297,7 @@ export const APP_TRANSITION_TYPES = {
   "message.claim.substituted": true,
   "message.commands.disclosed": true,
   "message.appended": true,
+  "conversion.settled": true,
   "confirmation.cancelled": true,
   "tab.opened": true,
   "tab.selected": true,
@@ -3087,11 +3088,21 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           break
         }
 
+        case "conversion.settled": {
+          const row = collections.messages.get(transition.id)
+          if (row?.conversion && row.conversion.result === undefined) collections.messages.update(row.id, draft => {
+            draft.conversion = { ...row.conversion!, result: transition.result }
+            draft.text = transition.result
+          })
+          break
+        }
+
         case "message.appended": {
           insertMessage({
             id: `message-appended-${recordId}`,
             role: "smithers",
             text: transition.text,
+            ...(transition.conversion === undefined ? {} : { conversion: transition.conversion }),
             ...(transition.diagnostic === undefined ? {} : { diagnostic: transition.diagnostic }),
             ...(transition.action === undefined ? {} : { action: transition.action }),
             ...(transition.spoken === undefined ? {} : { spoken: transition.spoken }),

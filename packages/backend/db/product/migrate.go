@@ -204,6 +204,7 @@ var migrationRegistry = []migrationSpec{
 	{166, "migrations/0166_sandbox_egress_billing_owner.sql"},
 	{167, "migrations/0167_sandbox_usage_billing_owner.sql"},
 	{168, "migrations/0168_guest_spend.sql"},
+	{169, "migrations/0169_guest_conversions.sql"},
 }
 
 type migration struct {

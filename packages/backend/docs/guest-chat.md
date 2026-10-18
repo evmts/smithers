@@ -7,8 +7,9 @@ service participates. Access is disabled by an empty operator allowlist.
 ## Authority
 
 A random, HttpOnly session capability belongs to one public repository. It is
-never a user, roster member, owner credential or general API bearer. The sole
-guest action is the fixed `guest.chat` flow. Its model request contains text,
+never a user, roster member, owner credential or general API bearer. The fixed guest actions are `guest.chat` and a repository-declared
+[`convert.v1`](guest-conversions.md) conversion. They share this admission pool.
+Guest chat never receives the converter as a tool. Its model request contains text,
 the built-in app instructions followed by `.smithers/instructions/app.md` read
 at a pinned main tip, and a bounded output allowance. No tools, provider-held
 context, retries, workspace, secret or write capability is supplied. Published
