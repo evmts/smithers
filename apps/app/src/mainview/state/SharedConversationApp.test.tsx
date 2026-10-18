@@ -848,6 +848,7 @@ test("a shared turn ticks while working, freezes on completion, and keeps its tr
 const CAPACITY_SENTENCE = "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
 test("a capacity-deferred prompt waits honestly, names the busy fleet, and leaves one receipt (#3822)", async () => {
   const storage = memoryStorage()
+  const admissions: Array<{ prompt: string; idempotencyKey: string }> = []
   const startedAt = Date.now() - 206_802
   let entries: Array<Record<string, unknown>> = []
   const turn = (fields: Record<string, unknown>) => [{ id: "turn-83b", author: 1, authorLogin: "ben", runId: "run-83b", prompt: "Short reply please", startedAt, ...fields }]
@@ -858,7 +859,10 @@ test("a capacity-deferred prompt waits honestly, names the busy fleet, and leave
       toastDebounceMs: 1,
       fetchImpl: async (input, init) => {
         const path = String(input)
-        if (init?.method === "POST" && path === "/api/conversations/main/prompt") return Response.json({ status: "accepted", turnId: "turn-83b", terminal: false }, { status: 202 })
+        if (init?.method === "POST" && path === "/api/conversations/main/prompt") {
+          admissions.push(JSON.parse(String(init.body)))
+          return Response.json({ status: "accepted", turnId: "turn-83b", terminal: false }, { status: 202 })
+        }
         if (path === "/api/conversations/main") return Response.json({ id: "main", entries })
         if (path.endsWith("/view-state")) return Response.json({})
         return new Response("{}", { status: 404 })
@@ -890,7 +894,7 @@ test("a capacity-deferred prompt waits honestly, names the busy fleet, and leave
     // This turn never got there: attempts spent, sealed by the typed code.
     entries = turn({ state: "failed", finishedAt: startedAt + 206_802, frames: [{ runId: "run-83b", type: "done", code: "host_no_capacity", error: CAPACITY_SENTENCE }] })
     await session.controller.sharedConversation!.read()
-    await waitFor(() => session.host.textContent?.includes("Every model host is busy. Nothing here was lost") === true)
+    await waitFor(() => session.host.textContent?.includes(CAPACITY_SENTENCE) === true)
     await waitFor(() => session.store.session().sharedPrompts?.[0]?.state === "failed")
     expect(session.host.querySelector('[data-failure="HostNoCapacity"]')?.getAttribute("data-fault")).toBe("infra")
     expect(session.host.textContent).toContain(CAPACITY_SENTENCE)
@@ -903,7 +907,7 @@ test("a capacity-deferred prompt waits honestly, names the busy fleet, and leave
   // Reload: the acknowledged request stays deduplicated against the same turn.
   const reloaded = await mount()
   try {
-    await waitFor(() => reloaded.host.textContent?.includes("Every model host is busy. Nothing here was lost") === true)
+    await waitFor(() => reloaded.host.textContent?.includes(CAPACITY_SENTENCE) === true)
     expect(prompts(reloaded.host)).toBe(0)
     expect(reloaded.store.session().sharedPrompts?.[0]?.state).toBe("failed")
   } finally { await reloaded.unmount() }
@@ -913,6 +917,10 @@ test("a capacity-deferred prompt waits honestly, names the busy fleet, and leave
   try {
     await waitFor(() => prompts(alone.host) === 1)
     expect(alone.host.textContent).toContain("Short reply please")
+    await alone.controller.submitCommand({ name: "chat.retry", payload: {}, actor: "user" })
+    await waitFor(() => admissions.length === 2)
+    expect(admissions.map(row => row.prompt)).toEqual(["Short reply please", "Short reply please"])
+    expect(admissions[1]!.idempotencyKey).not.toBe(admissions[0]!.idempotencyKey)
   } finally { await alone.unmount() }
 }, 20_000)
 
