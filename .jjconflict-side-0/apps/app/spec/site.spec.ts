@@ -75,6 +75,8 @@ test("bootstrapped route inventory includes home, README, a file and issues", as
 })
 
 test("CSP blocks a cross-origin fetch even when the page shim is bypassed", async ({ page }) => {
+  // Responses carry the same policy so external worker scripts inherit it too.
+  expect((await page.request.get(`${host.origin}/favicon.svg`)).headers()["content-security-policy"]).toBe("connect-src 'self'")
   await page.addInitScript(() => { (window as unknown as { rawFetch: typeof fetch }).rawFetch = fetch.bind(window) })
   await page.goto(`${host.origin}/maya/tinyhttp`)
   await page.waitForFunction(() => window.__spec !== undefined)

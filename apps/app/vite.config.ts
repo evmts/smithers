@@ -1,6 +1,7 @@
 import { validateFixtures } from "./spec/validate"
 import { openApiChunk } from "./scripts/openapi-chunk"
 import react from "@vitejs/plugin-react"
+import { appendFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { defineConfig } from "vite"
@@ -58,6 +59,9 @@ export default defineConfig(({ mode }) => ({
   } satisfies Plugin] : []), ...(mode === "spec" ? [{
     name: "smithers-spec-entry",
     buildStart() { validateFixtures() },
+    async writeBundle() {
+      await appendFile(resolve(here, "dist-spec/_headers"), "  Content-Security-Policy: connect-src 'self'\n")
+    },
     transformIndexHtml: { order: "pre" as const, handler(html: string) {
       return html.replace('<head>', '<head><meta http-equiv="Content-Security-Policy" content="connect-src \'self\'">')
         .replace('src="/main.tsx"', 'src="/spec-entry"')

@@ -8,7 +8,8 @@ pnpm exec vite build --configLoader runner --mode spec
 pnpm exec playwright test --config playwright.spec.config.ts --workers=1
 ```
 
-Serve `apps/app/dist-spec` with any static host that falls back to `index.html`.
+Serve `apps/app/dist-spec` with a static host that falls back to `index.html`.
+Apply its `_headers` file (CSP on every response, including worker scripts).
 The production build remains `pnpm exec vite build --configLoader runner`.
 
 Open `/maya/tinyhttp`, `/smithers-canary/smithers`, or `/effeck/effeck`.
@@ -27,3 +28,8 @@ Every response is decoded before delivery and by `specSite` before bundling.
 and `assertClean()`. Unknown HTTP/socket requests produce a visible fixture
 failure; `assertClean()` throws. Tests also refuse any backend request that
 reaches the static server, including requests originating in workers.
+
+Known product gaps are retained as failing tests, outside the D1 transport gate:
+`SPEC_PRODUCT_GAPS=1 pnpm exec playwright test --config playwright.spec.config.ts --workers=1`.
+They assert whole long files (L3/L4) and semantic README headings; the product
+currently clips file cards at 16 KiB and draws homepage headings without roles.

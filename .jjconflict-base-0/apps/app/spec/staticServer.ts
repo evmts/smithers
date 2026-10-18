@@ -7,6 +7,7 @@ export const staticServer = async (root: string) => {
   const escapes: string[] = []
   const base = await realpath(root)
   const server = createServer(async (req, res) => {
+    res.setHeader("Content-Security-Policy", "connect-src 'self'")
     const path = new URL(req.url ?? "/", "http://localhost").pathname
     if (path.startsWith("/api/") || path === "/live" || req.headers.upgrade?.toLowerCase() === "websocket") {
       escapes.push(`${req.method} ${path}`)
