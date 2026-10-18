@@ -16,7 +16,7 @@
  */
 import { spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
-import { dirname, join, relative, resolve, sep } from "node:path"
+import { basename, dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)))
@@ -222,17 +222,23 @@ const walk = (dir, base = dir) =>
  */
 export const sourceRoot = (pkg) => (existsSync(join(pkg, "src")) ? "src" : ".")
 
-/** Folders that never hold API modules, skipped in a flat package. */
-const notSources = new Set(["node_modules", "test", "tests", "e2e", "fixtures", "__tests__", "dist", "src-vibe", ".vibe-twin", "scripts"])
+/** Folders that never hold API modules anywhere. */
+const neverSources = new Set(["node_modules", "__tests__", "src-vibe", ".vibe-twin"])
+/**
+ * Folders a flat package keeps beside its modules at its root. Inside src/, a test/ folder
+ * holds public modules (kernel's src/test/HostContract.ts is a shipped subpath, B-7).
+ */
+const rootOnlyNonSources = new Set(["test", "tests", "e2e", "fixtures", "dist", "scripts"])
 
 /** Every file under a source root, without the folders that are never sources. */
 const walkSources = (dir, base = dir) =>
   existsSync(dir)
-    ? readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
-      e.isDirectory()
-        ? (e.name.startsWith(".") || notSources.has(e.name) ? [] : walkSources(join(dir, e.name), base))
-        : [relative(base, join(dir, e.name))]
-    )
+    ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      if (!e.isDirectory()) return [relative(base, join(dir, e.name))]
+      const flatRoot = dir === base && basename(base) !== "src" && basename(base) !== "src-vibe"
+      const skip = e.name.startsWith(".") || neverSources.has(e.name) || (flatRoot && rootOnlyNonSources.has(e.name))
+      return skip ? [] : walkSources(join(dir, e.name), base)
+    })
     : []
 
 /** A module file: TypeScript, not a declaration, test or config. */
