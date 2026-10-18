@@ -308,4 +308,4 @@ Reports go to `https://bug.smithers.sh/api/bugs` unless
 - [Output and exit codes](../concepts/output-and-exit-codes.md): the status
   each of these commands exits on.
 - [Script the CLI](./script-the-cli.md): answering a park from a script.
-- [`smthrs runs`](/cli/runs) and [`smthrs doctor`](/cli/doctor): the per-verb reference.
+- [CLI reference](../reference/cli/README.md): `smthrs runs` and `smthrs doctor`.
