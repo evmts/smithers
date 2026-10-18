@@ -7,6 +7,10 @@ const hash = (value: string | Uint8Array) => createHash("sha256").update(value).
 const unsigned = '{"text":"Ship"}'
 const openQuestion = async (page: Page, origin: string) => {
   const answers: any[] = []
+  if (origin.includes("localhost")) await page.route(`${origin}/**`, async route => {
+    const response = await route.fetch({ url: route.request().url().replace("localhost", "127.0.0.1") })
+    await route.fulfill({ response })
+  })
   await page.addInitScript('globalThis.__name = (fn) => fn')
   await installCloudFixture(page, { capabilities: ["agent", "identity", "cloud", "cloud.pat"], workspaces: [runningBox(repo)] })
   const json = (body: unknown) => ({ contentType: "application/json", body: JSON.stringify(body) })
@@ -28,7 +32,9 @@ const openQuestion = async (page: Page, origin: string) => {
     return route.fulfill(json({ ok: true, payload: { _tag: "flows", items: [] } }))
   })
   await page.goto(`${origin}/${repo}`)
-  await expect(page.locator(".app-shell")).toBeVisible()
+  const ask = page.getByRole("button", { name: "Ask", exact: true })
+  await expect(ask).toBeVisible()
+  if (await ask.getAttribute("aria-expanded") !== "true") await ask.click()
   if (!await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
   await page.getByTestId("composer-input").fill(`/runs ${JSON.stringify({ operation: "approval-list", repo })}`)
   await page.getByTestId("composer-input").press("Enter")
@@ -106,4 +112,17 @@ test("IP origin refuses signing and sends nothing", async ({ page, baseURL }) =>
   await expect(page.getByRole("alert")).toHaveText(`Signing needs http://localhost:${new URL(baseURL!).port}`)
   expect(answers).toHaveLength(0)
   await expect(page.getByTestId("approval-answer-text")).toHaveValue(unsigned)
+})
+
+test("cancelled and failed authenticators preserve the draft without submitting", async ({ page, baseURL }) => {
+  const answers = await openQuestion(page, baseURL!.replace("127.0.0.1", "localhost"))
+  for (const name of ["NotAllowedError", "UnknownError"]) {
+    await page.evaluate(name => {
+      Object.defineProperty(navigator.credentials, "get", { configurable: true, value: async () => { throw new DOMException("Authenticator unavailable", name) } })
+    }, name)
+    await page.getByTestId("approval-answer-send").click()
+    await expect(page.getByRole("alert")).toContainText(name === "NotAllowedError" ? "Signing cancelled" : "Authenticator unavailable")
+    expect(answers).toHaveLength(0)
+    await expect(page.getByTestId("approval-answer-text")).toHaveValue(unsigned)
+  }
 })

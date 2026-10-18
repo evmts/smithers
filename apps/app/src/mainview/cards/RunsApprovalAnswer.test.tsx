@@ -205,6 +205,12 @@ describe("reading a gateway row", () => {
     status: "pending" as const
   }
 
+  test("preserves the schema and exact wait execution for signed JSON answers", () => {
+    const schema = { type: "object", properties: { evidence: { format: "webauthn-assertion" } } }
+    expect(questionOf({ ...base, waitRunId: "child-execution", request: { kind: "json", prompt: "Sign", name: "answer", schema } }))
+      .toEqual({ kind: "json", prompt: "Sign", name: "answer", schema, waitRunId: "child-execution" })
+  })
+
   test("takes the question from a wait held below the run", () => {
     expect(questionOf({
       ...base,
