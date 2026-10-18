@@ -1466,6 +1466,7 @@ func buildRouter(
 				// A merge's credential is refused before the repository is
 				// resolved, as the numbered door refuses it.
 				r.Use(routes.MergeCredentialFirst)
+				r.Use(routes.SessionLandingCredentialFirst)
 				if queries != nil {
 					r.Use(middleware.LoadRepoContext(queries))
 				}
@@ -1800,6 +1801,7 @@ func buildRouter(
 					r.With(append(writeRepo, gateAgents)...).Post("/agent/sessions", agentSessionHandler.CreateSession)
 					r.With(append(readRepo, gateAgents)...).Get("/agent/sessions", agentSessionHandler.ListSessions)
 					r.With(append(readRepo, gateAgents)...).Get("/agent/sessions/{id}", agentSessionHandler.GetSession)
+					r.With(append(readRepo, gateAgents)...).Post("/agent/sessions/{id}/landing", agentSessionHandler.OpenLanding)
 					if config.IsMultitenant(cfg.Auth) {
 						r.With(append(readRepo, gateAgents)...).Get("/agent-sessions/{id}/egress", agentSessionHandler.ListEgressAudit)
 					}

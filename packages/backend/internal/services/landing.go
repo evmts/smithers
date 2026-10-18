@@ -1806,6 +1806,9 @@ func requireOwnLandingOrPerson(ctx context.Context, actor *db.User, authorID int
 }
 
 func landingRequestAgentSessionID(ctx context.Context) string {
+	if source, ok := ctx.Value(sessionLandingSourceKey{}).(sessionLandingSource); ok {
+		return source.sessionID
+	}
 	info := middleware.AuthInfoFromContext(ctx)
 	if info == nil || !info.IsTokenAuth {
 		return ""

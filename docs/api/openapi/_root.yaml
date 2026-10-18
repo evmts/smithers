@@ -36,6 +36,43 @@ components:
       scheme: bearer
       description: Shared first-party Worker secret from auth.worker_exchange_token / SMITHERS_AUTH_WORKER_EXCHANGE_TOKEN.
   schemas:
+    SessionLanding:
+      type: object
+      required: [landing_number, branch, pull_number, pull_url, head_commit, tested, passed]
+      properties:
+        landing_number: {type: integer, format: int64}
+        branch: {type: string}
+        pull_number: {type: integer, format: int64}
+        pull_url: {type: string, format: uri}
+        head_commit: {type: string, pattern: '^[0-9a-f]{40}$'}
+        tested: {type: boolean}
+        passed: {type: boolean, description: False for zero tests even when the command exits zero.}
+    AgentSessionRead:
+      type: object
+      required: [id, status, workspace, run, reason_code, reason, retryable]
+      properties:
+        id: {type: string}
+        status: {type: string}
+        workspace:
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [id, name, status]
+              properties:
+                id: {type: string}
+                name: {type: string}
+                status: {type: string}
+        run:
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [id, status]
+              properties:
+                id: {type: integer, format: int64}
+                status: {type: string}
+        reason_code: {type: [string, 'null']}
+        reason: {type: [string, 'null']}
+        retryable: {type: boolean}
     AppBootstrap:
       type: object
       required:

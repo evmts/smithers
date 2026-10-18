@@ -21,11 +21,14 @@ type landingProvenanceStore interface {
 // recordLandingSource keeps the workspace named by the creating landing
 // credential. A replayed create records it again, idempotently.
 func (s *LandingService) recordLandingSource(ctx context.Context, landingID int64) error {
-	info := middleware.AuthInfoFromContext(ctx)
-	if info == nil || !info.IsTokenAuth {
-		return nil
+	workspaceID := ""
+	if source, ok := ctx.Value(sessionLandingSourceKey{}).(sessionLandingSource); ok {
+		workspaceID = source.workspaceID
 	}
-	workspaceID := middleware.ParseTokenLandingWorkspace(info.RawScopes)
+	info := middleware.AuthInfoFromContext(ctx)
+	if workspaceID == "" && info != nil && info.IsTokenAuth {
+		workspaceID = middleware.ParseTokenLandingWorkspace(info.RawScopes)
+	}
 	if workspaceID == "" {
 		return nil
 	}

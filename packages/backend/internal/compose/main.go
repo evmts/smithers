@@ -1666,6 +1666,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		egressAuditService = services.NewSandboxEgressAuditService(runtimeStores.EgressAudit)
 	}
 	agentSessionHandler := &routes.AgentSessionHandler{
+		Landing:     services.NewAgentSessionLandingService(agentService, landingHandler.GitHubPull.(*services.LandingGitHubPullService), pool),
 		Service:     agentService,
 		EgressAudit: egressAuditService,
 	}
