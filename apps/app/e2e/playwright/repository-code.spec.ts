@@ -3,7 +3,7 @@ import { APPLICATION_SIGN_IN_PATH } from "@smthrs/rpc/ApplicationAuth"
 import { identityRoute } from "./identity"
 
 for (const width of [1440, 1280, 390]) for (const theme of ["light", "dark"] as const) {
-  test(`tree and blob views ${width} ${theme}`, async ({ page }) => {
+  test(`tree and blob views ${width} ${theme}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 844 })
     await page.emulateMedia({ colorScheme: theme })
     await page.route("**/api/bootstrap", route => route.fulfill({ json: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "cloud"], authFlow: "redirect", sandbox: null } }))
@@ -34,13 +34,13 @@ for (const width of [1440, 1280, 390]) for (const theme of ["light", "dark"] as 
     await expect(page.getByRole("navigation", { name: "Repository", exact: true })).toBeVisible()
     await expect(folder.getByRole("table", { name: "Files in src" })).toBeVisible()
     const file = folder.getByRole("link", { name: "index.ts", exact: true })
-    await page.screenshot({ path: `/tmp/sp1b-tree-${width}-${theme}.png` })
+    await page.screenshot({ path: testInfo.outputPath(`sp1b-tree-${width}-${theme}.png`) })
     await expect(file).toHaveAttribute("href", "/alpha/one/blob/main/src/index.ts")
     await file.focus(); await expect(file).toBeFocused(); await page.keyboard.press("Enter")
     const view = page.getByRole("region", { name: "File view" })
     await expect(view.getByRole("region", { name: "Source of src/index.ts" })).toContainText("// final line")
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
-    await page.screenshot({ path: `/tmp/sp1b-blob-${width}-${theme}.png` })
+    await page.screenshot({ path: testInfo.outputPath(`sp1b-blob-${width}-${theme}.png`) })
     await expect(view.getByText("Truncated", { exact: true })).toHaveCount(0)
     await expect(page.locator(".repo-ui-btn-primary:visible")).toHaveCount(1)
     await expect(view.getByRole("button", { name: "Blame", exact: true })).toHaveCount(0)

@@ -67,7 +67,7 @@ export function RepositoryCodeView({ repo, cards, refs, commits, admitted, reque
       {located && <select aria-label="Switch branches" value={revision} onChange={event => { window.location.href = route(subject.kind, path, event.target.value) }}>
         {[...new Set([revision, ...refs])].map(ref => <option key={ref}>{ref}</option>)}
       </select>}
-      <nav className="repo-code-breadcrumbs" aria-label="File path"><a href={route("tree", "")}>{repo.split("/").at(-1)}</a>
+      <nav className="repo-code-breadcrumbs" aria-label="File path">{located ? <a href={route("tree", "")}>{repo.split("/").at(-1)}</a> : <span>{repo.split("/").at(-1)}</span>}
         {path.split("/").filter(Boolean).map((part, index, parts) => <span key={index}><span className="repo-code-separator">/</span>{index === parts.length - 1 ? <strong>{part}</strong> : <a href={route("tree", parts.slice(0, index + 1).join("/"))}>{part}</a>}</span>)}
       </nav>
       {located && commit && <button className="repo-ui-btn repo-ui-btn-primary repo-code-permalink" onClick={permalink}>Copy permalink</button>}

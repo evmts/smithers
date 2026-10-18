@@ -5,6 +5,7 @@ import { afterAll, afterEach, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import App from "./App"
+import { RepositoryCodeView } from "./repository/RepositoryCodeView"
 import { ControllerTestProvider } from "./ControllerContext"
 import { beginRepositoryEntry, openRequestedRepo, requestedTarget, signInReturnTo } from "./RepoLink"
 import { openRequestedSubject } from "./RepositorySubjectEntry"
@@ -201,9 +202,15 @@ test("every pull request view the URL can name reaches its own tab, and the bare
 test("the pull request list and the issue list URLs open their own card", async () => {
   const list = await enter(`/${REPO}/pulls`, ownedRepository({ [`${ROOT}/landings`]: json(200, [landing(2)]) }))
   expect(list.store.collections.cards.get(`prs-${REPO}`)?.kind).toBe("pr-list")
+  const pullsHost = mount(list.controller).host
+  await settled()
+  expect(pullsHost.querySelector("[data-message-id=home]")).not.toBeNull()
 
   const issues = await enter(`/${REPO}/issues`, ownedRepository({ [`${ROOT}/issues`]: json(200, [cloudIssue(5)]) }))
   expect(issues.store.collections.cards.get(`issues-${REPO}`)?.kind).toBe("issue-list")
+  const issuesHost = mount(issues.controller).host
+  await settled()
+  expect(issuesHost.querySelector("[data-message-id=home]")).not.toBeNull()
 })
 
 /*
@@ -770,4 +777,18 @@ test("a throwing branch read settles its code read as failed", async () => {
   expect(repositoryCodeReads.get(codeReadKey(target.repo, "blob", "main/index.ts", requestId))).toMatchObject({
     state: "failed", error: "Could not read repository branches."
   })
+})
+
+test("an unresolved file ref keeps the repository breadcrumb as text", async () => {
+  window.history.replaceState(null, "", `/${REPO}/blob/unknown/src/index.ts`)
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  mounted.push(() => { flushSync(() => root.unmount()); host.remove() })
+  flushSync(() => root.render(<RepositoryCodeView repo={REPO} cards={[]} refs={[]} admitted={false} onAsk={() => {}} />))
+  await settled()
+  const breadcrumb = host.querySelector('nav[aria-label="File path"]')!
+  expect(breadcrumb.textContent).toBe("e2e-verify")
+  expect(breadcrumb.querySelector("a")).toBeNull()
+  expect(host.querySelector('[role="status"]')?.textContent).toContain("Loading")
 })

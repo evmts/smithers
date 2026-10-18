@@ -682,7 +682,7 @@ function AppContent() {
             {loginScreen && <MessageScrollerItem messageId="login" style={{ contentVisibility: "visible" }}>
               <LoginScreen onRunCommand={controller.runCommand} />
             </MessageScrollerItem>}
-            {bootRepository === null && !earlier && !repositoryNotice && home && <MessageScrollerItem messageId={HOME_ENTRY_ID}>{homeCard}</MessageScrollerItem>}
+            {(bootRepository === null || codeTarget?.subject?.kind === "issues" || codeTarget?.subject?.kind === "pulls") && !earlier && !repositoryNotice && home && <MessageScrollerItem messageId={HOME_ENTRY_ID}>{homeCard}</MessageScrollerItem>}
             {!loginScreen && !repositoryNotice && <BranchNavigation saving={savingNavigation} onView={setBranchNavigationView} />}
             {!earlier && controller.sharedConversation && <SharedConversation source={controller.sharedConversation} localCardIds={new Set(visibleEntries.flatMap(entry => entry.kind === "card" ? [entry.card.id] : []))} localEntries={visibleEntries.map(entry => ({ id: entryId(entry), content: renderEntry(entry) }))} />}
             {!earlier && !controller.sharedConversation && visibleEntries.map(renderEntry)}
@@ -761,7 +761,6 @@ function AppContent() {
   if (!rootRoute && !codeRoute) return chat()
   return <RepoFrame repo={bootRepository} publicRepo={repository?.catalog === true}
     login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
-    member={identity?.state === "signed-in" && repository !== undefined && repository.catalog !== true}
     onAsk={() => controller.runCommand("chat.open")} onSignIn={() => controller.runCommand("sign-in")} ask={(visible: boolean) => chat(visible)}>
     {codeRoute ? <RepositoryCodeView repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
       admitted={bootEntry?.phase === "ready"} requestId={bootEntry?.requestId} error={bootUnavailable ? bootEntry?.error : undefined} onAsk={text => controller.changeDraft(text)} /> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
