@@ -47,6 +47,7 @@ export const questionOf = (row: ApprovalRow): ApprovalQuestion | undefined => {
   const maxAttempts = fields["maxAttempts"]
   const name = fields["name"]
   return {
+    ...(fields["schema"] === undefined ? {} : { schema: fields["schema"], waitRunId: row.waitRunId }),
     kind: isKind(fields["kind"]) ? fields["kind"] : "ask",
     prompt: typeof fields["prompt"] === "string" ? fields["prompt"] : row.title,
     ...(typeof name === "string" ? { name } : {}),
