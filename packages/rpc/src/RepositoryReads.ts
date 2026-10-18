@@ -78,3 +78,23 @@ export const RepositoryIssueSearchSchema = z.object({
   )
 })
 
+/** One branch's immutable head, recorded commit metadata and repository default flag.
+ * @category schemas
+ * @since 0.1.0
+ */
+export const RepositoryBranchSchema = z.object({
+  name: z.string().min(1),
+  head: sha,
+  author: z.string(),
+  updated: z.iso.datetime({ offset: true }),
+  title: z.string(),
+  is_default: z.boolean()
+})
+/** A bounded page of branches using the existing repository bookmark cursor.
+ * @category schemas
+ * @since 0.1.0
+ */
+export const RepositoryBranchPageSchema = z.object({
+  items: z.array(RepositoryBranchSchema),
+  next_cursor: z.string().min(1).optional()
+})

@@ -24,3 +24,10 @@ test("repository issue search validates its result", async () => {
  const client = { request: async (path: string) => { expect(path).toBe("/api/repos/alice/demo/search/issues?q=bug"); return { items: [], total_count: 0, page: 1, per_page: 30 } } } as unknown as ApplicationClient
  expect((await searchRepositoryIssues(client, "alice", "demo", "bug")).total_count).toBe(0)
 })
+
+test("repository branches decode metadata and follow the existing bookmark cursor", async () => {
+ const { listRepositoryBranches } = await import("./RepositoryReadsClient.ts")
+ const signal = new AbortController().signal
+ const client = { request: async (path: string, init: RequestInit) => { expect(path).toBe("/api/repos/alice/demo/branches?cursor=2&limit=2"); expect(init.signal).toBe(signal); return { items: [{ name: "main", head: commit.sha, author: "Ada", updated: commit.committed_at, title: "Fix", is_default: true }] } } } as unknown as ApplicationClient
+ expect((await listRepositoryBranches(client, "alice", "demo", { cursor: "2", limit: 2, signal })).items[0]?.is_default).toBe(true)
+})
