@@ -32,6 +32,11 @@ import { refusalWords,readErrorMessage,readResult,unreachableSentence } from "./
  * a confabulation waiting to happen.
  */
 export interface FilesSeam {
+  /** Contents reads for repository pages; does not open a chat card. */
+  readonly contents: {
+    readonly listFiles: (path: string, repo?: string, ref?: string) => Promise<ViewResult>
+    readonly readFile: (path: string, repo?: string, anchor?: FileAnchor, ref?: string) => Promise<ViewResult>
+  }
   /** Dark S2 operations; production supplies no activation receipts yet. */
   readonly branchFiles: BranchFileOperations
   /**
@@ -208,7 +213,7 @@ export const createFilesSeam = (ctx: SeamContext, branchOptions?: BranchFileOpti
     return refusal.code === "not_found" ? fallback : refusalLine(refusal, fallback)
   }
 
-  const readers: { listFiles: (path: string, repo?: string, ref?: string) => Promise<ViewResult>; readFile: (path: string, repo?: string, anchor?: FileAnchor, ref?: string) => Promise<ViewResult> } = {
+  const readers: { listFiles: (path: string, repo?: string, ref?: string) => Promise<ViewResult>; readFile: (path: string, repo?: string, anchor?: FileAnchor, ref?: string, whole?: boolean) => Promise<ViewResult> } = {
     listFiles: async (pathArg, explicitRepoArg, ref) => {
       const target = install
         ? unsafePath(pathArg) ? { error: "File paths must stay inside the repository." }
@@ -270,7 +275,7 @@ export const createFilesSeam = (ctx: SeamContext, branchOptions?: BranchFileOpti
       return install ? { ...result, card: { ...result.card, id: `files-branch-${branch}-${normalized || "/"}` } } : result
     },
 
-    readFile: async (pathArg, explicitRepoArg, anchor, ref) => {
+    readFile: async (pathArg, explicitRepoArg, anchor, ref, whole = false) => {
       const target = resolveFileTarget(ctx.store, pathArg, explicitRepoArg)
       if ("error" in target) return target.error
       const { repo, path: normalized } = target
@@ -353,7 +358,9 @@ export const createFilesSeam = (ctx: SeamContext, branchOptions?: BranchFileOpti
         return { ...result, card: { ...result.card, payload: {
           ...result.card.payload,
           ...(commit ? { readAt: { changeId: null, commitId: commit } } : {}),
-          ...(originalSize === undefined ? {} : { originalSize })
+          ...(originalSize === undefined ? {} : { originalSize }),
+          // A repository page shows the whole source; only chat cards cap it.
+          ...(whole && !binary ? { content, truncated: false } : {})
         } } }
       }
       if (branchFile?.success) {
@@ -402,6 +409,7 @@ export const createFilesSeam = (ctx: SeamContext, branchOptions?: BranchFileOpti
     }
   }
   return {
+    contents: { listFiles: readers.listFiles, readFile: (path, repo, anchor, ref) => readers.readFile(path, repo, anchor, ref, true) },
     branchFiles: branchFileOperations(ctx, branchOptions),
     listFiles: preparedView(ctx, (path: string, repo?: string, ref?: string) => plan("files", path, repo, undefined, ref)),
     readFile: preparedView(ctx, (path: string, repo?: string, anchor?: FileAnchor, ref?: string) => plan("file", path, repo, anchor, ref)),
