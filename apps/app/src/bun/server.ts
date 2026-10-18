@@ -60,6 +60,7 @@ import type { CloudAuth, CloudKeychain } from "./CloudAuth"
 import { createModelProbe } from "@smthrs/model-host/ModelProbe"
 import { machineReadableRefusal, upstreamRefusalMessage } from "@smthrs/rpc/UpstreamProse"
 import { decodePath, invalidPath, json, jsonError, readJson, refuse, Router } from "./routes"
+import { createLocalWorkflowRelay, localGatewayApi, type LocalWorkflowGateway } from "./LocalWorkflowGateway"
 
 /** The deployed identity seam the sign-in device flow talks to. */
 export const DEFAULT_IDENTITY_UPSTREAM = "https://canary.smithers.sh"
@@ -135,6 +136,9 @@ const MAX_CLOUD_WS_UPSTREAM_BUFFER = 1024 * 1024
 const MAX_WS_BACKPRESSURE_BYTES = 4 * 1024 * 1024
 
 export interface LocalServerOptions {
+  readonly localGateway?: LocalWorkflowGateway
+  readonly publicHostname?: "localhost" | "127.0.0.1"
+
   /** 0 (the default) picks a free port. */
   readonly port?: number
   /** The built SPA: index.html plus assets/. */
@@ -645,7 +649,9 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   const distDir = resolve(options.distDir)
   const version = options.version ?? APP_VERSION
   const upstreamTimeoutMs = options.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS
-  const remoteEnabled = options.cloudMode === "hybrid"
+  const localGateway = options.localGateway
+  const localWorkflowRelay = localGateway === undefined ? undefined : createLocalWorkflowRelay(localGateway, upstreamTimeoutMs)
+  const remoteEnabled = localGateway === undefined && options.cloudMode === "hybrid"
   const identityUpstream = !remoteEnabled
     ? null
     : options.identityUpstream === undefined
@@ -691,6 +697,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
 
   router.add("GET", APP_BOOTSTRAP_PATH, () =>
     json({
+      ...(localGateway === undefined ? {} : { gateway: { repo: localGateway.repo, workspaceId: localGateway.workspaceId } }),
       apiVersion: APP_API_VERSION,
       host: "local",
       version,
@@ -699,11 +706,11 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       // doors (`cloud.terminal`, `cloud.pat`) ride the Smithers Cloud upstream.
       capabilities: localCapabilities({
         agent: false,
-        identity: identityUpstream !== null,
+        identity: identityUpstream !== null || localGateway !== undefined,
         balance: identityUpstream !== null,
         overview: identityUpstream !== null,
         plans: identityUpstream !== null,
-        cloud: cloudUpstream !== null,
+        cloud: cloudUpstream !== null || localGateway !== undefined,
         browser: remoteEnabled
       }),
       authFlow: identityUpstream === null ? "none" : "both",
@@ -1003,6 +1010,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       return jsonError("invalid_host", "This local server accepts only its loopback origin.")
     }
     if (pathname === "/api/live") {
+      if (localGateway !== undefined) return json({ message: "Live collaboration is not available in local mode." }, 409)
       if (request.headers.get("origin") !== origin) return jsonError("invalid_origin", "WebSocket origin does not match the local app.")
       const protocols = (request.headers.get("sec-websocket-protocol") ?? "").split(",").map(value => value.trim())
       if (!protocols.includes("smithers.live.v1")) return jsonError("invalid_request", "Expected smithers.live.v1.")
@@ -1118,6 +1126,10 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
         return cloudUpstream === null
           ? refuse("feature_unavailable_here", "The cloud seam is disabled in this build.")
           : proxyCloud(request, url, cloudUpstream, cloudAuth?.token(), upstreamTimeoutMs, log)
+      }
+      if (localGateway !== undefined) {
+        if (pathname.startsWith("/api/workflow/")) return localWorkflowRelay!(request)
+        return localGatewayApi(localGateway, request)
       }
       if (pathname === "/api/auth/session") return jsonError("not_found", `No route for ${request.method} ${pathname}.`)
       if (pathname.startsWith(AUTH_ROUTE_PREFIX) || pathname.startsWith(IDENTITY_ROUTE_PREFIX)) {
@@ -1320,8 +1332,8 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   })
 
   const port = server.port ?? 0
-  origin = `http://127.0.0.1:${port}`
-  expectedHost = `127.0.0.1:${port}`
+  origin = `http://${options.publicHostname ?? "127.0.0.1"}:${port}`
+  expectedHost = `${options.publicHostname ?? "127.0.0.1"}:${port}`
   log(`SMITHERS_LOCAL_ORIGIN=${origin}`)
 
   const local: LocalServer = {

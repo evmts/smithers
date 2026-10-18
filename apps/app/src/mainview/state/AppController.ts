@@ -74,7 +74,7 @@ import { cardAvailable } from "./CardAvailability"
 import { disposePreparedViews,invalidatePreparedViews } from "./PreparedView"
 import type { KnownRepositories } from "./RepoContext"
 import { TodoCardSchema } from "@smthrs/rpc/TodoCard"
-import { activeCatalogRepositoryId,activeRepositoryId,gatewayBindingFor,knownRepositories,resolveTargetRepo } from "./RepoContext"
+import { bindGatewayHost,activeCatalogRepositoryId,activeRepositoryId,gatewayBindingFor,knownRepositories,resolveTargetRepo } from "./RepoContext"
 import type { StorageRecoveryAction,StorageRecoveryHost } from "./StorageRecoveryAction"
 import type { AgentsController } from "./controller/agents"
 import { createModelsController } from "./controller/models"
@@ -894,6 +894,7 @@ export const createAppController = (
   agent: AgentPort,
   services: AppServices = {}
 ): AppController => {
+  bindGatewayHost(store, services.bootstrap?.gateway)
   const ctx = createControllerContext(store, agent, services)
   const actors = createActorBindings(ctx.onDispose)
   const privacyActions = createPrivacyActions(ctx)
