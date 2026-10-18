@@ -7,6 +7,7 @@ import { earlyCodingJournal } from "../../src/mainview/cards/fixtures/CodingJour
 import { CODING_PLAN } from "../../src/mainview/cards/fixtures/CodingPlan"
 import { FIXTURE_BOX, installCloudFixture, runningBox } from "./cloudFixture.ts"
 import { prepareHealthPage,sendHealthCommand } from "./healthFixture"
+import { fillComposer } from "./composer"
 
 /*
  * Lane runs T1 (.specs/engineering/spec.md §11.6): launch a fixture flow,
@@ -143,12 +144,14 @@ const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>>
 }
 
 const send = async (page: Page, text: string): Promise<void> => {
-  await expect(page.locator(".app-shell")).toBeVisible()
-  if (!await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
-  await page.getByTestId("composer-input").fill(text)
+  await fillComposer(page, text)
   await page.getByTestId("composer-input").press("Enter")
   await expect(page.getByTestId("composer-input")).toHaveValue("")
-  await expect(page.getByTestId("composer-input")).toBeHidden()
+  if (await page.getByRole("button", { name: "Ask", exact: true }).isVisible()) {
+    await expect(page.getByTestId("composer-input")).toBeVisible()
+  } else {
+    await expect(page.getByTestId("composer-input")).toBeHidden()
+  }
 }
 
 /** Exercise workspace flows after the introduction, using its existing command. */
@@ -214,6 +217,7 @@ test("T1: approval counts settle with receipts and decided questions survive rel
     await expect(card.locator('.sui-approval-question').filter({ hasText: prompt })).toBeVisible()
     expect(rpc.filter(call => call.procedure === "Approval.Submit").at(-1)?.payload.answer).toBe("The scheduler")
     await page.reload()
+    await fillComposer(page, "")
     await expect(count).toHaveText("0 approvals pending")
     await expect(card).toContainText("Run the deploy script?")
     await expect(card).toContainText(prompt)

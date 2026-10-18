@@ -47,10 +47,15 @@
 .repo-code-home-latest time { color:var(--text-muted); }
 .repo-ui-branch-menu { max-height: min(400px, 60dvh); overflow:auto; }
 
-/* The same narrow-frame geometry as the shared chat rail: no squeezed transcript. */
+/* Compact Ask keeps the shared notices without the desktop activity rail. */
 .repository-chat .chat-frame { container-type:inline-size; }
 @container (max-width:879px) {
-  .repository-chat .chat-frame > .rail { display:none; }
+  .repository-chat .chat-frame > .rail {
+    display:flex; top:8px; bottom:auto; left:12px; width:calc(100% - 24px);
+    max-height:50%; overflow-y:auto;
+  }
+  .repository-chat .rail > :is(.edge-map, .timeline) { display:none; }
+  .repository-chat .rail > .notify { position:static; width:100%; }
   .repository-chat .app-shell .chat-frame .smithers-transcript .sui-chat-messages,
   .repository-chat .app-shell .chat-frame:has(> .rail) .smithers-transcript .sui-chat-messages {
     width:100%; max-width:100%; margin-left:0; align-self:stretch;

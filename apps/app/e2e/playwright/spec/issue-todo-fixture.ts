@@ -62,9 +62,9 @@ export async function issueTodoInstall(page: Page, label = false) {
 
 export const openIssueTodoInstall = async (page: Page) => {
   await page.goto(`/${ISSUE_REPO}`, { waitUntil: "domcontentloaded" })
-  const chat = page.getByRole("button", { name: "Chat", exact: true })
+  const ask = page.getByRole("button", { name: "Ask", exact: true })
   const takeover = page.getByRole("button", { name: "Use Smithers here", exact: true })
-  await expect(chat.or(takeover)).toBeVisible({ timeout: 60_000 })
+  await expect(ask.or(takeover)).toBeVisible({ timeout: 60_000 })
   if (await takeover.isVisible()) await takeover.press("Enter")
-  await expect(chat).toBeVisible({ timeout: 60_000 })
+  await expect(ask).toBeVisible({ timeout: 60_000 })
 }

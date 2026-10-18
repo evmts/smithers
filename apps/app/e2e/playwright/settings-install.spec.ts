@@ -190,3 +190,51 @@ test("Settings keeps its saved daily allowance when an older install read arrive
   await expect(form.locator("output")).toHaveText("13")
   expect(writes).toHaveLength(1)
 })
+
+for (const status of [404, 503]) test(`repository Ask shows a Settings ${status} failure and recovers on retry`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: status === 404 ? 1280 : 390, height: 800 })
+  // A signed-in hosted session has no owner install until the server serves one.
+  await signedInOwner(page)
+  await page.route("**/api/bootstrap", route => route.fulfill({ json: {
+    apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
+    capabilities: ["identity", "agent", "cloud"], authFlow: "redirect", sandbox: null
+  } }))
+  await page.route("**/api/agent/conversations", route => route.fulfill({ json: { status: "ok", conversations: [], next: null } }))
+  await page.route("**/api/conversations/main", route => route.fulfill({ json: { id: "main", entries: [] } }))
+  await page.route("**/api/conversations/main/view-state", route => route.fulfill({ json: {} }))
+  let available = false, reads = 0
+  await page.route("**/api/install", route => {
+    reads++
+    return available ? route.fulfill({ json: installFixture() }) : status === 404
+      ? route.fulfill({ status, contentType: "text/plain", body: "404 page not found" })
+      : route.fulfill({ status, json: { code: "install_unavailable", class: "infra", message: "Install temporarily unavailable" } })
+  })
+  await page.goto("/smithersai/smithers?design=off")
+  await say(page, "/settings")
+  const notifications = page.getByRole("region", { name: "Notifications", exact: true })
+  const reason = status === 404 ? "No install on this host" : "The operation failed."
+  const failed = notifications.getByRole("alert").filter({ hasText: reason })
+  await expect(failed).toContainText(reason)
+  await expect(failed).toBeVisible()
+  await expect(failed).toBeInViewport()
+  const noticeBounds = (await failed.boundingBox())!
+  const askBounds = (await page.getByRole("complementary", { name: "Ask", exact: true }).boundingBox())!
+  const composerBounds = (await page.getByTestId("composer-input").boundingBox())!
+  expect(noticeBounds.x).toBeGreaterThanOrEqual(askBounds.x)
+  expect(noticeBounds.x + noticeBounds.width).toBeLessThanOrEqual(askBounds.x + askBounds.width)
+  expect(noticeBounds.y + noticeBounds.height).toBeLessThan(composerBounds.y)
+  await page.screenshot({ path: testInfo.outputPath(`settings-${status}-notice.png`) })
+  await testInfo.attach(`settings-${status}-notice`, { path: testInfo.outputPath(`settings-${status}-notice.png`), contentType: "image/png" })
+  await expect(page.getByTestId("card-settings")).toHaveCount(0)
+  await expect(page.getByTestId("composer-input")).toBeEditable()
+  // Dismiss through the shared keyboard door, then retry the real Settings flow.
+  await failed.getByRole("button", { name: "Hide Settings", exact: true }).press("Enter")
+  await expect(failed).toHaveCount(0)
+  const refusedReads = reads
+  available = true
+  await say(page, "/settings")
+  await expect(page.getByTestId("card-settings")).toBeVisible()
+  await expect(page.getByTestId("card-settings").getByRole("button", { name: "Network", exact: true })).toBeVisible()
+  expect(reads).toBeGreaterThan(refusedReads)
+  await expect(page.getByTestId("composer-input")).toBeEditable()
+})

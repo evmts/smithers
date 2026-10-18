@@ -1,13 +1,8 @@
-import { expect, test, type Page } from "./browserTest"
+import { expect, test } from "./browserTest"
 import { identityRoute } from "./identity"
+import { fillComposer, say } from "./composer"
 
-const command = async (page: Page, line: string) => {
-  const input = page.getByTestId("composer-input")
-  if (!await input.isVisible()) await page.keyboard.press("Control+k")
-  await input.fill(line)
-  await input.press("Enter")
-  await expect(input).toBeHidden()
-}
+const command = say
 
 // Explicit HTTP fixtures exercise registry, persisted cards and keyboard dispatch.
 test("a deduplicated file search keeps its repository after selection and reload", async ({ page }) => {
@@ -28,7 +23,7 @@ test("a deduplicated file search keeps its repository after selection and reload
     return route.fulfill({ status: 404, json: { message: "Path not found" } })
   })
   await page.goto("/alpha/one/?design=off")
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
   await command(page, "/files / alpha/one")
   await expect(page.locator('[data-kind="file-list"]')).toContainText("README.md")
   await command(page, "/search.files README")
@@ -42,6 +37,7 @@ test("a deduplicated file search keeps its repository after selection and reload
   await expect(page.getByTestId("card-file-alpha/one-README.md")).toContainText("Alpha content")
   expect(reads).toEqual(["/api/repos/alpha/one/contents/README.md"])
   await page.reload()
+  await fillComposer(page, "")
   await expect(open).toBeVisible()
   await command(page, "/repo.select beta/two")
   await open.focus()
