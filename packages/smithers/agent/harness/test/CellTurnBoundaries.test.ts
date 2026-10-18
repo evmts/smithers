@@ -877,6 +877,27 @@ describe("CellTurn park without a human", () => {
     expect(resolvedText(events)).toBe("continued from output")
   })
 
+  it("journals a recovered demanded frame as read-only instead of parked", async () => {
+    const { events, failure, model } = await run({
+      state: new CellTurn.State({
+        ...state({ readOnlyCap: 2, maxFrames: 6 }),
+        frame: 1,
+        readOnlyFrames: 2,
+        pendingReadOnlyDemand: { streak: 2, cap: 2 }
+      }),
+      script: [inspectionsThenPark, emits("ctx.done(\"continued from output\")")],
+      flows: inspectionFlows,
+      calls: reads
+    })
+    // Recovery continues; the following completion can still hit the read cap.
+    expect(failure).toMatchObject({ code: "read_only_cap" })
+    expect(model.recorder.requests).toHaveLength(2)
+    expect(of(events, "read-only-demanded").filter((event) => event.nextFrame === 1)).toEqual([
+      expect.objectContaining({ streak: 2, cap: 2, nextFrame: 1, nextAction: "read-only" })
+    ])
+    expect(of(events, "turn-closed").some((event) => event.outcome === "continue")).toBe(true)
+  })
+
   it("honors the same inspection park when an approval channel exists", async () => {
     const { failure, model } = await run({
       state: state({ approvalChannel: true }),

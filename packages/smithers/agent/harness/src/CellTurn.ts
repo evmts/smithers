@@ -4023,6 +4023,12 @@ const frame = (
     )
 
     if (transition._tag === "park") {
+      // Decide recovery before journaling the frame's response to a read demand.
+      // A recovered inspection continues as read-only rather than parking.
+      const unobserved = ran.frame.prints !== "" || ran.calls.some((call) => call.ok && !call.failing)
+      const recover = !state.approvalChannel && transition.reason === "waiting-input" &&
+        !state.speculativeParkRecovered && !mutated && !ran.calls.some((call) => call.mutates) &&
+        unobserved && Frame.hasNextFrame(state)
       if (state.pendingReadOnlyDemand !== undefined) {
         yield* emit(
           new AgentEvent.ReadOnlyDemanded({
@@ -4030,7 +4036,7 @@ const frame = (
             streak: state.pendingReadOnlyDemand.streak,
             cap: state.pendingReadOnlyDemand.cap,
             nextFrame: state.frame,
-            nextAction: mutated ? "write" : "park"
+            nextAction: mutated ? "write" : recover ? "read-only" : "park"
           })
         )
       }
@@ -4039,11 +4045,7 @@ const frame = (
         // escapes evaluation as PermissionRequired and remains a durable park.
         // Return fresh inspection evidence once, without inventing an answer
         // to the question or replaying any completed call.
-        const unobserved = ran.frame.prints !== "" || ran.calls.some((call) => call.ok && !call.failing)
-        if (
-          transition.reason === "waiting-input" && !state.speculativeParkRecovered &&
-          !mutated && !ran.calls.some((call) => call.mutates) && unobserved && Frame.hasNextFrame(state)
-        ) {
+        if (recover) {
           if (cap > 0 && readOnlyFrames >= cap * 2) {
             return yield* readOnlyCapFailure(cap, readOnlyFrames)
           }
