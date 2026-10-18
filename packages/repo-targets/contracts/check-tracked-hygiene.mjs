@@ -151,9 +151,21 @@ export const listFiles = (root, { includeUntracked = false, projectedTree = fals
     command = "jj"
     args = [...(includeUntracked ? [] : ["--ignore-working-copy"]), "file", "list", "-T", 'path ++ "\\0"']
   } else return walkFiles(root, readIgnore(root), { projectedTree })
-  const result = spawnSync(command, args, { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 })
-  if (result.error !== undefined || result.status !== 0) {
-    throw new Error(`${command} file listing failed: ${result.error?.message ?? result.stderr.trim()}`)
+  const options = { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }
+  const failed = result => result.error !== undefined || result.status !== 0
+  const diagnostic = result => result.error?.message ?? result.stderr.trim()
+  let result = spawnSync(command, args, options)
+  if (command === "jj" && failed(result) &&
+      result.stderr?.includes("seems to be a sibling of the working copy's operation")) {
+    const original = diagnostic(result)
+    const repaired = spawnSync(command, ["workspace", "update-stale"], options)
+    if (failed(repaired)) throw new Error(`jj file listing failed: ${original}\nRecovery failed: ${diagnostic(repaired)}`)
+    console.error("jj: ran workspace update-stale after sibling operation error; retrying once")
+    result = spawnSync(command, args, options)
+    if (failed(result)) throw new Error(`jj file listing failed: ${original}\nRetry failed: ${diagnostic(result)}`)
+  }
+  if (failed(result)) {
+    throw new Error(`${command} file listing failed: ${diagnostic(result)}`)
   }
   return [...new Set(result.stdout.split("\0").filter((p) => p !== ""))].filter((path) => {
     if (!includeUntracked) return true

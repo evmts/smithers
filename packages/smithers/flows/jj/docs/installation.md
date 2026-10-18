@@ -48,6 +48,8 @@ The layers build without jj. With no usable jj, every operation fails with the
 `not_installed` code and a message naming the fix, rather than throwing. Nothing in the package installs,
 downloads, or `chmod`s a binary on your behalf.
 
+On a sibling working-copy operation error, the Node and Bun layers run `jj workspace update-stale` in the same workspace and retry the command once, preserving working-copy files and reporting both failures if recovery fails.
+
 ### Point at a specific jj
 
 Set `SMITHERS_JJ_PATH` to the file you want spawned:
