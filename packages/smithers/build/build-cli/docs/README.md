@@ -155,8 +155,10 @@ helps choose a verb and pattern for a task.
 - Concepts: [the invocation pipeline](./concepts/invocation.md),
   [workspace discovery](./concepts/discovery.md),
   [output and renderers](./concepts/output.md),
-  [caching](./concepts/caching.md), and
-  [target execution](./concepts/execution.md).
+  [caching](./concepts/caching.md),
+  [target execution](./concepts/execution.md), and
+  [mounts](./concepts/mounts.md), which run an overlay repository's targets
+  against an upstream repository it never forks.
 - [Native file outputs](./concepts/native-file-outputs.md): output admission and publication.
 - [Rule contracts and ownership](./concepts/rule-contracts.md): the internal
   architecture and the boundary between declarations and host execution.

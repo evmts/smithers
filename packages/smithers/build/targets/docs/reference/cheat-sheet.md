@@ -213,6 +213,27 @@ export default S.Workspace("acme", {
 })
 ```
 
+## Overlay mounts
+
+An overlay repository holds only `.smithers/`. Its `.smithers/config.ts`
+names the upstream repository the build CLI checks out and lays the overlay
+over; the `mounts` concept page of `@smthrs/build-cli` covers the rest.
+
+```ts
+// .smithers/config.ts
+import { Smithers as S } from "@smthrs/targets"
+
+export default S.Mounts({
+  effect: S.Mount({
+    repository: "https://github.com/Effect-TS/effect.git",
+    ref: "b04191b2941534754282c51ef2df2f965ac43a5c", // the pin: a full commit id
+    track: "main", // the branch drift is measured against
+    drift: "warn", // or "refuse", or "follow"
+    patches: [] // unified diffs under .smithers/, applied in order
+  })
+})
+```
+
 ## Package declarations
 
 ```ts

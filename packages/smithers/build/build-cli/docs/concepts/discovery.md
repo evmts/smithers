@@ -21,6 +21,11 @@ The nearest ancestor holding either one is the workspace root. A directory
 with neither, and no ancestor with either, fails the command with
 `not a workspace; create .smithers/WORKSPACE.ts`.
 
+An overlay repository is the one exception. When the nearest
+`.smithers/config.ts` above the working directory declares `S.Mounts`, the
+CLI first materializes the mount into `.mounts/<name>` and discovers from that
+checkout instead. See [Mounts](./mounts.md).
+
 The loader first scans the workspace's static relative imports and checks for
 conflicting runtime installations. It then evaluates the workspace declaration
 before walking the package tree. The declaration names

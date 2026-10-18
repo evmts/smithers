@@ -764,6 +764,25 @@ Retaining facts in the declared Smithers Cloud banks. From
 | `MemoryCommandFailed`                                                              | class carrying `exitCode`, `stdout`, `stderr`, `args`                 | The backend ran and refused.                                  |
 | `isMemoryBackendUnavailable`, `isMemoryCapabilityMissing`, `isMemoryCommandFailed` | guards                                                                | One per error class.                                          |
 
+## Mount
+
+Materializing an overlay repository's mount before a command plans. From
+`@smthrs/build-cli/Mount`. See [Mounts](./concepts/mounts.md).
+
+| Export               | Signature                                                                  | What it is                                                                                        |
+| -------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `resolveWorkspace`   | `(start: string, options: Options) => Promise<Resolved>`                   | The directory a command plans in: a materialized checkout from an overlay, `start` anywhere else. |
+| `materialize`        | `(overlayRoot, name, options: Options) => Promise<Materialized>`           | Fetches the pin, applies the patches, and lays the overlay for one named mount.                   |
+| `loadConfig`         | `(overlayRoot: string) => Promise<Mounts>`                                 | Evaluates `.smithers/config.ts` and returns its `S.Mounts` declaration.                           |
+| `summary`            | `(mount: Materialized) => string`                                          | The one-line report a command prints after materializing.                                         |
+| `Options`            | `{ environment; report; signal? }`                                         | The git environment, the report sink, and cancellation.                                           |
+| `Resolved`           | `{ workspace: string; mount: Materialized \| undefined }`                  | Where a command plans, and the mount behind it.                                                   |
+| `Materialized`       | `{ name; root; overlayRoot; repository; pin; base; head; patches; drift }` | One materialized mount.                                                                           |
+| `Drift`              | `{ state; track?; tip? }`                                                  | `untracked`, `current`, `behind`, or `unknown`.                                                   |
+| `MountError`         | class carrying `code`                                                      | One typed refusal, from `mount_config_invalid` to `mount_overlay_collision`.                      |
+| `checkoutsDirectory` | `".mounts"`                                                                | The overlay-relative directory every checkout lives under.                                        |
+| `receiptFile`        | `"smithers-mount.json"`                                                    | The receipt in a checkout's `.git` directory.                                                     |
+
 ## RspackRunner
 
 Bundler targets, run through the workspace's own bundler. From

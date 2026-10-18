@@ -88,6 +88,7 @@
     "./ManifestJson": "./src/ManifestJson.ts",
     "./MemoryTarget": "./src/MemoryTarget.ts",
     "./Mise": "./src/Mise.ts",
+    "./Mount": "./src/Mount.ts",
     "./NewPackage": "./src/NewPackage.ts",
     "./Nix": "./src/Nix.ts",
     "./NodeArtifact": "./src/NodeArtifact.ts",
@@ -653,6 +654,16 @@
         "require": {
           "types": "./dist/cjs/Mise.d.ts",
           "default": "./dist/cjs/Mise.js"
+        }
+      },
+      "./Mount": {
+        "import": {
+          "types": "./dist/esm/Mount.d.ts",
+          "default": "./dist/esm/Mount.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Mount.d.ts",
+          "default": "./dist/cjs/Mount.js"
         }
       },
       "./NewPackage": {

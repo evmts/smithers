@@ -2622,6 +2622,27 @@ export default S.Workspace("acme", {
 })
 ```
 
+## Overlay mounts
+
+An overlay repository holds only `.smithers/`. Its `.smithers/config.ts`
+names the upstream repository the build CLI checks out and lays the overlay
+over; the `mounts` concept page of `@smthrs/build-cli` covers the rest.
+
+```ts
+// .smithers/config.ts
+import { Smithers as S } from "@smthrs/targets"
+
+export default S.Mounts({
+  effect: S.Mount({
+    repository: "https://github.com/Effect-TS/effect.git",
+    ref: "b04191b2941534754282c51ef2df2f965ac43a5c", // the pin: a full commit id
+    track: "main", // the branch drift is measured against
+    drift: "warn", // or "refuse", or "follow"
+    patches: [] // unified diffs under .smithers/, applied in order
+  })
+})
+```
+
 ## Package declarations
 
 ```ts
@@ -8573,6 +8594,25 @@ Retaining facts in the declared Smithers Cloud banks. From
 | `MemoryCapabilityMissing`                                                          | class carrying `capability`                                           | A required operation has no counterpart in the installed CLI. |
 | `MemoryCommandFailed`                                                              | class carrying `exitCode`, `stdout`, `stderr`, `args`                 | The backend ran and refused.                                  |
 | `isMemoryBackendUnavailable`, `isMemoryCapabilityMissing`, `isMemoryCommandFailed` | guards                                                                | One per error class.                                          |
+
+## Mount
+
+Materializing an overlay repository's mount before a command plans. From
+`@smthrs/build-cli/Mount`. See [Mounts](https://github.com/smithersai/smithers/blob/main/packages/smithers/build/build-cli/docs/concepts/mounts.md).
+
+| Export               | Signature                                                                  | What it is                                                                                        |
+| -------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `resolveWorkspace`   | `(start: string, options: Options) => Promise<Resolved>`                   | The directory a command plans in: a materialized checkout from an overlay, `start` anywhere else. |
+| `materialize`        | `(overlayRoot, name, options: Options) => Promise<Materialized>`           | Fetches the pin, applies the patches, and lays the overlay for one named mount.                   |
+| `loadConfig`         | `(overlayRoot: string) => Promise<Mounts>`                                 | Evaluates `.smithers/config.ts` and returns its `S.Mounts` declaration.                           |
+| `summary`            | `(mount: Materialized) => string`                                          | The one-line report a command prints after materializing.                                         |
+| `Options`            | `{ environment; report; signal? }`                                         | The git environment, the report sink, and cancellation.                                           |
+| `Resolved`           | `{ workspace: string; mount: Materialized \| undefined }`                  | Where a command plans, and the mount behind it.                                                   |
+| `Materialized`       | `{ name; root; overlayRoot; repository; pin; base; head; patches; drift }` | One materialized mount.                                                                           |
+| `Drift`              | `{ state; track?; tip? }`                                                  | `untracked`, `current`, `behind`, or `unknown`.                                                   |
+| `MountError`         | class carrying `code`                                                      | One typed refusal, from `mount_config_invalid` to `mount_overlay_collision`.                      |
+| `checkoutsDirectory` | `".mounts"`                                                                | The overlay-relative directory every checkout lives under.                                        |
+| `receiptFile`        | `"smithers-mount.json"`                                                    | The receipt in a checkout's `.git` directory.                                                     |
 
 ## RspackRunner
 

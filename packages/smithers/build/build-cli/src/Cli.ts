@@ -31,6 +31,7 @@ import * as GraphOutput from "./GraphOutput.ts"
 import * as ApprovalBridge from "./internal/ApprovalBridge.ts"
 import * as KnownRed from "./KnownRed.ts"
 import * as Label from "./Label.ts"
+import * as Mount from "./Mount.ts"
 import * as Owners from "./Owners.ts"
 import * as PackageDiscovery from "./PackageDiscovery.ts"
 import * as PackageExec from "./PackageExec.ts"
@@ -351,6 +352,8 @@ const remoteCacheAccess = (
 
 /**
  * Opens the target index rooted by the nearest WORKSPACE.ts declaration.
+ * From an overlay repository, the root is the materialized mount's checkout
+ * (see `Mount.resolveWorkspace`).
  * @category querying
  * @since 0.1.0
  */
@@ -359,7 +362,14 @@ export const openPackageIndex = async (
   runtime: RuntimeConfig = {}
 ): Promise<PackageIndex.PackageIndex> => {
   runtime.signal?.throwIfAborted()
-  const root = await PackageDiscovery.findWorkspaceRoot(NodePath.resolve(flags.workspace))
+  // An overlay repository plans against its materialized mount, never itself.
+  const stderr = runtime.stderr ?? Reporter.terminalOf(process.stderr)
+  const { workspace: invocation } = await Mount.resolveWorkspace(flags.workspace, {
+    environment: runtime.environment ?? process.env,
+    report: (line) => stderr.write(`${line}\n`),
+    signal: runtime.signal
+  })
+  const root = await PackageDiscovery.findWorkspaceRoot(invocation)
   if (root === undefined) {
     throw new Error("not a workspace; create .smithers/WORKSPACE.ts")
   }
@@ -380,7 +390,7 @@ export const openPackageIndex = async (
     signal: runtime.signal
   })
   const loaded = await PackageLoader.load(discovery)
-  return PackageIndex.PackageIndex.make(loaded, NodePath.resolve(flags.workspace))
+  return PackageIndex.PackageIndex.make(loaded, invocation)
 }
 
 /** Evaluates a query against the target index. */

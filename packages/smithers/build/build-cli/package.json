@@ -75,6 +75,7 @@
     "./Label": "./src/Label.ts",
     "./MarkdownCodeBlocks": "./src/MarkdownCodeBlocks.ts",
     "./MemoryBackend": "./src/MemoryBackend.ts",
+    "./Mount": "./src/Mount.ts",
     "./NixExec": "./src/NixExec.ts",
     "./OutputStream": "./src/OutputStream.ts",
     "./OverlayExec": "./src/OverlayExec.ts",
@@ -405,6 +406,16 @@
         "require": {
           "types": "./dist/cjs/MemoryBackend.d.ts",
           "default": "./dist/cjs/MemoryBackend.js"
+        }
+      },
+      "./Mount": {
+        "import": {
+          "types": "./dist/esm/Mount.d.ts",
+          "default": "./dist/esm/Mount.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Mount.d.ts",
+          "default": "./dist/cjs/Mount.js"
         }
       },
       "./NixExec": {

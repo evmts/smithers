@@ -100,6 +100,8 @@ export { Workspace } from "./WorkspaceDeclaration.ts"
 export { Cache, Flags, Host, Sandbox, Sandboxes } from "./WorkspaceDeclaration.ts"
 /** @category constructors @since 0.1.0 */
 export { make as LocalRepository } from "./LocalRepository.ts"
+/** @category constructors @since 1.0.0 */
+export { Mount, Mounts } from "./Mount.ts"
 /** @category constructors @since 0.1.0 */
 export { Package } from "./Package.ts"
 
