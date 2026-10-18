@@ -11,6 +11,22 @@ import { typecheckInputs, typecheckSource } from "./flow-typecheck-build.mjs"
 import { wikiPolicyIdentity } from "./wiki-policy.ts"
 
 /**
+ * The largest coding host Plue stages into a hosted workspace: eight base64
+ * chunks of 16 MiB, each one request inside the 64 MiB body limit. At
+ * 915058c5 the host outgrew Plue's earlier 48 MiB limit and every hosted
+ * coding turn failed (plue#863). Keep it equal to `maxPackagedFlowHostBytes`
+ * in plue's apps/backend/internal/composition/workspaceruntime/services.go.
+ */
+export const stagedHostLimitBytes = 128 * 1024 * 1024
+
+/** Refuses a coding host Plue could not stage. */
+export const checkStagedHostSize = (bytes) => {
+  if (bytes > stagedHostLimitBytes) {
+    throw new Error(`Coding host is ${bytes} bytes; Plue stages at most ${stagedHostLimitBytes} (plue#863)`)
+  }
+}
+
+/**
  * The files a packaged default ships, relative to its directory: `flow.ts` and
  * its `src/` tree (`shipsWithDefault`). Only those are listed. Node's recursive
  * readdir follows directory links, and a default that is also a workspace
@@ -143,6 +159,7 @@ export const bundle = async (entryPoint, outfile) => {
   const output = compiled.replace(/^(#![^\n]*\n)/,
     `$1const __SMITHERS_CODING_ARTIFACT_DIGEST__ = ${JSON.stringify(digest)};\n`)
   if (output === compiled) throw new Error("Coding artifact has no executable banner")
+  checkStagedHostSize(Buffer.byteLength(output))
   await mkdir(dirname(resolve(outfile)), { recursive: true })
   await writeFile(outfile, output)
   await chmod(outfile, 0o755)

@@ -2770,6 +2770,81 @@
     }
   },
   {
+    "label": "//.smithers/flows:codingHostSize",
+    "package": ".smithers/flows",
+    "name": "codingHostSize",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": ".smithers/flows/test/coding-host-size.test.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": ".smithers/flows/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": ".smithers/flows/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": ".smithers/flows/coding/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/coding/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": ".smithers/flows/create-flow/**/flow.mdx",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/issue/repro/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/issue/poc/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/pr-triage/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/review/change/flow.mdx"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/tsconfig.json"
+      },
+      {
+        "kind": "pnpm-workspace",
+        "path": "pnpm-workspace.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//.smithers/flows:automationModules"
+    ],
+    "source": {
+      "file": ".smithers/flows/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//.smithers/flows:codingNative",
     "package": ".smithers/flows",
     "name": "codingNative",
