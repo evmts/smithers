@@ -99,6 +99,16 @@ type workspaceMutationTransaction struct {
 	tx        pgx.Tx
 }
 
+// heldWorkspaceTransaction is the mutation transaction the caller already
+// holds over workspaceID, whoever the member is, or nil.
+func heldWorkspaceTransaction(ctx context.Context, workspaceID string) pgx.Tx {
+	held, ok := ctx.Value(workspaceMutationTransactionKey{}).(workspaceMutationTransaction)
+	if !ok || held.tx == nil || held.authority.workspaceID != workspaceID {
+		return nil
+	}
+	return held.tx
+}
+
 // Only work for this exact workspace/member may reuse its held transaction.
 // The authority owner commits it after the entire callback succeeds; nested
 // credential issuance must neither acquire another connection nor commit early.
@@ -243,8 +253,8 @@ func (s *WorkspaceService) refuseBackgroundWorkspaceAccess(ctx context.Context, 
 	})
 	// A step under held mutation authority over this workspace asks its own
 	// transaction: a second pool connection could wait on the one it holds.
-	if held, found := ctx.Value(workspaceMutationTransactionKey{}).(workspaceMutationTransaction); found && held.authority.workspaceID == id {
-		store, ok = db.New(held.tx), true
+	if tx := heldWorkspaceTransaction(ctx, id); tx != nil {
+		store, ok = db.New(tx), true
 	}
 	if ok {
 		background, err := store.IsWorkflowBackgroundWorkspace(ctx, id)

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"maps"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -19,6 +20,7 @@ type fakeRuntimeMetricsStore struct {
 	oldestSession  float64
 	landingDepth   int64
 	backlog        db.GetCodeSearchBacklogRow
+	admission      []db.ListWorkspaceAdmissionBacklogRow
 }
 
 func (f *fakeRuntimeMetricsStore) CountActiveAgentSessions(context.Context) (int64, error) {
@@ -37,6 +39,10 @@ func (f *fakeRuntimeMetricsStore) GetCodeSearchBacklog(context.Context) (db.GetC
 	return f.backlog, nil
 }
 
+func (f *fakeRuntimeMetricsStore) ListWorkspaceAdmissionBacklog(context.Context) ([]db.ListWorkspaceAdmissionBacklogRow, error) {
+	return f.admission, nil
+}
+
 type fakeRuntimeMetricsObserver struct {
 	mu             sync.Mutex
 	activeSessions float64
@@ -44,7 +50,40 @@ type fakeRuntimeMetricsObserver struct {
 	landingDepth   float64
 	backlog        float64
 	backlogOldest  float64
+	admission      map[string]float64
+	failures       map[string]int
 	sets           int
+}
+
+func (f *fakeRuntimeMetricsObserver) SetWorkspaceAdmissionOldestSeconds(stage string, seconds float64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.admission == nil {
+		f.admission = map[string]float64{}
+	}
+	f.admission[stage] = seconds
+	f.sets++
+}
+
+func (f *fakeRuntimeMetricsObserver) ObserveRuntimeMetricsCollectionFailure(collector string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failures == nil {
+		f.failures = map[string]int{}
+	}
+	f.failures[collector]++
+}
+
+func (f *fakeRuntimeMetricsObserver) admissionSnapshot() map[string]float64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return maps.Clone(f.admission)
+}
+
+func (f *fakeRuntimeMetricsObserver) failureSnapshot() map[string]int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return maps.Clone(f.failures)
 }
 
 func (f *fakeRuntimeMetricsObserver) SetActiveAgentSessions(n float64) {
@@ -88,7 +127,7 @@ func (f *fakeRuntimeMetricsObserver) snapshot() (active, oldest, landing float64
 }
 
 // runCollector starts the collector and returns a channel closed when it returns.
-func runCollector(ctx context.Context, store RuntimeMetricsStore, observer RuntimeMetricsObserver, interval, timeout time.Duration) <-chan struct{} {
+func runCollector(ctx context.Context, store RuntimeGaugeStore, observer RuntimeMetricsObserver, interval, timeout time.Duration) <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -211,6 +250,85 @@ func TestRuntimeMetricsCollector_QueryErrorKeepsLastValue(t *testing.T) {
 	active, _, landing, _ := observer.snapshot()
 	require.Equal(t, 5.0, active)
 	require.Equal(t, 2.0, landing)
+	// The failure is a counted series, by collector, not only a WARN.
+	require.Equal(t, map[string]int{"active_sessions": 1}, observer.failureSnapshot())
+	collectRuntimeMetrics(context.Background(), &failingRuntimeMetricsStore{}, observer, time.Second)
+	require.Equal(t, map[string]int{"active_sessions": 2}, observer.failureSnapshot())
+}
+
+type failingAdmissionMetricsStore struct{ fakeRuntimeMetricsStore }
+
+func (failingAdmissionMetricsStore) ListWorkspaceAdmissionBacklog(context.Context) ([]db.ListWorkspaceAdmissionBacklogRow, error) {
+	return nil, errors.New("pool exhausted")
+}
+
+func TestRuntimeMetricsCollector_AdmissionFailureKeepsLastValueAndCounts(t *testing.T) {
+	observer := &fakeRuntimeMetricsObserver{}
+	collectRuntimeMetrics(context.Background(), &fakeRuntimeMetricsStore{admission: []db.ListWorkspaceAdmissionBacklogRow{
+		{Stage: workspaceWaitingForMachine, OldestAgeSeconds: 600},
+	}}, observer, time.Second)
+	collectRuntimeMetrics(context.Background(), &failingAdmissionMetricsStore{}, observer, time.Second)
+	require.Equal(t, 600.0, observer.admissionSnapshot()[workspaceWaitingForMachine],
+		"a failed refresh published a false zero for a stuck admission")
+	require.Equal(t, map[string]int{"workspace_admission": 1}, observer.failureSnapshot())
+}
+
+// Every stage of the closed set is published on every refresh, so a stage
+// whose rows cleared reads zero instead of its last age, and a stored stage
+// outside the set cannot become a label of its own.
+func TestRuntimeMetricsCollector_AdmissionStagesAreClosed(t *testing.T) {
+	observer := &fakeRuntimeMetricsObserver{}
+	collectRuntimeMetrics(context.Background(), &fakeRuntimeMetricsStore{admission: []db.ListWorkspaceAdmissionBacklogRow{
+		{Stage: "", OldestAgeSeconds: 30},
+		{Stage: workspaceWaitingForMachine, OldestAgeSeconds: 7200},
+		{Stage: "toolchain_bootstrap", OldestAgeSeconds: 12},
+		{Stage: "customer prose stage", OldestAgeSeconds: 10},
+		{Stage: "another unlisted stage", OldestAgeSeconds: 40},
+	}}, observer, time.Second)
+	require.Equal(t, map[string]float64{
+		"none": 30, workspaceWaitingForMachine: 7200, "toolchain_bootstrap": 12,
+		"environment_setup": 0, "ready": 0, "other": 40,
+	}, observer.admissionSnapshot())
+
+	collectRuntimeMetrics(context.Background(), &fakeRuntimeMetricsStore{}, observer, time.Second)
+	for stage, age := range observer.admissionSnapshot() {
+		require.Zero(t, age, "stage %s kept an age after its rows cleared", stage)
+	}
+}
+
+// The generated query ages each stage's oldest admission from the right
+// clock: a first start from creation, a wake from its row's last change. It
+// runs on an isolated database so no other test's rows can be older.
+func TestRuntimeMetricsCollector_PostgresAdmissionBacklog(t *testing.T) {
+	pool, _ := shippedCorePool(t)
+	ctx := context.Background()
+	userID, repoID := setupTestUserAndRepo(t, pool)
+	insert := func(status, stage, created, updated string, started bool, deleted bool) {
+		t.Helper()
+		_, err := pool.Exec(ctx, `INSERT INTO workspaces (repository_id, user_id, name, status, provisioning_stage,
+				created_at, updated_at, started_at, deleted_at, vm_id)
+			VALUES ($1, $2, gen_random_uuid()::text, $3, $4, NOW() - $5::interval, NOW() - $6::interval,
+				CASE WHEN $7 THEN NOW() - $5::interval END, CASE WHEN $8 THEN NOW() END, '')`,
+			repoID, userID, status, stage, created, updated, started, deleted)
+		require.NoError(t, err)
+	}
+	// A first start parked waiting for a machine for two hours.
+	insert("starting", workspaceWaitingForMachine, "2 hours", "1 minute", false, false)
+	// A wake of a week-old box that began a minute ago: aged from the wake.
+	insert("starting", "", "7 days", "1 minute", true, false)
+	// A pending first start from ten minutes ago.
+	insert("pending", "", "10 minutes", "10 minutes", false, false)
+	// Neither a running box nor a deleted row is an admission.
+	insert("running", "", "30 days", "30 days", true, false)
+	insert("starting", workspaceWaitingForMachine, "9 days", "9 days", false, true)
+
+	observer := &fakeRuntimeMetricsObserver{}
+	collectRuntimeMetrics(ctx, db.New(pool), observer, 5*time.Second)
+	require.Empty(t, observer.failureSnapshot())
+	admission := observer.admissionSnapshot()
+	require.InDelta(t, 7200, admission[workspaceWaitingForMachine], 60)
+	require.InDelta(t, 600, admission["none"], 60, "the wake was aged from creation, or the pending row was missed")
+	require.Zero(t, admission["other"])
 }
 
 // The generated product queries back the gauges, and the values follow

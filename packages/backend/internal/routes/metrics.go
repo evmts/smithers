@@ -31,6 +31,10 @@ type SmithersMetrics struct {
 	// The field name is retained for older service interfaces.
 	Sandbox *SandboxLegacyMetrics
 
+	// PoolAdmission holds what a full core pool refused and what workspace
+	// admission left waiting.
+	PoolAdmission *PoolAdmissionMetrics
+
 	// --- Backward-compatible field aliases (delegate to sub-structs) ---
 
 	// HTTPRequestsTotal counts all HTTP requests by method, path, and status code.
@@ -172,6 +176,7 @@ func NewSmithersMetrics() *SmithersMetrics {
 	workflowM := NewWorkflowMetrics(reg)
 	webhookM := NewWebhookMetrics(reg)
 	sandboxM := NewSandboxLegacyMetrics(reg)
+	poolAdmissionM := NewPoolAdmissionMetrics(reg)
 
 	// Ticket 0132: rate-limit metrics. These live on SmithersMetrics
 	// (rather than in a sub-struct) because only two routes + one
@@ -302,6 +307,8 @@ func NewSmithersMetrics() *SmithersMetrics {
 		Workflow: workflowM,
 		Webhook:  webhookM,
 		Sandbox:  sandboxM,
+
+		PoolAdmission: poolAdmissionM,
 
 		// Backward-compatible aliases — point to the same prometheus collectors
 		// that live inside the sub-structs.

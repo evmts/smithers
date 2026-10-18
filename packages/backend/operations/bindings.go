@@ -74,7 +74,9 @@ type Bindings struct {
 	Secrets             *SecretInjector
 	Webhooks            webhooks.Dispatcher
 	Metrics             *Metrics
-	Streams             StreamCounter
-	Access              Access
-	HTTP                HTTPSettings
+	// Streams counts live SSE streams. It is nil in a process that serves no
+	// HTTP, which starts no SSE broker.
+	Streams StreamCounter
+	Access  Access
+	HTTP    HTTPSettings
 }

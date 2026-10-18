@@ -659,7 +659,7 @@ func (s *WorkspaceService) ensureWorkspaceRunning(ctx context.Context, workspace
 		input.UserID = workspace.UserID
 	}
 	provision := func(ctx context.Context) (db.Workspace, error) {
-		return s.withWorkspaceProvisionLock(ctx, workspace, func(claim context.Context, current db.Workspace) (db.Workspace, error) {
+		return s.withWorkspaceProvisionLock(ctx, workspaceClaimStart, workspace, func(claim context.Context, current db.Workspace) (db.Workspace, error) {
 			return s.ensureWorkspaceRunningOwned(claim, current, input)
 		})
 	}

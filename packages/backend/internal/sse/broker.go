@@ -920,13 +920,12 @@ func (b *Broker) MetricsCollectors() []prometheus.Collector {
 		b.slowDisconnects, b.relistens, b.rejections,
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "smithers_sse_broker_subscriptions", Help: "Live broker subscriptions."}, func() float64 { return float64(b.ActiveConnections()) }),
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "smithers_sse_broker_channels", Help: "Channels currently tracked by the broker LISTEN set."}, func() float64 { return float64(b.channelCount.Load()) }),
-		// WHICH process-lifetime resident is in a full pool. The broker is
-		// started in every composition, before any topology branch, and holds
-		// this one connection from Start to Stop — including in a workers-only
-		// process, which serves no HTTP and therefore has no subscriber for it
-		// to fan out to. A pool that reads full needs that connection
-		// attributed by role, because no duty gauge owns it and subtracting an
-		// assumed resident count instead would be inventing a number.
+		// WHICH process-lifetime resident is in a full pool. The broker holds
+		// this one connection from Start to Stop in every process that serves
+		// HTTP; a workers-only process has no subscriber and starts no broker
+		// (plue#839). A pool that reads full needs that connection attributed
+		// by role, because no duty gauge owns it and subtracting an assumed
+		// resident count instead would be inventing a number.
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "smithers_sse_broker_pooled_connections_held",
 			Help: "Core-pool connections this broker is holding right now: one shared LISTEN connection from Start to Stop, zero while reconnecting.",

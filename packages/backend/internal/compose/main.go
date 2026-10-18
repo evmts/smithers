@@ -456,6 +456,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if cfg.Observability.MetricsAddr != "" && options.topology.servesHTTP() {
 		return errors.New("observability.metrics_addr applies only to worker duties; HTTP processes serve /metrics on the product router")
 	}
+	if err := requireCorePoolFloor(cfg.Database.MaxConns, options.topology); err != nil {
+		slog.New(middleware.NewGCPJSONHandler(stderr, slog.LevelError)).Error("invalid database pool size", "error", err)
+		return err
+	}
 	if err := config.ValidateServerStartupWithDependencies(cfg, config.StartupDependencies{
 		InProcessRepository: options.Repository != nil && options.Repository.InProcess(),
 		WorkspaceRuntime:    options.Workspace != nil,
@@ -594,14 +598,22 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// stream while the server has not yet observed the old TCP close and run the
 	// deferred Unsubscribe. 100 leaves comfortable headroom for that overlap while
 	// still stopping a single user from opening unbounded streams on one pod.
-	sseBroker := sse.NewBroker(pool)
-	smithersMetrics.MustRegister(sseBroker.MetricsCollectors()...)
-	sseBroker.MaxStreamsPerUser = 100
-	if err := startSSEBroker(sseBroker, ctx); err != nil {
-		slog.Error("failed to start SSE broker", "error", err)
-		return err
+	//
+	// Only a process that serves HTTP has a subscriber, so only it starts the
+	// broker. In a workers-only process the broker held one of four core
+	// connections for its whole life with no channel to listen on (plue#839);
+	// its HTTP consumers are constructed with nil and never routed.
+	var sseBroker *sse.Broker
+	if options.topology.servesHTTP() {
+		sseBroker = sse.NewBroker(pool)
+		smithersMetrics.MustRegister(sseBroker.MetricsCollectors()...)
+		sseBroker.MaxStreamsPerUser = 100
+		if err := startSSEBroker(sseBroker, ctx); err != nil {
+			slog.Error("failed to start SSE broker", "error", err)
+			return err
+		}
+		defer sseBroker.Stop()
 	}
-	defer sseBroker.Stop()
 
 	// Revocation fan-out: one durable event per revocation plus NOTIFY, a
 	// per-request check in the auth chain, and termination of every live SSE
@@ -2533,7 +2545,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			Agents: agentService, Workspaces: workspaceService, Workflows: workflowRunService,
 			CommitStatuses: commitStatusService, GitHubChecks: gitHubCheckRunService,
 			GitHubInstallations: repoConnectionService, Secrets: secretInjector,
-			Webhooks: webhookDispatcher, Metrics: smithersMetrics, Streams: sseBroker,
+			Webhooks: webhookDispatcher, Metrics: smithersMetrics, Streams: streamCounter(sseBroker),
 			Access: deploymentAccess(queries, cfg),
 			HTTP: operations.HTTPSettings{Address: srv.Addr, ReadTimeout: srv.ReadTimeout,
 				ReadHeaderTimeout: srv.ReadHeaderTimeout, WriteTimeout: srv.WriteTimeout,

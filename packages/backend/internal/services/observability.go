@@ -24,6 +24,14 @@ type RuntimeMetricsObserver interface {
 	SetActiveAgentSessionOldestAgeSeconds(n float64)
 	SetLandingQueueDepth(n int)
 	SetCodeSearchBacklog(repositories int, oldestAgeSeconds float64)
+	// SetWorkspaceAdmissionOldestSeconds publishes, for every stage in
+	// WorkspaceAdmissionStages, the age of the oldest workspace still being
+	// admitted at that stage, and zero for a stage with none.
+	SetWorkspaceAdmissionOldestSeconds(stage string, seconds float64)
+	// ObserveRuntimeMetricsCollectionFailure counts one refresh of collector
+	// that failed and kept its gauge's last value. A starved pool used to
+	// fail every refresh behind a WARN no alert could read.
+	ObserveRuntimeMetricsCollectionFailure(collector string)
 }
 
 // RuntimeMetricsStore reads the current state backing runtime gauges. The
@@ -35,6 +43,33 @@ type RuntimeMetricsStore interface {
 	GetCodeSearchBacklog(ctx context.Context) (db.GetCodeSearchBacklogRow, error)
 }
 
+// RuntimeGaugeStore is everything the worker's gauge collector reads: the
+// state the admin status shares, plus the workspace admission backlog.
+type RuntimeGaugeStore interface {
+	RuntimeMetricsStore
+	ListWorkspaceAdmissionBacklog(ctx context.Context) ([]db.ListWorkspaceAdmissionBacklogRow, error)
+}
+
+// WorkspaceAdmissionStages is the closed stage label set of the admission
+// gauge. provisioning_stage is free text in the schema, so a stage outside it
+// is published as "other", and the empty stage as "none".
+var WorkspaceAdmissionStages = []string{
+	"none", workspaceWaitingForMachine, "toolchain_bootstrap", "environment_setup", "ready", "other",
+}
+
+// workspaceAdmissionStage maps a stored provisioning_stage onto the closed set.
+func workspaceAdmissionStage(stored string) string {
+	if stored == "" {
+		return "none"
+	}
+	for _, stage := range WorkspaceAdmissionStages {
+		if stage == stored {
+			return stage
+		}
+	}
+	return "other"
+}
+
 // RuntimeMetricsInterval is how often the worker refreshes runtime gauges.
 const RuntimeMetricsInterval = 15 * time.Second
 
@@ -44,14 +79,14 @@ const runtimeMetricsTimeout = 3 * time.Second
 // immediately and then every interval, so alerts and dashboards reflect live
 // agent-session and landing-queue state. It is a worker duty: it blocks until
 // ctx is cancelled and any in-flight refresh has returned.
-func RunRuntimeMetricsCollector(ctx context.Context, store RuntimeMetricsStore, observer RuntimeMetricsObserver, interval time.Duration) {
+func RunRuntimeMetricsCollector(ctx context.Context, store RuntimeGaugeStore, observer RuntimeMetricsObserver, interval time.Duration) {
 	if store == nil || observer == nil || interval <= 0 {
 		return
 	}
 	runRuntimeMetricsCollector(ctx, store, observer, interval, runtimeMetricsTimeout)
 }
 
-func runRuntimeMetricsCollector(ctx context.Context, store RuntimeMetricsStore, observer RuntimeMetricsObserver, interval, timeout time.Duration) {
+func runRuntimeMetricsCollector(ctx context.Context, store RuntimeGaugeStore, observer RuntimeMetricsObserver, interval, timeout time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -67,7 +102,7 @@ func runRuntimeMetricsCollector(ctx context.Context, store RuntimeMetricsStore, 
 	}
 }
 
-func collectRuntimeMetrics(ctx context.Context, store RuntimeMetricsStore, observer RuntimeMetricsObserver, timeout time.Duration) {
+func collectRuntimeMetrics(ctx context.Context, store RuntimeGaugeStore, observer RuntimeMetricsObserver, timeout time.Duration) {
 	refreshCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	// Independent queries publish successful values immediately, even while
@@ -80,6 +115,7 @@ func collectRuntimeMetrics(ctx context.Context, store RuntimeMetricsStore, obser
 		go func() {
 			defer wg.Done()
 			if err := query(refreshCtx); err != nil && ctx.Err() == nil {
+				observer.ObserveRuntimeMetricsCollectionFailure(name)
 				slog.Warn("runtime metrics collection failed", "metric", name, "error", err)
 			}
 		}()
@@ -111,6 +147,21 @@ func collectRuntimeMetrics(ctx context.Context, store RuntimeMetricsStore, obser
 			observer.SetCodeSearchBacklog(int(backlog.Repositories), backlog.OldestAgeSeconds)
 		}
 		return err
+	})
+	run("workspace_admission", func(ctx context.Context) error {
+		rows, err := store.ListWorkspaceAdmissionBacklog(ctx)
+		if err != nil {
+			return err
+		}
+		oldest := make(map[string]float64, len(WorkspaceAdmissionStages))
+		for _, row := range rows {
+			stage := workspaceAdmissionStage(row.Stage)
+			oldest[stage] = max(oldest[stage], row.OldestAgeSeconds)
+		}
+		for _, stage := range WorkspaceAdmissionStages {
+			observer.SetWorkspaceAdmissionOldestSeconds(stage, oldest[stage])
+		}
+		return nil
 	})
 	wg.Wait()
 }

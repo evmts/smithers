@@ -30,10 +30,11 @@ import (
 // eventually succeeds. So these cumulative totals cannot report how many
 // acquires are pending, and flat totals beside a full pool do not mean nothing
 // is parked — they mean nothing has completed a wait since the last sample.
-// CanceledAcquireCount is the one that moves for an acquire that gave up,
-// which is what a written bound refusing looks like from the pool's side.
-// Separating parked from refusing needs the per-duty held and stall series in
-// services/core_pool_duty.go, not these totals alone.
+// An acquire that gave up is counted where it fails, with the duty that asked,
+// by smithers_db_pool_acquire_failures_total (see pool_acquire.go); pgx's own
+// CanceledAcquireCount is the same event without the attribution, so it is not
+// published twice. Separating parked from refusing needs the per-duty held and
+// stall series in services/core_pool_duty.go, not these totals alone.
 //
 // There is no sampling of anything a connection carried: no SQL text, no
 // parameter, no identifier, no error and no customer value is in a connection
@@ -59,9 +60,5 @@ func PoolMetricsCollectors(pool *pgxpool.Pool) []prometheus.Collector {
 			Name: "smithers_db_pool_acquire_wait_seconds_total",
 			Help: "Time spent waiting by those completed acquires. Time being spent by an acquire that is still parked is not in it yet.",
 		}, func() float64 { return pool.Stat().EmptyAcquireWaitTime().Seconds() }),
-		prometheus.NewCounterFunc(prometheus.CounterOpts{
-			Name: "smithers_db_pool_acquire_cancellations_total",
-			Help: "Acquires cancelled while waiting. This is what a written acquire bound refusing looks like from the pool's side.",
-		}, func() float64 { return float64(pool.Stat().CanceledAcquireCount()) }),
 	}
 }

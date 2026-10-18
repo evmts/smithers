@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
@@ -1667,6 +1668,7 @@ func (s *WorkspaceService) provisionWorkspaceAsyncWithStart(ctx context.Context,
 				return startErr
 			})
 		}
+		s.recordAsyncProvisionOutcome(workspace.ID, err)
 		if err != nil {
 			if errors.Is(err, errWorkspaceProvisionInProgress) || errors.Is(err, errWorkspaceMachineWaitEnded) {
 				return
@@ -1706,6 +1708,62 @@ func (s *WorkspaceService) provisionWorkspaceAsyncWithStart(ctx context.Context,
 	}()
 }
 
+// recordAsyncProvisionOutcome leaves the one record a refused asynchronous
+// claim has. The refusal used to return without a trace: the row's stage and
+// updated_at never moved, so a create the claim gate refused every five
+// seconds for days looked exactly like one nobody had asked for (plue#839).
+//
+// It logs once per row per change of stage and reason, in the reconcile loop's
+// finite shape; smithers_workspace_reconcile_claims_total counts every
+// refusal. A claim another claimant holds is provisioning, not refused, and
+// leaves no record. Any other outcome forgets the row's last refusal.
+func (s *WorkspaceService) recordAsyncProvisionOutcome(workspaceID string, err error) {
+	stage, refused := workspaceProvisionClaimStage(err)
+	if !refused || !errors.Is(err, errWorkspaceProvisionInProgress) {
+		if s.provisionTasks != nil {
+			s.provisionTasks.refusals.forget(workspaceID)
+		}
+		return
+	}
+	refusal := interruptedReleaseStopOutcome{stage: stage, reason: interruptedReleaseStopReasonFor(err)}
+	if s.provisionTasks != nil && !s.provisionTasks.refusals.changed(workspaceID, refusal) {
+		return
+	}
+	slog.Warn("async workspace provisioning refused", refusal.logArgs(workspaceID)...)
+}
+
+// asyncProvisionRefusalsCap bounds the refusals remembered. A row deleted
+// while refused is never forgotten by an outcome, so past the cap the memory
+// starts over; the cost is one repeated log line per row still refused.
+const asyncProvisionRefusalsCap = 1024
+
+// asyncProvisionRefusals is each refused row's last logged refusal.
+type asyncProvisionRefusals struct {
+	mu   sync.Mutex
+	last map[string]interruptedReleaseStopOutcome
+}
+
+// changed records refusal for workspaceID and reports whether it differs
+// from the last one logged.
+func (r *asyncProvisionRefusals) changed(workspaceID string, refusal interruptedReleaseStopOutcome) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if last, ok := r.last[workspaceID]; ok && last == refusal {
+		return false
+	}
+	if r.last == nil || len(r.last) >= asyncProvisionRefusalsCap {
+		r.last = make(map[string]interruptedReleaseStopOutcome)
+	}
+	r.last[workspaceID] = refusal
+	return true
+}
+
+func (r *asyncProvisionRefusals) forget(workspaceID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.last, workspaceID)
+}
+
 func (s *WorkspaceService) provisionSnapshotWorkspaceAsync(ctx context.Context, workspace db.Workspace, snapshot db.WorkspaceSnapshot) {
 	done := s.trackProvision()
 	go func() {
@@ -1713,12 +1771,13 @@ func (s *WorkspaceService) provisionSnapshotWorkspaceAsync(ctx context.Context, 
 		defer s.recoverAsyncProvision(ctx, workspace, "async-snapshot")
 		provisionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), workspaceProvisionTimeout)
 		defer cancel()
-		_, err := s.withWorkspaceProvisionLock(provisionCtx, workspace, func(claim context.Context, current db.Workspace) (db.Workspace, error) {
+		_, err := s.withWorkspaceProvisionLock(provisionCtx, workspaceClaimSnapshotRestore, workspace, func(claim context.Context, current db.Workspace) (db.Workspace, error) {
 			if s.runtime != nil {
 				return s.restoreRuntimeWorkspaceSnapshot(claim, current, snapshot, current.UserID)
 			}
 			return s.createWorkspaceVMFromSnapshot(claim, current, snapshot)
 		})
+		s.recordAsyncProvisionOutcome(workspace.ID, err)
 		if errors.Is(err, errWorkspaceProvisionInProgress) {
 			return
 		}

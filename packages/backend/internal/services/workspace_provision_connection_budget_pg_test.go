@@ -334,7 +334,7 @@ func TestRetainedGuestStopProgressesAtShippedConnectionBudget(t *testing.T) {
 	claimant := sampleDBWorkspace("ws-budget-concurrent-claim")
 	claimed := make(chan error, 1)
 	go func() {
-		_, err := svc.withWorkspaceProvisionLock(context.Background(), claimant, func(_ context.Context, current db.Workspace) (db.Workspace, error) {
+		_, err := svc.withWorkspaceProvisionLock(context.Background(), workspaceClaimStart, claimant, func(_ context.Context, current db.Workspace) (db.Workspace, error) {
 			return current, nil
 		})
 		claimed <- err
@@ -448,7 +448,7 @@ func TestClaimAdmissionIsMeasuredAgainstTheRealPoolNotAReservedGuess(t *testing.
 	pool := budgetTestPool(t, shippedWorkerCorePoolMaxConns)
 	svc := newWorkspaceServiceForTests(provisioningTestQuerier(nil), WithWorkspaceTransactions(pool))
 
-	idle, admitted := svc.reserveProvisionClaim()
+	idle, admitted := svc.reserveProvisionClaim(workspaceProvisionConnectionsPerClaim)
 	require.True(t, admitted, "an idle pool can serve a whole claim")
 	require.Equal(t, workspaceProvisionConnectionsPerClaim, svc.provisionTasks.reservedConnections(),
 		"an admitted claim must reserve the connections it will need")
@@ -470,7 +470,7 @@ func TestClaimAdmissionIsMeasuredAgainstTheRealPoolNotAReservedGuess(t *testing.
 		headroom, measured := corePoolHeadroom(pool)
 		require.True(t, measured, "a real pool must be measurable")
 		require.Equal(t, shippedWorkerCorePoolMaxConns-taken, headroom)
-		reservation, admitted := svc.reserveProvisionClaim()
+		reservation, admitted := svc.reserveProvisionClaim(workspaceProvisionConnectionsPerClaim)
 		require.Equal(t, headroom >= workspaceProvisionConnectionsPerClaim, admitted,
 			"admission must follow the pool's measured headroom, not a reserved constant")
 		reservation.release()
@@ -481,7 +481,7 @@ func TestClaimAdmissionIsMeasuredAgainstTheRealPoolNotAReservedGuess(t *testing.
 	opaque := newWorkspaceServiceForTests(provisioningTestQuerier(nil), WithWorkspaceTransactions(opaqueTransactions{pool}))
 	_, measured := corePoolHeadroom(opaqueTransactions{pool})
 	require.False(t, measured)
-	opaqueReservation, admitted := opaque.reserveProvisionClaim()
+	opaqueReservation, admitted := opaque.reserveProvisionClaim(workspaceProvisionConnectionsPerClaim)
 	require.True(t, admitted)
 	opaqueReservation.release()
 }
@@ -521,7 +521,7 @@ func TestTwoClaimantsAreNeverAdmittedAgainstTheSameFreeConnections(t *testing.T)
 	for range claimants {
 		go func() {
 			<-start
-			reservation, admitted := svc.reserveProvisionClaim()
+			reservation, admitted := svc.reserveProvisionClaim(workspaceProvisionConnectionsPerClaim)
 			results <- attempt{reservation: reservation, admitted: admitted}
 		}()
 	}
@@ -549,7 +549,7 @@ func TestTwoClaimantsAreNeverAdmittedAgainstTheSameFreeConnections(t *testing.T)
 		"an acquired connection is still reserved as well as counted by the pool")
 
 	// While that claim runs there is still nothing left for a second one.
-	refused, admitted := svc.reserveProvisionClaim()
+	refused, admitted := svc.reserveProvisionClaim(workspaceProvisionConnectionsPerClaim)
 	require.False(t, admitted, "a second claim was admitted into a pool with one connection left")
 	refused.release()
 
@@ -558,7 +558,7 @@ func TestTwoClaimantsAreNeverAdmittedAgainstTheSameFreeConnections(t *testing.T)
 	conn.Release()
 	winners[0].release()
 	require.Zero(t, svc.provisionTasks.reservedConnections())
-	next, admitted := svc.reserveProvisionClaim()
+	next, admitted := svc.reserveProvisionClaim(workspaceProvisionConnectionsPerClaim)
 	require.True(t, admitted, "the backlog cannot converge if the next claim is refused after the first one let go")
 	next.release()
 }
@@ -662,7 +662,7 @@ func TestClaimUnwindsPromptlyOnShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := svc.withWorkspaceProvisionLock(ctx, listed, func(_ context.Context, current db.Workspace) (db.Workspace, error) {
+		_, err := svc.withWorkspaceProvisionLock(ctx, workspaceClaimStart, listed, func(_ context.Context, current db.Workspace) (db.Workspace, error) {
 			return current, nil
 		})
 		done <- err
@@ -867,7 +867,7 @@ func TestShutdownIsNeverReportedAsACorePoolStall(t *testing.T) {
 	// source.
 	for slot := range svc.provisionTasks.limit {
 		go func(slot int) {
-			_, err := svc.withWorkspaceProvisionLock(context.Background(),
+			_, err := svc.withWorkspaceProvisionLock(context.Background(), workspaceClaimStart,
 				sampleDBWorkspace("ws-budget-gate-holder-"+string(rune('a'+slot))),
 				func(_ context.Context, current db.Workspace) (db.Workspace, error) {
 					holding <- struct{}{}
@@ -892,7 +892,7 @@ func TestShutdownIsNeverReportedAsACorePoolStall(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	waiting := make(chan error, 1)
 	go func() {
-		_, err := svc.withWorkspaceProvisionLock(ctx, listed, func(_ context.Context, current db.Workspace) (db.Workspace, error) {
+		_, err := svc.withWorkspaceProvisionLock(ctx, workspaceClaimStart, listed, func(_ context.Context, current db.Workspace) (db.Workspace, error) {
 			return current, nil
 		})
 		waiting <- err

@@ -21,9 +21,12 @@ type queryStartTimeKey struct{}
 type queryLabelKey struct{}
 type querySpanKey struct{}
 
-// MetricsTracer implements pgx.QueryTracer and records query durations.
+// MetricsTracer implements pgx.QueryTracer and records query durations. On a
+// named pool it also counts the acquires that pool did not serve.
 type MetricsTracer struct {
 	metrics DBQueryDurationObserver
+	// pool is the pool label for acquire failures; empty counts none.
+	pool string
 }
 
 var _ pgx.QueryTracer = (*MetricsTracer)(nil)

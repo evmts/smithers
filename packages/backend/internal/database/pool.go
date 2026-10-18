@@ -35,7 +35,9 @@ func NewPool(ctx context.Context, cfg config.DatabaseConfig, metrics ...DBQueryD
 		return nil
 	}
 	if len(metrics) > 0 && metrics[0] != nil {
-		poolCfg.ConnConfig.Tracer = NewMetricsTracer(metrics[0])
+		tracer := NewMetricsTracer(metrics[0])
+		tracer.pool = CorePoolName
+		poolCfg.ConnConfig.Tracer = tracer
 	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)

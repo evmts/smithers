@@ -22,9 +22,9 @@ import (
 // CORE-POOL OWNERS THIS PACKAGE'S DUTY GAUGES DO NOT NAME, at the serving
 // worker's measured pool size of four.
 //
-// Two of them are process-lifetime residents: compose starts sse.NewBroker and
-// revocation.NewBus before any topology branch and with no condition on
-// whether the process serves HTTP, and each holds one pooled connection from
+// Two of them are process-lifetime residents of a process that serves HTTP:
+// compose starts sse.NewBroker only there (plue#839) and revocation.NewBus in
+// every process, and each holds one pooled connection from
 // Start to Stop. The third is the public mirror seeder, which compose starts
 // under topology.workers(): each pass tries the mirror's SESSION-level
 // advisory lock once (database.AcquireSessionLock), and the pass that wins

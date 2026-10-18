@@ -38,6 +38,42 @@ func (q *Queries) CompletePendingWorkspaceSessions(ctx context.Context, workspac
 	return items, nil
 }
 
+const listWorkspaceAdmissionBacklog = `-- name: ListWorkspaceAdmissionBacklog :many
+SELECT w.provisioning_stage AS stage,
+       EXTRACT(EPOCH FROM NOW() - MIN(CASE WHEN w.started_at IS NULL THEN w.created_at ELSE w.updated_at END))::double precision AS oldest_age_seconds
+FROM workspaces w
+WHERE w.deleted_at IS NULL AND w.status IN ('pending', 'starting')
+GROUP BY w.provisioning_stage
+`
+
+type ListWorkspaceAdmissionBacklogRow struct {
+	Stage            string  `json:"stage"`
+	OldestAgeSeconds float64 `json:"oldest_age_seconds"`
+}
+
+// Runtime gauge: by provisioning stage, the age of the oldest workspace still
+// being admitted (pending or starting). A first start is aged from the row's
+// creation; a wake, which reuses 'starting', from the row's last change.
+func (q *Queries) ListWorkspaceAdmissionBacklog(ctx context.Context) ([]ListWorkspaceAdmissionBacklogRow, error) {
+	rows, err := q.db.Query(ctx, listWorkspaceAdmissionBacklog)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWorkspaceAdmissionBacklogRow{}
+	for rows.Next() {
+		var i ListWorkspaceAdmissionBacklogRow
+		if err := rows.Scan(&i.Stage, &i.OldestAgeSeconds); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWorkspaceProvisioningRecovery = `-- name: ListWorkspaceProvisioningRecovery :many
 SELECT w.id, w.repository_id, w.user_id, w.target_bookmark,
        COALESCE(u.username, o.name, '')::text AS repository_owner,

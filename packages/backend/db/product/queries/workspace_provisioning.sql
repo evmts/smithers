@@ -53,3 +53,13 @@ WHERE s.workspace_id=w.id AND w.id=sqlc.arg(workspace_id)::uuid
   AND w.status='running' AND w.deleted_at IS NULL
   AND s.status IN ('pending','starting')
 RETURNING s.id;
+
+-- name: ListWorkspaceAdmissionBacklog :many
+-- Runtime gauge: by provisioning stage, the age of the oldest workspace still
+-- being admitted (pending or starting). A first start is aged from the row's
+-- creation; a wake, which reuses 'starting', from the row's last change.
+SELECT w.provisioning_stage AS stage,
+       EXTRACT(EPOCH FROM NOW() - MIN(CASE WHEN w.started_at IS NULL THEN w.created_at ELSE w.updated_at END))::double precision AS oldest_age_seconds
+FROM workspaces w
+WHERE w.deleted_at IS NULL AND w.status IN ('pending', 'starting')
+GROUP BY w.provisioning_stage;

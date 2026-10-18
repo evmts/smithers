@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -51,10 +52,16 @@ type Hints interface {
 	Listen(ctx context.Context, channels []string) (events <-chan sse.Event, stop func(), err error)
 }
 
+var errNoBroker = errors.New("live: this process started no SSE broker")
+
 // BrokerHints listens on sse.Broker, the install's one LISTEN connection.
 type BrokerHints struct{ Broker *sse.Broker }
 
 func (b BrokerHints) Listen(ctx context.Context, channels []string) (<-chan sse.Event, func(), error) {
+	// A process that serves no HTTP starts no broker, and has no subscriber.
+	if b.Broker == nil {
+		return nil, nil, errNoBroker
+	}
 	// The hub's streams share user 0's broker streams, one per topic.
 	sub, err := b.Broker.SubscribeMulti(ctx, channels, 0)
 	if err != nil {
