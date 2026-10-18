@@ -32,7 +32,7 @@ const redact = (value: unknown, redactCredentials: (text: string) => string): un
   }
   return value
 }
-const unknownFieldsOf = (raw: unknown, decoded: unknown, path = "$"): Array<{ path: string; kind: string }> => {
+export const unknownFieldsOf = (raw: unknown, decoded: unknown, path = "$"): Array<{ path: string; kind: string }> => {
   if (Array.isArray(raw) && Array.isArray(decoded)) return raw.flatMap((value, index) => unknownFieldsOf(value, decoded[index], `${path}[${index}]`))
   if (raw === null || decoded === null || typeof raw !== "object" || typeof decoded !== "object") return []
   return Object.entries(raw).flatMap(([key, value]) => Object.hasOwn(decoded, key)

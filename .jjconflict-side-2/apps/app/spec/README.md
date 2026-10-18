@@ -260,3 +260,17 @@ bun apps/app/spec/run.ts live smithers/landing-install --results-file l1-live.js
 ```
 
 Queue `test.txt` commands stay offline; live collection is an operator action.
+
+## Drift feed
+
+`bun apps/app/spec/driftCli.ts <manifest.json> <results-directory> <receipts...>`
+pairs the newest mock/live receipt per journey and atomically writes `drift.json`.
+The manifest supplies `builtAt`, the factory `spec.aheadMaxDays`, `journeys`
+(`id`, optional `owner` issue and `capabilities`), world `capabilities` and
+`ahead`, optional `productionCapabilities` and schema-tagged `captures`.
+Omit production capabilities when bootstrap could not be read. An empty array
+means bootstrap was read and advertises none. `GITHUB_TOKEN` enables read-only
+REST issue checks; failed reads remain unverified. No GitHub writes occur.
+Product can declare a mock failure stale with `stale: { by, reason }` on the
+journey metadata. A failure alone never proves the app moved past its spec.
+The previous feed retains shipped history across failed cycles. Preserve it.
