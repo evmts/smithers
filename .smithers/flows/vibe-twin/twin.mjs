@@ -250,10 +250,25 @@ const tsconfig = (pkg, file, compilerOptions, include, exclude = []) => {
   )
 }
 
+/** The compiler's version, as [major, minor, patch]; VibeLang 0.0.1 knows no vibelang options. */
+let compilerVersion
+const version = () => {
+  if (compilerVersion) return compilerVersion
+  const out = spawnSync(process.execPath, [join(root, "node_modules/vibelang/bin/vibelang"), "--version"], { encoding: "utf8" }).stdout ?? ""
+  compilerVersion = (out.match(/VibeLang (\d+)\.(\d+)\.(\d+)/) ?? [0, 0, 0, 0]).slice(1).map(Number)
+  return compilerVersion
+}
+const atLeast = ([a, b, c]) => {
+  const [x, y, z] = version()
+  return x !== a ? x > a : y !== b ? y > b : z >= c
+}
+
 const common = {
-  // D261: Smithers' own TypeScript packages are trusted, so a call into a sibling package that
-  // isn't twinned yet is a plain call (no EK4401) whose exceptions are defects.
-  vibelang: { trustedPackages: ["@smthrs/*", "@smithers/*"] },
+  // D261 (VibeLang 0.0.2): Smithers' own TypeScript packages are trusted, so a call into a sibling
+  // package that isn't twinned yet is a plain call (no EK4401) whose exceptions are defects.
+  get vibelang() {
+    return atLeast([0, 0, 2]) ? { trustedPackages: ["@smthrs/*", "@smithers/*"] } : undefined
+  },
   noEmit: false,
   noEmitOnError: false,
   composite: false,
@@ -561,7 +576,11 @@ const bunTest = (pkg, args, preload, outputFile) => {
 /** `node <flags> --test <files>`, with an optional --import, read from its JUnit report. */
 const nodeTest = (pkg, args, register, outputFile) => {
   const argv = [...(register ? ["--import", register] : []), "--test-reporter=junit", `--test-reporter-destination=${outputFile}`, ...args]
-  const child = spawnSync(process.execPath, argv, { cwd: pkg, encoding: "utf8", env: { ...process.env, CI: "1" }, maxBuffer: 64 * 1024 * 1024 })
+  // Suites that spawn `node src/x.ts` reach the twin only if their child processes load the
+  // hook too (E-8), so it also goes in NODE_OPTIONS.
+  const nodeOptions = register ? [process.env.NODE_OPTIONS, `--import=${register}`].filter(Boolean).join(" ") : process.env.NODE_OPTIONS
+  const env = { ...process.env, CI: "1", ...(nodeOptions ? { NODE_OPTIONS: nodeOptions } : {}) }
+  const child = spawnSync(process.execPath, argv, { cwd: pkg, encoding: "utf8", env, maxBuffer: 64 * 1024 * 1024 })
   return existsSync(outputFile)
     ? { ...parseJunit(readFileSync(outputFile, "utf8"), pkg), status: child.status, signal: child.signal, error: child.error?.message }
     : { ran: false, pass: 0, fail: 0, skip: 0, failed: ["(node --test wrote no report)"] }
@@ -569,6 +588,12 @@ const nodeTest = (pkg, args, register, outputFile) => {
 
 /** The package's test runner: Bun for `bun test`, Node for `node ... --test`, else Vitest. */
 export const runner = (pkg) => {
+  // suites.json names the suite where the package.json test script isn't the package's real
+  // suite (PACKAGE.ts declares another, or the script never imports src/).
+  const suitesFile = fileURLToPath(new URL("./suites.json", import.meta.url))
+  const suites = existsSync(suitesFile) ? JSON.parse(readFileSync(suitesFile, "utf8")) : {}
+  const declared = suites[relative(root, pkg)]
+  if (declared) return { kind: declared.kind, args: declared.args, unverifiable: declared.unverifiable ? declared.why : undefined }
   const script = JSON.parse(readFileSync(join(pkg, "package.json"), "utf8")).scripts?.test ?? ""
   const words = (text) => text.trim().split(/\s+/).filter(Boolean)
   const bunArgs = script.match(/\bbun test\b(.*)$/)
@@ -667,7 +692,13 @@ import { fallbackFor, twinFor } from ${JSON.stringify(fileURLToPath(import.meta.
 const pkg = ${JSON.stringify(pkg)}
 export async function resolve(specifier, context, next) {
   const parent = context.parentURL?.startsWith("file:") ? fileURLToPath(context.parentURL) : undefined
-  if (parent === undefined || !parent.startsWith(pkg) || parent.includes("/node_modules/")) return next(specifier, context)
+  if (parent === undefined) {
+    // An entry point, such as a spawned \`node src/x.ts\`: run its twin instead.
+    const resolved = await next(specifier, context)
+    const twin = resolved.url.startsWith("file:") ? twinFor(fileURLToPath(resolved.url), pkg) : undefined
+    return twin ? { ...resolved, url: pathToFileURL(twin).href, shortCircuit: true } : resolved
+  }
+  if (!parent.startsWith(pkg) || parent.includes("/node_modules/")) return next(specifier, context)
   if (parent.includes("/.vibe-twin/out/")) {
     const fallback = fallbackFor(specifier, parent, pkg)
     return fallback ? next(pathToFileURL(fallback).href, context) : next(specifier, context)
@@ -713,7 +744,8 @@ export async function resolve(specifier, context, next) {
     regressions,
     unverifiableApi: missingDeclarations.map((file) => relative(join(work, "ts-dts"), file)),
     quality: quality(pkg),
-    ok: compileOk && twin.errors.length === 0 && apiOk(api) && baseline.ran && !baseline.signal && !baseline.error && vibe.ran
+    unverifiable: tests.unverifiable,
+    ok: tests.unverifiable === undefined && compileOk && twin.errors.length === 0 && apiOk(api) && baseline.ran && baseline.pass > 0 && !baseline.signal && !baseline.error && vibe.ran
       && regressions.length === 0 && vibe.pass >= baseline.pass && heldCalls === 0,
     complete: false
   }
@@ -740,7 +772,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const t = receipt.tests
     process.stdout.write(
       [
-        `${receipt.package}: ${receipt.complete ? "COMPLETE" : !receipt.ok ? "NOT OK" : !receipt.baselineClean ? "OK (baseline not clean: the TypeScript suite's own process failed)" : "OK (partial)"}`,
+        `${receipt.package}: ${receipt.unverifiable ? `UNVERIFIABLE (${receipt.unverifiable})` : receipt.complete ? "COMPLETE" : !receipt.ok ? "NOT OK" : !receipt.baselineClean ? "OK (baseline not clean: the TypeScript suite's own process failed)" : "OK (partial)"}`,
         `  compile: ${receipt.compile.twinErrors.length} errors, ${receipt.compile.twinWarnings.length} warnings, ${receipt.compile.vibelangErrorsInTypeScript.length} VibeLang errors in unchanged TypeScript (findings, not blocking)`,
         ...receipt.compile.vibelangErrorsInTypeScript.slice(0, 5).map((e) => `  finding: ${e}`),
         `  api: ${receipt.api.modules} modules twinned (${receipt.api.identicalFiles} with identical .d.ts), ${receipt.api.missingEffectModules.length} Effect modules not yet (${receipt.api.missingModules.length} in all), ${receipt.api.checked} type checks`,

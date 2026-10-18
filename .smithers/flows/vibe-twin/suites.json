@@ -1,0 +1,8 @@
+{
+  "apps/model-host": {
+    "why": "PACKAGE.ts runs test/serve.test.mjs and test/transcript.test.mjs, and both bundle src/ with esbuild (build.mjs) and run the bundle, so no resolver reaches the twin (finding E-8). Verifying it needs the build to compile .vibe (vibelang-unplugin), which is cutover work.",
+    "kind": "node",
+    "args": ["--test", "test/serve.test.mjs", "test/transcript.test.mjs"],
+    "unverifiable": true
+  }
+}
