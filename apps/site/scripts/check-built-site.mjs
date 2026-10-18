@@ -103,33 +103,18 @@ export function checkAssetHeaders(root) {
   return failures
 }
 
-/**
- * The landing page's primary action, Get started for free, opens the product. The link
- * check above cannot see this: the app page is one this build emits, so a Get started for free
- * that points into /docs is a working link that sends every first visitor to
- * the documentation instead of the app (it did, before the app moved home).
- *
- * The page is src/pages/index.astro, whose styles are scoped, so the built
- * markup carries Astro's generated class beside `actions` and `start`; the
- * match reads the class list, not the exact attribute.
- */
-export function checkLandingActions(root, appPath) {
+/** The static landing carries exactly one action and its two reference links. */
+export function checkLandingActions(root) {
   const landing = join(root, "index.html")
   if (!existsSync(landing)) return ["index.html: missing from the build"]
-  const actions = readFileSync(landing, "utf8").match(/<div class="actions(?:\s[^"]*)?"[^>]*>([\s\S]*?)<\/div>/)
-  if (actions === null) return ["index.html: the landing page has no actions"]
-  const anchors = [...actions[1].matchAll(/<a\b[^>]*>/g)].map((match) => match[0])
-  const href = (tag) => tag.match(/href="([^"]*)"/)?.[1]
-  const classes = (tag) => tag.match(/class="([^"]*)"/)?.[1]?.split(/\s+/) ?? []
-  const start = anchors.find((tag) => /\bid="start"/.test(tag) || classes(tag).includes("start"))
-  if (start === undefined) return ["index.html: the landing page has no Get started for free action"]
-  const tutorialPath = "/?tutorial"
-  if (href(start) !== tutorialPath) {
-    return [`index.html: Get started for free must open the tutorial at ${tutorialPath}, got ${href(start) ?? "no href"}`]
-  }
-  const document = start.match(/data-app-document="([^"]*)"/)?.[1]
-  if (document !== appPath) return [`index.html: Get started for free must load the app document at ${appPath}, got ${document ?? "no document"}`]
-  return []
+  const html = readFileSync(landing, "utf8")
+  const install = /<button\b[^>]*id="copy-install"/.test(html)
+  const open = /<form\b[^>]*class="repository-launcher-open"/.test(html)
+  if (install === open) return ["index.html: render exactly one install or open action"]
+  const failures = []
+  if (!html.includes('href="/docs/installation/"') || !html.includes('href="https://github.com/smithersai/smithers"')) failures.push("index.html: missing Docs or Source")
+  if (install && (!html.includes("npm i -g smthrs@next") || !html.includes("packages/smithers/docs/guides/change-code.md"))) failures.push("index.html: missing install command or coding guide")
+  return failures
 }
 
 export async function releaseReferences(repoRoot) {

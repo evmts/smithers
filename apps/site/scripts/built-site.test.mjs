@@ -239,32 +239,12 @@ test("the source public/_headers the build copies into dist already passes, so t
   assert.deepEqual(Object.keys(ASSET_HEADERS), ["cross-origin-embedder-policy", "cross-origin-resource-policy"])
 })
 
-test("the landing page's Get started for free opens the tutorial, through Astro's scoped class names", (t) => {
-  const actions = (href, attrs = ' data-app-document="/smithersai/smithers/"') =>
-    `<div class="actions astro-lcdefpme"><script>document.documentElement.classList.add("js")</script>` +
-    `<a id="start" class="start astro-lcdefpme" href="${href}" aria-keyshortcuts="s"${attrs}><span>Get started for free</span></a></div>`
-  const app = "/smithersai/smithers/"
-  assert.deepEqual(checkLandingActions(fixture(t, { "index.html": actions("/?tutorial") }), app), [])
-  assert.deepEqual(checkLandingActions(fixture(t, { "index.html": actions(app) }), app), [
-    "index.html: Get started for free must open the tutorial at /?tutorial, got /smithersai/smithers/"
-  ])
-  const intoDocs = checkLandingActions(fixture(t, { "index.html": actions("/docs/quickstart/") }), app)
-  assert.deepEqual(intoDocs, ["index.html: Get started for free must open the tutorial at /?tutorial, got /docs/quickstart/"])
-  assert.deepEqual(checkLandingActions(fixture(t, { "index.html": actions("/?tutorial", "") }), app), [
-    "index.html: Get started for free must load the app document at /smithersai/smithers/, got no document"
-  ])
-  assert.deepEqual(checkLandingActions(fixture(t, { "index.html": actions("/?tutorial", ' data-app-document="/missing/repo/"') }), app), [
-    "index.html: Get started for free must load the app document at /smithersai/smithers/, got /missing/repo/"
-  ])
-  const noStart = checkLandingActions(
-    fixture(t, { "index.html": `<div class="actions"><a class="btn ghost" href="/docs/">Docs</a></div>` }),
-    app
-  )
-  assert.deepEqual(noStart, ["index.html: the landing page has no Get started for free action"])
-  const noActions = checkLandingActions(fixture(t, { "index.html": `<main><a id="start" href="${app}">x</a></main>` }), app)
-  assert.deepEqual(noActions, ["index.html: the landing page has no actions"])
+test("the landing has exactly one static install or open action", t => {
+  const install = '<h1>Durable agent coding</h1><a href="/docs/installation/">Docs</a><a href="https://github.com/smithersai/smithers">Source</a><div class="landing-command"><code>npm i -g smthrs@next</code><button id="copy-install">Copy</button></div><a href="https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md">Then follow the coding guide</a>'
+  const open = install.replace(/<div class="landing-command">.*?<\/div><a href="https:.*?<\/a>$/, '<form class="repository-launcher-open"><input name="repository"><button>Open</button></form>')
+  for (const html of [install, open]) assert.deepEqual(checkLandingActions(fixture(t, { "index.html": html })), [])
+  for (const html of [install + open, '<h1>Empty</h1>']) assert.ok(checkLandingActions(fixture(t, { "index.html": html })).length > 0)
 })
-
 
 /*
  * Every repository page the build emits is the APP page, curated row or not
