@@ -121,7 +121,8 @@ const supportedKeywords = [
   "items",
   "nullable",
   "description",
-  "title"
+  "title",
+  "format"
 ]
 
 /** Truncates a caller-supplied diagnostic while stating exactly what was dropped.
@@ -331,6 +332,11 @@ const validateSchemaAt = (
   const unsupported = Object.keys(schema).find((keyword) => !supportedKeywords.includes(keyword))
   if (unsupported !== undefined) {
     return `${at(path)} uses the unsupported JSON Schema keyword "${truncateDiagnostic(unsupported)}".`
+  }
+  // An evidence transport annotation, never an assertion verifier. The
+  // receiving workflow owns enrollment, freshness and signature checks.
+  if (Object.hasOwn(schema, "format") && schema["format"] !== "webauthn-assertion") {
+    return `${at(path)} declares an unsupported "format".`
   }
   const enumeration = schema["enum"]
   if (enumeration !== undefined && !Array.isArray(enumeration)) {

@@ -326,6 +326,7 @@ export const runsCardFamily: CardFamily<"run-list" | "approvals-inbox"> = {
 import { useRef, useState } from "react"
 import type { ApprovalQuestion } from "./ApprovalQuestion"
 import { attemptWords } from "./ApprovalQuestion"
+import { signingProperty, signAnswer } from "./AnswerSigning"
 
 /** What a person typed, shaped for the question's kind, or why it cannot be sent. */
 export const answerValue = (
@@ -372,14 +373,31 @@ export const ApprovalAnswerForm = ({
   const [answerNote, setAnswerNote] = useState<string | undefined>(undefined)
   const attempt = attemptWords(question)
 
-  const send = (): void => {
+  const signing = useRef(false)
+  const editRevision = useRef(0)
+  const send = async (): Promise<void> => {
+    if (disabled || signing.current) return
     const shaped = answerValue(question, box.current?.value ?? "")
     if ("error" in shaped) {
       setAnswerNote(shaped.error)
       return
     }
     setAnswerNote(undefined)
-    onAnswer(shaped.value)
+    try {
+      const property = question.kind === "json" ? signingProperty(question.schema) : undefined
+      if (property === undefined) { onAnswer(shaped.value); return }
+      signing.current = true
+      const revision = editRevision.current
+      const original = box.current?.value
+      const signed = await signAnswer(shaped.value, property, question.waitRunId, question.name)
+      if (revision !== editRevision.current || original !== box.current?.value || !box.current?.isConnected) {
+        setAnswerNote("Answer changed. Sign again.")
+        return
+      }
+      onAnswer(signed)
+    } catch (error) {
+      setAnswerNote(error instanceof Error && error.name !== "NotAllowedError" ? error.message : "Signing cancelled. Try again.")
+    } finally { signing.current = false }
   }
 
   return (
@@ -427,6 +445,7 @@ export const ApprovalAnswerForm = ({
               ref={restoreDraft}
               defaultValue={draft?.text ?? ""}
               onInput={event => {
+                editRevision.current += 1
                 pendingText.current = { question: draft?.question, text: event.currentTarget.value }
                 onDraft?.(event.currentTarget.value)
               }}

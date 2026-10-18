@@ -19,3 +19,11 @@ test("only the declared schema property requests signing; ambiguity fails closed
   expect(signingProperty({ properties: { proof: { type: "object" } } })).toBeUndefined()
   expect(() => signingProperty({ properties: { a: { format: "webauthn-assertion" }, b: { format: "webauthn-assertion" } } })).toThrow()
 })
+
+test("challenge changes with every bound component", async () => {
+  const input = ["run", "wait", { text: "yes" }, "time"] as const
+  const baseline = base64url(await answerChallenge(...input))
+  for (const args of [ ["other", "wait", { text: "yes" }, "time"], ["run", "other", { text: "yes" }, "time"], ["run", "wait", { text: "no" }, "time"], ["run", "wait", { text: "yes" }, "later"] ] as const) {
+    expect(base64url(await answerChallenge(...args))).not.toBe(baseline)
+  }
+})

@@ -571,6 +571,12 @@ describe("HumanTask.validate", () => {
 })
 
 describe("HumanTask.validateSchema", () => {
+  it("admits the WebAuthn evidence annotation without treating it as verification", () => {
+    const schema = { type: "object", properties: { evidence: { type: "object", format: "webauthn-assertion" } } }
+    expect(HumanTask.validateSchema(schema)).toBeUndefined()
+    expect(HumanTask.validate({ evidence: {} }, { kind: "json", schema })).toBeUndefined()
+    expect(HumanTask.validateSchema({ format: "email" })).toContain("format")
+  })
   it("accepts a schema the subset can enforce, at every depth", () => {
     expect(
       HumanTask.validateSchema({
