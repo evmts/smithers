@@ -1,3 +1,4 @@
+import { IssueViews } from "./repository/IssueViews"
 import { RepoFrame } from "./repository/RepoFrame"
 import { CodeHome } from "./repository/CodeHome"
 import { RepositoryCodeView } from "./repository/RepositoryCodeView"
@@ -762,13 +763,15 @@ function AppContent() {
   const repository = repositoryRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())
   const rootRoute = window.location.pathname.replace(/\/$/, "") === `/${bootRepository}`
   const codeRoute = codeTarget?.subject?.kind === "tree" || codeTarget?.subject?.kind === "blob"
-  if (!rootRoute && !codeRoute) return chat
-  return <RepoFrame repo={bootRepository} publicRepo={repository?.catalog === true}
+  const issueMatch = /^\/issues(?:\/(\d+))?\/?$/.exec(window.location.pathname.slice(bootRepository.length + 1))
+  if (!rootRoute && !codeRoute && !issueMatch) return chat
+  const issueCard = [...cardRows].reverse().find(card => card.viewRepo?.toLowerCase() === bootRepository.toLowerCase() && (card.viewKey?.startsWith("[\"issues\"") || card.viewKey?.startsWith("issue-")))
+  return <RepoFrame issueCount={issueCard?.kind === "issue-list" && !issueCard.payload.github?.refusal ? issueCard.payload.issues.filter(row => row.state === "open").length : undefined} repo={bootRepository} publicRepo={repository?.catalog === true}
     login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
     member={identity?.state === "signed-in" && repository !== undefined && repository.catalog !== true}
     onAsk={() => controller.runCommand("chat.open")} onSignIn={() => controller.runCommand("sign-in")} ask={chat}>
     {codeRoute ? <RepositoryCodeView repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
-      admitted={true} requestId={bootEntry.requestId} onAsk={text => controller.changeDraft(text)} /> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
+      admitted={true} requestId={bootEntry.requestId} onAsk={text => controller.changeDraft(text)} /> : issueMatch ? <IssueViews repo={bootRepository} number={issueMatch[1] ? Number(issueMatch[1]) : undefined} card={issueCard} signedIn={identity?.state === "signed-in"} run={(name, args) => controller.runCommand(name, args)}/> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
       tree={repoTreeRows.find(row => row.copyId === homeTreeCopy && row.path === "")}
       home={repositoryHome} summary={repository?.summary}/>}
   </RepoFrame>
