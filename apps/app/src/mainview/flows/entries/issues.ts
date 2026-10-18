@@ -46,7 +46,8 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     // An install lists its repository's GitHub issues (GET /api/issues).
     runtimeAny: ["cloud", "install"],
     args: "[open|closed|all] [--kind conversation|issue] [--view <id>] [owner/repo]",
-    requires: ["first-run-target", "repo-source"],
+    requires: ["repo-source"],
+    payloadRequires: payload => payload.repo === undefined ? ["first-run-target"] : [],
     input: Schema.Struct({
       filter: Schema.optional(Schema.Literals(["open", "closed", "all"])),
       kind: Schema.optional(Schema.Literals(["all", "conversation", "issue"])),
@@ -63,7 +64,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     // An install opens its repository's GitHub issues (GET /api/issues/{n}).
     runtimeAny: ["cloud", "install"],
     args: "<number> [owner/repo] [--source github|smithers-cloud]",
-    requires: ["repo-read"],
+    requires: ["repo-source"],
     input: Schema.Struct({
       ...NumberedTarget.fields,
       source: Schema.optional(Schema.Literals(["smithers-cloud", "github"]))

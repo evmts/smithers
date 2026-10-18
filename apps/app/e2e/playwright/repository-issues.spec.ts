@@ -1,0 +1,47 @@
+import { expect, test } from "./browserTest"
+import { signedOutVisitor, identityRoute } from "./identity"
+for (const width of [1280, 390]) for (const colorScheme of ["light", "dark"] as const) {
+  test(`issues frame ${width} ${colorScheme}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await page.emulateMedia({ colorScheme })
+    await signedOutVisitor(page)
+    await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "maya/tinyhttp" }] } }))
+    await page.route("**/api/repos/maya/tinyhttp", route => route.fulfill({ json: { full_name: "maya/tinyhttp", is_public: true, default_bookmark: "main" } }))
+    await page.route(/\/api\/repos\/maya\/tinyhttp\/issues(?:\?.*)?$/, route => route.fulfill({ json: [] }))
+    await page.route("**/api/user/github-repos/maya/tinyhttp/issues?*", route => route.fulfill({ json: [{ number: 7, title: "Keep requests readable", state: "open", user: { login: "maya" }, labels: [{ name: "bug" }], body: "Public issue body", comments: 1, created_at: "2026-10-17T12:00:00Z" }] }))
+    await page.route("**/api/user/github-repos/maya/tinyhttp/issues/7/comments*", route => route.fulfill({ json: [] }))
+    await page.goto("/maya/tinyhttp/issues")
+    const main = page.getByRole("main")
+    await expect(main.getByRole("list", { name: "Issues", exact: true })).toBeVisible()
+    await expect(main.getByRole("link", { name: "Keep requests readable", exact: true })).toBeVisible()
+    await expect(page.getByRole("navigation", { name: "Repository", exact: true }).getByRole("link", { name: "Issues 1", exact: true })).toBeVisible()
+    await expect(main.getByRole("button", { name: "New issue", exact: true })).toHaveCount(0)
+    const controls = main.locator("a,button,input,summary")
+    const visible = []
+    for (let i = 0; i < await controls.count(); i++) if (await controls.nth(i).isVisible()) visible.push(controls.nth(i))
+    const reached = new Set<number>()
+    for (let step = 0; step < 60 && reached.size < visible.length; step++) {
+      await page.keyboard.press("Tab")
+      for (let i = 0; i < visible.length; i++) if (await visible[i]!.evaluate(element => element === document.activeElement)) reached.add(i)
+    }
+    expect(reached.size).toBe(visible.length)
+    await main.getByRole("link", { name: "Keep requests readable", exact: true }).click()
+    await expect(main.getByRole("heading", { name: "Keep requests readable #7" })).toBeVisible()
+    await expect(main.getByText("Public issue body", { exact: true })).toBeVisible()
+    await expect(main.getByRole("button", { name: "Sign in to comment", exact: true })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await expect(main).not.toContainText(/Make TODO|Implement|Stack/)
+    await page.route(/\/api\/repos\/maya\/tinyhttp\/issues(?:\?.*)?$/, route => route.fulfill({ status: 503, json: { message: "Tracker unavailable" } }))
+    await page.goto("/maya/tinyhttp/issues")
+    await expect(main.getByRole("alert")).toContainText("failed (503)")
+    await expect(main.getByText("No issues yet", { exact: true })).toHaveCount(0)
+    await expect(main.getByRole("button", { name: "Retry", exact: true })).toBeVisible()
+    await page.route(/\/api\/repos\/maya\/tinyhttp\/issues(?:\?.*)?$/, route => route.fulfill({ json: [] }))
+    await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute())
+    await page.goto("/maya/tinyhttp/issues")
+    await main.getByRole("button", { name: "New issue", exact: true }).click()
+    const ask = page.getByRole("complementary", { name: "Ask", exact: true })
+    await expect(ask).toBeVisible()
+    await expect(ask.getByRole("textbox", { name: /title/i })).toBeVisible()
+  })
+}

@@ -14,7 +14,8 @@ const tabs = [
 ] as const
 
 /** Repository route shell. `children` is the plain content slot shared by repo views. */
-export function RepoFrame({ repo, login, publicRepo, ask, onRunCommand, children }: {
+export function RepoFrame({ repo, login, publicRepo, ask, onRunCommand, children, issueCount, pullCount }: {
+  issueCount?: number; pullCount?: number
   repo: string; login?: string; publicRepo?: boolean
   onRunCommand: RunDynamicCommand; ask: ReactNode | ((visible: boolean) => ReactNode); children: ReactNode
 }) {
@@ -59,7 +60,7 @@ export function RepoFrame({ repo, login, publicRepo, ask, onRunCommand, children
         <div className="repo-frame-repo-title-row"><div className="repo-frame-repo-title"><BookOpen size={20} aria-hidden="true"/><h1><a href="/">{owner}</a><span>/</span><a href={base}>{name}</a></h1>{publicRepo && <span className="repo-frame-visibility">Public</span>}</div>
           <button ref={trigger} className={`repo-ui-btn ${fileRoute ? "repo-ui-btn-quiet" : "repo-ui-btn-primary"} repo-frame-ask-button`} aria-label="Ask" aria-controls="repo-ask" aria-expanded={expanded} {...flowProps(login ? "chat.open" : "sign-in")} onClick={() => openAsk(onRunCommand)}>Ask <kbd>⌘K</kbd></button>
         </div>
-        <nav className="repo-ui-tabs" aria-label="Repository">{tabs.map(([path, label]) => <a className="repo-ui-tab" key={path} href={`${base}${path ? `/${path}` : ""}`} aria-current={window.location.pathname.replace(/\/$/, "") === `${base}${path ? `/${path}` : ""}` || (path === "" && fileRoute) ? "page" : undefined}>{label}</a>)}</nav>
+        <nav className="repo-ui-tabs" aria-label="Repository">{tabs.map(([path, label]) => <a className="repo-ui-tab" key={path} href={`${base}${path ? `/${path}` : ""}`} aria-current={(path === "issues" ? window.location.pathname.startsWith(`${base}/issues`) : path === "pulls" ? /\/pulls?(?:\/|$)/.test(window.location.pathname.slice(base.length)) : window.location.pathname.replace(/\/$/, "") === base || fileRoute) ? "page" : undefined}>{label}{(path === "issues" ? issueCount : path === "pulls" ? pullCount : undefined) !== undefined && <span className="repo-ui-counter">{path === "issues" ? issueCount : pullCount}</span>}</a>)}</nav>
       </header>
       <main id="repo-content" tabIndex={-1} className="repo-frame-content" data-keyboard-pane="Repository"><RepositoryAskContext.Provider value={openAsk}>{children}</RepositoryAskContext.Provider></main>
     </div>
