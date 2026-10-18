@@ -1,0 +1,32 @@
+---
+/*
+ * A Markdown guide in the site frame, outside the Starlight docs tree. The one
+ * page that uses it is /migration/1.0, the URL every published 1.0 package
+ * sends a 0.x project to (scripts/migration-guide.mjs writes it).
+ */
+import Base from "./Base.astro"
+
+const { frontmatter } = Astro.props
+---
+<Base title={`${frontmatter.title} · Smithers`} description={frontmatter.description}>
+  <main class="guide wrap">
+    <h1>{frontmatter.title}</h1>
+    <div class="guide-copy"><slot /></div>
+  </main>
+</Base>
+<style>
+  .guide { max-width: 860px; padding-block: clamp(2.5rem, 6vw, 5rem); }
+  h1 { font-size: clamp(2.25rem, 6vw, 3.5rem); line-height: 1.08; letter-spacing: -.035em; margin: 0 0 1.5rem; }
+  .guide-copy { overflow-wrap: anywhere; }
+  .guide-copy :global(h2) { margin: 2.75rem 0 .75rem; font-size: 1.45rem; letter-spacing: -.02em; scroll-margin-top: 1rem; }
+  .guide-copy :global(p), .guide-copy :global(li), .guide-copy :global(td) { color: var(--text-muted); line-height: 1.7; }
+  .guide-copy :global(a[href]) { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; }
+  .guide-copy :global(a[id]) { scroll-margin-top: 1rem; }
+  .guide-copy :global(code) { font-size: .88em; color: var(--text); background: var(--surface-2); padding: .1em .35em; border-radius: 5px; }
+  .guide-copy :global(pre) { overflow-x: auto; padding: 1rem 1.1rem; border: 1px solid var(--border-strong); border-radius: 10px; font-size: .88rem; line-height: 1.55; }
+  .guide-copy :global(pre code) { background: none; padding: 0; font-size: inherit; }
+  .guide-copy :global(table) { display: block; overflow-x: auto; border-collapse: collapse; margin-block: 1.2rem; font-size: .92rem; }
+  .guide-copy :global(th), .guide-copy :global(td) { text-align: left; padding: .6rem .8rem; border-bottom: 1px solid var(--border-strong); vertical-align: top; }
+  .guide-copy :global(th) { color: var(--text); }
+  .guide-copy :global(tr:target), .guide-copy :global(tr:has(a:target)) { background: var(--surface-2); }
+</style>
