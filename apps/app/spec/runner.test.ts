@@ -211,7 +211,7 @@ test("CLI mock, live and capture --live write typed results and redact captures"
   await writeFile(join(directory, "index.html"), `<main>Loading</main><script>fetch('/api/repos/org/repo/contents/README.md').then(r=>r.json()).then(()=>document.querySelector('main').textContent='Loaded')</script>`)
   const file = join(directory, "cli.journey.ts")
   const definition = { ...base, live: { target: server.origin }, steps: [{ caption: "Read", go: "/", expect: [{ text: "Loaded" }, { shape: "GET /api/repos/:repo/contents/*", schema: "RepoContents" }] }] }
-  await writeFile(file, `export default ${JSON.stringify(definition)}`)
+  await writeFile(file, `export default ${JSON.stringify([definition, { ...definition, id: "contract/second-case" }])}`)
   const staticFile = join(directory, "static.journey.ts")
   await writeFile(staticFile, `export default ${JSON.stringify({ ...base, world: { base: "smithers" }, steps: [{ caption: "Static", go: "/", expect: [{ text: "Static offline" }] }] })}`)
   const previous = { mock: process.env.SPEC_MOCK_URL, output: process.env.SPEC_OUTPUT, sites: process.env.SPEC_MOCK_SITE_DIRS }
@@ -222,6 +222,8 @@ test("CLI mock, live and capture --live write typed results and redact captures"
       const output = join(directory, `${command}.json`)
       expect(await main([command, ...(command === "capture" ? ["--live"] : []), file, "--results-file", output])).toBe(0)
       const document = await readFile(output, "utf8")
+      expect(results(JSON.parse(document)).map(run => run.journey)).toEqual(["contract/read", "contract/second-case"])
+      expect(results(JSON.parse(document)).flatMap(run => run.steps)).toHaveLength(2)
       expect(results(JSON.parse(document))[0]!.mode).toBe(command === "mock" ? "mock" : "live")
       expect(document).not.toContain(token)
     }

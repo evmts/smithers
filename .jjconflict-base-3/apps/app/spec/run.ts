@@ -2,9 +2,10 @@ import { chromium, type Page } from "@playwright/test"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { resolve, dirname } from "node:path"
 import { pathToFileURL } from "node:url"
-import { execFileSync } from "node:child_process"
+import { revision } from "./revision"
+import { loadJourneys, journeyFiles } from "./loadJourneys"
 import { prepare } from "../e2e/showcase/driver"
-import { journey, interpolate, interpolateData, type Journey, type Assertion, type Step } from "./journey"
+import { interpolate, interpolateData, type Journey, type Assertion, type Step } from "./journey"
 import { element, observe, type Decode, type Exchange } from "./observe"
 import { results, type Mode, type RunResult, type StepResult } from "./results"
 
@@ -119,7 +120,17 @@ export const runJourney = async (page: Page, definition: Journey, options: RunOp
             if (!safe) throw new Error("Live control is not a same-origin read navigation")
             await paceNavigation()
           }
-          await driver.app.click(element(page, step.click))
+          const control = element(page, step.click)
+          const linkedPage = await control.evaluate(node => {
+            const link = node.closest("a")
+            return link?.target === "_blank" ? link.href : null
+          })
+          // Keep a linked document in the runner's observed stage, even when the app opens a tab.
+          if (linkedPage) {
+            if (new URL(linkedPage).origin !== new URL(options.origin).origin) throw new Error("Linked document must stay on the read-only target")
+            await paceNavigation()
+            await page.goto(linkedPage, { waitUntil: "domcontentloaded" })
+          } else await driver.app.click(control)
         }
         if (step.type) {
           if (options.mode === "live") throw new Error("Live typing is not permitted")
@@ -159,7 +170,7 @@ export const runJourney = async (page: Page, definition: Journey, options: RunOp
 
 export const main = async (argv: string[]): Promise<number> => {
   const [command, ...args] = argv
-  if (!["mock", "live", "capture", "judge"].includes(command ?? "")) throw new Error("Usage: run.ts mock|live|capture <journey...> [--results-file path]")
+  if (!["mock", "live", "capture", "judge"].includes(command ?? "")) throw new Error("Usage: run.ts mock|live|capture <journey...> [--all] [--results-file path]")
   if (command === "capture" && !args.includes("--live")) throw new Error("capture requires --live")
   const recording = command === "judge"
   if (recording && !args.includes("--record")) throw new Error("judge requires --record")
@@ -167,15 +178,14 @@ export const main = async (argv: string[]): Promise<number> => {
   const resultAt = args.indexOf("--results-file")
   const resultsFile = resultAt < 0 ? undefined : args[resultAt + 1]
   if (resultAt >= 0 && !resultsFile) throw new Error("--results-file requires a path")
-  const names = args.filter((arg, i) => !arg.startsWith("--") && (resultAt < 0 || i !== resultAt + 1))
-  if (!names.length) throw new Error("At least one journey required")
-  const definitions: Journey[] = []
-  for (const name of names) {
-    const file = name.endsWith(".ts") ? resolve(name) : resolve(import.meta.dirname, "journeys", `${name}.journey.ts`)
-    definitions.push(journey((await import(pathToFileURL(file).href)).default))
-  }
+  const timeoutAt = args.indexOf("--assertion-timeout-ms")
+  const assertionTimeoutMs = timeoutAt < 0 ? undefined : Number(args[timeoutAt + 1])
+  if (timeoutAt >= 0 && (!Number.isFinite(assertionTimeoutMs) || assertionTimeoutMs! <= 0)) throw new Error("--assertion-timeout-ms requires a positive number")
+  const names = args.filter((arg, i) => !arg.startsWith("--") && (resultAt < 0 || i !== resultAt + 1) && (timeoutAt < 0 || i !== timeoutAt + 1))
+  if (!names.length && !args.includes("--all")) throw new Error("At least one journey required")
+  const definitions = await loadJourneys(args.includes("--all") ? await journeyFiles() : names)
   const output = process.env.SPEC_OUTPUT ?? resolve(process.env.HOME ?? ".", "smithers-lanes/out/spec2-runner")
-  const revision = execFileSync("jj", ["--at-operation=@", "log", "-r", "@", "--no-graph", "-T", "commit_id"], { encoding: "utf8" }).trim()
+  const sourceRevision = revision()
   const { decode } = await import("./wire")
   const siteDirectories = (mode === "mock" ? JSON.parse(process.env.SPEC_MOCK_SITE_DIRS ?? "{}") : {}) as Record<string, string>
   if (!siteDirectories || typeof siteDirectories !== "object" || Array.isArray(siteDirectories) || Object.values(siteDirectories).some(path => typeof path !== "string")) throw new Error("SPEC_MOCK_SITE_DIRS must map world names to directories")
@@ -216,9 +226,9 @@ export const main = async (argv: string[]): Promise<number> => {
   const runs: RunResult[] = []
   const siteHosts = new Map<string, NonNullable<typeof server>>()
   try {
-    for (const [definitionIndex, definition] of definitions.entries()) {
+    for (const { definition, file } of definitions) {
       if (mode === "live" && "skip" in definition.live) {
-        runs.push({ journey: definition.id, mode, revision, startedAt: new Date().toISOString(), steps: [], state: "unverified", reason: definition.live.skip })
+        runs.push({ journey: definition.id, mode, revision: sourceRevision, startedAt: new Date().toISOString(), steps: [], state: "unverified", reason: definition.live.skip })
         continue
       }
       let mockHost = server
@@ -236,23 +246,21 @@ export const main = async (argv: string[]): Promise<number> => {
       const origin = mode === "mock" ? definition.world.base === "default" ? process.env.SPEC_MOCK_URL ?? mockHost?.origin : mockHost?.origin
         : "target" in definition.live ? ({ default: "https://smithers.sh", smithers: "https://smithers.sh", effeck: "https://effeck.dev" } as Record<string, string>)[definition.live.target] ?? definition.live.target : "https://smithers.sh"
       if (!origin) {
-        runs.push({ journey: definition.id, mode, revision, startedAt: new Date().toISOString(), steps: [], state: "unverified", reason: unavailable ?? "SPEC_MOCK_URL must point at a served dist-spec" })
+        runs.push({ journey: definition.id, mode, revision: sourceRevision, startedAt: new Date().toISOString(), steps: [], state: "unverified", reason: unavailable ?? "SPEC_MOCK_URL must point at a served dist-spec" })
         continue
       }
       if (mode === "live" && runs.length > 0) await new Promise(resolve => setTimeout(resolve, 1000))
-      const name = names[definitionIndex]!
-      const file = name.endsWith(".ts") ? resolve(name) : resolve(import.meta.dirname, "journeys", `${name}.journey.ts`)
       const sidecar = mode === "mock"
         ? file.replace(/(?:\.journey)?\.ts$/, ".judgments.json")
         : resolve(output, "live-judgments", `${definition.id}.judgments.json`)
       if (recording) await mkdir(dirname(sidecar), { recursive: true })
       const context = await browser.newContext({ serviceWorkers: "block" })
       try {
-        let testedRevision = revision
+        let testedRevision = sourceRevision
         const stamp = await context.request.get(new URL("/__build.json", origin).href).then(response => response.json()).catch(() => null) as { gitSha?: unknown } | null
         if (typeof stamp?.gitSha === "string") testedRevision = stamp.gitSha
         else if (mode === "live") testedRevision = "unknown: deployed build stamp unavailable"
-        runs.push(await runJourney(await context.newPage(), definition, { mode, origin, output, revision: testedRevision, decode,
+        runs.push(await runJourney(await context.newPage(), definition, { mode, origin, output, revision: testedRevision, decode, assertionTimeoutMs,
             judge: {
               policy,
               sidecar,

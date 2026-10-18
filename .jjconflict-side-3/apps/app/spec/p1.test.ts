@@ -14,9 +14,9 @@ import { runJourney } from "./run"
 import { staticServer } from "./staticServer"
 import { decode } from "./wire"
 const definitions = [githubPaths, lineToRun, waiting, issue, ...modelCases, ...cells]
-const output = resolve(process.env.HOME!, "smithers-lanes/out/spec9-p1-journeys")
+const output = process.env.SPEC_OUTPUT ?? resolve(process.env.HOME!, "smithers-lanes/out/spec9-p1-journeys")
 test("six P1 files parse: 6 scenarios + 80 zero-step cells; 124 checkpoints", () => {
-  expect(new Set(definitions.map((d) => d.id)).size).toBe(6)
+  expect(new Set(definitions.map((d) => d.id)).size).toBe(86)
   expect(definitions).toHaveLength(86)
   expect(definitions.reduce((n, d) => n + (d.steps.length || 1), 0)).toBe(124)
   for (const d of definitions) expect(journey(d)).toEqual(d)
@@ -26,26 +26,39 @@ test("six P1 files parse: 6 scenarios + 80 zero-step cells; 124 checkpoints", ()
 })
 test("execute every P1 checkpoint through the real spec build; retain exact failures", async () => {
   const mode = process.env.SPEC_P1_LIVE === "1" ? "live" : "mock"
-  const host = mode === "mock" ? await staticServer(resolve(import.meta.dirname, "../dist-spec")) : undefined
+  if (mode === "mock") {
+    await mkdir(output, { recursive: true })
+    const resultFile = resolve(output, "mock-results.json")
+    const child = Bun.spawn(["bun", "spec/run.ts", "mock",
+      "default/github-paths", "default/line-to-run", "default/waiting-on-you",
+      "default/issue-to-stack", "default/settings-models", "default/states",
+      "--assertion-timeout-ms", "1500", "--results-file", resultFile],
+      { cwd: resolve(import.meta.dirname, ".."), env: { ...process.env, SPEC_OUTPUT: output }, stdout: "ignore", stderr: "pipe" })
+    const stderr = await new Response(child.stderr).text()
+    expect([0, 1], stderr).toContain(await child.exited)
+    const receipts = results(JSON.parse(await readFile(resultFile, "utf8")))
+    expect(receipts).toHaveLength(86)
+    expect(new Set(receipts.map(run => run.journey)).size).toBe(86)
+    expect(receipts.reduce((n, run) => n + run.steps.length, 0)).toBe(124)
+    return
+  }
   const browser = await chromium.launch({ headless: true })
-  const revision = mode === "mock"
-    ? JSON.parse(await readFile(resolve(import.meta.dirname, "../dist-spec/__build.json"), "utf8")).gitSha
-    : "unknown: deployed stamp not collected"
+  const revision = "unknown: deployed stamp not collected"
   const receipts = []
   try {
     for (const definition of definitions) {
       const context = await browser.newContext({ serviceWorkers: "block" })
       try {
-        if (mode === "live" && !("skip" in definition.live)) await new Promise((resolve) => setTimeout(resolve, 1000))
+        if (!("skip" in definition.live)) await new Promise((resolve) => setTimeout(resolve, 1000))
         receipts.push(
           await runJourney(await context.newPage(), definition, {
             mode,
-            origin: host?.origin ?? "https://smithers.sh",
+            origin: "https://smithers.sh",
             output,
             revision,
             decode,
             assertionTimeoutMs: 1500,
-            requireFixtureTransport: mode === "mock"
+            requireFixtureTransport: false
           })
         )
       } finally {
@@ -55,10 +68,10 @@ test("execute every P1 checkpoint through the real spec build; retain exact fail
     await mkdir(output, { recursive: true })
     await writeFile(resolve(output, `${mode}-results.json`), JSON.stringify(results(receipts), null, 2) + "\n")
     expect(receipts).toHaveLength(86)
-    expect(receipts.reduce((n, r) => n + r.steps.length, 0)).toBe(mode === "mock" ? 124 : 47)
+    expect(receipts.reduce((n, r) => n + r.steps.length, 0)).toBe(47)
   } finally {
     await browser.close()
-    await host?.close()
+
   }
 }, 600000)
 test("seeded wrong-view path fails D2 through the real spec build", async () => {

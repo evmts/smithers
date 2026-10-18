@@ -42,7 +42,7 @@ export const cells = views.flatMap((path, view) =>
     }]
     if (kind === "error") expect.push({ absent: { pattern: "No (?:open issues|results|runs|files)" } })
     return state({
-      id: "default/states",
+      id: `default/states-${view + 1}-${kind}`,
       site: "default",
       lifecycle: "evergreen",
       spec: `PM D7; repo-ui-spec principle 6, view ${view + 1}; ${kind}`,
@@ -53,4 +53,4 @@ export const cells = views.flatMap((path, view) =>
     })
   })
 )
-export default cells[0]!
+export default cells

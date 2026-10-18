@@ -2,7 +2,7 @@ import { journey } from "../../journey"
 import { mondayClaim } from "../../mondayClaim"
 export const modelCases = ["no", "yes"].map((hosted) =>
   journey({
-    id: "default/settings-models",
+    id: `default/settings-models-${hosted}`,
     site: "default",
     lifecycle: "evergreen",
     spec: "PM D6; repo-ui-spec view 13; hosted vs install",
@@ -28,4 +28,4 @@ export const modelCases = ["no", "yes"].map((hosted) =>
     }]
   })
 )
-export default modelCases[0]!
+export default modelCases
