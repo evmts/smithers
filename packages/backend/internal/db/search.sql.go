@@ -22,16 +22,16 @@ WITH visible_repositories AS (
 
     SELECT r.id
     FROM repositories r
-    WHERE $2::bigint > 0
-      AND r.user_id = $2::bigint
+    WHERE $3::bigint > 0
+      AND r.user_id = $3::bigint
 
     UNION
 
     SELECT r.id
     FROM repositories r
     JOIN org_members om ON om.organization_id = r.org_id
-    WHERE $2::bigint > 0
-      AND om.user_id = $2::bigint
+    WHERE $3::bigint > 0
+      AND om.user_id = $3::bigint
       AND om.role = 'owner'
 
     UNION
@@ -39,30 +39,32 @@ WITH visible_repositories AS (
     SELECT tr.repository_id AS id
     FROM team_repos tr
     JOIN team_members tm ON tm.team_id = tr.team_id
-    WHERE $2::bigint > 0
-      AND tm.user_id = $2::bigint
+    WHERE $3::bigint > 0
+      AND tm.user_id = $3::bigint
 
     UNION
 
     SELECT c.repository_id AS id
     FROM collaborators c
-    WHERE $2::bigint > 0
-      AND c.user_id = $2::bigint
+    WHERE $3::bigint > 0
+      AND c.user_id = $3::bigint
 )
 SELECT COUNT(*)
 FROM code_search_documents c
 JOIN repositories r ON r.id = c.repository_id
 JOIN visible_repositories vr ON vr.id = r.id
-WHERE c.search_vector @@ websearch_to_tsquery('simple', $1::text)
+WHERE ($1::bigint = 0 OR r.id = $1::bigint)
+  AND c.search_vector @@ websearch_to_tsquery('simple', $2::text)
 `
 
 type CountSearchCodeFTSParams struct {
-	Query    string `json:"query"`
-	ViewerID int64  `json:"viewer_id"`
+	RepositoryID int64  `json:"repository_id"`
+	Query        string `json:"query"`
+	ViewerID     int64  `json:"viewer_id"`
 }
 
 func (q *Queries) CountSearchCodeFTS(ctx context.Context, arg CountSearchCodeFTSParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countSearchCodeFTS, arg.Query, arg.ViewerID)
+	row := q.db.QueryRow(ctx, countSearchCodeFTS, arg.RepositoryID, arg.Query, arg.ViewerID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -78,16 +80,16 @@ WITH visible_repositories AS (
 
     SELECT r.id
     FROM repositories r
-    WHERE $6::bigint > 0
-      AND r.user_id = $6::bigint
+    WHERE $7::bigint > 0
+      AND r.user_id = $7::bigint
 
     UNION
 
     SELECT r.id
     FROM repositories r
     JOIN org_members om ON om.organization_id = r.org_id
-    WHERE $6::bigint > 0
-      AND om.user_id = $6::bigint
+    WHERE $7::bigint > 0
+      AND om.user_id = $7::bigint
       AND om.role = 'owner'
 
     UNION
@@ -95,59 +97,61 @@ WITH visible_repositories AS (
     SELECT tr.repository_id AS id
     FROM team_repos tr
     JOIN team_members tm ON tm.team_id = tr.team_id
-    WHERE $6::bigint > 0
-      AND tm.user_id = $6::bigint
+    WHERE $7::bigint > 0
+      AND tm.user_id = $7::bigint
 
     UNION
 
     SELECT c.repository_id AS id
     FROM collaborators c
-    WHERE $6::bigint > 0
-      AND c.user_id = $6::bigint
+    WHERE $7::bigint > 0
+      AND c.user_id = $7::bigint
 )
 SELECT COUNT(*)
 FROM issues i
 JOIN repositories r ON r.id = i.repository_id
 JOIN visible_repositories vr ON vr.id = r.id
-WHERE i.kind <> 'chat' AND i.search_vector @@ websearch_to_tsquery('simple', $1::text)
-  AND (
-    $2::text = ''
-    OR i.state = $2::text
-  )
+WHERE ($1::bigint = 0 OR r.id = $1::bigint)
+  AND i.kind <> 'chat' AND i.search_vector @@ websearch_to_tsquery('simple', $2::text)
   AND (
     $3::text = ''
+    OR i.state = $3::text
+  )
+  AND (
+    $4::text = ''
     OR EXISTS (
       SELECT 1
       FROM issue_labels il
       JOIN labels l ON l.id = il.label_id
       WHERE il.issue_id = i.id
         AND l.repository_id = r.id
-        AND LOWER(l.name) = LOWER($3::text)
-    )
-  )
-  AND (
-    $4::text = ''
-    OR EXISTS (
-      SELECT 1
-      FROM issue_assignees ia
-      JOIN users au ON au.id = ia.user_id
-      WHERE ia.issue_id = i.id
-        AND au.lower_username = LOWER($4::text)
+        AND LOWER(l.name) = LOWER($4::text)
     )
   )
   AND (
     $5::text = ''
     OR EXISTS (
       SELECT 1
+      FROM issue_assignees ia
+      JOIN users au ON au.id = ia.user_id
+      WHERE ia.issue_id = i.id
+        AND au.lower_username = LOWER($5::text)
+    )
+  )
+  AND (
+    $6::text = ''
+    OR EXISTS (
+      SELECT 1
       FROM milestones m
       WHERE m.id = i.milestone_id
         AND m.repository_id = r.id
-        AND LOWER(m.title) = LOWER($5::text)
+        AND LOWER(m.title) = LOWER($6::text)
     )
   )
 `
 
 type CountSearchIssuesFTSParams struct {
+	RepositoryID    int64  `json:"repository_id"`
 	Query           string `json:"query"`
 	StateFilter     string `json:"state_filter"`
 	LabelFilter     string `json:"label_filter"`
@@ -158,6 +162,7 @@ type CountSearchIssuesFTSParams struct {
 
 func (q *Queries) CountSearchIssuesFTS(ctx context.Context, arg CountSearchIssuesFTSParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countSearchIssuesFTS,
+		arg.RepositoryID,
 		arg.Query,
 		arg.StateFilter,
 		arg.LabelFilter,
@@ -391,16 +396,16 @@ WITH visible_repositories AS (
 
     SELECT r.id
     FROM repositories r
-    WHERE $4::bigint > 0
-      AND r.user_id = $4::bigint
+    WHERE $5::bigint > 0
+      AND r.user_id = $5::bigint
 
     UNION
 
     SELECT r.id
     FROM repositories r
     JOIN org_members om ON om.organization_id = r.org_id
-    WHERE $4::bigint > 0
-      AND om.user_id = $4::bigint
+    WHERE $5::bigint > 0
+      AND om.user_id = $5::bigint
       AND om.role = 'owner'
 
     UNION
@@ -408,15 +413,15 @@ WITH visible_repositories AS (
     SELECT tr.repository_id AS id
     FROM team_repos tr
     JOIN team_members tm ON tm.team_id = tr.team_id
-    WHERE $4::bigint > 0
-      AND tm.user_id = $4::bigint
+    WHERE $5::bigint > 0
+      AND tm.user_id = $5::bigint
 
     UNION
 
     SELECT c.repository_id AS id
     FROM collaborators c
-    WHERE $4::bigint > 0
-      AND c.user_id = $4::bigint
+    WHERE $5::bigint > 0
+      AND c.user_id = $5::bigint
 )
 SELECT
     c.repository_id,
@@ -435,17 +440,19 @@ JOIN repositories r ON r.id = c.repository_id
 JOIN visible_repositories vr ON vr.id = r.id
 LEFT JOIN users u ON u.id = r.user_id
 LEFT JOIN organizations o ON o.id = r.org_id
-WHERE c.search_vector @@ websearch_to_tsquery('simple', $1::text)
+WHERE ($2::bigint = 0 OR r.id = $2::bigint)
+  AND c.search_vector @@ websearch_to_tsquery('simple', $1::text)
 ORDER BY rank DESC, c.repository_id DESC, c.file_path ASC
-LIMIT $3::int
-OFFSET $2::int
+LIMIT $4::int
+OFFSET $3::int
 `
 
 type SearchCodeFTSParams struct {
-	Query      string `json:"query"`
-	PageOffset int32  `json:"page_offset"`
-	PageSize   int32  `json:"page_size"`
-	ViewerID   int64  `json:"viewer_id"`
+	Query        string `json:"query"`
+	RepositoryID int64  `json:"repository_id"`
+	PageOffset   int32  `json:"page_offset"`
+	PageSize     int32  `json:"page_size"`
+	ViewerID     int64  `json:"viewer_id"`
 }
 
 type SearchCodeFTSRow struct {
@@ -460,6 +467,7 @@ type SearchCodeFTSRow struct {
 func (q *Queries) SearchCodeFTS(ctx context.Context, arg SearchCodeFTSParams) ([]SearchCodeFTSRow, error) {
 	rows, err := q.db.Query(ctx, searchCodeFTS,
 		arg.Query,
+		arg.RepositoryID,
 		arg.PageOffset,
 		arg.PageSize,
 		arg.ViewerID,
@@ -499,16 +507,16 @@ WITH visible_repositories AS (
 
     SELECT r.id
     FROM repositories r
-    WHERE $8::bigint > 0
-      AND r.user_id = $8::bigint
+    WHERE $9::bigint > 0
+      AND r.user_id = $9::bigint
 
     UNION
 
     SELECT r.id
     FROM repositories r
     JOIN org_members om ON om.organization_id = r.org_id
-    WHERE $8::bigint > 0
-      AND om.user_id = $8::bigint
+    WHERE $9::bigint > 0
+      AND om.user_id = $9::bigint
       AND om.role = 'owner'
 
     UNION
@@ -516,15 +524,15 @@ WITH visible_repositories AS (
     SELECT tr.repository_id AS id
     FROM team_repos tr
     JOIN team_members tm ON tm.team_id = tr.team_id
-    WHERE $8::bigint > 0
-      AND tm.user_id = $8::bigint
+    WHERE $9::bigint > 0
+      AND tm.user_id = $9::bigint
 
     UNION
 
     SELECT c.repository_id AS id
     FROM collaborators c
-    WHERE $8::bigint > 0
-      AND c.user_id = $8::bigint
+    WHERE $9::bigint > 0
+      AND c.user_id = $9::bigint
 )
 SELECT
     i.id,
@@ -546,49 +554,51 @@ JOIN repositories r ON r.id = i.repository_id
 JOIN visible_repositories vr ON vr.id = r.id
 LEFT JOIN users u ON u.id = r.user_id
 LEFT JOIN organizations o ON o.id = r.org_id
-WHERE i.kind <> 'chat' AND i.search_vector @@ websearch_to_tsquery('simple', $1::text)
-  AND (
-    $2::text = ''
-    OR i.state = $2::text
-  )
+WHERE ($2::bigint = 0 OR r.id = $2::bigint)
+  AND i.kind <> 'chat' AND i.search_vector @@ websearch_to_tsquery('simple', $1::text)
   AND (
     $3::text = ''
+    OR i.state = $3::text
+  )
+  AND (
+    $4::text = ''
     OR EXISTS (
       SELECT 1
       FROM issue_labels il
       JOIN labels l ON l.id = il.label_id
       WHERE il.issue_id = i.id
         AND l.repository_id = r.id
-        AND LOWER(l.name) = LOWER($3::text)
-    )
-  )
-  AND (
-    $4::text = ''
-    OR EXISTS (
-      SELECT 1
-      FROM issue_assignees ia
-      JOIN users au ON au.id = ia.user_id
-      WHERE ia.issue_id = i.id
-        AND au.lower_username = LOWER($4::text)
+        AND LOWER(l.name) = LOWER($4::text)
     )
   )
   AND (
     $5::text = ''
     OR EXISTS (
       SELECT 1
+      FROM issue_assignees ia
+      JOIN users au ON au.id = ia.user_id
+      WHERE ia.issue_id = i.id
+        AND au.lower_username = LOWER($5::text)
+    )
+  )
+  AND (
+    $6::text = ''
+    OR EXISTS (
+      SELECT 1
       FROM milestones m
       WHERE m.id = i.milestone_id
         AND m.repository_id = r.id
-        AND LOWER(m.title) = LOWER($5::text)
+        AND LOWER(m.title) = LOWER($6::text)
     )
   )
 ORDER BY rank DESC, i.id DESC
-LIMIT $7::int
-OFFSET $6::int
+LIMIT $8::int
+OFFSET $7::int
 `
 
 type SearchIssuesFTSParams struct {
 	Query           string `json:"query"`
+	RepositoryID    int64  `json:"repository_id"`
 	StateFilter     string `json:"state_filter"`
 	LabelFilter     string `json:"label_filter"`
 	AssigneeFilter  string `json:"assignee_filter"`
@@ -618,6 +628,7 @@ type SearchIssuesFTSRow struct {
 func (q *Queries) SearchIssuesFTS(ctx context.Context, arg SearchIssuesFTSParams) ([]SearchIssuesFTSRow, error) {
 	rows, err := q.db.Query(ctx, searchIssuesFTS,
 		arg.Query,
+		arg.RepositoryID,
 		arg.StateFilter,
 		arg.LabelFilter,
 		arg.AssigneeFilter,
