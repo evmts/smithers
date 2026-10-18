@@ -110,7 +110,7 @@ export const buttonCss = `
 /* -------------------------------------------------------------------------- */
 
 export const badgeCss = `
-.sui-badge { display:inline-flex; align-items:center; gap:6px; min-width:0; max-width:100%; min-height:22px; padding:0 10px; border:1px solid ${t.border}; border-radius:${t.radiusFull}; background:transparent; color:${t.mutedForeground}; font-size:11px; font-weight:650; text-transform:uppercase; letter-spacing:.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sui-badge { display:inline-flex; align-items:center; gap:6px; min-width:0; max-width:100%; min-height:22px; padding:0 10px; border:1px solid ${t.border}; border-radius:${t.radiusFull}; background:transparent; color:${t.mutedForeground}; font-size:12px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .sui-badge-default { border-color:${t.primaryBorder}; background:${t.primarySoft}; color:${t.primary}; }
 .sui-badge-secondary { border-color:${t.border}; background:${t.hoverSubtle}; color:${t.mutedForeground}; }
 .sui-badge-outline { border-color:${t.input}; color:${t.foreground}; }

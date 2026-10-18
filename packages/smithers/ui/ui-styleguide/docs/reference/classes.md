@@ -76,8 +76,8 @@ weight 650 with 0.05em tracking.
 
 - `.pill` is brand tinted: `--brand-soft` on `--brand-border` with `--brand`
   text. `.pill.muted` and `.chip` are the neutral form on `--surface-2`.
-- `.badge` is uppercase at weight 650 in the UI font, and takes a status
-  modifier.
+- `.badge` is sentence case at `--fs-2` and weight 650 in the UI font, and
+  takes a status modifier.
 
 The status vocabulary is shared with [`@smthrs/ui`](https://github.com/smithersai/smithers/tree/main/packages/smithers/ui), and a parity test
 there keeps the two aligned:
