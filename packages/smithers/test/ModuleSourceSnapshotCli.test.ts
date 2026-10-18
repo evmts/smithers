@@ -105,6 +105,152 @@ describe("the approved module source snapshot", () => {
     240_000
   )
 
+  it("starts edited helper code while an older snapshot is parked", async () => {
+    await withHost(async (root, command) => {
+      const directory = join(root, ".smithers", "flows", "probe")
+      await mkdir(directory, { recursive: true })
+      await mkdir(join(root, ".smithers", "lib"))
+      await writeFile(
+        join(directory, "flow.ts"),
+        `
+import { Action, DurableDeferred, Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Effect, Schema } from "effect"
+import { helper } from "../../lib/helper.ts"
+const Probe = Action.make("probe/write", { payload: { marker: Schema.String, park: Schema.Boolean }, success: Schema.String })
+const gate = DurableDeferred.make("hold", { success: Schema.String })
+export const layer = Probe.toLayer(({ marker, park }) => Effect.gen(function*() {
+  const version = helper(marker)
+  return park ? yield* DurableDeferred.await(gate) : version
+}))
+export default Flow.make("probe", {
+  description: "Write the imported helper version",
+  capabilities: ["fs:read:**", "fs:write:**"],
+  effects: { reads: [], writes: ["**"], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+  payload: { marker: Schema.String, park: Schema.Boolean }, success: Schema.String,
+  body: Node.capture({}, (input) => Probe.call(input))
+})
+`
+      )
+      const helper = (version: string) =>
+        writeFile(
+          join(root, ".smithers", "lib", "helper.ts"),
+          `
+import { appendFileSync } from "node:fs"
+export function helper(marker: string) { appendFileSync(marker, "${version}\\n"); return "${version}" }
+`
+        )
+      const data = (park: boolean) => JSON.stringify({ marker: join(root, "marker"), park })
+      await helper("v1")
+      const child = spawn(process.execPath, [
+        "--no-warnings",
+        "--import",
+        preload,
+        bin,
+        "flow",
+        "start",
+        "probe",
+        "--data",
+        data(true),
+        "--wait",
+        "--json"
+      ], {
+        cwd: root,
+        env: {
+          ...process.env,
+          XDG_CONFIG_HOME: join(root, "config"),
+          AI_GATEWAY_API_KEY: "",
+          SMITHERS_REMOTE: "",
+          NODE_OPTIONS: ""
+        },
+        stdio: ["ignore", "pipe", "pipe"]
+      })
+      let output = ""
+      child.stdout.on("data", (chunk) => {
+        output += String(chunk)
+      })
+      child.stderr.on("data", (chunk) => {
+        output += String(chunk)
+      })
+      const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()))
+      try {
+        const deadline = Date.now() + 120_000
+        for (;;) {
+          let parked = false
+          try {
+            parked = controlRows(root).some((row) => row.run_id === "run-1" && row.status === "suspended")
+          } catch {}
+          if (parked) break
+          if (child.exitCode !== null || child.signalCode !== null || Date.now() > deadline) {
+            throw new Error(`First run never parked: ${output}`)
+          }
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+        child.kill("SIGTERM")
+        await exited
+        const original = JSON.parse(controlRows(root)[0]!.state_json as string) as { executionDigest: string }
+        expect(await readFile(join(root, "marker"), "utf8")).toBe("v1\n")
+        await helper("v2")
+        const started = await command(["flow", "start", "probe", "--data", data(false), "--wait", "--json"])
+        expect(started, JSON.stringify(started)).toMatchObject({ code: 0 })
+        expect(await readFile(join(root, "marker"), "utf8")).toBe("v1\nv2\n")
+        const rows = controlRows(root)
+        expect(rows.map((row) => row.status)).toEqual(["suspended", "completed"])
+        expect(JSON.parse(rows[1]!.state_json as string).executionDigest).not.toBe(original.executionDigest)
+        expect(JSON.parse(rows[0]!.state_json as string).executionDigest).toBe(original.executionDigest)
+        // A deferred wait keeps its CLI owner alive. Observe the re-park, then
+        // close that host just as for the initial launch.
+        const resumed = spawn(process.execPath, [
+          "--no-warnings",
+          "--import",
+          preload,
+          bin,
+          "runs",
+          "resume",
+          "run-1",
+          "--json"
+        ], {
+          cwd: root,
+          env: {
+            ...process.env,
+            XDG_CONFIG_HOME: join(root, "config"),
+            AI_GATEWAY_API_KEY: "",
+            SMITHERS_REMOTE: "",
+            NODE_OPTIONS: ""
+          },
+          stdio: "ignore"
+        })
+        const resumedExit = new Promise<void>((resolve) => resumed.once("exit", () => resolve()))
+        try {
+          const deadline = Date.now() + 120_000
+          for (;;) {
+            const marker = await readFile(join(root, "marker"), "utf8")
+            if (marker === "v1\nv2\nv1\n" && controlRows(root)[0]!.status === "suspended") break
+            if (resumed.exitCode !== null || resumed.signalCode !== null || Date.now() > deadline) {
+              throw new Error(`Original snapshot did not re-park: ${marker}`)
+            }
+            await new Promise((resolve) => setTimeout(resolve, 50))
+          }
+        } finally {
+          resumed.kill("SIGTERM")
+          await resumedExit
+        }
+        expect(controlRows(root)[0]!.status).toBe("suspended")
+        expect(JSON.parse(controlRows(root)[0]!.state_json as string).executionDigest).toBe(original.executionDigest)
+        // Broken or removed current source cannot admit the historical version.
+        await writeFile(join(root, ".smithers", "lib", "helper.ts"), "export function helper(")
+        expect((await command(["flow", "start", "probe", "--data", data(false), "--wait", "--json"])).code).toBe(1)
+        await rm(directory, { recursive: true })
+        expect((await command(["flow", "start", "probe", "--data", data(false), "--wait", "--json"])).code).toBe(1)
+        expect(controlRows(root)).toHaveLength(2)
+        expect(await readFile(join(root, "marker"), "utf8")).toBe("v1\nv2\nv1\n")
+      } finally {
+        child.kill("SIGKILL")
+        await exited
+      }
+    })
+  }, 240_000)
+
   it.each(["pinned", "missing-manifest", "lockfile", "adopt"] as const)(
     "resumes after SIGKILL with execution authority (%s)",
     async (mode) => {
