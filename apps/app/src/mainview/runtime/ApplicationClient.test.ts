@@ -712,7 +712,7 @@ describe("application client owned browser cookie units", () => {
   // HappyDOM retains an empty cookie for Max-Age=0. A real past expiry removes
   // it, so an absent-cookie case cannot accidentally inherit the empty case.
   const clearOwnedCookies = () => {
-    for (const name of ["__Host-smithers_csrf", "unrelated"]) document.cookie = `${name}=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; Path=/`
+    for (const name of ["__Host-smithers_csrf", "__csrf", "smithers_local_csrf", "unrelated"]) document.cookie = `${name}=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; Path=/`
   }
   beforeEach(clearOwnedCookies)
   afterEach(clearOwnedCookies)
@@ -754,25 +754,29 @@ describe("application client owned browser cookie units", () => {
       })
       await client.request("/api/write", { method: "POST" })
       expect(headers.get("x-csrf-token")).toBe("local-token")
+      document.cookie = "smithers_local_csrf=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/"
+      await client.request("/api/write", { method: "POST" })
+      expect(headers.get("x-csrf-token")).toBeNull()
     } finally {
       for (const name of ["smithers_local_csrf", "__csrf"]) document.cookie = `${name}=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/`
       window.location.href = pageOrigin
     }
   })
 
-  test("HTTPS browser rejects legacy and local CSRF cookies", async () => {
-    document.cookie = "smithers_local_csrf=local-token; Path=/"
-    document.cookie = "__csrf=legacy-token; Path=/"
-    try {
-      let headers = new Headers()
-      const client = createApplicationClient(target("web-selfhost"), {
-        fetchImpl: async (_input, init) => { headers = new Headers(init?.headers); return Response.json({}) }
-      })
-      await client.request("/api/write", { method: "POST" })
-      expect(headers.get("x-csrf-token")).toBeNull()
-    } finally {
-      for (const name of ["smithers_local_csrf", "__csrf"]) document.cookie = `${name}=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/`
-    }
+  test.each([
+    { cookies: ["__csrf=legacy-token", "__Host-smithers_csrf=host-token"], expected: "host-token" },
+    { cookies: ["__Host-smithers_csrf=host-token", "__csrf=legacy-token"], expected: "host-token" },
+    { cookies: ["__csrf=legacy-token"], expected: "legacy-token" },
+    { cookies: ["smithers_local_csrf=local-token"], expected: null },
+    { cookies: [], expected: null }
+  ])("HTTPS browser selects the preferred CSRF cookie: $cookies", async ({ cookies, expected }) => {
+    for (const cookie of cookies) document.cookie = `${cookie}; Secure; Path=/`
+    let headers = new Headers()
+    const client = createApplicationClient(target("web-selfhost"), {
+      fetchImpl: async (_input, init) => { headers = new Headers(init?.headers); return Response.json({}) }
+    })
+    await client.request("/api/write", { method: "POST" })
+    expect(headers.get("x-csrf-token")).toBe(expected)
   })
 
   test("omitting fetchImpl delegates to the owned global fetch with its receiver, URL, and session options", async () => {

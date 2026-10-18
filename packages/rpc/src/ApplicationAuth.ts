@@ -26,6 +26,12 @@ export { AUTH_SIGN_IN_PATH as APPLICATION_SIGN_IN_PATH } from "./AgentApiRoutes.
  * @category constants
  */
 export const CSRF_COOKIE_NAME = "__Host-smithers_csrf"
+/** Compatibility only for backends older than 55615878. Delete once every
+ * supported backend includes that host-scoped cookie change.
+ * @since 1.0.0
+ * @category constants
+ */
+export const LEGACY_CSRF_COOKIE_NAME = "__csrf"
 /** Separate namespace for an explicitly configured self-hosted HTTP origin.
  * @since 1.0.0
  * @category constants

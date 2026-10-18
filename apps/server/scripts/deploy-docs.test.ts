@@ -234,3 +234,11 @@ test("deploy commands are unique and every documented server script exists", () 
   expect(documented.length).toBeGreaterThan(0)
   for (const script of documented) expect(manifest.scripts[script]).toBeDefined()
 })
+
+
+test("backend requirements guide names the declaration, ancestry verdicts and failure policy", () => {
+  const section = guide.split("### Backend requirements")[1]!.split("\n## ")[0]!
+  for (const text of ["apps/app/backend-requirements.json", "ahead", "identical", "malformed",
+    "Dry runs", "deploy the backend first", "backendRequirements", "Delete an entry", "degrade gracefully"])
+    expect(section).toContain(text)
+})
