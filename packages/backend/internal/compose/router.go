@@ -2119,6 +2119,8 @@ func buildRouter(
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/contents", repoHandler.GetRepoContents)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/contents/*", repoHandler.GetRepoContents)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/home", repoHandler.GetRepositoryHome)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/commits", repoHandler.ListRepositoryCommits)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/commits/{sha}", repoHandler.GetRepositoryCommit)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/git/refs", repoHandler.ListGitRefs)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/commits/{ref}/statuses", commitStatusHandler.GetCommitStatuses)
 			// jj VCS read routes: bookmarks, changes, operations.
