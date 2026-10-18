@@ -1,4 +1,5 @@
 import { markdownBlockParser } from "@smthrs/ui/markdown"
+import { copyText } from "@smthrs/ui/copy"
 import { cloneElement, createElement, isValidElement, useContext, useState, type ReactNode } from "react"
 import { FileText, Folder, GitBranch } from "lucide-react"
 import { ageLabel } from "../Timestamps"
@@ -29,6 +30,7 @@ export function CodeHome({ repo, branch, branches, headCommit, changes = [], onB
   onBranchesOpen?: () => void; treeCopyId?: string; onRunCommand: RunDynamicCommand; treeAvailable?: boolean; tree?: RepoTreeRow; home?: RepositoryHomeAnswer; 
 }) {
   const [filter, setFilter] = useState("")
+  const [copyFailed, setCopyFailed] = useState(false)
   const names = branches?.state === "ready" ? branches.names : branch ? [branch] : []
   const fullSha = /^[a-f0-9]{40}$/i.test(filter)
   const selectedHead = branches?.state === "ready" ? branches.commits?.[branch ?? ""] : headCommit
@@ -55,7 +57,7 @@ export function CodeHome({ repo, branch, branches, headCommit, changes = [], onB
       </div></details>}
       {branches?.state === "ready" && <span className="repo-ui-muted">{branches.names.length} {branches.names.length === 1 ? "branch" : "branches"}</span>}
       <div className="repo-code-home-toolbar-spacer"/>
-      <details className="repo-ui-dropdown repo-code-home-code-menu"><summary className="repo-ui-btn">Code</summary><div className="repo-ui-menu"><h3>Clone</h3><div className="repo-code-home-command"><code>{`git clone ${REPOSITORY_CLONE_HOST}/${repo}.git`}</code><button className="repo-ui-btn" aria-label="Copy clone URL" onClick={() => void navigator.clipboard.writeText(`git clone ${REPOSITORY_CLONE_HOST}/${repo}.git`)}>Copy</button></div></div></details>
+      <details className="repo-ui-dropdown repo-code-home-code-menu"><summary className="repo-ui-btn">Code</summary><div className="repo-ui-menu"><h3>Clone</h3><div className="repo-code-home-command"><code>{`git clone ${REPOSITORY_CLONE_HOST}/${repo}.git`}</code><button className="repo-ui-btn" aria-label="Copy clone URL" onClick={async () => setCopyFailed(!(await copyText(`git clone ${REPOSITORY_CLONE_HOST}/${repo}.git`)).ok)}>Copy</button></div>{copyFailed && <p role="status">Copy failed</p>}</div></details>
     </div>
     <section className="repo-ui-box repo-code-home-files" aria-label="Files">
       {latestSha && <div className="repo-code-home-latest" aria-label="Latest commit">

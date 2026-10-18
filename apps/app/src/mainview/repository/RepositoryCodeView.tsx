@@ -1,7 +1,8 @@
 import { RepositoryAskContext } from "./RepoFrame"
 import { useLiveQuery } from "@tanstack/react-db"
+import { copyText } from "@smthrs/ui/copy"
 import { codeReadKey, repositoryCodeReads } from "./RepositoryCodeRead"
-import { useContext, useRef, useSyncExternalStore, type CSSProperties } from "react"
+import { useContext, useRef, useState, useSyncExternalStore, type CSSProperties } from "react"
 import { File, Folder } from "lucide-react"
 import type { Card } from "../state/AppState"
 import { pathTarget } from "../RepoLink"
@@ -31,6 +32,7 @@ export function RepositoryCodeView({ repo, cards, refs, commits, admitted, reque
   repo: string; cards: ReadonlyArray<Card>; refs: ReadonlyArray<string>; commits?: Readonly<Record<string, string>>; admitted: boolean; requestId?: string; error?: string; onAsk: (text: string) => void
 }) {
   const anchor = useRef<number | null>(null)
+  const [copyFailed, setCopyFailed] = useState(false)
   const openAsk = useContext(RepositoryAskContext)
   const { data: reads } = useLiveQuery(repositoryCodeReads)
   const address = useSyncExternalStore(subscribe, location, () => "")
@@ -56,11 +58,12 @@ export function RepositoryCodeView({ repo, cards, refs, commits, admitted, reque
   }
   const commit = permalinkCommit(revision, payload?.readAt?.commitId, commits)
   const failure = error ?? (read?.state === "failed" ? read.error : undefined)
+  const copy = async (text: string) => setCopyFailed(!(await copyText(text)).ok)
   const permalink = () => {
     if (!commit) return
     const url = new URL(route(subject.kind, path, commit), window.location.origin)
     if (selected) url.searchParams.set("L", `${selected.start}${selected.end === selected.start ? "" : `-${selected.end}`}`)
-    void navigator.clipboard.writeText(url.href)
+    void copy(url.href)
   }
   return <section role="region" className="repository-code repo-code-main" data-keyboard-pane="Repository code" aria-label={subject.kind === "tree" ? "Folder view" : "File view"}>
     <div className="repo-code-path-header">
@@ -72,13 +75,14 @@ export function RepositoryCodeView({ repo, cards, refs, commits, admitted, reque
       </nav>
       {located && commit && <button className="repo-ui-btn repo-ui-btn-primary repo-code-permalink" onClick={permalink}>Copy permalink</button>}
     </div>
+    {copyFailed && <p role="status">Copy failed</p>}
     {failure ? <p role="alert">{failure}</p> : !card ? <p role="status">Loading…</p> : card.kind === "file-list" ? <div className="repository-code-box">
       {card.payload.entries.length === 0 ? <p>This folder is empty.</p> : <div role="table" aria-label={path ? `Files in ${path}` : "Repository files"}>
         {path && <div role="row" className="repo-code-file-row"><span role="cell"><a href={route("tree", path.split("/").slice(0, -1).join("/"))} aria-label="Parent directory">..</a></span></div>}
         {card.payload.entries.map(entry => <div className="repo-code-file-row" role="row" key={entry.name}><span role="cell"><a href={route(entry.kind === "dir" ? "tree" : "blob", [path, entry.name].filter(Boolean).join("/"))}>{entry.kind === "dir" ? <Folder size={17} aria-hidden="true" /> : <File size={17} aria-hidden="true" />}{entry.name}</a></span></div>)}
       </div>}{card.payload.truncated && <p>Truncated</p>}
     </div> : payload && <div className="repository-code-box">
-      <div className="repo-code-file-toolbar"><strong>Code</strong><span className="repo-code-file-stats">{tokens.length} lines · {(payload.originalSize ?? new TextEncoder().encode(payload.content).length).toLocaleString("en-US")} B{payload.truncated && payload.originalSize === undefined ? " shown" : ""}</span><span className="repo-code-toolbar-spacer" /><button onClick={() => query("raw", raw ? "0" : "1")}>{raw ? "Exit raw" : "Raw"}</button><button aria-label="Copy file contents" onClick={() => void navigator.clipboard.writeText(payload.content)}>Copy</button></div>
+      <div className="repo-code-file-toolbar"><strong>Code</strong><span className="repo-code-file-stats">{tokens.length} lines · {(payload.originalSize ?? new TextEncoder().encode(payload.content).length).toLocaleString("en-US")} B{payload.truncated && payload.originalSize === undefined ? " shown" : ""}</span><span className="repo-code-toolbar-spacer" /><button onClick={() => query("raw", raw ? "0" : "1")}>{raw ? "Exit raw" : "Raw"}</button><button aria-label="Copy file contents" onClick={() => void copy(payload.content)}>Copy</button></div>
       {payload.truncated && <p role="status">Truncated</p>}
       {payload.binary ? <p>Binary file</p> : !payload.content ? <p>This file is empty.</p> : raw ? <pre className="repo-code-raw" aria-label={`Raw ${path}`}>{payload.content}</pre> : <>
         {selected && <div className="repo-code-selection" aria-label="Selected line actions"><span>lines {selected.start}-{selected.end}</span><button onClick={() => { onAsk(`Explain lines ${selected.start}-${selected.end} of ${path} at ${revision}`); openAsk?.() }}>Ask about lines</button>{commit && <button onClick={permalink}>Copy link</button>}</div>}
