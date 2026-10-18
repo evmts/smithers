@@ -5411,6 +5411,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/docs/guides/change-code.md"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/docs/guides/cloud-sandbox.md"
       },
       {
