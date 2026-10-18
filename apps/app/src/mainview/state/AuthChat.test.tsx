@@ -264,12 +264,13 @@ describe("auth is a conversation state — the chat is the only page", () => {
   })
 
   for (const repo of ["nope/nope", "smithersai/smithres", "Some-Owner/repo_name", "cached/selection"]) {
-    test(`signed out at /${repo}/ names the requested path and links the available roster`, async () => {
+    test(`signed out at /${repo}/ names the requested path and offers sign-in, not a catalog roster`, async () => {
       window.history.replaceState(null, "", `/${repo}/`)
       const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
       const http = backend({
         "/api/user": json(401, { status: "error" }),
         "/api/auth/scopes": json(200, { scopes: [] }),
+        // The launcher's public catalog still lists another repository; the refusal no longer offers it.
         "/api/public/repos": json(200, { repos: [{ name: "smithersai/smithers" }] })
       })
       // ControllerBoot.client.ts passes the requested repository; that is what
@@ -291,8 +292,14 @@ describe("auth is a conversation state — the chat is the only page", () => {
       const { host } = mount(controller)
       const message = host.querySelector(".smithers-chat-message")
       expect(host.querySelector('[data-testid="transcript"]')?.hasAttribute("data-repository-missing")).toBe(true)
-      expect(message?.textContent).toContain(`${repo} isn't on Smithers yet. Sign in with GitHub to open your own repositories, or pick one below.`)
-      expect(message?.querySelector('a[href="/smithersai/smithers/"]')?.textContent).toBe("smithersai/smithers")
+      /*
+       * Since 68f1d894 admission reads only this repository's document, so a
+       * refusal carries no catalog alternatives (RepoLink.test.ts "invents no
+       * catalog alternatives"): the notice ends at sign-in, with no roster.
+       */
+      expect(message?.textContent).toContain(`${repo} isn't on Smithers yet. Sign in with GitHub to open your own repositories.`)
+      expect(message?.textContent).not.toContain("pick one below")
+      expect(message?.querySelector('a[href="/smithersai/smithers/"]')).toBeNull()
       expect(message?.querySelector<HTMLButtonElement>(".message-cta")?.dataset.flow).toBe("sign-in")
       if (repo !== "cached/selection") expect(controller.commands.state().publicRepo).toBe(false)
     })
@@ -312,10 +319,10 @@ describe("auth is a conversation state — the chat is the only page", () => {
     const { host } = mount(controller)
     expect(host.querySelector(".smithers-chat-message")).toBeNull()
     store.dispatch({ type: "repository.entry.changed", actor: "system", entry: {
-      requestId: "catalog", repo: "alpha/one", phase: "failed", failureKind: "unavailable", error: "The public repository catalog answered HTTP 503."
+      requestId: "catalog", repo: "alpha/one", phase: "failed", failureKind: "unavailable", error: "Repository unavailable (HTTP 503)."
     } })
     await settled()
-    expect(host.querySelector(".smithers-chat-message")?.textContent).toContain("The public repository catalog answered HTTP 503.")
+    expect(host.querySelector(".smithers-chat-message")?.textContent).toContain("Repository unavailable (HTTP 503).")
     expect(host.querySelector(".smithers-chat-message .message-cta")).toBeNull()
     expect(host.textContent).not.toContain("isn't on Smithers yet")
     store.dispatch({ type: "repository.entry.changed", actor: "system", entry: { requestId: "retry", repo: "alpha/one", phase: "pending" } })
@@ -336,8 +343,7 @@ describe("auth is a conversation state — the chat is the only page", () => {
       const http = backend({
         "/api/user": json(401, {}),
         "/api/auth/scopes": json(200, { scopes: [] }),
-        "/api/public/repos": json(200, { repos: [{ name: "smithersai/smithers" }] }),
-        "/api/repos/smithersai/smithers": json(200, { default_bookmark: "main" }),
+        "/api/repos/smithersai/smithers": json(200, { full_name: "smithersai/smithers", default_bookmark: "main", is_public: true }),
       })
       const boot = async () => {
         const store = await createAppStore({ kind: "localStorage", storage })
@@ -361,7 +367,7 @@ describe("auth is a conversation state — the chat is the only page", () => {
 
       window.history.replaceState(null, "", "/nope/nope/")
       const reloaded = await boot()
-      expect(reloaded.refusal).toBe("nope/nope is not in the public repository catalog.")
+      expect(reloaded.refusal).toBe("nope/nope is not available publicly.")
       expect(reloaded.store.session().activeRepoKey).toBeNull()
       expect(reloaded.store.session().repositoryEntry).toMatchObject({ repo: "nope/nope", phase: "failed" })
       const { host } = mount(reloaded.controller)

@@ -166,11 +166,10 @@ const openRepository = async (home: Response, repo = "smithersai/smithers") => {
   const http = backend({
     "/api/user": json(200, { id: 1, username: "ada", is_admin: false }),
     "/api/auth/scopes": json(200, { scopes: [] }),
-    "/api/public/repos": json(200, { repos: [{ name: repo }] }),
     "/api/user/repos": json(200, []),
     "/api/user/orgs": json(200, []),
     "/api/user/workspaces": json(200, []),
-    [`/api/repos/${owner}/${name}`]: json(200, { default_bookmark: "main" }),
+    [`/api/repos/${owner}/${name}`]: json(200, { full_name: repo, default_bookmark: "main", is_public: true }),
     [`/api/repos/${owner}/${name}/home`]: home,
     [`/api/repos/${owner}/${name}/contents`]: json(200, [{ name: "README.md", path: "README.md", type: "file" }])
   })

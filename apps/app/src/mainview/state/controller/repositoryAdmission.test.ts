@@ -9,6 +9,14 @@ import { createAppStore, PERSISTED_COLLECTION_SPECS, type PersistenceBackend } f
 import { json, memoryStorage, silentAgent } from "../TestFixtures"
 
 const repo = "alpha/one"
+/*
+ * Signed-out admission reads the repository's own document and admits it only
+ * when `is_public` is true (RepoLink.openRequestedRepo, since 68f1d894); a
+ * public document is then asked for guest admission at `<document>/guest`.
+ * A 401/403/404 or a document that is not public refuses as not-public.
+ */
+const DOCUMENT = `/api/repos/${repo}`
+const publicDocument = (name = repo) => json(200, { full_name: name, is_public: true })
 const pause = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms))
 const until = async (check: () => boolean) => { for (let i = 0; i < 150 && !check(); i++) await pause(10); expect(check()).toBe(true) }
 const setup = async (storage = memoryStorage(), fetchImpl: FetchLike = async () => json(404, {}), backend?: PersistenceBackend) => {
@@ -62,7 +70,7 @@ test("a cold explicit public target from home persists and acknowledges before i
   let catalogs = 0, reads = 0
   const h = await setup(undefined, async input => {
     const url = String(input)
-    if (url === "/api/public/repos") { catalogs++; return catalog }
+    if (url === DOCUMENT) { catalogs++; return catalog }
     if (url.endsWith(`/api/repos/${repo}/contents/README.md`)) { reads++; return file }
     return json(404, {})
   })
@@ -79,7 +87,7 @@ test("a cold explicit public target from home persists and acknowledges before i
     h.controller.changeDraft("Chat remains available")
     expect(h.store.session().draft).toBe("Chat remains available")
     await until(() => h.store.collections.toasts.get("toast-repository.ready")?.status === "running")
-    resolveCatalog(json(200, { repos: [{ name: repo }] }))
+    resolveCatalog(publicDocument())
     await until(() => reads === 1)
     expect(h.store.collections.toasts.get("toast-repository.ready")?.status).toBe("running")
     resolveFile(json(200, { path: "README.md", content: "COLD PUBLIC TARGET", encoding: "utf-8", type: "file" }))
@@ -114,14 +122,14 @@ for (const phase of ["pending", "ready"] as const) test(`root reload waits for t
   const controller = createAppController(store, silentAgent, { toastDebounceMs: 10, fetchImpl: async input => {
     const url = String(input); hits.push(url)
     if (url.endsWith("/api/auth/scopes")) { await scopes; return json(200, { scopes: [] }) }
-    return url === "/api/public/repos" ? json(200, { repos: [{ name: repo }] }) : json(200, [])
+    return url === DOCUMENT ? publicDocument() : json(200, [])
   } })
   try {
     controller.changeDraft("Chat is available before identity finishes")
     await pause(15)
     const adopting = controller.adoptSession({ state: "signed-out", login: null, admin: false })
     await pause(25)
-    expect(hits.filter(path => path === "/api/public/repos")).toEqual([])
+    expect(hits.filter(path => path === DOCUMENT)).toEqual([])
     expect(hits.filter(path => path.includes("/contents/docs"))).toEqual([])
     expect(store.session().pendingCommand?.requirement).toBe("repository-ready")
     releaseScopes()
@@ -129,9 +137,9 @@ for (const phase of ["pending", "ready"] as const) test(`root reload waits for t
     await until(() => store.collections.cards.get(`files-${repo}-docs`)?.status === "active")
     expect(store.session().repositoryEntry).toBeNull()
     expect(store.session().repositoryCommandEntry?.requestId).toBe(requestId)
-    expect(hits.filter(path => path === "/api/public/repos")).toHaveLength(phase === "pending" ? 1 : 0)
+    expect(hits.filter(path => path === DOCUMENT)).toHaveLength(phase === "pending" ? 1 : 0)
     expect(hits.filter(path => path.includes("/contents/docs"))).toEqual([`/api/repos/${repo}/contents/docs`])
-    release(json(200, { repos: [{ name: "old/stale" }] }))
+    release(publicDocument("old/stale"))
     await pause(20)
     expect(store.collections.repositories.has("old/stale")).toBe(false)
   } finally { releaseScopes(); release(json(503, {})); await controller.dispose(); await store.dispose?.() }
@@ -139,7 +147,7 @@ for (const phase of ["pending", "ready"] as const) test(`root reload waits for t
 
 test("an explicit cold target leaves a different URL admission and selection intact", async () => {
   const hits: string[] = []
-  const h = await setup(undefined, async input => { const url = String(input); hits.push(url); return url === "/api/public/repos" ? json(200, { repos: [{ name: "beta/two" }] }) : json(200, []) })
+  const h = await setup(undefined, async input => { const url = String(input); hits.push(url); return url === "/api/repos/beta/two" ? publicDocument("beta/two") : json(200, []) })
   try {
     await h.ready()
     await h.store.dispatch({ type: "repo.selected", actor: "user", id: repo }).isPersisted.promise
@@ -148,7 +156,7 @@ test("an explicit cold target leaves a different URL admission and selection int
     await until(() => h.store.collections.cards.get("files-beta/two-docs")?.status === "active")
     expect(h.store.session().repositoryEntry).toEqual(entry)
     expect(h.store.session().activeRepoKey).toBe(repo)
-    expect(hits).toEqual(["/api/public/repos", "/api/repos/beta/two/contents/docs"])
+    expect(hits).toEqual(["/api/repos/beta/two", "/api/repos/beta/two/guest", "/api/repos/beta/two/contents/docs"])
   } finally { await h.close() }
 })
 
@@ -157,7 +165,7 @@ test("an unavailable cold catalog is retryable and a not-public answer never loo
   const hits: string[] = []
   const h = await setup(undefined, async input => {
     const url = String(input); hits.push(url)
-    if (url === "/api/public/repos") return ++catalogs === 1 ? json(503, {}) : json(200, { repos: [] })
+    if (url === DOCUMENT) return ++catalogs === 1 ? json(503, {}) : json(200, { full_name: repo, is_public: false })
     return json(404, {})
   })
   try {
@@ -174,7 +182,7 @@ test("an unavailable cold catalog is retryable and a not-public answer never loo
     await h.controller.commands.run("files", `docs ${repo}`)
     await pause(20)
     expect(catalogs).toBe(2)
-    expect(hits).toEqual(["/api/public/repos", "/api/public/repos"])
+    expect(hits).toEqual([DOCUMENT, DOCUMENT])
     expect([...h.store.collections.messages.values()].some(message => message.action?.flow === "sign-in")).toBe(true)
     expect(h.store.collections.toasts.get("toast-repository.ready")?.status).not.toBe("ok")
   } finally { await h.close() }
@@ -188,7 +196,8 @@ for (const change of ["account", "dispose", "target"] as const) {
     const reads: string[] = []
     const h = await setup(undefined, async input => {
       const url = String(input)
-      if (url === "/api/public/repos") return ++catalogs === 1 ? gate : json(200, { repos: [{ name: "beta/two" }] })
+      if (url === DOCUMENT) return ++catalogs === 1 ? gate : json(404, {})
+      if (url === "/api/repos/beta/two") return publicDocument("beta/two")
       reads.push(url); return json(200, [])
     })
     try {
@@ -201,7 +210,7 @@ for (const change of ["account", "dispose", "target"] as const) {
         await h.controller.commands.run("files", "other beta/two")
         await until(() => h.store.collections.cards.get("files-beta/two-other")?.status === "active")
       }
-      release(json(200, { repos: [{ name: repo }] }))
+      release(publicDocument())
       await pause(35)
       expect(h.store.collections.repositories.has(repo)).toBe(false)
       expect(reads.filter(path => path.includes(`/api/repos/${repo}/`))).toEqual([])
@@ -218,7 +227,7 @@ test("a cold catalog response still serves its command through a same-owner iden
   const reads: string[] = []
   const h = await setup(undefined, async input => {
     const url = String(input)
-    if (url === "/api/public/repos") return ++catalogs === 1 ? gate : json(200, { repos: [{ name: "beta/two" }] })
+    if (url === DOCUMENT) return ++catalogs === 1 ? gate : json(404, {})
     reads.push(url); return json(200, [])
   })
   try {
@@ -226,7 +235,7 @@ test("a cold catalog response still serves its command through a same-owner iden
     await h.controller.commands.run("files", `docs ${repo}`)
     await until(() => catalogs === 1)
     await h.controller.adoptSession({ state: "signed-out", login: null, admin: false })
-    release(json(200, { repos: [{ name: repo }] }))
+    release(publicDocument())
     await until(() => h.store.collections.repositories.has(repo))
   } finally { release(json(503, {})); await h.close() }
 })
@@ -238,7 +247,7 @@ test("new arguments share a cold catalog request while keeping the latest exact 
   const reads: string[] = []
   const h = await setup(undefined, async input => {
     const url = String(input)
-    if (url === "/api/public/repos") { catalogs++; return gate }
+    if (url === DOCUMENT) { catalogs++; return gate }
     reads.push(url); return json(200, [])
   })
   try {
@@ -249,17 +258,17 @@ test("new arguments share a cold catalog request while keeping the latest exact 
     await h.store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "selected/repo", org: "selected", name: "repo", ownerKind: "user", head: null }] }).isPersisted.promise
     await h.store.dispatch({ type: "repo.selected", actor: "user", id: "selected/repo" }).isPersisted.promise
     expect(h.store.session().repositoryCommandEntry?.requestId).toBe(requestId)
-    release(json(200, { repos: [{ name: repo }] }))
+    release(publicDocument())
     await until(() => h.store.collections.cards.get(`files-${repo}-new`)?.status === "active")
     expect(catalogs).toBe(1)
-    expect(reads).toEqual([`/api/repos/${repo}/contents/new`])
+    expect(reads).toEqual([`/api/repos/${repo}/guest`, `/api/repos/${repo}/contents/new`])
     expect(h.store.session().activeRepoKey).toBe("selected/repo")
   } finally { release(json(503, {})); await h.close() }
 })
 
 test("cold admission and duplicate acknowledgments wait for persistence before any catalog request", async () => {
   let catalogs = 0
-  const h = await setup(undefined, async input => { if (String(input) === "/api/public/repos") catalogs++; return json(200, { repos: [] }) })
+  const h = await setup(undefined, async input => { if (String(input) === DOCUMENT) catalogs++; return json(404, {}) })
   await h.store.dispatch({ type: "repository.entry.changed", actor: "system", entry: null }).isPersisted.promise
   let release!: () => void
   const gate = new Promise<void>(resolve => { release = resolve })
@@ -289,7 +298,7 @@ test("an earlier admission commit cannot launch a newer uncommitted target", asy
   const hits: string[] = []
   const h = await setup(undefined, async input => {
     const url = String(input); hits.push(url)
-    return url === "/api/public/repos" ? json(200, { repos: [{ name: repo }, { name: "beta/two" }] }) : json(200, [])
+    return url === DOCUMENT || url === "/api/repos/beta/two" ? publicDocument(url.slice("/api/repos/".length)) : json(200, [])
   })
   await h.store.dispatch({ type: "repository.entry.changed", actor: "system", entry: null }).isPersisted.promise
   const releases: Array<() => void> = []
@@ -313,19 +322,19 @@ test("an earlier admission commit cannot launch a newer uncommitted target", asy
     releases[1]!()
     expect(await second).toEqual({ status: "executed", value: "Requested" })
     await until(() => h.store.collections.cards.get("files-beta/two-new")?.status === "active")
-    expect(hits).toEqual(["/api/public/repos", "/api/repos/beta/two/contents/new"])
+    expect(hits).toEqual(["/api/repos/beta/two", "/api/repos/beta/two/guest", "/api/repos/beta/two/contents/new"])
   } finally { releases.forEach(release => release()); spy.mockRestore(); await h.close() }
 })
 
 test("a cold target's progress reports the actual content failure after successful admission", async () => {
   let release!: (response: Response) => void
   const gate = new Promise<Response>(resolve => { release = resolve })
-  const h = await setup(undefined, async input => String(input) === "/api/public/repos" ? gate : json(502, { message: "upstream unavailable" }))
+  const h = await setup(undefined, async input => String(input) === DOCUMENT ? gate : json(502, { message: "upstream unavailable" }))
   try {
     await h.store.dispatch({ type: "repository.entry.changed", actor: "system", entry: null }).isPersisted.promise
     await h.controller.commands.run("files", `docs ${repo}`)
     await until(() => h.store.collections.toasts.get("toast-repository.ready")?.status === "running")
-    release(json(200, { repos: [{ name: repo }] }))
+    release(publicDocument())
     await until(() => h.store.collections.toasts.get("toast-repository.ready")?.status === "failed")
     expect(h.store.collections.cards.get(`files-${repo}-docs`)?.status).toBe("error")
     expect(h.store.session().repositoryCommandEntry?.phase).toBe("ready")
@@ -387,7 +396,7 @@ test("catalog failure stays visible and a fresh request can retry", async () => 
 })
 
 test("private targets keep their sign-in gate and agent calls never queue", async () => {
-  const h = await setup(undefined, async input => String(input) === "/api/public/repos" ? json(200, { repos: [] }) : json(404, {}))
+  const h = await setup(undefined, async () => json(404, {}))
   try {
     expect(await h.controller.commands.runForAgent("file", `README.md ${repo}`)).toMatchObject({ status: "failed", error: expect.stringContaining("loading") })
     expect(h.store.session().pendingCommand).toBeFalsy()
@@ -425,7 +434,7 @@ test("a known global repository does not bind to an unrelated pending URL", asyn
 
 test("an explicit private repository requires its own source", async () => {
   const hits: string[] = []
-  const h = await setup(undefined, async input => { hits.push(String(input)); return String(input) === "/api/public/repos" ? json(200, { repos: [] }) : json(404, {}) })
+  const h = await setup(undefined, async input => { hits.push(String(input)); return json(404, {}) })
   try {
     await h.controller.commands.run("file", "README.md private/secret")
     await until(() => h.store.session().pendingCommand?.requirement === "repo-source")
@@ -439,7 +448,11 @@ for (const answer of ["private", "invalid", "offline"] as const) {
     const h = await setup()
     try {
       await h.controller.commands.run("file", `README.md ${repo}`)
-      const http: FetchLike = async () => { if (answer === "offline") throw new Error("offline"); return json(200, answer === "private" ? { repos: [] } : { wrong: [] }) }
+      const http: FetchLike = async () => {
+        if (answer === "offline") throw new Error("offline")
+        // A readable document that is not public refuses; an unreadable body is unavailable.
+        return answer === "private" ? json(200, { full_name: repo, is_public: false }) : new Response("not a repository document", { status: 200 })
+      }
       await openRequestedRepo(h.controller, http, repo, h.store.session().repositoryEntry!.requestId)
       await until(() => h.store.session().pendingCommand?.requirement !== "repository-ready")
       if (answer === "private") {
@@ -585,7 +598,7 @@ test("a fresh command refreshes a failed catalog once without changing selection
   let refreshes = 0
   const reads: string[] = []
   const h = await setup(undefined, async input => {
-    if (String(input) === "/api/public/repos") { refreshes++; return catalog }
+    if (String(input) === DOCUMENT) { refreshes++; return catalog }
     reads.push(String(input)); return json(200, [])
   })
   try {
@@ -600,17 +613,17 @@ test("a fresh command refreshes a failed catalog once without changing selection
     expect([...h.store.collections.messages.values()].some(m => m.action?.flow === "sign-in")).toBe(false)
     h.controller.changeDraft("usable during refresh")
     expect(h.store.session().draft).toBe("usable during refresh")
-    release(json(200, { repos: [{ name: repo }] }))
+    release(publicDocument())
     await until(() => h.store.collections.cards.get(`files-${repo}-docs`)?.status === "active")
-    expect(reads).toEqual([`/api/repos/${repo}/contents/docs`])
+    expect(reads).toEqual([`/api/repos/${repo}/guest`, `/api/repos/${repo}/contents/docs`])
     expect(h.store.session().activeRepoKey).toBe("beta/two")
-  } finally { release(json(200, { repos: [] })); await h.close() }
+  } finally { release(json(404, {})); await h.close() }
 })
 
 test("a failed refresh stays honest and the next user retry can succeed without reload", async () => {
   let refreshes = 0
-  const h = await setup(undefined, async input => String(input) === "/api/public/repos"
-    ? ++refreshes === 1 ? json(503, {}) : json(200, { repos: [{ name: repo }] })
+  const h = await setup(undefined, async input => String(input) === DOCUMENT
+    ? ++refreshes === 1 ? json(503, {}) : publicDocument()
     : json(200, []))
   try {
     await catalogFailed(h.store)
@@ -626,7 +639,7 @@ test("a failed refresh stays honest and the next user retry can succeed without 
 
 test("a retry resolving to not-public renders the sign-in gate and never loops the catalog", async () => {
   let refreshes = 0
-  const h = await setup(undefined, async input => { if (String(input) === "/api/public/repos") refreshes++; return json(200, { repos: [] }) })
+  const h = await setup(undefined, async input => { if (String(input) === DOCUMENT) refreshes++; return json(404, {}) })
   try {
     await h.ready()
     await catalogFailed(h.store)
@@ -644,13 +657,14 @@ test("a URL refused by the public catalog before a signed-in answer reopens once
   let catalogReads = 0, inventoryReads = 0
   const h = await setup(undefined, async input => {
     const path = String(input)
-    if (path === "/api/public/repos") { catalogReads++; return json(200, { repos: [] }) }
+    // The member reads their own private repository's document: readable, not public.
+    if (path === DOCUMENT) { catalogReads++; return json(200, { full_name: repo, is_public: false }) }
     if (path.startsWith("/api/user/repos")) { inventoryReads++; return json(200, [{ owner: "alpha", name: "one", full_name: repo, default_bookmark: null }]) }
     return json(200, [])
   })
   try {
-    const refusal = await openRequestedRepo(h.controller, async () => { catalogReads++; return json(200, { repos: [] }) }, repo, h.store.session().repositoryEntry!.requestId)
-    expect(refusal).toBe(`${repo} is not in the public repository catalog.`)
+    const refusal = await openRequestedRepo(h.controller, async () => { catalogReads++; return json(404, {}) }, repo, h.store.session().repositoryEntry!.requestId)
+    expect(refusal).toBe(`${repo} is not available publicly.`)
     expect(h.store.session().repositoryEntry).toMatchObject({ phase: "failed", failureKind: "not-public" })
     expect(inventoryReads).toBe(0)
     await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", admin: false, scopesPlain: null }).isPersisted.promise
@@ -666,12 +680,12 @@ test("a member whose inventory lacks the URL's repository keeps the refusal with
   let catalogReads = 0, inventoryReads = 0
   const h = await setup(undefined, async input => {
     const path = String(input)
-    if (path === "/api/public/repos") { catalogReads++; return json(200, { repos: [] }) }
+    if (path === DOCUMENT) { catalogReads++; return json(404, {}) }
     if (path.startsWith("/api/user/repos")) { inventoryReads++; return json(200, []) }
     return json(200, [])
   })
   try {
-    await openRequestedRepo(h.controller, async () => json(200, { repos: [] }), repo, h.store.session().repositoryEntry!.requestId)
+    await openRequestedRepo(h.controller, async () => json(404, {}), repo, h.store.session().repositoryEntry!.requestId)
     await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", admin: false, scopesPlain: null }).isPersisted.promise
     await until(() => inventoryReads === 1 && h.store.session().repositoryEntry?.phase === "failed")
     expect(h.store.session().repositoryEntry?.failureKind).toBe("not-public")
@@ -687,7 +701,7 @@ for (const scope of ["account", "selection", "entry"] as const) {
     let release!: (response: Response) => void
     const catalog = new Promise<Response>(resolve => release = resolve)
     const reads: string[] = []
-    const h = await setup(undefined, async input => { if (String(input) === "/api/public/repos") return catalog; reads.push(String(input)); return json(200, []) })
+    const h = await setup(undefined, async input => { if (String(input) === DOCUMENT) return catalog; reads.push(String(input)); return json(200, []) })
     try {
       await catalogFailed(h.store)
       await h.controller.commands.run("files", `docs ${repo}`)
@@ -697,19 +711,19 @@ for (const scope of ["account", "selection", "entry"] as const) {
         await h.store.dispatch({ type: "repo.selected", actor: "user", id: "selected/repo" }).isPersisted.promise
       }
       if (scope === "entry") beginRepositoryEntry(h.store, "beta/two")
-      release(json(200, { repos: [{ name: repo }] }))
+      release(publicDocument())
       await pause(50)
       expect(reads.filter(path => path.includes("contents/docs"))).toEqual([])
       expect(h.store.collections.repositories.get(repo)).toBeUndefined()
       if (scope === "selection") expect(h.store.session().activeRepoKey).toBe("selected/repo")
       if (scope === "entry") expect(h.store.session().repositoryEntry?.repo).toBe("beta/two")
-    } finally { release(json(200, { repos: [] })); await h.close() }
+    } finally { release(json(404, {})); await h.close() }
   })
 }
 
 test("refresh launch waits for the atomic retry admission commit", async () => {
   let requests = 0
-  const h = await setup(undefined, async () => { requests++; return json(200, { repos: [] }) })
+  const h = await setup(undefined, async () => { requests++; return json(404, {}) })
   let release!: () => void
   const gate = new Promise<void>(resolve => release = resolve)
   await catalogFailed(h.store)
