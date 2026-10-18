@@ -19,6 +19,7 @@ export type Assertion =
   | { readonly fuzzy: { readonly view: string }; readonly means: string }
   | { readonly rubric: string; readonly on: { readonly view: string } }
 export interface Step {
+  readonly volatile?: { readonly text: ReadonlyArray<string>; readonly selectors?: ReadonlyArray<string> }
   readonly viewport?: { readonly width: number; readonly height: number }
   readonly caption: string
   readonly spec?: string
@@ -53,6 +54,7 @@ const assertionSchema = z.union([
   z.strictObject({ rubric: z.string(), on: z.strictObject({ view: z.string() }) })
 ])
 const stepSchema = z.strictObject({
+  volatile: z.strictObject({ text: z.array(z.string().min(1)), selectors: z.array(z.string().min(1)).optional() }).optional(),
   viewport: z.strictObject({ width: z.number().int().positive(), height: z.number().int().positive() }).optional(),
   caption: z.string().min(1), spec: z.string().min(1).optional(), go: z.string().optional(), click: elementSchema.optional(),
   type: z.strictObject({ into: elementSchema, text: z.string() }).optional(), say: z.string().optional(), actor: z.string().optional(), expect: z.array(assertionSchema)

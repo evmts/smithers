@@ -33,8 +33,9 @@ const run = async (name: string, beforeStep?: RunOptions["beforeStep"]) => {
 }
 test("unchanged PM journey: shipped README assertions pass; header gaps remain recorded", async () => {
   const receipt = await run("canonical")
-  expect(receipt.steps[1]!.status).toBe("passed")
-  expect(receipt.steps[2]!.status).toBe("passed")
+  expect(receipt.steps[1]!.assertions.filter(a => a.kind !== "rubric").every(a => a.ok === true)).toBe(true)
+  expect(receipt.steps[2]!.assertions.filter(a => a.kind !== "rubric").every(a => a.ok === true)).toBe(true)
+  expect(receipt.steps[2]!.assertions.find(a => a.kind === "rubric")).toMatchObject({ verdict: "inconclusive", ok: null })
   // Full canonical evidence remains a failure when required product UI is missing.
   // Do not remove or invert any canonical assertion to obtain a green journey.
   expect(receipt.steps[0]!.assertions.length).toBe(definition.steps[0]!.expect.length)
@@ -50,7 +51,7 @@ test("Risk 3: remove the real README click handler; the read region never appear
       delete props.onClick
     })
   })
-  expect(receipt.steps[1]!.status).toBe("passed")
+  expect(receipt.steps[1]!.assertions.filter(a => a.kind !== "rubric").every(a => a.ok === true)).toBe(true)
   expect(receipt.steps[2]!.caption).toBe("Read the README")
   expect(receipt.steps[2]!.assertions.find(a => a.kind === "see")).toMatchObject({ ok: false })
   expect(receipt.steps[2]!.status).toBe("failed")

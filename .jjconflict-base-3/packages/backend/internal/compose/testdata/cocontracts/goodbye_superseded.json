@@ -1,0 +1,17 @@
+{
+  "kind": 0,
+  "stream": 0,
+  "payload": "0500000002010f",
+  "local": false,
+  "literal": {
+    "variant": 5,
+    "struct": [
+      [
+        1,
+        {
+          "u8": 15
+        }
+      ]
+    ]
+  }
+}

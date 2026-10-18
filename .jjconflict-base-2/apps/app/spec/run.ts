@@ -1,5 +1,5 @@
 import { chromium, type Page } from "@playwright/test"
-import { mkdir, writeFile } from "node:fs/promises"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { resolve, dirname } from "node:path"
 import { pathToFileURL } from "node:url"
 import { execFileSync } from "node:child_process"
@@ -8,7 +8,10 @@ import { journey, interpolate, interpolateData, type Journey, type Assertion, ty
 import { element, observe, type Decode, type Exchange } from "./observe"
 import { results, type Mode, type RunResult, type StepResult } from "./results"
 
+import { judgeAssertion, type JudgeOptions } from "./judgeAssertion.ts"
+
 export interface RunOptions {
+  readonly judge?: JudgeOptions
   readonly mode: Mode
   readonly origin: string
   readonly output: string
@@ -126,11 +129,13 @@ export const runJourney = async (page: Page, definition: Journey, options: RunOp
           if (options.mode === "live") throw new Error("Live form submission is not permitted")
           await driver.app.say(expand(step.say))
         }
-        for (const assertion of step.expect) {
+        for (const [assertionIndex, assertion] of step.expect.entries()) {
           const expanded = interpolateData(assertion, bindings) as Assertion
           await Promise.all([...pending])
           const fixtureExchanges = options.mode === "mock" ? await page.evaluate(() => window.__spec?.exchanges ?? []) : []
-          assertions.push(await observe(page, expanded, [...exchanges, ...fixtureExchanges], options.decode, options.assertionTimeoutMs))
+          assertions.push("fuzzy" in expanded || "rubric" in expanded
+            ? await judgeAssertion(page, expanded, definition, step, `${index}:${assertionIndex}`, options.judge)
+            : await observe(page, expanded, [...exchanges, ...fixtureExchanges], options.decode, options.assertionTimeoutMs))
         }
         await Promise.all([...pending])
         if (options.mode === "mock") await page.evaluate(required => {
@@ -154,9 +159,11 @@ export const runJourney = async (page: Page, definition: Journey, options: RunOp
 
 export const main = async (argv: string[]): Promise<number> => {
   const [command, ...args] = argv
-  if (!["mock", "live", "capture"].includes(command ?? "")) throw new Error("Usage: run.ts mock|live|capture <journey...> [--results-file path]")
+  if (!["mock", "live", "capture", "judge"].includes(command ?? "")) throw new Error("Usage: run.ts mock|live|capture <journey...> [--results-file path]")
   if (command === "capture" && !args.includes("--live")) throw new Error("capture requires --live")
-  const mode: Mode = command === "mock" ? "mock" : "live"
+  const recording = command === "judge"
+  if (recording && !args.includes("--record")) throw new Error("judge requires --record")
+  const mode: Mode = command === "mock" || recording && !args.includes("--live") ? "mock" : "live"
   const resultAt = args.indexOf("--results-file")
   const resultsFile = resultAt < 0 ? undefined : args[resultAt + 1]
   if (resultAt >= 0 && !resultsFile) throw new Error("--results-file requires a path")
@@ -168,17 +175,48 @@ export const main = async (argv: string[]): Promise<number> => {
     definitions.push(journey((await import(pathToFileURL(file).href)).default))
   }
   const output = process.env.SPEC_OUTPUT ?? resolve(process.env.HOME ?? ".", "smithers-lanes/out/spec2-runner")
-  const revision = execFileSync("jj", ["log", "-r", "@", "--no-graph", "-T", "commit_id"], { encoding: "utf8" }).trim()
+  const revision = execFileSync("jj", ["--at-operation=@", "log", "-r", "@", "--no-graph", "-T", "commit_id"], { encoding: "utf8" }).trim()
   const { decode } = await import("./wire")
   const siteDirectories = (mode === "mock" ? JSON.parse(process.env.SPEC_MOCK_SITE_DIRS ?? "{}") : {}) as Record<string, string>
   if (!siteDirectories || typeof siteDirectories !== "object" || Array.isArray(siteDirectories) || Object.values(siteDirectories).some(path => typeof path !== "string")) throw new Error("SPEC_MOCK_SITE_DIRS must map world names to directories")
+  const factory = JSON.parse(
+    await readFile(
+      process.env.SPEC_JUDGE_POLICY ?? resolve(import.meta.dirname, "../../../.smithers/factory.json"),
+      "utf8"
+    )
+  )
+  const policy = factory.judges
+  const runId = `spec-${crypto.randomUUID()}`
+  const ledger = resolve(resultsFile ? dirname(resultsFile) : output, "review-budget.json")
+  let evaluator: import("@smthrs/model/Evaluator").Evaluator | undefined
+  let fuzzyEvaluator: import("@smthrs/model/Evaluator").Evaluator | undefined
+  if (recording) {
+    if (process.env.CI || !policy || !process.env.SPEC_JUDGE_SEAT) {
+      console.error("Judgment inconclusive: recording requires local policy and SPEC_JUDGE_SEAT")
+      return 5
+    }
+    const { seat, seats } = await import(pathToFileURL(resolve(process.env.SPEC_JUDGE_SEAT)).href)
+    const { seatEvaluator } = await import("./seatEvaluator.ts")
+    const { Effect } = await import("effect")
+    try {
+      evaluator = await Effect.runPromise(
+        seatEvaluator(seats?.rubric ?? seat, policy.engines.rubric.model, policy.engines.rubric.engine)
+      )
+      fuzzyEvaluator = await Effect.runPromise(
+        seatEvaluator(seats?.fuzzy ?? seat, policy.engines.fuzzy.model, policy.engines.fuzzy.engine)
+      )
+    } catch {
+      console.error("Judgment inconclusive: seat does not match policy")
+      return 5
+    }
+  }
   let mockUnavailable: string | undefined
   const server = mode === "mock" && !process.env.SPEC_MOCK_URL ? await (await import("./staticServer")).staticServer(resolve(import.meta.dirname, "../dist-spec")).catch(error => { mockUnavailable = `Spec build unavailable: ${String(error)}`; return undefined }) : undefined
   const browser = await chromium.launch({ headless: true }).catch(async error => { await server?.close(); throw error })
   const runs: RunResult[] = []
   const siteHosts = new Map<string, NonNullable<typeof server>>()
   try {
-    for (const definition of definitions) {
+    for (const [definitionIndex, definition] of definitions.entries()) {
       if (mode === "live" && "skip" in definition.live) {
         runs.push({ journey: definition.id, mode, revision, startedAt: new Date().toISOString(), steps: [], state: "unverified", reason: definition.live.skip })
         continue
@@ -202,6 +240,12 @@ export const main = async (argv: string[]): Promise<number> => {
         continue
       }
       if (mode === "live" && runs.length > 0) await new Promise(resolve => setTimeout(resolve, 1000))
+      const name = names[definitionIndex]!
+      const file = name.endsWith(".ts") ? resolve(name) : resolve(import.meta.dirname, "journeys", `${name}.journey.ts`)
+      const sidecar = mode === "mock"
+        ? file.replace(/(?:\.journey)?\.ts$/, ".judgments.json")
+        : resolve(output, "live-judgments", `${definition.id}.judgments.json`)
+      if (recording) await mkdir(dirname(sidecar), { recursive: true })
       const context = await browser.newContext({ serviceWorkers: "block" })
       try {
         let testedRevision = revision
@@ -209,6 +253,22 @@ export const main = async (argv: string[]): Promise<number> => {
         if (typeof stamp?.gitSha === "string") testedRevision = stamp.gitSha
         else if (mode === "live") testedRevision = "unknown: deployed build stamp unavailable"
         runs.push(await runJourney(await context.newPage(), definition, { mode, origin, output, revision: testedRevision, decode,
+            judge: {
+              policy,
+              sidecar,
+              labels: resolve(import.meta.dirname, "labels"),
+              ...(evaluator
+                ? {
+                  record: {
+                    evaluator,
+                    fuzzyEvaluator,
+                    ledger,
+                    run: runId,
+                    pendingLabels: resolve(resultsFile ? dirname(resultsFile) : output, "pending-labels.jsonl")
+                  }
+                }
+                : {})
+            },
           readWorld: (await import("./readWorld")).readWorld,
           requireFixtureTransport: mode === "mock" && definition.world.base === "default" && process.env.SPEC_MOCK_URL === undefined,
           checkTransport: () => { if (mockHost?.escapes.length) throw new Error(`Escaped mock transport: ${mockHost.escapes.join(", ")}`) },
@@ -226,6 +286,6 @@ export const main = async (argv: string[]): Promise<number> => {
   }
   console.log(JSON.stringify(runs, null, 2))
   if (runs.some(run => run.steps.some(step => step.status === "failed"))) return 1
-  return runs.some(run => run.reason && run.steps.length === 0) ? 5 : 0
+  return runs.some(run => run.reason && run.steps.length === 0 || run.steps.some(step => step.assertions.some(assertion => assertion.verdict === "inconclusive"))) ? 5 : 0
 }
 if (import.meta.main) main(process.argv.slice(2)).then(code => { process.exitCode = code }).catch(error => { console.error(error); process.exitCode = 1 })

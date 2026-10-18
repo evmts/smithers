@@ -4,6 +4,8 @@ export type Mode = "mock" | "live"
 export type State = "shipped" | "ahead" | "regressed" | "stale" | "unverified"
 export interface AssertionResult {
   readonly kind: string
+  readonly verdict?: "pass" | "fail" | "uncertain" | "missing" | "stale" | "inconclusive"
+  readonly blocking?: boolean
   readonly ok: boolean | null
   readonly expected: unknown
   readonly actual: unknown
@@ -28,15 +30,32 @@ export interface RunResult {
 }
 /** Shared runtime schema for player, drift and on-disk CLI receipts. */
 export const ResultsSchema = z.array(z.strictObject({
-  journey: z.string().min(1), mode: z.enum(["mock", "live"]), revision: z.string().min(1),
-  startedAt: z.string().refine(value => Number.isFinite(Date.parse(value)), "invalid timestamp"),
-  state: z.enum(["shipped", "ahead", "regressed", "stale", "unverified"]), reason: z.string().optional(),
+  journey: z.string().min(1),
+  mode: z.enum(["mock", "live"]),
+  revision: z.string().min(1),
+  startedAt: z.string().refine((value) => Number.isFinite(Date.parse(value)), "invalid timestamp"),
+  state: z.enum(["shipped", "ahead", "regressed", "stale", "unverified"]),
+  reason: z.string().optional(),
   steps: z.array(z.strictObject({
-    caption: z.string().min(1), spec: z.string().min(1), status: z.enum(["passed", "failed", "skipped"]),
-    screenshot: z.string().min(1), ms: z.number().finite().nonnegative(),
-    assertions: z.array(z.strictObject({
-      kind: z.string().min(1), ok: z.boolean().nullable(), expected: z.unknown(), actual: z.unknown(), reason: z.string().optional()
-    }).refine(value => Object.hasOwn(value, "expected") && Object.hasOwn(value, "actual"), "expected and actual required"))
+    caption: z.string().min(1),
+    spec: z.string().min(1),
+    status: z.enum(["passed", "failed", "skipped"]),
+    screenshot: z.string().min(1),
+    ms: z.number().finite().nonnegative(),
+    assertions: z.array(
+      z.strictObject({
+        kind: z.string().min(1),
+        verdict: z.enum(["pass", "fail", "uncertain", "missing", "stale", "inconclusive"]).optional(),
+        blocking: z.boolean().optional(),
+        ok: z.boolean().nullable(),
+        expected: z.unknown(),
+        actual: z.unknown(),
+        reason: z.string().optional()
+      }).refine(
+        (value) => Object.hasOwn(value, "expected") && Object.hasOwn(value, "actual"),
+        "expected and actual required"
+      )
+    )
   }))
 }))
 /** Validate external results before the player or drift reads them. */
