@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/control",
   "type": "module",
-  "version": "1.0.0-rc.14",
+  "version": "1.0.0-rc.15",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -402,27 +402,27 @@
     "test:matrix": "node ../flows/database/scripts/test-matrix.mjs"
   },
   "dependencies": {
-    "@smthrs/model": "1.0.0-rc.14",
-    "@smthrs/canonical": "1.0.0-rc.14",
-    "@smthrs/crypto": "1.0.0-rc.14",
-    "@smthrs/database": "1.0.0-rc.14",
-    "@smthrs/journal": "1.0.0-rc.14",
-    "@smthrs/notifications": "1.0.0-rc.14",
-    "@smthrs/plan": "1.0.0-rc.14",
-    "@smthrs/registry": "1.0.0-rc.14",
-    "@smthrs/run-store": "1.0.0-rc.14",
-    "@smthrs/flow": "1.0.0-rc.14"
+    "@smthrs/model": "1.0.0-rc.15",
+    "@smthrs/canonical": "1.0.0-rc.15",
+    "@smthrs/crypto": "1.0.0-rc.15",
+    "@smthrs/database": "1.0.0-rc.15",
+    "@smthrs/journal": "1.0.0-rc.15",
+    "@smthrs/notifications": "1.0.0-rc.15",
+    "@smthrs/plan": "1.0.0-rc.15",
+    "@smthrs/registry": "1.0.0-rc.15",
+    "@smthrs/run-store": "1.0.0-rc.15",
+    "@smthrs/flow": "1.0.0-rc.15"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
     "@effect/vitest": "4.0.5",
     "@eslint/js": "9.39.5",
-    "@smthrs/core": "1.0.0-rc.14",
-    "@smthrs/engine-store": "1.0.0-rc.14",
-    "@smthrs/jj": "1.0.0-rc.14",
-    "@smthrs/plan-store": "1.0.0-rc.14",
-    "@smthrs/step-cache": "1.0.0-rc.14",
-    "@smthrs/time-travel": "1.0.0-rc.14",
+    "@smthrs/core": "1.0.0-rc.15",
+    "@smthrs/engine-store": "1.0.0-rc.15",
+    "@smthrs/jj": "1.0.0-rc.15",
+    "@smthrs/plan-store": "1.0.0-rc.15",
+    "@smthrs/step-cache": "1.0.0-rc.15",
+    "@smthrs/time-travel": "1.0.0-rc.15",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

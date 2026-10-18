@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/build",
   "type": "module",
-  "version": "1.0.0-rc.14",
+  "version": "1.0.0-rc.15",
   "license": "MIT",
   "smthrs": {
     "group": "tooling"
@@ -126,9 +126,9 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/crypto": "1.0.0-rc.14",
-    "@smthrs/flow": "1.0.0-rc.14",
-    "@smthrs/plan": "1.0.0-rc.14"
+    "@smthrs/crypto": "1.0.0-rc.15",
+    "@smthrs/flow": "1.0.0-rc.15",
+    "@smthrs/plan": "1.0.0-rc.15"
   },
   "peerDependencies": {
     "effect": "4.0.5"

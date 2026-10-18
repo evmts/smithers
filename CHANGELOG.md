@@ -5,6 +5,58 @@ release (what changed and why it matters, with screenshots and examples), see
 the release notes at
 [smithers.sh/changelogs/1.0.0-rc.0](https://smithers.sh/changelogs/1.0.0-rc.0).
 
+## 1.0.0-rc.15 (2026-10-18)
+
+<!-- commits:1.0.0-rc.15 -->
+
+32 commits since [v1.0.0-rc.14](https://github.com/smithersai/smithers/commit/c006e22fd1).
+
+### ✨ Features
+
+- **landing:** serve the install action before JavaScript ([88068440f8](https://github.com/smithersai/smithers/commit/88068440f8420e0be28ac9aaf64fa7b1c6d6979b))
+- **front-door:** choose a launcher lead for each visit ([1140892af4](https://github.com/smithersai/smithers/commit/1140892af4d8a84f7a198abc090588762e5db2cd))
+- **guest:** run repository conversions with signed compiler receipts ([4c2be49741](https://github.com/smithersai/smithers/commit/4c2be49741ab5c3172e43a101df90f6f9f3024e9))
+- **build:** artifact tests report but never block ([844e31b6bb](https://github.com/smithersai/smithers/commit/844e31b6bb34ef7e7da3523ae2b6bc22888cfb55))
+
+### 🐛 Bug fixes
+
+- **cli:** retain drift adoption without a restorable snapshot ([bb8b5314c1](https://github.com/smithersai/smithers/commit/bb8b5314c13082ba513f34e3ee6c60e7c6b178b2))
+- **billing:** bill only allowlisted orgs to the sandbox service payer (plue#839) ([b2c7502a2e](https://github.com/smithersai/smithers/commit/b2c7502a2e163f6911440f3f0111940baa2bf66b))
+- **cli:** capture fresh sources beside parked flow snapshots ([65609c5964](https://github.com/smithersai/smithers/commit/65609c59641c61b89988adb30ca152ae257416fe))
+- **harness:** recover one unattended inspection park ([56a3eedc9b](https://github.com/smithersai/smithers/commit/56a3eedc9b488abeedf31e8c3b7cf1cea8379cb4))
+- **engine-store:** memoize tolerant plan provenance lookup ([acfb2fa05a](https://github.com/smithersai/smithers/commit/acfb2fa05a0274c00f36d7ed381c091550a21486))
+- **flows:** resume coding after workspace edits ([907d128e13](https://github.com/smithersai/smithers/commit/907d128e13fc0432043d044feef88fe4fe25f718))
+- **platform-node:** recheck drained groups after slow cleanup snapshots ([ce622ad4c3](https://github.com/smithersai/smithers/commit/ce622ad4c3d234490ee079e1c7a342c0739f793d))
+- **billing:** bill free organizations' machines to the machine service user (plue#839) ([605751cdc2](https://github.com/smithersai/smithers/commit/605751cdc2e8026b69d4e9fedd46072bc1aefdfd))
+- **cli:** explain existing evaluation baselines ([5145188820](https://github.com/smithersai/smithers/commit/5145188820eed8073a9c5d707995b5daeacaff64))
+- **catalog:** regenerate the catalog outputs for convert and guest.chat ([aba09c5414](https://github.com/smithersai/smithers/commit/aba09c54145069470701bb2a44b889266a0cee9e))
+- **flows:** lead "Cannot load flow" with the underlying cause (#4253) ([e0fb0fcd87](https://github.com/smithersai/smithers/commit/e0fb0fcd87c6ac26ca319827db03e86dc716cdb4))
+- **compose:** authenticate live and terminal browser fixtures ([5b12b69545](https://github.com/smithersai/smithers/commit/5b12b69545a80f2ad1d8606919648d39b683a427))
+- **release:** promote npm tags only after every package is served ([0431fcc863](https://github.com/smithersai/smithers/commit/0431fcc8633a3d0cc79ba1a391fdd0755d673b45))
+- **backend:** synchronize resident bus pool tests after startup catch-up ([2907462f1a](https://github.com/smithersai/smithers/commit/2907462f1ace264833e16f6912b36ab3f9f633f6))
+- **cli:** name the Node version instead of "Something went wrong" on Node < 26.4 ([617c8c8f0d](https://github.com/smithersai/smithers/commit/617c8c8f0d2258067f96d1573571fb032368f78c))
+- **build-cli:** retain failed command diagnostics in quiet output ([35ccedad49](https://github.com/smithersai/smithers/commit/35ccedad49250a778e5b6f31d712e2343bdba5a6))
+- **backend:** expect protected paths in lexical order after flow relocation ([322bc73214](https://github.com/smithersai/smithers/commit/322bc73214e0c84dde3c71a54e9e93e29ee51e27))
+- **backend:** use the shared TODO credential lock order for creation ([4266bdefe4](https://github.com/smithersai/smithers/commit/4266bdefe4140e29d918f0f8f306ed66e62ebe2b))
+- **backend:** GitHub App setup reads the CSRF cookie it issued on HTTP installs ([ed3d325c3e](https://github.com/smithersai/smithers/commit/ed3d325c3e75aed7fed94a13fd06303c2afc1afb))
+- **repo-targets:** include testing prerequisites in browser plan contract ([82590c14b0](https://github.com/smithersai/smithers/commit/82590c14b005558dd110bedb80b0ab12e98ad89d))
+- **control:** wait for a non-null deferred token ([a146f6116d](https://github.com/smithersai/smithers/commit/a146f6116d998178daaf682a988e8080da6a989c))
+- **server:** the __Host- cookie browser proof runs on Linux CI runners ([4c8209da7e](https://github.com/smithersai/smithers/commit/4c8209da7e1287349ac2a0acc35623acf56eed2f))
+- **backend:** config and chat tests read the guest config and host-only session cookies ([aab1aa1b3d](https://github.com/smithersai/smithers/commit/aab1aa1b3d5fbd5b0e6c191556c226e5c3058331))
+- **backend:** leave a workspace claim its connections at the shipped core pool ([71d465ebc9](https://github.com/smithersai/smithers/commit/71d465ebc9ca4e83aa7f16dd57a75b75a0ed2f06))
+- **backend:** never wait out another replica's session advisory lock (plue#839) ([28b9981d4b](https://github.com/smithersai/smithers/commit/28b9981d4b13626314af298cacdd6600b7adda9e))
+- **deploy:** refuse a frontend that needs a newer backend than production runs (#4265) ([648f29fbcd](https://github.com/smithersai/smithers/commit/648f29fbcd3d4ce1964ce42f9535d0f9fe8b7633))
+
+### 📝 Documentation
+
+- **cli:** show how to resume interrupted coding runs ([863aa813af](https://github.com/smithersai/smithers/commit/863aa813affa9d96b4a17c2add06d1da59983108))
+
+### 🧹 Chores
+
+- checkpoint shared working tree ([5bcdbb1232](https://github.com/smithersai/smithers/commit/5bcdbb1232274574a88885edfdd960aafd978602))
+
+<!-- /commits:1.0.0-rc.15 -->
+
 ## 1.0.0-rc.14 (2026-10-18)
 
 <!-- commits:1.0.0-rc.14 -->
