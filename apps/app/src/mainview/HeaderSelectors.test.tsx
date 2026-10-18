@@ -245,3 +245,41 @@ describe("the header on other hosts", () => {
     expect(host.querySelector("[data-header-select]")).toBeNull()
   })
 })
+
+import { CodeHome } from "./repository/CodeHome"
+
+describe("repository Code home availability", () => {
+  test("files wait for an authoritative default branch before becoming links", () => {
+    const tree = { id:"copy:", copyId:"copy", path:"", state:"loaded" as const, entries:[{name:"README.md",kind:"file" as const}], expanded:true, loadedAt:1 }
+    const unknown = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" tree={tree}/>)
+    expect(unknown.textContent).toContain("README.md")
+    expect(unknown.querySelector('a[href*="/HEAD/"]')).toBeNull()
+    expect(unknown.querySelector('a[href*="/blob/"]')).toBeNull()
+    const known = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="trunk" tree={tree}/>)
+    expect(known.querySelector('a[href="/maya/tinyhttp/blob/trunk/README.md"]')).not.toBeNull()
+  })
+  test("a missing tree copy is an unavailable state rather than an endless spinner", () => {
+    const host = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" treeAvailable={false}/>)
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe("Couldn't load repository files.")
+    expect(host.querySelector('[role="status"]')).toBeNull()
+  })
+})
+
+test("declared home blocks stay above Files in spec order and README stays below", () => {
+  const host = mount(<CodeHome repo="maya/tinyhttp" onRunCommand={() => false} treeAvailable={false} home={{ kind:"blocks", blocks:[
+    {type:"links",links:[{label:"Documentation",url:"https://example.com/docs"}]},
+    {type:"prompt",placeholder:"Ask a question"}, {type:"text",text:"Repository introduction"},
+    {type:"markdown",path:"README.md",markdown:"# Project README"}
+  ] }}/>)
+  const home = host.querySelector('[data-testid="repository-home"]')!
+  expect(home).not.toBeNull()
+  const copy = home.textContent!
+  expect(copy.indexOf("Repository introduction")).toBeLessThan(copy.indexOf("Ask a question"))
+  expect(copy.indexOf("Ask a question")).toBeLessThan(copy.indexOf("Documentation"))
+  expect(copy).not.toContain("Project README")
+  const files = host.querySelector('[aria-label="Files"]')!
+  const readme = host.querySelector('[aria-label="README"]')!
+  expect(home.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  expect(files.compareDocumentPosition(readme) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  expect(readme.querySelector("h1")?.textContent).toBe("Project README")
+})

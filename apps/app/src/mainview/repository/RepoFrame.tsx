@@ -1,6 +1,6 @@
 import { WORDMARK } from "../Wordmark"
 import { createContext, useRef, useState, type ReactNode } from "react"
-import { BookOpen, Search, X } from "lucide-react"
+import { BookOpen, X } from "lucide-react"
 import "./ui.css"
 import "./frame.css"
 import "./repository.css"
@@ -17,7 +17,6 @@ export function RepoFrame({ repo, login, publicRepo, ask, onAsk, onSignIn, child
   ask: ReactNode; onAsk: () => void; onSignIn: () => void; children: ReactNode
 }) {
   const [open, setOpen] = useState<boolean | undefined>(undefined)
-  const [searchOpen, setSearchOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const base = `/${repo}`
   const [owner, name] = repo.split("/")
@@ -25,14 +24,14 @@ export function RepoFrame({ repo, login, publicRepo, ask, onAsk, onSignIn, child
   const openAsk = () => { if (!login) { onSignIn(); return }; setOpen(true); onAsk() }
   const close = () => { setOpen(false); trigger.current?.focus() }
   return <div className="repo-frame" data-ask-open={!login ? "false" : open === undefined ? "auto" : String(open)} onKeyDown={event => {
+    if (event.defaultPrevented) return
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault(); event.stopPropagation(); openAsk()
     }
     if (event.key === "Escape") {
       const details = (event.target as HTMLElement).closest("details[open]")
       if (details) { details.removeAttribute("open"); details.querySelector<HTMLElement>("summary")?.focus(); return }
-      if (searchOpen) { setSearchOpen(false); document.querySelector<HTMLButtonElement>(".repo-frame-search-toggle")?.focus(); return }
-      close()
+      if (event.target === document.getElementById("repo-ask") || (event.target as HTMLElement).closest(".repo-frame-ask-heading")) close()
     }
   }}>
     <a className="repo-frame-skip" href="#repo-content">Skip to content</a>
@@ -40,10 +39,6 @@ export function RepoFrame({ repo, login, publicRepo, ask, onAsk, onSignIn, child
       <a className="repo-frame-mark" href="/" aria-label="Smithers home"><pre aria-label="Smithers">{WORDMARK.join("\n")}</pre></a>
       <div className="repo-frame-crumbs"><a href="/">{owner}</a><span>/</span><a href={base}>{name}</a></div>
       <div className="repo-frame-global-spacer" />
-      <form className="repo-frame-search" role="search" action={`${base}/search`} data-expanded={searchOpen}>
-        <Search size={16} aria-hidden="true" /><input name="q" aria-label="Search this repository" placeholder="Search this repository…" /><kbd>/</kbd>
-      </form>
-      <button className="repo-ui-icon-btn repo-frame-search-toggle" aria-label="Search repository" aria-expanded={searchOpen} onClick={() => { setSearchOpen(!searchOpen); if (!searchOpen) requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".repo-frame-search input")?.focus()) }}><Search size={19}/></button>
       {login ? <><details className="repo-frame-avatar-menu"><summary className="repo-frame-avatar-button repo-ui-btn" aria-label={`${login}'s account menu`}>{login.slice(0, 1).toUpperCase()}</summary><div className="repo-ui-menu repo-frame-account"><span>{login}</span><a href="/">Your repositories</a></div></details></> : <button className="repo-ui-btn repo-ui-btn-quiet" onClick={onSignIn}>Sign in</button>}
     </header>
     <div className="repo-frame-workspace"><div className="repo-frame-page">

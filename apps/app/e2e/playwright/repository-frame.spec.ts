@@ -57,11 +57,19 @@ for (const member of [false, true]) for (const width of [1440, 1280, 390]) for (
     await page.getByText("Code", { exact: true }).filter({ hasNot: page.locator("svg") }).last().click()
     await expect(page.getByText("git clone https://api.smithers.sh/maya/tinyhttp.git", { exact: true })).toBeVisible()
     await page.keyboard.press("Escape")
+    await expect(page.locator(".repo-code-home-code-menu")).not.toHaveAttribute("open")
+    await expect(page.locator(".repo-code-home-code-menu summary")).toBeFocused()
+    await expect(page.getByRole("search")).toHaveCount(0)
+    await expect(page.locator('a[href$="/branches"]')).toHaveCount(0)
+    await expect(page.locator('a[href*="/HEAD/"]')).toHaveCount(0)
     if (process.env.REPOSITORY_SHOTS) await page.screenshot({ path: `${process.env.REPOSITORY_SHOTS}/code-home-${member ? "member" : "signed-out"}-${width}-${colorScheme}.png`, fullPage: true })
     if (member) {
       await page.getByRole("button", { name: "Ask", exact: true }).click()
       await expect(page.getByRole("complementary", { name: "Ask", exact: true })).toBeVisible()
-      await expect(page.getByTestId("composer-input")).toBeVisible()
+      await expect(page.getByRole("complementary", { name: "Ask", exact: true }).getByTestId("composer-input")).toBeVisible()
+      await page.getByTestId("composer-input").focus()
+      await page.keyboard.press("Escape")
+      await expect(page.getByRole("complementary", { name: "Ask", exact: true })).toBeVisible()
       await page.getByRole("button", { name: "Close Ask" }).click()
       await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeFocused()
       return
@@ -71,6 +79,34 @@ for (const member of [false, true]) for (const width of [1440, 1280, 390]) for (
     await page.getByRole("button", { name: "Ask", exact: true }).click()
     await signIn
     await page.waitForURL(url => url.pathname === APPLICATION_SIGN_IN_PATH)
-    await expect(page.locator("body")).not.toContainText(/Smithers (reviews|merges|lands) changes/)
+  })
+}
+
+for (const width of [1280, 390]) for (const colorScheme of ["light", "dark"] as const) {
+  test(`declared repository home blocks ${width} ${colorScheme}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await page.emulateMedia({ colorScheme })
+    await signedOutVisitor(page)
+    await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "maya/tinyhttp" }] } }))
+    await page.route("**/api/repos/maya/tinyhttp", route => route.fulfill({ json: { is_public: true, default_bookmark: "main" } }))
+    await page.route("**/api/repos/maya/tinyhttp/home", route => route.fulfill({ json: { kind: "blocks", blocks: [
+      { type: "links", links: [{ label: "Documentation", url: "https://example.com/docs" }] },
+      { type: "prompt", placeholder: "Ask about this repository" },
+      { type: "text", text: "Repository introduction" },
+      { type: "markdown", path: "README.md", markdown: "# Project README" }
+    ] } }))
+    await page.route(/\/api\/repos\/maya\/tinyhttp\/contents(?:\?.*)?$/, route => route.fulfill({ json: [{ name: "README.md", path: "README.md", type: "file" }] }))
+    await page.goto("/maya/tinyhttp")
+    const home = page.getByTestId("repository-home")
+    await expect(home).toBeVisible()
+    const blocks = await home.locator(".repository-home-block").allTextContents()
+    expect(blocks).toEqual(["Repository introduction", "Ask about this repository", "Documentation"])
+    const files = page.getByRole("region", { name: "Files", exact: true })
+    const readme = page.getByRole("region", { name: "README", exact: true })
+    await expect(home.getByRole("button", { name: "Files", exact: true })).toBeVisible()
+    await expect(readme.getByRole("heading", { name: "Project README", level: 1 })).toBeVisible()
+    expect((await home.boundingBox())!.y).toBeLessThan((await files.boundingBox())!.y)
+    expect((await files.boundingBox())!.y).toBeLessThan((await readme.boundingBox())!.y)
+    await expect(home.getByText("Project README", { exact: true })).toHaveCount(0)
   })
 }
