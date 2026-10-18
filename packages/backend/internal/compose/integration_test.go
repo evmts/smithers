@@ -2,6 +2,7 @@ package compose
 
 import (
 	"context"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -521,13 +522,22 @@ func TestServerRouter_AgentSessionCRUDRoutesRegistered(t *testing.T) {
 		{http.MethodPost, "/api/repos/alice/demo/agent/sessions/test-id/messages"},
 	}
 
+	served := map[string]servedRoute{}
+	walkServedRoutes(t, router.(chi.Routes), served)
 	for _, tc := range routesToCheck {
 		req := httptest.NewRequest(tc.method, tc.path, nil)
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 
-		assert.NotEqual(t, http.StatusNotFound, rec.Code,
-			"%s %s should be registered (got 404)", tc.method, tc.path)
+		pattern := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(tc.path, "alice", "{owner}"), "demo", "{repo}"), "test-id", "{id}")
+		pattern = strings.ReplaceAll(pattern, "change-1", "{change_id}")
+		pattern = strings.ReplaceAll(pattern, "/12/", "/{finding_id}/")
+		if tc.method == http.MethodGet && strings.Contains(tc.path, "/agent/sessions") {
+			require.Contains(t, served, strings.ToLower(tc.method)+" "+pattern)
+			assert.Equal(t, http.StatusNotFound, rec.Code)
+		} else {
+			assert.NotEqual(t, http.StatusNotFound, rec.Code, "%s %s should be registered", tc.method, tc.path)
+		}
 	}
 }
 
@@ -586,8 +596,10 @@ func TestServerRouter_AgentSessionStreamRouteRegistered(t *testing.T) {
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
-	assert.NotEqual(t, http.StatusNotFound, rec.Code,
-		"agent session SSE stream route must be registered (got 404)")
+	served := map[string]servedRoute{}
+	walkServedRoutes(t, router.(chi.Routes), served)
+	require.Contains(t, served, "get /api/repos/{owner}/{repo}/agent/sessions/{id}/stream")
+	assert.Equal(t, http.StatusNotFound, rec.Code, "anonymous session streams hide existence")
 }
 
 func TestServerRouter_GitHubImportStatusSSEOutsideAPITimeout(t *testing.T) {

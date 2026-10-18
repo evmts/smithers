@@ -13,6 +13,10 @@ Self-hosted HTTP uses `smithers_local_session` and `smithers_local_csrf`, select
 only from the install's validated effective origin. HTTPS installs use the
 host-isolated names.
 
+The shared backend also protects coding-session pull-request POSTs with these
+CSRF cookies and the exact effective origin. The install-member route table
+explicitly denies this hosted-only mutation.
+
 ## Verification
 
 `TestHostCookieWorkerdBrowser` drives Chromium through the actual edge in

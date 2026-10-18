@@ -66,7 +66,7 @@ func (h *AgentSessionStreamHandler) AgentSessionStream(w http.ResponseWriter, r 
 	// Require authentication.
 	user, err := requireRouteUser(r)
 	if err != nil {
-		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
+		pkgerrors.WriteError(w, pkgerrors.NotFound("agent session not found"))
 		return
 	}
 
