@@ -471,6 +471,7 @@ export const host = async (bind: Serve.Bind, options: ConnectionOptions, runtime
   const operatorToken = bind.credential === undefined || bind.credential === ""
     ? randomBytes(32).toString("hex")
     : undefined
+  // Publish only after the bind policy above has accepted this host.
   if (bind.operatorTokenFile !== undefined) {
     await writeOperatorTokenFile(bind.operatorTokenFile, operatorToken ?? bind.credential!)
   }
