@@ -14,7 +14,6 @@
 
 import * as Data from "effect/Data"
 import { ERROR_REFERENCE_URL, isSmithersErrorCode, type SmithersErrorCode } from "./ErrorCode.vibe"
-import { hasSmithersErrorShapeImpl } from "./shape.ts"
 
 /**
  * Construction options for a {@link SmithersError}.
@@ -206,4 +205,15 @@ export const isSmithersError = (value: unknown): value is SmithersError => value
  * @category refinements
  * @since 1.0.0
  */
-export const hasSmithersErrorShape: (value: unknown) => value is SmithersError = hasSmithersErrorShapeImpl
+export const hasSmithersErrorShape = (value: unknown): value is SmithersError => {
+  try {
+    if (!(value instanceof Error)) return false
+    const details = (value as SmithersError).details
+    return isSmithersErrorCode((value as SmithersError).code) &&
+      typeof (value as SmithersError).summary === "string" &&
+      typeof (value as SmithersError).docsUrl === "string" &&
+      (details === undefined || (typeof details === "object" && details !== null && !Array.isArray(details)))
+  } catch {
+    return false
+  }
+}
