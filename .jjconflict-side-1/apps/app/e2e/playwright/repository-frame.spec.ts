@@ -13,6 +13,10 @@ for (const member of [false, true]) for (const width of [1440, 1280, 390]) for (
     await page.route("**/api/repos/maya/tinyhttp", route => route.fulfill({ json: { is_public: true, default_bookmark: "main" } }))
     await page.route("**/api/repos/maya/tinyhttp/home", route => route.fulfill({ json: { kind: "readme", markdown: "# tinyhttp\n\nA small HTTP framework.\n\n## Installation\n\n```sh\nnpm install tinyhttp\n```" } }))
     await page.route(/\/api\/repos\/maya\/tinyhttp\/contents(?:\?.*)?$/, route => route.fulfill({ json: [{ name: "src", path: "src", type: "dir" }, { name: "README.md", path: "README.md", type: "file", size: 50 }] }))
+    await page.route("**/api/repos/maya/tinyhttp/bookmarks**", route => route.fulfill({ json: { items: [
+      { name: "main", target_change_id: "main-change", target_commit_id: "a".repeat(40) },
+      { name: "docs/ui", target_change_id: "docs-change", target_commit_id: "b".repeat(40) }
+    ], next_cursor: "" } }))
     if (member) {
       await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute())
       await page.route("**/api/user/repos", route => route.fulfill({ json: [{ owner: "maya", name: "tinyhttp", full_name: "maya/tinyhttp", default_bookmark: "main" }] }))
@@ -21,6 +25,7 @@ for (const member of [false, true]) for (const width of [1440, 1280, 390]) for (
     await page.goto("/maya/tinyhttp")
     await expect(page.locator(".session-shell > .session-navigation")).toBeHidden()
     expect((await page.locator(".repo-frame").boundingBox())?.width).toBe(width)
+    await expect(page.getByRole("button", { name: "Ask", exact: true })).toHaveAttribute("aria-expanded", String(member && width >= 1440))
     const header = await page.locator(".repo-frame-global").boundingBox()
     expect(header?.height).toBe(width === 390 ? 50 : 56)
     const content = await page.locator(".repo-frame-content").boundingBox()
@@ -54,6 +59,17 @@ for (const member of [false, true]) for (const width of [1440, 1280, 390]) for (
       for (let i = 0; i < visible.length; i++) if (await visible[i]!.evaluate(element => element === document.activeElement)) reached.add(i)
     }
     expect(reached.size).toBe(visible.length)
+    const branchMenu = page.locator(".repo-code-home-toolbar details").first()
+    await branchMenu.locator("summary").click()
+    await expect(branchMenu.getByRole("link", { name: "docs/ui", exact: true })).toHaveAttribute("href", "/maya/tinyhttp/tree/docs%2Fui")
+    await expect(page.getByText("2 branches", { exact: true })).toBeVisible()
+    const filter = branchMenu.getByRole("textbox", { name: "Filter branches or enter full SHA" })
+    await filter.fill("abcdef1")
+    await expect(branchMenu.getByRole("link")).toHaveCount(0)
+    await filter.fill("c".repeat(40))
+    await expect(branchMenu.getByRole("link", { name: "c".repeat(40), exact: true })).toHaveAttribute("href", `/maya/tinyhttp/tree/${"c".repeat(40)}`)
+    await page.keyboard.press("Escape")
+    await expect(branchMenu.locator("summary")).toBeFocused()
     await page.getByText("Code", { exact: true }).filter({ hasNot: page.locator("svg") }).last().click()
     await expect(page.getByText("git clone https://api.smithers.sh/maya/tinyhttp.git", { exact: true })).toBeVisible()
     await page.keyboard.press("Escape")
