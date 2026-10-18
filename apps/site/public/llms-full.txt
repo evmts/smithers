@@ -3738,8 +3738,8 @@ directly. Both packages are on npm under the `next` tag.
 ```json
 {
   "devDependencies": {
-    "@smthrs/build-cli": "1.0.0-rc.12",
-    "@smthrs/targets": "1.0.0-rc.12",
+    "@smthrs/build-cli": "1.0.0-rc.14",
+    "@smthrs/targets": "1.0.0-rc.14",
     "effect": "4.0.5"
   }
 }
@@ -24971,7 +24971,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `delegationV2Schemas`                    | none                                                                                         | none                                                                            | unsafe    |
 | `denyNode`                               | `Control.deny`                                                                               | `@smthrs/control/Control`                                                       | guided    |
 | `devPreviewKindSchema`                   | none                                                                                         | none                                                                            | unsafe    |
-| `docs`                                   | `Text pointing at .smithers/flows/, smthrs flow start, and report.md`                         | none                                                                            | guided    |
+| `docs`                                   | `Text pointing at .smithers/flows/, smthrs flow start, and report.md`                        | none                                                                            | guided    |
 | `dryRun`                                 | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `e2eHarness`                             | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `edit`                                   | `The std flows bound through StandardFlows`                                                  | `@smthrs/std, @smthrs/agent/StandardFlows`                                      | automatic |
@@ -25022,7 +25022,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `makeHarness`                            | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `makeReplayBundle`                       | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `markdownComponents`                     | none                                                                                         | none                                                                            | automatic |
-| `mdx-prompt`                             | `prompt: (payload) => string, or .smithers/flows/<name>/flow.mdx`                             | `@smthrs/agent/AgentAction, @smthrs/registry/MarkdownFlow`                      | automatic |
+| `mdx-prompt`                             | `prompt: (payload) => string, or .smithers/flows/<name>/flow.mdx`                            | `@smthrs/agent/AgentAction, @smthrs/registry/MarkdownFlow`                      | automatic |
 | `mdxPlugin`                              | none                                                                                         | none                                                                            | automatic |
 | `memoryFactReads`                        | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
 | `memoryFactWrites`                       | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
