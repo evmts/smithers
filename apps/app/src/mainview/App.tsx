@@ -770,7 +770,7 @@ function AppContent() {
     {codeRoute ? <RepositoryCodeView repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
       admitted={bootEntry?.phase === "ready"} requestId={bootEntry?.requestId} error={bootUnavailable ? bootEntry?.error : undefined} onAsk={text => controller.changeDraft(text)} /> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
       tree={repoTreeRows.find(row => row.copyId === homeTreeCopy && row.path === "")}
-      home={repositoryHome} summary={repository?.summary}/>}
+      home={repositoryHome}/>}
   </RepoFrame>
 }
 
