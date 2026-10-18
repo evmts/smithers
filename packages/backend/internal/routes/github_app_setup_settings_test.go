@@ -52,7 +52,7 @@ func TestInstallSettingsDecodeExistingFields(t *testing.T) {
 			r.Header.Set("Origin", "http://localhost:4000")
 			r.Header.Set("Content-Type", "application/json")
 			r.Header.Set("X-CSRF-Token", "csrf")
-			r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+			addSetupCSRFCookie(r, "csrf")
 			r = r.WithContext(middleware.ContextWithAuthInfo(r.Context(), &middleware.AuthInfo{User: &owner, SessionHash: "owner-session"}))
 			w := httptest.NewRecorder()
 			h.SetSettings(w, r)
