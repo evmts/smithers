@@ -229,3 +229,12 @@
 .repo-history-commit-row:last-child { border-bottom:0; }
 .repo-history-toolbar h1 { font-size:var(--fs-5); font-weight:500; }
 @media(max-width:600px) { .repo-history-page { padding:var(--sp-4); } .repo-history-commit-row { align-items:flex-start; flex-direction:column; gap:var(--sp-3); } }
+.repo-history-commit-header { display:flex; gap:var(--sp-5); justify-content:space-between; align-items:flex-start; }
+.repo-history-commit-header h1 { margin-top:var(--sp-2); font-size:var(--fs-6); font-weight:500; overflow-wrap:anywhere; }
+.repo-history-message { white-space:pre-wrap; overflow-wrap:anywhere; }
+.repo-history-identity { display:flex; flex-wrap:wrap; gap:var(--sp-3); align-items:center; overflow-wrap:anywhere; }
+.repo-history-identity code { min-width:0; overflow-wrap:anywhere; }
+.repo-history-file-header { display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-3); padding:var(--sp-3); background:var(--surface-2); overflow-wrap:anywhere; }
+.repo-history-additions { color:var(--success); }
+.repo-history-deletions { color:var(--danger); }
+@media(max-width:600px) { .repo-history-commit-header { flex-wrap:wrap; } }

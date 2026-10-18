@@ -1,3 +1,4 @@
+import { RepositoryCommit } from "./repository/RepositoryCommit"
 import { RepositoryCommits } from "./repository/RepositoryCommits"
 import { subscribe as subscribeRepositoryRoute, getSnapshot as repositoryRouteSnapshot } from "./RepositoryRouter"
 import { RepoFrame } from "./repository/RepoFrame"
@@ -258,6 +259,7 @@ function AppContent() {
   const bootEntry = session.repositoryEntry?.repo.toLowerCase() === bootRepository?.toLowerCase()
     ? session.repositoryEntry : undefined
   const codeTarget = useSyncExternalStore(subscribeRepositoryRoute, repositoryRouteSnapshot, () => null)
+  const commitRoute = codeTarget?.subject?.kind === "commit"
   const commitsRoute = codeTarget?.subject?.kind === "commits"
   const codeRoute = codeTarget?.subject?.kind === "tree" || codeTarget?.subject?.kind === "blob"
   const loadHistoryRefs = useMemo(() => async () => {
@@ -766,11 +768,11 @@ function AppContent() {
   if (bootRepository === null || (bootEntry?.phase !== "ready" && !(bootUnavailable && codeRoute))) return chat()
   const repository = repositoryRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())
   const rootRoute = window.location.pathname.replace(/\/$/, "") === `/${bootRepository}`
-  if (!rootRoute && !codeRoute && !commitsRoute) return chat()
+  if (!rootRoute && !codeRoute && !commitsRoute && !commitRoute) return chat()
   return <RepoFrame repo={bootRepository} publicRepo={repository?.catalog === true}
     login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
     onAsk={() => controller.runCommand("chat.open")} onSignIn={() => controller.runCommand("sign-in")} ask={(visible: boolean) => chat(visible)}>
-    {commitsRoute ? <RepositoryCommits defaultRef={codeDefaultRef} loadRefs={loadHistoryRefs} repo={bootRepository} location={codeTarget?.subject?.kind === "commits" ? codeTarget.subject.location : undefined} refs={codeRefs} scope={`${identity?.state}/${identity?.state === "signed-in" ? identity.login : ""}`}/> : codeRoute ? <RepositoryCodeView repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
+    {commitRoute && codeTarget?.subject?.kind === "commit" ? <RepositoryCommit repo={bootRepository} sha={codeTarget.subject.sha} scope={`${identity?.state}/${identity?.state === "signed-in" ? identity.login : ""}`}/> : commitsRoute ? <RepositoryCommits defaultRef={codeDefaultRef} loadRefs={loadHistoryRefs} repo={bootRepository} location={codeTarget?.subject?.kind === "commits" ? codeTarget.subject.location : undefined} refs={codeRefs} scope={`${identity?.state}/${identity?.state === "signed-in" ? identity.login : ""}`}/> : codeRoute ? <RepositoryCodeView repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
       admitted={bootEntry?.phase === "ready"} requestId={bootEntry?.requestId} error={bootUnavailable ? bootEntry?.error : undefined} onAsk={text => controller.changeDraft(text)} /> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
       branches={codeBranchRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())}
       onBranchesOpen={() => { void controller.repositoryBranches.load(bootRepository) }}
