@@ -60,6 +60,7 @@ func TestPublicMetadataRepositoryAccessPostgres(t *testing.T) {
 		view, err := svc.GetRepoView(ctx, viewer, "owner", "repo")
 		require.NoError(t, err)
 		require.Equal(t, &GitHubSource{Owner: "source", Repo: "upstream"}, view.GitHubSource)
+		require.Equal(t, IssueTrackerGitHub, view.IssueTracker)
 	}
 
 	for _, resource := range []string{"issues", "issues/7", "pulls", "pulls/7"} {
@@ -93,5 +94,13 @@ func TestPublicMetadataRepositoryAccessPostgres(t *testing.T) {
 	view, err := svc.GetRepoView(ctx, &db.User{ID: 1001}, "owner", "repo")
 	require.NoError(t, err)
 	require.NotNil(t, view.GitHubSource, "private writers retain their source mapping")
+	require.Equal(t, IssueTrackerGitHub, view.IssueTracker)
+	_, err = svc.GetRepoView(ctx, nil, "owner", "repo")
+	require.Equal(t, 403, apiStatus(t, err), "private repositories retain their signed-out refusal")
+	_, err = pool.Exec(ctx, `DELETE FROM import_jobs WHERE repository_id=$1`, id)
+	require.NoError(t, err)
+	view, err = svc.GetRepoView(ctx, &db.User{ID: 1001}, "owner", "repo")
+	require.NoError(t, err)
+	require.Equal(t, IssueTrackerSmithers, view.IssueTracker, "native repositories keep their own tracker")
 
 }
