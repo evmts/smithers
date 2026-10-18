@@ -1,0 +1,124 @@
+package chat
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/smithersai/smithers/packages/backend/ports"
+)
+
+// Defaults for a process that serves one owner. Hosted composition passes its
+// own sizes from configuration.
+const (
+	DefaultQueueSize   = 256
+	DefaultConcurrency = 4
+	// DefaultLease is short because the dispatcher renews it every quarter
+	// lease while the host runs. It bounds how long a crashed process holds a
+	// turn before recovery reclaims it.
+	DefaultLease = 2 * time.Minute
+	// DefaultHostSilence bounds how long a dispatched host may report no new
+	// stage and commit no batch. It exceeds the slowest healthy gap, a provider
+	// that answers nothing while it reads a long prompt, and bounds a wedged
+	// host, whose turn would otherwise renew its lease for hours (#3812).
+	DefaultHostSilence = 5 * time.Minute
+)
+
+type RuntimeOptions struct {
+	// PrivateConversations enables account-owned hosted chat. Repository
+	// conversations retain their install membership and branch checks.
+	PrivateConversations bool
+	ContextRepository    ContextRepository
+	QueueSize            int
+	Concurrency          int
+	Lease                time.Duration
+	Logger               *slog.Logger
+	// Sources serves turns' reads of a mirrored main as the credential that
+	// admitted each turn; nil offers none.
+	Sources SourceReader
+	// API issues and revokes generation-bound credentials for public API calls;
+	// nil offers no API commands.
+	API CommandAPI
+	// InstallOrigin is read for each turn so Settings address changes apply
+	// without restarting the dispatcher or exposing a callback listener.
+	InstallOrigin func() string
+	// HostSilence overrides DefaultHostSilence, the no-progress bound on one
+	// dispatched host.
+	HostSilence time.Duration
+}
+
+type Runtime struct {
+	Handler     *Handler
+	dispatcher  *Dispatcher
+	concurrency int
+}
+
+// NewRuntime composes the common PostgreSQL admission boundary with a
+// deployment-provided location for the same TypeScript model host. Root only
+// mounts the returned routes and attaches Run to its existing lifecycle.
+func NewRuntime(pool *pgxpool.Pool, host ports.ChatHost, producerBaseURL string, options RuntimeOptions) (*Runtime, error) {
+	if host == nil {
+		return nil, errors.New("chat runtime requires a model host")
+	}
+	callback, err := url.Parse(strings.TrimSpace(producerBaseURL))
+	if err != nil || (callback.Scheme != "http" && callback.Scheme != "https") || callback.Host == "" || callback.User != nil || callback.RawQuery != "" || callback.Fragment != "" {
+		return nil, errors.New("chat producer callback URL is invalid")
+	}
+	if options.QueueSize == 0 {
+		options.QueueSize = DefaultQueueSize
+	}
+	if options.Concurrency == 0 {
+		options.Concurrency = DefaultConcurrency
+	}
+	if options.Lease == 0 {
+		options.Lease = DefaultLease
+	}
+	if options.HostSilence == 0 {
+		options.HostSilence = DefaultHostSilence
+	}
+	if options.QueueSize < 1 || options.Concurrency < 1 || options.Lease <= 0 || options.HostSilence <= 0 {
+		return nil, errors.New("chat runtime options are invalid")
+	}
+	if options.Logger == nil {
+		options.Logger = slog.Default()
+	}
+	store, err := NewStore(pool)
+	if err != nil {
+		return nil, err
+	}
+	credentials := newTurnCredentials()
+	dispatcher, err := NewDispatcher(store, PortHost{Host: host, ProducerBaseURL: callback.String(), InstallOrigin: options.InstallOrigin, Sources: options.Sources, API: options.API, credentials: credentials, logger: options.Logger}, options.QueueSize, options.Lease)
+	if err != nil {
+		return nil, err
+	}
+	dispatcher.logger = options.Logger
+	dispatcher.silence = options.HostSilence
+	store.latencies = dispatcher.metrics.latencies
+	handler := &Handler{PrivateConversations: options.PrivateConversations, ContextRepository: options.ContextRepository, Store: store, Dispatcher: dispatcher, Sources: options.Sources, credentials: credentials, logger: options.Logger}
+	return &Runtime{Handler: handler, dispatcher: dispatcher, concurrency: options.Concurrency}, nil
+}
+
+// Run dispatches turns until ctx ends.
+func (r *Runtime) Run(ctx context.Context) error {
+	if r == nil || r.dispatcher == nil {
+		return errors.New("chat runtime is not configured")
+	}
+	return r.dispatcher.Run(ctx, r.concurrency)
+}
+
+// Collectors returns the runtime's Prometheus metrics for the process registry.
+func (r *Runtime) Collectors() []prometheus.Collector { return r.dispatcher.metrics.collectors() }
+
+func (r *Runtime) MountPublic(router chi.Router)        { r.Handler.MountPublic(router) }
+func (r *Runtime) MountAuthenticated(router chi.Router) { r.Handler.MountAuthenticated(router) }
+func (r *Runtime) MountErasure(router chi.Router)       { r.Handler.MountErasure(router) }
+func (r *Runtime) MountProducerCallbacks(router chi.Router) {
+	r.Handler.MountProducerCallbacks(router)
+}

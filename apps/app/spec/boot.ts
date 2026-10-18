@@ -1,5 +1,6 @@
 import { defaultWorld } from "./worlds/default"
 import { readRoutes } from "./routes/reads"
+import type { FixtureExchange } from "./route"
 import { matchRoute } from "./route"
 import { RepositoryReadErrorSchema } from "@smthrs/rpc/RepositoryRead"
 import { configureApplicationFetch } from "../src/mainview/runtime/ApplicationTransport"
@@ -10,6 +11,7 @@ export const SPEC_SENTINEL = "SMITHERS_SPEC_TRANSPORT_ONLY_4267"
 export const spec = {
   sentinel: SPEC_SENTINEL,
   requests: [] as string[],
+  exchanges: [] as FixtureExchange[],
   failures: [] as string[],
   violations: [] as string[],
   sockets: [] as string[],
@@ -53,13 +55,23 @@ const fixtureFetch: import("@smthrs/rpc/NativeAgent").FetchLike = async (input, 
       const params = matchRoute(route.path, url.pathname)
       if (params === undefined) continue
       if (spec.world.variants.net === "slow" && !route.control) await new Promise(resolve => setTimeout(resolve, 750))
-      if (spec.world.variants.net === "error" && !route.control) return Response.json(RepositoryReadErrorSchema.parse({ message: `Fixture read failed: ${method} ${url.pathname}` }), { status: 503 })
+      if (spec.world.variants.net === "error" && !route.control) {
+        const body = RepositoryReadErrorSchema.parse({ message: `Fixture read failed: ${method} ${url.pathname}` })
+        spec.exchanges.push({ method, url: url.href, status: 503, body })
+        return Response.json(body, { status: 503 })
+      }
+      let exchange: { method: string; url: string; status: number; body: unknown } | undefined
       try {
         const response = route.handle({ url, params }, spec.world)
+        exchange = { method, url: url.href, status: response.status ?? 200, body: response.body }
+        spec.exchanges.push(exchange)
         const body = route.schema.parse(response.body)
         if (route.transition) spec.world = route.transition({ url, params }, spec.world)
         return Response.json(body, { status: response.status ?? 200 })
-      } catch { return fail(method, url.pathname) }
+      } catch {
+        if (exchange) exchange.status = 599
+        return fail(method, url.pathname)
+      }
     }
   }
   return fail(method, url.origin === location.origin ? url.pathname : url.href)

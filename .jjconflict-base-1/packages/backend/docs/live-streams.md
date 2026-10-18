@@ -1,0 +1,114 @@
+---
+title: "Live streams"
+description: "Every long-lived response the backend serves, who may open it, and what it delivers."
+---
+
+## Inventory
+
+`TestLiveStreamInventoryMatchesTheRouter` fails when a served handler streams
+and has no row here, or a row names a route that does not stream.
+`TestLiveStreamsServeOnlyTheirSubscribersPostgres` and
+`TestLiveChatStreamsServeOnlyTheirSubscribersPostgres` open every row as its
+owner, as another account and anonymously through the composed backend.
+
+| Stream | Transport | Who may open it | Delivery | Test composition |
+| --- | --- | --- | --- | --- |
+| `GET /api/live` | WebSocket | install members with a browser session from the install's origin or a scoped delegated bearer | shared `home` and `todo:<n>` snapshots and durable TODO-fact deltas; `run:<id>` runtime journal; `flows` and owner `external:<agent>:<session>` snapshots; `smithers.live.v1` | refused 404: install-only; the J4 and J11 rehearsals open it on the install |
+| `GET /api/notifications` | SSE | the signed-in account, its own notifications | live hints; no replay | opens |
+| `GET /api/notifications/events/stream` | SSE | the signed-in account, its own notifications | durable facts; `Last-Event-ID` cursor | opens |
+| `GET /api/github/import/{id}` | SSE with `Accept: text/event-stream` | the account that started the import | polled import snapshots until terminal | opens |
+| `POST /api/model/stream` | NDJSON | the signed-in account, its own model | relayed model output; no replay | opens |
+| `GET /api/repos/{owner}/{repo}/changes/events` | SSE | repository readers | live hints; no replay | opens |
+| `GET /api/repos/{owner}/{repo}/mythical/events` | SSE | repository readers | live hints; clients refetch the stack | opens |
+| `GET /api/repos/{owner}/{repo}/issues/state-events/stream` | SSE | repository readers | durable facts; `Last-Event-ID` cursor | opens |
+| `GET /api/repos/{owner}/{repo}/runs/{id}/logs` | SSE | repository readers | persisted log lines; `Last-Event-ID` replay | opens |
+| `GET /api/repos/{owner}/{repo}/runs/{id}/events` | SSE | repository readers | persisted log lines; `Last-Event-ID` replay | opens |
+| `GET /api/repos/{owner}/{repo}/workflows/runs/{id}/events` | SSE | repository readers | persisted log lines; `Last-Event-ID` replay | opens |
+| `GET /api/repos/{owner}/{repo}/runs/{id}/status/stream` | SSE | repository readers | status snapshot, then live changes | opens |
+| `GET /api/repos/{owner}/{repo}/agent/sessions/{id}/stream` | SSE | repository readers with agent access | persisted messages; `Last-Event-ID` replay | opens |
+| `GET /api/repos/{owner}/{repo}/workspaces/{id}/stream` | SSE | the workspace's owner and share members | live status; no replay | opens |
+| `GET /api/repos/{owner}/{repo}/workspace/sessions/{id}/stream` | SSE | the session's owner | live status; no replay | opens |
+| `GET /api/repos/{owner}/{repo}/workspace/sessions/{id}/terminal` | WebSocket | the session's owner with repository write | interactive terminal; no replay | refused 500: no sandbox machine backs the seeded workspace; `TestWorkspaceRuntimeProcessRequestPath` opens one |
+| `GET /api/branches/{b}/lsp/{id}` | WebSocket | admitted install branch members | interactive language server; no replay | refused 404: install-only; branch LSP integration tests exercise admission |
+
+Byte relays are not streams of their own: the workspace desktop relay, workspace
+previews and the model provider proxy forward the upstream connection.
+
+## Resume, lost wakeups and revoked access
+
+`TestLiveStreamResiliencePostgres` drives every stream above that replays past
+events (and the run status and import snapshots) through three failures:
+
+- A `Last-Event-ID` the stream did not issue, or whose record was pruned, is
+  refused with `409` and `details: {"reason":"cursor_unknown","resync":true}`
+  before the stream starts. The client drops its position and reloads; a
+  stream never resumes past events it cannot prove were delivered.
+- A row committed without a wakeup still arrives: durable streams re-read
+  the database every 5 seconds, the run status stream re-reads the run, and
+  the import stream polls. A reconnect catches up from its cursor.
+- Deleting the credential a stream is open under ends it with a `revoked`
+  event, and the credential cannot reopen it.
+
+## Live frame boundary
+
+`GET /api/live` uses `smithers.live.v1`. S1 requests are `sub` and `unsub`;
+reserved `presence` and binary kinds 1 and 2 answer `err unsupported` with
+that subscription id and keep the connection open. A presence refusal does
+not remove an existing subscription. Invalid requests close with WebSocket
+status 1007 and `malformed_frame`; invalid binary kinds close with 1003.
+The shared TypeScript frame contract is `@smthrs/rpc/Live`, with committed
+record fixtures in `packages/rpc/test/fixtures/Live.ts`.
+
+Upgrades without the revocation provider fail with `503 infra/live_unavailable`.
+Revocation watches register before checking retained revocations, including
+browser sessions. `/metrics` exposes `smithers_live_connections` from the
+in-process connection count.
+
+TODO subscriptions reuse `product_job_events` and `product_job_streams` through
+`jobs.Store.Replay`: a resume returns only later source rows, and an expired
+cursor returns a fresh committed snapshot. Broker notifications wake replay;
+a 250 ms repair poll recovers missed notifications. No transport event or
+retention table is created. Home orders those same rows by the source's
+`repository_sequence`; TODO streams retain their existing item cursors. Facts
+carry historical cards and Home items/counts, built inside their transaction.
+Pruning an item stream advances the repository retention floor too. Main health,
+capacity and background providers retain periodic committed snapshots; flows
+remain snapshot-only.
+
+`run:<id>` resolves a durable Flow dispatch checkpoint in the install's
+repository and rechecks access before every poll. A member with branch read
+access reads the existing host's `run-summary`, `run-tree` and `run-events`
+projections without starting a host. Snapshots and deltas carry
+`{summary, steps, events}`: summary and steps share a committed journal cursor;
+a delta includes every later event through that cursor in source order. Gateway
+pages that split one journal entry are drained before advancing the numeric Live
+cursor. A missing retained entry returns `gap`, followed by a fresh snapshot on
+cursor-free resubscription. Unknown dispatch runs are refused.
+
+A read never wakes a machine. When the host is stopped or asleep, the topic
+serves the run archive: the answers the host gave while the dispatcher observed
+it (`run_archives`, `run_archive_events`). When the branch grants no read, as
+after a finished TODO's lane retires, a credential that may run `monitor` reads
+the archive alone and no host is called; without `monitor`, or for a run with no
+archive, the topic answers `forbidden`.
+The gateway's wall-clock `statusRollup` is excluded from the base summary so
+readers at one journal cursor receive identical bytes. The monitor's health,
+cost, waits and journal presentation remain its owning projection's contract;
+this base topic does not invent those fields.
+
+Cookie-bearing upgrades require the effective Origin; cookie-free bearer upgrades
+use the same credential loader, scoped authorizer and durable revocation watcher,
+and require no Origin. Machine/run credentials cannot open member Live sockets.
+
+The named `C-COL-02.spec.ts` journey starts the production install with an owned
+PostgreSQL database and the native wiki library, then drives the real app in
+Chromium. Set `SMITHERS_TEST_DATABASE_URL` and `SMITHERS_FFI_LIBRARY_PATH` (build
+the library with `cargo build --locked -p smithers-ffi`) before running it with
+`pnpm exec playwright test e2e/playwright/spec/C-COL-02.spec.ts --workers 1` from
+`apps/app`. It checks source rollback/retention and browser cursor replay across
+a ten-second outage. The same harness covers the control portion of C-UI-05:
+held admission, an independent chat answer, and queued-card reload. Its model
+answer commits through the authenticated producer callback; no API response or
+Live frame is mocked. Machine execution, failure/retry and stale-write cases
+still require the isolated reference install; these control tests do not prove
+machine isolation or reference-host latency.

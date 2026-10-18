@@ -27,3 +27,6 @@ export const matchRoute = (pattern: string, path: string): Readonly<Record<strin
   return actual.length === expected.length ? params : undefined
   } catch { return undefined }
 }
+
+/** A response observed at the fixture boundary, including schema-invalid seeded data. */
+export interface FixtureExchange { readonly method: string; readonly url: string; readonly status: number; readonly body: unknown }
