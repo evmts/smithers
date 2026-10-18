@@ -221,7 +221,11 @@ const DELEGATED_HANDLERS: Readonly<Record<string, readonly string[]>> = {
   // The launcher's Open box GOES to `/owner/name` — the same browser
   // navigation its rows' links already are. The route there owns admission,
   // sign-in, import and every refusal, so there is no command to run here.
-  "../cards/RepositoryLauncher.tsx": ["onOpenRepository(repositoryHref("],
+  // 88068440 moved the box into RepositoryOpenForm.tsx for the static first screen.
+  "../cards/RepositoryOpenForm.tsx": ["onOpenRepository("],
+  // The front door's lead links are browser navigation like the rows' links;
+  // onLeadAction only reports the lead's "acted" step (LauncherSeam.ts, 1140892a).
+  "../cards/RepositoryLauncher.tsx": ["onClick={onLeadAction}"],
   // The repository home's stack bound: Show all / Show fewer only widens which
   // already-loaded rows render (aria-expanded) — local presentation state (#4085).
   "../cards/RepositoryHomeView.tsx": ["setAll(!all)"]
@@ -1356,7 +1360,8 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/CodingVibeCard.tsx": 1,
       "../cards/RepositoryChoiceCard.tsx": 2,
       "../cards/RepositoryHomeView.tsx": 5,
-      "../cards/RepositoryLauncher.tsx": 7,
+      "../cards/RepositoryLauncher.tsx": 8, // 1140892a: the lead links' onLeadAction
+      "../cards/RepositoryOpenForm.tsx": 1, // 88068440: the Open box's submit, moved out of the launcher
       "../cards/RepositoryUpdateCard.tsx": 2,
       /*
        * The Library (the `plugins` surface and the guided introduction share

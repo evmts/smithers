@@ -73,7 +73,8 @@ const openOnMissingRepository = async (installations: Response) => {
   const http = backend({
     "/api/user": json(200, { id: 1, username: "ada", is_admin: false }),
     "/api/auth/scopes": json(200, { scopes: [] }),
-    "/api/public/repos": json(200, { repos: [] }),
+    // Smithers does not have it: the repository document is a 404 (RepoLink.openRequestedRepo).
+    [`/api/repos/${REPO}`]: json(404, { status: "error" }),
     "/api/user/github-app/installations": installations
   })
   const controller = createAppController(store, silentAgent, { bootstrap: WEB, repositoryApp: REPO, ...http })
@@ -88,7 +89,7 @@ test("a covered repository the person has access to offers the import that exist
   const { host, store, refusal } = await openOnMissingRepository(
     json(200, { install_url: INSTALL_URL, repos: [{ fullName: REPO, installationId: 42 }] })
   )
-  expect(refusal).toBe(`${REPO} is not in the public repository catalog.`)
+  expect(refusal).toBe(`${REPO} is not available publicly.`)
   const notice = host.querySelector('[data-repository-missing] [data-message-id="repository-entry"]')
   expect(notice).not.toBeNull()
   expect(notice?.textContent).toContain(`Smithers doesn't have ${REPO} yet.`)
