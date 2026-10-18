@@ -73,3 +73,19 @@ describe("repository search", () => {
     ).toBe(false)
   })
 })
+
+describe("repository branches", () => {
+  it("decodes default flag and immutable head metadata", async () => {
+    const { RepositoryBranchPageSchema } = await import("../src/RepositoryReads.ts")
+    const branch = {
+      name: "feature/a",
+      head: "a".repeat(40),
+      author: "Ada",
+      updated: "2026-10-18T10:00:00Z",
+      title: "Fix",
+      is_default: false
+    }
+    expect(RepositoryBranchPageSchema.parse({ items: [branch], next_cursor: "2" }).items[0]).toEqual(branch)
+    expect(RepositoryBranchPageSchema.safeParse({ items: [{ ...branch, head: "unknown" }] }).success).toBe(false)
+  })
+})
