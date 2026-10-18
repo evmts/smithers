@@ -332,6 +332,7 @@ A failed agent run, and a launch the executor refused, journal the fault on `con
 | Payload field | Meaning                                                                                                              |
 | ------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `name`        | addresses the question. Two calls naming one question in one execution await one answer                              |
+| `requestId`   | optional per-ask identity; nonempty, well-formed text within 1024 JSON-encoded UTF-8 bytes, including quotes and escapes (`maxTaskNameBytes`) |
 | `kind`        | `ask` (prose), `confirm` (a boolean), `select` (one of `options`), `json` (a value `schema` accepts)                 |
 | `prompt`      | what the person is asked                                                                                             |
 | `options`     | the choices a `select` offers                                                                                        |
@@ -345,8 +346,10 @@ Each attempt is its own durable wait point, `WaitFor/<name>#<attempt>`, so an an
 
 The park also publishes `WaitingAnnotation.request` as JSON text containing
 `task: "human"`, `name`, `kind`, `prompt`, `attempt`, `maxAttempts`, and any
-declared `options` or `schema`. It describes the question without including an
-answer. Durable readers use it to render pending questions, including waits
+declared `requestId`, `options` or `schema`. It describes the question without including an
+answer. Give each new ask using the same wait name its own requestId; retain it
+across replay. Flows verifying signed answers should set it to know askId without
+reading runtime state. Durable readers use it to render pending questions, including waits
 inside child executions; routing still uses the wait token.
 
 `HumanTaskFailed` carries `code`, `task`, `attempts`, the `rejections` it collected, and a message. `request_invalid` refuses an unanswerable question before anyone is asked: a `select` with no options, an attempt budget below one or above the documented ceiling, a `timeoutMs` that is not a length of time or is above `Number.MAX_SAFE_INTEGER`, a schema outside the subset, a schema past the depth or node bound, or a schema supplied with the wrong kind. `rejected` means the budget was spent on answers the task refused. `timeout` means the deadline passed with the question open.

@@ -39,6 +39,13 @@ export const layer = Layer.mergeAll(
 `name` addresses the question. Two calls naming one question in one execution
 await one answer.
 
+Optional `requestId` identifies the ask for signed answers. It must be nonempty,
+well-formed text within 1024 JSON-encoded UTF-8 bytes, including quotes and
+escapes (the `maxTaskNameBytes` bound). It is carried unchanged in the approval
+request. Give each new ask using the same wait name its own requestId and retain
+it when replaying that ask. A flow verifying its own answers should set it so
+it knows the signing challenge's askId without reading runtime state.
+
 ## Choose the shape of the answer
 
 | `kind`    | What the person supplies                | Other fields |

@@ -25,7 +25,7 @@ const openQuestion = async (page: Page, origin: string) => {
       const projection = payload.selector._tag
       return route.fulfill(json({ ok: true, payload: { cursor: { projection, runId: null, value: 0 }, rows: projection === "approvals" ? [{
         runId: "run-test", requestId: "question", title: "Sign answer", requestedAt: Date.now(), status: "pending", waitRunId: "wait-execution",
-        request: { kind: "json", name: "decision", prompt: "Sign answer", requestId: "question", schema: { type: "object", properties: { text: { type: "string" }, evidence: { type: "object", format: "webauthn-assertion" } } } },
+        request: { kind: "json", name: "decision", prompt: "Sign answer", requestId: "flow-ask-1", schema: { type: "object", properties: { text: { type: "string" }, evidence: { type: "object", format: "webauthn-assertion" } } } },
         payload: { target: { _tag: "Node", runId: "run-test", requestId: "question", digest: "sha256:test", envelope: { capabilities: [], flows: [], budget: {} } }, scope: "run", idempotencyKey: "approve:question" }
       }] : [] } }))
     }
@@ -42,7 +42,7 @@ const openQuestion = async (page: Page, origin: string) => {
   return answers
 }
 // Test-only reference verifier, independent of the shipped challenge code.
-async function verify(answer: any, privateKey: string, origin: string, expectedText = "Ship", run = "wait-execution", askId = "question") {
+async function verify(answer: any, privateKey: string, origin: string, expectedText = "Ship", run = "wait-execution", askId = "flow-ask-1") {
   const e = answer.evidence
   const client = Buffer.from(e.clientDataJSON, "base64url")
   const data = JSON.parse(client.toString())
