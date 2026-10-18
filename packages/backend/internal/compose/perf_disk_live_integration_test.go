@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,7 +33,7 @@ try {
 } finally { window.__diskSocket?.close() }
 `)
 	command.Dir = root
-	command.Env = append(os.Environ(), "PERF_ORIGIN="+f.origin, "PERF_COOKIE=session="+f.cookie, "PERF_BRANCH="+f.row.ID)
+	command.Env = append(os.Environ(), "PERF_ORIGIN="+f.origin, "PERF_COOKIE="+config.LocalSessionCookieName+"="+f.cookie, "PERF_BRANCH="+f.row.ID)
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, string(output))
 	require.Equal(t, "smithers.live.v1\n", string(output))
