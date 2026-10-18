@@ -1,0 +1,2698 @@
+{
+  "version": "incur.v1",
+  "commands": [
+    {
+      "name": "agent",
+      "description": "Configure an agent",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "agent edit",
+      "description": "Propose an instruction change; waits for the person's confirmation",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "enum": [
+                "planner",
+                "implementer",
+                "reviewer",
+                "app"
+              ]
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "request": {
+              "type": "string",
+              "minLength": 1
+            },
+            "diff": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "request",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "agents",
+      "description": "The factory's agents",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "api",
+      "description": "Make raw API calls to the Smithers server",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "endpoint": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "endpoint"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "method": {
+              "default": "GET",
+              "type": "string"
+            },
+            "field": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "header": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "input": {
+              "type": "string",
+              "description": "JSON request body from a file, or - for stdin"
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "method",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "branch add-to-stack",
+      "description": "Add a scratch branch as a TODO; waits for the person's confirmation",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "branch": {
+              "type": "string"
+            },
+            "text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "acceptance": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "after": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "before": {
+              "type": "string",
+              "pattern": "^T[1-9]\\d*$"
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "branch",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "branch archive",
+      "description": "Archive a scratch branch; waits for the person's confirmation",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "branch": {
+              "type": "string"
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "branch",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "branch fork",
+      "description": "Fork a scratch branch",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "from",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "branch rebase",
+      "description": "Rebase this branch now",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "branch": {
+              "type": "string"
+            },
+            "conflict_change": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "onto_revision": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "branch",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "branch show",
+      "description": "Open a branch's card",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "branches",
+      "description": "List branches with presence",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "cp",
+      "description": "Copy files or directories between the local machine and a workspace",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "src": {
+              "type": "string",
+              "description": "Local path or <workspace-id>:<path>"
+            },
+            "dst": {
+              "type": "string",
+              "description": "Local path or <workspace-id>:<path>"
+            }
+          },
+          "required": [
+            "src",
+            "dst"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            },
+            "timeout": {
+              "default": 0,
+              "type": "number",
+              "description": "Transfer timeout in seconds"
+            },
+            "user": {
+              "default": "developer",
+              "type": "string",
+              "description": "Guest user"
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "timeout",
+            "user",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "diff",
+      "description": "Show a branch's changes",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "branch": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "entry": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "exec",
+      "description": "Run a workspace command with a durable receipt and bounded output",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Workspace ID (auto-detected if omitted)"
+            }
+          },
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string",
+              "description": "Remote command to run (multi-line allowed; runs under bash)"
+            },
+            "cwd": {
+              "type": "string",
+              "description": "Working directory (default: workspace root)"
+            },
+            "detach": {
+              "default": false,
+              "type": "boolean",
+              "description": "Return the receipt at once; the command keeps running (reattach with --exec-id)"
+            },
+            "env": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "KEY=VALUE exported to the command (repeatable)"
+            },
+            "exec-id": {
+              "type": "string",
+              "description": "Durable command ID; reuse with the same command to reattach after a disconnect"
+            },
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            },
+            "seedAgentAuth": {
+              "type": "string",
+              "description": "Agent auth to seed before running the command (claude seeds ANTHROPIC_API_KEY; subscription logins stay on the workspace)"
+            },
+            "timeout": {
+              "type": "number",
+              "description": "Cancel after this many seconds (default: 0; server guard: 60 minutes)"
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "command",
+            "detach",
+            "env",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "file",
+      "description": "Open and co-edit a file",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "branch": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "revision": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "files",
+      "description": "Browse a branch's files",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "branch": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "flow edit",
+      "description": "Propose a change to a flow; waits for the person's confirmation",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "request": {
+              "type": "string",
+              "minLength": 1
+            },
+            "diff": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "request",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "flow new",
+      "description": "Create a new flow; waits for the person's confirmation",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "repo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "description",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "flow plan",
+      "description": "See what a flow would run",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "flow": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Discovered flow name"
+            },
+            "input": {
+              "default": [],
+              "description": "Input fields as key=value",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "flow",
+            "input"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "root": {
+              "description": "Project directory; defaults to the nearest Smithers project",
+              "type": "string"
+            },
+            "remote": {
+              "description": "Remote control plane URL; defaults to SMITHERS_REMOTE",
+              "type": "string"
+            },
+            "mcpConfig": {
+              "description": "Path to the configured MCP servers",
+              "type": "string"
+            },
+            "quiet": {
+              "description": "Suppress progress messages",
+              "default": false,
+              "type": "boolean"
+            },
+            "data": {
+              "description": "JSON input object",
+              "type": "string"
+            },
+            "verbose": {
+              "description": "Show redacted diagnostic details",
+              "default": false,
+              "type": "boolean"
+            },
+            "repo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sourceCard": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "against": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "input": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "flow run",
+      "description": "Run a flow with typed input",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sourceCard": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "workspaceId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "input": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "flow show",
+      "description": "Show a flow's steps and versions",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "flow": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Discovered flow name"
+            }
+          },
+          "required": [
+            "flow"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "root": {
+              "description": "Project directory; defaults to the nearest Smithers project",
+              "type": "string"
+            },
+            "remote": {
+              "description": "Remote control plane URL; defaults to SMITHERS_REMOTE",
+              "type": "string"
+            },
+            "mcpConfig": {
+              "description": "Path to the configured MCP servers",
+              "type": "string"
+            },
+            "quiet": {
+              "description": "Suppress progress messages",
+              "default": false,
+              "type": "boolean"
+            },
+            "verbose": {
+              "description": "Show redacted diagnostic details",
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "flow source",
+      "description": "Co-edit a flow's source",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "flows",
+      "description": "List the repository's flows",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "github",
+      "description": "Show sync status and retry",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "host backup",
+      "description": "Back up the installation",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "host restore",
+      "description": "Restore the installation from a verified backup",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "directory": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "directory"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "host start",
+      "description": "Start the bundled host service",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "bundle": {
+              "description": "Built server bundle directory",
+              "type": "string"
+            },
+            "bind": {
+              "type": "string"
+            },
+            "origin": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "host status",
+      "description": "Show launchd, bundle and process health",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "host stop",
+      "description": "Stop the host service",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "host upgrade",
+      "description": "Upgrade the installation after a verified backup",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "issue comment",
+      "description": "Comment on an issue; waits for the person's confirmation",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "number": {
+              "type": "string",
+              "description": "Issue number"
+            }
+          },
+          "required": [
+            "number"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "body": {
+              "type": "string",
+              "minLength": 1
+            },
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "body",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "issue new",
+      "description": "Open a GitHub issue; waits for the person's confirmation",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "body": {
+              "type": "string"
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "title",
+            "body",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "issue show",
+      "description": "Open an issue's card",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "number": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "Infinity",
+                    "-Infinity",
+                    "NaN"
+                  ]
+                }
+              ]
+            }
+          },
+          "required": [
+            "number"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "issues",
+      "description": "List the repository's issues",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "login",
+      "description": "Log in to Smithers",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "origin": {
+              "type": "string",
+              "description": "Install origin"
+            }
+          },
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "admin": {
+              "default": false,
+              "type": "boolean",
+              "description": "Request an expiring administrator token with browser consent"
+            },
+            "host": {
+              "type": "string",
+              "description": "Hostname or API URL (alias for --hostname)"
+            },
+            "hostname": {
+              "type": "string",
+              "description": "Hostname or API URL to authenticate with"
+            },
+            "observe": {
+              "default": false,
+              "type": "boolean",
+              "description": "Sign in as an administrator and open Observe already authenticated"
+            },
+            "agent": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]{1,32}$",
+              "description": "External agent name"
+            },
+            "ttl": {
+              "type": "string",
+              "description": "Admin token lifetime (5m to 12h; default 1h)"
+            },
+            "with-token": {
+              "default": false,
+              "type": "boolean",
+              "description": "Read token from stdin instead of browser flow"
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "admin",
+            "observe",
+            "with-token",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "merge",
+      "description": "Review and merge the next item; waits for the person's confirmation",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "n": {
+              "type": "string",
+              "pattern": "^T[1-9]\\d*$"
+            }
+          },
+          "required": [
+            "n"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "reviewed_head_sha": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "idempotencyKey": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "monitor",
+      "description": "Every run, with its debug view",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "pr",
+      "description": "Open a pull request's card",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "number": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "number"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "review",
+      "description": "Review a change, return findings; waits for the person's confirmation",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "patterns": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Bazel labels or recursive patterns; the verb runs their union"
+            }
+          },
+          "required": [
+            "patterns"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "workspace": {
+              "description": "Directory inside a workspace containing WORKSPACE.ts",
+              "default": "<cwd>",
+              "type": "string"
+            },
+            "cacheDir": {
+              "description": "Workspace-relative cache directory; overrides the WORKSPACE.ts declaration",
+              "type": "string"
+            },
+            "policyRevision": {
+              "description": "Full approved commit SHA containing the trusted review index",
+              "type": "string"
+            },
+            "revision": {
+              "description": "Committed source revision: HEAD or a full commit SHA",
+              "default": "HEAD",
+              "type": "string"
+            },
+            "plan": {
+              "description": "Show pinned policy and source selection without inference",
+              "default": false,
+              "type": "boolean"
+            },
+            "required": {
+              "description": "Fail every selected review that selects no files or cannot run instead of passing it",
+              "default": false,
+              "type": "boolean"
+            },
+            "findingsStore": {
+              "description": "Absolute private directory for review runs and findings (default: the Git directory)",
+              "type": "string"
+            },
+            "credentialReceiver": {
+              "description": "Absolute executable that receives credential names and locations as JSON on stdin; a nonzero exit fails the review",
+              "type": "string"
+            },
+            "verbose": {
+              "description": "Show redacted diagnostic details",
+              "default": false,
+              "type": "boolean"
+            },
+            "repo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "run inspect",
+      "description": "Open a run's monitor",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "runs list",
+      "description": "Active and attention-needing runs",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            },
+            "root": {
+              "description": "Project directory; defaults to the nearest Smithers project",
+              "type": "string"
+            },
+            "remote": {
+              "description": "Remote control plane URL; defaults to SMITHERS_REMOTE",
+              "type": "string"
+            },
+            "mcpConfig": {
+              "description": "Path to the configured MCP servers",
+              "type": "string"
+            },
+            "quiet": {
+              "description": "Suppress progress messages",
+              "default": false,
+              "type": "boolean"
+            },
+            "flow": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "accepted",
+                "running",
+                "parked",
+                "waiting-approval",
+                "cancelled",
+                "completed",
+                "failed"
+              ]
+            },
+            "since": {
+              "description": "Only runs created at or after this time (epoch ms or ISO 8601)",
+              "type": "string"
+            },
+            "until": {
+              "description": "Only runs created before this time (epoch ms or ISO 8601)",
+              "type": "string"
+            },
+            "sort": {
+              "description": "Order by creation time",
+              "type": "string",
+              "enum": [
+                "newest",
+                "oldest"
+              ]
+            },
+            "parent": {
+              "description": "Only runs branched from this run",
+              "type": "string"
+            },
+            "trigger": {
+              "description": "Only runs this trigger started",
+              "type": "string"
+            },
+            "limit": {
+              "description": "Runs per page (default 100)",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "cursor": {
+              "description": "Continue from the nextCursor a previous page printed",
+              "type": "string"
+            },
+            "verbose": {
+              "description": "Show redacted diagnostic details",
+              "default": false,
+              "type": "boolean"
+            },
+            "cloud": {
+              "description": "Use repository flows and runs on the backend",
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "runs show",
+      "description": "Open a run's card",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "run": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Durable run ID"
+            }
+          },
+          "required": [
+            "run"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            },
+            "root": {
+              "description": "Project directory; defaults to the nearest Smithers project",
+              "type": "string"
+            },
+            "remote": {
+              "description": "Remote control plane URL; defaults to SMITHERS_REMOTE",
+              "type": "string"
+            },
+            "mcpConfig": {
+              "description": "Path to the configured MCP servers",
+              "type": "string"
+            },
+            "quiet": {
+              "description": "Suppress progress messages",
+              "default": false,
+              "type": "boolean"
+            },
+            "timing": {
+              "description": "Report where the run's time and tokens went",
+              "default": false,
+              "type": "boolean"
+            },
+            "verbose": {
+              "description": "Show redacted diagnostic details",
+              "default": false,
+              "type": "boolean"
+            },
+            "cloud": {
+              "description": "Use repository flows and runs on the backend",
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "search",
+      "description": "Search code, wiki and runs",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "shell",
+      "description": "Open an interactive terminal in a workspace via the WebSocket terminal endpoint",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Workspace ID (auto-detected if omitted)"
+            }
+          },
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "cols": {
+              "default": 0,
+              "type": "number",
+              "description": "Initial terminal columns (0 = detect)"
+            },
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            },
+            "rows": {
+              "default": 0,
+              "type": "number",
+              "description": "Initial terminal rows (0 = detect)"
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "cols",
+            "rows",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "ssh",
+      "description": "Copy the SSH line for a branch",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "branch": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "branch"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "ssh-key add",
+      "description": "Add an SSH key",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "description": "Key title"
+            },
+            "key": {
+              "type": "string",
+              "description": "Public key content"
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "title",
+            "key",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "ssh-key delete",
+      "description": "Delete an SSH key",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Key ID"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "ssh-key list",
+      "description": "List SSH keys",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "stack",
+      "description": "Show the stack and background runs",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "stack move",
+      "description": "Reorder an item",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "n": {
+              "type": "string",
+              "pattern": "^T[1-9]\\d*$"
+            },
+            "direction": {
+              "type": "string",
+              "enum": [
+                "up",
+                "down"
+              ]
+            }
+          },
+          "required": [
+            "n",
+            "direction"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "todo amend",
+      "description": "Change an unmerged TODO's prompt; waits for the person's confirmation",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "n": {
+              "type": "string",
+              "pattern": "^T[1-9]\\d*$"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "n",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "acceptance": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cardId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "idempotencyKey": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "todo answer",
+      "description": "Answer the agent's question",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "todo": {
+              "type": "string",
+              "pattern": "^T[1-9]\\d*$",
+              "description": "TODO number (T3)"
+            },
+            "answer": {
+              "type": "string",
+              "description": "Your answer"
+            }
+          },
+          "required": [
+            "todo",
+            "answer"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "wait": {
+              "type": "string",
+              "description": "The question's id, when the TODO asks more than one"
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "todo drop",
+      "description": "Abandon an unmerged TODO; waits for the person's confirmation",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "n": {
+              "type": "string",
+              "pattern": "^T[1-9]\\d*$"
+            }
+          },
+          "required": [
+            "n"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "todo from-issue",
+      "description": "Draft a TODO from an issue; waits for the person's confirmation",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "number": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "Infinity",
+                    "-Infinity",
+                    "NaN"
+                  ]
+                }
+              ]
+            }
+          },
+          "required": [
+            "number"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "todo new",
+      "description": "Write and place a TODO; waits for the person's confirmation",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "acceptance": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "before": {
+              "type": "string",
+              "pattern": "^T[1-9]\\d*$"
+            },
+            "cardId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "idempotencyKey": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "todo resume",
+      "description": "Resume a paused TODO",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "n": {
+              "type": "string",
+              "pattern": "^T[1-9]\\d*$"
+            }
+          },
+          "required": [
+            "n"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "todo retry",
+      "description": "Retry a failed TODO",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "n": {
+              "type": "string",
+              "pattern": "^T[1-9]\\d*$"
+            }
+          },
+          "required": [
+            "n"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "todo show",
+      "description": "Open a TODO",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "n": {
+              "type": "string",
+              "pattern": "^T[1-9]\\d*$"
+            }
+          },
+          "required": [
+            "n"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "todo steer",
+      "description": "Send the agent a correction",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "n": {
+              "type": "string",
+              "pattern": "^T[1-9]\\d*$"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "n",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "idempotencyKey": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "todo stop",
+      "description": "Pause a working TODO",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "n": {
+              "type": "string",
+              "pattern": "^T[1-9]\\d*$"
+            }
+          },
+          "required": [
+            "n"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "wiki page",
+      "description": "Open or create a page",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "owner": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "repo": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "owner",
+            "repo",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "wiki save",
+      "description": "Save this answer as a page",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "wiki show",
+      "description": "Open the wiki",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "owner": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "repo": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "owner",
+            "repo",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "workspace ssh",
+      "description": "SSH into a workspace (creates one if none exists for the repo)",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Workspace ID (auto-detected if omitted)"
+            }
+          },
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  ],
+  "globals": {
+    "type": "object",
+    "properties": {
+      "audience": {
+        "default": "auto",
+        "description": "Presentation audience; auto detects agent harnesses, CI, and terminals",
+        "type": "string",
+        "enum": [
+          "auto",
+          "human",
+          "agent"
+        ]
+      },
+      "silent": {
+        "default": false,
+        "description": "Suppress progress; retain the result and actionable failures",
+        "type": "boolean"
+      },
+      "ui": {
+        "default": "auto",
+        "description": "Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence",
+        "type": "string",
+        "enum": [
+          "auto",
+          "tty",
+          "stream",
+          "plain"
+        ]
+      }
+    },
+    "required": [
+      "audience",
+      "silent",
+      "ui"
+    ],
+    "additionalProperties": false
+  }
+}

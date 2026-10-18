@@ -1,0 +1,68 @@
+# C-MCH-10 Tool logins persist per machine; tokens never copy
+
+Proves: mvp.md §6.8 Terminals, J6.1 · spec.md §8.7.2, §8.7.3 · Layer: integration · Stage: S2 · Tickets: T-MCH-11
+Automation: `packages/backend/internal/compose/real_credentials_test.go` (new) · Runs in: reference mini, two real microVMs with fixture tool logins
+
+## Setup
+Ben and Alice have private homes on machines A and B. Fixture tools write distinct login sentinels on each machine. Use no live tokens; C-REL-05 owns the live soak.
+
+## Steps
+1. As Ben, create fixture Claude Code, Codex and `gh` login files on A. Start Ben's first session on B and inspect its home.
+2. Log in independently on B with different sentinels. Sleep and wake each machine; restart the host; read each machine's files as Ben.
+3. Refresh a login on A, then log out on A. Read B's files after each change and after B sleeps and wakes.
+4. Attempt to read Ben's files as Alice and `agent`. Inspect host database rows, daemon events and API responses for the fixture bytes.
+5. Recreate A from a new recipe and inspect its new home before Ben logs in.
+
+## Pass when
+- Step 1: B has no A login files or sentinel bytes.
+- Step 2: each machine retains exactly its own login files across sleep, wake and host restart.
+- Step 3: B's login files remain unchanged. A's logout affects A alone.
+- Step 4: other users cannot read Ben's files; host database rows, events and responses contain no tool token bytes.
+- Step 5: the new home is empty; Smithers restores no login from another machine or a host store.
+
+## Fail when
+- Smithers stores or copies a tool token outside its machine, or local login files disappear after sleep and wake.
+
+## Evidence
+`.artifacts/checks/C-MCH-10/<ts>/`: redacted per-machine file digests, denied reads, event and database scan results, host profile and commit.
+
+## Authored reference-host coverage (2026-10-08)
+
+The helpers run inside `TestInstalledMemberTerminalAndSSHChain`, using its approved-bundle preflight, composed install router, GitHub fake, authenticated terminal WebSocket and real broker. They live in `internal/compose` to reuse the production composition rather than add a second microVM harness. They are not passing reference-host receipts.
+
+The native chain also denies Alice and agent reads of all three fixture login
+files, retains replacement terminals after wake, verifies logins across backend
+recomposition and checks B again after A logs out and B sleeps/wakes. Backend
+recomposition does not replace step 2's physical host-service restart. New-recipe
+recreation is now authored in the same native chain; execution remains pending.
+
+Private-login reads by Alice and agent now require the kernel's `EACCES` for
+Ben's directory and all three login paths. Ben first reads the exact fixtures
+and verifies his home's literal uid, gid and mode; missing files cannot stand
+in for permission isolation. Native execution remains pending.
+
+The native chain now attaches a count-only diagnostic to the existing
+registry reader before the first boot. It scans every authenticated event
+frame before decoding or ingestion, including hints and refused events, for
+all seven literal credential sentinels. The observer survives recomposition
+and wake, requires a nonempty stream, and checks again on cleanup. It adds no
+second event consumer and retains no event bytes. Reference-host execution
+remains pending.
+
+
+New-recipe coverage wakes A through an authenticated terminal after a fixture
+GitHub-main image declaration change. The common service wake path refreshes
+only a stopped machine whose recipe changed; the production runtime persists
+the target recipe before removing the old disk. It requires a new layer,
+installed jq, absent old personal logins/marker/cache workload and unchanged B
+logins. The branch's durable identity and captured working copy remain intact.
+`TestInstalledNewRecipeRecreation` is supplemental Linux coverage over the
+composed setup reader and recording msb, not an empty-home/security receipt.
+It covers awake refusal, unchanged-recipe retention, changed-recipe selection
+and fresh boot through production runtime methods.
+
+The [physical restart campaign](../campaigns/mch-host-restart.md) is executable
+as `TestInstalledPhysicalHomeRestart` against a running disposable Mac install.
+It requires an unloaded launchd job and a changed service PID, new authenticated
+terminals and unchanged per-machine login/workload hashes after host stop/start.
+Physical and native execution remain pending.
