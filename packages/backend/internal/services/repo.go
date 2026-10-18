@@ -1587,7 +1587,7 @@ func (s *RepoService) GetRepoContents(ctx context.Context, viewer *db.User, owne
 	if file.Encoding == "base64" {
 		bytes, decodeErr := base64.StdEncoding.DecodeString(file.Content)
 		if decodeErr != nil {
-			return RepoContent{}, errors.Internal("invalid repository file encoding")
+			return RepoContent{}, errors.Internal("invalid repository file encoding").WithCause(decodeErr)
 		}
 		size = int64(len(bytes))
 		encoding = "base64"

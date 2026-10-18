@@ -4511,6 +4511,17 @@ export interface GetApiReposOwnerRepoGithubAppStatusInput {
 export const getApiReposOwnerRepoGithubAppStatus = (transport: Transport, input: GetApiReposOwnerRepoGithubAppStatusInput): Promise<GetApiReposOwnerRepoGithubAppStatusResponse> =>
   transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/github-app-status`) as Promise<GetApiReposOwnerRepoGithubAppStatusResponse>
 
+export type GetApiReposOwnerRepoGithubMetadataPathResponse = AnyJSON
+
+export interface GetApiReposOwnerRepoGithubMetadataPathInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly path: string }
+  readonly query?: { readonly state?: "open" | "closed" | "all"; readonly sort?: string; readonly direction?: "asc" | "desc"; readonly per_page?: number; readonly page?: number; readonly cursor?: string; readonly labels?: string; readonly head?: string; readonly base?: string }
+}
+
+/** GET /api/repos/{owner}/{repo}/github/metadata/{path} */
+export const getApiReposOwnerRepoGithubMetadataPath = (transport: Transport, input: GetApiReposOwnerRepoGithubMetadataPathInput): Promise<GetApiReposOwnerRepoGithubMetadataPathResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/github/metadata/${segment(input.path.path)}${search({ state: input.query?.state, sort: input.query?.sort, direction: input.query?.direction, per_page: input.query?.per_page, page: input.query?.page, cursor: input.query?.cursor, labels: input.query?.labels, head: input.query?.head, base: input.query?.base })}`) as Promise<GetApiReposOwnerRepoGithubMetadataPathResponse>
+
 export type GetApiReposOwnerRepoHooksResponse = AnyJSON
 
 export interface GetApiReposOwnerRepoHooksInput {

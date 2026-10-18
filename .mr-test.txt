@@ -1,0 +1,5 @@
+cd packages/backend && test -z "$(gofmt -l internal/routes internal/services apiclient)" && go build ./... && go vet ./internal/routes ./internal/services ./apiclient
+cd packages/backend && go test ./internal/pkg/errors ./apiclient/... -count=1
+cd packages/backend && go test ./internal/compose -run "TestOpenAPI|TestInstallRouteAuthorizationCoverage|TestInstallAuthorizationOpenAPIResponses" -count=1
+pnpm exec smthrs test //packages/backend:openapiBundle //packages/backend:openapiClients --verbose
+set -e; for b in /usr/lib/postgresql/*/bin; do export PATH="$b:$PATH"; done; pgdir=$(mktemp -d "$PWD/.main-reds.XXXXXX"); PGP=$((49400 + RANDOM % 2000)); initdb -D "$pgdir/pg" -U smithers --auth=trust >/dev/null; pg_ctl -D "$pgdir/pg" -o "-h 127.0.0.1 -p $PGP -k $pgdir -c dynamic_shared_memory_type=mmap" -l "$pgdir/pg.log" start >/dev/null; mr_cleanup() { pg_ctl -D "$pgdir/pg" -m fast stop >/dev/null 2>&1 || true; rm -rf "$pgdir"; }; trap mr_cleanup EXIT; export SMITHERS_TEST_DATABASE_URL="postgres://smithers@127.0.0.1:$PGP/postgres?sslmode=disable" SMITHERS_REQUIRE_DATABASE_TESTS=1; cd packages/backend && go test ./internal/routes ./internal/services -count=1
