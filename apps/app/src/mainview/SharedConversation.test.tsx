@@ -90,6 +90,22 @@ const renderShared = async (conversation: ReturnType<typeof SharedConversationSc
 }
 const CAPACITY_WORDS = "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
 
+test.each(["admitted", "allocating", "cloning", "model", "verifying"])("the shared projection renders %s in the existing run card", async stage => {
+  const html = await renderShared(turnOf({ state: "running", frames: [], progress: [{ stage, at: Date.now(), requestId: "request", turnId: "capacity", runId: "run-capacity", generation: 1 }] }))
+  expect(html).toContain('data-testid="run-trace-run-capacity"')
+  expect(html).toContain(`class="run-outcome-words">${stage}</span>`)
+  expect(html).not.toContain("Waiting for a model host")
+})
+
+test("shared capacity refusal retains the prompt and renders one local path with the server sentence", async () => {
+  const html = await renderShared(turnOf({ state: "failed", frames: [{ runId: "run-capacity", type: "done", code: "host_no_capacity", error: CAPACITY_WORDS }],
+    progress: [{ stage: "refused", code: "host_no_capacity", at: Date.now(), requestId: "request", turnId: "capacity", runId: "run-capacity", generation: 1 }] }))
+  expect(html).toContain("Short reply please")
+  expect(html).toContain("Capacity paused")
+  expect(html.match(/href="\/docs\/installation\/"/g)).toHaveLength(1)
+  expect(html.split(CAPACITY_WORDS)).toHaveLength(2)
+})
+
 test("a turn with no committed output says it is waiting for a host, not working", async () => {
   const waiting = await renderShared(turnOf({ state: "running", frames: [] }))
   expect(waiting).toContain('data-turn-elapsed="waiting"')
@@ -116,18 +132,14 @@ test("another member's turn with nothing shared yet still says it is working", a
   expect(html).not.toContain("Waiting for a model host")
 })
 
-test("a terminal capacity refusal names the busy fleet first and keeps the producer's words in Details", async () => {
+test("a legacy terminal capacity refusal shows the server sentence and the local path", async () => {
   const html = await renderShared(turnOf({ state: "failed", finishedAt: Date.now(), frames: [
     { runId: "run-capacity", type: "done", code: "host_no_capacity", error: CAPACITY_WORDS }
   ] }))
-  expect(html).toContain("Every model host is busy. Nothing here was lost; send it again in a moment.")
-  expect(html).toContain('data-failure="HostNoCapacity"')
+  expect(html).toContain("Capacity paused")
   expect(html).not.toContain("Smithers could not finish that")
-  // The producer's sentence stays raw detail inside the disclosure, wrapped.
   expect(html).toContain(CAPACITY_WORDS)
-  expect(html.indexOf("<details>")).toBeLessThan(html.indexOf(CAPACITY_WORDS))
-  expect(html).toContain('class="failure-detail"')
-  expect(html).toContain('data-turn-elapsed="failed"')
+  expect(html.match(/href="\/docs\/installation\/"/g)).toHaveLength(1)
 })
 
 test("an outcome this build cannot classify keeps the generic sentence", async () => {
