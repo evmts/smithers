@@ -187,9 +187,9 @@ are blocked in the export map: `@smthrs/cli/internal/*` and
 `@smthrs/cli/*/index`.
 
 The package depends on the whole Smithers stack, including
-[`@smthrs/control`](/api/control), [`@smthrs/engine`](/api/engine),
-[`@smthrs/agent`](/api/agent), [`@smthrs/gateway`](/api/gateway), and
-[`@smthrs/journal`](/api/journal). Installing it installs them, so a host that
+[`@smthrs/control`](../control/docs/api.md), [`@smthrs/engine`](../flows/engine/docs/api.md),
+[`@smthrs/agent`](../agent/docs/api.md), [`@smthrs/gateway`](../gateway/docs/api.md), and
+[`@smthrs/journal`](../flows/journal/docs/api.md). Installing it installs them, so a host that
 embeds the command tree adds no further packages. See
 [Embed the command tree](./guides/embed-the-command-tree.md).
 
