@@ -79,7 +79,7 @@ func TestRepoHandler_NotesRoundTrip(t *testing.T) {
 				return
 			}
 			require.Equal(t, 200, content.Code)
-			require.JSONEq(t, `{"name":"cd","path":"ab/cd","sha":"","type":"file","encoding":"utf-8","content":"story","size":5}`, content.Body.String())
+			require.JSONEq(t, `{"name":"cd","path":"ab/cd","sha":"","type":"file","encoding":"utf-8","content":"story","size":5,"raw_url":"/api/repos/alice/demo/contents/ab/cd?raw=1&ref=`+sha+`"}`, content.Body.String())
 		})
 	}
 }

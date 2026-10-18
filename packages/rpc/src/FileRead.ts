@@ -228,3 +228,41 @@ export const fileReadCard = (
     value: fileValue(read.repo, read.path, payload)
   }
 }
+
+/** A complete repository page read, independent of the transcript card cap.
+ * @since 0.1.0
+ * @category models
+ */
+export interface FilePage {
+  readonly content: string | null
+  readonly binary: boolean
+  readonly size: number
+  readonly commitSha: string
+  readonly rawUrl: string
+  readonly tooLarge: boolean
+}
+
+/** Decode an immutable contents response without truncating its text.
+ * @since 0.1.0
+ * @category parsers
+ */
+export const decodeFilePage = (value: unknown): FilePage => {
+  if (value === null || typeof value !== "object") throw new Error("Invalid file response")
+  const wire = value as Record<string, unknown>
+  if (wire.type !== "file" || typeof wire.size !== "number" || !Number.isSafeInteger(wire.size) || wire.size < 0 ||
+      typeof wire.content !== "string" || typeof wire.commit_sha !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(wire.commit_sha) ||
+      typeof wire.raw_url !== "string" || !wire.raw_url.startsWith("/api/repos/") || wire.raw_url.includes("\\")) throw new Error("Invalid file response")
+  const tooLarge = wire.too_large === true || wire.size > 512 * 1024
+  let content: string | null = tooLarge ? null : wire.content
+  let binary = false
+  if (!tooLarge) {
+    if (wire.encoding === "base64") {
+      const bytes = Uint8Array.from(atob(wire.content), char => char.charCodeAt(0))
+      binary = bytes.includes(0)
+      try { content = binary ? null : new TextDecoder("utf-8", { fatal: true }).decode(bytes) }
+      catch { binary = true; content = null }
+    } else if (wire.encoding !== "utf-8" && wire.encoding !== "utf8") throw new Error("Invalid file encoding")
+    if (content?.includes("\u0000")) { binary = true; content = null }
+  }
+  return { content, binary, size: wire.size, commitSha: wire.commit_sha, rawUrl: wire.raw_url, tooLarge }
+}
