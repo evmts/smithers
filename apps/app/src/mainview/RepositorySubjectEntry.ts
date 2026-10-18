@@ -38,7 +38,7 @@ export type RepositorySubjectView = Exclude<RepositorySubject, { readonly kind: 
  *
  * `repo` binds the read to the URL. The row or repository chooses its tracker.
  */
-export const subjectCommand = (repo: string, subject: RepositorySubjectView, source: "github" | "smithers-cloud" = "github"): { readonly name: string; readonly args: string } =>
+export const subjectCommand = (repo: string, subject: RepositorySubjectView, source?: "github" | "smithers-cloud"): { readonly name: string; readonly args: string } =>
   subject.kind === "pull" ? { name: "pr", args: flowArgs("pr", { number: subject.number, repo }) }
     : subject.kind === "pulls" ? { name: "pr", args: flowArgs("pr", { operation: "list", repo }) }
       : subject.kind === "issue"
@@ -286,7 +286,7 @@ export const openRequestedSubject = async (
   const row = [...controller.store.collections.cards.values()].flatMap(card => card.kind === "issue-list" && card.payload.repo.toLowerCase() === repo.toLowerCase() ? card.payload.issues : []).find(row => subject.kind === "issue" && row.number === subject.number)
   const repository = controller.store.collections.repositories.get(repo)
   const requestedSource = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("source")
-  const source = (requestedSource === "github" || requestedSource === "smithers-cloud" ? requestedSource : undefined) ?? row?.source ?? (repository?.issueTracker === "github" ? "github" : "smithers-cloud")
+  const source = (requestedSource === "github" || requestedSource === "smithers-cloud" ? requestedSource : undefined) ?? (row ? row.source ?? "smithers-cloud" : repository?.issueTracker)
   const { name, args } = subjectCommand(repo, subject, source)
   // The read runs to completion first: its own card is what the tab is chosen
   // on, and one command at a time is the lifecycle's own rule.

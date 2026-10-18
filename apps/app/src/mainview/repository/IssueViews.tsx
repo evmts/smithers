@@ -6,6 +6,14 @@ import { useContext, type ReactNode } from "react"
 import { RepositoryAskContext } from "./RepoFrame"
 import "./issues.css"
 
+/** Both trackers use the repository's issue path and retain distinct read identities. */
+export const matchesIssueReadKey = (key: string | undefined, repo: string, number?: number): boolean => {
+  const keys = number === undefined
+    ? [JSON.stringify(["issues", repo, "all", "all", null])]
+    : [`issue-${repo}-${number}`, `issue-github-${repo}-${number}`]
+  return keys.some(expected => key?.toLowerCase() === expected.toLowerCase())
+}
+
 export const Counter = ({ count }: { count: number }) => <span className="repo-ui-counter">{count}</span>
 export const LabelChip = ({ name }: { name: string }) => <span className="repo-ui-label repo-ui-tone-neutral">{name}</span>
 export const PersonChip = ({ login, compact = false }: { login: string; compact?: boolean }) => <span className="repo-ui-person" title={login}><span className="repo-ui-avatar" data-lane="guest" aria-label={compact ? login : undefined}>{login.slice(0, 1).toUpperCase()}</span>{!compact && <span>{login}</span>}</span>

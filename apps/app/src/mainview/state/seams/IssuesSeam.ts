@@ -752,9 +752,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     }
     // A source 404 too: the repo is nowhere — the plain honest error, no card.
     if (!response.ok) {
-      return ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in"
-        ? readErrorMessage(response, `Listing issues for ${repo} failed (${response.status})`)
-        : readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
+      return readErrorMessage(response, `Listing issues for ${repo} failed (${response.status})`)
     }
     const body: unknown = await response.json().catch(() => null)
     if (!Array.isArray(body)) {
@@ -847,9 +845,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     } catch (error) {
       return unreachable(`list issues for ${repo}`, error)
     }
-    if (!response.ok) return ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in"
-        ? readErrorMessage(response, `Listing issues for ${repo} failed (${response.status})`)
-        : readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
+    if (!response.ok) return readErrorMessage(response, `Listing issues for ${repo} failed (${response.status})`)
     const body: unknown = await response.json().catch(() => null)
     if (!Array.isArray(body)) return `The backend answered issues for ${repo} with an unreadable payload`
     const issues = body.flatMap((entry) => {
@@ -1037,9 +1033,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
         if (typeof source === "string") return source
         return readErrorMessage(response, `Listing issues for ${repo} failed (404)`)
       }
-      return ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in"
-        ? readErrorMessage(response, `Listing issues for ${repo} failed (${response.status})`)
-        : readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
+      return readErrorMessage(response, `Listing issues for ${repo} failed (${response.status})`)
     }
     const body: unknown = await response.json().catch(() => null)
     if (!Array.isArray(body)) {
@@ -1117,6 +1111,17 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       },
       read: () => install ? readInstallIssue(repo, number) : source === "github" ? readGithubIssue(repo, number) : readIssue(repo, number) }
   })
+  const resolvedIssueSource = async (repo: string, number: number, asked?: IssueSource): Promise<{ readonly source: IssueSource } | { readonly error: string }> => {
+    const known = issueReadSource(repo, number, asked)
+    if (known !== undefined) return { source: known }
+    const declared = await declaredGithubSource(repo)
+    return typeof declared === "string" ? { error: declared } : { source: declared ? "github" : "smithers-cloud" }
+  }
+  const failedIssueSource = preparedView(ctx, (repo: string, number: number, error: string) => ({
+    id: `issue-${repo}-${number}`, title: `Issue #${number} · ${repo}`, pane: repo,
+    read: async () => error
+  }))
+
   /*
    * Every caller here is on a Smithers Cloud path — the Cloud branch of
    * `viewIssue`, and the re-reads after a Cloud PATCH/POST — so the tracker
@@ -1466,13 +1471,20 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
        * The same resolution the card itself takes, so the metadata read and
        * the card never address two different trackers for one number.
        */
-      if (issueReadSource(target.repo, number, source) === "github") {
+      const resolved = await resolvedIssueSource(target.repo, number, source)
+      if ("error" in resolved) return failedIssueSource(target.repo, number, resolved.error)
+      if (resolved.source === "github") {
         return readRepositoryDetail(ctx, target.repo, "issue", number,
           () => issueView(number, target.repo, "github"), "github")
       }
       const shown = await readRepositoryDetail(ctx, target.repo, "issue", number, () => showIssue(target.repo, number), "smithers")
       return shown
-    }, { preload: issueView.preload }),
+    }, { preload: async (number: number, explicitRepo?: string, source?: IssueSource) => {
+      const target = resolveTargetRepo(ctx.store, repoOf(explicitRepo))
+      if ("error" in target) return
+      const resolved = await resolvedIssueSource(target.repo, number, source)
+      if ("source" in resolved) await issueView.preload(number, target.repo, resolved.source)
+    } }),
 
     issueWriteTarget: repo => resolveTargetRepo(ctx.store, repo),
 

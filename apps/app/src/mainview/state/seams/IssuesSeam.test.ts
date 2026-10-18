@@ -64,6 +64,8 @@ const backend = (routes: Record<string, RouteAnswer>, calls: string[] = []): App
         ? answer(new Request(absolute.toString(), init))
         : answer.clone()
     }
+    // Mixed-tracker tests declare the mirror; their native issue door is explicit below.
+    if (method === "GET" && absolute.pathname === "/api/repos/will/flows") return json(200, { full_name: "will/flows", github_source: { owner: "will", repo: "flows" } })
     return json(404, { status: "error", message: `no stub for ${method} ${absolute.pathname}` })
   }
 })
@@ -97,7 +99,7 @@ const reposChosen = async (store: AppStore): Promise<void> => {
   store.dispatch({
     type: "repositories.loaded",
     actor: "system",
-    repositories: [{ id: "will/flows", org: "will", ownerKind: "user", name: "flows", head: null }]
+    repositories: [{ id: "will/flows", org: "will", ownerKind: "user", name: "flows", head: null, issueTracker: "smithers-cloud" }]
   })
   await settled()
 }
@@ -106,7 +108,8 @@ const issuesController = async (services: AppServices) => {
   const storage = memoryStorage()
   const store = await createAppStore({ kind: "localStorage", storage })
   const controller = createAppController(store, unavailableAgent, services)
-  await signedIn(store)
+  if (services.applicationIdentity) await controller.loadSession()
+  else await signedIn(store)
   await reposChosen(store)
   return { store, controller, storage }
 }
@@ -191,15 +194,7 @@ describe("issues seam — the list", () => {
       expect(store.collections.cards.get("issues-will/flows")).toMatchObject({ status: "error", loading: false })
     }
   })
-  /*
-   * Canary D-5: one refusal reached the person as two sentences. The
-   * transcript said the true one ("Sign in with GitHub to read issues on …",
-   * with the button) while the card beside it wore a FAILED headline and
-   * "This view couldn't be loaded. Try opening it again." — opening it again
-   * will never work, and the louder of the two was the false one. The
-   * sign-in prompt is the whole answer.
-   */
-  test("a signed-out read answers with the sign-in prompt alone, not a failed view card", async () => {
+  test("a refused signed-out public read ends in an error card that can be retried", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(store, unavailableAgent,
       backend({ "GET /api/repos/smithersai/smithers/issues": json(401, { status: "error", message: "sign in first" }) }))
@@ -209,12 +204,10 @@ describe("issues seam — the list", () => {
     await settled()
     await controller.commands.run("issues.list", "open smithersai/smithers")
     await settled()
-    const prompts = [...store.collections.messages.values()].filter((message) => message.action?.flow === "sign-in")
-    expect(prompts.map((message) => message.text)).toEqual(["Sign in with GitHub to read issues on smithersai/smithers."])
-    for (const card of store.collections.cards.values()) {
-      expect(card.status).not.toBe("error")
-      expect(card.body ?? "").not.toContain("This view couldn't be loaded")
-    }
+    const card = [...store.collections.cards.values()].find(card => card.viewRepo === "smithersai/smithers")
+    expect(card).toMatchObject({ status: "error", loading: false })
+    expect(card?.body).toContain("sign in first")
+    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "sign-in")).toHaveLength(0)
   })
 
   test("issues.list upserts the issue-list card with defensively parsed rows and asks state=open", async () => {
@@ -354,9 +347,10 @@ describe("issues seam — the list", () => {
     invalidatePreparedViews(store)
     const result = await controller.commands.run("issues.list")
     await settled()
-    expect(result.status).toBe("executed")
-    expect([...store.collections.messages.values()].some(message => message.action?.flow === "sign-in")).toBe(true)
+    expect(result.status).toBe("failed")
+    expect([...store.collections.messages.values()].some(message => message.action?.flow === "sign-in")).toBe(false)
     expect(calls.filter(call => call.startsWith("GET /api/user/github-repos/"))).toHaveLength(1)
+    expect(store.collections.cards.get("issues-will/flows")).toMatchObject({ status: "error", loading: false })
     const card = store.collections.cards.get("issues-will/flows")
     expect(card?.kind === "issue-list" && card.status === "active" && card.payload.issues.length > 0).toBe(false)
   })

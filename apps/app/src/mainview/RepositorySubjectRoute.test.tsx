@@ -313,22 +313,19 @@ test("a superseded admission request opens nothing, so one URL's subject never l
  * repository read, so the command PARKS on sign-in and the whole target is
  * what the sign-in returns to. No guest is allocated to read a pull request.
  */
-test("signed out, the subject parks on sign-in and the whole target is the return path", async () => {
+test("signed out, a public subject attempts its read and retains a truthful refusal", async () => {
   const backend = recordingBackend({
     "/api/user": json(401, { status: "error", code: "unauthorized" }),
-    [ROOT]: json(200, { full_name: REPO, default_bookmark: "main", is_public: true })
+    [ROOT]: json(200, { full_name: REPO, default_bookmark: "main", is_public: true }),
+    [`${ROOT}/landings/2`]: json(401, { message: "Public pull read refused" })
   })
   const { store, refusal } = await enter(`/${REPO}/pull/2/files`, backend)
   expect(store.session().repositoryEntry?.phase).toBe("ready")
-  // Nothing was read from the repository's pull requests, and no guest was asked for.
-  expect(backend.seen.some(path => path.includes("/landings"))).toBe(false)
+  expect(backend.seen.some(path => path.includes("/landings/2"))).toBe(true)
   expect(backend.seen.some(path => path.includes("/workspace"))).toBe(false)
-  // The park is the pull request read itself, bound to the URL's repository.
-  const pending = store.session().pendingCommand
-  expect(pending?.name).toBe("pr")
-  expect(JSON.parse(pending?.args ?? "{}")).toEqual({ number: 2, repo: REPO })
-  expect(pending?.requirement).toBe("repo-read")
-  expect(refusal).toBeUndefined()
+  expect(store.session().pendingCommand).toBeUndefined()
+  expect([...store.collections.cards.values()].some(card => card.status === "error" && card.loading === false)).toBe(true)
+  expect(refusal).toBeDefined()
   // And the sign-in comes back to the pull request, not to the repository root.
   expect(signInReturnTo(window.location)).toBe(`/${REPO}/pull/2/files`)
 })

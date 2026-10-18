@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { IssueViews } from "./IssueViews"
+import { IssueViews, matchesIssueReadKey } from "./IssueViews"
 import { PullViews } from "./PullViews"
 import { subjectCommand } from "../RepositorySubjectEntry"
 import { createIssuesSeam } from "../state/seams/IssuesSeam"
@@ -116,4 +116,36 @@ test("a native tracker 404 is an error, never a GitHub fallback", async () => {
   expect(card.status).toBe("error")
   expect(markup(card)).toContain("Retry")
   expect(calls.some(path => path.includes("github"))).toBe(false)
+})
+
+test("the repository frame matches native and GitHub issue reads without crossing repositories or numbers", () => {
+  expect(matchesIssueReadKey("issue-maya/tinyhttp-7", "maya/tinyhttp", 7)).toBe(true)
+  expect(matchesIssueReadKey("issue-github-Maya/TinyHttp-7", "maya/tinyhttp", 7)).toBe(true)
+  expect(matchesIssueReadKey("issue-maya/tinyhttp-8", "maya/tinyhttp", 7)).toBe(false)
+  expect(matchesIssueReadKey("issue-maya/other-7", "maya/tinyhttp", 7)).toBe(false)
+  expect(matchesIssueReadKey(undefined, "maya/tinyhttp", 7)).toBe(false)
+  expect(matchesIssueReadKey(JSON.stringify(["issues", "maya/tinyhttp", "all", "all", null]), "maya/tinyhttp")).toBe(true)
+  expect(matchesIssueReadKey("issue-maya/tinyhttp-7", "maya/tinyhttp")).toBe(false)
+})
+
+for (const nativeOnly of [true, false]) test(`a bare signed-out issue URL resolves its declared ${nativeOnly ? "native" : "GitHub"} tracker`, async () => {
+  const { store, issues, calls } = await setup("signed-out", false, nativeOnly, !nativeOnly)
+  const number = nativeOnly ? 7 : 8
+  const command = subjectCommand("maya/tinyhttp", { kind: "issue", number })
+  expect(command.args).not.toContain("--source")
+  await issues.viewIssue(number, "maya/tinyhttp")
+  const card = [...store.collections.cards.values()].find(card => card.kind === "issue")!
+  expect(card.kind).toBe("issue")
+  if (card.kind === "issue") expect(card.payload.source === "github").toBe(!nativeOnly)
+  if (nativeOnly) expect(calls.some(path => path.includes("github"))).toBe(false)
+  else expect(calls).not.toContain("/api/repos/maya/tinyhttp/issues/8")
+})
+test("failed source discovery on a bare issue URL finishes with Retry", async () => {
+  const { store, ctx } = await setup("unavailable")
+  const issues = createIssuesSeam({ ...ctx, http: async url => url.endsWith("/maya/tinyhttp") ? Response.json({}, { status: 401 }) : ctx.http(url) })
+  await issues.viewIssue(7, "maya/tinyhttp")
+  const card = [...store.collections.cards.values()].find(card => card.viewRepo === "maya/tinyhttp")!
+  expect(card.status).toBe("error")
+  expect(card.loading).toBe(false)
+  expect(markup(card)).toContain("Retry")
 })
