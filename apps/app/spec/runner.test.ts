@@ -158,7 +158,7 @@ test("absence, sent, URL, skipped judges and shape are recorded", async () => {
       { sent: "GET /api/repos/:repo/contents/*" }, { shape: "GET /api/repos/:repo/contents/*", schema: "RepoContents" },
       { url: { startsWith: "https://github.com/org/repo/issues/new?", includes: ["route", "build", "correlation"], absent: ["private"] }, on: { role: "link", name: "Publish" } }
     ]) expect((await observe(page, assertion, [exchange], decode)).ok).toBe(true)
-    for (const assertion of [{ fuzzy: { view: "reply" }, means: "clear" }, { rubric: "clear", on: { view: "reply" } }]) expect(await observe(page, assertion, [], decode)).toMatchObject({ ok: null, reason: "skipped: judges arrive in spec4" })
+    for (const assertion of [{ fuzzy: { view: "reply" }, means: "clear" }, { rubric: "clear", on: { view: "reply" } }]) expect(await observe(page, assertion, [], decode)).toMatchObject({ ok: null, verdict: "inconclusive", reason: "Judged assertions require the journey judge context" })
     expect((await observe(page, { sent: "GET /missing" }, [], decode)).ok).toBe(false)
     await page.setContent('<a href="https://github.com/smithersai/smithers/issues/new?body=private-canary%2Fsecret-repository">Publish</a>')
     const leaked = await observe(page, { url: { startsWith: "https://github.com/smithersai/smithers/issues/new?", absent: ["private-canary/secret-repository"] }, on: { role: "link", name: "Publish" } }, [], decode)
