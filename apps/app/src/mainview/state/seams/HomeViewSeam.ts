@@ -13,6 +13,8 @@ export class HomeViewFailure extends Data.TaggedError("HomeViewFailure")<{ reado
 
 /** Private main-conversation preferences; shared Home facts never contain these. */
 export function createHomeViewSeam(options: {
+  readonly visibility?: Pick<Document, "visibilityState" | "addEventListener" | "removeEventListener">
+  readonly focus?: Pick<Window, "addEventListener" | "removeEventListener">
   readonly live?: LiveTopics
   readonly serializeView?: (work: () => Promise<void>) => Promise<void>
   readonly http: SeamFetch
@@ -27,6 +29,12 @@ export function createHomeViewSeam(options: {
     initialData: [{ id: "main", view: emptyView }]
   }))
   rows.preload()
+  const visibility = options.visibility ?? (typeof document === "undefined" ? undefined : document)
+  const focus = options.focus ?? (typeof window === "undefined" ? undefined : window)
+  const hidden = () => visibility?.visibilityState === "hidden"
+  let interval = 2000
+  let pollingRevision = 0
+  let previous: Pick<HomeViewProps["view"], "filter" | "menu" | "last_seen_seq"> | undefined
   let disposed = false
   let generation = 0
   let readGeneration = 0
@@ -81,24 +89,48 @@ export function createHomeViewSeam(options: {
     publish({ ...get(), filter: parsed.success ? parsed.data : undefined, menu, last_seen_seq: lastSeen })
     scheduleLook()
   }
-  const read = () => {
+  const read = (backoff = false, visibleOnly = false) => {
+    const pollRevision = pollingRevision
     const revision = generation, principal = owner, reading = ++readGeneration
     // A poll during admission must not return pre-write preferences after
     // the committed write. Reads use the same local and conversation queue.
     const work = pending.then(() => (options.serializeView ?? (work => work()))(async () => {
-      if (!valid(revision, principal)) return
-      try { const body = await request(); if (valid(revision, principal) && reading === readGeneration) apply(body) }
+      if (!valid(revision, principal) || (visibleOnly && hidden())) return
+      try {
+        const body = await request()
+        if (valid(revision, principal) && reading === readGeneration) {
+          apply(body)
+          const view = get()
+          const unchanged = previous !== undefined && previous.filter === view.filter && previous.menu === view.menu && previous.last_seen_seq === view.last_seen_seq
+          previous = { filter: view.filter, menu: view.menu, last_seen_seq: view.last_seen_seq }
+          if (pollRevision === pollingRevision) interval = backoff && unchanged ? Math.min(30000, interval * 2) : 2000
+        }
+      }
       catch (error) { if (valid(revision, principal)) options.report(error) }
     }))
     pending = work.catch(() => {})
     return work
   }
+  const cancelPoll = () => {
+    ++pollingRevision
+    if (timer !== undefined) clearTimeout(timer)
+    timer = undefined
+  }
   const poll = () => {
+    if (disposed || !listeners.size || hidden() || timer !== undefined) return
+    const revision = pollingRevision
     timer = setTimeout(() => {
       timer = undefined
-      void read().finally(() => { if (!disposed && listeners.size) poll() })
-    }, 2000)
+      void read(true, true).finally(() => { if (revision === pollingRevision) poll() })
+    }, interval)
   }
+  const restart = () => {
+    cancelPoll(); interval = 2000
+    if (disposed || !listeners.size || hidden()) return
+    const revision = pollingRevision
+    void read(false, true).finally(() => { if (revision === pollingRevision) poll() })
+  }
+  const visibilityChanged = () => { if (hidden()) cancelPoll(); else restart() }
   const changeOwner = () => {
     const next = options.owner()
     if (next === owner) return
@@ -108,18 +140,21 @@ export function createHomeViewSeam(options: {
     // Visibility belongs to this mounted tab, not the previous member.
     const onScreen = get().on_screen
     publish({ maximized: false, ...(onScreen === undefined ? {} : { on_screen: onScreen }) })
-    void read()
+    previous = undefined
+    restart()
   }
   const subscribe = (notify: () => void) => {
     if (disposed) return () => {}
     listeners.add(notify)
     if (listeners.size === 1 && !disposed) {
       stopOwner = options.subscribeOwner(changeOwner)
-      stopHome = options.live?.subscribe("home", observeHome)
+      stopHome = options.live?.subscribe("home", () => { observeHome(); restart() })
+      visibility?.addEventListener("visibilitychange", visibilityChanged)
+      focus?.addEventListener?.("focus", restart)
       observeHome(); changeOwner()
       const now = Date.now()
-      if (!preferencesKnown || now - subscribedReadAt >= 2000) { subscribedReadAt = now; void read() }
-      poll()
+      if (!preferencesKnown || now - subscribedReadAt >= 2000) { subscribedReadAt = now; restart() }
+      else poll()
     }
     return () => {
       listeners.delete(notify)
@@ -129,8 +164,9 @@ export function createHomeViewSeam(options: {
         cancelLook(); const releaseHome = stopHome; stopHome = undefined
         queueMicrotask(() => releaseHome?.())
         ++generation; stopOwner?.(); stopOwner = undefined
-        if (timer !== undefined) clearTimeout(timer)
-        timer = undefined
+        cancelPoll()
+        visibility?.removeEventListener("visibilitychange", visibilityChanged)
+        focus?.removeEventListener?.("focus", restart)
       }
     }
   }
@@ -154,6 +190,7 @@ export function createHomeViewSeam(options: {
       (!("menu" in patch) || patch.menu === get().menu) &&
       (patch.last_seen_seq === undefined || patch.last_seen_seq <= (get().last_seen_seq ?? 0))
     if (unchanged()) return
+    cancelPoll(); interval = 2000
     const revision = generation, principal = owner
     pending = pending.then(() => (options.serializeView ?? (work => work()))(async () => {
       if (!valid(revision, principal) || unchanged()) return
@@ -166,14 +203,15 @@ export function createHomeViewSeam(options: {
       const result = await request({ method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...saved, ...(patch.last_seen_seq === undefined ? {} : { last_seen_seq: Math.max(typeof saved.last_seen_seq === "number" ? saved.last_seen_seq : 0, patch.last_seen_seq) }), home: { ...home, ...changes } }) })
       if (valid(revision, principal)) apply(result)
-    })).catch(error => { if (valid(revision, principal)) options.report(error) })
+    })).catch(error => { if (valid(revision, principal)) options.report(error) }).finally(() => { poll() })
   }
   const dispose = () => {
     if (disposed) return
     disposed = true; ++generation; stopOwner?.(); stopOwner = undefined
     stopHome?.(); stopHome = undefined; cancelLook()
-    if (timer !== undefined) clearTimeout(timer)
-    timer = undefined
+    cancelPoll()
+    visibility?.removeEventListener("visibilitychange", visibilityChanged)
+    focus?.removeEventListener?.("focus", restart)
     listeners.clear(); rows.cleanup()
   }
   return { get, subscribe, onView, read, dispose }

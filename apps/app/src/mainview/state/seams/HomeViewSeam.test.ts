@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test"
+import { expect, jest, test } from "bun:test"
 import { createHomeViewSeam } from "./HomeViewSeam"
 import { waitFor } from "../TestFixtures"
 import { LiveChannel, type LiveSocket } from "../../runtime/LiveChannel"
@@ -314,4 +314,111 @@ test("Home card handoff preserves the live cursor and releases the final reader"
     await Promise.resolve()
     expect(frames.at(-1)).toEqual({ t: "unsub", id: 1 })
   } finally { seam.dispose(); live.dispose() }
+})
+
+// Flush the seam's serialized queue without advancing the polling clock.
+async function flushPolling() { for (let i = 0; i < 40; i++) await Promise.resolve() }
+
+function pollingFixture() {
+  const visibility = Object.assign(new EventTarget(), { visibilityState: "visible" as DocumentVisibilityState })
+  const focus = new EventTarget()
+  let owner = "Ben", ownerChanged = () => {}, homeChanged = () => {}, requests = 0
+  let answer = { home: { filter: "queued", menu: 1 }, last_seen_seq: 2 }
+  const seam = createHomeViewSeam({ visibility, focus,
+    owner: () => owner, subscribeOwner: notify => { ownerChanged = notify; return () => {} },
+    live: { subscribe: (_topic, notify) => { homeChanged = notify; return () => {} }, getSnapshot: () => undefined },
+    report: error => { throw error }, http: async (_path, init) => {
+      requests++
+      if (init?.method === "PUT") answer = JSON.parse(String(init.body))
+      return Response.json(answer)
+    } })
+  const stop = seam.subscribe(() => {})
+  return { seam, stop, visibility, focus, count: () => requests,
+    change: () => { answer = { ...answer, last_seen_seq: answer.last_seen_seq + 1 } },
+    owner: () => { owner = "Alice"; ownerChanged() }, home: () => homeChanged() }
+}
+
+
+async function tick(ms: number) { jest.advanceTimersByTime(ms); await flushPolling() }
+
+test("unchanged Home answers poll after 2, 4, 8, 16, 30, 30 seconds", async () => {
+  jest.useFakeTimers()
+  const f = pollingFixture()
+  try {
+    await flushPolling()
+    expect(f.count()).toBe(1)
+    for (const [i, delay] of [2000, 4000, 8000, 16000, 30000, 30000].entries()) {
+      await tick(delay - 1); expect(f.count()).toBe(i + 1)
+      await tick(1); expect(f.count()).toBe(i + 2)
+    }
+  } finally { f.seam.dispose(); jest.useRealTimers() }
+})
+
+test("changed Home answer resets polling to two seconds", async () => {
+  jest.useFakeTimers(); const f = pollingFixture()
+  try {
+    await flushPolling(); await tick(2000); f.change(); await tick(4000)
+    expect(f.count()).toBe(3)
+    await tick(1999); expect(f.count()).toBe(3)
+    await tick(1); expect(f.count()).toBe(4)
+  } finally { f.seam.dispose(); jest.useRealTimers() }
+})
+
+test("hidden Home pauses and becoming visible reads immediately then after two seconds", async () => {
+  jest.useFakeTimers(); const f = pollingFixture()
+  try {
+    await flushPolling()
+    f.visibility.visibilityState = "hidden"; f.visibility.dispatchEvent(new Event("visibilitychange"))
+    await tick(120000); expect(f.count()).toBe(1)
+    f.focus.dispatchEvent(new Event("focus")); await flushPolling(); expect(f.count()).toBe(1)
+    f.visibility.visibilityState = "visible"; f.visibility.dispatchEvent(new Event("visibilitychange"))
+    await flushPolling(); expect(f.count()).toBe(2)
+    await tick(1999); expect(f.count()).toBe(2)
+    await tick(1); expect(f.count()).toBe(3)
+  } finally { f.seam.dispose(); jest.useRealTimers() }
+})
+
+for (const trigger of ["focus", "owner", "home", "write"] as const) test(`${trigger} resets Home polling`, async () => {
+  jest.useFakeTimers(); const f = pollingFixture()
+  try {
+    await flushPolling(); await tick(2000); await tick(4000)
+    if (trigger === "focus") f.focus.dispatchEvent(new Event("focus"))
+    else if (trigger === "write") f.seam.onView({ menu: 9 })
+    else f[trigger]()
+    await flushPolling()
+    const count = f.count()
+    expect(count).toBeGreaterThan(3)
+    await tick(1999); expect(f.count()).toBe(count)
+    await tick(1); expect(f.count()).toBe(count + 1)
+  } finally { f.seam.dispose(); jest.useRealTimers() }
+})
+
+test("unsubscribe and dispose stop Home timers and browser listeners", async () => {
+  jest.useFakeTimers(); const f = pollingFixture()
+  try {
+    await flushPolling(); f.stop(); await flushPolling()
+    await tick(120000); expect(f.count()).toBe(1)
+    f.focus.dispatchEvent(new Event("focus")); await flushPolling(); expect(f.count()).toBe(1)
+    f.seam.subscribe(() => {}); await flushPolling()
+    const count = f.count(); f.seam.dispose()
+    f.focus.dispatchEvent(new Event("focus")); f.visibility.dispatchEvent(new Event("visibilitychange"))
+    await tick(120000); expect(f.count()).toBe(count)
+  } finally { f.seam.dispose(); jest.useRealTimers() }
+})
+
+test("Home mounted hidden waits for visibility and ignores unrelated answer fields", async () => {
+  jest.useFakeTimers()
+  const visibility = Object.assign(new EventTarget(), { visibilityState: "hidden" as DocumentVisibilityState })
+  let requests = 0
+  const seam = createHomeViewSeam({ visibility, owner: () => "Ben", subscribeOwner: () => () => {},
+    report: error => { throw error }, http: async () => Response.json({ home: {}, unrelated: ++requests }) })
+  seam.subscribe(() => {})
+  try {
+    await flushPolling(); await tick(60000); expect(requests).toBe(0)
+    visibility.visibilityState = "visible"; visibility.dispatchEvent(new Event("visibilitychange"))
+    await flushPolling(); expect(requests).toBe(1)
+    await tick(2000); expect(requests).toBe(2)
+    await tick(3999); expect(requests).toBe(2)
+    await tick(1); expect(requests).toBe(3)
+  } finally { seam.dispose(); jest.useRealTimers() }
 })
