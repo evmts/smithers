@@ -48,12 +48,14 @@ const backend = (routes: Record<string, Answer>, calls: string[]): AppServices =
 
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-const controllerFor = async (routes: Record<string, Answer>) => {
+/** `mirror` loads the row as admission records a document declaring a GitHub source, so the list asks GitHub's door too. */
+const controllerFor = async (routes: Record<string, Answer>, mirror = false) => {
   const calls: string[] = []
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableAgent, backend(routes, calls))
   store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", admin: false, scopesPlain: null })
-  store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "will/flows", org: "will", ownerKind: "user", name: "flows", head: null }] })
+  store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "will/flows", org: "will", ownerKind: "user", name: "flows", head: null,
+    ...(mirror ? { githubSource: { owner: "will", repo: "flows" } } : {}) }] })
   await settled()
   return { store, controller, calls }
 }
@@ -77,7 +79,7 @@ describe("saved issue views in the issue list", () => {
     const { store, controller, calls } = await controllerFor({
       "GET /api/repos/will/flows/issues": json(200, [wireIssue(7)]),
       "GET /api/repos/will/flows/issue-views": json(200, [...VIEWS, { id: "", title: "junk" }, "junk"])
-    })
+    }, true)
     expect((await controller.commands.run("issues.list")).status).toBe("executed")
     await settled()
     const card = listCard(store)

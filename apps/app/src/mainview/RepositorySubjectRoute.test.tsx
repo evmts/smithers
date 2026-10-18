@@ -227,10 +227,15 @@ test("a GitHub-shaped issue URL opens GitHub's issue, never the Cloud row with t
     "/api/user/github-repos/roninjin10/e2e-verify/issues": json(200, [githubIssue(5)]),
     "/api/user/github-repos/roninjin10/e2e-verify/issues/5/comments": json(200, [])
   })
-  const { store, refusal } = await enter(`/${REPO}/issues/5`, backend)
+  const retained: Extract<import("./state/AppState").Card, {kind: "issue-list"}> = {
+    id: "native-list", kind: "issue-list", title: "Issues", status: "active", createdAt: 0, ordinal: 1,
+    payload: {repo: REPO, filter: "all", issues: [{number: 5, title: "Native collision", state: "open", source: "smithers-cloud", author: null, comments: 0, updatedAt: null}]}
+  }
+  const { store, refusal } = await enter(`/${REPO}/issues/5`, backend, {retained: [{type: "card.upsert", actor: "system", card: retained}]})
   expect(refusal).toBeUndefined()
   const opened = [...store.collections.cards.values()].filter(card => card.kind === "issue")
-  expect(opened.map(card => card.id)).toEqual([`issue-github-${REPO}-5`])
+  expect(opened).toHaveLength(1)
+  expect(opened[0]?.kind === "issue" ? opened[0].payload.source : undefined).toBe("github")
   expect(opened[0]?.kind === "issue" ? opened[0].payload.title : undefined).toBe("GitHub issue 5")
   // The read was GitHub's, through the explicit source the URL carries.
   expect(backend.seen.some(path => path.startsWith("/api/user/github-repos/roninjin10/e2e-verify/issues"))).toBe(true)
@@ -321,22 +326,19 @@ test("a superseded admission request opens nothing, so one URL's subject never l
  * repository read, so the command PARKS on sign-in and the whole target is
  * what the sign-in returns to. No guest is allocated to read a pull request.
  */
-test("signed out, the subject parks on sign-in and the whole target is the return path", async () => {
+test("signed out, a public subject attempts its read and retains a truthful refusal", async () => {
   const backend = recordingBackend({
     "/api/user": json(401, { status: "error", code: "unauthorized" }),
-    [ROOT]: json(200, { full_name: REPO, default_bookmark: "main", is_public: true })
+    [ROOT]: json(200, { full_name: REPO, default_bookmark: "main", is_public: true }),
+    [`${ROOT}/landings/2`]: json(401, { message: "Public pull read refused" })
   })
   const { store, refusal } = await enter(`/${REPO}/pull/2/files`, backend)
   expect(store.session().repositoryEntry?.phase).toBe("ready")
-  // Nothing was read from the repository's pull requests, and no guest was asked for.
-  expect(backend.seen.some(path => path.includes("/landings"))).toBe(false)
+  expect(backend.seen.some(path => path.includes("/landings/2"))).toBe(true)
   expect(backend.seen.some(path => path.includes("/workspace"))).toBe(false)
-  // The park is the pull request read itself, bound to the URL's repository.
-  const pending = store.session().pendingCommand
-  expect(pending?.name).toBe("pr")
-  expect(JSON.parse(pending?.args ?? "{}")).toEqual({ number: 2, repo: REPO })
-  expect(pending?.requirement).toBe("repo-read")
-  expect(refusal).toBeUndefined()
+  expect(store.session().pendingCommand).toBeUndefined()
+  expect([...store.collections.cards.values()].some(card => card.status === "error" && card.loading === false)).toBe(true)
+  expect(refusal).toBeDefined()
   // And the sign-in comes back to the pull request, not to the repository root.
   expect(signInReturnTo(window.location)).toBe(`/${REPO}/pull/2/files`)
 })
@@ -844,4 +846,20 @@ test("whole-file controls retain registry dispatch and exact bytes after page ad
   expect(host.querySelector('[aria-label="Source of controls.ts"]')).toBeNull()
   expect(host.querySelector('a[href="/raw/controls.ts"]')?.textContent).toBe("Raw")
   expect(host.textContent).toContain("524,289 B")
+})
+
+test("issue detail keeps the loaded list count from persisted card history", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/issues`]: json(200, [cloudIssue(5)]),
+    [`${ROOT}/issues/5`]: json(200, cloudIssue(5)),
+    [`${ROOT}/issues/5/comments`]: json(200, [])
+  })
+  const {store, controller} = await enter(`/${REPO}/issues`, backend)
+  expect((await controller.commands.run("issues.view", `5 ${REPO} --source smithers-cloud`)).status).toBe("executed")
+  window.history.replaceState(null, "", `/${REPO}/issues/5`)
+  const {host} = mount(controller)
+  await settled()
+  expect([...store.collections.cardHistories.values()].some(history => history.entries.some(card => card.kind === "issue-list"))).toBe(true)
+  const nav = host.querySelector('nav[aria-label="Repository"]')
+  expect([...nav!.querySelectorAll("a")].find(a => a.getAttribute("href")?.endsWith("/issues"))?.textContent).toBe("Issues1")
 })

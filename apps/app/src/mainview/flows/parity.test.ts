@@ -1328,6 +1328,8 @@ describe("launch-law parity: every affordance is a command", () => {
         .filter(([, count]) => count > 0)
     )
     expect(counts).toEqual({
+      "../repository/IssueViews.tsx": 3,
+      // PullViews delegates Retry to FailureNotice through flowAction; no direct handler.
       // Toast dismissal is owned by ToastStack; includes dock Close.
       // Close, Back and Next all dispatch onboarding.act through IntroSlidesShell.
       // The optional capability reel after the last lesson: its launch pill and its Back.

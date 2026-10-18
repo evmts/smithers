@@ -1,6 +1,6 @@
 import { preparedView, type ViewAction, type ViewResult, invalidatePreparedViews } from "../PreparedView"
 import { readRepositoryDetail } from "../RepositoryReadReceipts"
-import { readRepositoryListError, repositoryListRead, type RepositoryForm } from "./RepositoryListSeam"
+import { repositoryMetadataNotice,readRepositoryListError, repositoryListRead, type RepositoryForm } from "./RepositoryListSeam"
 /*
  * The landings seam ("PRs"): /api/repos/{owner}/{repo}/landings* through the
  * product Worker's platform proxy. Landing a PR QUEUES it (202 Accepted) — the
@@ -67,9 +67,15 @@ interface LandingRow {
   readonly state: string
   readonly author: string | null
   readonly updatedAt: string | null
+  readonly createdAt?: string
+  readonly labels?: string[]
+  readonly draft?: boolean
+  readonly comments?: number
+  readonly branch?: string
+  readonly baseBranch?: string
 }
 
-interface LandingDetail extends LandingRow {
+interface LandingDetail extends Omit<LandingRow, "createdAt"> {
   readonly body: string
   /** The jj change ids (bottom → top); the tip is the checks status ref. */
   readonly changeIds: readonly string[]
@@ -108,7 +114,13 @@ const parseLandingRow = (value: unknown): LandingRow | null => {
     state: mergedState(value, typeof value.state === "string" && value.state !== "" ? value.state : "unknown"),
     author: isRecord(value.author) ? stringOrNull(value.author.login)
       : isRecord(value.user) ? stringOrNull(value.user.login) : null,
-    updatedAt: stringOrNull(value.updated_at)
+    updatedAt: stringOrNull(value.updated_at),
+    ...(typeof value.created_at === "string" ? { createdAt: value.created_at } : {}),
+    ...(typeof value.draft === "boolean" ? { draft: value.draft } : {}),
+    ...(typeof value.comments === "number" && Number.isInteger(value.comments) && value.comments >= 0 ? { comments: value.comments } : {}),
+    ...(Array.isArray(value.labels) ? { labels: value.labels.flatMap(label => typeof label === "string" ? [label] : isRecord(label) && typeof label.name === "string" ? [label.name] : []) } : {}),
+    ...(isRecord(value.head) && typeof value.head.ref === "string" ? { branch: value.head.ref } : {}),
+    ...(isRecord(value.base) && typeof value.base.ref === "string" ? { baseBranch: value.base.ref } : {})
   }
 }
 
@@ -190,7 +202,7 @@ const repoApiRoot = (repo: string): string => {
 type PullSource =
   | { readonly kind: "native" }
   | { readonly kind: "github"; readonly repo: string; readonly publicReadRoot?: string }
-  | { readonly error: string }
+  | { readonly error: string; readonly status?: number }
 
 /** A ready import in the repository response is the only source mapping. */
 const pullSource = async (ctx: Pick<SeamContext, "http" | "baseUrl">, repo: string): Promise<PullSource> => {
@@ -201,15 +213,17 @@ const pullSource = async (ctx: Pick<SeamContext, "http" | "baseUrl">, repo: stri
     return { error: `The source of pull requests for ${repo} couldn't be checked.` }
   }
   if (!response.ok) {
-    return { error: await readErrorMessage(response, `The source of pull requests for ${repo} couldn't be checked.`) }
+    return { error: await readErrorMessage(response, `The source of pull requests for ${repo} couldn't be checked.`), status: response.status }
   }
   const body: unknown = await response.json().catch(() => null)
   if (!isRecord(body) || typeof body.full_name !== "string" || body.full_name.toLowerCase() !== repo.toLowerCase()) {
     return { error: `The source of pull requests for ${repo} answered with a different repository.` }
   }
+  if (body.issue_tracker === "smithers-cloud") return { kind: "native" }
+  if (body.issue_tracker !== undefined && body.issue_tracker !== "github") return { error: `The source of pull requests for ${repo} could not be checked.` }
   if (body.github_source_unavailable === true) return { error: `The source of pull requests for ${repo} is unavailable.` }
   if (body.github_source_ambiguous === true) return { error: `This repository has more than one GitHub source, so its pull requests cannot be reviewed here.` }
-  if (body.github_source === undefined) return { kind: "native" }
+  if (body.github_source === undefined) return body.issue_tracker === "github" ? { error: `The GitHub source of ${repo} could not be verified.` } : { kind: "native" }
   const source = body.github_source
   if (!isRecord(source) || typeof source.owner !== "string" || typeof source.repo !== "string"
     || !/^[A-Za-z0-9_.-]+$/.test(source.owner) || !/^[A-Za-z0-9_.-]+$/.test(source.repo)) {
@@ -524,22 +538,24 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     }
   }
 
-  /** Checks for the tip change id; no ref or a section failure degrades to []. */
+  /** Checks for the tip change id; a refused read stays distinct from no checks. */
   const fetchChecks = async (
     repo: string,
     ref: string | undefined
-  ): Promise<Array<{ context: string; state: string }>> => {
-    if (ref === undefined || ref === "") return []
+  ): Promise<{ rows: Array<{ context: string; state: string }>; error?: string }> => {
+    if (ref === undefined || ref === "") return { rows: [] }
     try {
       const response = await ctx.http(
         `${ctx.baseUrl}${repoApiRoot(repo)}/commits/${encodeURIComponent(ref)}/statuses?limit=100`
       )
-      if (!response.ok) return []
+      if (!response.ok) return { rows: [], error: await readErrorMessage(response, `Read failed (HTTP ${response.status}).`) }
       const body: unknown = await response.json().catch(() => undefined)
-      if (!Array.isArray(body)) return []
-      return newestPerContext(body.map(parseCheckRow).filter((row): row is CheckRow => row !== null))
+      if (!Array.isArray(body)) return { rows: [], error: "The platform returned an unreadable response." }
+      const parsed = body.map(parseCheckRow)
+      if (parsed.some(row => row === null)) return { rows: [], error: "The platform returned an unreadable response." }
+      return { rows: newestPerContext(parsed as CheckRow[]) }
     } catch {
-      return []
+      return { rows: [], error: "The platform didn't answer." }
     }
   }
 
@@ -857,7 +873,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     repo: string,
     number: number,
     stateOverride?: string,
-    resolvedSource?: Exclude<PullSource, { readonly error: string }>
+    resolvedSource?: PullSource
   ): Promise<ViewResult> => {
     /* The caller that already resolved the source hands it over: the read and
      * the notification it acknowledges then name the SAME fact, and the
@@ -890,7 +906,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       ? await fetchGitHubTabs(source.repo, number, githubHead, githubCommitCount)
       : undefined
     const [reviews, checks, stack] = github !== undefined
-      ? [[], github.checks ?? [], github.tabs] as const
+      ? [[], { rows: github.checks ?? [], error: undefined }, github.tabs] as const
       : await Promise.all([
         fetchReviews(repo, number),
         fetchChecks(repo, landing.changeIds.at(-1)),
@@ -911,14 +927,16 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       author: landing.author,
       prBody: landing.body,
       reviews: [...reviews],
-      checks: [...checks],
+      checks: [...checks.rows],
       ...(landing.targetBookmark !== null ? { baseBranch: landing.targetBookmark } : {}),
       ...(landing.createdAt !== null ? { createdAt: landing.createdAt } : {}),
-      ...stack
+      ...stack,
+      ...(checks.error === undefined ? {} : { readErrors: { ...stack.readErrors, checks: `Checks unavailable (${checks.error})` } })
     }
     const card: Card = {
       id: `pr-${repo}-${number}`,
       kind: "pr",
+      body: repositoryMetadataNotice(response),
       title: `#${number} ${landing.title} · ${repo}`,
       status: "active",
       createdAt: Date.now(),
@@ -941,8 +959,12 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     if ("error" in target) return target.error
     const repo = target.repo
     return { id: `prs-${repo}`, title: `Pull requests · ${repo}`, pane: repo, read: async (): Promise<ViewResult> => {
+      const offerSignIn = ctx.store.collections.identitySessions.get("identity")?.state !== "signed-out"
       const source = await pullSource(ctx, repo)
-      if ("error" in source) return source.error
+      if ("error" in source) {
+        if (source.status === 401 && offerSignIn) ctx.promptSignIn?.(`read pull requests on ${repo}`)
+        return source.error
+      }
       let response: Response
       try {
         // One bounded page. Omitting `state` lists every lifecycle state —
@@ -952,7 +974,8 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
         return `Pull requests for ${repo} couldn't be listed — the platform didn't answer.`
       }
       if (!response.ok) {
-        return readRepositoryListError(response, `Pull requests for ${repo} couldn't be listed.`)
+        if (response.status === 401 && offerSignIn) ctx.promptSignIn?.(`read pull requests on ${repo}`)
+        return readErrorMessage(response, `Pull requests for ${repo} couldn't be listed.`)
       }
       const body: unknown = await response.json().catch(() => undefined)
       if (!Array.isArray(body)) {
@@ -961,16 +984,11 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       const landings = body
         .map(parseLandingRow)
         .filter((row): row is LandingRow => row !== null)
-        .map(({ number, title, state, author, updatedAt }) => ({
-          number,
-          title,
-          state,
-          author,
-          updatedAt
-        }))
+
       const card: Card = {
         id: `prs-${repo}`,
         kind: "pr-list",
+        body: repositoryMetadataNotice(response),
         title: `Pull requests · ${repo}`,
         status: "active",
         createdAt: Date.now(),
@@ -982,7 +1000,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
         : `Pull requests · ${repo}\n${landings.map((landing) => `#${landing.number} ${landing.title} · ${landing.state}`).join("\n")}`) }
     } }
   })
-  const landingView = preparedView(ctx, (number: number, repoArg?: string, stateOverride?: string, source?: Exclude<PullSource, { readonly error: string }>) => {
+  const landingView = preparedView(ctx, (number: number, repoArg?: string, stateOverride?: string, source?: PullSource) => {
     const target = resolveTargetRepo(ctx.store, repoArg)
     if ("error" in target) return target.error
     const repo = target.repo
@@ -1218,7 +1236,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       const conversation = conversationTabIdOf(ctx.store.session())
       const source = await pullSource(ctx, target.repo)
       if (!ownerCurrent() || conversationTabIdOf(ctx.store.session()) !== conversation) return "The repository or account changed while its pull request was loading."
-      if ("error" in source) return source.error
+      if ("error" in source) return landingView(number, target.repo, undefined, source)
       return readRepositoryDetail(ctx, target.repo, "pr", number,
         () => landingView(number, target.repo, undefined, source), source.kind === "github" ? "github" : "smithers")
     }, {

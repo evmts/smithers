@@ -29,13 +29,13 @@ const setup = async (fetchImpl?: import("./AppController").AppServices["fetchImp
   return { store, controller, redirects, requests }
 }
 
-// A repository read parks on repo-read, which an advertised public repository can satisfy; everything else on signed-in.
+// Issue source reads use repo-source; an advertised public repository satisfies its public reader.
 // The prompt names what sign-in unlocks (a named launch keeps its repository) or says "continue" for a chrome door.
 for (const [name, args, requirement, prompt] of [
   ["flow.run", "review smithersai/smithers", "signed-in", "Sign in with GitHub to run review on smithersai/smithers."],
   ["secrets", undefined, "signed-in", "Sign in with GitHub to continue."],
   ["settings", undefined, "signed-in", "Sign in with GitHub to continue."],
-  ["issues.view", "3", "repo-read", undefined]
+  ["issues.view", "3", "repo-source", undefined]
 ] as const) {
   test(`${name} signed out parks silently with one sign-in prompt across repeated clicks, without starting OAuth`, async () => {
     const { controller, store, requests, redirects } = await setup()

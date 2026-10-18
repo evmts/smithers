@@ -92,22 +92,30 @@ const signedIn = async (store: AppStore, login = "will"): Promise<void> => {
   await settled()
 }
 
-/** ONE loaded repo, so repo resolution answers "will/flows" without an argument. */
-const reposChosen = async (store: AppStore): Promise<void> => {
+/**
+ * ONE loaded repo, so repo resolution answers "will/flows" without an argument.
+ * The row declares what admission would have recorded off the repository
+ * document: a Smithers Cloud tracker, or (`mirror`) a GitHub source the
+ * server has not resolved into a tracker, so the list reads the tracker's
+ * rows AND GitHub's and a bare number on no recorded row opens GitHub's.
+ */
+const reposChosen = async (store: AppStore, mirror = false): Promise<void> => {
   store.dispatch({
     type: "repositories.loaded",
     actor: "system",
-    repositories: [{ id: "will/flows", org: "will", ownerKind: "user", name: "flows", head: null }]
+    repositories: [{ id: "will/flows", org: "will", ownerKind: "user", name: "flows", head: null,
+      ...(mirror ? { githubSource: { owner: "will", repo: "flows" } } : { issueTracker: "smithers-cloud" }) }]
   })
   await settled()
 }
 
-const issuesController = async (services: AppServices) => {
+const issuesController = async (services: AppServices, options: { readonly mirror?: boolean } = {}) => {
   const storage = memoryStorage()
   const store = await createAppStore({ kind: "localStorage", storage })
   const controller = createAppController(store, unavailableAgent, services)
-  await signedIn(store)
-  await reposChosen(store)
+  if (services.applicationIdentity) await controller.loadSession()
+  else await signedIn(store)
+  await reposChosen(store, options.mirror === true)
   return { store, controller, storage }
 }
 
@@ -191,15 +199,7 @@ describe("issues seam — the list", () => {
       expect(store.collections.cards.get("issues-will/flows")).toMatchObject({ status: "error", loading: false })
     }
   })
-  /*
-   * Canary D-5: one refusal reached the person as two sentences. The
-   * transcript said the true one ("Sign in with GitHub to read issues on …",
-   * with the button) while the card beside it wore a FAILED headline and
-   * "This view couldn't be loaded. Try opening it again." — opening it again
-   * will never work, and the louder of the two was the false one. The
-   * sign-in prompt is the whole answer.
-   */
-  test("a signed-out read answers with the sign-in prompt alone, not a failed view card", async () => {
+  test("a refused signed-out public read ends in an error card that can be retried", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(store, unavailableAgent,
       backend({ "GET /api/repos/smithersai/smithers/issues": json(401, { status: "error", message: "sign in first" }) }))
@@ -209,12 +209,10 @@ describe("issues seam — the list", () => {
     await settled()
     await controller.commands.run("issues.list", "open smithersai/smithers")
     await settled()
-    const prompts = [...store.collections.messages.values()].filter((message) => message.action?.flow === "sign-in")
-    expect(prompts.map((message) => message.text)).toEqual(["Sign in with GitHub to read issues on smithersai/smithers."])
-    for (const card of store.collections.cards.values()) {
-      expect(card.status).not.toBe("error")
-      expect(card.body ?? "").not.toContain("This view couldn't be loaded")
-    }
+    const card = [...store.collections.cards.values()].find(card => card.viewRepo === "smithersai/smithers")
+    expect(card).toMatchObject({ status: "error", loading: false })
+    expect(card?.body).toContain("sign in first")
+    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "sign-in")).toHaveLength(0)
   })
 
   test("issues.list upserts the issue-list card with defensively parsed rows and asks state=open", async () => {
@@ -231,7 +229,7 @@ describe("issues seam — the list", () => {
         },
         calls
       )
-    )
+    , { mirror: true })
     const outcome = await controller.commands.run("issues.list")
     expect(outcome.status).toBe("executed")
     await settled()
@@ -271,7 +269,7 @@ describe("issues seam — the list", () => {
     const calls: string[] = []
     const { store, controller } = await issuesController(
       backend({ "GET /api/repos/will/flows/issues": json(200, []) }, calls)
-    )
+    , { mirror: true })
     const outcome = await controller.commands.run("issues.list", "all")
     expect(outcome.status).toBe("executed")
     await settled()
@@ -299,7 +297,7 @@ describe("issues seam — the list", () => {
           }
         })
       })
-    )
+    , { mirror: true })
     const outcome = await controller.commands.run("issues.list")
     expect(outcome.status).toBe("executed")
     await settled()
@@ -322,8 +320,9 @@ describe("issues seam — the list", () => {
     const { store, controller } = await issuesController(selectedUserBackend({
       "GET /api/repos/will/flows/issues": json(200, [wireIssue(7)]),
       "GET /api/user/github-repos/will/flows/issues": json(401, { message: "GitHub connection required" }),
+      "GET /api/repos/will/flows/github/metadata/issues": json(401, { message: "GitHub connection required" }),
       "GET /api/user": json(200, { id: 1, username: "will", is_admin: false })
-    }, calls))
+    }, calls), { mirror: true })
     const outcome = await controller.commands.run("issues.list")
     expect(outcome.status).toBe("executed")
     await settled()
@@ -347,16 +346,17 @@ describe("issues seam — the list", () => {
         : json(401, { message: "Native session expired" }),
       "GET /api/user/github-repos/will/flows/issues": json(200, [wireGithubIssue(12)]),
       "GET /api/user": json(200, { id: 1, username: "will", is_admin: false })
-    }, calls))
+    }, calls), { mirror: true })
     expect((await controller.commands.run("issues.list")).status).toBe("executed")
     await settled()
     authorized = false
     invalidatePreparedViews(store)
     const result = await controller.commands.run("issues.list")
     await settled()
-    expect(result.status).toBe("executed")
+    expect(result.status).toBe("failed")
     expect([...store.collections.messages.values()].some(message => message.action?.flow === "sign-in")).toBe(true)
     expect(calls.filter(call => call.startsWith("GET /api/user/github-repos/"))).toHaveLength(1)
+    expect(store.collections.cards.get("issues-will/flows")).toMatchObject({ status: "error", loading: false })
     const card = store.collections.cards.get("issues-will/flows")
     expect(card?.kind === "issue-list" && card.status === "active" && card.payload.issues.length > 0).toBe(false)
   })
@@ -366,6 +366,7 @@ describe("issues seam — the list", () => {
     const { store, controller } = await issuesController(selectedUserBackend({
       "GET /api/repos/will/flows/issues": json(200, [wireIssue(7, { kind: "chat" })]),
       "GET /api/user/github-repos/will/flows/issues": json(401, { message: "GitHub connection required" }),
+      "GET /api/repos/will/flows/github/metadata/issues": json(401, { message: "GitHub connection required" }),
       "GET /api/user": json(200, { id: 1, username: "will", is_admin: false })
     }, calls))
     const outcome = await controller.commands.run("issues.list", "open --kind conversation will/flows")
@@ -384,7 +385,7 @@ describe("issues seam — the list", () => {
         "GET /api/repos/will/flows/issues": json(200, [wireIssue(7)]),
         "GET /api/user/github-repos/will/flows/issues": json(403, { message: "GitHub is not linked for this account" })
       })
-    )
+    , { mirror: true })
     expect((await controller.commands.run("issues.list")).status).toBe("executed")
     await settled()
     const card = cardOfKind(store, "issues-will/flows", "issue-list")
@@ -716,7 +717,7 @@ describe("issues seam — source-only fallback (repo not imported)", () => {
         },
         calls
       )
-    )
+    , { mirror: true })
     const outcome = await controller.commands.run("issues.list")
     expect(outcome.status).toBe("executed")
     expect(outcome.status === "executed" ? outcome.value : undefined).toBe(
@@ -759,7 +760,7 @@ describe("issues seam — source-only fallback (repo not imported)", () => {
     const { controller } = await issuesController(backend({
       "GET /api/repos/will/flows/issues": json(404, { message: "repository not found" }),
       "GET /api/user/github-repos/will/flows/issues": json(200, [])
-    }))
+    }), { mirror: true })
     const outcome = await controller.commands.runForAgent("issues.list", filter)
     expect(outcome.status).toBe("executed")
     expect(outcome.status === "executed" ? outcome.value : undefined).toBe(
@@ -777,7 +778,7 @@ describe("issues seam — source-only fallback (repo not imported)", () => {
         },
         calls
       )
-    )
+    , { mirror: true })
     const outcome = await controller.commands.run("issues.list", "all")
     expect(outcome.status).toBe("executed")
     await settled()
@@ -795,7 +796,7 @@ describe("issues seam — source-only fallback (repo not imported)", () => {
           message: "GitHub answered 404 for will/flows"
         })
       })
-    )
+    , { mirror: true })
     const outcome = await controller.commands.run("issues.list")
     expect(outcome.status).toBe("failed")
     if (outcome.status === "failed") {
@@ -936,7 +937,7 @@ describe("source-qualified issue identity", () => {
       "GET /api/repos/will/flows/issues/1/comments": json(200, []),
       "GET /api/user/github-repos/will/flows/issues": json(200, [wireGithubIssue(1, { title: "GitHub issue" })]),
       "GET /api/user/github-repos/will/flows/issues/1/comments": json(200, [{ user: { login: "octo" }, body: "GitHub comment", created_at: "2026-09-14T12:00:00Z" }])
-    }, calls))
+    }, calls), { mirror: true })
     expect((await controller.commands.run("issues.list", "will/flows")).status).toBe("executed")
     const list = cardOfKind(store, "issues-will/flows", "issue-list")
     expect(list.payload.issues.map(row => [row.number, row.source])).toEqual([[1, "smithers-cloud"], [1, "github"]])
@@ -1028,7 +1029,7 @@ test.each(["smithers-cloud", "github"] as const)("%s issue reads retain forge as
     "GET /api/repos/will/flows/issues/1/comments": json(200, []),
     "GET /api/user/github-repos/will/flows/issues": json(200, [wire]),
     "GET /api/user/github-repos/will/flows/issues/1/comments": json(200, [])
-  }))
+  }), { mirror: true })
   try {
     expect((await controller.commands.run("issues.list")).status).toBe("executed")
     const row = cardOfKind(store, "issues-will/flows", "issue-list").payload.issues[0]!

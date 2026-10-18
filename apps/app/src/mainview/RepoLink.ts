@@ -6,7 +6,7 @@ import { appCoverageRow, readRepoAccess } from "./RepositoryEntryOffer"
 import type { AppController } from "./state/AppController"
 import type { AppStore } from "./state/AppStore"
 import { accountOwnerOf } from "./state/AccountOwner"
-import { parseRepoSelection,repoTreeRowId,sharedCopyIdOf, type RepositoryEntry } from "./state/AppState"
+import { parseRepoSelection,repoTreeRowId,sharedCopyIdOf, type CloudRepository, type RepositoryEntry } from "./state/AppState"
 import { randomUuid } from "./runtime/RandomUuid"
 
 /*
@@ -274,6 +274,44 @@ export const beginRepositoryEntry = (store: AppStore, requested: string | null):
   return requestId
 }
 
+/** What the repository document declares about where its issues and pull requests live. */
+export type RepositoryDeclaration = Pick<CloudRepository, "issueTracker" | "githubSource">
+
+const GITHUB_NAME = /^[A-Za-z0-9_.-]+$/
+
+/**
+ * The declaration off one repository document (GET /api/repos/{o}/{r}), read
+ * ONCE here at admission and carried on the repository row: the issue and
+ * pull seams decide a read's door from the row and never ask the document
+ * again. `issue_tracker` is the server's resolved tracker (#4320) and is used
+ * when present; `github_source` names the mirror. A declaration this app
+ * cannot use — the source store unavailable, more than one source, a tracker
+ * word this app cannot read, or a tracker of GitHub with no readable source —
+ * is recorded as such, so a read states it instead of falling back to an
+ * empty native list. A document that declares nothing declares the native
+ * tracker, which every origin has.
+ */
+export const repositoryDeclaration = (document: Record<string, unknown> | undefined): RepositoryDeclaration => {
+  if (document === undefined) return {}
+  const source = document.github_source
+  const pair = typeof source === "object" && source !== null && typeof (source as { owner?: unknown }).owner === "string" && typeof (source as { repo?: unknown }).repo === "string"
+    && GITHUB_NAME.test((source as { owner: string }).owner) && GITHUB_NAME.test((source as { repo: string }).repo)
+    ? { owner: (source as { owner: string }).owner, repo: (source as { repo: string }).repo }
+    : undefined
+  const tracker = document.issue_tracker
+  if (tracker === "smithers-cloud") return { issueTracker: "smithers-cloud", ...(pair === undefined ? {} : { githubSource: pair }) }
+  if (tracker === "github") return { issueTracker: "github", githubSource: pair ?? "unavailable" }
+  if (tracker !== undefined) return { githubSource: "unavailable" }
+  if (document.github_source_unavailable === true) return { githubSource: "unavailable" }
+  if (document.github_source_ambiguous === true) return { githubSource: "ambiguous" }
+  if (source === undefined) return {}
+  return { githubSource: pair ?? "unavailable" }
+}
+
+/** True when two rows declare the same source. */
+const sameDeclaration = (a: RepositoryDeclaration, b: RepositoryDeclaration): boolean =>
+  a.issueTracker === b.issueTracker && JSON.stringify(a.githubSource) === JSON.stringify(b.githubSource)
+
 /**
  * Select the requested repository from its authorized document or the signed-in inventory. The
  * admitted row joins the repositories collection beside whatever the cloud
@@ -318,6 +356,7 @@ export const openRequestedRepo = async (
   let catalog: unknown
   let memberDocument: { full_name: string; description?: unknown; default_bookmark?: unknown } | undefined
   let guest: { sessionId: string; landingId:string; revision: string } | undefined
+  let declaration: RepositoryDeclaration = {}
   try {
     const path = `/api/repos/${requested.split("/").map(encodeURIComponent).join("/")}`
     const response = await http(path, { headers: { accept: "application/json" }, credentials: "same-origin" })
@@ -326,9 +365,11 @@ export const openRequestedRepo = async (
     const backendRequestId = response.headers.get("x-request-id")
     if (backendRequestId !== null && /^[\w/.-]{1,160}$/.test(backendRequestId)) diagnostics.documentRequestId = backendRequestId
     if (!response.ok && ![401, 403, 404].includes(response.status)) return finish(`Repository unavailable (HTTP ${response.status}).`)
-    const document = response.ok ? await response.json() as { is_public?: unknown; description?: unknown; full_name?:unknown; default_bookmark?: unknown } : undefined
+    const document = response.ok ? await response.json() as { is_public?: unknown; description?: unknown; full_name?:unknown; default_bookmark?: unknown } & Record<string, unknown> : undefined
     if (!current()) return
     const canonical = typeof document?.full_name === "string" && document.full_name.toLowerCase() === requested.toLowerCase() ? document.full_name : requested
+    // The one declaration read: the row below carries it for the issue and pull seams.
+    declaration = repositoryDeclaration(typeof document?.full_name === "string" && document.full_name.toLowerCase() === requested.toLowerCase() ? document : undefined)
     catalog = { repos: document?.is_public === true ? [{ name: canonical, summary: document.description }] : [] }
     if (document?.is_public === false && typeof document.full_name === "string" &&
       document.full_name.toLowerCase() === requested.toLowerCase() && identityAtStart?.state !== "signed-in" &&
@@ -366,6 +407,7 @@ export const openRequestedRepo = async (
     const bookmark = typeof memberDocument.default_bookmark === "string" && memberDocument.default_bookmark !== "" ? memberDocument.default_bookmark : undefined
     controller.store.dispatch({ type: "repository.upserted", actor: "system", repository: {
       ...existing, ...member, ownerKind: existing?.ownerKind ?? "user", catalog: false, guest: undefined,
+      issueTracker: declaration.issueTracker ?? existing?.issueTracker, githubSource: declaration.githubSource,
       documentOwner: identityAtStart!.login!,
       head: bookmark === undefined || existing?.head?.bookmark === bookmark ? existing?.head ?? null : { bookmark, changeId: null, commitId: null }
     } })
@@ -391,6 +433,11 @@ export const openRequestedRepo = async (
       diagnostics.inventory = failure !== undefined ? "unavailable" : own === undefined ? "missing" : "matched"
       if (failure === undefined && own !== undefined) {
         diagnostics.source = "inventory"
+        // The inventory carries no source declaration; the document this entry read does.
+        if (!sameDeclaration(own, { issueTracker: declaration.issueTracker ?? own.issueTracker, githubSource: declaration.githubSource })) {
+          controller.store.dispatch({ type: "repository.upserted", actor: "system",
+            repository: { ...own, issueTracker: declaration.issueTracker ?? own.issueTracker, githubSource: declaration.githubSource } })
+        }
         if (options.activate === false || options.scope === "command") return finish()
         const refusal = await controller.selectRepo(selectionForRepo(controller, own.id))
         if (!current()) return
@@ -427,7 +474,8 @@ export const openRequestedRepo = async (
   diagnostics.source = "public-document"
   const { repositories } = controller.store.collections
   const existing = repositories.get(repository.id)
-  if (existing?.catalog !== true || JSON.stringify(existing.guest) !== JSON.stringify(guest)) {
+  const declared: RepositoryDeclaration = { issueTracker: declaration.issueTracker ?? existing?.issueTracker, githubSource: declaration.githubSource }
+  if (existing?.catalog !== true || JSON.stringify(existing.guest) !== JSON.stringify(guest) || !sameDeclaration(existing, declared)) {
     controller.store.dispatch({
       type: "repository.upserted",
       actor: "system",
@@ -437,7 +485,7 @@ export const openRequestedRepo = async (
        * treats it as "no org changesets", never as a fabricated org.
        * `catalog` records where the row came from: readable signed out.
        */
-      repository: { ...existing, ...repository, guest, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: true }
+      repository: { ...existing, ...repository, ...declared, guest, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: true }
     })
   }
   if (options.activate === false || options.scope === "command") return finish()

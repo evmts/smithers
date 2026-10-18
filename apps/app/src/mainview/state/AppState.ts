@@ -311,6 +311,18 @@ export const CloudRepositorySchema = z.object({
    * `issueWriteTarget`). Never derived from a display name or a number.
    */
   issueTracker: z.enum(["github", "smithers-cloud"]).optional(),
+  /*
+   * The GitHub source the repository DOCUMENT declared (`github_source` on
+   * GET /api/repos/{o}/{r}, which admission reads once per entry, RepoLink.ts
+   * `repositoryDeclaration`). The issue and pull seams decide a read's door
+   * from this row and never read the document again. A pair names the
+   * mirror; "unavailable" and "ambiguous" record a declaration the document
+   * made but this app cannot use (the source store is down, more than one
+   * source, or a tracker word this app cannot read), which the seams state
+   * rather than fall back from. Absent when the document declared none, or
+   * when the row came from an inventory that carries no declaration.
+   */
+  githubSource: z.union([z.object({ owner: z.string(), repo: z.string() }), z.literal("unavailable"), z.literal("ambiguous")]).optional(),
   updatedAt: z.number(),
   revision: z.number().int().nonnegative()
 })
@@ -2021,7 +2033,7 @@ type AppTransitionBody =
   | {
     type: "repositories.loaded"
     actor: "system"
-    repositories: ReadonlyArray<Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "summary" | "issueTracker">>
+    repositories: ReadonlyArray<Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "summary" | "issueTracker" | "githubSource">>
   }
   /*
    * One repository row upserted: the catalog row a `/owner/name` request
@@ -2033,7 +2045,7 @@ type AppTransitionBody =
   | {
     type: "repository.upserted"
     actor: "system"
-    repository: Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "documentOwner" | "summary" | "issueTracker" | "guest">
+    repository: Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "documentOwner" | "summary" | "issueTracker" | "githubSource" | "guest">
   }
   | {
     type: "workingcopies.workspaces.loaded"
