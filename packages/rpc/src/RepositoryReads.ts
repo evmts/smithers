@@ -36,7 +36,8 @@ export const RepositoryCommitPageSchema = z.object({
 export const RepositoryCommitDetailSchema = RepositoryCommitSchema.extend({
   files: z.array(z.object({
     path: z.string().min(1),
-    status: z.enum(["added", "modified", "deleted"]),
+    from: z.string().min(1).optional(),
+    status: z.enum(["added", "modified", "deleted", "renamed"]),
     additions: z.number().int().nonnegative(),
     deletions: z.number().int().nonnegative()
   }))
@@ -76,3 +77,4 @@ export const RepositoryIssueSearchSchema = z.object({
     })
   )
 })
+
