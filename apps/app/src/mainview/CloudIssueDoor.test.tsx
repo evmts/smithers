@@ -195,6 +195,7 @@ test("the door the overlay now admits writes the Cloud issue it names, and nothi
         bodies.push(JSON.parse(String(init?.body ?? "{}")))
         return json(200, created)
       }
+      if (method === "GET" && url.pathname === "/api/repos/will/flows") return json(200, {full_name: "will/flows"})
       if (method === "GET" && url.pathname === "/api/repos/will/flows/issues/9") return json(200, created)
       if (method === "GET" && url.pathname === "/api/repos/will/flows/issues/9/comments") return json(200, [])
       return json(404, { status: "error", message: "no stub" })

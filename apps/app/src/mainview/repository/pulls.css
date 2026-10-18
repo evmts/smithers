@@ -11,7 +11,7 @@
 .repo-pulls-page textarea:focus-visible,
 .repo-pulls-page select:focus-visible,
 .repo-pulls-page summary:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring-border);
   outline-offset: 3px;
 }
 .repo-pulls-page button:disabled {

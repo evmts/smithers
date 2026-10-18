@@ -177,7 +177,7 @@
 .repo-issues-detail input:focus-visible,
 .repo-issues-list-page input:focus-visible,
 .repo-issues-markdown-field textarea:focus-visible,
-.repo-issues-confirm:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+.repo-issues-confirm:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 3px; }
 .repo-issues-list-page button:disabled,
 .repo-issues-detail button:disabled,
 .repo-issues-new button:disabled { opacity: .5; cursor: not-allowed; }

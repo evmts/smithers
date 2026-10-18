@@ -291,10 +291,9 @@ export const openRequestedSubject = async (
   const owner = accountOwnerOf(controller.store.collections.identitySessions.get("identity"))
   if (!admitted(controller.store, repo, options.requestId, owner)) return
   if (subject.kind === "tree" || subject.kind === "blob") return openRequestedFile(controller, repo, subject, owner, options)
-  const row = [...controller.store.collections.cards.values()].flatMap(card => card.kind === "issue-list" && card.payload.repo.toLowerCase() === repo.toLowerCase() ? card.payload.issues : []).find(row => subject.kind === "issue" && row.number === subject.number)
   const repository = controller.store.collections.repositories.get(repo)
   const requestedSource = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("source")
-  const source = (requestedSource === "github" || requestedSource === "smithers-cloud" ? requestedSource : undefined) ?? (row ? row.source ?? "smithers-cloud" : repository?.issueTracker)
+  const source = (requestedSource === "github" || requestedSource === "smithers-cloud" ? requestedSource : undefined) ?? repository?.issueTracker
   const { name, args } = subjectCommand(repo, subject, source)
   // The read runs to completion first: its own card is what the tab is chosen
   // on, and one command at a time is the lifecycle's own rule.

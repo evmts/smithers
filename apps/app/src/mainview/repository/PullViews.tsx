@@ -1,3 +1,6 @@
+import { flowAction } from "../flows/FlowAction"
+import { FailureNotice, retryableFailure } from "../FailureNotice"
+import { flowArgs } from "../flows/FlowArgs"
 import type { Card } from "../state/AppState"
 import { RepositoryMarkdown } from "./CodeHome"
 import { Counter, LabelChip, PersonChip, ReadState, RelTime, StateIcon, Tabs } from "./IssueViews"
@@ -14,8 +17,10 @@ export function DiffView({ files }: { files: NonNullable<Pull["files"]> }) {
   })}</div>
 }
 
-export function PullViews({ repo, number, tab = "conversation", card, retry }: { repo: string; number?: number; tab?: "conversation" | "commits" | "checks" | "files"; card?: Card; retry: () => void }) {
+export function PullViews({ repo, number, tab = "conversation", card, onRunCommand }: { repo: string; number?: number; tab?: "conversation" | "commits" | "checks" | "files"; card?: Card; onRunCommand: (name: string, args?: string) => void }) {
   const base = `/${repo}`
+  const retryArgs = flowArgs("pr", number === undefined ? {repo, operation: "list"} : {repo, number})
+  const retry = flowAction(onRunCommand, "pr", retryArgs)
   if (!card || card.loading || card.status === "error") return <section aria-label={number === undefined ? "Pull requests" : `Pull request #${number}`}><ReadState card={card} what={number === undefined ? "pull requests" : "this pull request"} retry={retry}/></section>
   if (number === undefined) {
     if (card.kind !== "pr-list") return <ReadState card={card} what="pull requests" retry={retry}/>
@@ -54,7 +59,7 @@ export function PullViews({ repo, number, tab = "conversation", card, retry }: {
     <header className="repo-pulls-detail-header"><div className="repo-pulls-title-row"><h1>{item.title} <span>#{number}</span></h1></div><div className="repo-pulls-branch-summary"><span className={`repo-pulls-status repo-pulls-status-${item.state}`}><StateIcon state={item.state}/>{item.draft ? "Draft" : item.state === "merged" ? "Merged" : isOpen(item.state) ? "Open" : "Closed"}</span><p>{item.baseBranch && <>into <a className="repo-pulls-ref" href={`${base}/tree/${encodeURIComponent(item.baseBranch)}`}>{item.baseBranch}</a> </>}{item.branch && <>from <a className="repo-pulls-ref" href={`${base}/tree/${encodeURIComponent(item.branch)}`}>{item.branch}</a> </>}{item.author && `· opened by ${item.author}`}</p></div></header>
     <Tabs label="Pull request" active={tab} items={[{ id: "conversation", label: "Conversation", href: url }, { id: "commits", label: "Commits", href: `${url}/commits`, count: item.commits?.length }, { id: "checks", label: "Checks", href: `${url}/checks`, count: item.readErrors?.checks ? undefined : item.checks.length }, { id: "files", label: "Files changed", href: `${url}/files`, count: item.files?.length }]}/>
     <section aria-label={tab === "files" ? "Files changed" : tab[0]!.toUpperCase() + tab.slice(1)}>
-      {failure ? <div className="repo-frame-state" role="alert"><p>{failure}</p><button className="repo-ui-btn" onClick={retry}>Retry</button></div> : <>
+      {failure ? <div className="repo-frame-state"><FailureNotice failure={retryableFailure("RepositoryPullTabRead", `${tab === "commits" ? "Commits" : tab === "checks" ? "Checks" : "Files"} unavailable.`, failure)} actions={{retry}}/></div> : <>
         {limit && <p role="status">{limit}</p>}
         {tab === "conversation" ? <div className="repo-pulls-detail-layout"><div className="repo-pulls-conversation"><article className="repo-ui-box"><div className="repo-ui-box-header">{item.author && <PersonChip login={item.author}/>}<RelTime date={item.createdAt}/></div><div className="repo-pulls-card-body"><RepositoryMarkdown content={item.prBody}/></div></article>{item.reviews.map((review, i) => <article className="repo-ui-box" key={i}><div className="repo-ui-box-header">{review.author} · {review.type}</div><RepositoryMarkdown content={review.reviewBody}/></article>)}{isOpen(item.state) && item.sourceRepo !== undefined && <div className="repo-ui-box"><div className="repo-ui-box-header">{!item.draft && !item.readErrors?.checks && !item.readLimits?.checks && item.checks.length > 0 && item.checks.every(check => check.state === "success") && <p>Checks passed.</p>}<a className="repo-ui-btn" href={`https://github.com/${item.sourceRepo}/pull/${number}`} target="_blank" rel="noopener noreferrer">Merge on GitHub ↗</a></div></div>}</div><aside className="repo-ui-sidebar" aria-label="Pull request details">{item.labels !== undefined && <section className="repo-ui-sidebar-section"><h2>Labels</h2>{item.labels.map(name => <LabelChip key={name} name={name}/>)}</section>}{item.reviews.some(review => review.author) && <section className="repo-ui-sidebar-section"><h2>Reviewers</h2>{[...new Set(item.reviews.flatMap(review => review.author ? [review.author] : []))].map(login => <PersonChip key={login} login={login}/>)}</section>}</aside></div>
           : tab === "commits" ? item.commits?.length ? <div className="repo-ui-box" role="list" aria-label="Commits">{item.commits.map((commit, i) => <div className="repo-ui-row" role="listitem" key={i}><strong>{commit.message}</strong><div className="repo-pulls-meta">{commit.author}<RelTime date={commit.timestamp}/>{commit.commitId && <code>{commit.commitId}</code>}</div></div>)}</div> : <div className="repo-frame-state"><h2>No commits.</h2></div>

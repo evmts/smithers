@@ -19,6 +19,7 @@ import { settledPill } from "./CardFamily"
 import type { UserFailureCopy } from "@smthrs/rpc/UserFailure"
 import { describedFailure, FailureNotice } from "../FailureNotice"
 import {
+  isOpenPull,
   Avatar,
   AvatarStack,
   BADGE_CLASS,
@@ -138,7 +139,7 @@ export const LandingListCardBody = ({
   onRunCommand
 }: { readonly card: Extract<Card, { kind: "pr-list" }> } & LandingCardActions) => {
   const { repo, landings } = card.payload
-  const open = landings.filter((landing) => prDisplay(landing.state).tone === "open").length
+  const open = landings.filter((landing) => isOpenPull(landing.state)).length
   return (
     <div className="ghc ghc-box" data-testid="pr-list">
       <div className="ghc-toolbar">

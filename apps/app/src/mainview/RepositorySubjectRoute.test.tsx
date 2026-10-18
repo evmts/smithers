@@ -226,10 +226,15 @@ test("a GitHub-shaped issue URL opens GitHub's issue, never the Cloud row with t
     "/api/user/github-repos/roninjin10/e2e-verify/issues": json(200, [githubIssue(5)]),
     "/api/user/github-repos/roninjin10/e2e-verify/issues/5/comments": json(200, [])
   })
-  const { store, refusal } = await enter(`/${REPO}/issues/5`, backend)
+  const retained: Extract<import("./state/AppState").Card, {kind: "issue-list"}> = {
+    id: "native-list", kind: "issue-list", title: "Issues", status: "active", createdAt: 0, ordinal: 1,
+    payload: {repo: REPO, filter: "all", issues: [{number: 5, title: "Native collision", state: "open", source: "smithers-cloud", author: null, comments: 0, updatedAt: null}]}
+  }
+  const { store, refusal } = await enter(`/${REPO}/issues/5`, backend, {retained: [{type: "card.upsert", actor: "system", card: retained}]})
   expect(refusal).toBeUndefined()
   const opened = [...store.collections.cards.values()].filter(card => card.kind === "issue")
-  expect(opened.map(card => card.id)).toEqual([`issue-github-${REPO}-5`])
+  expect(opened).toHaveLength(1)
+  expect(opened[0]?.kind === "issue" ? opened[0].payload.source : undefined).toBe("github")
   expect(opened[0]?.kind === "issue" ? opened[0].payload.title : undefined).toBe("GitHub issue 5")
   // The read was GitHub's, through the explicit source the URL carries.
   expect(backend.seen.some(path => path.startsWith("/api/user/github-repos/roninjin10/e2e-verify/issues"))).toBe(true)
@@ -788,4 +793,20 @@ test("an unresolved file ref keeps the repository breadcrumb as text", async () 
   expect(breadcrumb.textContent).toBe("e2e-verify")
   expect(breadcrumb.querySelector("a")).toBeNull()
   expect(host.querySelector('[role="status"]')?.textContent).toContain("Loading")
+})
+
+test("issue detail keeps the loaded list count from persisted card history", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/issues`]: json(200, [cloudIssue(5)]),
+    [`${ROOT}/issues/5`]: json(200, cloudIssue(5)),
+    [`${ROOT}/issues/5/comments`]: json(200, [])
+  })
+  const {store, controller} = await enter(`/${REPO}/issues`, backend)
+  expect((await controller.commands.run("issues.view", `5 ${REPO} --source smithers-cloud`)).status).toBe("executed")
+  window.history.replaceState(null, "", `/${REPO}/issues/5`)
+  const {host} = mount(controller)
+  await settled()
+  expect([...store.collections.cardHistories.values()].some(history => history.entries.some(card => card.kind === "issue-list"))).toBe(true)
+  const nav = host.querySelector('nav[aria-label="Repository"]')
+  expect([...nav!.querySelectorAll("a")].find(a => a.getAttribute("href")?.endsWith("/issues"))?.textContent).toBe("Issues1")
 })

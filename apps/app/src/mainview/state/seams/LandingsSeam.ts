@@ -202,7 +202,7 @@ const repoApiRoot = (repo: string): string => {
 type PullSource =
   | { readonly kind: "native" }
   | { readonly kind: "github"; readonly repo: string; readonly publicReadRoot?: string }
-  | { readonly error: string }
+  | { readonly error: string; readonly status?: number }
 
 /** A ready import in the repository response is the only source mapping. */
 const pullSource = async (ctx: Pick<SeamContext, "http" | "baseUrl">, repo: string): Promise<PullSource> => {
@@ -213,15 +213,17 @@ const pullSource = async (ctx: Pick<SeamContext, "http" | "baseUrl">, repo: stri
     return { error: `The source of pull requests for ${repo} couldn't be checked.` }
   }
   if (!response.ok) {
-    return { error: await readErrorMessage(response, `The source of pull requests for ${repo} couldn't be checked.`) }
+    return { error: await readErrorMessage(response, `The source of pull requests for ${repo} couldn't be checked.`), status: response.status }
   }
   const body: unknown = await response.json().catch(() => null)
   if (!isRecord(body) || typeof body.full_name !== "string" || body.full_name.toLowerCase() !== repo.toLowerCase()) {
     return { error: `The source of pull requests for ${repo} answered with a different repository.` }
   }
+  if (body.issue_tracker === "smithers-cloud") return { kind: "native" }
+  if (body.issue_tracker !== undefined && body.issue_tracker !== "github") return { error: `The source of pull requests for ${repo} could not be checked.` }
   if (body.github_source_unavailable === true) return { error: `The source of pull requests for ${repo} is unavailable.` }
   if (body.github_source_ambiguous === true) return { error: `This repository has more than one GitHub source, so its pull requests cannot be reviewed here.` }
-  if (body.github_source === undefined) return { kind: "native" }
+  if (body.github_source === undefined) return body.issue_tracker === "github" ? { error: `The GitHub source of ${repo} could not be verified.` } : { kind: "native" }
   const source = body.github_source
   if (!isRecord(source) || typeof source.owner !== "string" || typeof source.repo !== "string"
     || !/^[A-Za-z0-9_.-]+$/.test(source.owner) || !/^[A-Za-z0-9_.-]+$/.test(source.repo)) {
@@ -957,8 +959,12 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     if ("error" in target) return target.error
     const repo = target.repo
     return { id: `prs-${repo}`, title: `Pull requests · ${repo}`, pane: repo, read: async (): Promise<ViewResult> => {
+      const offerSignIn = ctx.store.collections.identitySessions.get("identity")?.state !== "signed-out"
       const source = await pullSource(ctx, repo)
-      if ("error" in source) return source.error
+      if ("error" in source) {
+        if (source.status === 401 && offerSignIn) ctx.promptSignIn?.(`read pull requests on ${repo}`)
+        return source.error
+      }
       let response: Response
       try {
         // One bounded page. Omitting `state` lists every lifecycle state —
@@ -968,6 +974,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
         return `Pull requests for ${repo} couldn't be listed — the platform didn't answer.`
       }
       if (!response.ok) {
+        if (response.status === 401 && offerSignIn) ctx.promptSignIn?.(`read pull requests on ${repo}`)
         return readErrorMessage(response, `Pull requests for ${repo} couldn't be listed.`)
       }
       const body: unknown = await response.json().catch(() => undefined)

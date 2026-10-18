@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { IssueViews, matchesIssueReadKey } from "./IssueViews"
+import { LandingListCardBody } from "../cards/LandingCards"
 import { PullViews } from "./PullViews"
 import { subjectCommand } from "../RepositorySubjectEntry"
 import { createIssuesSeam } from "../state/seams/IssuesSeam"
@@ -39,7 +40,7 @@ async function setup(identity: "signed-out" | "unavailable", refused = false, na
   const controller = { commands: { run: async (name: string, args: string) => { const p = JSON.parse(args); return name === "issues.list" ? issues.listIssues("all", p.repo) : name === "issues.view" ? issues.viewIssue(p.number, p.repo, p.source) : pulls.listLandings(p.repo) } } }
   return { store, controller, calls, issues, ctx }
 }
-const markup = (card: Card) => render(createElement(IssueViews, { repo: "maya/tinyhttp", card, signedIn: false, run: () => {} }))
+const markup = (card: Card) => render(createElement(IssueViews, { repo: "maya/tinyhttp", card, signedIn: false, onRunCommand: () => {} }))
 test("signed out keeps native rows beside a GitHub refusal and opens the native tracker", async () => {
   const { store, controller, calls, issues } = await setup("signed-out")
   await controller.commands.run("issues.list", JSON.stringify({ repo: "maya/tinyhttp", filter: "all" }))
@@ -48,6 +49,8 @@ test("signed out keeps native rows beside a GitHub refusal and opens the native 
   expect(html).toContain("Native issue")
   expect(html).toContain("/maya/tinyhttp/issues/7?source=smithers-cloud")
   expect(html).toContain("authentication required")
+  expect(html).toContain("<details")
+  expect(html).not.toContain("<p>authentication required</p>")
   expect(html).toContain("Retry")
   expect(html).not.toContain("No issues yet")
   const command = subjectCommand("maya/tinyhttp", { kind: "issue", number: 7 }, "smithers-cloud")
@@ -73,9 +76,12 @@ for (const identity of ["signed-out", "unavailable"] as const) test(`${identity}
 })
 test("queued, failed and unknown pulls remain in the open list", () => {
   const card: Card = { id: "prs", kind: "pr-list", title: "Pull requests", status: "active", createdAt: 0, ordinal: 0, payload: { repo: "maya/tinyhttp", landings: ["open", "draft", "queued", "failed", "unknown", "closed", "merged", "landed"].map((state, i) => ({ number: i + 1, title: `Pull ${state}`, author: null, updatedAt: null, state })) } }
-  const html = render(createElement(PullViews, { repo: "maya/tinyhttp", card, retry: () => {} }))
+  const html = render(createElement(PullViews, { repo: "maya/tinyhttp", card, onRunCommand: () => {} }))
   for (const state of ["open", "draft", "queued", "failed", "unknown"]) expect(html).toContain(`Pull ${state}`)
   for (const state of ["closed", "merged", "landed"]) expect(html).not.toContain(`Pull ${state}`)
+  const chat = render(createElement(LandingListCardBody, { card: card as Extract<Card, {kind: "pr-list"}>, onRunCommand: () => {} }))
+  expect(chat).toContain("5 Open")
+  expect(chat).toContain("3 Other")
 })
 
 test("a native-only repository never asks the GitHub tracker for its issues", async () => {
@@ -103,7 +109,7 @@ test("stale pull mirror headers remain visible beside an empty list", async () =
   const pulls = createLandingsSeam({ ...ctx, http: async (url, init) => url.includes("/pulls") ? Response.json([], { headers: { "X-Metadata-Stale": "true", "X-Metadata-Synced-At": "2026-09-16T12:00:00Z" } }) : ctx.http(url, init) })
   await pulls.listLandings("maya/tinyhttp")
   const card = [...store.collections.cards.values()].find(card => card.kind === "pr-list")!
-  const html = render(createElement(PullViews, { repo: "maya/tinyhttp", card, retry: () => {} }))
+  const html = render(createElement(PullViews, { repo: "maya/tinyhttp", card, onRunCommand: () => {} }))
   expect(html).toContain("Stale · synced")
   expect(html).toContain("No pull requests.")
 })
@@ -148,4 +154,80 @@ test("failed source discovery on a bare issue URL finishes with Retry", async ()
   expect(card.status).toBe("error")
   expect(card.loading).toBe(false)
   expect(markup(card)).toContain("Retry")
+})
+
+for (const nativeOnly of [true, false]) test(`new issues follow the declared ${nativeOnly ? "native" : "GitHub"} tracker`, async () => {
+  const { ctx } = await setup("signed-out", false, nativeOnly)
+  const writes: string[] = []
+  const seam = createIssuesSeam({ ...ctx, http: async (url, init) => {
+    if (init?.method === "POST") {
+      writes.push(new URL(url).pathname)
+      return Response.json({ number: 7 }, {status: 202})
+    }
+    return ctx.http(url, init)
+  } })
+  await seam.createIssue("New issue", "maya/tinyhttp")
+  expect(writes).toEqual([`/api/repos/maya/tinyhttp/${nativeOnly ? "issues" : "github/issues"}`])
+})
+for (const identity of ["signed-in", "unavailable", "signed-out"] as const) test(`${identity} 401 keeps Retry and offers the appropriate chat sign-in door`, async () => {
+  const {ctx, store} = await setup("signed-out", true, true)
+  await store.dispatch({type: "identity.session.loaded", actor: "system", state: identity, login: identity === "signed-in" ? "maya" : null, admin: false, scopesPlain: null}).isPersisted.promise
+  const prompts: string[] = []
+  const scoped = {...ctx, promptSignIn: (summary?: string) => { prompts.push(summary ?? "") }}
+  await createIssuesSeam(scoped).listIssues("all", "maya/tinyhttp")
+  await createLandingsSeam(scoped).listLandings("maya/tinyhttp")
+  expect(prompts).toHaveLength(identity === "signed-out" ? 0 : 2)
+  for (const card of store.collections.cards.values()) if (card.viewRepo === "maya/tinyhttp") {
+    expect(card.loading).toBe(false)
+    expect(card.status).toBe("error")
+  }
+})
+
+test("an expired session during pull source discovery retains Retry and offers sign-in", async () => {
+  const {ctx, store} = await setup("unavailable")
+  const prompts: string[] = []
+  await createLandingsSeam({...ctx, promptSignIn: summary => {prompts.push(summary ?? "")}, http: async () => Response.json({message: "Session expired"}, {status: 401})}).listLandings("maya/tinyhttp")
+  expect(prompts).toEqual(["read pull requests on maya/tinyhttp"])
+  expect([...store.collections.cards.values()].find(card => card.viewKey === "prs-maya/tinyhttp")).toMatchObject({status: "error", loading: false})
+})
+
+test("an explicit Smithers tracker takes precedence over a retained GitHub binding", async () => {
+  const {ctx, store, calls} = await setup("signed-out")
+  const scoped = {...ctx, http: async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/maya/tinyhttp")) return Response.json({full_name: "maya/tinyhttp", is_public: true, issue_tracker: "smithers-cloud", github_source: {owner: "maya", repo: "tinyhttp"}})
+    if (url.includes("/landings?")) return Response.json([{number: 12, title: "Native landing", state: "open", author: {login: "maya"}}])
+    return ctx.http(url, init)
+  }}
+  await createIssuesSeam(scoped).listIssues("all", "maya/tinyhttp")
+  const list = [...store.collections.cards.values()].find(card => card.kind === "issue-list")!
+  expect(markup(list)).toContain("Native issue")
+  expect(markup(list)).not.toContain("authentication required")
+  await createLandingsSeam(scoped).listLandings("maya/tinyhttp")
+  const pulls = [...store.collections.cards.values()].find(card => card.kind === "pr-list")!
+  expect(pulls).toMatchObject({status: "active", loading: false, payload: {landings: [{number: 12, title: "Native landing"}]}})
+  expect(calls.some(path => path.includes("github"))).toBe(false)
+})
+for (const tracker of ["github", "future-tracker"]) test(`${tracker} without a readable binding never becomes an empty native tracker`, async () => {
+  const {ctx, store} = await setup("signed-out")
+  const scoped = {...ctx, http: async (url: string) => url.endsWith("/maya/tinyhttp") ? Response.json({full_name: "maya/tinyhttp", issue_tracker: tracker}) : Response.json([])}
+  await createIssuesSeam(scoped).listIssues("all", "maya/tinyhttp")
+  const list = [...store.collections.cards.values()].find(card => card.viewRepo === "maya/tinyhttp")!
+  expect(markup(list)).toContain("Retry")
+  expect(markup(list)).not.toContain("No issues yet")
+  await createLandingsSeam(scoped).listLandings("maya/tinyhttp")
+  expect([...store.collections.cards.values()].find(card => card.viewKey === "prs-maya/tinyhttp")).toMatchObject({status: "error", loading: false})
+})
+
+for (const tab of ["commits", "checks", "files"] as const) test(`${tab} failure keeps typed Retry and collapses backend details`, () => {
+  const card: Card = { id: "pr", kind: "pr", title: "Fix", status: "active", createdAt: 0, ordinal: 0,
+    payload: {repo: "maya/tinyhttp", number: 7, title: "Fix", state: "open", author: "maya", prBody: "", reviews: [], checks: [], readErrors: {[tab]: "Upstream diagnostic"}} }
+  const html = render(createElement(PullViews, {repo: "maya/tinyhttp", number: 7, tab, card, onRunCommand: () => {}}))
+  expect(html).toContain('role="alert"')
+  expect(html).toContain('data-flow="pr"')
+  expect(html).toContain('data-flow-args=')
+  expect(html).toContain("Retry")
+  expect(html).toContain('<details><summary>Details</summary>')
+  expect(html).toContain("Upstream diagnostic</pre>")
+  expect(html).not.toContain("<p>Upstream diagnostic</p>")
+  expect(html).not.toContain("No checks reported.")
 })

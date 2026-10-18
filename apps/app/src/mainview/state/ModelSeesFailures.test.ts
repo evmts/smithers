@@ -32,6 +32,7 @@ const backend = (): AppServices => ({
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
     const path = new URL(url, "https://app.test").pathname
     if (path === "/api/billing/balance") return json(200, BALANCE)
+    if (path === "/api/repos/will/nope") return json(200, {full_name: "will/nope"})
     if (path === "/api/repos/will/nope/issues/99") return json(404, { message: "issue not found" })
     return json(404, { message: `no stub for ${path}` })
   }

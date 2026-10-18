@@ -180,6 +180,7 @@ describe("a repo-scoped command whose text ends in a path", () => {
         const absolute = new URL(url, "https://app.test")
         const method = (init?.method ?? "GET").toUpperCase()
         calls.push(`${method} ${absolute.pathname}`)
+        if (method === "GET" && absolute.pathname === `/api/repos/${target}`) return json(200, {full_name: target})
         if (method === "POST" && absolute.pathname === `/api/repos/${target}/issues`) {
           bodies.push(JSON.parse(String(init?.body)))
           return json(201, { number: 9 })

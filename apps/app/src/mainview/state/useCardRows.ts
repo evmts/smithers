@@ -16,7 +16,7 @@
 import type { Collection, NonSingleResult } from "@tanstack/db"
 import { eq, useLiveQuery } from "@tanstack/react-db"
 import type { AppCollections } from "./AppStore"
-import type { Card, FlowDurationsRow } from "./AppState"
+import type { Card, CardHistory, FlowDurationsRow } from "./AppState"
 
 /** The cards collection as a live array of `Card`, in store order. */
 export const useCardRows = (cards: AppCollections["cards"]): ReadonlyArray<Card> => {
@@ -77,3 +77,11 @@ export const useFileCardRows = (cards: AppCollections["cards"]): ReadonlyArray<E
 export const useFlowDurationRows = (
   flowDurations: AppCollections["flowDurations"]
 ): ReadonlyArray<FlowDurationsRow> => useLiveQuery(flowDurations).data
+
+/** Persisted card navigation snapshots, with the same explicit union boundary as live cards. */
+export const useCardHistoryRows = (histories: AppCollections["cardHistories"]): ReadonlyArray<CardHistory> => {
+  const { data } = useLiveQuery<CardHistory, string, Record<string, never>>(
+    histories as unknown as Collection<CardHistory, string, Record<string, never>> & NonSingleResult
+  )
+  return data
+}

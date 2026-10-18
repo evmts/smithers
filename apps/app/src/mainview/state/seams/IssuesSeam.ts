@@ -991,8 +991,10 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       const response = await ctx.http(`${ctx.baseUrl}/api/repos/${repo.split("/").map(encodeURIComponent).join("/")}`)
       const body: unknown = response.ok ? await response.json().catch(() => null) : null
       if (isRecord(body) && typeof body.full_name === "string" && body.full_name.toLowerCase() === repo.toLowerCase()) {
+        if (body.issue_tracker === "smithers-cloud") return false
+        if (body.issue_tracker !== undefined && body.issue_tracker !== "github") return "The repository's issue source could not be checked."
         if (body.github_source_unavailable === true || body.github_source_ambiguous === true) return "The repository's issue source could not be checked."
-        if (body.github_source === undefined) return false
+        if (body.github_source === undefined) return body.issue_tracker === "github" ? "The repository's issue source could not be checked." : false
         if (isRecord(body.github_source) && typeof body.github_source.owner === "string" && typeof body.github_source.repo === "string"
           && /^[A-Za-z0-9_.-]+$/.test(body.github_source.owner) && /^[A-Za-z0-9_.-]+$/.test(body.github_source.repo)) return true
       }
@@ -1016,6 +1018,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     // Conversations are owner-private and excluded from the plain list; ask for them by kind (chat = issues contract; #2111).
     if (kind === "conversation") search.set("kind", "chat")
     const query = search.size === 0 ? "" : `?${search}`
+    const offerSignIn = ctx.store.collections.identitySessions.get("identity")?.state !== "signed-out"
     let response: Response
     try {
       response = await ctx.http(`${issuesPath(repo)}${query}`)
@@ -1033,6 +1036,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
         if (typeof source === "string") return source
         return readErrorMessage(response, `Listing issues for ${repo} failed (404)`)
       }
+      if (response.status === 401 && offerSignIn) ctx.promptSignIn?.(`read issues on ${repo}`)
       return readErrorMessage(response, `Listing issues for ${repo} failed (${response.status})`)
     }
     const body: unknown = await response.json().catch(() => null)
@@ -1479,7 +1483,16 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
        * writer — the same door `/issue.new` uses, which opens the issue
        * GitHub actually numbered.
        */
-      if (kind !== "chat" && (source === "github" || source === undefined && install)) {
+      if (kind !== "chat" && source === undefined) {
+        const tracker = install ? "github" : repositoryTracker(repo)
+        if (tracker !== undefined) source = tracker
+        else {
+          const declared = await declaredGithubSource(repo)
+          if (typeof declared === "string") return declared
+          source = declared ? "github" : "smithers-cloud"
+        }
+      }
+      if (kind !== "chat" && source === "github") {
         // An install's create goes through IssueCreateSeam, the door
         // `/issue.new` already uses. Every other origin addresses the
         // repository's own GitHub tracker, which answers the same durable
