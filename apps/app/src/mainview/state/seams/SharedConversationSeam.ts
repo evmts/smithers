@@ -19,6 +19,12 @@ const SharedTurnSchema = z.object({
   entry_sequences: z.record(z.string(), z.number().int().positive().safe()).optional(), summary: z.string().optional(), summary_rev: z.number().int().nonnegative().optional(), sequence: z.number().int().positive().optional(), id: z.string(), title: z.string().optional(), tone: ToneSchema.optional(), author: z.number().int().positive(), authorLogin: z.string().min(1), runId: z.string(), prompt: z.string(),
   state: z.enum(["accepted", "running", "completed", "failed", "cancelled", "uncertain"]),
   frames: z.array(AgentTurnFrameSchema), context: z.array(ContextItemSchema).optional(), preflight: ContextPreflightResultSchema.optional(),
+  progress: z.array(z.object({
+    stage: z.enum(["admitted", "allocating", "cloning", "model", "verifying", "refused"]),
+    at: z.number().int().positive().safe(), requestId: z.string(), turnId: z.string(), runId: z.string(),
+    generation: z.number().int().nonnegative(), code: z.string().optional(),
+    sandboxId: z.string().optional(), machineId: z.string().optional(), reservationId: z.string().optional()
+  })).optional(),
   startedAt: z.number().int().positive().safe().optional(), finishedAt: z.number().int().positive().safe().optional()
 }).strict()
 // The journal projection carries adapter drafts, not persisted browser messages.
@@ -119,7 +125,7 @@ export function createSharedConversationSeam(ctx: ControllerContext, live?: Live
     reading = true
     const revision = generation, at = branch, viewing = viewRevision
     try {
-      const response = await ctx.boundedFetch(`${ctx.baseUrl}/api/conversations/${encodeURIComponent(at)}`, { credentials: "same-origin", headers: { "X-Smithers-Chat-Trace": "1" } })
+      const response = await ctx.boundedFetch(`${ctx.baseUrl}/api/conversations/${encodeURIComponent(at)}`, { credentials: "same-origin", headers: { "X-Smithers-Chat-Trace": "1", "X-Smithers-Chat-Progress": "1" } })
       if (!response.ok) throw new SharedConversationFailure({ sentence: "Conversation unavailable" })
       const conversation = SharedConversationSchema.parse(await response.json())
       // The first view restores the transcript; publish its entries with it

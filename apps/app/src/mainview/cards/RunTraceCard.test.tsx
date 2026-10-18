@@ -87,6 +87,20 @@ const runCard = (
 
 const noop = (): void => {}
 
+test.each(["admitted", "allocating", "cloning", "model", "verifying"])("chat run shows its recorded %s stage", stage => {
+  const { host } = renderTrace({ workflow: "chat", events: [stamp(1, "chat.turn.progress", { stage }, 1000)] })
+  expect(host.querySelector(".run-outcome-words")?.textContent).toBe(stage)
+})
+
+test("a capacity paused run shows the server sentence and one local installation link", () => {
+  const sentence = "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
+  const { host } = renderTrace({ workflow: "chat", phase: "no-capacity", error: sentence,
+    events: [stamp(1, "chat.turn.progress", { stage: "refused", code: "host_no_capacity", message: sentence }, 1000)] })
+  expect(host.querySelector(".run-outcome-words")?.textContent).toBe("Capacity paused")
+  expect(host.textContent).toContain(sentence)
+  expect(host.querySelectorAll('a[href="/docs/installation/"]')).toHaveLength(1)
+})
+
 const render = (element: React.ReactElement): HTMLElement => {
   const host = document.createElement("div")
   document.body.append(host)

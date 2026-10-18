@@ -122,6 +122,9 @@ export const traceStatus = (model: TraceModel, cursor?: number): RunStatus => {
     supersede(row)
     const p = record(row.payload)
     switch (row.kind) {
+      case "chat.turn.progress":
+        if (["admitted", "allocating", "cloning", "model", "verifying", "refused"].includes(String(p.stage))) activity = String(p.stage)
+        break
       case "control.agent.turn-opened": activity = "Thinking"; break
       case "control.agent.cell-produced":
         // Native call facts can commit before this cell's telemetry arrives.
