@@ -16,7 +16,26 @@ export function htmlRunResult(result: string): HtmlRunResult | null {
 // block external resources/fetch/forms, and omit popup/top-navigation authority.
 // CSP does not prevent the isolated frame from navigating itself.
 export const RUN_RESULT_CSP = "default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'"
-export function RunResult({ result, technical = false }: { readonly result: string; readonly technical?: boolean }) {
+/** Only operator build configuration chooses the service; run output cannot choose a URL. */
+export function lanesAccountsOrigin(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  try {
+    const url = new URL(value)
+    if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) return null
+    return url.origin
+  } catch { return null }
+}
+export function isLanesAccountsResult(result: string): boolean {
+  try { return JSON.parse(result)?.ui?.kind === "lanes-accounts" } catch { return false }
+}
+export function RunResult({ result, technical = false, accountsOrigin = import.meta.env?.VITE_LANES_ACCOUNTS_ORIGIN }: { readonly result: string; readonly technical?: boolean; readonly accountsOrigin?: string }) {
+  const origin = lanesAccountsOrigin(accountsOrigin)
+  if (origin !== null && isLanesAccountsResult(result)) return <section data-keyboard-pane="Accounts">
+    <a href={`${origin}/auth/login`} target="_blank" rel="noopener noreferrer">Continue with GitHub</a>
+    <iframe className="run-result" title="Accounts" src={`${origin}/accounts/tool`}
+      sandbox="allow-scripts allow-same-origin allow-forms" referrerPolicy="no-referrer"
+      style={{ width: "100%", height: "min(70vh, 720px)", border: 0 }} />
+  </section>
   const ui = htmlRunResult(result)
   if (ui !== null) return <iframe
     className="run-result"
