@@ -18,9 +18,10 @@ SET owner_login       = $1::text,
     owner_login_lower = LOWER($1::text),
     repo_name         = $2::text,
     repo_name_lower   = LOWER($2::text),
+    github_private    = NULL,
     updated_at        = NOW()
 WHERE id = $3
-RETURNING id, owner_login, owner_login_lower, repo_name, repo_name_lower, installation_id, github_repository_id, sync_refs, sync_metadata, sync_state, enrolled_via, mirror_owner, mirror_repo, last_synced_at, last_webhook_at, syncing_since, sync_error, consecutive_failures, created_at, updated_at
+RETURNING id, owner_login, owner_login_lower, repo_name, repo_name_lower, installation_id, github_repository_id, sync_refs, sync_metadata, sync_state, enrolled_via, mirror_owner, mirror_repo, last_synced_at, last_webhook_at, syncing_since, sync_error, consecutive_failures, created_at, updated_at, github_private, next_reconcile_at, reconcile_skip_logged_at
 `
 
 type AdoptGitHubSyncedRepoSlugParams struct {
@@ -56,8 +57,87 @@ func (q *Queries) AdoptGitHubSyncedRepoSlug(ctx context.Context, arg AdoptGitHub
 		&i.ConsecutiveFailures,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GithubPrivate,
+		&i.NextReconcileAt,
+		&i.ReconcileSkipLoggedAt,
 	)
 	return i, err
+}
+
+const bindGitHubSyncedRepoInstallation = `-- name: BindGitHubSyncedRepoInstallation :one
+UPDATE github_synced_repos
+SET installation_id = $1,
+    github_repository_id = COALESCE(github_repository_id, $2),
+    github_private = NULL,
+    updated_at = NOW()
+WHERE id = $3
+  AND installation_id IS NULL
+  AND owner_login_lower = LOWER($4::text)
+  AND repo_name_lower = LOWER($5::text)
+  AND (github_repository_id IS NULL OR github_repository_id = $2)
+RETURNING id, owner_login, owner_login_lower, repo_name, repo_name_lower, installation_id, github_repository_id, sync_refs, sync_metadata, sync_state, enrolled_via, mirror_owner, mirror_repo, last_synced_at, last_webhook_at, syncing_since, sync_error, consecutive_failures, created_at, updated_at, github_private, next_reconcile_at, reconcile_skip_logged_at
+`
+
+type BindGitHubSyncedRepoInstallationParams struct {
+	InstallationID     pgtype.Int8 `json:"installation_id"`
+	GithubRepositoryID pgtype.Int8 `json:"github_repository_id"`
+	ID                 int64       `json:"id"`
+	OwnerLogin         string      `json:"owner_login"`
+	RepoName           string      `json:"repo_name"`
+}
+
+// Bind only the exact source that was looked up; preserve webhook/racing binds.
+func (q *Queries) BindGitHubSyncedRepoInstallation(ctx context.Context, arg BindGitHubSyncedRepoInstallationParams) (GithubSyncedRepo, error) {
+	row := q.db.QueryRow(ctx, bindGitHubSyncedRepoInstallation,
+		arg.InstallationID,
+		arg.GithubRepositoryID,
+		arg.ID,
+		arg.OwnerLogin,
+		arg.RepoName,
+	)
+	var i GithubSyncedRepo
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerLogin,
+		&i.OwnerLoginLower,
+		&i.RepoName,
+		&i.RepoNameLower,
+		&i.InstallationID,
+		&i.GithubRepositoryID,
+		&i.SyncRefs,
+		&i.SyncMetadata,
+		&i.SyncState,
+		&i.EnrolledVia,
+		&i.MirrorOwner,
+		&i.MirrorRepo,
+		&i.LastSyncedAt,
+		&i.LastWebhookAt,
+		&i.SyncingSince,
+		&i.SyncError,
+		&i.ConsecutiveFailures,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.GithubPrivate,
+		&i.NextReconcileAt,
+		&i.ReconcileSkipLoggedAt,
+	)
+	return i, err
+}
+
+const claimGitHubSyncedRepoSkipLog = `-- name: ClaimGitHubSyncedRepoSkipLog :execrows
+UPDATE github_synced_repos
+SET reconcile_skip_logged_at = NOW()
+WHERE id = $1
+  AND (reconcile_skip_logged_at IS NULL OR reconcile_skip_logged_at <= NOW() - INTERVAL '1 hour')
+`
+
+// Share the diagnostic throttle between replicas and across restarts.
+func (q *Queries) ClaimGitHubSyncedRepoSkipLog(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, claimGitHubSyncedRepoSkipLog, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const claimGitHubSyncedRepoSync = `-- name: ClaimGitHubSyncedRepoSync :execrows
@@ -101,6 +181,23 @@ func (q *Queries) CountGitHubSyncedIssues(ctx context.Context, arg CountGitHubSy
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const deferGitHubSyncedRepoSync = `-- name: DeferGitHubSyncedRepoSync :exec
+UPDATE github_synced_repos
+SET next_reconcile_at = $1
+WHERE id = $2
+`
+
+type DeferGitHubSyncedRepoSyncParams struct {
+	NextReconcileAt pgtype.Timestamptz `json:"next_reconcile_at"`
+	ID              int64              `json:"id"`
+}
+
+// Schedule another background attempt without claiming success or a failure.
+func (q *Queries) DeferGitHubSyncedRepoSync(ctx context.Context, arg DeferGitHubSyncedRepoSyncParams) error {
+	_, err := q.db.Exec(ctx, deferGitHubSyncedRepoSync, arg.NextReconcileAt, arg.ID)
+	return err
 }
 
 const deleteGitHubSyncedIssue = `-- name: DeleteGitHubSyncedIssue :exec
@@ -223,6 +320,12 @@ SET owner_login     = EXCLUDED.owner_login,
     repo_name       = EXCLUDED.repo_name,
     installation_id = COALESCE(EXCLUDED.installation_id, github_synced_repos.installation_id),
     github_repository_id = COALESCE(EXCLUDED.github_repository_id, github_synced_repos.github_repository_id),
+    github_private = CASE
+        WHEN EXCLUDED.github_repository_id IS NOT NULL
+             AND github_synced_repos.github_repository_id IS DISTINCT FROM EXCLUDED.github_repository_id
+        THEN NULL
+        ELSE github_synced_repos.github_private
+    END,
     sync_refs       = github_synced_repos.sync_refs OR EXCLUDED.sync_refs,
     sync_metadata   = github_synced_repos.sync_metadata OR EXCLUDED.sync_metadata,
     -- A rebind restarts sync bookkeeping. An operator-disabled row stays
@@ -250,7 +353,7 @@ SET owner_login     = EXCLUDED.owner_login,
         ELSE github_synced_repos.consecutive_failures
     END,
     updated_at      = NOW()
-RETURNING id, owner_login, owner_login_lower, repo_name, repo_name_lower, installation_id, github_repository_id, sync_refs, sync_metadata, sync_state, enrolled_via, mirror_owner, mirror_repo, last_synced_at, last_webhook_at, syncing_since, sync_error, consecutive_failures, created_at, updated_at
+RETURNING id, owner_login, owner_login_lower, repo_name, repo_name_lower, installation_id, github_repository_id, sync_refs, sync_metadata, sync_state, enrolled_via, mirror_owner, mirror_repo, last_synced_at, last_webhook_at, syncing_since, sync_error, consecutive_failures, created_at, updated_at, github_private, next_reconcile_at, reconcile_skip_logged_at
 `
 
 type EnrollGitHubSyncedRepoParams struct {
@@ -307,6 +410,9 @@ func (q *Queries) EnrollGitHubSyncedRepo(ctx context.Context, arg EnrollGitHubSy
 		&i.ConsecutiveFailures,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GithubPrivate,
+		&i.NextReconcileAt,
+		&i.ReconcileSkipLoggedAt,
 	)
 	return i, err
 }
@@ -351,7 +457,7 @@ func (q *Queries) GetGitHubSyncedIssueCommentCoverage(ctx context.Context, arg G
 
 const getGitHubSyncedRepo = `-- name: GetGitHubSyncedRepo :one
 
-SELECT id, owner_login, owner_login_lower, repo_name, repo_name_lower, installation_id, github_repository_id, sync_refs, sync_metadata, sync_state, enrolled_via, mirror_owner, mirror_repo, last_synced_at, last_webhook_at, syncing_since, sync_error, consecutive_failures, created_at, updated_at
+SELECT id, owner_login, owner_login_lower, repo_name, repo_name_lower, installation_id, github_repository_id, sync_refs, sync_metadata, sync_state, enrolled_via, mirror_owner, mirror_repo, last_synced_at, last_webhook_at, syncing_since, sync_error, consecutive_failures, created_at, updated_at, github_private, next_reconcile_at, reconcile_skip_logged_at
 FROM github_synced_repos
 WHERE owner_login_lower = LOWER($1::text)
   AND repo_name_lower = LOWER($2::text)
@@ -387,12 +493,15 @@ func (q *Queries) GetGitHubSyncedRepo(ctx context.Context, arg GetGitHubSyncedRe
 		&i.ConsecutiveFailures,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GithubPrivate,
+		&i.NextReconcileAt,
+		&i.ReconcileSkipLoggedAt,
 	)
 	return i, err
 }
 
 const getGitHubSyncedRepoByGitHubID = `-- name: GetGitHubSyncedRepoByGitHubID :one
-SELECT id, owner_login, owner_login_lower, repo_name, repo_name_lower, installation_id, github_repository_id, sync_refs, sync_metadata, sync_state, enrolled_via, mirror_owner, mirror_repo, last_synced_at, last_webhook_at, syncing_since, sync_error, consecutive_failures, created_at, updated_at
+SELECT id, owner_login, owner_login_lower, repo_name, repo_name_lower, installation_id, github_repository_id, sync_refs, sync_metadata, sync_state, enrolled_via, mirror_owner, mirror_repo, last_synced_at, last_webhook_at, syncing_since, sync_error, consecutive_failures, created_at, updated_at, github_private, next_reconcile_at, reconcile_skip_logged_at
 FROM github_synced_repos
 WHERE github_repository_id = $1
 `
@@ -423,6 +532,9 @@ func (q *Queries) GetGitHubSyncedRepoByGitHubID(ctx context.Context, githubRepos
 		&i.ConsecutiveFailures,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GithubPrivate,
+		&i.NextReconcileAt,
+		&i.ReconcileSkipLoggedAt,
 	)
 	return i, err
 }
@@ -454,18 +566,22 @@ func (q *Queries) GetGitHubSyncedRepoReadGrant(ctx context.Context, arg GetGitHu
 }
 
 const listDueGitHubSyncedRepos = `-- name: ListDueGitHubSyncedRepos :many
-SELECT id, owner_login, owner_login_lower, repo_name, repo_name_lower, installation_id, github_repository_id, sync_refs, sync_metadata, sync_state, enrolled_via, mirror_owner, mirror_repo, last_synced_at, last_webhook_at, syncing_since, sync_error, consecutive_failures, created_at, updated_at
+SELECT id, owner_login, owner_login_lower, repo_name, repo_name_lower, installation_id, github_repository_id, sync_refs, sync_metadata, sync_state, enrolled_via, mirror_owner, mirror_repo, last_synced_at, last_webhook_at, syncing_since, sync_error, consecutive_failures, created_at, updated_at, github_private, next_reconcile_at, reconcile_skip_logged_at
 FROM github_synced_repos
 WHERE sync_metadata
   AND sync_state NOT IN ('disabled', 'failed')
   AND (syncing_since IS NULL OR syncing_since < NOW() - INTERVAL '5 minutes')
-ORDER BY last_synced_at ASC NULLS FIRST, id
+  AND (next_reconcile_at IS NULL OR next_reconcile_at <= NOW())
+ORDER BY CASE WHEN last_synced_at IS NULL THEN 0
+              WHEN github_private IS NULL THEN 1
+              ELSE 2 END,
+         last_synced_at ASC NULLS FIRST, next_reconcile_at ASC NULLS FIRST, id
 LIMIT $1::int
 `
 
-// Reconciliation backstop candidates, oldest staleness first. Due-ness (the
-// adaptive clamp, failure backoff, webhook-heartbeat stretch) is computed by
-// the reconciler in Go; this returns the stalest eligible rows.
+// Reconciliation candidates: never synced, visibility unknown, then stale.
+// Within never-synced rows, untouched candidates precede expired retries.
+// The reconciler applies adaptive cadence only once visibility is known.
 func (q *Queries) ListDueGitHubSyncedRepos(ctx context.Context, rowLimit int32) ([]GithubSyncedRepo, error) {
 	rows, err := q.db.Query(ctx, listDueGitHubSyncedRepos, rowLimit)
 	if err != nil {
@@ -496,6 +612,9 @@ func (q *Queries) ListDueGitHubSyncedRepos(ctx context.Context, rowLimit int32) 
 			&i.ConsecutiveFailures,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.GithubPrivate,
+			&i.NextReconcileAt,
+			&i.ReconcileSkipLoggedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -673,7 +792,7 @@ func (q *Queries) ListGitHubSyncedRepoMirrorBinders(ctx context.Context) ([]List
 }
 
 const listGitHubSyncedRepos = `-- name: ListGitHubSyncedRepos :many
-SELECT id, owner_login, owner_login_lower, repo_name, repo_name_lower, installation_id, github_repository_id, sync_refs, sync_metadata, sync_state, enrolled_via, mirror_owner, mirror_repo, last_synced_at, last_webhook_at, syncing_since, sync_error, consecutive_failures, created_at, updated_at
+SELECT id, owner_login, owner_login_lower, repo_name, repo_name_lower, installation_id, github_repository_id, sync_refs, sync_metadata, sync_state, enrolled_via, mirror_owner, mirror_repo, last_synced_at, last_webhook_at, syncing_since, sync_error, consecutive_failures, created_at, updated_at, github_private, next_reconcile_at, reconcile_skip_logged_at
 FROM github_synced_repos
 WHERE sync_state <> 'disabled'
   -- refs_only is github-sync's mirror working set: advertising a row with no
@@ -714,6 +833,9 @@ func (q *Queries) ListGitHubSyncedRepos(ctx context.Context, refsOnly bool) ([]G
 			&i.ConsecutiveFailures,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.GithubPrivate,
+			&i.NextReconcileAt,
+			&i.ReconcileSkipLoggedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -871,6 +993,38 @@ type SetGitHubSyncedRepoSyncErrorParams struct {
 // disabled.
 func (q *Queries) SetGitHubSyncedRepoSyncError(ctx context.Context, arg SetGitHubSyncedRepoSyncErrorParams) error {
 	_, err := q.db.Exec(ctx, setGitHubSyncedRepoSyncError, arg.SyncError, arg.HardFailAfter, arg.ID)
+	return err
+}
+
+const setGitHubSyncedRepoVisibility = `-- name: SetGitHubSyncedRepoVisibility :exec
+UPDATE github_synced_repos
+SET github_private = $1, updated_at = NOW()
+WHERE id = $2
+  AND installation_id = $3
+  AND github_repository_id = $4
+  AND owner_login = $5
+  AND repo_name = $6
+`
+
+type SetGitHubSyncedRepoVisibilityParams struct {
+	GithubPrivate      pgtype.Bool `json:"github_private"`
+	ID                 int64       `json:"id"`
+	InstallationID     pgtype.Int8 `json:"installation_id"`
+	GithubRepositoryID pgtype.Int8 `json:"github_repository_id"`
+	OwnerLogin         string      `json:"owner_login"`
+	RepoName           string      `json:"repo_name"`
+}
+
+// Match the installation and immutable source identity observed by the sync.
+func (q *Queries) SetGitHubSyncedRepoVisibility(ctx context.Context, arg SetGitHubSyncedRepoVisibilityParams) error {
+	_, err := q.db.Exec(ctx, setGitHubSyncedRepoVisibility,
+		arg.GithubPrivate,
+		arg.ID,
+		arg.InstallationID,
+		arg.GithubRepositoryID,
+		arg.OwnerLogin,
+		arg.RepoName,
+	)
 	return err
 }
 

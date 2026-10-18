@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -105,7 +106,7 @@ func (f *installPollFixture) poll(at int64, want ...string) {
 	f.mu.Lock()
 	var reads []string
 	for _, path := range f.paths {
-		if len(path) >= 4 && path[:4] == "GET " {
+		if len(path) >= 4 && path[:4] == "GET " && path != "GET /repos/acme/app" {
 			reads = append(reads, path[4:])
 		}
 	}
@@ -143,7 +144,7 @@ func TestGitHubInstallMetadataCadencesAndWebhookHints(t *testing.T) {
 	f.poll(225, "pulls", "issues/comments")
 	f.poll(240, "issues", "issues/events")
 	require.Zero(t, fetchedCount(t, f.pool, `SELECT count(*) FROM github_synced_issues`), "hint payloads never become objects")
-	reads := f.upstream.Reads()
+	reads := f.metadataReads()
 	for _, read := range reads[4:] {
 		require.Equal(t, 304, read.Status)
 		require.NotEmpty(t, read.IfNoneMatch)
@@ -209,7 +210,7 @@ func TestGitHubInstallMetadataClaimRetainsHintsAndRestartForgetsCadences(t *test
 	fresh.SetConditionalFetcherFactory(factory)
 	f.service = fresh
 	f.poll(12, "issues", "pulls", "issues/events", "issues/comments")
-	reads := f.upstream.Reads()
+	reads := f.metadataReads()
 	for _, read := range reads[len(reads)-4:] {
 		require.Empty(t, read.IfNoneMatch)
 		require.Equal(t, 200, read.Status)
@@ -245,7 +246,7 @@ func TestGitHubInstallMetadataWorkerWakesWithoutWaitingForCadence(t *testing.T) 
 	case <-time.After(time.Second):
 		t.Fatal("hint did not wake the existing worker")
 	}
-	reads := f.upstream.Reads()
+	reads := f.metadataReads()
 	require.Len(t, reads, 5)
 	require.Contains(t, reads[4].Path, "/pulls?")
 	require.Equal(t, 304, reads[4].Status)
@@ -407,7 +408,18 @@ func TestGitHubRetrySchedulesExistingReadersAndPreservesPauses(t *testing.T) {
 	// A primary-resource exhaustion holds every REST reader and the main token path.
 	f.exhausted.Store(true)
 	require.NoError(t, main.RetrySync(ctx))
-	f.poll(48, "pulls")
+	// The repository visibility read runs before the streams and is the read
+	// that observes the exhaustion, so no stream read is spent.
+	f.poll(48)
+	f.mu.Lock()
+	var gets []string
+	for _, path := range f.paths {
+		if strings.HasPrefix(path, "GET ") {
+			gets = append(gets, path)
+		}
+	}
+	f.mu.Unlock()
+	require.Equal(t, []string{"GET /repos/acme/app"}, gets)
 	require.NoError(t, main.RetrySync(ctx))
 	f.poll(49)
 	err = s.AuthorizeRefRead(ctx, repo.ID)
@@ -423,4 +435,19 @@ func TestGitHubRetrySchedulesExistingReadersAndPreservesPauses(t *testing.T) {
 	s.install.authorize = func(context.Context, db.GithubSyncedRepo) error { return errors.New("revoked") }
 	require.ErrorContains(t, main.RetrySync(ctx), "revoked")
 	require.Equal(t, before, checks.retries)
+}
+
+// Stream cadence assertions exclude the separately verified repository visibility read.
+func (f *installPollFixture) metadataReads() []githubfake.Read {
+	return metadataStreamReads(f.upstream.Reads())
+}
+
+func metadataStreamReads(all []githubfake.Read) []githubfake.Read {
+	var reads []githubfake.Read
+	for _, read := range all {
+		if read.Path != "/repos/acme/app" {
+			reads = append(reads, read)
+		}
+	}
+	return reads
 }
