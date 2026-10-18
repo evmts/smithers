@@ -77,6 +77,12 @@ func githubAppSetupTestHandler() (*GitHubAppSetupHandler, *githubAppSetupTestSer
 	return &GitHubAppSetupHandler{Service: s, Owners: githubAppSetupTestOwner{err: pgx.ErrNoRows}, Sessions: setupSessionStub{}, Origins: middleware.FixedOrigins("http://localhost:4000", "https://factory.example")}, s
 }
 
+// addSetupCSRFCookie sends the CSRF cookie a browser holds for r's scheme
+// after OpenSetup.
+func addSetupCSRFCookie(r *http.Request, value string) {
+	r.AddCookie(&http.Cookie{Name: setupCSRFCookieName(r.URL.Scheme + "://" + r.Host), Value: value})
+}
+
 func githubAppSetupBeginRequest(origin string) *http.Request {
 	r := httptest.NewRequest(http.MethodPost, origin+"/api/install/setup/app", strings.NewReader(`{"owner":"smithersai"}`))
 	r.Header.Set("Content-Type", "application/json")
@@ -110,7 +116,7 @@ func TestGitHubAppSetupBeginBindsCookieAndTrustedOrigin(t *testing.T) {
 			h, s := githubAppSetupTestHandler()
 			r := githubAppSetupBeginRequest(origin)
 			r.AddCookie(&http.Cookie{Name: GitHubAppSetupSessionCookie, Value: strings.Repeat("s", 64)})
-			r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+			addSetupCSRFCookie(r, "csrf")
 			r.Header.Set("X-CSRF-Token", "csrf")
 			origin, ok := h.requestOrigin(r)
 			if ok {
@@ -156,7 +162,7 @@ func TestGitHubAppSetupBeginRequiresOwnerBrowserSessionAfterOwnerExists(t *testi
 			h.Owners = githubAppSetupTestOwner{user: db.User{ID: 7}}
 			r := githubAppSetupBeginRequest("http://localhost:4000")
 			r.AddCookie(&http.Cookie{Name: GitHubAppSetupSessionCookie, Value: strings.Repeat("s", 64)})
-			r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+			addSetupCSRFCookie(r, "csrf")
 			r.Header.Set("X-CSRF-Token", "csrf")
 			origin, ok := h.requestOrigin(r)
 			if ok {
@@ -193,7 +199,7 @@ func TestGitHubAppSetupBeginRefusesUntrustedOriginsAndMalformedBody(t *testing.T
 			h, s := githubAppSetupTestHandler()
 			r := httptest.NewRequest(http.MethodPost, test.origin+"/api/install/setup/app", strings.NewReader(test.body))
 			r.AddCookie(&http.Cookie{Name: GitHubAppSetupSessionCookie, Value: strings.Repeat("s", 64)})
-			r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+			addSetupCSRFCookie(r, "csrf")
 			r.Header.Set("X-CSRF-Token", "csrf")
 			// Model the browser and loopback peer directly; deriving Origin
 			// before assigning the peer can stop at CSRF instead of JSON.
@@ -217,7 +223,7 @@ func TestGitHubAppSetupBeginFailuresDoNotIssueCookie(t *testing.T) {
 		s.err = failure
 		r := githubAppSetupBeginRequest("http://localhost:4000")
 		r.AddCookie(&http.Cookie{Name: GitHubAppSetupSessionCookie, Value: strings.Repeat("s", 64)})
-		r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		addSetupCSRFCookie(r, "csrf")
 		r.Header.Set("X-CSRF-Token", "csrf")
 		origin, ok := h.requestOrigin(r)
 		if ok {
@@ -235,7 +241,7 @@ func TestGitHubAppSetupBeginFailuresDoNotIssueCookie(t *testing.T) {
 	h.Owners = githubAppSetupTestOwner{err: errors.New("database unavailable")}
 	r := githubAppSetupBeginRequest("http://localhost:4000")
 	r.AddCookie(&http.Cookie{Name: GitHubAppSetupSessionCookie, Value: strings.Repeat("s", 64)})
-	r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+	addSetupCSRFCookie(r, "csrf")
 	r.Header.Set("X-CSRF-Token", "csrf")
 	origin, ok := h.requestOrigin(r)
 	if ok {
@@ -337,7 +343,7 @@ func TestGitHubAppSetupInstallationResumesWithoutConversionState(t *testing.T) {
 		h, s := githubAppSetupTestHandler()
 		r := githubAppSetupCallbackRequest("http://localhost:4000", "installed", "installation_id="+raw, "")
 		r.AddCookie(&http.Cookie{Name: GitHubAppSetupSessionCookie, Value: strings.Repeat("s", 64)})
-		r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		addSetupCSRFCookie(r, "csrf")
 		r.Header.Set("X-CSRF-Token", "csrf")
 		origin, ok := h.requestOrigin(r)
 		if ok {
@@ -434,7 +440,7 @@ func TestGitHubAppSetupMissingDependenciesFailClosed(t *testing.T) {
 		}
 		r := githubAppSetupBeginRequest("http://localhost:4000")
 		r.AddCookie(&http.Cookie{Name: GitHubAppSetupSessionCookie, Value: strings.Repeat("s", 64)})
-		r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		addSetupCSRFCookie(r, "csrf")
 		r.Header.Set("X-CSRF-Token", "csrf")
 		origin, ok := h.requestOrigin(r)
 		if ok {
@@ -500,7 +506,7 @@ func TestGitHubAppSetupStatusRequiresAuthorityBeforeReadingCredentials(t *testin
 	h.Status(w, r)
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 	r.AddCookie(&http.Cookie{Name: GitHubAppSetupSessionCookie, Value: strings.Repeat("s", 64)})
-	r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+	addSetupCSRFCookie(r, "csrf")
 	r.Header.Set("X-CSRF-Token", "csrf")
 	origin, ok := h.requestOrigin(r)
 	if ok {
@@ -528,7 +534,7 @@ func TestGitHubAppSetupStatusMetadataAndFailures(t *testing.T) {
 		h.Store = &githubAppSetupTestCredentials{credentials: credentials}
 		r := httptest.NewRequest(http.MethodGet, "http://localhost:4000/api/install", nil)
 		r.AddCookie(&http.Cookie{Name: GitHubAppSetupSessionCookie, Value: strings.Repeat("s", 64)})
-		r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		addSetupCSRFCookie(r, "csrf")
 		r.Header.Set("X-CSRF-Token", "csrf")
 		origin, ok := h.requestOrigin(r)
 		if ok {
@@ -558,7 +564,7 @@ func TestGitHubAppSetupStatusMetadataAndFailures(t *testing.T) {
 		h.Store = &githubAppSetupTestCredentials{loadError: test.loadError, installURLError: test.installError}
 		r := httptest.NewRequest(http.MethodGet, "http://localhost:4000/api/install", nil)
 		r.AddCookie(&http.Cookie{Name: GitHubAppSetupSessionCookie, Value: strings.Repeat("s", 64)})
-		r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		addSetupCSRFCookie(r, "csrf")
 		r.Header.Set("X-CSRF-Token", "csrf")
 		origin, ok := h.requestOrigin(r)
 		if ok {
@@ -593,7 +599,8 @@ func TestGitHubAppSetupProxyOriginRequiresTrustAndExactAllowlist(t *testing.T) {
 
 			r := githubAppSetupBeginRequest("http://" + test.host)
 			r.AddCookie(&http.Cookie{Name: GitHubAppSetupSessionCookie, Value: strings.Repeat("s", 64)})
-			r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+			// Behind TLS termination the browser sees HTTPS and holds the hosted cookie.
+			r.AddCookie(&http.Cookie{Name: setupCSRFCookieName("https://factory.example"), Value: "csrf"})
 			r.Header.Set("X-CSRF-Token", "csrf")
 			origin, ok := h.requestOrigin(r)
 			if ok {
@@ -667,7 +674,7 @@ func TestGitHubAppSetupStatusShowsExactCallbackRegistrationFix(t *testing.T) {
 	h.Store = reader
 	r := httptest.NewRequest(http.MethodGet, "http://localhost:4000/api/install", nil)
 	r.AddCookie(&http.Cookie{Name: GitHubAppSetupSessionCookie, Value: strings.Repeat("s", 64)})
-	r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+	addSetupCSRFCookie(r, "csrf")
 	r.Header.Set("X-CSRF-Token", "csrf")
 	origin, ok := h.requestOrigin(r)
 	if ok {
@@ -702,7 +709,7 @@ func TestGitHubAppSetupOriginAndCSRFBeforeBegin(t *testing.T) {
 		h, s := githubAppSetupTestHandler()
 		r := githubAppSetupBeginRequest("http://localhost:4000")
 		r.AddCookie(&http.Cookie{Name: GitHubAppSetupSessionCookie, Value: strings.Repeat("s", 64)})
-		r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		addSetupCSRFCookie(r, "csrf")
 		r.Header.Set("Origin", tc.origin)
 		r.Header.Set("X-CSRF-Token", tc.csrf)
 		w := httptest.NewRecorder()
@@ -731,7 +738,7 @@ func TestGitHubAppSetupMixedCaseSavedOriginIsTheBrowserOrigin(t *testing.T) {
 			r := githubAppSetupBeginRequest("http://williams-mac-mini.local:4000")
 			r.RemoteAddr = "10.0.0.20:51000"
 			r.AddCookie(&http.Cookie{Name: GitHubAppSetupSessionCookie, Value: strings.Repeat("s", 64)})
-			r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+			addSetupCSRFCookie(r, "csrf")
 			r.Header.Set("X-CSRF-Token", "csrf")
 			r.Header.Set("Origin", header)
 			w := httptest.NewRecorder()
@@ -746,7 +753,7 @@ func TestGitHubAppSetupMixedCaseSavedOriginIsTheBrowserOrigin(t *testing.T) {
 	r := githubAppSetupBeginRequest("http://williams-mac-mini.local:4000")
 	r.RemoteAddr = "10.0.0.20:51000"
 	r.AddCookie(&http.Cookie{Name: GitHubAppSetupSessionCookie, Value: strings.Repeat("s", 64)})
-	r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+	addSetupCSRFCookie(r, "csrf")
 	r.Header.Set("X-CSRF-Token", "csrf")
 	r.Header.Set("Origin", "http://williams-mac-mini.local:4001")
 	w := httptest.NewRecorder()
@@ -773,6 +780,56 @@ func TestGitHubAppSetupClosedNavigationRedirectsButAPIRetainsRefusal(t *testing.
 				require.Contains(t, w.Body.String(), "setup_closed")
 				require.Empty(t, w.Header().Get("Location"))
 			}
+		})
+	}
+}
+
+// The setup link issues the CSRF cookie for its origin's scheme. Every setup
+// write must read that same cookie, or an install served over HTTP can never
+// create its GitHub App.
+func TestGitHubAppSetupWritesAcceptTheCSRFCookieOpenSetupIssued(t *testing.T) {
+	for _, origin := range []string{"http://localhost:4000", "https://factory.example"} {
+		t.Run(origin, func(t *testing.T) {
+			h, s := githubAppSetupTestHandler()
+			open := httptest.NewRequest(http.MethodGet, origin+"/setup?token=setup-token", nil)
+			open.RemoteAddr = "127.0.0.1:1234"
+			opened := httptest.NewRecorder()
+			h.OpenSetup(opened, open)
+			require.Equal(t, http.StatusSeeOther, opened.Code, opened.Body.String())
+			var issued []*http.Cookie
+			csrf := ""
+			for _, cookie := range opened.Result().Cookies() {
+				if cookie.MaxAge < 0 {
+					continue
+				}
+				issued = append(issued, cookie)
+				if !cookie.HttpOnly {
+					csrf = cookie.Value
+				}
+			}
+			require.NotEmpty(t, csrf, "the setup link issues a script-readable CSRF cookie")
+			for _, write := range []struct {
+				name string
+				call func(http.ResponseWriter, *http.Request)
+				path string
+			}{
+				{"begin", h.Begin, "/api/install/setup/app"},
+				{"step", h.Step, "/api/install/setup/step"},
+				{"settings", h.SetSettings, "/api/install/setup/settings"},
+			} {
+				r := httptest.NewRequest(http.MethodPost, origin+write.path, strings.NewReader(`{"owner":"smithersai"}`))
+				r.Header.Set("Content-Type", "application/json")
+				r.RemoteAddr = "127.0.0.1:1234"
+				for _, cookie := range issued {
+					r.AddCookie(cookie)
+				}
+				r.Header.Set("Origin", origin)
+				r.Header.Set("X-CSRF-Token", csrf)
+				w := httptest.NewRecorder()
+				write.call(w, r)
+				require.NotContains(t, w.Body.String(), "setup origin and CSRF token required", write.name)
+			}
+			require.Equal(t, 1, s.beginCalls)
 		})
 	}
 }

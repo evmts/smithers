@@ -157,6 +157,12 @@ func (h *GitHubAppSetupHandler) requestOrigin(r *http.Request) (string, bool) {
 
 // OpenSetup exchanges the terminal token for the shared durable session before
 // any setup step. Redirect removes the token from the address and referrer.
+// setupCSRFCookieName names the CSRF cookie OpenSetup issues for origin's
+// scheme; every setup write reads the same one.
+func setupCSRFCookieName(origin string) string {
+	return middleware.CSRFCookieNameForSecure(strings.HasPrefix(origin, "https://"))
+}
+
 func (h *GitHubAppSetupHandler) OpenSetup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
@@ -185,7 +191,7 @@ func (h *GitHubAppSetupHandler) OpenSetup(w http.ResponseWriter, r *http.Request
 		WriteInstallSetupError(w, r, err)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: middleware.CSRFCookieNameForSecure(strings.HasPrefix(origin, "https://")), Value: token, Path: "/", SameSite: http.SameSiteLaxMode, Secure: strings.HasPrefix(origin, "https://"), MaxAge: 86400})
+	http.SetCookie(w, &http.Cookie{Name: setupCSRFCookieName(origin), Value: token, Path: "/", SameSite: http.SameSiteLaxMode, Secure: strings.HasPrefix(origin, "https://"), MaxAge: 86400})
 	http.SetCookie(w, &http.Cookie{Name: config.BrowserSessionCookieName("", strings.HasPrefix(origin, "http://")), Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: strings.HasPrefix(origin, "https://"), MaxAge: -1})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -270,7 +276,7 @@ func (h *GitHubAppSetupHandler) Begin(w http.ResponseWriter, r *http.Request) {
 	if !h.authorize(w, r) {
 		return
 	}
-	csrf, err := r.Cookie(middleware.CSRFCookieName)
+	csrf, err := r.Cookie(setupCSRFCookieName(origin))
 	if !middleware.SameOrigin(r.Header.Get("Origin"), origin) || err != nil || csrf.Value == "" || subtle.ConstantTimeCompare([]byte(csrf.Value), []byte(r.Header.Get("X-CSRF-Token"))) != 1 {
 		writeInstallAPIError(w, pkgerrors.Forbidden("setup origin and CSRF token required"))
 		return
@@ -455,7 +461,7 @@ func (h *GitHubAppSetupHandler) Step(w http.ResponseWriter, r *http.Request) {
 	if !h.authorize(w, r) {
 		return
 	}
-	csrf, err := r.Cookie(middleware.CSRFCookieName)
+	csrf, err := r.Cookie(setupCSRFCookieName(origin))
 	if !middleware.SameOrigin(r.Header.Get("Origin"), origin) || err != nil || csrf.Value == "" || subtle.ConstantTimeCompare([]byte(csrf.Value), []byte(r.Header.Get("X-CSRF-Token"))) != 1 {
 		writeInstallAPIError(w, pkgerrors.Forbidden("setup origin and CSRF token required"))
 		return
@@ -507,7 +513,7 @@ func (h *GitHubAppSetupHandler) SetSettings(w http.ResponseWriter, r *http.Reque
 		writeInstallAPIError(w, pkgerrors.Forbidden("install owner session required"))
 		return
 	}
-	csrf, err := r.Cookie(middleware.CSRFCookieName)
+	csrf, err := r.Cookie(setupCSRFCookieName(origin))
 	if !middleware.SameOrigin(r.Header.Get("Origin"), origin) || err != nil || csrf.Value == "" || subtle.ConstantTimeCompare([]byte(csrf.Value), []byte(r.Header.Get("X-CSRF-Token"))) != 1 {
 		writeInstallAPIError(w, pkgerrors.Forbidden("setup origin and CSRF token required"))
 		return
