@@ -1,5 +1,6 @@
 import { expect, type Page } from "../browserTest"
 import { installCloudFixture } from "../cloudFixture"
+import { openComposer } from "../composer"
 import { installFixture } from "../../../src/mainview/state/seams/InstallFixtures.test-support"
 import { fixtures } from "../../../../../packages/rpc/test/fixtures/Todo"
 import type { TodoCard } from "@smthrs/rpc/TodoCard"
@@ -63,8 +64,9 @@ export async function issueTodoInstall(page: Page, label = false) {
 export const openIssueTodoInstall = async (page: Page) => {
   await page.goto(`/${ISSUE_REPO}`, { waitUntil: "domcontentloaded" })
   const chat = page.getByRole("button", { name: "Chat", exact: true })
+  const ask = page.getByRole("button", { name: "Ask", exact: true })
   const takeover = page.getByRole("button", { name: "Use Smithers here", exact: true })
-  await expect(chat.or(takeover)).toBeVisible({ timeout: 60_000 })
+  await expect.poll(async () => await chat.isVisible() || await ask.isVisible() || await takeover.isVisible(), { timeout: 60_000 }).toBe(true)
   if (await takeover.isVisible()) await takeover.press("Enter")
-  await expect(chat).toBeVisible({ timeout: 60_000 })
+  await openComposer(page)
 }

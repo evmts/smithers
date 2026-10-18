@@ -3,6 +3,7 @@ import { owner, say } from "./j1-fixtures"
 import { ISSUE_REPO, issueTodoInstall } from "./issue-todo-fixture"
 import type { TodoCard } from "@smthrs/rpc/TodoCard"
 import { fixtures } from "../../../../../packages/rpc/test/fixtures/Todo"
+import { openComposer } from "../composer"
 
 // Literal oracle: do not derive expected bytes from the production helper.
 const recipeDiff = '--- a/.smithers/machine.json\n+++ b/.smithers/machine.json\n@@ -1,1 +1,6 @@\n-{"packages":["jq"]}\n+{\n+  "packages": [\n+    "jq",\n+    "figlet"\n+  ]\n+}\n'
@@ -34,6 +35,7 @@ for (const installed of [false, true]) test(`C-APP-03: a missing package drafts 
   expect(reads).toHaveLength(1)
   expect(new URL(reads[0]!).searchParams.get("ref")).toBe("main")
   await page.reload()
+  await openComposer(page)
   await expect(page.locator(".draft-seed pre").last()).toContainText("figlet")
   await page.getByRole("button", { name: "Discard", exact: true }).last().click()
   await expect(page.locator('[data-kind="draft"]')).toHaveCount(0)
@@ -62,6 +64,7 @@ test("C-APP-03: the install image Draft stays private to its browser", async ({ 
       return route.fulfill({ json: { content: '{"packages":["jq"]}', encoding: "utf-8" } })
     })
     await maya.goto(new URL(`/${ISSUE_REPO}`, page.url()).href)
+    await openComposer(maya)
     await expect(maya.getByTestId("composer-input")).toBeEditable()
     await expect(maya.getByRole("region", { name: "Draft", exact: true })).toHaveCount(0)
     await say(maya, "/settings")
@@ -82,6 +85,7 @@ test("C-APP-03: the install image Draft stays private to its browser", async ({ 
     await expect(mayaDraft).toHaveCount(0)
     await expect(benDraft.locator(".draft-seed pre")).toHaveText(recipeDiff)
     await page.reload()
+    await openComposer(page)
     await expect(benDraft.locator(".draft-seed pre")).toHaveText(recipeDiff)
   } finally {
     await mayaContext.close()

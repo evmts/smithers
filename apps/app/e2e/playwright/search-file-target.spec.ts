@@ -1,12 +1,10 @@
 import { expect, test, type Page } from "./browserTest"
 import { identityRoute } from "./identity"
+import { openComposer, say } from "./composer"
 
 const command = async (page: Page, line: string) => {
-  const input = page.getByTestId("composer-input")
-  if (!await input.isVisible()) await page.keyboard.press("Control+k")
-  await input.fill(line)
-  await input.press("Enter")
-  await expect(input).toBeHidden()
+  await say(page, line)
+  await expect(page.getByTestId("composer-input")).toBeEditable()
 }
 
 // Explicit HTTP fixtures exercise registry, persisted cards and keyboard dispatch.
@@ -28,7 +26,7 @@ test("a deduplicated file search keeps its repository after selection and reload
     return route.fulfill({ status: 404, json: { message: "Path not found" } })
   })
   await page.goto("/alpha/one/?design=off")
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+  await openComposer(page)
   await command(page, "/files / alpha/one")
   await expect(page.locator('[data-kind="file-list"]')).toContainText("README.md")
   await command(page, "/search.files README")
@@ -36,14 +34,19 @@ test("a deduplicated file search keeps its repository after selection and reload
   await expect(result.locator(".search-results-item")).toHaveCount(1)
   await expect(result.locator(".search-results-actions button")).toHaveCount(1)
   const open = result.getByRole("button", { name: "Read a file from a repository", exact: true })
+  await expect(open).toHaveAttribute("data-flow-args", "README.md alpha/one")
   await command(page, "/repo.select beta/two")
+  // Return to the result's own conversation before using its retained card.
+  await command(page, "/repo.select alpha/one")
   await open.focus()
   await open.press("Enter")
   await expect(page.getByTestId("card-file-alpha/one-README.md")).toContainText("Alpha content")
   expect(reads).toEqual(["/api/repos/alpha/one/contents/README.md"])
   await page.reload()
+  await openComposer(page)
   await expect(open).toBeVisible()
   await command(page, "/repo.select beta/two")
+  await command(page, "/repo.select alpha/one")
   await open.focus()
   await open.press("Enter")
   await expect.poll(() => reads.length).toBe(2)

@@ -7,6 +7,7 @@ import { earlyCodingJournal } from "../../src/mainview/cards/fixtures/CodingJour
 import { CODING_PLAN } from "../../src/mainview/cards/fixtures/CodingPlan"
 import { FIXTURE_BOX, installCloudFixture, runningBox } from "./cloudFixture.ts"
 import { prepareHealthPage,sendHealthCommand } from "./healthFixture"
+import { openComposer, say as send } from "./composer"
 
 /*
  * Lane runs T1 (.specs/engineering/spec.md §11.6): launch a fixture flow,
@@ -142,15 +143,6 @@ const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>>
   return { rpc }
 }
 
-const send = async (page: Page, text: string): Promise<void> => {
-  await expect(page.locator(".app-shell")).toBeVisible()
-  if (!await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
-  await page.getByTestId("composer-input").fill(text)
-  await page.getByTestId("composer-input").press("Enter")
-  await expect(page.getByTestId("composer-input")).toHaveValue("")
-  await expect(page.getByTestId("composer-input")).toBeHidden()
-}
-
 /** Exercise workspace flows after the introduction, using its existing command. */
 const finishGuide = async (page: Page): Promise<void> => {
   await expect(page.getByTestId("composer-input")).toBeAttached()
@@ -190,6 +182,7 @@ test("T1: approval counts settle with receipts and decided questions survive rel
     await page.goto(`/${REPO}`)
     await finishGuide(page)
     await send(page, `/runs ${JSON.stringify({ operation: "approval-list", repo: REPO })}`)
+    await expect(page.getByTestId("composer-input")).toBeEditable()
     const card = page.locator('[data-kind="approvals-inbox"]')
     const count = card.getByTestId("approvals-inbox-count")
     const grant = card.locator('[data-slot="confirmation"]').filter({ hasText: "Run the deploy script?" })
@@ -214,6 +207,7 @@ test("T1: approval counts settle with receipts and decided questions survive rel
     await expect(card.locator('.sui-approval-question').filter({ hasText: prompt })).toBeVisible()
     expect(rpc.filter(call => call.procedure === "Approval.Submit").at(-1)?.payload.answer).toBe("The scheduler")
     await page.reload()
+    await openComposer(page)
     await expect(count).toHaveText("0 approvals pending")
     await expect(card).toContainText("Run the deploy script?")
     await expect(card).toContainText(prompt)
@@ -236,6 +230,7 @@ test("T1: a guard's park lists as its incident, and Stop denies the guard's own 
   await page.goto(`/${REPO}`)
   await finishGuide(page)
   await send(page, `/runs ${JSON.stringify({ operation: "approval-list", repo: REPO })}`)
+  await expect(page.getByTestId("composer-input")).toBeEditable()
   const row = page.locator('[data-kind="approvals-inbox"] [data-slot="confirmation"]')
     .filter({ hasText: "Runaway · Raise the tokens budget from 10 to 40 tokens?" })
   await expect(row.getByRole("button", { name: "Continue", exact: true })).toBeVisible()

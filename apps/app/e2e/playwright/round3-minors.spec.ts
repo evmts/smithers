@@ -18,7 +18,7 @@ test("an unknown repository opens its recovery notice after a known repository i
   await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithersai/smithers" }] } }))
   await page.route("**/api/repos/smithersai/smithers", route => route.fulfill({ json: { is_public: true, default_bookmark: "main" } }))
   await page.goto("/smithersai/smithers/?design=off")
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+  await expect(page.getByRole("navigation", { name: "Repository", exact: true }).getByRole("link", { name: "Code", exact: true })).toHaveAttribute("aria-current", "page")
   await page.route("**/api/repos/nope/nope", route => route.fulfill({ status: 404, json: { message: "Not found" } }))
   await page.goto("/nope/nope/?design=off")
   const notice = page.locator('[data-repository-missing] .smithers-chat-message')
@@ -29,6 +29,6 @@ test("an unknown repository opens its recovery notice after a known repository i
 
   await expect(notice.getByRole("link")).toHaveCount(0)
   await page.goto("/smithersai/smithers/?design=off")
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+  await expect(page.getByRole("navigation", { name: "Repository", exact: true }).getByRole("link", { name: "Code", exact: true })).toHaveAttribute("aria-current", "page")
   await expect(page.locator('[data-repository-missing]')).toHaveCount(0)
 })
