@@ -25,7 +25,7 @@ const openQuestion = async (page: Page, origin: string) => {
       const projection = payload.selector._tag
       return route.fulfill(json({ ok: true, payload: { cursor: { projection, runId: null, value: 0 }, rows: projection === "approvals" ? [{
         runId: "run-test", requestId: "question", title: "Sign answer", requestedAt: Date.now(), status: "pending", waitRunId: "wait-execution",
-        request: { kind: "json", name: "decision", prompt: "Sign answer", schema: { type: "object", properties: { text: { type: "string" }, evidence: { type: "object", format: "webauthn-assertion" } } } },
+        request: { kind: "json", name: "decision", prompt: "Sign answer", requestId: "question", schema: { type: "object", properties: { text: { type: "string" }, evidence: { type: "object", format: "webauthn-assertion" } } } },
         payload: { target: { _tag: "Node", runId: "run-test", requestId: "question", digest: "sha256:test", envelope: { capabilities: [], flows: [], budget: {} } }, scope: "run", idempotencyKey: "approve:question" }
       }] : [] } }))
     }
@@ -42,13 +42,13 @@ const openQuestion = async (page: Page, origin: string) => {
   return answers
 }
 // Test-only reference verifier, independent of the shipped challenge code.
-async function verify(answer: any, privateKey: string, origin: string, expectedText = "Ship", run = "wait-execution") {
+async function verify(answer: any, privateKey: string, origin: string, expectedText = "Ship", run = "wait-execution", askId = "question") {
   const e = answer.evidence
   const client = Buffer.from(e.clientDataJSON, "base64url")
   const data = JSON.parse(client.toString())
   expect(data.type).toBe("webauthn.get")
   expect(data.origin).toBe(origin)
-  expect(data.challenge).toBe(hash(JSON.stringify(["smithers-answer/v1", run, "decision", JSON.stringify({ text: expectedText }), e.issuedAt])).toString("base64url"))
+  expect(data.challenge).toBe(hash(JSON.stringify(["smithers-answer/v1", run, "decision", askId, { text: expectedText }, e.issuedAt])).toString("base64url"))
   const auth = Buffer.from(e.authenticatorData, "base64url")
   expect(auth.subarray(0, 32)).toEqual(hash("localhost"))
   expect(auth[32]! & 5).toBe(5)
@@ -86,6 +86,7 @@ test("real passkey assertion binds answer, run and origin", async ({ page, baseU
   await expect(verify(answers[0], credentials[0]!.privateKey, origin, "Changed")).rejects.toThrow()
   await expect(verify(answers[0], credentials[0]!.privateKey, "http://wrong.example")).rejects.toThrow()
   await expect(verify(answers[0], credentials[0]!.privateKey, origin, "Ship", "other-wait")).rejects.toThrow()
+  await expect(verify(answers[0], credentials[0]!.privateKey, origin, "Ship", "wait-execution", "next-ask")).rejects.toThrow()
 })
 
 test("editing during signing refuses stale assertion and keeps answer", async ({ page, baseURL }) => {

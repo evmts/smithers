@@ -217,8 +217,8 @@ export const schemaLimits: BoundedJson.Limits = {
  * reason it does not fit.
  *
  * The subset is `type` (`object`, `array`, `string`, `number`, `integer`,
- * `boolean`, `null`), `enum`, `properties`, `required`, `items`, and
- * `nullable`. It is deliberately small: a human-task schema exists to say what
+ * `boolean`, `null`), `enum`, `properties`, `required`, `items`, `nullable`, `description`, `title`, and
+ * `format` (`webauthn-assertion` only). It is deliberately small: a human-task schema exists to say what
  * shape an answer takes, and every keyword beyond these describes a constraint
  * a person cannot be usefully re-asked about. A schema that reaches outside it
  * is refused as `request_invalid` rather than silently ignored, because a
@@ -303,7 +303,7 @@ const checkAt = (
 export const check = (value: unknown, schema: unknown): string | undefined => {
   const admittedSchema = BoundedJson.admit(schema, schemaLimits)
   if (!admittedSchema.ok) return admittedSchema.complaint
-  const schemaComplaint = validateSchemaAt(admittedSchema.value, [], 0, { visited: 0 })
+  const schemaComplaint = validateSchemaAt(admittedSchema.value, [], 0, { visited: 0, markers: 0 })
   if (schemaComplaint !== undefined) return schemaComplaint
   const admittedAnswer = BoundedJson.admit(value, answerLimits)
   if (!admittedAnswer.ok) return admittedAnswer.complaint
@@ -311,6 +311,7 @@ export const check = (value: unknown, schema: unknown): string | undefined => {
 }
 
 interface SchemaBudget {
+  markers: number
   visited: number
 }
 
@@ -319,7 +320,8 @@ const validateSchemaAt = (
   schema: unknown,
   path: ReadonlyArray<string>,
   depth: number,
-  budget: SchemaBudget
+  budget: SchemaBudget,
+  property = false
 ): string | undefined => {
   if (depth > maxSchemaDepth) {
     return `${at(path)} exceeds the maximum JSON Schema depth of ${maxSchemaDepth}.`
@@ -337,6 +339,10 @@ const validateSchemaAt = (
   // receiving workflow owns enrollment, freshness and signature checks.
   if (Object.hasOwn(schema, "format") && schema["format"] !== "webauthn-assertion") {
     return `${at(path)} declares an unsupported "format".`
+  }
+  if (schema["format"] === "webauthn-assertion") {
+    if (depth !== 1 || !property || (schema["type"] !== undefined && schema["type"] !== "object")) return `${at(path)} requires an object assertion marker on a depth-1 property.`
+    if (++budget.markers > 1) return `${at(path)} declares more than one assertion marker.`
   }
   const enumeration = schema["enum"]
   if (enumeration !== undefined && !Array.isArray(enumeration)) {
@@ -370,7 +376,7 @@ const validateSchemaAt = (
   if (properties !== undefined) {
     if (!isObject(properties)) return `${at(path)} declares "properties" that is not an object.`
     for (const [key, property] of Object.entries(properties)) {
-      const complaint = validateSchemaAt(property, [...path, key], depth + 1, budget)
+      const complaint = validateSchemaAt(property, [...path, key], depth + 1, budget, true)
       if (complaint !== undefined) return complaint
     }
   }
@@ -393,6 +399,6 @@ export const validateSchema = (
 ): string | undefined => {
   const admitted = BoundedJson.admit(schema, schemaLimits)
   return admitted.ok
-    ? validateSchemaAt(admitted.value, path, 0, { visited: 0 })
+    ? validateSchemaAt(admitted.value, path, 0, { visited: 0, markers: 0 })
     : admitted.complaint
 }
