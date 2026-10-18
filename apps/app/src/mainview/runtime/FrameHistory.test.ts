@@ -254,3 +254,15 @@ describe("browser frame history", () => {
     expect(createBrowserFrameHistory(host).current()).toBeUndefined()
   })
 })
+
+
+test("frame writes retain a client-navigated subject and search query", () => {
+  const { host } = browser("/o/r")
+  const history = createBrowserFrameHistory(host)
+  history.replace(root)
+  host.history.pushState(host.history.state, "", "/o/r/search?q=hello")
+  history.push(card)
+  expect(host.location.pathname + host.location.search).toBe("/o/r/search?q=hello")
+  history.back()
+  expect(host.location.pathname + host.location.search).toBe("/o/r/search?q=hello")
+})
