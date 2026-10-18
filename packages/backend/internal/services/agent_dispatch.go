@@ -81,10 +81,8 @@ type agentDispatch struct {
 	vmCreated        bool
 	watchdogStarted  bool
 	// RFD-004: the workspace this run executes in ("" on the ephemeral
-	// path) and whether its agent unit was started (decides fail vs suspend
-	// in cleanup).
+	// path).
 	workspaceID     string
-	serviceStarted  bool
 	flowOperationID string
 
 	// infraFailedMarked is set to true when markAgentDispatchInfrastructureFailed
@@ -202,16 +200,10 @@ func (d *agentDispatch) cleanup() {
 		d.svc.cancelAgentRuntimeWatchdogForRun(d.input.SessionID, d.run.ID)
 	}
 	if d.vmCreated && d.workspaceID != "" {
-		// RFD-004: a workspace whose agent never started is failed (quota
-		// released); one whose agent ran is suspended and kept.
-		logger := middleware.LoggerWithAgentSessionAndWorkflowRun(ctx, d.input.SessionID, d.run.ID)
-		if d.serviceStarted {
-			if err := d.svc.workspaces.SuspendAgentWorkspace(ctx, d.workspaceID); err != nil {
-				logger.Error("failed to suspend agent workspace during dispatch cleanup", "workspace_id", d.workspaceID, "error", err)
-			}
-		} else if err := d.svc.workspaces.FailAgentWorkspace(ctx, d.workspaceID); err != nil {
-			logger.Error("failed to fail agent workspace during dispatch cleanup", "workspace_id", d.workspaceID, "error", err)
-		}
+		// RFD-004: the run's box is released and its row kept.
+		release, err := d.svc.workspaces.ReleaseAgentWorkspace(ctx, d.workspaceID, d.input.SessionID)
+		logAgentWorkspaceRelease(middleware.LoggerWithAgentSessionAndWorkflowRun(ctx, d.input.SessionID, d.run.ID),
+			d.workspaceID, "dispatch_failed", release, err)
 	} else if d.vmCreated {
 		if err := d.svc.sandbox.DeleteSandbox(ctx, d.vm.ID); err != nil {
 			middleware.LoggerWithAgentSessionAndWorkflowRun(ctx, d.input.SessionID, d.run.ID).
@@ -1272,7 +1264,6 @@ func (d *agentDispatch) startService() error {
 			Error("microsandbox systemd service creation failed", "vm_id", d.vm.ID, "type", "agent", "error", serviceErr)
 		return d.markInfraFailed("create microsandbox systemd service: " + serviceErr)
 	}
-	d.serviceStarted = true
 	return nil
 }
 
