@@ -15,9 +15,9 @@ test("a deduplicated file search keeps its repository after selection and reload
   await page.route("**/api/bootstrap", route => route.fulfill({ json: {
     apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "native-handoff", sandbox: null
   } }))
-  await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute(null))
+  await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute())
   await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "alpha/one" }, { name: "beta/two" }] } }))
-  await page.route(/\/api\/repos\/(alpha\/one|beta\/two)$/, route => route.fulfill({ json: { default_bookmark: "main" } }))
+  await page.route(/\/api\/repos\/(alpha\/one|beta\/two)$/, route => route.fulfill({ json: { is_public: true, default_bookmark: "main" } }))
   await page.route(/\/api\/repos\/(alpha\/one|beta\/two)\/contents(?:\/[^?]*)?(?:\?.*)?$/, route => {
     const path = new URL(route.request().url()).pathname
     if (path.endsWith("/contents")) return route.fulfill({ json: [{ name: "README.md", path: "README.md", type: "file", size: 12 }] })
@@ -27,8 +27,9 @@ test("a deduplicated file search keeps its repository after selection and reload
     }
     return route.fulfill({ status: 404, json: { message: "Path not found" } })
   })
-  await page.goto("/alpha/one/")
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+  await page.goto("/alpha/one/?design=off")
+  await page.getByRole("button", { name: "Ask", exact: true }).click()
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
   await command(page, "/files / alpha/one")
   await expect(page.locator('[data-kind="file-list"]')).toContainText("README.md")
   await command(page, "/search.files README")
@@ -42,6 +43,7 @@ test("a deduplicated file search keeps its repository after selection and reload
   await expect(page.getByTestId("card-file-alpha/one-README.md")).toContainText("Alpha content")
   expect(reads).toEqual(["/api/repos/alpha/one/contents/README.md"])
   await page.reload()
+  await page.getByRole("button", { name: "Ask", exact: true }).click()
   await expect(open).toBeVisible()
   await command(page, "/repo.select beta/two")
   await open.focus()
