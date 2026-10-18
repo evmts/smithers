@@ -60,7 +60,8 @@ GitHub URL without opening it. Working Copy controls and signed-in publishing
 remain unverified under this lane's live policy.
 
 The results array is validated by ResultsSchema in results.ts. Exact failures
-remain failures. ok:null records skipped judges; judges do not block. Drift
+remain failures. Unpromoted judgments stay advisory; missing/stale sidecars fail.
+No policy or an exhausted budget is inconclusive. Drift
 owns paired shipped/ahead classification and issue ownership. Missing landing
 worlds report unverified: world arrives at M. No sites/ code changes.
 
@@ -212,3 +213,28 @@ uses its capture as a **Live-display fixture**, not production evidence.
 To repeat the lane's retained-evidence proof, set `SPEC_PLAYER_RESULTS` to a
 directory holding real mock/live runner receipts and their captures.
 `SPEC_PLAYER_EVIDENCE` selects the test screenshot directory.
+
+## Judged evidence and label agreement
+
+Judged chips use ≈ with the verdict and recorded reason, including missing,
+stale and inconclusive receipts. They do not turn an advisory failure into ✓.
+The runner stamps rubric/version/model/content identity onto real judged
+receipts. Thumbs retain that provenance in `assertions`; missing or older
+unstamped evidence stays a general journey label. Fuzzy labels stay advisory
+and cannot promote a rubric. Mixed-rubric steps use `journey.jsonl`; the shared
+report and runner read it alongside the rubric's own file.
+
+The host returns the shared agreement report in `/__spec/data` and after a
+label POST. To print it:
+
+```sh
+bun apps/app/spec/agreementCli.ts .smithers/factory.json "$HOME/smithers-spec/labels" will
+```
+
+For Tailscale, set `SPEC_HOST_OWNER` and that command's final argument to the
+owner's `Tailscale-User-Login` value. LAN defaults to `will`. Real owner counts
+remain zero until the owner labels real judged evidence; test fixtures do not
+calibrate a model. A mock receipt whose revision differs from the currently
+served build is hidden, and the host refuses labels for it. Rerun mock after
+each build before labeling it. The integrated spec typecheck inherits the six
+known errors documented by spec2/spec4; no clean whole-tree check is claimed.

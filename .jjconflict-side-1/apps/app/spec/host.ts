@@ -5,6 +5,8 @@ import { dirname, extname, resolve, sep } from "node:path"
 import { timingSafeEqual, randomBytes } from "node:crypto"
 import { z } from "zod"
 import { catalog } from "./player/catalog"
+import { labelEvidence } from "./labelEvidence"
+import { agreementReports } from "./agreementReports"
 
 const labelInput = z.strictObject({
   journey: z.string().regex(/^[a-z0-9-]+\/[a-z0-9-]+$/), step: z.number().int().nonnegative(),
@@ -34,6 +36,7 @@ export interface HostOptions {
   readonly resultsDirectory?: string
   readonly labelsDirectory?: string
   readonly dist?: string
+  readonly policyPath?: string
 }
 /** Private read host; only authenticated people append labels. Never forwards API calls. */
 export const startHost = async (options: HostOptions = {}) => {
@@ -86,6 +89,8 @@ export const startHost = async (options: HostOptions = {}) => {
     }
     return counts
   }
+  const mockRevision = async () => { const stamp = await Bun.file(resolve(dist, "__build.json")).json().catch(() => null) as { gitSha?: unknown } | null; return typeof stamp?.gitSha === "string" ? stamp.gitSha : null }
+  const reports = () => agreementReports(options.policyPath ?? resolve(import.meta.dirname, "../../../.smithers/factory.json"), labelsDirectory, options.owner ?? process.env.SPEC_HOST_OWNER ?? "will").catch(() => null)
   let writes = Promise.resolve()
   const server = Bun.serve({
     hostname, port: options.port ?? Number(process.env.SPEC_HOST_PORT ?? 4790), maxRequestBodySize: 32_768,
@@ -104,26 +109,35 @@ export const startHost = async (options: HostOptions = {}) => {
         const by = lan ? sameToken(cookie, token) ? options.owner ?? process.env.SPEC_HOST_OWNER ?? "will" : undefined
           : local ? "local-test" : request.headers.get("Tailscale-User-Login")
         if (!by) return reply("Unauthorized", 401)
-        if (request.headers.get("origin") !== url.origin) return reply("Origin required", 403)
+        const origin = request.headers.get("origin")
+        const proxyHost = request.headers.get("x-forwarded-host") ?? request.headers.get("host")
+        // Tailscale terminates HTTPS before its authenticated loopback proxy.
+        const tailscaleOrigin = !lan && !local && proxyHost && origin === `https://${proxyHost}`
+        if (origin !== url.origin && !tailscaleOrigin) return reply("Origin required", 403)
         let input: z.infer<typeof labelInput>
         try { input = labelInput.parse(await request.json()) } catch { return reply("Invalid label", 400) }
         const value = await data()
         const run = value.runs.find(run => run.journey === input.journey && run.mode === input.mode && run.revision === input.revision)
         const step = run?.steps[input.step]
+        if (input.mode === "mock" && input.revision !== await mockRevision()) return reply("Build changed; rerun mock", 409)
         if (!step || input.assertions.some(index => !step.assertions[index])) return reply("Receipt changed; reload", 409)
-        const disputed = input.assertions.map(index => ({ index, ...step.assertions[index] }))
-        const note = [input.note, ...disputed.map(assertion => `Assertion ${assertion.index + 1}: ${JSON.stringify(assertion)}`)].filter(Boolean).join("\n")
-        const label = { ...input, assertions: [], ...(note ? { note } : {}), by, at: new Date().toISOString() }
+        const indices = input.assertions.length ? input.assertions : input.thumb === "up" ? step.assertions.map((_, index) => index) : []
+        const disputed = indices.map(index => ({ index, ...step.assertions[index]! }))
+        const evidence = disputed.flatMap(assertion => { const value = labelEvidence(assertion); return value ? [value] : [] })
+        const rubrics = [...new Set(disputed.filter(assertion => assertion.kind === "rubric").flatMap(assertion => { const value = labelEvidence(assertion); return value ? [value.rubric] : [] }))]
+        const filename = rubrics.length === 1 && disputed.every(assertion => assertion.kind === "rubric" || !labelEvidence(assertion)) && evidence.every(value => value.rubric === rubrics[0]) && ["claims-honest", "reply-actionable"].includes(rubrics[0]!) ? rubrics[0]! : "journey"
+        const note = [input.note, ...input.assertions.map(index => { const assertion = step.assertions[index]!; return `Assertion ${index + 1}: ${assertion.kind}; expected ${JSON.stringify(assertion.expected)?.slice(0, 2000)}; actual ${["rubric", "fuzzy"].includes(assertion.kind) ? assertion.reason ?? "unverified" : JSON.stringify(assertion.actual)?.slice(0, 2000)}` })].filter(Boolean).join("\n")
+        const label = { ...input, assertions: evidence, ...(note ? { note } : {}), by, at: new Date().toISOString() }
         const write = writes.then(async () => {
-          const file = await open(resolve(labelsDirectory, "journey.jsonl"), constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW, 0o600)
+          const file = await open(resolve(labelsDirectory, `${filename}.jsonl`), constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW, 0o600)
           try { await file.writeFile(JSON.stringify(label) + "\n") } finally { await file.close() }
         })
         writes = write.catch(() => {})
         try { await write } catch { return reply("Label write failed", 500) }
-        return json({ counts: await countLabels() }, 201)
+        return json({ counts: await countLabels(), agreement: await reports() }, 201)
       }
       if (request.method !== "GET" && request.method !== "HEAD") return reply(null, 405)
-      if (url.pathname === "/__spec/data") return json({ ...await data(), counts: await countLabels(), live: JSON.parse(process.env.SPEC_LIVE_URLS ?? '{"default":"https://smithers.sh","smithers":"https://smithers.sh","effeck":"https://effeck.dev"}'), drift: await Bun.file(resolve(resultsDirectory, "drift.json")).json().catch(() => null) })
+      if (url.pathname === "/__spec/data") return json({ ...await data(), counts: await countLabels(), agreement: await reports(), mockRevision: await mockRevision(), live: JSON.parse(process.env.SPEC_LIVE_URLS ?? '{"default":"https://smithers.sh","smithers":"https://smithers.sh","effeck":"https://effeck.dev"}'), drift: await Bun.file(resolve(resultsDirectory, "drift.json")).json().catch(() => null) })
       if (url.pathname === "/__spec/player.js") return reply(script, 200, { "Content-Type": "text/javascript" })
       if (url.pathname === "/__spec/player.css") return reply(await Bun.file(resolve(import.meta.dirname, "player/player.css")).text(), 200, { "Content-Type": "text/css" })
       if (url.pathname === "/__spec/capture") {

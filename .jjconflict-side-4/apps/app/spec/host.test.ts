@@ -85,6 +85,10 @@ test("default identity comes from Tailscale and unsafe bind addresses fail close
     const response = await fetch(extra.origin + "/__spec/labels", { method: "POST", headers: { Origin: extra.origin, "Content-Type": "application/json", "Tailscale-User-Login": "will@example.com" }, body: JSON.stringify(payload) })
     expect(response.status).toBe(201)
     expect(JSON.parse((await readFile(resolve(root, "tail-labels/journey.jsonl"), "utf8")).trim()).by).toBe("will@example.com")
+    const proxied = await fetch(extra.origin + "/__spec/labels", { method: "POST", headers: { Origin: "https://mini.tailnet.test", "X-Forwarded-Host": "mini.tailnet.test", "Tailscale-User-Login": "will@example.com", "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+    expect(proxied.status).toBe(201)
+    const foreign = await fetch(extra.origin + "/__spec/labels", { method: "POST", headers: { Origin: "https://foreign.invalid", "X-Forwarded-Host": "mini.tailnet.test", "Tailscale-User-Login": "will@example.com", "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+    expect(foreign.status).toBe(403)
   } finally { extra.close() }
   await expect(startHost({ hostname: "0.0.0.0" })).rejects.toThrow("requires loopback")
 })
@@ -100,4 +104,60 @@ test("labels cannot follow a symlink into another directory", async () => {
     expect(response.status).toBe(500)
     expect(await readFile(target, "utf8")).toBe("original\n")
   } finally { extra.close() }
+})
+
+
+test("judged chips keep reasons, owner thumbs calibrate the shared report, and missing receipts do not", async () => {
+  const directory = resolve(root, "judged-results"); await mkdir(directory)
+  const policy = JSON.parse(await readFile(resolve(import.meta.dirname, "../../../.smithers/factory.json"), "utf8")).judges
+  const label = { kind: "rubric", rubric: "claims-honest", rubricVersion: "1", model: policy.engines.rubric.model, identity: "a".repeat(64), verdict: "fail", trials: 3, passes: 0 }
+  const run = { journey: payload.journey, mode: "live", revision: "judged-contract-fixture", startedAt: "2026-10-18T00:00:00Z", state: "unverified", steps: [{ caption: "Open the public repository", spec: "PM D1", status: "passed", assertions: [
+    { kind: "rubric", ok: true, verdict: "fail", blocking: false, expected: { rubric: "claims-honest", on: { view: "page" } }, actual: { ...label, label }, reason: "honesty: 1/5 · advisory" },
+    { kind: "rubric", ok: false, verdict: "missing", blocking: true, expected: { rubric: "claims-honest", on: { view: "page" } }, actual: { verdict: "missing", reason: "Missing sidecar" }, reason: "Missing sidecar" },
+    { kind: "rubric", ok: true, verdict: "fail", blocking: false, expected: { rubric: "reply-actionable", on: { view: "page" } }, actual: { ...label, identity: "b".repeat(64), label: { ...label, rubric: "reply-actionable", identity: "b".repeat(64) } }, reason: "Not actionable" }
+  ], screenshot: "missing.png", ms: 1 }] }
+  await writeFile(resolve(directory, "results.json"), JSON.stringify([run]))
+  const extra = await startHost({ port: 49400 + Math.floor(Math.random() * 2000), lan: true, local: true, hostname: "127.0.0.1", tokenFile: resolve(root, "judge-token"), labelsDirectory: resolve(root, "judge-labels"), resultsDirectory: directory })
+  const context = await browser.newContext()
+  try {
+    const page = await context.newPage(); const token = await readFile(resolve(root, "judge-token"), "utf8")
+    await page.goto(`${extra.origin}/?k=${token}&journey=${payload.journey}&mode=live`)
+    await page.getByText("≈ rubric · fail", { exact: true }).first().waitFor()
+    expect(await page.getByText("honesty: 1/5 · advisory", { exact: true }).count()).toBe(1)
+    expect(await page.getByText("≈ rubric · missing", { exact: true }).count()).toBe(1)
+    await page.getByRole("button", { name: "Thumb down", exact: true }).click()
+    await page.getByRole("checkbox", { name: "Dispute assertion 1", exact: true }).check()
+    const saved = page.waitForResponse(response => response.url().endsWith("/__spec/labels") && response.request().method() === "POST")
+    await page.getByRole("button", { name: "Save", exact: true }).click()
+    const response = await saved
+    expect(response.status()).toBe(201)
+    const result = await response.json()
+    expect(result.agreement.find((report: { rubric: string }) => report.rubric === "claims-honest")).toMatchObject({ labels: 1, promoted: false, agreement: { agree: 1, total: 1 } })
+    const stored = JSON.parse((await readFile(resolve(root, "judge-labels/claims-honest.jsonl"), "utf8")).trim())
+    expect(stored.assertions).toEqual([label]); expect(stored.by).toBe("will")
+    await page.getByRole("button", { name: "Thumb down", exact: true }).click()
+    await page.getByRole("checkbox", { name: "Dispute assertion 2", exact: true }).check()
+    const missingSaved = page.waitForResponse(response => response.url().endsWith("/__spec/labels") && response.request().method() === "POST")
+    await page.getByRole("button", { name: "Save", exact: true }).click()
+    expect((await (await missingSaved).json()).agreement.find((report: { rubric: string }) => report.rubric === "claims-honest").labels).toBe(1)
+    const missing = JSON.parse((await readFile(resolve(root, "judge-labels/journey.jsonl"), "utf8")).trim())
+    expect(missing.assertions).toEqual([])
+    const mixedSaved = page.waitForResponse(response => response.url().endsWith("/__spec/labels") && response.request().method() === "POST")
+    await page.getByRole("button", { name: "Thumb up", exact: true }).click()
+    const mixed = await (await mixedSaved).json()
+    expect(mixed.agreement.find((report: { rubric: string }) => report.rubric === "reply-actionable").labels).toBe(1)
+    const mixedLines = (await readFile(resolve(root, "judge-labels/journey.jsonl"), "utf8")).trim().split("\n").map(line => JSON.parse(line))
+    expect(mixedLines.at(-1).assertions).toHaveLength(2)
+    await page.screenshot({ path: resolve(process.env.SPEC_PLAYER_EVIDENCE ?? root, "player-judged-contract.png"), fullPage: true })
+  } finally { await context.close(); extra.close() }
+}, 30_000)
+
+test("a new mock build cannot receive a label for an older run revision", async () => {
+  const fixture = JSON.parse(await readFile(resolve(root, "results/results.json"), "utf8"))
+  fixture[0].mode = "mock"
+  await writeFile(resolve(root, "results/mock-results.json"), JSON.stringify(fixture))
+  await writeFile(resolve(root, "dist/__build.json"), JSON.stringify({ gitSha: "new-build" }))
+  const response = await fetch(host.origin + "/__spec/labels", { method: "POST", headers: { Origin: host.origin, "Content-Type": "application/json", cookie: `spec_host=${await readFile(resolve(root, "token"), "utf8")}` }, body: JSON.stringify({ ...payload, mode: "mock" }) })
+  expect(response.status).toBe(409)
+  expect(await response.text()).toBe("Build changed; rerun mock")
 })

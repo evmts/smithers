@@ -1,8 +1,8 @@
 import type { Page } from "@playwright/test"
 import type * as Evaluator from "@smthrs/model/Evaluator"
-import { join } from "node:path"
 import type { JudgePolicy } from "../../../packages/smithers/build/targets/src/Factory.ts"
-import { agreement, blocks, readLabels } from "./agreement.ts"
+import { agreement, blocks } from "./agreement.ts"
+import { readRubricLabels } from "./readRubricLabels"
 import { captureObservation } from "./captureObservation.ts"
 import type { Assertion, Journey, Step } from "./journey.ts"
 import { type JudgmentRequest, record, replay } from "./judgments.ts"
@@ -81,7 +81,7 @@ export const judgeAssertion = async (
     })
     : await replay(options.sidecar, request, options.policy, slot)
   const report = kind === "rubric"
-    ? agreement(rubric, options.policy, await readLabels(join(options.labels, `${rubric.id}.jsonl`)))
+    ? agreement(rubric, options.policy, await readRubricLabels(options.labels, rubric.id))
     : undefined
   const blocking = result.verdict === "missing" || result.verdict === "stale" ||
     blocks(kind, result.verdict, options.policy.blocking.rubric !== false && report?.promoted)
@@ -91,7 +91,10 @@ export const judgeAssertion = async (
     blocking,
     ok: blocking ? false : result.verdict === "uncertain" || result.verdict === "inconclusive" ? null : true,
     expected: assertion,
-    actual: result,
+    actual: "identity" in result ? { ...result, label: {
+      kind, rubric: rubric.id, rubricVersion: rubric.version, model: options.policy.engines[kind].model,
+      identity: result.identity, verdict: result.verdict, trials: result.trials, passes: result.passes
+    } } : result,
     reason: result.reason
   }
 }

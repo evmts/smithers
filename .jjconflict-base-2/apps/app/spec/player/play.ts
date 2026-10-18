@@ -4,6 +4,7 @@ import { checkpoint } from "./checkpoint"
 import { thumbs } from "./thumbs"
 
 export interface PlayerData {
+  readonly mockRevision: string | null
   readonly journeys: Journey[]
   readonly runs: RunResult[]
   readonly counts: Record<string, { up: number; down: number }>
@@ -19,7 +20,7 @@ const button = (text: string, action: () => void, name = text) => {
 export const play = (app: HTMLElement, data: PlayerData, definition: Journey) => {
   const params = new URLSearchParams(location.search)
   const steps = definition.steps.length ? definition.steps : [{ caption: definition.id, go: definition.go, expect: definition.expect ?? [] }]
-  let index = Math.max(0, Math.min(Number(params.get("s")) || 0, steps.length - 1))
+  let index = Math.max(0, Math.min(Math.trunc(Number(params.get("s"))) || 0, steps.length - 1))
   let mode: "mock" | "live" = params.get("mode") === "live" ? "live" : "mock"
   let walk = params.get("view") === "walk"
   let timer: ReturnType<typeof setInterval> | undefined
@@ -58,7 +59,7 @@ export const play = (app: HTMLElement, data: PlayerData, definition: Journey) =>
   }
   controls.append(previous, autoplay, next, count, mock, live, walking)
   app.replaceChildren(header, controls, world, caption, stage, chips, labels, status)
-  const runFor = () => data.runs.find(run => run.journey === definition.id && run.mode === mode)
+  const runFor = () => data.runs.find(run => run.journey === definition.id && run.mode === mode && (mode !== "mock" || run.revision === data.mockRevision))
   const show = () => {
     replay?.abort(); replay = new AbortController(); const signal = replay.signal
     const step = steps[index]!
@@ -105,17 +106,18 @@ export const play = (app: HTMLElement, data: PlayerData, definition: Journey) =>
     }
     for (const [number, assertion] of (receipt?.assertions ?? []).entries()) {
       const chip = element("label"); chip.dataset.assertion = String(number)
-      const details = element("details"); const summary = element("summary", `${assertion.ok === true ? "✓" : assertion.ok === false ? "✗" : "?"} ${assertion.kind}`)
-      details.append(summary, element("pre", `Expected ${JSON.stringify(assertion.expected)}\nActual ${JSON.stringify(assertion.actual)}${assertion.reason ? "\n" + assertion.reason : ""}`)); chip.append(details); chips.append(chip)
+      const judged = ["rubric", "fuzzy", "visual", "agent"].includes(assertion.kind)
+      const details = element("details"); const summary = element("summary", judged ? `≈ ${assertion.kind} · ${assertion.verdict ?? "inconclusive"}` : `${assertion.ok === true ? "✓" : assertion.ok === false ? "✗" : "?"} ${assertion.kind}`)
+      details.append(summary, element("pre", `Expected ${JSON.stringify(assertion.expected)}\nActual ${JSON.stringify(assertion.actual)}${assertion.reason ? "\n" + assertion.reason : ""}`)); chip.append(details); if (judged && assertion.reason) chip.append(element("span", assertion.reason)); chips.append(chip)
     }
     if (!receipt) chips.append(element("span", "No receipt"))
     else if (run) thumbs(labels, chips, run, index, data.counts, status)
   }
   window.addEventListener("keydown", event => {
-    if (event.ctrlKey || event.metaKey || event.altKey || (event.target as HTMLElement).closest("input,textarea,select,button,a,[contenteditable=true],summary")) return
+    if (event.ctrlKey || event.metaKey || event.altKey || (event.target as HTMLElement).closest("input,textarea,select,[contenteditable=true]")) return
     if (event.key === "ArrowLeft") { event.preventDefault(); move(-1) }
     if (event.key === "ArrowRight") { event.preventDefault(); move(1) }
-    if (event.key === " ") { event.preventDefault(); toggle() }
+    if (event.key === " " && !(event.target as HTMLElement).closest("button,a,summary")) { event.preventDefault(); toggle() }
   })
   show()
 }

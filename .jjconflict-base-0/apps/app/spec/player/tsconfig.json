@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.json",
-  "compilerOptions": { "types": ["bun", "node"] },
+  "compilerOptions": { "types": ["bun", "node"], "lib": ["ES2024", "DOM", "DOM.Iterable"] },
   "include": ["./*.ts", "../host.ts", "../host.test.ts", "../labels-handoff.ts", "../labels-handoff.test.ts"],
   "exclude": []
 }

@@ -2,7 +2,7 @@ import { play } from "./play"
 import type { Journey } from "../journey"
 import type { RunResult } from "../results"
 
-interface Data { journeys: Journey[]; runs: RunResult[]; counts: Record<string, { up: number; down: number }>; live: Record<string, string>; drift: { builtMinutes?: number; ahead?: number; regressed?: number } | null }
+interface Data { mockRevision: string | null; journeys: Journey[]; runs: RunResult[]; counts: Record<string, { up: number; down: number }>; live: Record<string, string>; drift: { builtMinutes?: number; ahead?: number; regressed?: number } | null }
 const app = document.querySelector<HTMLElement>("#app")!
 const node = <K extends keyof HTMLElementTagNameMap>(tag: K, text?: string) => {
   const element = document.createElement(tag)
@@ -23,7 +23,7 @@ const main = async () => {
   const filters = node("nav"); filters.setAttribute("aria-label", "Results")
   const list = node("div"); app.append(filters, list)
   let filter = ""
-  const present = (journey: Journey, mode: string) => data.runs.some(run => run.journey === journey.id && (mode === "judged" ? run.steps.some(step => step.assertions.some(a => ["fuzzy", "rubric"].includes(a.kind) && a.ok !== null)) : run.mode === mode && run.steps.length > 0))
+  const present = (journey: Journey, mode: string) => data.runs.some(run => run.journey === journey.id && (mode === "judged" ? run.steps.some(step => step.assertions.some(a => ["fuzzy", "rubric"].includes(a.kind))) : run.mode === mode && run.steps.length > 0))
   const show = () => {
     list.replaceChildren()
     for (const site of [...new Set(data.journeys.map(j => j.site))]) {

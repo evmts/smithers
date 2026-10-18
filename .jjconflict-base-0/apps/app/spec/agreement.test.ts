@@ -54,3 +54,8 @@ test("agreement CLI reads label files and prints both rubrics", async () => {
   expect(await child.exited).toBe(0)
   expect(reports.map((report) => [report.rubric, report.labels, report.promoted])).toEqual([["claims-honest", 0, false], ["reply-actionable", 0, false]])
 })
+
+test("fuzzy labels cannot promote a rubric even when model and rubric match", () => {
+  const fuzzy = Array.from({ length: 20 }, (_, index) => label(index)).concat(label(100, 0, "down", true)).map(entry => ({ ...entry, assertions: entry.assertions.map(assertion => ({ ...assertion, kind: "fuzzy" as const })) }))
+  expect(agreement(claimsHonest, policy, fuzzy)).toMatchObject({ labels: 0, promoted: false })
+})

@@ -42,7 +42,8 @@ test("real build restores all three checkpoints; flip preserves step and renders
     await page.getByRole("button", { name: "Next step", exact: true }).click()
     await browserExpect(page.locator("#caption")).toHaveText("Browse repository files")
     await browserExpect(page.frameLocator('iframe[title="Mock checkpoint"]').getByRole("button", { name: "README.md", exact: true })).toBeVisible()
-    await page.getByRole("button", { name: "Next step", exact: true }).click()
+    // Focus stays on Next after clicking: arrows must still operate the player.
+    await page.keyboard.press("ArrowRight")
     await browserExpect(page.locator("#caption")).toHaveText("Read the README")
     await browserExpect(page.frameLocator('iframe[title="Mock checkpoint"]').getByRole("region", { name: "README.md", exact: true })).toBeVisible()
     await page.getByRole("button", { name: "Live", exact: true }).click()
@@ -63,7 +64,7 @@ test("arrow keys, Space, world variants, deep links, focus and phone Walk", asyn
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark" })
   try {
     const page = await context.newPage()
-    await page.goto(`${host.origin}/?journey=${id}&s=1&mode=live`)
+    await page.goto(`${host.origin}/?journey=${id}&s=1.75&mode=live`)
     await browserExpect(page.locator("#count")).toHaveText("2/3")
     await page.locator("#caption").click(); await page.keyboard.press("ArrowRight")
     await browserExpect(page.locator("#count")).toHaveText("3/3")

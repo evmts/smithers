@@ -11,6 +11,7 @@ export interface Label {
   readonly revision: string
   readonly thumb: "up" | "down"
   readonly assertions: ReadonlyArray<{
+    readonly kind?: "rubric" | "fuzzy"
     readonly rubric: string
     readonly rubricVersion: string
     readonly model: string
@@ -35,7 +36,7 @@ export const readLabels = async (path: string): Promise<readonly Label[]> => {
     const label: Label = JSON.parse(line)
     if (!label || typeof label.journey !== "string" || !Number.isSafeInteger(label.step) || label.step < 0 || !["mock", "live"].includes(label.mode) || typeof label.revision !== "string" || !["up", "down"].includes(label.thumb) || typeof label.by !== "string" || !Number.isFinite(Date.parse(label.at)) || !Array.isArray(label.assertions)) throw new Error(`Invalid label ${path}:${index + 1}`)
     for (const assertion of label.assertions) {
-      if (!assertion || [assertion.rubric, assertion.rubricVersion, assertion.model, assertion.identity].some((value) => typeof value !== "string" || !value) || assertion.trials !== 3 || !Number.isInteger(assertion.passes) || assertion.passes < 0 || assertion.passes > 3 || assertion.verdict !== (assertion.passes === 3 ? "pass" : assertion.passes === 0 ? "fail" : "uncertain") || (assertion.seededDefect !== undefined && typeof assertion.seededDefect !== "boolean")) throw new Error(`Invalid assertion ${path}:${index + 1}`)
+      if (!assertion || (assertion.kind !== undefined && !["rubric", "fuzzy"].includes(assertion.kind)) || [assertion.rubric, assertion.rubricVersion, assertion.model, assertion.identity].some((value) => typeof value !== "string" || !value) || assertion.trials !== 3 || !Number.isInteger(assertion.passes) || assertion.passes < 0 || assertion.passes > 3 || assertion.verdict !== (assertion.passes === 3 ? "pass" : assertion.passes === 0 ? "fail" : "uncertain") || (assertion.seededDefect !== undefined && typeof assertion.seededDefect !== "boolean")) throw new Error(`Invalid assertion ${path}:${index + 1}`)
     }
     return label
   })
@@ -57,7 +58,7 @@ export const agreement = (rubric: RubricData, policy: typeof JudgePolicy.Type, l
   for (const label of [...labels].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))) {
     if (label.by.toLowerCase() !== owner.toLowerCase()) continue
     for (const assertion of label.assertions) {
-      if (assertion.rubric === rubric.id && assertion.rubricVersion === rubric.version && assertion.model === policy.engines.rubric.model) observations.set(assertion.identity, { label, assertion })
+      if (assertion.kind !== "fuzzy" && assertion.rubric === rubric.id && assertion.rubricVersion === rubric.version && assertion.model === policy.engines.rubric.model) observations.set(assertion.identity, { label, assertion })
     }
   }
   const cases = [...observations.values()]

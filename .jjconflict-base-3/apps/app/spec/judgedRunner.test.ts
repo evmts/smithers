@@ -90,6 +90,7 @@ test("D3 browser runner records both judged kinds and CI replay dispatches zero 
   const recorded = await run(true)
   expect(recorded.steps[0]?.status).toBe("passed")
   expect(calls).toBe(6)
+  expect(recorded.steps[0]?.assertions[0]?.actual).toMatchObject({ label: { rubric: "claims-honest", rubricVersion: "1", model: policy.engines.rubric.model, trials: 3, passes: 3, verdict: "pass" } })
   const sidecar = JSON.parse(await readFile(join(directory, "judged.judgments.json"), "utf8"))
   expect(Object.keys(sidecar.judgments)).toEqual(["0:0", "0:1"])
   const replayed = await run()
