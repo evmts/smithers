@@ -2115,6 +2115,7 @@ func buildRouter(
 			r.With(readRepo...).Get("/repos/{owner}/{repo}", repoHandler.GetRepo)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/topics", repoHandler.GetRepoTopics)
 
+			r.With(append(readRepo, middleware.SearchRateLimit(queries))...).Get("/repos/{owner}/{repo}/github/metadata/*", repoHandler.GetPublicRepositoryMetadata)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/contents", repoHandler.GetRepoContents)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/contents/*", repoHandler.GetRepoContents)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/home", repoHandler.GetRepositoryHome)

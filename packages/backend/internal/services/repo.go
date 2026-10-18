@@ -1121,21 +1121,22 @@ func (s *RepoService) GetRepoView(ctx context.Context, viewer *db.User, owner, r
 		return RepoView{}, err
 	}
 	view := RepoView{Repository: repository, ForkOf: s.upstreamFullName(ctx, repository)}
-	if viewer == nil {
+	if viewer != nil {
+		canWrite, err := s.canWriteRepo(ctx, repository, viewer.ID)
+		if err != nil {
+			return RepoView{}, err
+		}
+		view.CanWrite = canWrite
+	} else if !repository.IsPublic {
 		return view, nil
 	}
-	canWrite, err := s.canWriteRepo(ctx, repository, viewer.ID)
-	if err != nil {
-		return RepoView{}, err
-	}
-	view.CanWrite = canWrite
 	view.GitHubSourceUnavailable = s.pool == nil
 	view.GitHubSource, view.GitHubSourceAmbiguous, err = s.githubSource(ctx, repository.ID)
 	if err != nil {
 		slog.WarnContext(ctx, "github import source unavailable", "repository_id", repository.ID, "error", err)
 		view.GitHubSourceUnavailable = true
 	}
-	if !view.CanWrite && (view.GitHubSource != nil || view.GitHubSourceAmbiguous) {
+	if !repository.IsPublic && !view.CanWrite && (view.GitHubSource != nil || view.GitHubSourceAmbiguous) {
 		// A readable Cloud mirror does not grant GitHub source metadata.
 		view.GitHubSource, view.GitHubSourceAmbiguous, view.GitHubSourceUnavailable = nil, false, true
 	}
