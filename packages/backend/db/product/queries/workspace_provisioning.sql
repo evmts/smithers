@@ -1,5 +1,46 @@
+-- name: ClaimWorkspaceProvisioningLease :one
+-- A provisioning claim is a committed lease (#4294). The caller commits this
+-- statement's transaction at once and renews the lease while its work runs.
+-- No row means another claimant owns the workspace: its lease is live, or a
+-- transaction holds the provisioning advisory lock (a claim made under a
+-- caller's held transaction keeps that lock until the caller commits). A
+-- lease past expires_at belongs to a holder that stopped renewing and is
+-- taken over with a new token. reclaim_token is a lease this process's own
+-- ended claim could not delete; it is taken over at once. An empty
+-- reclaim_token names none.
+INSERT INTO workspace_provisioning_leases AS lease (workspace_id, claim_token, claim_kind, claimed_at, expires_at)
+SELECT sqlc.arg(workspace_id)::text, gen_random_uuid(), sqlc.arg(claim_kind)::text, now(),
+       now() + make_interval(secs => sqlc.arg(lease_seconds)::double precision)
+WHERE pg_try_advisory_xact_lock(hashtextextended('workspace-provision:' || sqlc.arg(workspace_id)::text, 0))
+ON CONFLICT (workspace_id) DO UPDATE
+SET claim_token = EXCLUDED.claim_token,
+    claim_kind = EXCLUDED.claim_kind,
+    claimed_at = EXCLUDED.claimed_at,
+    expires_at = EXCLUDED.expires_at
+WHERE lease.expires_at <= now()
+   OR lease.claim_token::text = sqlc.arg(reclaim_token)::text
+RETURNING lease.claim_token, lease.expires_at;
+
+-- name: RenewWorkspaceProvisioningLease :one
+-- Extends a live lease the token still owns. No row means the lease expired
+-- or another claimant took it: ownership ended and is never revived.
+UPDATE workspace_provisioning_leases
+SET expires_at = now() + make_interval(secs => sqlc.arg(lease_seconds)::double precision)
+WHERE workspace_id = sqlc.arg(workspace_id)::text
+  AND claim_token = sqlc.arg(claim_token)::uuid
+  AND expires_at > now()
+RETURNING expires_at;
+
+-- name: ReleaseWorkspaceProvisioningLease :exec
+-- Ends the token's lease. A lease another claimant took is left alone.
+DELETE FROM workspace_provisioning_leases
+WHERE workspace_id = sqlc.arg(workspace_id)::text
+  AND claim_token = sqlc.arg(claim_token)::uuid;
+
 -- name: TryLockWorkspaceProvisioning :one
--- Transaction-scoped ownership is released on an API crash, not on row age.
+-- The provisioning advisory lock on a caller's held transaction, kept until
+-- that transaction ends. Every lease claim checks it, so a claim made under a
+-- held transaction excludes the next claimant until its writes are visible.
 SELECT pg_try_advisory_xact_lock(hashtextextended('workspace-provision:' || sqlc.arg(workspace_id)::text, 0))::boolean AS acquired;
 
 -- name: ListWorkspaceProvisioningRecovery :many

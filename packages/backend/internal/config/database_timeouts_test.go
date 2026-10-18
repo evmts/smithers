@@ -9,9 +9,11 @@ import (
 
 // plue#839: production ran both session bounds at 0. A statement is bounded
 // at 15 minutes. An idle open transaction is bounded at a day, because a
-// workspace provisioning claim holds its transaction idle while its work
-// boots a guest and clones the repository; see
-// services.TestIdleTransactionTimeoutOutlastsTheProvisioningClaim.
+// member's start of a machine-owned branch holds the member's mutation
+// transaction idle while it boots a guest and clones the repository; see
+// services.TestIdleTransactionTimeoutOutlastsAMemberStartTransaction. The
+// provisioning claim no longer depends on it (#4294); see
+// services.TestAHeartbeatingClaimPastTheIdleBoundIsNeverTaken.
 func TestLoad_DatabaseSessionTimeoutDefaults(t *testing.T) {
 	clearConfigEnv(t)
 	cfg, err := Load("")

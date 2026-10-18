@@ -270,11 +270,12 @@ type ServerConfig struct {
 	TrustedProxyHops int `mapstructure:"trusted_proxy_hops"`
 }
 
-// DefaultDatabaseIdleInTransactionSessionTimeoutSecs is a day. A workspace
-// provisioning claim holds its transaction idle while its work boots a guest
-// and clones the repository, and a session closed under it drops the claim's
-// lock while the guest is still starting (plue#839). The bound only ends a
-// transaction nothing will ever finish.
+// DefaultDatabaseIdleInTransactionSessionTimeoutSecs is a day. A member's
+// start of a machine-owned branch holds the member's mutation transaction idle
+// while the start boots a guest and clones the repository, and a session
+// closed under it fails the start (plue#839). The workspace provisioning claim
+// itself is a committed lease and does not depend on this bound (#4294). The
+// bound only ends a transaction nothing will ever finish.
 const DefaultDatabaseIdleInTransactionSessionTimeoutSecs = 86400
 
 type DatabaseConfig struct {
