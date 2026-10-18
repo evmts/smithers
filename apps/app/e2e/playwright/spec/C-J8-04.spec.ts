@@ -1,5 +1,6 @@
 import { expect, test } from "../browserTest"
 import { say } from "./j1-fixtures"
+import { fillComposer } from "../composer"
 import { ISSUE_REPO, issueTodoInstall, openIssueTodoInstall } from "./issue-todo-fixture"
 import { fixtures } from "../../../../../packages/rpc/test/fixtures/Todo"
 import type { TodoCard } from "@smthrs/rpc/TodoCard"
@@ -30,7 +31,6 @@ test("C-J8-04: Retry preserves old citations and opens captured history after re
     } else await route.fulfill({ json: model })
   })
   await openIssueTodoInstall(page)
-  if (!await page.getByTestId("composer-input").isVisible()) await page.getByRole("button", { name: "Chat", exact: true }).press("Enter")
   await say(page, "/todo T12")
   const card = page.getByRole("article", { name: "TODO T12", exact: true }).last()
   await expect(card.getByRole("link", { name: "retry-policy · r3", exact: true })).toHaveAttribute("href", `/api/repos/${ISSUE_REPO}/wiki/history/42/3/content?visibility=public`)
@@ -40,6 +40,7 @@ test("C-J8-04: Retry preserves old citations and opens captured history after re
   expect(writes[0]!.key).toBeTruthy()
   expect(model.evidence[0]).toEqual(earlier)
   await page.reload()
+  await fillComposer(page, "")
   await expect(card.getByRole("region", { name: "Attempt 1 evidence", exact: true }).getByRole("link", { name: "retry-policy · r3", exact: true })).toBeVisible()
   await expect(card.getByRole("region", { name: "Attempt 2 evidence", exact: true }).getByRole("link", { name: "retry-policy · r4", exact: true })).toBeVisible()
   await expect(card.getByRole("link", { name: /release-process/ })).toHaveCount(0)
@@ -51,6 +52,7 @@ test("C-J8-04: Retry preserves old citations and opens captured history after re
     expect(await (await response).text()).toBe(body)
     // A history content link is a native navigation; return to the persisted card.
     await page.goBack()
+    await fillComposer(page, "")
     await expect(card).toBeVisible()
   }
   await expect(page.getByTestId("composer-input")).toBeEditable()

@@ -25,6 +25,8 @@ import {
   verifyConversationHistoryPage
 } from "./ConversationHistory"
 import { memoryStorage, settled, silentAgent } from "./TestFixtures"
+import { loadDocs } from "../../docs/Docs"
+import { diskPageFiles } from "../../docs/DiskPages"
 
 const createAppController = scopedControllers()
 const cloud: AppBootstrap = {
@@ -449,8 +451,9 @@ test("an unresolved account read cannot erase a card created by an unrelated sla
         return source.replay
       }
     }
-  }, { bootstrap: cloud, fetchImpl: unrelated })
-  expect((await controller.commands.run("account.show")).status).toBe("executed")
+  }, { bootstrap: cloud, fetchImpl: unrelated, docs: () => loadDocs(diskPageFiles()) })
+  // Hosted Settings has no install card; use the shipped docs read from disk.
+  expect(await controller.commands.run("docs")).toMatchObject({ status: "executed" })
   const before = [...store.collections.cards.values()].map((row) => row.id)
   expect(before.length).toBeGreaterThan(0)
   held.resolve(source.index)

@@ -223,8 +223,8 @@ for (const status of [404, 503]) test(`repository Ask shows a Settings ${status}
   expect(noticeBounds.x).toBeGreaterThanOrEqual(askBounds.x)
   expect(noticeBounds.x + noticeBounds.width).toBeLessThanOrEqual(askBounds.x + askBounds.width)
   expect(noticeBounds.y + noticeBounds.height).toBeLessThan(composerBounds.y)
-  await page.screenshot({ path: testInfo.outputPath(`settings-${status}-notice.png`) })
-  await testInfo.attach(`settings-${status}-notice`, { path: testInfo.outputPath(`settings-${status}-notice.png`), contentType: "image/png" })
+  await page.screenshot({ path: testInfo.outputPath(`ask-notice-${status}.png`) })
+  await testInfo.attach(`ask-notice-${status}`, { path: testInfo.outputPath(`ask-notice-${status}.png`), contentType: "image/png" })
   await expect(page.getByTestId("card-settings")).toHaveCount(0)
   await expect(page.getByTestId("composer-input")).toBeEditable()
   // Dismiss through the shared keyboard door, then retry the real Settings flow.

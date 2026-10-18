@@ -1,5 +1,6 @@
 import { expect, test } from "../browserTest"
 import { say } from "./j1-fixtures"
+import { fillComposer } from "../composer"
 import { ISSUE_REPO, issueTodoInstall, openIssueTodoInstall } from "./issue-todo-fixture"
 import { fixtures } from "../../../../../packages/rpc/test/fixtures/Todo"
 import type { TodoCard } from "@smthrs/rpc/TodoCard"
@@ -20,7 +21,6 @@ test("C-J8-05: older and newer TODO cards open their own decision revision", asy
   await page.route("**/api/todos", route => route.fulfill({ json: models }))
   for (const model of models) await page.route(`**/api/todos/${model.n}`, route => route.fulfill({ json: model }))
   await openIssueTodoInstall(page)
-  if (!await page.getByTestId("composer-input").isVisible()) await page.getByRole("button", { name: "Chat", exact: true }).press("Enter")
   for (const [n, body] of [[1, "Decision: webhook redelivery uses `retryExponential()`. Reason: provider rate limits."], [2, "Decision: webhook redelivery uses `retryFixed(5000)`. `retryExponential()` is not used for webhooks. Reason: the provider's idempotency window."]] as const) {
     await say(page, `/todo T${n}`)
     const card = page.getByRole("article", { name: `TODO T${n}`, exact: true }).last()
@@ -34,6 +34,7 @@ test("C-J8-05: older and newer TODO cards open their own decision revision", asy
     await link.press("Enter")
     expect(await (await response).text()).toBe(body)
     await page.goBack()
+    await fillComposer(page, "")
     await expect(page.getByTestId("composer-input")).toBeEditable()
     await say(page, `/todo T${n}`)
     await expect(card).toBeVisible()

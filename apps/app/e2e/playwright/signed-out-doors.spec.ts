@@ -26,14 +26,12 @@ test("hosted signed-out root keeps its two doors in the transcript", async ({ pa
   expect(reads).toBe(0)
 })
 
-test("an explicit repository sign-in prompt keeps return_to", async ({ page }) => {
+test("the repository frame sign-in keeps return_to", async ({ page }) => {
   await signedOutVisitor(page)
   await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithersai/smithers" }] } }))
+  await page.route("**/api/repos/smithersai/smithers", route => route.fulfill({ json: { full_name: "smithersai/smithers", is_public: true, default_bookmark: "main" } }))
   await page.goto("/smithersai/smithers/")
-  await fillComposer(page, "/auth.prompt")
-  await page.getByTestId("composer-input").press("Enter")
-  await page.getByTestId("composer-input").press("Escape")
-  const door = page.getByRole("button", { name: "Sign in with GitHub", exact: true }).last()
+  const door = page.getByRole("button", { name: "Sign in", exact: true })
   await expect(door).toBeVisible()
   await page.route("**/api/auth/github**", route => route.fulfill({ body: "Sign-in handoff" }))
   const request = page.waitForRequest(request => new URL(request.url()).pathname === APPLICATION_SIGN_IN_PATH)

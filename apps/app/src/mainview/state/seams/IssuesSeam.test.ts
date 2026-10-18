@@ -318,24 +318,32 @@ describe("issues seam — the list", () => {
   })
 
   test("native 200 and optional GitHub 401 keep authorized rows and source-specific refusal", async () => {
-    const calls: string[] = []
-    const { store, controller } = await issuesController(selectedUserBackend({
-      "GET /api/repos/will/flows/issues": json(200, [wireIssue(7)]),
-      "GET /api/user/github-repos/will/flows/issues": json(401, { message: "GitHub connection required" }),
-      "GET /api/user": json(200, { id: 1, username: "will", is_admin: false })
-    }, calls))
-    const outcome = await controller.commands.run("issues.list")
-    expect(outcome.status).toBe("executed")
-    await settled()
-    const card = cardOfKind(store, "issues-will/flows", "issue-list")
-    expect(card.status).toBe("active")
-    expect(card.payload.issues.map(issue => [issue.number, issue.source])).toEqual([[7, "smithers-cloud"]])
-    expect(card.payload.github).toMatchObject({ source: "refused", refusal: "GitHub connection required" })
-    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "sign-in")).toHaveLength(0)
-    expect(calls.filter(call => call.includes("/issues?"))).toEqual([
-      "GET /api/repos/will/flows/issues?state=open",
-      "GET /api/user/github-repos/will/flows/issues?state=open"
-    ])
+    for (const mirror of ["missing", "disconnected"] as const) {
+      const calls: string[] = []
+      const { store, controller } = await issuesController(selectedUserBackend({
+        "GET /api/repos/will/flows/issues": json(200, [wireIssue(7)]),
+        "GET /api/user/github-repos/will/flows/issues": json(401, { message: "GitHub connection required" }),
+        "GET /api/user": json(200, { id: 1, username: "will", is_admin: false }),
+        "GET /api/repos/will/flows/github/metadata/issues": mirror === "missing"
+          ? json(404, { message: "Mirror unavailable" })
+          : () => { throw new Error("Mirror disconnected") }
+      }, calls))
+      // Initialize both selected-target session projections before exercising a same-account re-probe.
+      await controller.loadSession()
+      const outcome = await controller.commands.run("issues.list")
+      expect(outcome.status).toBe("executed")
+      await settled()
+      const card = cardOfKind(store, "issues-will/flows", "issue-list")
+      expect(card.status).toBe("active")
+      expect(card.payload.issues.map(issue => [issue.number, issue.source])).toEqual([[7, "smithers-cloud"]])
+      expect(card.payload.github).toMatchObject({ source: "refused", refusal: "GitHub connection required" })
+      expect([...store.collections.messages.values()].filter(message => message.action?.flow === "sign-in")).toHaveLength(0)
+      expect(calls.filter(call => call.includes("/issues?"))).toEqual([
+        "GET /api/repos/will/flows/issues?state=open",
+        "GET /api/user/github-repos/will/flows/issues?state=open",
+        "GET /api/repos/will/flows/github/metadata/issues?state=open"
+      ])
+    }
   })
 
   test("a native 401 refuses the list before reading GitHub or publishing stale rows", async () => {
