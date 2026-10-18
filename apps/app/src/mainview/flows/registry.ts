@@ -53,6 +53,7 @@ import * as repos from "./entries/repos"
 import * as review from "./entries/review"
 import * as runs from "./entries/runs"
 import * as search from "./entries/search"
+import * as site from "./entries/site"
 import * as secrets from "./entries/secrets"
 import * as sync from "./entries/sync"
 import * as toast from "./entries/toast"
@@ -414,6 +415,7 @@ export const NAMESPACES: ReadonlyArray<Namespace> = [
   todo.namespace,
   chat.namespace,
   repo.namespace,
+  site.namespace,
   repos.namespace,
   wiki.namespace,
   flow.namespace,

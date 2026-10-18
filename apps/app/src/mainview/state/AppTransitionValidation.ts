@@ -83,6 +83,7 @@ const TRANSITION_SCHEMAS = {
   "branch.archive.requests.changed": z.object({ type:z.literal("branch.archive.requests.changed"), actor:ActorSchema, requests:SessionSchema.shape.branchArchiveRequests.unwrap() }).strict(),
   "egress.requests.changed": z.object({ type: z.literal("egress.requests.changed"), actor: ActorSchema, requests: SessionSchema.shape.egressRequests.unwrap() }).strict(),
   "github.sync.request.changed": z.object({ type: z.literal("github.sync.request.changed"), actor: ActorSchema, request: SessionSchema.shape.githubSyncRequest }).strict(),
+  "repository.site.requests.changed": z.object({ type: z.literal("repository.site.requests.changed"), actor: ActorSchema, requests: SessionSchema.shape.repositorySiteRequests.unwrap() }).strict(),
   "home.background.requests.changed": z.object({ type: z.literal("home.background.requests.changed"), actor: ActorSchema, requests: SessionSchema.shape.homeBackgroundRequests.unwrap() }).strict(),
   "stack.wiki.requests.changed": z.object({ type: z.literal("stack.wiki.requests.changed"), actor: ActorSchema, requests: SessionSchema.shape.wikiRequests.unwrap() }).strict(),
   "branch.control.requests.changed": z.object({ type: z.literal("branch.control.requests.changed"), actor: ActorSchema, requests: SessionSchema.shape.branchControlRequests.unwrap() }).strict(),

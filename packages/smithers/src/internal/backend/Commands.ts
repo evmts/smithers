@@ -25,6 +25,7 @@ import { misc } from "./Misc.ts"
 import { repositories } from "./Repositories.ts"
 import { type Handler, resources } from "./Resources.ts"
 import { runs } from "./Runs.ts"
+import { sites } from "./Sites.ts"
 import { stacks } from "./Stack.ts"
 import { workspaceChildren } from "./WorkspaceChildren.ts"
 import { workspaces } from "./Workspaces.ts"
@@ -48,6 +49,7 @@ export const handlers: Record<string, Handler> = {
   ...auth,
   ...local,
   ...repositories,
+  ...sites,
   ...runs,
   ...misc,
   ...workspaces,
@@ -105,6 +107,8 @@ export const groups: Record<string, string> = {
   "org team member": "Manage team members",
   "org team repo": "Manage a team's repository access",
   "repo": "Manage repositories and their GitHub connection",
+  "site": "Publish and bind repository sites",
+  "site domain": "Verify and bind custom domains",
   "search": "Search repositories, issues, code and users",
   "secret": "Manage repository secrets",
   "ssh-key": "Manage your SSH keys",

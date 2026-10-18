@@ -1072,6 +1072,10 @@ export const SessionSchema = z.object({
   /* Wiki refreshes asked of a repository's stack (WikiRefreshSeam.refreshWiki): each notice reconnects after a reload until the Wiki settles. */
   branchArchiveRequests: z.array(z.object({ id:z.string(), owner:z.string(), branch:z.string(), state:z.enum(["requested","completed","failed"]), error:z.string().optional() }).strict()).optional(),
   githubSyncRequest: z.object({ id: z.string(), owner: z.string(), lastSuccessAt: z.string().nullable(), phase: z.enum(["requested", "running", "failed"]), error: z.string().optional(), mainReset: z.object({ id: z.string().min(1), old: z.string().regex(/^[0-9a-f]{40}$/), new: z.string().regex(/^[0-9a-f]{40}$/) }).optional() }).optional(),
+  repositorySiteRequests: z.array(z.object({
+    id: z.string(), owner: z.string(), repo: z.string(), input: z.record(z.string(), z.string()),
+    state: z.enum(["requested", "completed", "failed"]), result: z.string().optional()
+  })).optional(),
   homeBackgroundRequests: z.array(z.object({
     key: z.string(), owner: z.string(), id: z.string(), op: z.enum(["retry", "dismiss"]),
     state: z.enum(["requested", "running", "completed", "failed"]), run_id: z.union([z.number().int().positive(), z.string().uuid()]).optional(), error: z.string().optional()
@@ -1576,6 +1580,7 @@ type AppTransitionBody =
   | { type: "issue.todo.requests.changed"; actor: Actor; requests: NonNullable<Session["issueTodoRequests"]> }
   | { type: "coding.provider.requests.changed"; actor: Actor; requests: NonNullable<Session["codingProviderRequests"]> }
   | { type: "github.sync.request.changed"; actor: Actor; request?: Session["githubSyncRequest"] }
+  | { type: "repository.site.requests.changed"; actor: Actor; requests: NonNullable<Session["repositorySiteRequests"]> }
   | { type: "home.background.requests.changed"; actor: Actor; requests: NonNullable<Session["homeBackgroundRequests"]> }
   | { type: "stack.wiki.requests.changed"; actor: Actor; requests: NonNullable<Session["wikiRequests"]> }
   | { type: "branch.control.requests.changed"; actor: Actor; requests: NonNullable<Session["branchControlRequests"]> }

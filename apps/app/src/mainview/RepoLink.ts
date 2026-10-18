@@ -70,7 +70,28 @@ export const paramRepo = (search: string): string | null => {
  * What the URL asks for: the repository path and its subject first, else the
  * `repo` parameter at `/`, which names a repository and never a subject.
  */
+export const repositorySite = (): { readonly repository: string; readonly appPrefix: string } | undefined => {
+  const siteMeta = typeof document === "undefined" ? null : document.querySelector('meta[name="smithers-repository-site"]')?.getAttribute("content")
+  if (siteMeta) {
+    try {
+      const site = JSON.parse(siteMeta) as { repository?: unknown; appPrefix?: unknown }
+      if (typeof site.repository === "string" && pathRepo(`/${site.repository}`) === site.repository && typeof site.appPrefix === "string" &&
+        (site.appPrefix === "" || /^\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*\/$/.test(site.appPrefix))) {
+        return { repository: site.repository, appPrefix: site.appPrefix }
+      }
+    } catch { /* A malformed boot projection cannot select a different repository. */ }
+  }
+  return undefined
+}
+
 export const requestedTarget = (location: Pick<Location, "pathname" | "search">): RequestedTarget | null => {
+  const site = repositorySite()
+  if (site) {
+    const canonical = pathTarget(location.pathname)
+    if (canonical?.repo.toLowerCase() === site.repository.toLowerCase()) return canonical
+    const local = site.appPrefix !== "" && location.pathname.startsWith(site.appPrefix) ? location.pathname.slice(site.appPrefix.length) : site.appPrefix === "" ? location.pathname.replace(/^\//, "") : ""
+    return pathTarget(`/${site.repository}/${local}`) ?? { repo: site.repository }
+  }
   const path = pathTarget(location.pathname)
   if (path !== null) return path
   const param = location.pathname === "/" ? paramRepo(location.search) : null
@@ -136,7 +157,7 @@ const queryString = (params: URLSearchParams): string => params.toString()
  * `validBrowserReturn`), so a subject path needs nothing new there.
  */
 export const signInReturnTo = (location: Pick<Location, "pathname" | "search">): string | null => {
-  if (pathRepo(location.pathname) === null) return null
+  if (repositorySite() === undefined && pathRepo(location.pathname) === null) return null
   const params = new URLSearchParams(location.search)
   params.delete(AUTH_SIGNED_IN_PARAM)
   params.delete("auth")
@@ -306,15 +327,21 @@ export const openRequestedRepo = async (
     return error
   }
   let catalog: unknown
+  let sitePrivate = false
   let guest: { sessionId: string; landingId:string; revision: string } | undefined
   try {
     const path = `/api/repos/${requested.split("/").map(encodeURIComponent).join("/")}`
     const response = await http(path, { headers: { accept: "application/json" }, credentials: "same-origin" })
     if (!current()) return
+    if ([401, 403, 404].includes(response.status) && repositorySite()?.repository.toLowerCase() === requested.toLowerCase()) return finish("Repository unavailable", "not-public")
     if (!response.ok && ![401, 403, 404].includes(response.status)) return finish(`Repository unavailable (HTTP ${response.status}).`)
     const document = response.ok ? await response.json() as { is_public?: unknown; description?: unknown; full_name?:unknown } : undefined
     const canonical = typeof document?.full_name === "string" && document.full_name.toLowerCase() === requested.toLowerCase() ? document.full_name : requested
-    catalog = { repos: document?.is_public === true ? [{ name: canonical, summary: document.description }] : [] }
+    // The same repository read is also the authority for a signed-in person
+    // on a bound private site; no account-wide inventory API is needed there.
+    sitePrivate = response.ok && document?.is_public === false && repositorySite()?.repository.toLowerCase() === requested.toLowerCase() &&
+      controller.store.collections.identitySessions.get("identity")?.state === "signed-in"
+    catalog = { repos: document?.is_public === true || sitePrivate ? [{ name: canonical, summary: document?.description }] : [] }
     if (document?.is_public === true) {
       // Public readability alone never authorizes sponsored compute.
       const admission = await http(`/api/repos/${canonical.split("/").map(encodeURIComponent).join("/")}/guest`, { credentials: "same-origin", headers: { accept: "application/json" } }).catch(() => undefined)
@@ -383,7 +410,7 @@ export const openRequestedRepo = async (
        * treats it as "no org changesets", never as a fabricated org.
        * `catalog` records where the row came from: readable signed out.
        */
-      repository: { ...existing, ...repository, guest, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: true }
+      repository: { ...existing, ...repository, guest, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: !sitePrivate }
     })
   }
   if (options.activate === false || options.scope === "command") return finish()

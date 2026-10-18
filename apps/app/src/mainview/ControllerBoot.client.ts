@@ -5,7 +5,7 @@ import { selectFirstRunRepository } from "./state/BootRepositoryTarget"
 import { Effect } from "effect"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { loadRuntimeApplicationClient } from "./runtime/ApplicationTransport"
-import { beginRepositoryEntry, openRequestedRepo, requestedTarget, withoutRepoParam } from "./RepoLink"
+import { beginRepositoryEntry, openRequestedRepo, repositorySite, requestedTarget, withoutRepoParam } from "./RepoLink"
 import { openRequestedSubject } from "./RepositorySubjectEntry"
 import { createBrowserFrameHistory, ROOT_APP_PATH } from "./runtime/FrameHistory"
 import { BootstrapFailure, createRuntime, warmBootstrap, unavailableAgent } from "./runtime/Runtime"
@@ -96,7 +96,7 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
           // A journey that checks what a hosted page renders opts out with ?design=off.
           designFixture: import.meta.env.MODE === "test" && new URLSearchParams(window.location.search).get("design") !== "off",
           repositoryApp: store.savedStoreUnavailable ? undefined : requested ?? undefined,
-          frameHistory: createBrowserFrameHistory(window, { keepUrl: options.keepUrl === true || setupEntry }),
+          frameHistory: createBrowserFrameHistory(window, { keepUrl: options.keepUrl === true || setupEntry || repositorySite() !== undefined }),
         }
       )
     )

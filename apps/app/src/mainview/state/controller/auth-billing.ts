@@ -13,7 +13,7 @@ AUTH_SIGN_IN_PATH,
 AUTH_SIGNED_IN_PARAM,
 BILLING_BALANCE_PATH
 } from "@smthrs/rpc/AgentApiRoutes"
-import { signInReturnTo } from "../../RepoLink"
+import { repositorySite, signInReturnTo } from "../../RepoLink"
 import type { ControllerContext } from "./context"
 import type { FailureController } from "./failures"
 import { TOAST_SUPERSEDED } from "./failures"
@@ -550,11 +550,12 @@ export const createAuthBillingController = (
     // A repository page returns to itself; the landing needs a success marker
     // so its entrance resumes onboarding without a second Get started click.
     // The server validates either path against its own origin.
-    const returnTo = window.location.pathname === "/" ? `/?${AUTH_SIGNED_IN_PARAM}=github` : signInReturnTo(window.location)
+    const site = repositorySite()
+    const returnTo = window.location.pathname === "/" && site === undefined ? `/?${AUTH_SIGNED_IN_PARAM}=github` : signInReturnTo(window.location)
     const query = returnTo === null ? "" : `?${AUTH_RETURN_TO_PARAM}=${encodeURIComponent(returnTo)}`
     // The hop leaves the page: let the durable queue settle, or the state this click just changed is lost.
     return Promise.resolve(store.settled?.()).then(() => {
-      if (!ctx.disposed) window.location.assign(`${baseUrl}${selectedIdentity?.signInPath ?? AUTH_SIGN_IN_PATH}${query}`)
+      if (!ctx.disposed) window.location.assign(`${baseUrl}${site ? "/api/auth/site/start" : selectedIdentity?.signInPath ?? AUTH_SIGN_IN_PATH}${query}`)
     })
   }
 
