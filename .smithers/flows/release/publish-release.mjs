@@ -112,7 +112,8 @@ export const publishCandidate = async (directory, candidate, options) => {
   const pending = await preflight(directory, candidate, options)
   const published = []
   const awaiting = []
-  const record = () => writeFile(join(directory, "publish-receipt.json"), JSON.stringify({ schemaVersion: 1, source: candidate.source, published, awaiting: awaiting.map((entry) => entry.name) }, null, 2) + "\n")
+  const promoted = []
+  const record = () => writeFile(join(directory, "publish-receipt.json"), JSON.stringify({ schemaVersion: 1, source: candidate.source, published, promoted, awaiting: awaiting.map((entry) => entry.name) }, null, 2) + "\n")
   // The registry can accept a tarball before it serves the version. Only an
   // absent version waits; different bytes fail at once.
   const served = async (entry) => {
@@ -143,18 +144,38 @@ export const publishCandidate = async (directory, candidate, options) => {
       published.push(entry.name)
       await record()
     }
-    if (awaiting.length === 0) return published
+    if (awaiting.length === 0) break
     if (delay !== undefined) await options.pause?.(delay)
   }
-  throw new Error(`Published integrity could not be verified: ${awaiting.map((entry) => entry.name).join(", ")}`)
+  if (awaiting.length) throw new Error(`Published integrity could not be verified: ${awaiting.map((entry) => entry.name).join(", ")}`)
+  // Existing versions on a resume also need to be served before any consumer
+  // tag moves. The tested roster is dependency ordered; the CLI alias moves last.
+  for (const entry of candidate.packages) {
+    let verified = await options.verifyVersion(entry)
+    for (const delay of [...retryDelays, ...settleDelays]) {
+      if (verified) break
+      await options.pause?.(delay)
+      verified = await options.verifyVersion(entry)
+    }
+    if (!verified) throw new Error(`Published version is not served: ${entry.name}@${entry.version}`)
+  }
+  await record()
+  for (const entry of [...candidate.packages.filter((entry) => entry.name !== "smthrs"), ...candidate.packages.filter((entry) => entry.name === "smthrs")]) {
+    // Idempotent tag writes recover a partial promotion without trusting a
+    // local receipt over the registry or publishing immutable versions twice.
+    await options.promote(entry)
+    promoted.push(entry.name)
+    await record()
+  }
+  return published
 }
 
 /** Keep registry throttling and detached-tag publication behind the verified candidate boundary. */
 export const registryPublisher = ({ run = execFileSync, pause = (seconds) => execFileSync("sleep", [String(seconds)]) } = {}) => {
-  const invoke = (args, allowMissing, recovered) => {
+  const invoke = (args, allowMissing, recovered, command = "pnpm") => {
     for (let attempt = 0;; attempt++) {
       try {
-        return run("pnpm", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 180_000 })
+        return run(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 180_000 })
       } catch (error) {
         const diagnostic = `${error.code ?? ""}\n${error.stdout ?? ""}\n${error.stderr ?? ""}\n${error.message ?? ""}`
         // A new name answers 404; a missing version of an existing name answers
@@ -178,8 +199,16 @@ export const registryPublisher = ({ run = execFileSync, pause = (seconds) => exe
     if (typeof value !== "string" || !value.startsWith("sha512-")) throw new Error(`Registry returned no verifiable integrity for ${spec}`)
     return value
   }
-  return { pause, readRegistry, publish: (tarball, entry) =>
-    invoke(["publish", tarball, "--provenance", "--access", "public", "--tag", entry.version.includes("-") ? "next" : "latest", "--no-git-checks"], false, () => {
+  return { pause, readRegistry,
+    verifyVersion: (entry) => {
+      const output = invoke(["view", `${entry.name}@${entry.version}`, "version", "--json"], true, undefined, "npm")
+      return output !== undefined && JSON.parse(output) === entry.version
+    },
+    // The publish job supplies the same NODE_AUTH_TOKEN as npm-dist-tag.yml.
+    // Use the same npm command and token path as npm-dist-tag.yml.
+    promote: (entry) => invoke(["dist-tag", "add", `${entry.name}@${entry.version}`, entry.version.includes("-") ? "next" : "latest"], false, undefined, "npm"),
+    publish: (tarball, entry) =>
+    invoke(["publish", tarball, "--provenance", "--access", "public", "--tag", "staging", "--no-git-checks"], false, () => {
       const existing = readRegistry(`${entry.name}@${entry.version}`)
       if (existing === undefined) return false
       if (existing !== entry.integrity) throw new Error(`Registry integrity mismatch or unavailable: ${entry.name}`)

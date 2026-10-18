@@ -60,15 +60,29 @@ const fixture = async (test: TestContext, options: { gates?: ReleaseGateSet } = 
   )
   const registry = new Map(packages.slice(0, -1).map((entry) => [`${entry.name}@${version}`, entry.integrity]))
   const publishes: string[][] = []
+  const promotions: string[][] = []
+  const versionViews = new Set<string>()
   const ops = operations({
     root: repo.root,
     gates,
     run: async (command, args, options) => {
       if (command === "git") return commandRunner(repo.root)(command, args, options)
-      assert.equal(command, "pnpm")
+      assert.ok(command === "pnpm" || command === "npm")
+      if (args[0] === "dist-tag") {
+        assert.equal(command, "npm")
+        assert.equal(registry.size, packages.length)
+        assert.equal(versionViews.size, packages.length)
+        promotions.push([...args])
+        return ""
+      }
       if (args[0] === "view") {
         const value = registry.get(args[1]!)
         if (value === undefined) throw new ReleaseError({ step: "registry", message: "ERR_PNPM_FETCH_404" })
+        if (args[2] === "version") {
+          assert.equal(command, "npm")
+          versionViews.add(args[1]!)
+          return JSON.stringify(version)
+        }
         return JSON.stringify(value)
       }
       assert.equal(args[0], "publish")
@@ -83,7 +97,7 @@ const fixture = async (test: TestContext, options: { gates?: ReleaseGateSet } = 
     { phase: "publish", dryRun: false, requireContentApproval: false, provenance: false },
     version
   )
-  return { ...repo, directory, candidate, packages, registry, publishes, ops, input }
+  return { ...repo, directory, candidate, packages, registry, publishes, promotions, ops, input }
 }
 
 test("the publisher rechecks both runtime receipts and publishes only missing exact packages", async (test) => {
@@ -98,7 +112,9 @@ test("the publisher rechecks both runtime receipts and publishes only missing ex
   assert.deepEqual(result.published, [state.packages.at(-1)!.name])
   assert.equal(state.publishes.length, 1)
   assert.ok(state.publishes[0]!.includes("--provenance=false"))
-  assert.equal(state.publishes[0]![state.publishes[0]!.indexOf("--tag") + 1], "next")
+  assert.equal(state.publishes[0]![state.publishes[0]!.indexOf("--tag") + 1], "staging")
+  assert.equal(state.promotions.length, state.packages.length)
+  assert.deepEqual(state.promotions.at(-1), ["dist-tag", "add", `smthrs@${state.input.version}`, "next"])
   await state.ops.publish({ input: state.input, candidate: verified })
   assert.equal(state.publishes.length, 1)
 })

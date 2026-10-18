@@ -28,7 +28,7 @@ test("new names publish with provenance from a detached tag checkout", () => {
   const { adapter, calls } = fixture({ view: [404], publish: [200] })
   assert.equal(adapter.readRegistry("@smthrs/kernel@1.0.0-rc.0"), undefined)
   adapter.publish("kernel.tgz", { version: "1.0.0-rc.0" })
-  assert.deepEqual(calls[1], ["publish", "kernel.tgz", "--provenance", "--access", "public", "--tag", "next", "--no-git-checks"])
+  assert.deepEqual(calls[1], ["publish", "kernel.tgz", "--provenance", "--access", "public", "--tag", "staging", "--no-git-checks"])
 })
 
 // pnpm 11 answers a missing version of an existing name without a 404; the
@@ -114,5 +114,37 @@ test("credentials, TLS trust failures and other permanent errors never retry", (
     assert.throws(() => adapter.readRegistry("@smthrs/kernel@1.0.0-rc.0"), (cause) => cause === error)
     assert.throws(() => adapter.publish("kernel.tgz", { name: "@smthrs/kernel", version: "1.0.0-rc.0", integrity: "sha512-verified" }), (cause) => cause === error)
     assert.deepEqual(calls.map(([command]) => command), ["view", "publish"])
+  }
+})
+
+
+test("promotion uses npm with the token-capable dist-tag command and retries transient writes", () => {
+  const calls = [], pauses = []
+  const entry = { name: "smthrs", version: "1.0.0-rc.0" }
+  const adapter = registryPublisher({ pause: (seconds) => pauses.push(seconds), run: (command, args) => {
+    assert.equal(command, "npm")
+    calls.push(args)
+    if (calls.length === 1) throw new Error("E503")
+    return ""
+  } })
+  adapter.promote(entry)
+  adapter.promote({ ...entry, version: "1.0.0" })
+  assert.deepEqual(calls, [
+    ["dist-tag", "add", "smthrs@1.0.0-rc.0", "next"],
+    ["dist-tag", "add", "smthrs@1.0.0-rc.0", "next"],
+    ["dist-tag", "add", "smthrs@1.0.0", "latest"]
+  ])
+  assert.deepEqual(pauses, [10])
+})
+
+test("version verification requires npm to serve the exact requested version", () => {
+  for (const response of [undefined, "1.0.0-rc.0", "1.0.0-rc.1", null]) {
+    const adapter = registryPublisher({ run: (command, args) => {
+      assert.equal(command, "npm")
+      assert.deepEqual(args, ["view", "smthrs@1.0.0-rc.0", "version", "--json"])
+      if (response === undefined) throw new Error("E404")
+      return JSON.stringify(response)
+    } })
+    assert.equal(adapter.verifyVersion({ name: "smthrs", version: "1.0.0-rc.0" }), response === "1.0.0-rc.0")
   }
 })
