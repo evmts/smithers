@@ -2,7 +2,25 @@
   "apps/model-host": {
     "why": "PACKAGE.ts runs test/serve.test.mjs and test/transcript.test.mjs, and both bundle src/ with esbuild (build.mjs) and run the bundle, so no resolver reaches the twin (finding E-8). Verifying it needs the build to compile .vibe (vibelang-unplugin), which is cutover work.",
     "kind": "node",
-    "args": ["--test", "test/serve.test.mjs", "test/transcript.test.mjs"],
+    "args": [
+      "--test",
+      "test/serve.test.mjs",
+      "test/transcript.test.mjs"
+    ],
     "unverifiable": true
+  },
+  "apps/app": {
+    "why": "PACKAGE.ts unitTests runs bun over these folders: ~17K tests, 10-18 minutes, too heavy to run twice per iteration on the mini. Both runs use the test files whose relative imports reach a twinned module. Direct importers only while translating (the app entry reaches nearly every test transitively); the full suite runs once on a lane VM before the package counts for cutover.",
+    "kind": "bun",
+    "args": [
+      "src",
+      "proof",
+      "e2e/contracts",
+      "e2e/support",
+      "e2e/real/coverage",
+      "e2e/real/support",
+      "scripts"
+    ],
+    "affectedOnly": "direct"
   }
 }

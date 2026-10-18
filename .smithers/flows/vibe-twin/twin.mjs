@@ -570,6 +570,55 @@ export const parseJunit = (xml, pkg) => {
   }
 }
 
+/**
+ * For a package whose whole suite is too heavy to run twice (apps/app: 17K tests): the test
+ * files under the suite's folders whose relative imports reach a twinned module. Both runs
+ * use the same files, so the comparison stays like for like.
+ */
+export const affectedTests = (pkg, folders, twinned, mode = "transitive") => {
+  const root = join(pkg, sourceRoot(pkg))
+  const targets = new Set(twinned.map((rel) => join(root, rel)))
+  const strip = (f) => f.replace(/\.(?:ts|tsx|mts|js|mjs)$/, "").replace(/\/index$/, "")
+  const files = (dir) => (existsSync(dir) ? (/\.(?:ts|tsx)$/.test(dir) ? [dir] : walk(dir).map((f) => join(dir, f))) : [])
+  const imports = new Map()
+  const importsOf = (file) => {
+    if (!imports.has(file)) {
+      const found = []
+      if (existsSync(file)) {
+        for (const m of readFileSync(file, "utf8").matchAll(/(?:from\s+|import\(\s*)["'](\.{1,2}\/[^"']+)["']/g)) {
+          const target = resolve(dirname(file), m[1])
+          const base = target.replace(/\.(?:ts|tsx|mts|js|mjs)$/, "")
+          const real = [`${base}.ts`, `${base}.tsx`, join(base, "index.ts"), join(base, "index.tsx")].find(existsSync)
+          if (real) found.push(real)
+        }
+      }
+      imports.set(file, found)
+    }
+    return imports.get(file)
+  }
+  // A test is affected when its relative import graph inside the package reaches a twinned module.
+  const reaches = (file) => {
+    const seen = new Set([file])
+    const queue = [file]
+    while (queue.length > 0) {
+      const next = queue.pop()
+      if (next !== file && targets.has(strip(next))) return true
+      if (mode === "direct" && next !== file) continue
+      for (const dep of importsOf(next)) {
+        if (dep.startsWith(pkg) && !seen.has(dep)) {
+          seen.add(dep)
+          queue.push(dep)
+        }
+      }
+    }
+    return false
+  }
+  return folders.flatMap((folder) => files(join(pkg, folder)))
+    .filter((f) => /\.(?:test|spec)\.tsx?$/.test(f))
+    .filter(reaches)
+    .map((file) => relative(pkg, file))
+}
+
 /** `bun test <args>`, with an optional preload, read from its JUnit report. */
 const bunTest = (pkg, args, preload, outputFile) => {
   const argv = ["test", ...(preload ? ["--preload", preload] : []), "--reporter=junit", `--reporter-outfile=${outputFile}`, ...args]
@@ -599,7 +648,9 @@ export const runner = (pkg) => {
   const suitesFile = fileURLToPath(new URL("./suites.json", import.meta.url))
   const suites = existsSync(suitesFile) ? JSON.parse(readFileSync(suitesFile, "utf8")) : {}
   const declared = suites[relative(root, pkg)]
-  if (declared) return { kind: declared.kind, args: declared.args, unverifiable: declared.unverifiable ? declared.why : undefined }
+  if (declared) {
+    return { kind: declared.kind, args: declared.args, affectedOnly: declared.affectedOnly, unverifiable: declared.unverifiable ? declared.why : undefined }
+  }
   const script = JSON.parse(readFileSync(join(pkg, "package.json"), "utf8")).scripts?.test ?? ""
   const words = (text) => text.trim().split(/\s+/).filter(Boolean)
   const bunArgs = script.match(/\bbun test\b(.*)$/)
@@ -716,6 +767,11 @@ export async function resolve(specifier, context, next) {
 `)
     writeFileSync(register, `import { register } from "node:module"\nregister(${JSON.stringify(pathToFileURL(join(work, "node-hooks.mjs")).href)})\n`)
   }
+  if (tests.affectedOnly) {
+    const files = affectedTests(pkg, tests.args.filter((a) => !a.startsWith("-")), twinned, tests.affectedOnly === "direct" ? "direct" : "transitive")
+    tests.args = [...tests.args.filter((a) => a.startsWith("-")), ...files]
+    tests.affected = files.length
+  }
   const notRun = { ran: false, pass: 0, fail: 0, skip: 0, failed: [] }
   const baseline = tests.kind === "bun"
     ? bunTest(pkg, tests.args, undefined, join(work, "ts.xml"))
@@ -743,6 +799,8 @@ export async function resolve(specifier, context, next) {
   const receipt = {
     package: relative(root, pkg),
     runner: tests.kind,
+    affectedTestFiles: tests.affected,
+    ...(tests.affectedOnly ? { suiteSubset: `${tests.affectedOnly} importers of twinned modules; the full suite still needs one run before cutover` } : {}),
     twinFiles: walk(join(pkg, "src-vibe")).length,
     compile: { twinStatus: compiled.status, tsStatus: ts.status, missingOutputs, missingDeclarations, twinErrors: twin.errors, twinWarnings: twin.warnings, vibelangErrorsInTypeScript: twin.typescriptErrors, tsErrors: ts.errors.length },
     api,
