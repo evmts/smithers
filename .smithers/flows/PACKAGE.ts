@@ -424,6 +424,16 @@ const codingNativeBun = Smithers.Shell.Test({
   data: [...codingSources, ...codingDependencies],
   timeout: "45m"
 })
+// Builds the real coding host and holds it to the size Plue can stage into a
+// hosted workspace; the build itself refuses a larger host (plue#863).
+const codingHostSize = Smithers.NodeTest({
+  runtime: node,
+  runner: Smithers.testRunner([Smithers.file("//.smithers/flows/test/coding-host-size.test.ts")]),
+  srcs: codingSources,
+  deps: codingDependencies,
+  cwd,
+  cache: true
+})
 const codingBundle = Smithers.Shell.Test({
   bin: Smithers.Runtime.bin,
   runtime: node,
@@ -1690,6 +1700,7 @@ export const Package = Smithers.Package({
     codingBundle,
     codingBundleBun,
     codingHostBundle,
+    codingHostSize,
     egress,
     fixtures,
     pack,
