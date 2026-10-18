@@ -1,3 +1,5 @@
+import { splitRepositoryPath } from "@smthrs/rpc/RepositorySubjectPath"
+import { DeclaredTabView } from "./repository/DeclaredTabView"
 import { isOpenPull } from "./cards/GithubParts"
 import { PullViews } from "./repository/PullViews"
 import { IssueViews, matchesIssueReadKey } from "./repository/IssueViews"
@@ -782,6 +784,9 @@ function AppContent() {
   )
   if (bootRepository === null || (bootEntry?.phase !== "ready" && !(bootUnavailable && codeRoute))) return chat()
   const repository = repositoryRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())
+  const subject = splitRepositoryPath(window.location.pathname + window.location.search)?.subject
+  const declaredRoute = subject?.kind === "docs" || subject?.kind === "evals"
+  const declaredTabs = repositoryFlowRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())?.declaredTabs
   const rootRoute = window.location.pathname.replace(/\/$/, "") === `/${bootRepository}`
   const issueMatch = /^\/issues(?:\/(\d+))?\/?$/.exec(window.location.pathname.slice(bootRepository.length + 1))
   const pullMatch = /^\/(pulls|pull\/(\d+)(?:\/(commits|checks|files))?)\/?$/.exec(window.location.pathname.slice(bootRepository.length + 1))
@@ -790,7 +795,7 @@ function AppContent() {
   const flowsRoute = routeSubject?.kind === "flows" ? routeSubject : undefined
   const settingsRoute = routeSubject?.kind === "settings" ? routeSubject : undefined
   const notFoundRoute = routeSubject !== undefined && UNSERVED_SUBJECTS.has(routeSubject.kind)
-  if (!rootRoute && !codeRoute && !issueMatch && !pullMatch && !flowsRoute && !settingsRoute && !notFoundRoute) return chat()
+  if (!rootRoute && !codeRoute && !declaredRoute && !issueMatch && !pullMatch && !flowsRoute && !settingsRoute && !notFoundRoute) return chat()
   // Membership is the admission document's can_write for this signed-in viewer; absent fails closed.
   const member = identity?.state === "signed-in" && bootEntry?.canWrite === true
   const flowRead = flowsRoute ? flowReadRows.find(row => row.id === flowReadKey(bootRepository, flowsRoute.name, bootEntry?.requestId))?.value : undefined
@@ -802,7 +807,7 @@ function AppContent() {
   const pullList = retainedLists.find(card => card.kind === "pr-list" && card.viewRepo?.toLowerCase() === bootRepository.toLowerCase() && card.viewKey?.toLowerCase() === `prs-${bootRepository}`.toLowerCase())
   // The file or folder at its ref on a code route: what the Ask is about (Design (K)) and the ref the view's latest-commit bar reads (Design (H)).
   const codeLocated = codeRoute && codeTarget?.subject && (codeTarget.subject.kind === "tree" || codeTarget.subject.kind === "blob") ? resolveRefLocation(codeTarget.subject.location, codeRefs) : undefined
-  return <RepoFrame onRunCommand={controller.runCommand} member={member} pullCount={pullList?.kind === "pr-list" ? pullList.payload.landings.filter(row => isOpenPull(row.state)).length : undefined} pullsPartial={pullList?.kind === "pr-list" && pullList.payload.partial} issueCount={issueList?.kind === "issue-list" ? issueList.payload.issues.filter(row => row.state === "open").length : undefined} issuesPartial={issueList?.kind === "issue-list" && issueList.payload.partial} repo={bootRepository} publicRepo={repository?.catalog === true}
+  return <RepoFrame declaredTabs={declaredTabs?.tabs.map(tab => tab.declaration)} onRunCommand={controller.runCommand} member={member} pullCount={pullList?.kind === "pr-list" ? pullList.payload.landings.filter(row => isOpenPull(row.state)).length : undefined} pullsPartial={pullList?.kind === "pr-list" && pullList.payload.partial} issueCount={issueList?.kind === "issue-list" ? issueList.payload.issues.filter(row => row.state === "open").length : undefined} issuesPartial={issueList?.kind === "issue-list" && issueList.payload.partial} repo={bootRepository} publicRepo={repository?.catalog === true}
     sync={bootEntry?.githubSync}
     login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
     guest={guestAdmission(session.guestConversation, bootRepository)}
@@ -825,6 +830,9 @@ function AppContent() {
     : settingsRoute ? <RepositorySettings repo={bootRepository} section={settingsRoute.section} onRunCommand={controller.runCommand}
       access={identity?.state === "signed-in" ? member ? "member" : "reader" : identity?.state === "signed-out" || identity?.state === "unavailable" ? identity.state : "loading"}
       sync={githubSyncChip(bootEntry?.githubSync)}/>
+    : declaredRoute ? <DeclaredTabView repo={bootRepository} subject={subject} data={declaredTabs}
+      signedIn={identity?.state === "signed-in"} retry={() => void controller.reloadDeclaredTabs(bootRepository, subject, true)}
+      onAsk={path => { if (identity?.state === "signed-in") controller.changeDraft(`Ask about ${path}: `) }}/>
     : pullMatch ? <PullViews repo={bootRepository} number={pullMatch[2] ? Number(pullMatch[2]) : undefined} tab={pullMatch[3] as "commits" | "checks" | "files" | undefined} card={pullCard} onRunCommand={controller.runCommand}/> : issueMatch ? <IssueViews repo={bootRepository} number={issueMatch[1] ? Number(issueMatch[1]) : undefined} card={issueCard} signedIn={identity?.state === "signed-in"} onRunCommand={controller.runCommand}/> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
       branches={codeBranchRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())}
       onBranchesOpen={() => { void controller.repositoryBranches.load(bootRepository) }}

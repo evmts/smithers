@@ -157,10 +157,11 @@ export const ASK_PARAM = "ask"
 export const askRequested = (search: string): boolean => new URLSearchParams(search).get(ASK_PARAM) === "1"
 
 /** The same location without the entry's repo and ask parameters; other parameters and the fragment stay. */
-export const withoutRepoParam = (location: Pick<Location, "pathname" | "search" | "hash">): string => {
+export const withoutRepoParam = (location: Pick<Location, "pathname" | "search" | "hash">, consumed: ReadonlyArray<string> = []): string => {
   const params = new URLSearchParams(location.search)
   params.delete(REPO_PARAM)
   params.delete(ASK_PARAM)
+  for (const key of consumed) params.delete(key)
   const search = queryString(params)
   return `${location.pathname}${search === "" ? "" : `?${search}`}${location.hash}`
 }

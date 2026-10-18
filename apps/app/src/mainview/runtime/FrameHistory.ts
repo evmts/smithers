@@ -104,7 +104,7 @@ export const createBrowserFrameHistory = (
     const source = new URLSearchParams(host.location.search ?? "")
     const query = new URLSearchParams()
     const keys = kind === "tree" || kind === "blob" ? ["L", "raw", "view"]
-      : kind === "issue" ? ["source"] : ["q"]
+      : kind === "issue" ? ["source"] : kind === "evals" ? ["case"] : ["q"]
     for (const key of keys) {
       const value = source.get(key)
       if (value === null || (key === "source" && value !== "github" && value !== "smithers-cloud")) continue
@@ -122,7 +122,7 @@ export const createBrowserFrameHistory = (
   }
   const pinned: (() => string) | undefined = options.keepUrl === true && path === "/"
     ? () => `${host.location.pathname}${host.location.search}`
-    : subject?.kind === "tree" || subject?.kind === "blob" || subject?.kind === "issue" || subject?.kind === "issues" || subject?.kind === "pulls" ? subjectUrl
+    : subject?.kind === "tree" || subject?.kind === "blob" || subject?.kind === "issue" || subject?.kind === "issues" || subject?.kind === "pulls" || subject?.kind === "docs" || subject?.kind === "evals" ? subjectUrl
     : pathRepo(path) !== null || options.keepUrl === true ? repositoryUrl : undefined
   const current = (): FrameLocation | undefined =>
     pinned === undefined ? parseFramePath(host.location.pathname) : stateLocation(host.history.state)

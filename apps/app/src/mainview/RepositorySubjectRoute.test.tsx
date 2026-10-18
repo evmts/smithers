@@ -1,3 +1,4 @@
+import { createBrowserFrameHistory } from "./runtime/FrameHistory"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
@@ -1050,4 +1051,76 @@ test("a commit permalink names no bookmark: without the commits route it gets no
   await settled()
   expect(host.querySelector('[aria-label="Latest commit"]')).toBeNull()
   expect(host.querySelector(".repository-code-box")?.textContent).not.toMatch(/[0-9a-f]{40}/i)
+})
+
+
+test("declared docs mount in the repository frame after admission with their page context", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/contents/.smithers/ui/tabs.json`]: fileContents(JSON.stringify({ tabs: [{ type: "docs", title: "Docs", root: "docs", index: "start.md" }] })),
+    [`${ROOT}/contents/docs`]: json(200, [{ name: "start.md", type: "file" }]),
+    [`${ROOT}/contents/docs/start.md`]: fileContents("# Start here\n\nThe documentation.")
+  })
+  const { controller } = await enter(`/${REPO}/docs`, backend)
+  const { host } = mount(controller)
+  await settled()
+  expect(host.querySelector(".repo-frame")).not.toBeNull()
+  expect(host.querySelector("main")?.textContent).toContain("Start here")
+  const ask = host.querySelector<HTMLButtonElement>("[data-ask-page]")!
+  flushSync(() => ask.click())
+  expect(controller.store.session().draft).toBe("Ask about docs/start.md: ")
+})
+
+test("an undeclared docs route mounts not-found in the repository frame", async () => {
+  const backend = ownedRepository()
+  const { controller } = await enter(`/${REPO}/docs/missing.md`, backend)
+  const { host } = mount(controller)
+  await settled()
+  expect(host.querySelector("main")?.textContent).toBe("Not found")
+  expect(host.querySelector('nav[aria-label="Repository"] a[href$="/docs"]')).toBeNull()
+})
+
+test("declared eval case query survives admission and frame writes and opens its files", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/contents/.smithers/ui/tabs.json`]: fileContents(JSON.stringify({ tabs: [{ type: "eval", title: "Golden set", suite: "convert-golden", cases: "golden", command: "node score.mjs" }] })),
+    [`${ROOT}/contents/golden`]: json(200, [{ name: "01-basic", type: "dir" }]),
+    [`${ROOT}/contents/golden/01-basic`]: json(200, [{ name: "input.ts", type: "file" }, { name: "expected.effeck", type: "file" }]),
+    [`${ROOT}/contents/golden/01-basic/input.ts`]: fileContents("const answer = 42"),
+    [`${ROOT}/contents/golden/01-basic/expected.effeck`]: fileContents("let answer = 42")
+  })
+  const { controller, target } = await enter(`/${REPO}/evals/convert-golden?case=01-basic`, backend)
+  expect(target?.subject).toEqual({ kind: "evals", suite: "convert-golden", case: "01-basic" })
+  const history = createBrowserFrameHistory(window)
+  history.replace({ workspaceId: "w", branchId: "b", frameId: "f" })
+  const { host } = mount(controller)
+  await settled()
+  expect(window.location.search).toBe("?case=01-basic")
+  expect([...host.querySelectorAll("main h3")].map(heading => heading.textContent)).toEqual(["expected.effeck", "input.ts"])
+})
+
+test("declared docs fetch only the open page, cache it, and retry a failed page", async () => {
+  let failed = true
+  const backend = ownedRepository({
+    [`${ROOT}/contents/.smithers/ui/tabs.json`]: fileContents(JSON.stringify({ tabs: [{ type: "docs", title: "Docs", root: "docs/src", index: "start.md", nav: "docs/inventory.md" }] })),
+    [`${ROOT}/contents/docs/inventory.md`]: fileContents("- [Start](src/start.md)\n- [Next](src/next.md)"),
+    [`${ROOT}/contents/docs/src/start.md`]: fileContents("# Start"),
+    [`${ROOT}/contents/docs/src/next.md`]: () => failed ? json(503, {}) : fileContents("# Next")
+  })
+  const { controller, store } = await enter(`/${REPO}/docs`, backend)
+  expect(backend.seen.filter(path => path === `${ROOT}/contents/docs/src/next.md`)).toHaveLength(0)
+  await controller.reloadDeclaredTabs(REPO, { kind: "docs", path: "next.md" })
+  expect(store.collections.repositoryFlows.get(REPO)?.declaredTabs?.tabs[0]?.reads?.["next.md"]?.state).toBe("failed")
+  window.history.replaceState(null, "", `/${REPO}/docs/next.md`)
+  const { host } = mount(controller)
+  expect(host.querySelector("main")?.textContent).toContain("Retry")
+  failed = false
+  flushSync(() => [...host.querySelectorAll<HTMLButtonElement>("main button")].find(button => button.textContent === "Retry")!.click())
+  await settled()
+  expect(host.querySelector("main h1")?.textContent).toBe("Next")
+  await controller.reloadDeclaredTabs(REPO, { kind: "docs", path: "start.md" })
+  expect(store.collections.repositoryFlows.get(REPO)?.declaredTabs?.tabs[0]?.reads?.["next.md"]?.state).toBe("loaded")
+  expect(backend.seen.filter(path => path === `${ROOT}/contents/docs/src/start.md`)).toHaveLength(1)
+  expect(backend.seen.filter(path => path === `${ROOT}/contents/docs/inventory.md`)).toHaveLength(1)
+  await controller.reloadDeclaredTabs(REPO)
+  await controller.reloadDeclaredTabs(REPO, { kind: "docs", path: "start.md" })
+  expect(backend.seen.filter(path => path === `${ROOT}/contents/docs/src/start.md`)).toHaveLength(1)
 })

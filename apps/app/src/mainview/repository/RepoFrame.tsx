@@ -1,3 +1,4 @@
+import type { RepositoryTab } from "@smthrs/rpc/RepositoryHome"
 import { flowProps } from "../flows/FlowAction"
 import type { RunDynamicCommand } from "../cards/CardFamily"
 import { WORDMARK } from "@smthrs/ui"
@@ -85,7 +86,8 @@ export const frameAskPlaceholder = (signedIn: boolean, canWrite: boolean): strin
  * opens Ask on arrival for a viewer who can Ask. Signed out it opens nothing:
  * nothing redirects on load.
  */
-export function RepoFrame({ repo, login, guest, publicRepo, member = false, sync, ask, onRunCommand, children, issueCount, pullCount, issuesPartial, pullsPartial, askRequested, askTitle, askContext }: {
+export function RepoFrame({ declaredTabs = [], repo, login, guest, publicRepo, member = false, sync, ask, onRunCommand, children, issueCount, pullCount, issuesPartial, pullsPartial, askRequested, askTitle, askContext }: {
+  declaredTabs?: readonly RepositoryTab[]
   issueCount?: number; pullCount?: number
   /** The tab counts' lists are one page of more: each count is drawn as a floor, "30+". */
   issuesPartial?: boolean; pullsPartial?: boolean
@@ -125,7 +127,7 @@ export function RepoFrame({ repo, login, guest, publicRepo, member = false, sync
   const base = `/${repo}`
   const [owner, name] = repo.split("/")
   const fileRoute = /^\/(?:tree|blob)\//.test(window.location.pathname.slice(base.length))
-  const navigation = tabs.filter(([path]) => path !== "settings" || member)
+  const navigation = [...tabs.filter(([path]) => path !== "settings"), ...declaredTabs.map(tab => [tab.type === "docs" ? "docs" : `evals/${tab.suite}`, tab.title] as const), ...tabs.filter(([path]) => path === "settings" && member)]
   const active = (path: string) => {
     const below = window.location.pathname.slice(base.length)
     if (path === "") return window.location.pathname.replace(/\/$/, "") === base || fileRoute
@@ -172,7 +174,7 @@ export function RepoFrame({ repo, login, guest, publicRepo, member = false, sync
         </div>
         <nav className="repo-ui-tabs" aria-label="Repository">{navigation.map(([path, label]) => <a className="repo-ui-tab" key={path} href={`${base}${path ? `/${path}` : ""}`} aria-current={active(path) ? "page" : undefined}>{label}{(path === "issues" ? issueCount : path === "pulls" ? pullCount : undefined) !== undefined && <span className="repo-ui-counter">{path === "issues" ? issueCount : pullCount}{(path === "issues" ? issuesPartial : pullsPartial) && "+"}</span>}</a>)}</nav>
       </header>
-      <main id="repo-content" tabIndex={-1} className="repo-frame-content" data-keyboard-pane="Repository"><RepositoryAskContext.Provider value={openAsk}><RepositoryAskOpenContext.Provider value={expanded}>{children}</RepositoryAskOpenContext.Provider></RepositoryAskContext.Provider></main>
+      <main onClick={event => { if ((event.target as HTMLElement).closest("[data-ask-page]")) openAsk() }} id="repo-content" tabIndex={-1} className="repo-frame-content" data-keyboard-pane="Repository"><RepositoryAskContext.Provider value={openAsk}><RepositoryAskOpenContext.Provider value={expanded}>{children}</RepositoryAskOpenContext.Provider></RepositoryAskContext.Provider></main>
     </div>
     <aside id="repo-ask" className="repo-frame-ask" aria-label="Ask" data-keyboard-pane="Ask" onKeyDownCapture={event => {
       // A collapsed Ask's only reachable controls are its notices in the frame's region: the chord opens the Ask
