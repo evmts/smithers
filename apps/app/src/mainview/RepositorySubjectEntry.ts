@@ -447,7 +447,7 @@ const openRequestedFlows = async (
  * when the URL named no subject or when the admission is not this request's.
  */
 export const openRequestedSubject = async (
-  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches" | "readRepositoryFilePage" | "readRepositoryChange" | "readLatestCommit" | "repositoryContents">,
+  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches" | "readRepositoryFilePage" | "readRepositoryChange" | "readLatestCommit" | "repositoryContents" | "reloadDeclaredTabs">,
   repo: string,
   subject: RepositorySubject | undefined,
   options: SubjectEntryOptions
@@ -455,6 +455,7 @@ export const openRequestedSubject = async (
   const owner = accountOwnerOf(controller.store.collections.identitySessions.get("identity"))
   if (!admitted(controller.store, repo, options.requestId, owner)) return
   if (subject === undefined) { openRequestedHome(controller, repo, owner, options); return }
+  if (subject.kind === "docs" || subject.kind === "evals") return controller.reloadDeclaredTabs(repo, subject)
   if (subject.kind === "tree" || subject.kind === "blob") return openRequestedFile(controller, repo, subject, owner, options)
   if (subject.kind === "flows") return openRequestedFlows(controller, repo, subject, owner, options)
   // The default repo UI projects the other subjects directly from RepositoryRouter.
