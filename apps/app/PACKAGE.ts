@@ -335,17 +335,23 @@ const journeyWikiObsidian = Smithers.NodeTest({
 /** Living-mock journeys; D1 build dependency is pending its held handoff. */
 const specJourneyInputs = [Smithers.glob("spec/**/*"), suiteSources, sources, componentSources,
   styleSources, ...buildConfigs,
-  Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")]
+  Smithers.file("//.smithers/factory.json"), Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")]
 const journeyMock = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
   runner: Smithers.entrypoint(Smithers.file("spec/run.ts"), ["mock", "default/repo-read-signed-out"]),
-  // Fail closed until D1 supplies the built artifact dependency and browser identity.
-  cache: false, timeout: "10m", srcs: specJourneyInputs, deps: [rpcPackage.check], cwd
+  // Browser identity is incomplete, so replay remains uncached.
+  cache: false, timeout: "10m", srcs: specJourneyInputs, deps: [specSite, rpcPackage.check], cwd
 })
 const specLiveJourney = (id: string) => Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
   runner: Smithers.entrypoint(Smithers.file("spec/run.ts"), ["live", id]),
   cache: false, exclusive: true, timeout: "10m", srcs: specJourneyInputs, deps: [rpcPackage.check], cwd
+})
+/** Build CLI has no maxAge/keyScope attrs yet: live judging remains uncached. */
+const judgeLive = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("spec/run.ts"), ["judge", "--record", "--live", "default/repo-read-signed-out"]),
+  cache: false, exclusive: true, timeout: "30m", srcs: specJourneyInputs, deps: [rpcPackage.check], cwd
 })
 const specJourneyLiveDefaultRepoRead = specLiveJourney("default/repo-read-signed-out")
 const specJourneyLiveSmithersSelfRead = specLiveJourney("smithers/self-read-signed-out")
@@ -684,5 +690,5 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { crateInputs, proofProductInputs, proofMockInputs, docsInputs, serverBundle, solidCodegenInputs, check, unitTests, conformance, browserE2e, browserE2eShard1, browserE2eShard2, browserE2eShard3, installE2e, viewStories, journeyJ1Activation, journeyJ1Release, journeyKeyboard, journeyFreshRepository, journeyWikiGeneratedRefresh, journeyWikiCoedit, journeySetup, journeyWikiObsidian, journeyTodoFromIssue, journeyTodoNeedsYou, journeyTodoEvidence, journeyTodoMerge, journeyAskRepository, journeyTodoStackActions, journeyGitHubMerge, journeyGitHubMergeContinuation, journeyGitHubPRShape, journeyFlowSourceRun, journeyWikiDecisionFollow, journeyBranchPresence, journeyDuplicateLaunch, journeyFileCoedit, journeyHome, journeyTodoMergeOrder, journeyTodoPlacement, journeyTodoSteer, journeyFlowActivation, journeyLearning, journeyAgentTerminal, journeyTerminalSignin, journeyFileGone, journeyGitHubSyncHealth, journeyForkAddToStack, journeySshBranch, journeyInstallOrigins, journeyFileIntelligence, journeyForkDropInstall, journeyGitHubForeignPush, journeyGitHubMainMovedRebase, proofRecord, proofPage, webSources, ...securityReview, specSite, specProductionExclusion, specFixtures, specTransport, specSources, journeyMock, specJourneyLiveDefaultRepoRead, specJourneyLiveSmithersSelfRead, specJourneyLiveEffeckRepoRead, specJourneyLiveSmithersBugReport, specJourneyLiveSmithersLanding, specJourneyLiveEffeckLanding }
+  targets: { crateInputs, proofProductInputs, proofMockInputs, docsInputs, serverBundle, solidCodegenInputs, check, unitTests, conformance, browserE2e, browserE2eShard1, browserE2eShard2, browserE2eShard3, installE2e, viewStories, journeyJ1Activation, journeyJ1Release, journeyKeyboard, journeyFreshRepository, journeyWikiGeneratedRefresh, journeyWikiCoedit, journeySetup, journeyWikiObsidian, journeyTodoFromIssue, journeyTodoNeedsYou, journeyTodoEvidence, journeyTodoMerge, journeyAskRepository, journeyTodoStackActions, journeyGitHubMerge, journeyGitHubMergeContinuation, journeyGitHubPRShape, journeyFlowSourceRun, journeyWikiDecisionFollow, journeyBranchPresence, journeyDuplicateLaunch, journeyFileCoedit, journeyHome, journeyTodoMergeOrder, journeyTodoPlacement, journeyTodoSteer, journeyFlowActivation, journeyLearning, journeyAgentTerminal, journeyTerminalSignin, journeyFileGone, journeyGitHubSyncHealth, journeyForkAddToStack, journeySshBranch, journeyInstallOrigins, journeyFileIntelligence, journeyForkDropInstall, journeyGitHubForeignPush, journeyGitHubMainMovedRebase, proofRecord, proofPage, webSources, ...securityReview, specSite, specProductionExclusion, specFixtures, specTransport, specSources, journeyMock, specJourneyLiveDefaultRepoRead, specJourneyLiveSmithersSelfRead, specJourneyLiveEffeckRepoRead, specJourneyLiveSmithersBugReport, specJourneyLiveSmithersLanding, specJourneyLiveEffeckLanding, judgeLive }
 })

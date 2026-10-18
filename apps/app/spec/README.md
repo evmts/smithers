@@ -62,6 +62,11 @@ artifacts, never automatically loaded or promoted into the world.
 
 `journeyMock` is the blocking mock target; `specJourneyLive*` names avoid the
 existing real-install `journey*` targets. Live targets are exclusive and
-uncached. The mock target remains uncached until D1 supplies a build dependency and
-complete browser identity; the cache-contract rule forbids caching an
-incomplete input contract. Its declared inputs already include spec artifacts.
+uncached. The mock target depends on specSite and remains uncached until browser identity
+is complete. Its inputs include spec artifacts and the judge policy projection.
+
+`judge --record <journey>` records mock sidecars through the node-configured seat
+under ReviewBudget; `judge --record --live` records separate live artifacts.
+CI replays through CachedEvaluator and never records. Missing/stale evidence
+fails; no policy or an exhausted budget is inconclusive (exit 5). See JUDGES.md
+for seat configuration, labels, agreement reporting and eval baseline commands.

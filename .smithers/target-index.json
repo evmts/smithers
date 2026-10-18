@@ -42074,6 +42074,10 @@
       },
       {
         "kind": "file",
+        "path": ".smithers/factory.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/app/package.json"
       },
       {
@@ -42083,6 +42087,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//apps/app:specSite",
       "//packages/rpc:check"
     ],
     "source": {
@@ -42714,6 +42719,79 @@
     }
   },
   {
+    "label": "//apps/app:judgeLive",
+    "package": "apps/app",
+    "name": "judgeLive",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "exclusive": true,
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/app/spec/run.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/spec/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/e2e/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.css",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/vite.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/tailwind.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/postcss.config.js"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/factory.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/rpc:check"
+    ],
+    "source": {
+      "file": "apps/app/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//apps/app:proofMockInputs",
     "package": "apps/app",
     "name": "proofMockInputs",
@@ -43100,6 +43178,10 @@
       },
       {
         "kind": "file",
+        "path": ".smithers/factory.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/app/package.json"
       },
       {
@@ -43166,6 +43248,10 @@
       {
         "kind": "file",
         "path": "apps/app/postcss.config.js"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/factory.json"
       },
       {
         "kind": "file",
@@ -43238,6 +43324,10 @@
       },
       {
         "kind": "file",
+        "path": ".smithers/factory.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/app/package.json"
       },
       {
@@ -43304,6 +43394,10 @@
       {
         "kind": "file",
         "path": "apps/app/postcss.config.js"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/factory.json"
       },
       {
         "kind": "file",
@@ -43376,6 +43470,10 @@
       },
       {
         "kind": "file",
+        "path": ".smithers/factory.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/app/package.json"
       },
       {
@@ -43442,6 +43540,10 @@
       {
         "kind": "file",
         "path": "apps/app/postcss.config.js"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/factory.json"
       },
       {
         "kind": "file",

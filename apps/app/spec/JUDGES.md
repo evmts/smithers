@@ -39,10 +39,17 @@ pnpm exec smthrs eval run judges --root apps/app/spec --run-id judges-check
 pnpm exec smthrs eval compare judges-check --root apps/app/spec --baseline evals/judges.baseline.json
 ```
 
-The trusted local seat module exports `seat: { modelId, model }`; no credentials
-are written to receipts. Record is disabled when CI is set. The journey runner
-will own page capture, assertion selection, shared sidecar storage and result
-aggregation. This module alone does not prove journeyMock or D3 end to end.
+The trusted local seat module exports `seat: { id, modelId, model }`; no credentials
+are written to receipts. Record is disabled when CI is set. The journey runner owns page capture, assertion selection, shared sidecar storage
+and result aggregation. A journey sidecar stores `{version: 1, judgments: {...}}`
+keyed by zero-based `step:assertion`. Live sidecars stay under the output directory
+and never overwrite committed mock evidence. `judge --record` selects mock;
+`judge --record --live` selects read-only live capture. `SPEC_JUDGE_SEAT` names a
+trusted node module exporting `seat` or `seats: {rubric, fuzzy}`; each seat must
+match its policy model and engine (Anthropic/Claude or OpenAI/Codex). `SPEC_JUDGE_POLICY` optionally names a factory projection.
+The existing journeyMock target depends on specSite and replays only.
+`judgeLive` is exclusive and cache false: NodeTest does not support maxAge or
+keyScope on this build CLI. Live writes fresh evidence on each invocation.
 
 The agreement report reads owner labels from labels/<rubric>.jsonl. pass3 is
 passHatK(3, correct trial votes, 3), averaged over labeled observations; a

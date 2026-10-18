@@ -1,14 +1,17 @@
 import { chromium, type Page } from "@playwright/test"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
-import { resolve, dirname } from "node:path"
-import { pathToFileURL } from "node:url"
 import { execFileSync } from "node:child_process"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { dirname, resolve } from "node:path"
+import { pathToFileURL } from "node:url"
 import { prepare } from "../e2e/showcase/driver"
-import { journey, interpolate, interpolateData, type Journey, type Assertion, type Step } from "./journey"
-import { element, observe, type Decode, type Exchange } from "./observe"
-import { results, type Mode, type RunResult, type StepResult } from "./results"
+import { type Assertion, interpolate, interpolateData, type Journey, journey, type Step } from "./journey"
+import { judgeAssertion, type JudgeOptions } from "./judgeAssertion.ts"
+import { type Decode, element, type Exchange, observe } from "./observe"
+import { readWorld } from "./readWorld.ts"
+import { type Mode, results, type RunResult, type StepResult } from "./results"
 
 export interface RunOptions {
+  readonly judge?: JudgeOptions
   readonly mode: Mode
   readonly origin: string
   readonly output: string
@@ -37,7 +40,9 @@ export const runJourney = async (page: Page, definition: Journey, options: RunOp
   const startedAt = new Date().toISOString()
   const steps: StepResult[] = []
   const base = { journey: definition.id, mode: options.mode, revision: options.revision, startedAt, steps }
-  if (options.mode === "live" && "skip" in definition.live) return { ...base, state: "unverified", reason: definition.live.skip }
+  if (options.mode === "live" && "skip" in definition.live) {
+    return { ...base, state: "unverified", reason: definition.live.skip }
+  }
   const bindings: Record<string, string> = { ...("subject" in definition.live ? definition.live.subject : {}) }
   const exchanges: Exchange[] = []
   const pending = new Set<Promise<void>>()
@@ -49,7 +54,9 @@ export const runJourney = async (page: Page, definition: Journey, options: RunOp
       const exchange = { method: res.request().method(), url: res.url(), status: res.status(), body }
       exchanges.push(exchange)
       await options.capture?.(exchange)
-    })().catch(error => { errors.push(String(error)) })
+    })().catch((error) => {
+      errors.push(String(error))
+    })
     pending.add(task)
     void task.finally(() => pending.delete(task))
   }
@@ -69,7 +76,9 @@ export const runJourney = async (page: Page, definition: Journey, options: RunOp
         })()
       bindings[name] = pick(body, binding.pick)
     }
-    const planned: ReadonlyArray<Step> = definition.steps.length ? definition.steps : [{ caption: definition.id, go: definition.go, expect: definition.expect ?? [] }]
+    const planned: ReadonlyArray<Step> = definition.steps.length
+      ? definition.steps
+      : [{ caption: definition.id, go: definition.go, expect: definition.expect ?? [] }]
     let lastNavigation = 0
     for (const [index, step] of planned.entries()) {
       await Promise.all([...pending])
@@ -81,22 +90,29 @@ export const runJourney = async (page: Page, definition: Journey, options: RunOp
         if (step.viewport) await page.setViewportSize(step.viewport)
         const expand = (value: string) => interpolate(value, bindings)
         if (step.go !== undefined) {
-          if (options.mode === "live") await new Promise(r => setTimeout(r, Math.max(0, 1000 - (Date.now() - lastNavigation))))
+          if (options.mode === "live") {
+            await new Promise((r) => setTimeout(r, Math.max(0, 1000 - (Date.now() - lastNavigation))))
+          }
           lastNavigation = Date.now()
           const destination = new URL(expand(step.go), options.origin)
-          if (options.mode === "live" && destination.origin !== new URL(options.origin).origin) throw new Error("Live navigation must stay on target origin")
+          if (options.mode === "live" && destination.origin !== new URL(options.origin).origin) {
+            throw new Error("Live navigation must stay on target origin")
+          }
           await page.goto(destination.href, { waitUntil: "domcontentloaded" })
         }
         if (step.click) {
           if (options.mode === "live") {
             const control = element(page, step.click)
-            const safe = await control.evaluate(node => {
+            const safe = await control.evaluate((node) => {
               const link = node.closest("a")
-              if (link) return new URL(link.href).origin === location.origin && !/\/(?:auth|login|logout|sign-in)(?:\/|$)/.test(new URL(link.href).pathname)
+              if (link) {
+                return new URL(link.href).origin === location.origin &&
+                  !/\/(?:auth|login|logout|sign-in)(?:\/|$)/.test(new URL(link.href).pathname)
+              }
               return /^(?:files|file|issues|repo\.home)(?:\s|$)/.test(node.getAttribute("data-flow") ?? "")
             })
             if (!safe) throw new Error("Live control is not a same-origin read navigation")
-            await new Promise(r => setTimeout(r, Math.max(0, 1000 - (Date.now() - lastNavigation))))
+            await new Promise((r) => setTimeout(r, Math.max(0, 1000 - (Date.now() - lastNavigation))))
             lastNavigation = Date.now()
           }
           await driver.app.click(element(page, step.click))
@@ -109,10 +125,14 @@ export const runJourney = async (page: Page, definition: Journey, options: RunOp
           if (options.mode === "live") throw new Error("Live form submission is not permitted")
           await driver.app.say(expand(step.say))
         }
-        for (const assertion of step.expect) {
+        for (const [assertionIndex, assertion] of step.expect.entries()) {
           const expanded = interpolateData(assertion, bindings) as Assertion
           await Promise.all([...pending])
-          assertions.push(await observe(page, expanded, exchanges, options.decode))
+          assertions.push(
+            "fuzzy" in expanded || "rubric" in expanded
+              ? await judgeAssertion(page, expanded, definition, step, `${index}:${assertionIndex}`, options.judge)
+              : await observe(page, expanded, exchanges, options.decode)
+          )
         }
         await Promise.all([...pending])
         if (errors.length) throw new Error(errors.join("\n"))
@@ -121,19 +141,42 @@ export const runJourney = async (page: Page, definition: Journey, options: RunOp
       }
       await mkdir(dirname(screenshot), { recursive: true })
       await page.screenshot({ path: screenshot, fullPage: true })
-      steps.push({ caption: step.caption, spec: step.spec ?? definition.spec, status: assertions.some(a => a.ok === false) ? "failed" : assertions.some(a => a.ok === null) ? "skipped" : "passed", assertions, screenshot, ms: Date.now() - at })
+      steps.push({
+        caption: step.caption,
+        spec: step.spec ?? definition.spec,
+        status: assertions.some((a) => a.ok === false)
+          ? "failed"
+          : assertions.some((a) => a.ok === null)
+          ? "skipped"
+          : "passed",
+        assertions,
+        screenshot,
+        ms: Date.now() - at
+      })
     }
-    return { ...base, state: steps.some(s => s.status === "failed") ? (options.mode === "mock" ? "stale" : "unverified") : "unverified", reason: "Pair mock/live evidence in drift before assigning shipped or ahead" }
+    return {
+      ...base,
+      state: steps.some((s) => s.status === "failed")
+        ? (options.mode === "mock" ? "stale" : "unverified")
+        : "unverified",
+      reason: "Pair mock/live evidence in drift before assigning shipped or ahead"
+    }
   } catch (error) {
     return { ...base, state: "unverified", reason: String(error) }
-  } finally { page.off("response", response) }
+  } finally {
+    page.off("response", response)
+  }
 }
 
 export const main = async (argv: string[]): Promise<number> => {
   const [command, ...args] = argv
-  if (!["mock", "live", "capture"].includes(command ?? "")) throw new Error("Usage: run.ts mock|live|capture <journey...> [--results-file path]")
+  if (!["mock", "live", "capture", "judge"].includes(command ?? "")) {
+    throw new Error("Usage: run.ts mock|live|capture <journey...> [--results-file path]")
+  }
   if (command === "capture" && !args.includes("--live")) throw new Error("capture requires --live")
-  const mode: Mode = command === "mock" ? "mock" : "live"
+  const recording = command === "judge"
+  if (recording && !args.includes("--record")) throw new Error("judge requires --record")
+  const mode: Mode = command === "mock" || recording && !args.includes("--live") ? "mock" : "live"
   const resultAt = args.indexOf("--results-file")
   const resultsFile = resultAt < 0 ? undefined : args[resultAt + 1]
   if (resultAt >= 0 && !resultsFile) throw new Error("--results-file requires a path")
@@ -142,41 +185,140 @@ export const main = async (argv: string[]): Promise<number> => {
   const output = process.env.SPEC_OUTPUT ?? resolve(process.env.HOME ?? ".", "smithers-lanes/out/spec2-runner")
   const revision = execFileSync("jj", ["log", "-r", "@", "--no-graph", "-T", "commit_id"], { encoding: "utf8" }).trim()
   const { decode } = await import("./wire")
+  const factory = JSON.parse(
+    await readFile(
+      process.env.SPEC_JUDGE_POLICY ?? resolve(import.meta.dirname, "../../../.smithers/factory.json"),
+      "utf8"
+    )
+  )
+  const policy = factory.judges
+  const runId = `spec-${crypto.randomUUID()}`
+  const ledger = resolve(resultsFile ? dirname(resultsFile) : output, "review-budget.json")
+  let evaluator: import("@smthrs/model/Evaluator").Evaluator | undefined
+  let fuzzyEvaluator: import("@smthrs/model/Evaluator").Evaluator | undefined
+  if (recording) {
+    if (process.env.CI || !policy || !process.env.SPEC_JUDGE_SEAT) {
+      console.error("Judgment inconclusive: recording requires local policy and SPEC_JUDGE_SEAT")
+      return 5
+    }
+    const { seat, seats } = await import(pathToFileURL(resolve(process.env.SPEC_JUDGE_SEAT)).href)
+    const { seatEvaluator } = await import("./seatEvaluator.ts")
+    const { Effect } = await import("effect")
+    try {
+      evaluator = await Effect.runPromise(
+        seatEvaluator(seats?.rubric ?? seat, policy.engines.rubric.model, policy.engines.rubric.engine)
+      )
+      fuzzyEvaluator = await Effect.runPromise(
+        seatEvaluator(seats?.fuzzy ?? seat, policy.engines.fuzzy.model, policy.engines.fuzzy.engine)
+      )
+    } catch {
+      console.error("Judgment inconclusive: seat does not match policy")
+      return 5
+    }
+  }
   let mockUnavailable: string | undefined
-  const server = mode === "mock" && !process.env.SPEC_MOCK_URL ? await (await import("./serve")).serve(resolve(import.meta.dirname, "../dist-spec")).catch(error => { mockUnavailable = `Spec build unavailable: ${String(error)}`; return undefined }) : undefined
-  const browser = await chromium.launch({ headless: true }).catch(async error => { await server?.close(); throw error })
+  const server = mode === "mock" && !process.env.SPEC_MOCK_URL
+    ? await (await import("./serve")).serve(resolve(import.meta.dirname, "../dist-spec")).catch((error) => {
+      mockUnavailable = `Spec build unavailable: ${String(error)}`
+      return undefined
+    })
+    : undefined
+  const browser = await chromium.launch({ headless: true }).catch(async (error) => {
+    await server?.close()
+    throw error
+  })
   const runs: RunResult[] = []
   try {
     for (const name of names) {
       const file = name.endsWith(".ts") ? resolve(name) : resolve(import.meta.dirname, "journeys", `${name}.journey.ts`)
       const definition = journey((await import(pathToFileURL(file).href)).default)
-      const origin = mode === "mock" ? process.env.SPEC_MOCK_URL ?? server?.origin : "target" in definition.live ? ({ default: "https://smithers.sh", smithers: "https://smithers.sh", effeck: "https://effeck.dev" } as Record<string, string>)[definition.live.target] ?? definition.live.target : "https://smithers.sh"
+      const origin = mode === "mock"
+        ? process.env.SPEC_MOCK_URL ?? server?.origin
+        : "target" in definition.live
+        ? (factory.spec?.live && Object.hasOwn(factory.spec.live, definition.live.target)
+          ? factory.spec.live[definition.live.target]
+          : definition.live.target)
+        : "https://smithers.sh"
       if (!origin || mode === "mock" && definition.world.base !== "default") {
-        runs.push({ journey: definition.id, mode, revision, startedAt: new Date().toISOString(), steps: [], state: "unverified", reason: mode === "mock" && definition.world.base !== "default" ? "world arrives at M" : mockUnavailable ?? "SPEC_MOCK_URL must point at a served dist-spec" })
+        runs.push({
+          journey: definition.id,
+          mode,
+          revision,
+          startedAt: new Date().toISOString(),
+          steps: [],
+          state: "unverified",
+          reason: mode === "mock" && definition.world.base !== "default"
+            ? "world arrives at M"
+            : mockUnavailable ?? "SPEC_MOCK_URL must point at a served dist-spec"
+        })
         continue
       }
+      const sidecar = mode === "mock"
+        ? file.replace(/(?:\.journey)?\.ts$/, ".judgments.json")
+        : resolve(output, "live-judgments", `${definition.id}.judgments.json`)
+      if (recording) await mkdir(dirname(sidecar), { recursive: true })
       const context = await browser.newContext({ serviceWorkers: "block" })
       try {
-        runs.push(await runJourney(await context.newPage(), definition, { mode, origin, output, revision, decode,
-          readWorld: async (_definition, read) => {
-            const world = JSON.parse(await readFile(process.env.SPEC_WORLD_READS ?? resolve(output, "world-reads.json"), "utf8")) as Record<string, unknown>
-            if (!(read in world)) throw new Error(`Missing world binding: ${read}`)
-            return world[read]
-          },
-          ...(command === "capture" ? { capture: async (exchange: Exchange) => {
-            const { capture } = await import("./wire")
-            await capture(exchange, output, revision)
-          } } : {})
-        }))
-      } finally { await context.close() }
+        runs.push(
+          await runJourney(await context.newPage(), definition, {
+            mode,
+            origin,
+            output,
+            revision,
+            decode,
+            judge: {
+              policy,
+              sidecar,
+              labels: resolve(import.meta.dirname, "labels"),
+              ...(evaluator
+                ? {
+                  record: {
+                    evaluator,
+                    fuzzyEvaluator,
+                    ledger,
+                    run: runId,
+                    pendingLabels: resolve(resultsFile ? dirname(resultsFile) : output, "pending-labels.jsonl")
+                  }
+                }
+                : {})
+            },
+            readWorld,
+            ...(command === "capture" ?
+              {
+                capture: async (exchange: Exchange) => {
+                  const { capture } = await import("./wire")
+                  await capture(exchange, output, revision)
+                }
+              } :
+              {})
+          })
+        )
+      } finally {
+        await context.close()
+      }
     }
-  } finally { await browser.close(); await server?.close() }
+  } finally {
+    await browser.close()
+    await server?.close()
+  }
   if (resultsFile) {
     await mkdir(dirname(resolve(resultsFile)), { recursive: true })
     await writeFile(resultsFile, JSON.stringify(results(runs), null, 2) + "\n")
   }
   console.log(JSON.stringify(runs, null, 2))
-  if (runs.some(run => run.steps.some(step => step.status === "failed"))) return 1
-  return runs.some(run => run.reason && run.steps.length === 0) ? 5 : 0
+  if (runs.some((run) => run.steps.some((step) => step.status === "failed"))) return 1
+  return runs.some((run) =>
+      run.reason && run.steps.length === 0 ||
+      run.steps.some((step) => step.assertions.some((assertion) => assertion.verdict === "inconclusive"))
+    )
+    ? 5
+    : 0
 }
-if (import.meta.main) main(process.argv.slice(2)).then(code => { process.exitCode = code }).catch(error => { console.error(error); process.exitCode = 1 })
+if (import.meta.main) {
+  main(process.argv.slice(2)).then((code) => {
+    process.exitCode = code
+  }).catch((error) => {
+    console.error(error)
+    process.exitCode = 1
+  })
+}
