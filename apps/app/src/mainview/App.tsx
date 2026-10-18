@@ -1,5 +1,6 @@
+import { isOpenPull } from "./cards/GithubParts"
 import { PullViews } from "./repository/PullViews"
-import { IssueViews } from "./repository/IssueViews"
+import { IssueViews, matchesIssueReadKey } from "./repository/IssueViews"
 import { RepoFrame } from "./repository/RepoFrame"
 import { CodeHome } from "./repository/CodeHome"
 import { RepositoryCodeView } from "./repository/RepositoryCodeView"
@@ -763,11 +764,10 @@ function AppContent() {
   const issueMatch = /^\/issues(?:\/(\d+))?\/?$/.exec(window.location.pathname.slice(bootRepository.length + 1))
   const pullMatch = /^\/(pulls|pull\/(\d+)(?:\/(commits|checks|files))?)\/?$/.exec(window.location.pathname.slice(bootRepository.length + 1))
   if (!rootRoute && !codeRoute && !issueMatch && !pullMatch) return chat()
-  const issueKey = issueMatch?.[1] ? `issue-github-${bootRepository}-${Number(issueMatch[1])}` : JSON.stringify(["issues", bootRepository, "all", "all", null])
   const pullKey = pullMatch?.[2] ? JSON.stringify(["pr", bootRepository, Number(pullMatch[2])]).slice(0, -1) + "," : `prs-${bootRepository}`
-  const issueCard = [...cardRows].reverse().find(card => card.viewRepo?.toLowerCase() === bootRepository.toLowerCase() && card.viewKey?.toLowerCase() === issueKey.toLowerCase())
+  const issueCard = [...cardRows].reverse().find(card => card.viewRepo?.toLowerCase() === bootRepository.toLowerCase() && matchesIssueReadKey(card.viewKey, bootRepository, issueMatch?.[1] ? Number(issueMatch[1]) : undefined))
   const pullCard = [...cardRows].reverse().find(card => card.viewRepo?.toLowerCase() === bootRepository.toLowerCase() && (pullMatch?.[2] ? card.viewKey?.toLowerCase().startsWith(pullKey.toLowerCase()) : card.viewKey?.toLowerCase() === pullKey.toLowerCase()))
-  return <RepoFrame onRunCommand={controller.runCommand} pullCount={pullCard?.kind === "pr-list" ? pullCard.payload.landings.filter(row => ["open", "draft"].includes(row.state)).length : undefined} issueCount={issueCard?.kind === "issue-list" && !issueCard.payload.github?.refusal ? issueCard.payload.issues.filter(row => row.state === "open").length : undefined} repo={bootRepository} publicRepo={repository?.catalog === true}
+  return <RepoFrame onRunCommand={controller.runCommand} pullCount={pullCard?.kind === "pr-list" ? pullCard.payload.landings.filter(row => isOpenPull(row.state)).length : undefined} issueCount={issueCard?.kind === "issue-list" ? issueCard.payload.issues.filter(row => row.state === "open").length : undefined} repo={bootRepository} publicRepo={repository?.catalog === true}
     login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
     ask={(visible: boolean) => chat(visible)}>
     {codeRoute ? <RepositoryCodeView onRunCommand={controller.runCommand} repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}

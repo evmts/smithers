@@ -226,3 +226,6 @@ export const people = (rows: ReadonlyArray<{ readonly login: string; readonly av
   (rows ?? []).map((row) => ({ login: row.login, avatarUrl: row.avatar ?? null }))
 
 export const repoLabel = (repo: string): string => repo
+
+/** The chat and repository views share the same open pull lifecycle. */
+export const isOpenPull = (state: string): boolean => !["closed", "merged", "landed"].includes(state.toLowerCase())
