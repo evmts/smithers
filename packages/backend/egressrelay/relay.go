@@ -119,8 +119,7 @@ type binding struct {
 	secrets     []sandbox.EgressProxySecret
 	// masks pairs every form of a value the relay can emit or send (literal,
 	// query-escaped, path-escaped) with its placeholder, longest first.
-	masks   []mask
-	longest int
+	masks []mask
 	// ctx ends when the binding is replaced, revoked, or the relay closes:
 	// in-flight upstream requests are cancelled and open tunnels closed.
 	ctx    context.Context
@@ -218,7 +217,6 @@ func (r *Relay) Bind(workspaceID string, secrets []sandbox.EgressProxySecret) (G
 	names := map[string]bool{}
 	var hosts []string
 	var masks []mask
-	longest := 0
 	for _, secret := range secrets {
 		if err := secret.Validate(); err != nil {
 			return Grant{}, err
@@ -242,7 +240,6 @@ func (r *Relay) Bind(workspaceID string, secrets []sandbox.EgressProxySecret) (G
 		for _, form := range []string{secret.Value, url.QueryEscape(secret.Value), url.PathEscape(secret.Value)} {
 			if !slices.ContainsFunc(masks, func(existing mask) bool { return existing.value == form }) {
 				masks = append(masks, mask{value: form, placeholder: placeholder})
-				longest = max(longest, len(form))
 			}
 		}
 		bound = append(bound, secret)
@@ -263,7 +260,7 @@ func (r *Relay) Bind(workspaceID string, secrets []sandbox.EgressProxySecret) (G
 	// Longest first, so a value that extends another is masked whole.
 	slices.SortStableFunc(masks, func(a, b mask) int { return len(b.value) - len(a.value) })
 	ctx, cancel := context.WithCancel(context.Background())
-	r.byToken[token] = &binding{workspaceID: workspaceID, token: token, secrets: bound, masks: masks, longest: longest, ctx: ctx, cancel: cancel}
+	r.byToken[token] = &binding{workspaceID: workspaceID, token: token, secrets: bound, masks: masks, ctx: ctx, cancel: cancel}
 	r.byWorkspace[workspaceID] = token
 	proxyURL := url.URL{Scheme: "http", User: url.UserPassword(proxyUser, token), Host: r.listener.Addr().String()}
 	return Grant{ProxyURL: proxyURL.String(), Hosts: hosts, CACertPEM: slices.Clone(r.caPEM)}, nil
@@ -360,7 +357,22 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		w.Header()[name] = values
 	}
 	w.WriteHeader(response.StatusCode)
-	_, _ = io.Copy(w, response.Body)
+	// Each masked read goes to the guest at once, so a streamed response is
+	// not batched in the write buffer until the upstream ends (#4251).
+	flusher := http.NewResponseController(w)
+	buffer := make([]byte, 32*1024)
+	for {
+		n, err := response.Body.Read(buffer)
+		if n > 0 {
+			if _, writeErr := w.Write(buffer[:n]); writeErr != nil {
+				return
+			}
+			_ = flusher.Flush()
+		}
+		if err != nil {
+			return
+		}
+	}
 }
 
 // authenticate returns the live binding of a Proxy-Authorization credential.
@@ -595,32 +607,39 @@ func (b *binding) allows(host string) bool {
 
 // mask replaces every bound value form in value, leftmost-longest.
 func (b *binding) mask(value string) string {
-	out, _ := b.maskPrefix([]byte(value), len(value))
+	out, _ := b.maskPrefix([]byte(value), true)
 	return string(out)
 }
 
-// maskPrefix masks data up to the first position at or past limit where no
-// match starts, and returns the masked bytes and how much of data they
-// consumed. A match starting before limit is consumed whole.
-func (b *binding) maskPrefix(data []byte, limit int) ([]byte, int) {
+// maskPrefix replaces every bound value form in data, leftmost-longest, and
+// returns the masked bytes and how much of data they consumed. Unless data
+// is final, it stops at the first position where a form could begin and run
+// past the end of data: only those bytes wait to see how the form continues.
+func (b *binding) maskPrefix(data []byte, final bool) ([]byte, int) {
 	out := make([]byte, 0, len(data))
 	index := 0
-	for index < limit {
-		matched := false
+scan:
+	for index < len(data) {
+		rest := data[index:]
+		// Masks are longest first, so a longer form that may yet match is
+		// decided before a shorter one that does. The comparison conversions
+		// do not copy data; copying the remainder per byte made masking
+		// quadratic.
 		for _, candidate := range b.masks {
-			// The comparison conversion does not copy data; converting the
-			// whole remainder for every scanned byte made masking quadratic.
-			if end := index + len(candidate.value); end <= len(data) && string(data[index:end]) == candidate.value {
+			if len(rest) < len(candidate.value) {
+				if !final && candidate.value[:len(rest)] == string(rest) {
+					break scan
+				}
+				continue
+			}
+			if string(rest[:len(candidate.value)]) == candidate.value {
 				out = append(out, candidate.placeholder...)
 				index += len(candidate.value)
-				matched = true
-				break
+				continue scan
 			}
 		}
-		if !matched {
-			out = append(out, data[index])
-			index++
-		}
+		out = append(out, data[index])
+		index++
 	}
 	return out, index
 }
@@ -729,11 +748,12 @@ func (r *Relay) leaf(host string) (*tls.Certificate, error) {
 }
 
 // maskingBody replaces every bound value in a streamed body with its
-// placeholder, holding back only a possible partial match between reads.
+// placeholder, holding back between reads only bytes that begin a form.
 type maskingBody struct {
 	source  io.ReadCloser
 	bound   *binding
 	release func()
+	buffer  []byte
 	pending []byte
 	out     []byte
 	eof     bool
@@ -745,27 +765,26 @@ func (m *maskingBody) Read(p []byte) (int, error) {
 			if len(m.pending) == 0 {
 				return 0, io.EOF
 			}
-			m.out, _ = m.bound.maskPrefix(m.pending, len(m.pending))
+			m.out, _ = m.bound.maskPrefix(m.pending, true)
 			m.pending = nil
 			break
 		}
-		chunk := make([]byte, 32*1024)
-		n, err := m.source.Read(chunk)
-		m.pending = append(m.pending, chunk[:n]...)
+		if m.buffer == nil {
+			m.buffer = make([]byte, 32*1024)
+		}
+		n, err := m.source.Read(m.buffer)
+		m.pending = append(m.pending, m.buffer[:n]...)
 		if err == io.EOF {
 			m.eof = true
 			continue
 		} else if err != nil {
 			return 0, err
 		}
-		// A match starting in the last longest-1 bytes may continue in the
-		// next read; one starting earlier lies wholly inside pending.
-		limit := len(m.pending) - (m.bound.longest - 1)
-		if limit <= 0 {
-			continue
-		}
+		// Everything up to a possible partial match goes to the guest now:
+		// holding a fixed tail delayed each streamed event until the next
+		// one arrived (#4251).
 		var consumed int
-		m.out, consumed = m.bound.maskPrefix(m.pending, limit)
+		m.out, consumed = m.bound.maskPrefix(m.pending, false)
 		m.pending = append([]byte(nil), m.pending[consumed:]...)
 	}
 	n := copy(p, m.out)

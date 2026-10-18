@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/iotest"
 	"time"
@@ -324,12 +326,173 @@ func TestMaskingBodyNeverLeaksASplitValue(t *testing.T) {
 			out, err := io.ReadAll(body)
 			require.NoError(t, err)
 			assert.Equal(t, bound.mask(input.String()), string(out), name)
-			for _, value := range values {
-				for _, form := range []string{value, url.QueryEscape(value), url.PathEscape(value)} {
-					assert.NotContains(t, string(out), form, name)
-				}
+			assertNoForm(t, string(out), values, name)
+		}
+		// The upstream pauses after every possible byte: what the guest has
+		// by then holds no value, and the relay keeps back only bytes that
+		// begin a value form, so they may yet complete one (#4251).
+		whole := input.String()
+		for cut := 1; cut < len(whole); cut++ {
+			body := &maskingBody{source: io.NopCloser(&pausingReader{steps: []string{whole[:cut], pause, whole[cut:]}}), bound: bound}
+			before := readUntilPause(t, body)
+			assertNoForm(t, before, values, name)
+			assert.True(t, beginsAForm(bound, body.pending), "%s: cut %d held back %q, which begins no value form", name, cut, body.pending)
+			assert.Equal(t, bound.mask(whole), before+readUntilPause(t, body), "%s: cut %d", name, cut)
+		}
+	}
+}
+
+func assertNoForm(t *testing.T, out string, values []string, name string) {
+	t.Helper()
+	for _, value := range values {
+		for _, form := range []string{value, url.QueryEscape(value), url.PathEscape(value)} {
+			assert.NotContains(t, out, form, name)
+		}
+	}
+}
+
+// beginsAForm reports whether held is empty or a proper prefix of a value
+// form, the only bytes the relay may keep from the guest between reads.
+func beginsAForm(bound *binding, held []byte) bool {
+	if len(held) == 0 {
+		return true
+	}
+	for _, candidate := range bound.masks {
+		if len(held) < len(candidate.value) && strings.HasPrefix(candidate.value, string(held)) {
+			return true
+		}
+	}
+	return false
+}
+
+// pause marks where a pausingReader's upstream stops sending for now.
+const pause = "\x00pause"
+
+var errPaused = errors.New("upstream paused")
+
+// pausingReader serves each step as one read; at a pause step it returns
+// errPaused, standing in for an upstream that has sent all it has so far.
+type pausingReader struct{ steps []string }
+
+func (r *pausingReader) Read(p []byte) (int, error) {
+	if len(r.steps) == 0 {
+		return 0, io.EOF
+	}
+	if r.steps[0] == pause {
+		r.steps = r.steps[1:]
+		return 0, errPaused
+	}
+	n := copy(p, r.steps[0])
+	if r.steps[0] = r.steps[0][n:]; r.steps[0] == "" {
+		r.steps = r.steps[1:]
+	}
+	return n, nil
+}
+
+// readUntilPause returns what body delivers before its upstream pauses or ends.
+func readUntilPause(t *testing.T, body io.Reader) string {
+	t.Helper()
+	var out []byte
+	buffer := make([]byte, 7)
+	for {
+		n, err := body.Read(buffer)
+		out = append(out, buffer[:n]...)
+		if err != nil {
+			require.True(t, errors.Is(err, errPaused) || errors.Is(err, io.EOF), err)
+			return string(out)
+		}
+	}
+}
+
+// A streamed response reaches the guest as the upstream sends it: an event
+// is not held for the next one, and only bytes that could begin a value wait
+// to see whether they complete it (#4251).
+func TestMaskingBodyStreamsBytesThatCannotBeginAValue(t *testing.T) {
+	bound := liveBinding(t, testValue)
+	placeholder := sandbox.EgressProxyPlaceholder("A")
+	event := `data: {"choices":[{"delta":{"content":"hello"}}]}` + "\n\n"
+	query, path := url.QueryEscape(testValue), url.PathEscape(testValue)
+	require.NotEqual(t, query, path)
+	for name, test := range map[string]struct{ steps, want []string }{
+		"an event ending a read":     {[]string{event, pause, event, pause}, []string{event, event}},
+		"a byte that begins no form": {[]string{"data: x", pause, "y"}, []string{"data: x", "y"}},
+		"a short read":               {[]string{"d", pause, "one"}, []string{"d", "one"}},
+		"a prefix of the value": {[]string{"data: " + testValue[:4], pause, testValue[4:] + " end", pause},
+			[]string{"data: ", placeholder + " end"}},
+		"a prefix of the query form": {[]string{"k=" + query[:15], pause, query[15:] + "&", pause},
+			[]string{"k=", placeholder + "&"}},
+		"a prefix of the path form": {[]string{"/p/" + path[:20], pause, path[20:] + "/x", pause},
+			[]string{"/p/", placeholder + "/x"}},
+		"a prefix that is not the value": {[]string{"x " + testValue[:4], pause, "ew", pause},
+			[]string{"x ", testValue[:4] + "ew"}},
+		"a prefix at the end of the body": {[]string{"tail " + testValue[:4]}, []string{"tail " + testValue[:4]}},
+	} {
+		body := &maskingBody{source: io.NopCloser(&pausingReader{steps: test.steps}), bound: bound}
+		var got []string
+		for range test.want {
+			got = append(got, readUntilPause(t, body))
+		}
+		assert.Equal(t, test.want, got, name)
+	}
+}
+
+// pacedEvents writes each event, then waits for the client to acknowledge it
+// before sending the next or ending the response, counting every wait that
+// timed out: a relay that holds an event back makes the upstream wait.
+func pacedEvents(events []string, ack <-chan struct{}, late *atomic.Int32) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, event := range events {
+			_, _ = io.WriteString(w, strings.ReplaceAll(event, testName, r.Header.Get("Authorization")[len("Bearer "):]))
+			w.(http.Flusher).Flush()
+			select {
+			case <-ack:
+			case <-time.After(2 * time.Second):
+				late.Add(1)
 			}
 		}
+	})
+}
+
+// Each event of a streamed model response reaches the guest before the
+// upstream sends the next, and the last before the upstream ends, over both
+// the TLS tunnel and the plain-http path to the backend (#4251).
+func TestRelayStreamsEachEventBeforeTheNext(t *testing.T) {
+	events := []string{"data: {\"delta\":\"hel\"}\n\n", "data: {\"key\":\"" + testName + "\"}\n\n", "data: [DONE]\n\n"}
+	for name, start := range map[string]func(http.Handler) (*httptest.Server, Config){
+		"tls tunnel": func(handler http.Handler) (*httptest.Server, Config) {
+			upstream := httptest.NewTLSServer(handler)
+			roots := x509.NewCertPool()
+			roots.AddCert(upstream.Certificate())
+			return upstream, Config{Local: []string{upstream.Listener.Addr().String()}, RootCAs: roots}
+		},
+		"plain http": func(handler http.Handler) (*httptest.Server, Config) {
+			upstream := httptest.NewServer(handler)
+			return upstream, Config{Local: []string{upstream.Listener.Addr().String()}}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ack := make(chan struct{}, len(events))
+			var late atomic.Int32
+			upstream, config := start(pacedEvents(events, ack, &late))
+			t.Cleanup(upstream.Close)
+			relay := newRelay(t, config)
+			response, err := proxiedClient(t, mustGrant(t, relay, "ws", "127.0.0.1")).Do(placeholderRequest(t, upstream.URL))
+			require.NoError(t, err)
+			defer response.Body.Close()
+			reader := bufio.NewReader(response.Body)
+			for _, event := range events {
+				got := make([]byte, len(event))
+				_, err := io.ReadFull(reader, got)
+				require.NoError(t, err)
+				assert.Equal(t, event, string(got), "the event arrives whole and masked")
+				ack <- struct{}{}
+			}
+			rest, err := io.ReadAll(reader)
+			require.NoError(t, err)
+			assert.Empty(t, rest)
+			assert.Zero(t, late.Load(), "events waited at the relay for the upstream's next write")
+		})
 	}
 }
 
@@ -348,6 +511,18 @@ func TestMaskingBodyIsLinearInTheBody(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, strings.Repeat("a", size)+sandbox.EgressProxyPlaceholder("A"), string(out))
 	assert.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(32*size), "masking a 1 MiB body allocated quadratically")
+
+	// An upstream that sends a byte at a time, each byte possibly beginning
+	// the value, costs a bounded amount per read.
+	const small = 64 << 10
+	input = strings.Repeat(testValue[:len(testValue)-1]+"!", small/len(testValue))
+	runtime.ReadMemStats(&before)
+	body = &maskingBody{source: io.NopCloser(iotest.OneByteReader(strings.NewReader(input))), bound: bound}
+	out, err = io.ReadAll(body)
+	runtime.ReadMemStats(&after)
+	require.NoError(t, err)
+	assert.Equal(t, input, string(out))
+	assert.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(256*small), "masking one byte at a time allocated per read beyond the held bytes")
 }
 
 func TestGuestEnvironmentRoutesBoundHostsThroughTheRelay(t *testing.T) {
