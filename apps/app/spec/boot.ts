@@ -1,3 +1,7 @@
+import { defaultWorld } from "./worlds/default"
+import { readRoutes } from "./routes/reads"
+import { matchRoute } from "./route"
+import { RepositoryReadErrorSchema } from "@smthrs/rpc/RepositoryRead"
 import { configureApplicationFetch } from "../src/mainview/runtime/ApplicationTransport"
 import { configureLiveSocket } from "../src/mainview/runtime/LiveChannel"
 
@@ -8,7 +12,11 @@ export const spec = {
   requests: [] as string[],
   failures: [] as string[],
   violations: [] as string[],
-  sockets: [] as string[]
+  sockets: [] as string[],
+  world: defaultWorld(new URLSearchParams(location.search)),
+  assertClean() {
+    if (this.failures.length || this.violations.length) throw new Error([...this.failures, ...this.violations].join("\n"))
+  }
 }
 declare global { interface Window { __spec: typeof spec } }
 window.__spec = spec
@@ -39,6 +47,21 @@ const fixtureFetch: import("@smthrs/rpc/NativeAgent").FetchLike = async (input, 
   if (url.origin === location.origin && !url.pathname.startsWith("/api/") && url.pathname !== "/live") {
     if (method === "GET" && (url.pathname.startsWith("/assets/") || url.pathname === "/favicon.svg")) return assetFetch(input, init)
   }
+  if (url.origin === location.origin) {
+    for (const route of readRoutes) {
+      if (route.method !== method) continue
+      const params = matchRoute(route.path, url.pathname)
+      if (params === undefined) continue
+      if (spec.world.variants.net === "slow" && !route.control) await new Promise(resolve => setTimeout(resolve, 750))
+      if (spec.world.variants.net === "error" && !route.control) return Response.json(RepositoryReadErrorSchema.parse({ message: `Fixture read failed: ${method} ${url.pathname}` }), { status: 503 })
+      try {
+        const response = route.handle({ url, params }, spec.world)
+        const body = route.schema.parse(response.body)
+        if (route.transition) spec.world = route.transition({ url, params }, spec.world)
+        return Response.json(body, { status: response.status ?? 200 })
+      } catch { return fail(method, url.pathname) }
+    }
+  }
   return fail(method, url.origin === location.origin ? url.pathname : url.href)
 }
 class FixtureSocket extends EventTarget {
@@ -55,9 +78,16 @@ class FixtureSocket extends EventTarget {
   constructor(url: string | URL = "/api/live") {
     super()
     spec.sockets.push(String(url))
+    const target = new URL(url, location.href)
+    const origin = target.origin.replace(/^ws/, "http")
+    if (origin !== location.origin || target.pathname !== "/api/live") { fail("WS", target.pathname); this.readyState = 3; return }
     queueMicrotask(() => { this.readyState = 1; this.onopen?.() })
   }
-  send(_data: string | Uint8Array) {}
+  send(data: string | Uint8Array) {
+    if (typeof data !== "string") return
+    const frame = JSON.parse(data) as { t: string; id: number }
+    if (frame.t === "sub") queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({ t: "err", id: frame.id, code: "unsupported" }) }))
+  }
   close() { this.readyState = 3 }
 }
 configureApplicationFetch(fixtureFetch)
