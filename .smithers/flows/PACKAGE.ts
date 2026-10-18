@@ -779,6 +779,20 @@ const perfUnit = Smithers.NodeTest({
   cwd
 })
 
+/** Offline quality definitions, GitHub page replay, fallback, and artifact rendering. */
+const quality = Smithers.NodeTest({
+  runner: Smithers.testRunner([
+    Smithers.file("//.smithers/flows/quality/metrics.test.mjs"),
+    Smithers.file("//.smithers/flows/quality/github.test.mjs"),
+    Smithers.file("//.smithers/flows/quality/red-time.test.mjs"),
+    Smithers.file("//.smithers/flows/quality/output.test.mjs"),
+    Smithers.file("//.smithers/flows/quality/flow.test.ts")
+  ]),
+  srcs: [sources, Smithers.glob("//.smithers/flows/quality/**/*.mjs"), Smithers.glob("//.smithers/flows/quality/fixtures/*.json")],
+  deps: [automationModules],
+  cwd
+})
+
 /** K1–K8 campaign keeps component evidence distinct from integrated proof. */
 const workingTogetherFaults = Smithers.Shell.Test({
   shell: "node .smithers/flows/perf/working-together/faults.mjs",
@@ -1708,6 +1722,7 @@ export const Package = Smithers.Package({
     campaignVerifiers,
     perf,
     perfUnit,
+    quality,
     checkRunner,
     perfKeystroke,
     perfDiskWrite,
