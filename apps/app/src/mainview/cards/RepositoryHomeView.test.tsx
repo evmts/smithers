@@ -29,8 +29,9 @@ const render = (home: RepositoryHomeAnswer | undefined, treeCopyId: string | nul
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)
-  act(() => root.render(<RepositoryHomeView repo="ada/widgets" home={home} treeCopyId={treeCopyId ?? undefined}
-    onRunCommand={(name, args) => { calls.push([name, args]) }} />))
+  const controller = { store: { collections: { identitySessions: { get: () => ({ state: "signed-in" }), subscribeChanges: () => ({ unsubscribe() {} }) } } } } as unknown as AppController
+  act(() => root.render(<ControllerContext value={controller}><RepositoryHomeView repo="ada/widgets" home={home} treeCopyId={treeCopyId ?? undefined}
+    onRunCommand={(name, args) => { calls.push([name, args]) }} /></ControllerContext>))
   mounted.push(() => { act(() => root.unmount()); host.remove() })
   return { host, calls }
 }
@@ -313,4 +314,73 @@ test("a stack that fits claims nothing is left and offers no extra door", () => 
   const { stack } = withSnapshot({ stack: STACK, error: null })
   expect(stack.querySelectorAll(".repository-home-stack-row")).toHaveLength(4)
   expect(stack.querySelector('[data-testid="repository-home-stack-more"]')).toBeNull()
+})
+
+/** Audience and directory data are the real collections, populated by transitions. */
+const withAudience = async (signedIn: boolean) => {
+  const { createAppStore } = await import("../state/AppStore")
+  const data = new Map<string, string>()
+  const store = await createAppStore({ kind: "localStorage", storage: { getItem: key => data.get(key) ?? null, setItem: (key, value) => { data.set(key, value) }, removeItem: key => { data.delete(key) } } })
+  store.dispatch({ type: "identity.session.loaded", actor: "system", state: signedIn ? "signed-in" : "signed-out", login: signedIn ? "ada" : null, admin: false, scopesPlain: null })
+  store.dispatch({ type: "repo-tree.loading", actor: "system", copyId: COPY, path: "" })
+  store.dispatch({ type: "repo-tree.loaded", actor: "system", copyId: COPY, path: "", entries: [{ name: "README.md", kind: "file" }, { name: "apps", kind: "dir" }], truncated: false })
+  const controller = { store, repositorySnapshots: { get: () => undefined, subscribe: () => () => {} } } as unknown as AppController
+  const host = document.createElement("div")
+  const root = createRoot(host)
+  const calls: Array<[string, string | undefined]> = []
+  const paint = () => act(() => root.render(<ControllerContext value={controller}>
+    <RepositoryHomeView repo="ada/widgets" home={RepositoryHomeSchema.parse({ kind: "blocks", blocks: [
+      { type: "prompt", placeholder: "Ask Smithers" },
+      { type: "app", flow: "review", title: "Review", picture: "review" }
+    ] })} treeCopyId={COPY} onRunCommand={(name, args) => calls.push([name, args])} />
+  </ControllerContext>))
+  paint()
+  mounted.push(() => { act(() => root.unmount()); host.remove(); void store.dispose?.() })
+  return { host, store, calls }
+}
+
+test("signed-out repo home hides member app blocks and renders its file tree", async () => {
+  const { host, calls } = await withAudience(false)
+  expect(host.querySelector('.repository-home-app')).toBeNull()
+  expect(host.textContent).toContain("Ask Smithers")
+  expect(host.textContent).toContain("README.md")
+  expect(host.textContent).toContain("apps")
+  expect(calls).toEqual([])
+  const file = [...host.querySelectorAll<HTMLButtonElement>('button[data-flow="file"]')].find(button => button.textContent?.includes("README.md"))!
+  expect(file).toBeDefined()
+  act(() => file.click())
+  expect(calls[0]?.[0]).toBe("file")
+  expect(calls[0]?.[1]).toContain("README.md")
+})
+
+test("signed-in repo home keeps member apps", async () => {
+  const { host } = await withAudience(true)
+  expect(host.querySelector('.repository-home-app')?.textContent).toBe("Review")
+})
+
+test("signed-out Files renders the already-read root directory", async () => {
+  const { host } = await withAudience(false)
+  expect(host.textContent).toContain("README.md")
+  expect(host.textContent).toContain("apps")
+})
+
+test("sign-out hides member apps in the already-mounted home", async () => {
+  const { host, store } = await withAudience(true)
+  expect(host.querySelector('.repository-home-app')).not.toBeNull()
+  await act(async () => {
+    store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, admin: false, scopesPlain: null })
+    await new Promise(resolve => setTimeout(resolve, 0))
+  })
+  expect(host.querySelector('.repository-home-app')).toBeNull()
+})
+
+test("a refused directory read replaces old files with a visible failure", async () => {
+  const { host, store } = await withAudience(false)
+  await act(async () => {
+    store.dispatch({ type: "repo-tree.failed", actor: "system", copyId: COPY, path: "", error: "HTTP 503" })
+    await new Promise(resolve => setTimeout(resolve, 0))
+  })
+  expect(host.textContent).not.toContain("README.md")
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Files unavailable")
+  expect(host.querySelector('details')?.textContent).toContain("HTTP 503")
 })

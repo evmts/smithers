@@ -110,7 +110,13 @@ export const factory = S.Factory({
 // form, then the run card. Other repositories declare their own.
 export const home = S.Factory.Home({
   blocks: [
-    S.Home.Prompt({ title: "What should we work on?", placeholder: "Ask Smithers…" }),
+    S.Home.Prompt({ placeholder: "Ask Smithers" }),
+    S.Home.Links({ links: [
+      { label: "Docs", url: "https://smithers.sh/docs/installation/" },
+      { label: "Report a bug", url: "https://github.com/smithersai/smithers/issues/new/choose" },
+      { label: "Source on GitHub", url: "https://github.com/smithersai/smithers" }
+    ] }),
+    S.Home.Markdown({ title: "Fixed by agents", path: "docs/fixed-by-agents.md" }),
     S.Home.App({ flow: "issue.implement", title: "Fix an issue", picture: "issue" }),
     S.Home.App({ flow: "prs.triage", title: "Review a PR", picture: "review" }),
     S.Home.App({ flow: "wiki.ask", title: "Ask the codebase", picture: "wiki" }),

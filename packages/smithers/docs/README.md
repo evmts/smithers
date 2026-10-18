@@ -9,6 +9,8 @@ its events as durable state, so the run survives the process that started it.
 Use `smthrs` to start such a run, decide the approvals it asks for, and read
 back what it did. [CLI reference](./reference/cli/README.md) lists the commands.
 
+[Read Smithers’ own repository on Smithers](https://smithers.sh/smithers-canary/smithers).
+
 ## What it solves
 
 A long agent run is not a shell command. It outlives the terminal that started

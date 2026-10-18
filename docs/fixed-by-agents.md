@@ -1,0 +1,2 @@
+- 2026-10-18 · #4002 npm workspace CLI fails declaration_dependency_mismatch once effect 4.0.5 is latest → 28986e29
+- 2026-10-14 · #3905 Plan diff reports an unchanged step as added after a step is appended → d8c2152a

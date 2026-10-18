@@ -1,5 +1,5 @@
 import { Button, Markdown, StatusPill } from "@smthrs/ui"
-import { useContext, useState, useSyncExternalStore } from "react"
+import { useCallback, useContext, useState, useSyncExternalStore } from "react"
 import type { FlowView, RepositoryHome } from "@smthrs/rpc/RepositoryHome"
 import type { MythicalStack } from "@smthrs/rpc/Mythical"
 import { itemReason, itemStateLabel, itemTitle, stackCounts, stackRows } from "@smthrs/rpc/StackView"
@@ -9,6 +9,9 @@ import type { RepositoryFlowsRow } from "../state/AppState"
 import { flowViewOf } from "../state/seams/RepositoryFlowsSeam"
 import { dynamicFlowProps } from "../flows/FlowAction"
 import type { RunDynamicCommand } from "./CardFamily"
+import { repoTreeRowId } from "../state/AppState"
+import { FileListCardBody } from "./FileCards"
+import { FailureNotice, unavailableFailure } from "../FailureNotice"
 import "./RepositoryHomeView.css"
 
 /*
@@ -160,13 +163,26 @@ const StackBlock = ({ repo, title }: { readonly repo: string; readonly title: st
 }
 
 /** The repository's file tree, always one press from its own default view. */
-const FilesAction = ({ treeCopyId, onRunCommand }: Pick<RepositoryHomeViewProps, "treeCopyId" | "onRunCommand">) =>
-  treeCopyId === undefined ? null : <Button
-    variant="outline"
-    className="repository-home-files"
-    {...dynamicFlowProps("files", JSON.stringify({ operation: "tree", copy: treeCopyId }))}
-    onClick={() => onRunCommand("files", JSON.stringify({ operation: "tree", copy: treeCopyId }))}
-  >Files</Button>
+const FilesAction = ({ repo, treeCopyId, onRunCommand }: Pick<RepositoryHomeViewProps, "repo" | "treeCopyId" | "onRunCommand">) => {
+  const collection = useContext(ControllerContext)?.store?.collections.repoTree
+  const subscribe = useCallback((notify: () => void) => {
+    const subscription = collection?.subscribeChanges(notify)
+    return () => subscription?.unsubscribe()
+  }, [collection])
+  const read = () => treeCopyId === undefined ? undefined : collection?.get(repoTreeRowId(treeCopyId, ""))
+  const row = useSyncExternalStore(subscribe, read, read)
+  if (treeCopyId === undefined) return null
+  return <>
+    {row?.state === "loaded" ? <h2 className="repository-home-files">Files</h2> : <Button variant="outline" className="repository-home-files"
+      {...dynamicFlowProps("files", JSON.stringify({ operation: "tree", copy: treeCopyId }))}
+      onClick={() => onRunCommand("files", JSON.stringify({ operation: "tree", copy: treeCopyId }))}>Files</Button>}
+    {row?.state === "loaded" ? <FileListCardBody card={{
+      id: `home-files:${treeCopyId}`, kind: "file-list", title: "Files", status: "active", createdAt: row.loadedAt, ordinal: 0,
+      payload: { repo, path: "", entries: row.entries, truncated: row.truncated }
+    }} onRunCommand={onRunCommand} /> : row?.state === "failed" ? <FailureNotice
+      failure={unavailableFailure("RepositoryFilesUnavailable", "Files unavailable", row.error ?? "Files unavailable")} /> : null}
+  </>
+}
 
 /**
  * Declared blocks, drawn from data: a repository's homepage, or a flow's own
@@ -174,8 +190,9 @@ const FilesAction = ({ treeCopyId, onRunCommand }: Pick<RepositoryHomeViewProps,
  * reaches here: the repository-flows seam draws the named flow's blocks in
  * its place (`resolveFlowViews`).
  */
-const DeclaredBlocks = ({ repo, blocks, onRunCommand }: {
+const DeclaredBlocks = ({ repo, blocks, onRunCommand, showApps = true }: {
   readonly repo: string
+  readonly showApps?: boolean
   readonly blocks: ReadonlyArray<Extract<RepositoryHome, { kind: "blocks" }>["blocks"][number]> | FlowView
   readonly onRunCommand: RunDynamicCommand
 }) => <>
@@ -208,7 +225,7 @@ const DeclaredBlocks = ({ repo, blocks, onRunCommand }: {
        * through the registry, where its actor, role and confirmation live.
        */
       case "app":
-        return <Button variant="outline" className="repository-home-app" key={key}
+        return !showApps ? null : <Button variant="outline" className="repository-home-app" key={key}
           {...dynamicFlowProps(block.flow)} onClick={() => onRunCommand(block.flow)}>{block.title}</Button>
       case "prompt":
         return <div className="repository-home-block" key={key}>
@@ -232,12 +249,19 @@ const DeclaredBlocks = ({ repo, blocks, onRunCommand }: {
  * (the tree is then the view, as it always was).
  */
 export function RepositoryHomeView({ repo, home, treeCopyId, onRunCommand }: RepositoryHomeViewProps) {
+  const identity = useContext(ControllerContext)?.store?.collections.identitySessions
+  const subscribe = useCallback((notify: () => void) => {
+    const subscription = identity?.subscribeChanges(notify)
+    return () => subscription?.unsubscribe()
+  }, [identity])
+  const readSignedIn = () => identity?.get("identity")?.state === "signed-in"
+  const signedIn = useSyncExternalStore(subscribe, readSignedIn, readSignedIn)
   if (home === undefined || home.kind === "none") return null
   if (home.kind === "error") {
     return <section className="repository-home" data-testid="repository-home" data-home="error" aria-label={`${repo} home`}>
       {/* What failed, in the seam's words; the tree below is untouched. */}
       <p className="repository-home-notice" role="status">{`${home.message}. Showing ${repo}'s files instead.`}</p>
-      <FilesAction treeCopyId={treeCopyId} onRunCommand={onRunCommand} />
+      <FilesAction repo={repo} treeCopyId={treeCopyId} onRunCommand={onRunCommand} />
     </section>
   }
   const blocks = home.kind === "readme"
@@ -245,8 +269,8 @@ export function RepositoryHomeView({ repo, home, treeCopyId, onRunCommand }: Rep
     : home.blocks
   if (blocks.length === 0) return null
   return <section className="repository-home" data-testid="repository-home" data-home={home.kind} aria-label={`${repo} home`}>
-    <DeclaredBlocks repo={repo} blocks={blocks} onRunCommand={onRunCommand} />
-    <FilesAction treeCopyId={treeCopyId} onRunCommand={onRunCommand} />
+    <DeclaredBlocks repo={repo} blocks={blocks} onRunCommand={onRunCommand} showApps={signedIn} />
+    <FilesAction repo={repo} treeCopyId={treeCopyId} onRunCommand={onRunCommand} />
   </section>
 }
 

@@ -2,8 +2,29 @@
   "blocks": [
     {
       "type": "prompt",
-      "title": "What should we work on?",
-      "placeholder": "Ask Smithers…"
+      "placeholder": "Ask Smithers"
+    },
+    {
+      "type": "links",
+      "links": [
+        {
+          "label": "Docs",
+          "url": "https://smithers.sh/docs/installation/"
+        },
+        {
+          "label": "Report a bug",
+          "url": "https://github.com/smithersai/smithers/issues/new/choose"
+        },
+        {
+          "label": "Source on GitHub",
+          "url": "https://github.com/smithersai/smithers"
+        }
+      ]
+    },
+    {
+      "type": "markdown",
+      "path": "docs/fixed-by-agents.md",
+      "title": "Fixed by agents"
     },
     {
       "type": "app",
