@@ -24,7 +24,7 @@ const runtime = new Miniflare(convertV4MiniflareOptions({
 let browser
 try {
   const address = await runtime.ready
-  browser = await chromium.launch({ headless: true, executablePath: process.platform === "darwin" ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : undefined,
+  browser = await chromium.launch({ headless: true, executablePath: process.platform === "darwin" ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : process.env.CHROME_BIN || undefined,
     args: ["--no-proxy-server", "--host-resolver-rules=MAP smithers.test 127.0.0.1, MAP attacker.smithers.test 127.0.0.1"] })
   const context = await browser.newContext({ ignoreHTTPSErrors: true })
   const page = await context.newPage()

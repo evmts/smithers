@@ -3,13 +3,13 @@
   "producer": null,
   "output": {
     "path": "apps/server/docs/host-cookie-isolation.md",
-    "digest": "7708ee37213468a44f453acafd664c8d6f745d34bd72d28d05dd9388ec1cd877"
+    "digest": "cb4824053fbe9cacd9f438f28b9e578a6015824f97e1364e417ccb793740849e"
   },
-  "closure": "3c5b1aa28e89f23d067c2af59e4b15afa97bc7868628d60319cba7358f81a115",
+  "closure": "e3c848ea2091b71996ed4e43b6aea04d64ae63ef4c91ed2ae133cfdf8499e4fe",
   "inputs": [
     {
       "path": "apps/server/scripts/cutover/host-cookie-workerd.mjs",
-      "digest": "4d3473d4a2abb496103cab39f7c4609b26cf92a923ab9bf48ae9b767750b07e5"
+      "digest": "443d7e5b52bd871039fe93b27f0fc80908701e7b257f4cc340a2e064a35cbee3"
     },
     {
       "path": "packages/backend/internal/config/browser_cookies.go",
@@ -29,7 +29,7 @@
     },
     {
       "path": "packages/rpc/src/ApplicationAuth.ts",
-      "digest": "fe662508cee074956db63406832ca5f2896b32e94a10b5b652a8032a2546d69a"
+      "digest": "c8f7721063d4e18c7da0c396b49c5c0673ae8f6eae6c3673a4076cc5098164d4"
     }
   ]
 }

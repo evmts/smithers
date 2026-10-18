@@ -30,7 +30,9 @@ pnpm --filter smithers-app typecheck
 ```
 
 On a Mac, start a bounded `caffeinate` before browser verification. The test uses
-headless Chrome and never opens Arc.
+headless Chrome and never opens Arc. On Linux it launches `$CHROME_BIN` when set,
+which GitHub's Ubuntu runners point at Google Chrome; otherwise it uses
+Playwright's own Chromium.
 
 ## DRI cutover and rollback
 
