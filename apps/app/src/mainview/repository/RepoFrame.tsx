@@ -13,7 +13,7 @@ const tabs = [
 
 /** Repository route shell. `children` is the plain content slot shared by repo views. */
 export function RepoFrame({ repo, login, publicRepo, ask, onAsk, onSignIn, children }: {
-  repo: string; member?: boolean; login?: string; publicRepo?: boolean
+  repo: string; login?: string; publicRepo?: boolean
   ask: ReactNode | ((visible: boolean) => ReactNode); onAsk: () => void; onSignIn: () => void; children: ReactNode
 }) {
   const frame = useRef<HTMLDivElement>(null)

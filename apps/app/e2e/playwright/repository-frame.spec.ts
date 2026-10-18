@@ -109,6 +109,8 @@ for (const member of [false, true]) for (const width of [1440, 1280, 390]) for (
       await page.getByRole("button", { name: "Ask", exact: true }).click()
       await expect(page.getByRole("complementary", { name: "Ask", exact: true })).toBeVisible()
       await expect(page.getByRole("complementary", { name: "Ask", exact: true }).getByTestId("composer-input")).toBeVisible()
+      expect(await page.locator(".repo-code-home-main").evaluate(element => element.getBoundingClientRect().width)).toBe(
+        await page.locator(".repo-code-home-layout").evaluate(element => element.getBoundingClientRect().width))
       await page.getByTestId("composer-input").focus()
       await page.keyboard.press("Escape")
       await expect(page.getByRole("complementary", { name: "Ask", exact: true })).toBeVisible()
