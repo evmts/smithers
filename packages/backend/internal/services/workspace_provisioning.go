@@ -17,6 +17,7 @@ import (
 	"sync"
 	"text/template"
 	"time"
+	"unicode/utf8"
 
 	"github.com/smithersai/smithers/packages/backend/runtimeports"
 
@@ -1242,6 +1243,41 @@ func workspaceFailureDetailsFor(cause error) workspaceFailureDetails {
 	return details
 }
 
+// workspaceStartFailureBytes bounds the sentence a failed start records.
+const workspaceStartFailureBytes = 1000
+
+// workspaceStartFailureDetails is the verdict a failed start records on its
+// row: the cause's code and sentence, credentials masked, bounded.
+func workspaceStartFailureDetails(cause error) workspaceFailureDetails {
+	details := workspaceFailureDetailsFor(cause)
+	message := strings.ToValidUTF8(maskWorkspaceFailureText(details.Message), "")
+	if len(message) > workspaceStartFailureBytes {
+		cut := workspaceStartFailureBytes
+		for cut > 0 && !utf8.RuneStart(message[cut]) {
+			cut--
+		}
+		message = message[:cut] + "…"
+	}
+	if strings.TrimSpace(message) == "" {
+		message = "workspace provisioning failed"
+	}
+	details.Message = message
+	return details
+}
+
+// logWorkspaceStartFailure is the one structured record of why a start
+// failed, written before the row is failed and the guest reaped: the reap can
+// time out and the controller can drop its own record of the guest, so this
+// line and the row are what remain (deep canary workspace 6437d2a2,
+// 2026-10-18).
+func logWorkspaceStartFailure(row db.Workspace, stage string, failure workspaceFailureDetails) {
+	if strings.TrimSpace(stage) == "" {
+		stage = "provision"
+	}
+	slog.Error("workspace start failed", "workspace_id", row.ID, "vm_id", row.VmID, "stage", stage,
+		"failure_code", string(failure.Code), "error", failure.Message)
+}
+
 // workspaceProvisioningError turns a provisioning cause into the answer the
 // caller gets.
 //
@@ -1446,8 +1482,13 @@ func (s *WorkspaceService) markWorkspaceProvisionFailed(ctx context.Context, wor
 	updateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 
-	failure := workspaceFailureDetailsFor(cause)
+	failure := workspaceStartFailureDetails(cause)
 	_, transitioned, err := s.failProvisioningWorkspaceIfCurrent(updateCtx, workspace, failure)
+	if transitioned || err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		// This call is the one recording the failure; a row another writer
+		// already failed keeps that writer's record.
+		logWorkspaceStartFailure(workspace, workspace.ProvisioningStage, failure)
+	}
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		// Two finite reasons, kept apart, and neither sentence published: the
 		// store's refusal and the provisioning cause it was trying to record.
