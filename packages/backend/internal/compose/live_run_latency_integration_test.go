@@ -14,6 +14,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
+	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/jobs"
 	"github.com/stretchr/testify/require"
 )
@@ -87,7 +88,7 @@ func liveJournalLatency(t *testing.T) (string, error) {
 	if _, err := f.pool.Exec(t.Context(), `UPDATE product_job_dispatches SET external_receipt=$2 WHERE operation_id=$1`, receipt.OperationID, checkpoint); err != nil {
 		return "", err
 	}
-	browser := exec.CommandContext(t.Context(), "bun", "testdata/live/journal-latency-client.mjs", f.origin, f.cookie, host.Origin, host.RunID)
+	browser := exec.CommandContext(t.Context(), "bun", "testdata/live/journal-latency-client.mjs", f.origin, config.LocalSessionCookieName+"="+f.cookie, host.Origin, host.RunID)
 	result, err := browser.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("browser latency: %w: %s", err, result)

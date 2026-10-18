@@ -5,7 +5,7 @@ const samples = []
 let expected = 0, committedAt, ready = false, observed
 const deadline = setTimeout(() => { console.error("journal latency timed out"); process.exit(1) }, 60000)
 const channel = new LiveChannel({ socket: () => new WebSocket(origin.replace("http:", "ws:") + "/api/live", {
-  headers: { Cookie: "session=" + cookie, Origin: origin, "Sec-WebSocket-Protocol": "smithers.live.v1" }
+  headers: { Cookie: cookie, Origin: origin, "Sec-WebSocket-Protocol": "smithers.live.v1" }
 }) })
 channel.registerProjection(topic, (_, delta) => delta)
 async function append() {

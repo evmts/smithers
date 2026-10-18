@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/smithersai/smithers/packages/backend/internal/config"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +26,8 @@ func proveTerminalPersonCommand(t *testing.T, f presenceInstallFixture, origin, 
 		request.Header.Set("X-CSRF-Token", "csrf")
 		request.Header.Set("Idempotency-Key", key)
 		if cookie != "" {
-			request.Header.Set("Cookie", "session="+cookie+"; smithers_local_csrf=csrf")
+			request.AddCookie(&http.Cookie{Name: config.LocalSessionCookieName, Value: cookie})
+			request.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 		}
 		if bearer != "" {
 			request.Header.Set("Authorization", "Bearer "+bearer)
