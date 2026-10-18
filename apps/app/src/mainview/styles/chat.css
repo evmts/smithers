@@ -279,7 +279,15 @@
 	display: flex;
 	align-items: flex-start;
 	padding-top: max(24px, env(safe-area-inset-top));
+	-webkit-backdrop-filter: blur(1px);
+	backdrop-filter: blur(1px);
 }
+
+@media (prefers-reduced-transparency: reduce) {
+	.composer-overlay {
+		-webkit-backdrop-filter: none;
+		backdrop-filter: none;
+	}}
 
 .composer-overlay[hidden] {
 	display: none;
