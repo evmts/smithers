@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { answerChallenge, base64url, canonicalJson, assertionEvidence, signingProperty } from "./AnswerSigning"
+import { answerChallenge, base64url, canonicalJson, assertionEvidence, signingProperty, signAnswer } from "./AnswerSigning"
 
 test("canonical JSON sorts nested keys and preserves arrays", () => {
   expect(canonicalJson({ z: [{ b: 2, a: "é" }], a: null })).toBe('{"a":null,"z":[{"a":"é","b":2}]}')
@@ -25,5 +25,35 @@ test("challenge changes with every bound component", async () => {
   const baseline = base64url(await answerChallenge(...input))
   for (const args of [ ["other", "wait", { text: "yes" }, "time"], ["run", "other", { text: "yes" }, "time"], ["run", "wait", { text: "no" }, "time"], ["run", "wait", { text: "yes" }, "later"] ] as const) {
     expect(base64url(await answerChallenge(...args))).not.toBe(baseline)
+  }
+})
+
+
+test("signing replaces supplied evidence and requires user verification on the page hostname", async () => {
+  const original = new Map(["location", "isSecureContext", "navigator"].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
+  const bytes = new Uint8Array([1, 2, 3]).buffer
+  let options: CredentialRequestOptions | undefined
+  try {
+    Object.defineProperty(globalThis, "location", { configurable: true, value: { hostname: "localhost", port: "1234", protocol: "http:" } })
+    Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: true })
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { credentials: { get: async (input: CredentialRequestOptions) => {
+      options = input
+      return { rawId: bytes, response: { clientDataJSON: bytes, authenticatorData: bytes, signature: bytes, userHandle: bytes } }
+    } } } })
+    const signed = await signAnswer({ text: "yes", evidence: "forged" }, "evidence", "run", "wait")
+    expect(signed.text).toBe("yes")
+    expect(signed.evidence).toMatchObject({ kind: "webauthn", userHandle: "AQID" })
+    expect(options?.publicKey?.rpId).toBe("localhost")
+    expect(options?.publicKey?.userVerification).toBe("required")
+    expect(options?.publicKey?.challenge).toEqual(await answerChallenge("run", "wait", { text: "yes" }, (signed.evidence as { issuedAt: string }).issuedAt))
+    await expect(signAnswer([], "evidence", "run", "wait")).rejects.toThrow("JSON object")
+    await expect(signAnswer({}, "evidence", undefined, "wait")).rejects.toThrow("current question")
+    Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: false })
+    await expect(signAnswer({}, "evidence", "run", "wait")).rejects.toThrow("Signing needs http://localhost:1234")
+  } finally {
+    for (const [key, descriptor] of original) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor)
+      else Reflect.deleteProperty(globalThis, key)
+    }
   }
 })
