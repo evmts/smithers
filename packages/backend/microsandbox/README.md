@@ -107,8 +107,11 @@ Egress-bound secrets (`workspace.WorkspaceEgressSecrets`) go through the
 backend's `egressrelay`, whose loopback port joins the bridged ports. A
 binding gives the guest the relay's public CA (in the state directory) and a
 proxy environment holding each secret's placeholder and a revocable relay
-credential; the relay substitutes values only toward the bound hosts and
-masks them out of responses. Stop and delete revoke the binding. A machine
+credential. The relay substitutes a value only toward the bound hosts and
+only where its placeholder stands whole (a header token, path segment or
+query value); it refuses a placeholder embedded in a larger token. It masks
+each value, and every run of 8 or more of its bytes, out of responses. Stop
+and delete revoke the binding. A machine
 built before the relay route refuses bindings until its disk is reclaimed.
 
 ## Machine limits

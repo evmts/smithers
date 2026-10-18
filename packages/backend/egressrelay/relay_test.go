@@ -312,12 +312,19 @@ func TestMaskingBodyNeverLeaksASplitValue(t *testing.T) {
 		"prefix of another":    {"tok", "tok-extended-secret"},
 		"extension first":      {"tok-extended-secret", "tok"},
 		"escaped forms differ": {"a b/c+d", "q"},
+		"long escaped value":   {"fake/key+0123456789 abcdefghij", "tok"},
 	} {
 		bound := liveBinding(t, values...)
 		var input strings.Builder
-		for index, value := range values {
+		for _, value := range values {
 			input.WriteString("x" + value + value[:len(value)/2] + value + "y" + url.QueryEscape(value) + url.PathEscape(value))
-			_ = index
+			// Echoed fragments: a middle run, an escaped run, and a
+			// truncated prefix and suffix as a provider's error prints them.
+			if len(value) > 2*fragmentMin {
+				escaped := url.QueryEscape(value)
+				input.WriteString(" m:" + value[3:3+fragmentMin+2] + " e:" + escaped[len(escaped)-fragmentMin-1:] +
+					" p:" + value[:fragmentMin] + "***" + value[len(value)-4:])
+			}
 		}
 		for _, reader := range map[string]func(io.Reader) io.Reader{
 			"one byte": iotest.OneByteReader, "half": iotest.HalfReader, "whole": func(r io.Reader) io.Reader { return r },
@@ -327,16 +334,18 @@ func TestMaskingBodyNeverLeaksASplitValue(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, bound.mask(input.String()), string(out), name)
 			assertNoForm(t, string(out), values, name)
+			assertNoRun(t, string(out), bound, name)
 		}
 		// The upstream pauses after every possible byte: what the guest has
-		// by then holds no value, and the relay keeps back only bytes that
-		// begin a value form, so they may yet complete one (#4251).
+		// by then holds no value or run of one, and the relay keeps back
+		// only bytes that may begin one, so they may yet complete it (#4251).
 		whole := input.String()
 		for cut := 1; cut < len(whole); cut++ {
 			body := &maskingBody{source: io.NopCloser(&pausingReader{steps: []string{whole[:cut], pause, whole[cut:]}}), bound: bound}
 			before := readUntilPause(t, body)
 			assertNoForm(t, before, values, name)
-			assert.True(t, beginsAForm(bound, body.pending), "%s: cut %d held back %q, which begins no value form", name, cut, body.pending)
+			assertNoRun(t, before, bound, name)
+			assert.True(t, mayBeHeld(bound, body.pending), "%s: cut %d held back %q, which begins no value form or run", name, cut, body.pending)
 			assert.Equal(t, bound.mask(whole), before+readUntilPause(t, body), "%s: cut %d", name, cut)
 		}
 	}
@@ -351,15 +360,40 @@ func assertNoForm(t *testing.T, out string, values []string, name string) {
 	}
 }
 
-// beginsAForm reports whether held is empty or a proper prefix of a value
-// form, the only bytes the relay may keep from the guest between reads.
-func beginsAForm(bound *binding, held []byte) bool {
+// assertNoRun fails when out holds fragmentMin or more bytes of any value
+// form.
+func assertNoRun(t *testing.T, out string, bound *binding, name string) {
+	t.Helper()
+	for _, candidate := range bound.masks {
+		for offset := 0; offset+fragmentMin <= len(candidate.value); offset++ {
+			assert.NotContains(t, out, candidate.value[offset:offset+fragmentMin], name)
+		}
+	}
+}
+
+// mayBeHeld reports whether more bytes could still turn held into masked
+// bytes: held is empty, a run that a value form continues past, fewer than
+// fragmentMin bytes from where a form still has room for a run, or a proper
+// prefix of a form shorter than a run. Only such bytes may wait between reads.
+func mayBeHeld(bound *binding, held []byte) bool {
 	if len(held) == 0 {
 		return true
 	}
 	for _, candidate := range bound.masks {
-		if len(held) < len(candidate.value) && strings.HasPrefix(candidate.value, string(held)) {
-			return true
+		form := candidate.value
+		if len(form) < fragmentMin {
+			if len(held) < len(form) && strings.HasPrefix(form, string(held)) {
+				return true
+			}
+			continue
+		}
+		for at := 0; at+len(held) <= len(form); at++ {
+			if form[at:at+len(held)] != string(held) {
+				continue
+			}
+			if len(held) >= fragmentMin && at+len(held) < len(form) || len(held) < fragmentMin && at+fragmentMin <= len(form) {
+				return true
+			}
 		}
 	}
 	return false
@@ -405,8 +439,9 @@ func readUntilPause(t *testing.T, body io.Reader) string {
 }
 
 // A streamed response reaches the guest as the upstream sends it: an event
-// is not held for the next one, and only bytes that could begin a value wait
-// to see whether they complete it (#4251).
+// is not held for the next one, and only bytes that could begin a value, or
+// a run of fragmentMin bytes of one, wait to see whether they complete it
+// (#4251).
 func TestMaskingBodyStreamsBytesThatCannotBeginAValue(t *testing.T) {
 	bound := liveBinding(t, testValue)
 	placeholder := sandbox.EgressProxyPlaceholder("A")
@@ -423,8 +458,14 @@ func TestMaskingBodyStreamsBytesThatCannotBeginAValue(t *testing.T) {
 			[]string{"k=", placeholder + "&"}},
 		"a prefix of the path form": {[]string{"/p/" + path[:20], pause, path[20:] + "/x", pause},
 			[]string{"/p/", placeholder + "/x"}},
-		"a prefix that is not the value": {[]string{"x " + testValue[:4], pause, "ew", pause},
-			[]string{"x ", testValue[:4] + "ew"}},
+		"a prefix that is not the value": {[]string{"x " + testValue[:4], pause, "ex", pause},
+			[]string{"x ", testValue[:4] + "ex"}},
+		"bytes that may begin a run": {[]string{"tail with", pause, "out\n", pause},
+			[]string{"tail ", "without\n"}},
+		"a run split across reads": {[]string{"k: " + testValue[3:9], pause, testValue[9:14] + "\n", pause},
+			[]string{"k: ", placeholder + "\n"}},
+		"a part shorter than a run": {[]string{"k: " + testValue[3:3+fragmentMin-1] + "!\n", pause},
+			[]string{"k: " + testValue[3:3+fragmentMin-1] + "!\n"}},
 		"a prefix at the end of the body": {[]string{"tail " + testValue[:4]}, []string{"tail " + testValue[:4]}},
 	} {
 		body := &maskingBody{source: io.NopCloser(&pausingReader{steps: test.steps}), bound: bound}
@@ -513,7 +554,8 @@ func TestMaskingBodyIsLinearInTheBody(t *testing.T) {
 	assert.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(32*size), "masking a 1 MiB body allocated quadratically")
 
 	// An upstream that sends a byte at a time, each byte possibly beginning
-	// the value, costs a bounded amount per read.
+	// the value, costs a bounded amount per read. Each value prefix is a run
+	// of the value, so it is masked.
 	const small = 64 << 10
 	input = strings.Repeat(testValue[:len(testValue)-1]+"!", small/len(testValue))
 	runtime.ReadMemStats(&before)
@@ -521,7 +563,7 @@ func TestMaskingBodyIsLinearInTheBody(t *testing.T) {
 	out, err = io.ReadAll(body)
 	runtime.ReadMemStats(&after)
 	require.NoError(t, err)
-	assert.Equal(t, input, string(out))
+	assert.Equal(t, strings.Repeat(sandbox.EgressProxyPlaceholder("A")+"!", small/len(testValue)), string(out))
 	assert.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(256*small), "masking one byte at a time allocated per read beyond the held bytes")
 }
 
