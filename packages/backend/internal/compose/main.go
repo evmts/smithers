@@ -1544,10 +1544,11 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		AuditService: auditService,
 		SSHHost:      cfg.Server.SSHHost,
 	}
+	landingGitHubPull := services.NewLandingGitHubPullService(landingService, queries, repoConnectionService, gitHubUserReposService, publicBaseURL, repoConnectionService)
 	landingHandler := &routes.LandingHandler{
 		Service: landingService,
 		// A send-upstream repository delivers a landing as a GitHub pull request.
-		GitHubPull: services.NewLandingGitHubPullService(landingService, queries, repoConnectionService, gitHubUserReposService, publicBaseURL, repoConnectionService),
+		GitHubPull: landingGitHubPull,
 	}
 	var buildCacheOptions []func(*services.BuildCacheService)
 	if config.IsSingleOwner(cfg.Auth) {
@@ -1666,6 +1667,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		egressAuditService = services.NewSandboxEgressAuditService(runtimeStores.EgressAudit)
 	}
 	agentSessionHandler := &routes.AgentSessionHandler{
+		Landing:     services.NewAgentSessionLandingService(agentService, landingGitHubPull, pool),
 		Service:     agentService,
 		EgressAudit: egressAuditService,
 	}

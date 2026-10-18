@@ -435,6 +435,7 @@
   {"id":"get_api_repos_owner_repo_workspaces_id_children","method":"GET","path":"/api/repos/{owner}/{repo}/workspaces/{id}/children"},
   {"id":"post_api_repos_owner_repo_workspaces_id_children","method":"POST","path":"/api/repos/{owner}/{repo}/workspaces/{id}/children"},
   {"id":"post_api_repos_owner_repo_workspaces_id_children_child_id_stop","method":"POST","path":"/api/repos/{owner}/{repo}/workspaces/{id}/children/{child_id}/stop"},
+  {"id":"post_api_repos_owner_repo_agent_sessions_session_id_landing","method":"POST","path":"/api/repos/{owner}/{repo}/agent/sessions/{session_id}/landing"},
   {"id":"delete_api_repo_connection","method":"DELETE","path":"/api/repo-connection"},
   {"id":"get_api_repo_connection","method":"GET","path":"/api/repo-connection"},
   {"id":"post_api_repo_connection","method":"POST","path":"/api/repo-connection"},

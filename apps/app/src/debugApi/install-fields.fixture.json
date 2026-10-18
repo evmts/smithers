@@ -435,6 +435,7 @@
   {"id":"get_api_repos_owner_repo_workspaces_id_children","fields":[{"name":"path:owner","label":"owner","required":true,"kind":"text"},{"name":"path:repo","label":"repo","required":true,"kind":"text"},{"name":"path:id","label":"id","required":true,"kind":"text"}]},
   {"id":"post_api_repos_owner_repo_workspaces_id_children","fields":[{"name":"path:owner","label":"owner","required":true,"kind":"text"},{"name":"path:repo","label":"repo","required":true,"kind":"text"},{"name":"path:id","label":"id","required":true,"kind":"text"},{"name":"body","label":"JSON","kind":"text","multiline":true,"required":true}]},
   {"id":"post_api_repos_owner_repo_workspaces_id_children_child_id_stop","fields":[{"name":"path:owner","label":"owner","required":true,"kind":"text"},{"name":"path:repo","label":"repo","required":true,"kind":"text"},{"name":"path:id","label":"id","required":true,"kind":"text"},{"name":"path:child_id","label":"child_id","required":true,"kind":"text"}]},
+  {"id":"post_api_repos_owner_repo_agent_sessions_session_id_landing","fields":[{"name":"path:owner","label":"owner","required":true,"kind":"text"},{"name":"path:repo","label":"repo","required":true,"kind":"text"},{"name":"path:session_id","label":"session_id","required":true,"kind":"text"},{"name":"body","label":"JSON","kind":"text","multiline":true,"required":true}]},
   {"id":"delete_api_repo_connection","fields":[]},
   {"id":"get_api_repo_connection","fields":[]},
   {"id":"post_api_repo_connection","fields":[]},

@@ -1068,6 +1068,7 @@ func buildRouter(
 		r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
 		r.Use(middleware.JSONAllowContentType("application/json", routes.LFSJSONMediaType))
 		r.Use(middleware.MaxBodySizeForRequest(apiBodyLimit))
+		r.Use(routes.PullPublicationAgentCredentialFirst(config.IsMultitenant(cfg.Auth)))
 		// Global API rate limit: 5000/hr auth, 600/hr anon. AuthLoader runs first
 		// so user context is available for limit selection. Search routes excluded
 		// (they have their own SearchRateLimit). The worker token-exchange is
@@ -1466,6 +1467,11 @@ func buildRouter(
 				// A merge's credential is refused before the repository is
 				// resolved, as the numbered door refuses it.
 				r.Use(routes.MergeCredentialFirst)
+				if config.IsMultitenant(cfg.Auth) {
+					r.Use(routes.HostedPullPublicationCredentialFirst)
+					r.Use(routes.HostedSessionLandingOrigin(allowedOrigins))
+				}
+				r.Use(routes.SessionLandingCredentialFirst)
 				if queries != nil {
 					r.Use(middleware.LoadRepoContext(queries))
 				}
@@ -1800,6 +1806,8 @@ func buildRouter(
 					r.With(append(writeRepo, gateAgents)...).Post("/agent/sessions", agentSessionHandler.CreateSession)
 					r.With(append(readRepo, gateAgents)...).Get("/agent/sessions", agentSessionHandler.ListSessions)
 					r.With(append(readRepo, gateAgents)...).Get("/agent/sessions/{id}", agentSessionHandler.GetSession)
+					sessionLandingRepo := []func(http.Handler) http.Handler{middleware.RequireScope(middleware.ScopeWriteRepository), repoAPIQuota}
+					r.With(append(sessionLandingRepo, gateAgents)...).Post("/agent/sessions/{session_id}/landing", agentSessionHandler.OpenLanding)
 					if config.IsMultitenant(cfg.Auth) {
 						r.With(append(readRepo, gateAgents)...).Get("/agent-sessions/{id}/egress", agentSessionHandler.ListEgressAudit)
 					}
