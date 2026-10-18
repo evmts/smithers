@@ -3,6 +3,8 @@
  * call is needed; the publishing origin pins the operator's public key.
  * @since 0.1.0
  */
+import { digestSync } from "@smthrs/crypto"
+import { secureSubtle } from "./SecureSubtle"
 
 /** Fields authenticated by a converter receipt.
  * @category models
@@ -40,10 +42,12 @@ export const verifyConversionReceipt = async (input: string, output: string, res
       ![receipt.compilerDigest, receipt.dependenciesDigest].every(value => /^(sha256:)?[a-f0-9]{64}$/.test(value))) return false
     const encode = (value: string) => new TextEncoder().encode(value)
     if ([input, output].some(value => new TextDecoder().decode(encode(value)) !== value)) return false
-    const hash = async (value: string) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", encode(value)))].map(byte => byte.toString(16).padStart(2, "0")).join("")
-    if (await hash(input) !== receipt.inputSha || await hash(output) !== receipt.outputSha) return false
+    if (digestSync(encode(input)) !== receipt.inputSha || digestSync(encode(output)) !== receipt.outputSha) return false
+    // Ed25519 needs SubtleCrypto, which a plain-HTTP install lacks: the share then reads as unverified.
+    const subtle = secureSubtle()
+    if (subtle === null) return false
     const decode = (value: string) => Uint8Array.from(atob(value), character => character.charCodeAt(0))
-    const key = await crypto.subtle.importKey("raw", decode(publicKey), "Ed25519", false, ["verify"])
-    return await crypto.subtle.verify("Ed25519", key, decode(receipt.signature), encode(conversionReceiptMessage(result)))
+    const key = await subtle.importKey("raw", decode(publicKey), "Ed25519", false, ["verify"])
+    return await subtle.verify("Ed25519", key, decode(receipt.signature), encode(conversionReceiptMessage(result)))
   } catch { return false }
 }
