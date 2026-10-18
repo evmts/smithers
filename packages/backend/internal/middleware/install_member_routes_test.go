@@ -253,6 +253,8 @@ func TestInstallMemberCommandRoutes(t *testing.T) {
 		{http.MethodGet, "/api/repos/local-owner/demo/contents/README.md", "repo.read"},
 		{http.MethodGet, "/api/repos/local-owner/demo/contents", "repo.read"},
 		{http.MethodGet, "/api/repos/local-owner/demo/git/refs", "repo.read"},
+		{http.MethodGet, "/api/repos/local-owner/demo/github/metadata/pulls/7/comments", "repo.read"},
+		{http.MethodPost, "/api/repos/local-owner/demo/github/metadata/issues", ""},
 		{http.MethodGet, "/api/repos/local-owner/demo/workspaces/branch-id", "branch.read"},
 		{http.MethodPost, "/api/repos/local-owner/demo/contents/README.md", ""},
 		{http.MethodDelete, "/api/repos/local-owner/demo/git/refs", ""},

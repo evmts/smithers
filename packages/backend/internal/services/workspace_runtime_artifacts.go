@@ -63,7 +63,9 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceArtifacts(ctx context.Context, 
 	if err != nil {
 		return err
 	}
-	bootstrapCtx, cancel = context.WithTimeout(bootstrapCtx, workspaceResumeProvisionTimeout)
+	// The deferred cleanup above calls cancel on every path.
+	timed, stop := context.WithTimeout(bootstrapCtx, workspaceResumeProvisionTimeout)
+	bootstrapCtx, cancel = timed, stop
 	diagnosticCtx = bootstrapCtx
 	command := workspaceRuntimeCLIProbe(layout)
 	// A healthy running guest keeps its installed release. API deploys must
