@@ -281,6 +281,8 @@ pending approvals but refuses approval and denial decisions.
 
 ## Next steps
 
+[Change your code with a flow](./guides/change-code.md), review the diff, and commit and push it yourself.
+
 - [Script the CLI](./guides/script-the-cli.md): `--json`, exit codes, and the
   idempotency keys that make a retried command safe.
 - [Diagnose a run](./guides/diagnose-a-run.md): what `status`, `logs`, and

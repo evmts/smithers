@@ -184,6 +184,8 @@ embeds the command tree adds no further packages. See
 
 ## Next step
 
+[Change your code with a flow](./guides/change-code.md), review the diff, and commit and push it yourself.
+
 Run one project from `init` to a settled run in the [Quickstart](./quickstart.md).
 
 ## Agent skill
