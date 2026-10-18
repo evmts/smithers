@@ -1,0 +1,231 @@
+.repo-history-page {
+  min-width: 0;
+}
+
+.repo-history-page :is(button, a, input, select, summary):focus-visible,
+.repo-history-dialog :is(button, a, input, select):focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 3px;
+}
+
+.repo-history-page button:disabled {
+  opacity: .48;
+  cursor: not-allowed;
+}
+
+.repo-history-stack {
+  display: grid;
+  gap: var(--sp-5);
+  min-width: 0;
+}
+
+.repo-history-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.repo-history-heading {
+  font-size: var(--fs-5);
+  font-weight: 500;
+}
+
+.repo-history-spacer {
+  flex: 1;
+}
+
+.repo-history-muted {
+  color: var(--text-muted);
+  font-size: var(--fs-2);
+}
+
+.repo-history-path {
+  font-size: var(--fs-2);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.repo-history-path a {
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+
+.repo-history-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.repo-history-filters .repo-history-chip {
+  height: var(--ctl-h);
+  min-height: var(--ctl-h);
+  padding: 0 12px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-2);
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.repo-history-chip:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.repo-history-filters .repo-history-chip[aria-pressed="true"] {
+  background: var(--brand-soft);
+  color: var(--brand);
+  border-color: var(--brand-border);
+}
+
+.repo-history-agent-filter {
+  margin-left: auto;
+}
+
+.repo-history-filters .repo-history-agent-filter[aria-pressed="true"] {
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+
+.repo-history-days {
+  display: grid;
+  gap: var(--sp-5);
+}
+
+.repo-history-day {
+  position: relative;
+  padding-left: 29px;
+}
+
+.repo-history-day::before {
+  position: absolute;
+  content: "";
+  left: 7px;
+  top: 28px;
+  bottom: -22px;
+  width: 1px;
+  background: var(--border);
+}
+
+.repo-history-day:last-child::before {
+  bottom: 0;
+}
+
+.repo-history-day h2 {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 11px -29px;
+  color: var(--text-muted);
+  font-size: var(--fs-2);
+  font-weight: 400;
+}
+
+.repo-history-day h2 svg {
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+.repo-history-commit-row {
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.repo-history-commit-row:hover {
+  background: var(--surface-2);
+}
+
+.repo-history-commit-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.repo-history-commit-title {
+  color: var(--text);
+  font-size: var(--fs-3);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.repo-history-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-1);
+}
+
+.repo-history-meta .repo-ui-person {
+  font-size: var(--fs-1);
+}
+
+.repo-history-meta .repo-ui-avatar {
+  width: 21px;
+  height: 21px;
+  font-size: 9px;
+}
+
+.repo-history-meta .repo-ui-agent-harness {
+  display: none;
+}
+
+.repo-history-commit-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  justify-content: end;
+}
+
+.repo-history-commit-actions .repo-ui-copy {
+  width: 30px;
+  overflow: hidden;
+  padding-inline: 8px;
+  font-size: 0;
+}
+
+.repo-history-commit-actions .repo-ui-copy svg {
+  flex: 0 0 auto;
+}
+
+.repo-history-check-summary {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+}
+
+.repo-history-verified {
+  color: var(--success);
+  border: 1px solid var(--border);
+  border-radius: var(--r-2);
+  font-size: var(--fs-1);
+  padding: 2px 7px;
+}
+
+.repo-history-sha {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2);
+}
+
+.repo-history-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  padding: var(--sp-3) 0;
+}
+
+
+.repo-history-page { padding: var(--sp-5); }
+.repo-history-box { border:1px solid var(--border); border-radius:var(--r-2); overflow:hidden; }
+.repo-history-commit-row { display:flex; padding:var(--sp-4); border-bottom:1px solid var(--border); }
+.repo-history-commit-row:last-child { border-bottom:0; }
+.repo-history-toolbar h1 { font-size:var(--fs-5); font-weight:500; }
+@media(max-width:600px) { .repo-history-page { padding:var(--sp-4); } .repo-history-commit-row { align-items:flex-start; flex-direction:column; gap:var(--sp-3); } }

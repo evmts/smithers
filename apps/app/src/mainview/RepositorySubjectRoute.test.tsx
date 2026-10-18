@@ -5,6 +5,7 @@ import { afterAll, afterEach, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import App from "./App"
+import { repositoryRouter } from "./RepositoryRouter"
 import { RepositoryCodeView } from "./repository/RepositoryCodeView"
 import { ControllerTestProvider } from "./ControllerContext"
 import { beginRepositoryEntry, openRequestedRepo, requestedTarget, signInReturnTo } from "./RepoLink"
@@ -43,6 +44,7 @@ afterAll(async () => {
 const mounted: Array<() => void> = []
 afterEach(() => {
   while (mounted.length > 0) mounted.pop()?.()
+  repositoryRouter().dispose()
   window.history.replaceState(null, "", "/")
 })
 

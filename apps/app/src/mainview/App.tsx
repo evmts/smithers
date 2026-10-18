@@ -1,7 +1,8 @@
+import { RepositoryCommits } from "./repository/RepositoryCommits"
+import { subscribe as subscribeRepositoryRoute, getSnapshot as repositoryRouteSnapshot } from "./RepositoryRouter"
 import { RepoFrame } from "./repository/RepoFrame"
 import { CodeHome } from "./repository/CodeHome"
 import { RepositoryCodeView } from "./repository/RepositoryCodeView"
-import { pathTarget as codePathTarget } from "./RepoLink"
 import { rememberComposerFocus, restoreComposerFocus } from "./runtime/ComposerFocus"
 import { useSharedConversation } from "./state/useSharedConversation"
 import { useTodoRole } from "./cards/TodoCard"
@@ -25,7 +26,7 @@ SmithersUiStyles
 } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import type { ReactNode, PointerEvent as ReactPointerEvent } from "react"
-import { useMemo,useRef,useState } from "react"
+import { useMemo,useRef,useState,useSyncExternalStore } from "react"
 import { controllerCardActions as cardActions } from "./cards/controllerCardActions"
 import { LoginScreen } from "./cards/LoginScreen"
 import { CardView } from "./ChatCards"
@@ -256,8 +257,15 @@ function AppContent() {
   // pending/failed request, or reject a repository added since this build.
   const bootEntry = session.repositoryEntry?.repo.toLowerCase() === bootRepository?.toLowerCase()
     ? session.repositoryEntry : undefined
-  const codeTarget = typeof window === "undefined" ? null : codePathTarget(window.location.pathname)
+  const codeTarget = useSyncExternalStore(subscribeRepositoryRoute, repositoryRouteSnapshot, () => null)
+  const commitsRoute = codeTarget?.subject?.kind === "commits"
   const codeRoute = codeTarget?.subject?.kind === "tree" || codeTarget?.subject?.kind === "blob"
+  const loadHistoryRefs = useMemo(() => async () => {
+    const repo = codeTarget!.repo
+    await controller.repositoryBranches.load(repo)
+    const branches = controller.repositoryBranches.rows.get(repo)
+    return branches?.state === "ready" ? { names: branches.names } : { error: "Reference unavailable" }
+  }, [controller, codeTarget?.repo])
   const codeBranches = codeBranchRows.find(row => row.id.toLowerCase() === codeTarget?.repo.toLowerCase())
   const codeDefaultRef = repositoryRows.find(row => row.id.toLowerCase() === codeTarget?.repo.toLowerCase())?.head?.bookmark
   const codeRefs = [...new Set([...(codeBranches?.names ?? []), ...(codeDefaultRef ? [codeDefaultRef] : [])])]
@@ -758,11 +766,11 @@ function AppContent() {
   if (bootRepository === null || (bootEntry?.phase !== "ready" && !(bootUnavailable && codeRoute))) return chat()
   const repository = repositoryRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())
   const rootRoute = window.location.pathname.replace(/\/$/, "") === `/${bootRepository}`
-  if (!rootRoute && !codeRoute) return chat()
+  if (!rootRoute && !codeRoute && !commitsRoute) return chat()
   return <RepoFrame repo={bootRepository} publicRepo={repository?.catalog === true}
     login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
     onAsk={() => controller.runCommand("chat.open")} onSignIn={() => controller.runCommand("sign-in")} ask={(visible: boolean) => chat(visible)}>
-    {codeRoute ? <RepositoryCodeView repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
+    {commitsRoute ? <RepositoryCommits defaultRef={codeDefaultRef} loadRefs={loadHistoryRefs} repo={bootRepository} location={codeTarget?.subject?.kind === "commits" ? codeTarget.subject.location : undefined} refs={codeRefs} scope={`${identity?.state}/${identity?.state === "signed-in" ? identity.login : ""}`}/> : codeRoute ? <RepositoryCodeView repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
       admitted={bootEntry?.phase === "ready"} requestId={bootEntry?.requestId} error={bootUnavailable ? bootEntry?.error : undefined} onAsk={text => controller.changeDraft(text)} /> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
       branches={codeBranchRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())}
       onBranchesOpen={() => { void controller.repositoryBranches.load(bootRepository) }}
