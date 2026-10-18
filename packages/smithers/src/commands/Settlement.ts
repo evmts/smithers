@@ -234,6 +234,8 @@ export const awaitOwnedRun = (
     // exited 0, because every receipt tag but `Accepted` reported nothing at
     // all (recorded by the cli-exit-code lane's verifier).
     if (receipt._tag === "Terminal") return { kind: `control.run.${receipt.status}` }
+    // A plan awaiting its approval has no executor to wait for.
+    if (receipt._tag === "Parked") return { kind: "control.run.waiting-approval" }
     const ownsExecutor = yield* ExecutorOwnership.ExecutorOwnership
     if (!ownsExecutor || receipt._tag !== "Accepted" || receipt.runId === undefined) return undefined
     // A local executor can drive runs without owning this one. Approval
