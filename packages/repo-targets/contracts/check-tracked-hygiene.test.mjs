@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import test from "node:test"
@@ -405,3 +405,51 @@ test("missing inventoried source files fail closed while nonfiles and binary or 
     assert.match(result.stderr, /tracked hygiene: .*ENOENT/)
   }
 })
+
+
+for (const mode of ["recover", "other", "retry-sibling", "retry-other", "repair-fails"]) {
+  test(`jj listing recovers only once: ${mode}`, { skip: process.platform === "win32" }, (t) => {
+    const root = tree(t, { ".jj/marker": "", "source.ts": "export const value = 1\n" })
+    const bin = join(root, "bin")
+    mkdirSync(bin)
+    const binary = join(bin, "jj")
+    writeFileSync(binary, `#!${process.execPath}
+const fs = require("node:fs")
+const args = process.argv.slice(2)
+fs.appendFileSync("calls", JSON.stringify({ args, cwd: process.cwd() }) + "\\n")
+const sibling = "Internal error: The repo was loaded at operation first, which seems to be a sibling of the working copy's operation original"
+const fail = message => { console.error(message); process.exit(1) }
+if (args[0] === "workspace" && args[1] === "update-stale") {
+  if ("${mode}" === "repair-fails") fail("repair failed")
+  fs.writeFileSync("repaired", "")
+} else {
+  if ("${mode}" === "other") fail("unrelated failure")
+  if (!fs.existsSync("repaired")) fail(sibling)
+  if ("${mode}" === "retry-sibling") fail(sibling.replace("operation first", "operation second"))
+  if ("${mode}" === "retry-other") fail("retry unrelated failure")
+  process.stdout.write("source.ts\\0")
+}
+`)
+    chmodSync(binary, 0o755)
+    const result = spawnSync(process.execPath, [script, "--include-untracked", root], {
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}` }
+    })
+    const calls = readFileSync(join(root, "calls"), "utf8").trim().split("\n").map(JSON.parse)
+    assert.equal(calls.length, mode === "other" ? 1 : mode === "repair-fails" ? 2 : 3)
+    assert.ok(calls.every(call => call.cwd === calls[0].cwd))
+    if (mode !== "other") assert.deepEqual(calls[1].args, ["workspace", "update-stale"])
+    if (calls.length === 3) assert.deepEqual(calls[2], calls[0])
+    assert.equal(result.status, mode === "recover" ? 0 : 2, result.stderr)
+    assert.equal((result.stderr.match(/ran workspace update-stale/g) ?? []).length,
+      mode === "other" || mode === "repair-fails" ? 0 : 1)
+    if (mode !== "recover") {
+      if (mode === "other") assert.match(result.stderr, /unrelated failure/)
+      else {
+        assert.match(result.stderr, /operation first/)
+        assert.match(result.stderr, mode === "retry-sibling" ? /operation second/ :
+          mode === "retry-other" ? /retry unrelated failure/ : /repair failed/)
+      }
+    }
+  })
+}
