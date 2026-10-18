@@ -31,7 +31,7 @@ export const reserve = async (options: {
     const ledger: Ledger = raw === undefined ? { version: 1, days: {}, runs: {} } : JSON.parse(raw)
     if (ledger.version !== 1 || !ledger.days || !ledger.runs || ![...Object.values(ledger.days), ...Object.values(ledger.runs)].every(valid)) throw new Error("Invalid budget ledger")
     const day = options.at.toISOString().slice(0, 10)
-    const runKey = JSON.stringify([day, options.run])
+    const runKey = JSON.stringify(options.run)
     const add = (current: Charge): Charge => Object.fromEntries(keys.map((key) => [key, current[key] + options.charge[key]])) as unknown as Charge
     const run = add(Object.hasOwn(ledger.runs, runKey) ? ledger.runs[runKey]! : zero())
     const daily = add(Object.hasOwn(ledger.days, day) ? ledger.days[day]! : zero())
