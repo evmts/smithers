@@ -239,11 +239,15 @@ test("the source public/_headers the build copies into dist already passes, so t
   assert.deepEqual(Object.keys(ASSET_HEADERS), ["cross-origin-embedder-policy", "cross-origin-resource-policy"])
 })
 
-test("the landing has exactly one static install or open action", t => {
-  const install = '<h1>Durable agent coding</h1><a href="/docs/installation/">Docs</a><a href="https://github.com/smithersai/smithers">Source</a><div class="landing-command"><code>npm i -g smthrs@next</code><button id="copy-install">Copy</button></div><a href="https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md">Then follow the coding guide</a>'
-  const open = install.replace(/<div class="landing-command">.*?<\/div><a href="https:.*?<\/a>$/, '<form class="repository-launcher-open"><input name="repository"><button>Open</button></form>')
+test("the landing has exactly one static install or open action and its three buttons", t => {
+  const buttons = '<nav aria-label="Start"><a class="landing-button landing-primary" href="/?tutorial">Start app</a><a class="landing-button" href="/docs/installation/">Docs</a><a class="landing-button" href="https://github.com/smithersai/smithers">Source</a></nav>'
+  const run = '<div class="landing-command"><code><span aria-hidden="true">$ </span><span id="run-command">npx smthrs@next generate flow coding</span></code><button type="button" id="copy-install">Copy</button></div>'
+  const install = '<h1>Smithers is a codebase maintainer agent.</h1>' + run + buttons
+  const open = '<h1>Coding agents</h1><form class="repository-launcher-open"><input name="repository"><button>Open</button></form>' + buttons
   for (const html of [install, open]) assert.deepEqual(checkLandingActions(fixture(t, { "index.html": html })), [])
   for (const html of [install + open, '<h1>Empty</h1>']) assert.ok(checkLandingActions(fixture(t, { "index.html": html })).length > 0)
+  assert.deepEqual(checkLandingActions(fixture(t, { "index.html": install.replace(' href="/?tutorial"', ' href="/"') })), ["index.html: missing the /?tutorial button"])
+  assert.deepEqual(checkLandingActions(fixture(t, { "index.html": install.replace("npx smthrs@next", "npm i -g smthrs@next") })), ["index.html: missing the npx run command"])
 })
 
 /*

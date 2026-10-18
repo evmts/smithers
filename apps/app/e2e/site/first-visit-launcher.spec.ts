@@ -1,5 +1,6 @@
 import { placeholderRules } from "@smthrs/rpc/fixtures/FrontDoor"
 import emptyRules from "../../../../.smithers/front-door.json"
+import { landingCopy } from "../../../site/src/data/landingCopy"
 import { expect, test } from "@playwright/test"
 import type { Page } from "@playwright/test"
 import { identityRoute, SCOPED_TEST_USER, signedOutVisitor, signupProfileRoute } from "../playwright/identity"
@@ -68,27 +69,85 @@ async function freshVisitor(page: Page, answers: { catalog?: number; releases?: 
 
 const launcherOf = (page: Page) => page.getByTestId("repository-launcher")
 
-for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+/** The npx command is the static default; the bunx switch is progressive enhancement. */
+const { npx: NPX, bunx: BUNX } = landingCopy.commands
+
+/** The three landing buttons, in order, and where each goes. */
+const LANDING_BUTTONS = [
+  [landingCopy.startApp, "/?tutorial"],
+  [landingCopy.docs.label, "/docs/installation/"],
+  [landingCopy.source.label, "https://github.com/smithersai/smithers"]
+] as const
+
+async function expectLandingButtons(page: Page) {
+  const actions = page.getByRole("navigation", { name: "Start" })
+  await expect(actions.getByRole("link")).toHaveText(LANDING_BUTTONS.map(([name]) => name))
+  for (const [name, href] of LANDING_BUTTONS) {
+    const button = actions.getByRole("link", { name, exact: true })
+    await expect(button).toHaveAttribute("href", href)
+    await expect(button).toBeInViewport({ ratio: 1 })
+  }
+  // Sign in stays in the header; the coding-guide link is gone.
+  await expect(page.getByRole("banner").getByRole("link")).toHaveText(["Sign in"])
+  await expect(page.getByText("Then follow the coding guide")).toHaveCount(0)
+}
+
+/** No horizontal page scroll at this width. */
+const pageFitsWidth = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
   test(`signed-out static install landing at ${viewport.width}`, async ({ page, context }) => {
     await page.setViewportSize(viewport)
     await context.grantPermissions(["clipboard-read", "clipboard-write"])
     const reads = await freshVisitor(page, { catalog: 503, releases: 500 })
     await page.goto("/")
-    await expect(page.getByRole("heading", { name: "Durable agent coding on your own subscription." })).toBeVisible()
-    await expect(page.locator(".landing-sub")).toContainText("you review the diff and land it yourself")
-    await expect(page.getByRole("link", { name: "Docs", exact: true })).toHaveAttribute("href", "/docs/installation/")
-    await expect(page.getByRole("link", { name: "Source", exact: true })).toHaveAttribute("href", "https://github.com/smithersai/smithers")
-    await expect(page.locator(".landing-command")).toContainText("npm i -g smthrs@next")
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(landingCopy.headline)
+    await expect(page.locator(".landing-sub")).toHaveText(landingCopy.tagline)
+    await expect(page.getByRole("heading", { name: landingCopy.runLabel })).toBeVisible()
+    await expectLandingButtons(page)
+
+    // npx is selected first, and Copy writes the command on screen.
+    const runner = page.getByRole("radiogroup", { name: landingCopy.runnerLabel })
+    await expect(runner).toBeVisible()
+    await expect(runner.getByRole("radio")).toHaveCount(2)
+    await expect(runner.getByRole("radio", { name: "npx", exact: true })).toBeChecked()
+    await expect(page.locator(".landing-command code")).toHaveText(`$ ${NPX}`)
     await page.getByRole("button", { name: "Copy", exact: true }).click()
-    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("npm i -g smthrs@next")
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(NPX)
     await expect(page.getByRole("button", { name: "Copied", exact: true })).toBeVisible()
+
+    // Arrow keys move the selection, and Copy follows it.
+    await runner.getByRole("radio", { name: "npx", exact: true }).focus()
+    await page.keyboard.press("ArrowRight")
+    await expect(runner.getByRole("radio", { name: "bunx", exact: true })).toBeChecked()
+    await expect(page.locator(".landing-command code")).toHaveText(`$ ${BUNX}`)
+    await page.locator("#copy-install").click()
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(BUNX)
+    await runner.getByRole("radio", { name: "npx", exact: true }).click()
+    await expect(page.locator(".landing-command code")).toHaveText(`$ ${NPX}`)
+
+    expect(await pageFitsWidth(page)).toBe(true)
     await expect(page.locator("body")).not.toContainText(/Explore|Smithers updates|couldn't load|Welcome to Smithers/)
     await expect(launcherOf(page)).toHaveCount(0)
     await expect(page.getByTestId("composer-input")).toHaveCount(0)
     expect(reads.publicHeaders).toEqual([])
     expect(reads.auth).toEqual([])
-    await expect(page.getByRole("button", { name: "Copy", exact: true })).toBeVisible()
     await page.screenshot({ path: `${process.env.HOME}/smithers-lanes/pm-smithers-1.shots/landing-${viewport.width}.png`, fullPage: true })
+  })
+
+  test.describe(`landing without JavaScript at ${viewport.width}`, () => {
+    test.use({ javaScriptEnabled: false, viewport })
+    test(`shows the npx command and every button without JavaScript at ${viewport.width}`, async ({ page }) => {
+      await freshVisitor(page, { catalog: 503, releases: 500 })
+      await page.goto("/")
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText(landingCopy.headline)
+      await expect(page.locator(".landing-command code")).toHaveText(`$ ${NPX}`)
+      // The switch needs the script; without it the page carries npx only.
+      await expect(page.getByRole("radiogroup", { name: landingCopy.runnerLabel })).toBeHidden()
+      await expect(page.locator("body")).not.toContainText(BUNX)
+      await expectLandingButtons(page)
+      expect(await pageFitsWidth(page)).toBe(true)
+    })
   })
 }
 
