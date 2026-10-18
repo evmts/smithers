@@ -42008,6 +42008,75 @@
     }
   },
   {
+    "label": "//apps/app:journeyMock",
+    "package": "apps/app",
+    "name": "journeyMock",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/app/spec/run.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/spec/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/e2e/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.css",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/vite.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/tailwind.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/postcss.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//apps/app:specSite",
+      "//packages/rpc:check"
+    ],
+    "source": {
+      "file": "apps/app/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//apps/app:journeySetup",
     "package": "apps/app",
     "name": "journeySetup",
@@ -42946,6 +43015,420 @@
       {
         "kind": "file",
         "path": "apps/app/playwright.spec.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/rpc:check"
+    ],
+    "source": {
+      "file": "apps/app/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/app:specJourneyLiveDefaultRepoRead",
+    "package": "apps/app",
+    "name": "specJourneyLiveDefaultRepoRead",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "exclusive": true,
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/app/spec/run.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/spec/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/e2e/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.css",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/vite.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/tailwind.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/postcss.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/rpc:check"
+    ],
+    "source": {
+      "file": "apps/app/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/app:specJourneyLiveEffeckLanding",
+    "package": "apps/app",
+    "name": "specJourneyLiveEffeckLanding",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "exclusive": true,
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/app/spec/run.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/spec/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/e2e/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.css",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/vite.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/tailwind.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/postcss.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/rpc:check"
+    ],
+    "source": {
+      "file": "apps/app/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/app:specJourneyLiveEffeckRepoRead",
+    "package": "apps/app",
+    "name": "specJourneyLiveEffeckRepoRead",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "exclusive": true,
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/app/spec/run.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/spec/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/e2e/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.css",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/vite.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/tailwind.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/postcss.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/rpc:check"
+    ],
+    "source": {
+      "file": "apps/app/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/app:specJourneyLiveSmithersBugReport",
+    "package": "apps/app",
+    "name": "specJourneyLiveSmithersBugReport",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "exclusive": true,
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/app/spec/run.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/spec/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/e2e/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.css",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/vite.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/tailwind.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/postcss.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/rpc:check"
+    ],
+    "source": {
+      "file": "apps/app/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/app:specJourneyLiveSmithersLanding",
+    "package": "apps/app",
+    "name": "specJourneyLiveSmithersLanding",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "exclusive": true,
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/app/spec/run.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/spec/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/e2e/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.css",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/vite.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/tailwind.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/postcss.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/rpc:check"
+    ],
+    "source": {
+      "file": "apps/app/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/app:specJourneyLiveSmithersSelfRead",
+    "package": "apps/app",
+    "name": "specJourneyLiveSmithersSelfRead",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "exclusive": true,
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/app/spec/run.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/spec/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/e2e/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.css",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/vite.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/tailwind.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/postcss.config.js"
       },
       {
         "kind": "file",
