@@ -157,6 +157,7 @@ describe("landings seam — prs.list", () => {
         title: "Wire the seam 3",
         state: "open",
         author: "will",
+        createdAt: "2026-08-10T10:00:00.000Z",
         updatedAt: "2026-08-11T10:00:00.000Z"
       },
       {
@@ -164,6 +165,7 @@ describe("landings seam — prs.list", () => {
         title: "Wire the seam 4",
         state: "queued",
         author: "will",
+        createdAt: "2026-08-10T10:00:00.000Z",
         updatedAt: "2026-08-11T10:00:00.000Z"
       }
     ])
@@ -1188,4 +1190,46 @@ test("a saved PR form keeps its identity and explicit repository when submitted 
   expect(store.collections.cards.get(id)).toMatchObject({ id, status: "acted", payload: { flow: "pr", given: { repo: "will/flows" } } })
   expect(store.collections.cards.get("pr-will/flows-3")).toMatchObject({ payload: { number: 3, repo: "will/flows" } })
   await controller.dispose()
+})
+
+test.each(["refused", "unreadable", "network"] as const)("native Checks preserves a %s read as error and recovers to a real empty read", async failure => {
+  let failed = true
+  const { store, controller } = await ready(backend({
+    [`${LANDINGS}/3`]: json(200, landing(3, "open")),
+    [`${LANDINGS}/3/reviews`]: json(200, []),
+    [`${LANDINGS}/3/changes`]: json(200, []),
+    [`${LANDINGS}/3/diff`]: json(200, { changes: [] }),
+    [STATUSES]: () => {
+      if (!failed) return json(200, [])
+      if (failure === "network") throw new Error("offline")
+      return failure === "refused" ? json(503, {}) : json(200, {})
+    }
+  }))
+  try {
+    await controller.commands.run("pr", "3 will/flows")
+    let card = store.collections.cards.get("pr-will/flows-3")
+    if (card?.kind !== "pr") throw new Error("expected pull request")
+    expect(card.payload.checks).toEqual([])
+    expect(card.payload.readErrors?.checks).toContain("Checks unavailable (")
+    expect(card.payload.readErrors?.commits).toBeUndefined()
+    expect(card.payload.files).toEqual([])
+    failed = false
+    await controller.commands.run("pr", "3 will/flows")
+    card = store.collections.cards.get("pr-will/flows-3")
+    if (card?.kind !== "pr") throw new Error("expected recovered pull request")
+    expect(card.payload.checks).toEqual([])
+    expect(card.payload.readErrors).toBeUndefined()
+  } finally { controller.dispose() }
+})
+
+test("a refused pull source creates a durable retryable error instead of leaving its route loading", async () => {
+  const { store, controller } = await ready(backend({
+    "/api/repos/will/flows": json(503, {})
+  }))
+  try {
+    await controller.commands.run("pr", "3 will/flows")
+    expect(store.collections.cards.get("pr-will/flows-3")).toMatchObject({
+      loading: false, status: "error", body: expect.stringContaining("source of pull requests")
+    })
+  } finally { controller.dispose() }
 })
