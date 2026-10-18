@@ -41,3 +41,38 @@ export const RepositoryCommitDetailSchema = RepositoryCommitSchema.extend({
     deletions: z.number().int().nonnegative()
   }))
 })
+
+const searchPage = {
+  total_count: z.number().int().nonnegative(),
+  page: z.number().int().positive(),
+  per_page: z.number().int().positive()
+}
+const searchRepository = {
+  repository_id: z.number().int().positive(),
+  repository_owner: z.string(),
+  repository_name: z.string()
+}
+/** Code index matches within one authorized repository; snippets remain escaped text.
+ * @category schemas
+ * @since 0.1.0
+ */
+export const RepositoryCodeSearchSchema = z.object({
+  ...searchPage,
+  items: z.array(z.object({ ...searchRepository, path: z.string(), snippet: z.string() }))
+})
+/** Issue matches within one authorized repository, including its pagination count.
+ * @category schemas
+ * @since 0.1.0
+ */
+export const RepositoryIssueSearchSchema = z.object({
+  ...searchPage,
+  items: z.array(
+    z.object({
+      ...searchRepository,
+      id: z.number().int().positive(),
+      number: z.number().int().positive(),
+      title: z.string(),
+      state: z.enum(["open", "closed"])
+    })
+  )
+})
