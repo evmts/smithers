@@ -986,7 +986,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         attempt: z.number().int().positive().optional(),
         maxAttempts: z.number().int().positive().optional(),
         schema: z.unknown().optional(),
-        waitRunId: z.string().optional()
+        waitRunId: z.string().optional(),
+        askId: z.string().optional()
       }).optional(),
       /** Read projection of the human's draft, bound to the exact pending question. */
       answerDraft: z.object({ question: z.string().regex(/^[0-9a-f]{64}$/), text: z.string() }).optional(),
@@ -1400,7 +1401,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
             attempt: z.number().int().positive().optional(),
             maxAttempts: z.number().int().positive().optional(),
             schema: z.unknown().optional(),
-            waitRunId: z.string().optional()
+            waitRunId: z.string().optional(),
+        askId: z.string().optional()
           }).optional(),
           /** Read projection of the human's draft, bound to the exact pending question. */
           answerDraft: z.object({ question: z.string().regex(/^[0-9a-f]{64}$/), text: z.string() }).optional(),

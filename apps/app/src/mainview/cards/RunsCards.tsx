@@ -326,7 +326,7 @@ export const runsCardFamily: CardFamily<"run-list" | "approvals-inbox"> = {
 import { useRef, useState } from "react"
 import type { ApprovalQuestion } from "./ApprovalQuestion"
 import { attemptWords } from "./ApprovalQuestion"
-import { signingProperty, signAnswer } from "./AnswerSigning"
+import { signingProperty, signAnswer, parseSigningAnswer } from "./AnswerSigning"
 
 /** What a person typed, shaped for the question's kind, or why it cannot be sent. */
 export const answerValue = (
@@ -389,7 +389,7 @@ export const ApprovalAnswerForm = ({
       signing.current = true
       const revision = editRevision.current
       const original = box.current?.value
-      const signed = await signAnswer(shaped.value, property, question.waitRunId, question.name)
+      const signed = await signAnswer(parseSigningAnswer(box.current?.value ?? ""), property, question.waitRunId, question.name, question.askId)
       if (revision !== editRevision.current || original !== box.current?.value || !box.current?.isConnected) {
         setAnswerNote("Answer changed. Sign again.")
         return

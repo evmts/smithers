@@ -66,6 +66,7 @@ test("I-JSON refuses ambiguous and nonrepresentable answers before signing", () 
     expect(() => parseSigningAnswer(text)).toThrow()
   }
   for (const value of [NaN, Infinity, -Infinity, 9007199254740994, "\ud800", {"\udfff": 1}]) expect(() => canonicalJson(value)).toThrow()
+  for (const text of ['9007199254740992.0', '-9007199254740992e0', '90071992547409920e-1']) expect(() => parseSigningAnswer(text)).not.toThrow()
   expect(canonicalJson(parseSigningAnswer('{"n":9007199254740992,"s":"😀"}'))).toBe('{"n":9007199254740992,"s":"😀"}')
 })
 test("RFC 8785 section 3.2.3 published property sorting vector", () => {

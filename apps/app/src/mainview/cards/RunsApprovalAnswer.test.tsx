@@ -208,7 +208,7 @@ describe("reading a gateway row", () => {
   test("preserves the schema and exact wait execution for signed JSON answers", () => {
     const schema = { type: "object", properties: { evidence: { format: "webauthn-assertion" } } }
     expect(questionOf({ ...base, waitRunId: "child-execution", request: { kind: "json", prompt: "Sign", name: "answer", schema } }))
-      .toEqual({ kind: "json", prompt: "Sign", name: "answer", schema, waitRunId: "child-execution", askId: "coding-clarification#1" })
+      .toEqual({ kind: "json", prompt: "Sign", name: "answer", schema, waitRunId: "child-execution", askId: "42" })
   })
 
   test("takes the question from a wait held below the run", () => {
@@ -258,4 +258,13 @@ test("the answer box restores the projected draft and every input uses its exact
 
 test("ask identity falls back to the snapshot ask time", () => {
   expect(questionOf({ runId: "run", requestId: "", title: "Ask", payload: {} as never, requestedAt: 42, status: "pending", waitRunId: "run", request: { kind: "json", schema: {} } })?.askId).toBe("42")
+})
+
+test("a HumanTask request id takes precedence over the ask time", () => {
+  expect(questionOf({ runId: "run", requestId: "wait#1", title: "Ask", payload: {} as never, requestedAt: 42, status: "pending", waitRunId: "run", request: { kind: "json", schema: {}, requestId: "turn-2" } })?.askId).toBe("turn-2")
+})
+
+test("repeated same-named asks retain distinct snapshot times", () => {
+  const row = { runId: "run", requestId: "answer#1", title: "Ask", payload: {} as never, requestedAt: 42, status: "pending" as const, waitRunId: "run", request: { kind: "json", name: "answer", schema: {} } }
+  expect(questionOf(row)?.askId).not.toBe(questionOf({ ...row, requestedAt: 43 })?.askId)
 })
