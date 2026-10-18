@@ -42,7 +42,12 @@ test("public pull choices follow the imported local repository permission", asyn
   return new Response(null,{status:401})
  }}
  expect(await readLandingOptions(ctx,"local/mirror")).toEqual({options:[{value:"7",label:"#7 Pull"}]})
- expect(calls).toHaveLength(2)
+ // The viewer's GitHub route answers first; its 401 sends the read to the public mirror.
+ expect(calls).toEqual([
+  "/api/repos/local/mirror",
+  "/api/user/github-repos/upstream/source/pulls?state=open&per_page=100",
+  "/api/repos/local/mirror/github/metadata/pulls?state=open&per_page=100"
+ ])
 })
 
 
