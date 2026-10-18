@@ -108,6 +108,7 @@ func (service *Service) handleLaunch(ctx context.Context, lease *jobs.Lease) err
 	// its cancelled run settles. The admitted digest is not host evidence.
 	if checkpoint.FailureCode != pinMismatch {
 		checkpoint.FailureCode = ""
+		checkpoint.FailureDetail = ""
 		checkpoint.FailureClass = ""
 		checkpoint.FailureObservedAt = 0
 	}
@@ -540,7 +541,7 @@ func (service *Service) handleRunMutation(ctx context.Context, lease *jobs.Lease
 		return service.fail(lease, "wake_timeout", checkpoint)
 	}
 	checkpoint.WakeStartedAt = 0
-	checkpoint.FailureStep, checkpoint.FailureCode, checkpoint.FailureClass = "", "", ""
+	checkpoint.FailureStep, checkpoint.FailureCode, checkpoint.FailureClass, checkpoint.FailureDetail = "", "", "", ""
 	if payload.FlowID == "todo" {
 		if _, err := lease.Checkpoint(ctx, mustJSON(checkpoint)); err != nil {
 			return err
@@ -853,6 +854,7 @@ func (service *Service) fail(lease *jobs.Lease, code string, checkpoint RuntimeC
 func (service *Service) runtimeError(lease *jobs.Lease, err error, checkpoint RuntimeCheckpoint) error {
 	code, retryable := preRunRuntimeFailure(err, checkpoint.RunID)
 	checkpoint.FailureClass = runtimeFailureClass(err)
+	checkpoint.FailureDetail = runtimeFailureDetail(err)
 	if retryable {
 		// Persist a product observation even when resolution failed before a
 		// run exists. Never submit another operation from reconnect or polling.
@@ -1019,6 +1021,17 @@ func mustJSON(value any) json.RawMessage {
 		panic(fmt.Sprintf("flow dispatch: encode internal receipt: %v", err))
 	}
 	return encoded
+}
+
+// runtimeFailureDetail is the product sentence a typed failure states beside
+// its code. Only an error type that implements FlowRuntimeDetail supplies one,
+// so an adapter's own error text never becomes product copy.
+func runtimeFailureDetail(err error) string {
+	var detailed interface{ FlowRuntimeDetail() string }
+	if !errors.As(err, &detailed) {
+		return ""
+	}
+	return strings.TrimSpace(detailed.FlowRuntimeDetail())
 }
 
 // Classes are optional on older runtime failures. Only product-envelope classes

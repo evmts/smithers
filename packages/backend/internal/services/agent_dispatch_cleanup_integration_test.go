@@ -302,10 +302,10 @@ func TestClaimAgentSessionForDispatch_ClearsThePreviousAttemptsFailureReason(t *
 		ExpectedWorkflowRunID: pgtype.Int8{Int64: refusedRun.ID, Valid: true},
 	})
 	require.NoError(t, err)
-	failed, recorded, err := q.RecordAgentSessionFailureReason(ctx, sessionID, agentSessionNoCapacityMessage)
+	failed, recorded, err := q.RecordAgentSessionFailure(ctx, sessionID, agentSessionNoCapacity)
 	require.NoError(t, err)
 	require.True(t, recorded)
-	require.Contains(t, string(failed.Metadata), "failure_reason")
+	require.Contains(t, string(failed.Session.Metadata), "failure_reason_code")
 	require.NoError(t, q.FailWorkflowRun(ctx, refusedRun.ID))
 
 	retryRun := makeRun()
@@ -384,11 +384,11 @@ func TestAParkedDispatchRecordsItsWaitAndNeverOutlivesIt(t *testing.T) {
 		require.True(t, recorded)
 		_, err := pool.Exec(ctx, `UPDATE agent_sessions SET status='failed' WHERE id=$1`, sessionID)
 		require.NoError(t, err)
-		failed, ok, failErr := q.RecordAgentSessionFailureReason(ctx, sessionID, agentSessionNoCapacityMessage)
+		failed, ok, failErr := q.RecordAgentSessionFailure(ctx, sessionID, agentSessionNoCapacity)
 		require.NoError(t, failErr)
 		require.True(t, ok)
-		require.Contains(t, string(failed.Metadata), "failure_reason")
-		require.NotContains(t, string(failed.Metadata), "waiting_reason")
+		require.Contains(t, string(failed.Session.Metadata), "failure_reason")
+		require.NotContains(t, string(failed.Session.Metadata), "waiting_reason")
 
 		parked, parkErr := q.RecordAgentSessionWaitingReason(ctx, sessionID, agentSessionWaitingForSandboxMessage)
 		require.NoError(t, parkErr)

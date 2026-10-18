@@ -31,19 +31,19 @@ func TestAgentDispatchFailureRecordsUserFacingReason(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		message    string
-		reason     string
+		reason     agentSessionFailure
 		wantReason string
 	}{
 		{
 			name:       "a full pool names the pool",
 			message:    "create sandbox: microsandbox api returned status 503 (no_capacity)",
-			reason:     agentSessionNoCapacityMessage,
+			reason:     agentSessionNoCapacity,
 			wantReason: agentSessionNoCapacityMessage,
 		},
 		{
 			name:       "anything else gets one true sentence",
 			message:    "create repo api token: database unavailable",
-			reason:     agentSessionStartFailureMessage,
+			reason:     agentSessionStartFailure,
 			wantReason: agentSessionStartFailureMessage,
 		},
 	} {
@@ -58,13 +58,13 @@ func TestAgentDispatchFailureRecordsUserFacingReason(t *testing.T) {
 					session.Metadata = json.RawMessage(`{}`)
 					return session, nil
 				},
-				recordAgentSessionFailureReasonFn: func(_ context.Context, id, reason string) (db.AgentSession, bool, error) {
+				recordAgentSessionFailureFn: func(_ context.Context, id string, failure db.AgentSessionFailure) (db.AgentSessionFailureRecord, bool, error) {
 					require.Equal(t, sessionID, id)
-					recordedReason = reason
+					recordedReason = failure.Reason
 					session := sampleDBAgentSession(id, 101, 9, "agent")
 					session.Status = "failed"
-					session.Metadata = json.RawMessage(`{"failure_reason":` + mustJSONString(reason) + `}`)
-					return session, true, nil
+					session.Metadata = json.RawMessage(`{"failure_reason":` + mustJSONString(failure.Reason) + `,"failure_reason_code":` + mustJSONString(failure.Code) + `}`)
+					return db.AgentSessionFailureRecord{Session: session}, true, nil
 				},
 			}
 			svc := &AgentService{
@@ -93,6 +93,7 @@ func TestAgentDispatchFailureRecordsUserFacingReason(t *testing.T) {
 			require.Equal(t, "failed", events[0].Status)
 			require.Equal(t, tc.wantReason, events[0].Reason,
 				"a watching client must not have to re-poll to learn the reason")
+			require.Equal(t, tc.reason.Code, events[0].ReasonCode)
 			require.NotContains(t, events[0].Reason, "microsandbox",
 				"the provider's error chain stays on the operator side")
 		})
@@ -104,9 +105,9 @@ func TestAgentDispatchFailureRecordsUserFacingReason(t *testing.T) {
 func TestMarkAgentDispatchInfrastructureFailedDefaultsToAReason(t *testing.T) {
 	var recorded string
 	dq := &mockAgentDispatchQuerier{
-		recordAgentSessionFailureReasonFn: func(_ context.Context, _, reason string) (db.AgentSession, bool, error) {
-			recorded = reason
-			return db.AgentSession{}, false, nil
+		recordAgentSessionFailureFn: func(_ context.Context, _ string, failure db.AgentSessionFailure) (db.AgentSessionFailureRecord, bool, error) {
+			recorded = failure.Reason
+			return db.AgentSessionFailureRecord{}, false, nil
 		},
 	}
 	svc := &AgentService{
@@ -126,9 +127,9 @@ func TestAgentSessionFailureReasonForError(t *testing.T) {
 		Code:    pkgerrors.CodeNoCapacity,
 		Message: "no healthy Microsandbox worker has sufficient capacity",
 	}
-	require.Equal(t, agentSessionNoCapacityMessage, agentSessionFailureReasonForError(noCapacity))
+	require.Equal(t, agentSessionNoCapacityMessage, agentSessionFailureForError(noCapacity).Reason)
 	require.Equal(t, agentSessionStartFailureMessage,
-		agentSessionFailureReasonForError(pkgerrors.Internal("create sandbox: connection refused")))
+		agentSessionFailureForError(pkgerrors.Internal("create sandbox: connection refused")).Reason)
 }
 
 func TestAgentSessionFailureReasonFromMetadata(t *testing.T) {
@@ -175,7 +176,7 @@ func TestAgentDispatchFailureWritesOneLineToTheRunLog(t *testing.T) {
 	svc.markAgentDispatchInfrastructureFailedWithReason(context.Background(), 0, 20, 17463,
 		"dddddddd-dddd-4ddd-8ddd-dddddddddddd",
 		"create sandbox: microsandbox api returned status 503 (no_capacity)",
-		agentSessionNoCapacityMessage)
+		agentSessionNoCapacity)
 
 	require.Len(t, entries, 1)
 	require.Equal(t, int64(17463), entries[0].WorkflowRunID)
@@ -317,15 +318,15 @@ func TestAgentDispatchFailureLogStoresAStorableEntry(t *testing.T) {
 // smithers#3886.
 func TestAFanOutTurnSaysTheMachineIsStillStarting(t *testing.T) {
 	inFlight := fmt.Errorf("create agent workspace: %w", workspaceProvisionInProgress(nil))
-	require.Equal(t, agentSessionMachineStartingMessage, agentSessionFailureReasonForError(inFlight),
+	require.Equal(t, agentSessionMachineStartingMessage, agentSessionFailureForError(inFlight).Reason,
 		"a turn refused because the branch's machine is already starting says so; waiting is the action that helps")
 
 	// The two sentences that were already distinguished stay exactly as they were.
 	require.NotEqual(t, agentSessionMachineStartingMessage, agentSessionStartFailureMessage)
-	require.Equal(t, agentSessionNoCapacityMessage, agentSessionFailureReasonForError(
-		&pkgerrors.APIError{Status: http.StatusServiceUnavailable, Code: pkgerrors.CodeNoCapacity, Message: "no healthy Microsandbox worker has sufficient capacity"}))
+	require.Equal(t, agentSessionNoCapacityMessage, agentSessionFailureForError(
+		&pkgerrors.APIError{Status: http.StatusServiceUnavailable, Code: pkgerrors.CodeNoCapacity, Message: "no healthy Microsandbox worker has sufficient capacity"}).Reason)
 	require.Equal(t, agentSessionStartFailureMessage,
-		agentSessionFailureReasonForError(pkgerrors.Internal("create sandbox: connection refused")))
+		agentSessionFailureForError(pkgerrors.Internal("create sandbox: connection refused")).Reason)
 }
 
 // A branch machine can vanish under a row that still reads `running`: the
@@ -348,7 +349,7 @@ func TestATurnOnAVanishedMachineSaysTheMachineIsGone(t *testing.T) {
 	missing := fmt.Errorf("create agent workspace: %w",
 		pkgerrors.New(pkgerrors.CodeWorkspaceVMMissing,
 			"workspace VM no longer exists; run `smithers workspace create` to provision a fresh workspace"))
-	require.Equal(t, agentSessionMachineMissingMessage, agentSessionFailureReasonForError(missing),
+	require.Equal(t, agentSessionMachineMissingMessage, agentSessionFailureForError(missing).Reason,
 		"a turn whose machine no longer exists says so; a fresh box is the action that helps")
 	require.NotContains(t, agentSessionMachineMissingMessage, "try again in a moment",
 		"retrying cannot recreate a machine the fleet has lost")
@@ -357,12 +358,12 @@ func TestATurnOnAVanishedMachineSaysTheMachineIsGone(t *testing.T) {
 
 	// A machine that is merely still starting, a full pool and everything else
 	// keep the sentences they already had.
-	require.Equal(t, agentSessionMachineStartingMessage, agentSessionFailureReasonForError(
-		fmt.Errorf("create agent workspace: %w", workspaceProvisionInProgress(nil))))
-	require.Equal(t, agentSessionNoCapacityMessage, agentSessionFailureReasonForError(
-		&pkgerrors.APIError{Status: http.StatusServiceUnavailable, Code: pkgerrors.CodeNoCapacity, Message: "full"}))
+	require.Equal(t, agentSessionMachineStartingMessage, agentSessionFailureForError(
+		fmt.Errorf("create agent workspace: %w", workspaceProvisionInProgress(nil))).Reason)
+	require.Equal(t, agentSessionNoCapacityMessage, agentSessionFailureForError(
+		&pkgerrors.APIError{Status: http.StatusServiceUnavailable, Code: pkgerrors.CodeNoCapacity, Message: "full"}).Reason)
 	require.Equal(t, agentSessionStartFailureMessage,
-		agentSessionFailureReasonForError(pkgerrors.Internal("create sandbox: connection refused")))
+		agentSessionFailureForError(pkgerrors.Internal("create sandbox: connection refused")).Reason)
 }
 
 // The sibling of a vanished machine: a branch whose row still names the
@@ -378,7 +379,7 @@ func TestATurnWhoseSnapshotIsGoneSaysTheSnapshotIsGone(t *testing.T) {
 		pkgerrors.New(pkgerrors.CodeSnapshotNotFound,
 			"workspace snapshot is unavailable; run `smithers workspace create` to provision a fresh workspace").
 			WithCause(workspaceapi.ErrWorkspaceNotFound))
-	require.Equal(t, agentSessionSnapshotMissingMessage, agentSessionFailureReasonForError(gone),
+	require.Equal(t, agentSessionSnapshotMissingMessage, agentSessionFailureForError(gone).Reason,
 		"a turn whose snapshot is gone says so; a fresh box is the action that helps")
 	require.NotContains(t, agentSessionSnapshotMissingMessage, "try again in a moment",
 		"retrying cannot restore a snapshot the provider no longer has")
@@ -387,10 +388,10 @@ func TestATurnWhoseSnapshotIsGoneSaysTheSnapshotIsGone(t *testing.T) {
 	require.NotEqual(t, agentSessionSnapshotMissingMessage, agentSessionStartFailureMessage)
 
 	// The causes that are worth waiting for keep their own sentences.
-	require.Equal(t, agentSessionMachineStartingMessage, agentSessionFailureReasonForError(
-		fmt.Errorf("create agent workspace: %w", workspaceProvisionInProgress(nil))))
+	require.Equal(t, agentSessionMachineStartingMessage, agentSessionFailureForError(
+		fmt.Errorf("create agent workspace: %w", workspaceProvisionInProgress(nil))).Reason)
 	require.Equal(t, agentSessionStartFailureMessage,
-		agentSessionFailureReasonForError(pkgerrors.Internal("restore snapshot: connection refused")))
+		agentSessionFailureForError(pkgerrors.Internal("restore snapshot: connection refused")).Reason)
 }
 
 // A branch machine whose provision failed is retained, not replaced:
@@ -411,7 +412,7 @@ func TestATurnWhoseSnapshotIsGoneSaysTheSnapshotIsGone(t *testing.T) {
 func TestATurnOnARetainedFailedMachineDoesNotPromiseARetry(t *testing.T) {
 	retained := fmt.Errorf("create agent workspace: %w",
 		branchMachineCompatible(db.Workspace{Status: "failed", UserID: 7}, db.CreateWorkspaceParams{}, 7))
-	require.Equal(t, agentSessionBranchMachineFailedMessage, agentSessionFailureReasonForError(retained),
+	require.Equal(t, agentSessionBranchMachineFailedMessage, agentSessionFailureForError(retained).Reason,
 		"a turn on a branch machine that is a retained failure says so; recovering the machine is the action that helps")
 	require.NotContains(t, agentSessionBranchMachineFailedMessage, "try again in a moment",
 		"retrying cannot un-fail a machine the branch keeps")
@@ -429,12 +430,12 @@ func TestATurnOnARetainedFailedMachineDoesNotPromiseARetry(t *testing.T) {
 	// Every other cause keeps the sentence it already had, including the
 	// sibling refusals branchMachineCompatible answers for a machine that is
 	// merely sized differently or owned elsewhere.
-	require.Equal(t, agentSessionStartFailureMessage, agentSessionFailureReasonForError(
-		branchMachineCompatible(db.Workspace{Status: "running", UserID: 8}, db.CreateWorkspaceParams{}, 7)))
-	require.Equal(t, agentSessionMachineStartingMessage, agentSessionFailureReasonForError(
-		fmt.Errorf("create agent workspace: %w", workspaceProvisionInProgress(nil))))
-	require.Equal(t, agentSessionNoCapacityMessage, agentSessionFailureReasonForError(
-		&pkgerrors.APIError{Status: http.StatusServiceUnavailable, Code: pkgerrors.CodeNoCapacity, Message: "full"}))
+	require.Equal(t, agentSessionStartFailureMessage, agentSessionFailureForError(
+		branchMachineCompatible(db.Workspace{Status: "running", UserID: 8}, db.CreateWorkspaceParams{}, 7)).Reason)
+	require.Equal(t, agentSessionMachineStartingMessage, agentSessionFailureForError(
+		fmt.Errorf("create agent workspace: %w", workspaceProvisionInProgress(nil))).Reason)
+	require.Equal(t, agentSessionNoCapacityMessage, agentSessionFailureForError(
+		&pkgerrors.APIError{Status: http.StatusServiceUnavailable, Code: pkgerrors.CodeNoCapacity, Message: "full"}).Reason)
 }
 
 // The third retained machine, and the only one whose owner can undo it: a
@@ -448,7 +449,7 @@ func TestATurnOnARetainedFailedMachineDoesNotPromiseARetry(t *testing.T) {
 func TestATurnOnAStoppedBranchMachineNamesTheStart(t *testing.T) {
 	stopped := fmt.Errorf("create agent workspace: %w",
 		branchMachineCompatible(db.Workspace{Status: "stopped", UserID: 7}, db.CreateWorkspaceParams{}, 7))
-	require.Equal(t, agentSessionBranchMachineStoppedMessage, agentSessionFailureReasonForError(stopped),
+	require.Equal(t, agentSessionBranchMachineStoppedMessage, agentSessionFailureForError(stopped).Reason,
 		"a turn on a stopped branch machine says so; starting the machine is the action that helps")
 	require.NotContains(t, agentSessionBranchMachineStoppedMessage, "try again in a moment",
 		"the join refuses for as long as the row is stopped, so a retry alone cannot work")
@@ -464,7 +465,7 @@ func TestATurnOnAStoppedBranchMachineNamesTheStart(t *testing.T) {
 	require.Equal(t, "branch machine is retained; recover it before joining", api.Message)
 
 	// A failed provision keeps the sentence #3892 gave it.
-	require.Equal(t, agentSessionBranchMachineFailedMessage, agentSessionFailureReasonForError(
+	require.Equal(t, agentSessionBranchMachineFailedMessage, agentSessionFailureForError(
 		fmt.Errorf("create agent workspace: %w",
-			branchMachineCompatible(db.Workspace{Status: "failed", UserID: 7}, db.CreateWorkspaceParams{}, 7))))
+			branchMachineCompatible(db.Workspace{Status: "failed", UserID: 7}, db.CreateWorkspaceParams{}, 7))).Reason)
 }

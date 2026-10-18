@@ -483,6 +483,25 @@ func TestResolverKeepsTheLauncherRefusalOfAFailedStart(t *testing.T) {
 	assert.Equal(t, "failed", store.binding.State)
 }
 
+// A packaged host the runtime refuses to stage (plue#863: 58,987,479 bytes
+// over 50,331,648) keeps its own code and sizes through the resolver, so the
+// session can say what happened instead of "runtime_start_failed". Retrying
+// stages the same bytes, so the refusal is not retryable.
+func TestResolverKeepsATooLargeHostRefusalTyped(t *testing.T) {
+	resolver, store, launcher, target := testResolver(t)
+	launcher.startErr = workspaceapi.ManagedHostTooLargeError{Bytes: 58987479, Limit: 48 << 20}
+	_, err := resolver.ResolveFlowRuntime(context.Background(), target)
+	var bridgeFailure flowruntime.Failure
+	require.ErrorAs(t, err, &bridgeFailure)
+	assert.Equal(t, workspaceapi.ManagedHostTooLargeCode, bridgeFailure.FlowRuntimeCode())
+	assert.False(t, bridgeFailure.FlowRuntimeRetryable(), "the same bytes are refused again")
+	var detailed interface{ FlowRuntimeDetail() string }
+	require.ErrorAs(t, err, &detailed)
+	assert.Equal(t, "The coding host (56.3 MiB) exceeds the sandbox staging limit (48 MiB).", detailed.FlowRuntimeDetail())
+	assert.NotContains(t, err.Error(), "58987479", "the bridge failure never prints the cause")
+	assert.Equal(t, workspaceapi.ManagedHostTooLargeCode, store.lastErrorCode)
+}
+
 func upgradeCatalog(resolver *Resolver, digest string) {
 	catalog := resolver.catalogs[CatalogCoding]
 	catalog.ArtifactDigest = digest
