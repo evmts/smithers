@@ -679,6 +679,24 @@ export const operations = (
       sourceSha: "",
       releaseTag: `v${input.version}`,
       readRegistry,
+      verifyVersion: async (entry: { name: string; version: string }) => {
+        try {
+          return json<unknown>(
+            await run("npm", ["view", `${entry.name}@${entry.version}`, "version", "--json"], signal ? { signal } : {})
+          ) === entry.version
+        } catch (error) {
+          if (/\bE404\b/.test(String(error))) return false
+          throw error
+        }
+      },
+      promote: async (entry: { name: string; version: string }) => {
+        await run("npm", [
+          "dist-tag",
+          "add",
+          `${entry.name}@${entry.version}`,
+          entry.version.includes("-") ? "next" : "latest"
+        ], signal ? { signal } : {})
+      },
       publish: async (path: string, entry: { name: string; version: string; integrity: string }) => {
         try {
           await run("pnpm", [
@@ -688,7 +706,7 @@ export const operations = (
             "--access",
             "public",
             "--tag",
-            input.version.includes("-") ? "next" : "latest",
+            "staging",
             "--no-git-checks"
           ], signal ? { signal } : {})
         } catch (error) {

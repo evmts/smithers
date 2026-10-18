@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { maintainerReleasePlan, integrity, preflight, publishCandidate, recordSmokeSuccess } from "./publish-release.mjs"
+import { maintainerReleasePlan, integrity, preflight, publishCandidate, recordSmokeSuccess, registryPublisher } from "./publish-release.mjs"
 
 const fixture = async (body) => {
   const directory = await mkdtemp(join(tmpdir(), "smithers-publish-"))
@@ -14,7 +14,7 @@ const fixture = async (body) => {
     await writeFile(join(directory, "manifest.json"), JSON.stringify(packages))
     await writeFile(join(directory, "release-manifest.json"), JSON.stringify(candidate))
     await recordSmokeSuccess(directory, candidate)
-    const options = { sourceSha: "tested-sha", releaseTag: "v1.0.0-rc.0" }
+    const options = { sourceSha: "tested-sha", releaseTag: "v1.0.0-rc.0", promote: async () => {}, verifyVersion: async () => true }
     await body(directory, candidate, options)
   } finally { await rm(directory, { recursive: true, force: true }) }
 }
@@ -60,7 +60,7 @@ test("a publication the registry never serves fails the run once the train has s
   const calls = []
   await assert.rejects(publishCandidate(directory, candidate, { ...options, readRegistry: async () => undefined, publish: async (_path, entry) => calls.push(entry.name) }), /Published integrity could not be verified: a/)
   assert.deepEqual(calls, ["a", "b"])
-  assert.deepEqual(JSON.parse(await readFile(join(directory, "publish-receipt.json"), "utf8")), { schemaVersion: 1, source: candidate.source, published: [], awaiting: ["a", "b"] })
+  assert.deepEqual(JSON.parse(await readFile(join(directory, "publish-receipt.json"), "utf8")), { schemaVersion: 1, source: candidate.source, published: [], promoted: [], awaiting: ["a", "b"] })
 }))
 
 test("a publication the registry has not served yet is re-read through the retry ladder", () => fixture(async (directory, candidate, options) => {
@@ -277,4 +277,102 @@ test("M publication fails before registry reads or writes even with claimed pass
   await assert.rejects(preflight(directory, { ...candidate, releaseStage: "cloud" }, doors), /Unknown release stage/)
   assert.equal(reads, 0)
   assert.equal(writes, 0)
+}))
+
+// Model the npm boundary: a tag write is observable immediately, while views
+// can only serve versions whose publication has propagated.
+for (const version of ["1.0.0-rc.0", "1.0.0"]) {
+  test(`consumer tags never expose missing first-party dependencies (${version})`, () => fixture(async (directory, candidate, options) => {
+    const dependencies = { smthrs: ["@smthrs/cli"], "@smthrs/base": [], "@smthrs/cli": ["@smthrs/base"] }
+    candidate.packages = Object.keys(dependencies).map((name, index) => ({ name, version, filename: `${index}.tgz`, integrity: integrity(Buffer.from(name)) }))
+    candidate.source.tag = `v${version}`
+    await rm(join(directory, "a.tgz"))
+    await rm(join(directory, "b.tgz"))
+    for (const entry of candidate.packages) await writeFile(join(directory, entry.filename), entry.name)
+    await writeFile(join(directory, "manifest.json"), JSON.stringify(candidate.packages))
+    await writeFile(join(directory, "release-manifest.json"), JSON.stringify(candidate))
+    await recordSmokeSuccess(directory, candidate)
+    const served = new Map(), tags = new Map(), versionViews = new Set(), calls = []
+    let failPromotion = true
+    const adapter = registryPublisher({ pause: () => {}, run: (command, args) => {
+      calls.push([command, ...args])
+      if (args[0] === "view") {
+        const entry = candidate.packages.find((entry) => `${entry.name}@${version}` === args[1])
+        if (!served.has(entry.name)) throw new Error("E404")
+        if (args[2] === "version") versionViews.add(entry.name)
+        return JSON.stringify(args[2] === "version" ? version : entry.integrity)
+      }
+      let name, tag
+      if (args[0] === "publish") {
+        name = candidate.packages.find((entry) => join(directory, entry.filename) === args[1]).name
+        served.set(name, true)
+        tag = args[args.indexOf("--tag") + 1]
+      } else {
+        assert.equal(command, "npm")
+        assert.equal(args[0], "dist-tag")
+        assert.equal(args[1], "add")
+        name = args[2].slice(0, args[2].lastIndexOf("@"))
+        tag = args[3]
+        assert.equal(served.size, candidate.packages.length, "all versions must be served before promotion")
+        assert.equal(versionViews.size, candidate.packages.length, "every exact version must be viewed before promotion")
+        if (name === "@smthrs/cli" && failPromotion) { failPromotion = false; throw new Error("E401") }
+      }
+      tags.set(`${name}:${tag}`, version)
+      for (const [key] of tags) {
+        if (!key.endsWith(":next") && !key.endsWith(":latest")) continue
+        for (const dependency of dependencies[key.slice(0, key.lastIndexOf(":"))]) {
+          assert.ok(served.has(dependency), `${key} exposes missing ${dependency}@${version}`)
+        }
+      }
+      return ""
+    } })
+    const publish = () => publishCandidate(directory, candidate, { ...options, releaseTag: candidate.source.tag, ...adapter })
+    await assert.rejects(publish(), /E401/)
+    const receipt = JSON.parse(await readFile(join(directory, "publish-receipt.json"), "utf8"))
+    assert.deepEqual(receipt.promoted, ["@smthrs/base"])
+    const count = calls.filter(([, verb]) => verb === "publish").length
+    await publish()
+    assert.equal(calls.filter(([, verb]) => verb === "publish").length, count, "resume must not republish")
+    const promotions = calls.filter(([, verb]) => verb === "dist-tag")
+    assert.equal(promotions.at(-1)[3], `smthrs@${version}`)
+    assert.deepEqual(promotions.slice(-3).map((call) => call[3]), [`@smthrs/base@${version}`, `@smthrs/cli@${version}`, `smthrs@${version}`])
+    assert.ok(calls.some(([, verb, , field]) => verb === "view" && field === "version"))
+  }))
+}
+
+for (const eventuallyServed of [true, false]) {
+  test(`version propagation is bounded and holds every consumer tag (${eventuallyServed})`, () => fixture(async (directory, candidate, options) => {
+    const registry = new Map()
+    const promotions = [], pauses = []
+    let reads = 0
+    const publish = () => publishCandidate(directory, candidate, { ...options,
+      readRegistry: async (spec) => registry.get(spec),
+      publish: async (_path, entry) => registry.set(`${entry.name}@${entry.version}`, entry.integrity),
+      verifyVersion: async () => { reads++; return eventuallyServed && reads > 3 },
+      pause: async (seconds) => pauses.push(seconds),
+      promote: async (entry) => promotions.push(entry.name)
+    })
+    if (eventuallyServed) {
+      await publish()
+      assert.deepEqual(promotions, ["a", "b"])
+      assert.deepEqual(pauses, [2, 10, 30, 60])
+    } else {
+      await assert.rejects(publish(), /Published version is not served: a@/)
+      assert.equal(reads, 34)
+      assert.deepEqual(promotions, [])
+      assert.deepEqual(pauses, [2, 10, 30, 60, ...Array(30).fill(30)])
+    }
+  }))
+}
+
+test("an integrity-verified resume still checks every version before promotion", () => fixture(async (directory, candidate, options) => {
+  const versions = [], promotions = []
+  await assert.rejects(publishCandidate(directory, candidate, { ...options,
+    readRegistry: async (spec) => candidate.packages.find((entry) => `${entry.name}@${entry.version}` === spec).integrity,
+    publish: () => assert.fail("resume cannot republish existing versions"),
+    verifyVersion: async (entry) => { versions.push(entry.name); return entry.name === "a" },
+    promote: async (entry) => promotions.push(entry.name)
+  }), /Published version is not served: b@/)
+  assert.equal(versions[0], "a")
+  assert.deepEqual(promotions, [])
 }))
