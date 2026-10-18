@@ -8,7 +8,7 @@ export default journey({
     { text: "Durable agent coding on your own subscription.", source: "html" },
     { text: "Smithers runs Claude Code or Codex on your repository as a durable flow, on your machine and your own subscription. A crash or a closed laptop doesn't lose the run. When it finishes, you review the diff and land it yourself. Open source, MIT.", source: "html" },
     { text: "npm i -g smthrs@next", source: "html" },
-    { url: "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/quickstart.md", on: { role: "link", href: "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/quickstart.md" }, status: 200 }, { text: "npm i -g smthrs@next" },
+    { url: "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md", on: { role: "link", href: "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md" }, status: 200 }, { text: "npm i -g smthrs@next" },
     { see: { role: "button", name: "Copy" } }, { url: { startsWith: "" }, on: { role: "link", name: "Docs" }, status: 200 }, { see: { role: "link", name: "Sign in" } },
     { url: "https://github.com/smithersai/smithers", on: { role: "link", name: "Source" }, status: 200 },
     ...["Change github.com to smithers.sh", "Explore", "Smithers updates", "couldn't load", "Automate maintaining your codebase", "Get started for free", "lands it for you", "merges for you", "ready to merge"].map(absent => ({ absent })),
