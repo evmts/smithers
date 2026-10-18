@@ -142,6 +142,21 @@ export const parseDts = (text) => {
   return [...byName.values()]
 }
 
+/**
+ * Where the twin's compiled modules land. The twin compiles with the repository as rootDir,
+ * because a module may import TypeScript outside its package (apps/app imports
+ * .smithers/flows/coding schemas, F-2); every output then stays under .vibe-twin/out/.
+ */
+export const twinOutDir = (pkg) => join(pkg, ".vibe-twin", "out", relative(repoRoot(pkg), pkg), "src-vibe")
+
+/** The repository root: the nearest folder above the package with a pnpm workspace or .jj. */
+const repoRoot = (pkg) => {
+  for (let dir = pkg; dir !== dirname(dir); dir = dirname(dir)) {
+    if (existsSync(join(dir, "pnpm-workspace.yaml")) || existsSync(join(dir, ".jj"))) return dir
+  }
+  return pkg
+}
+
 /** The twin's compiled module for a resolved `src/` file, or undefined. */
 export const twinFor = (resolved, pkg) => {
   const file = resolved.split("?")[0]
@@ -149,12 +164,12 @@ export const twinFor = (resolved, pkg) => {
   if (!file.startsWith(src) || !/\.(?:ts|tsx|mts)$/.test(file) || file.endsWith(".d.ts")) return undefined
   const rel = file.slice(src.length).replace(/\.(?:ts|tsx|mts)$/, "")
   if (!twinModules(pkg).has(rel)) return undefined
-  return join(pkg, ".vibe-twin", "out", "src-vibe", `${rel}.js`)
+  return join(twinOutDir(pkg), `${rel}.js`)
 }
 
 /** The src/ modules (relative, no extension) that have a real twin; a stub is not one. */
 const twinModules = (pkg) => {
-  const manifest = join(pkg, ".vibe-twin", "out", "src-vibe", MANIFEST)
+  const manifest = join(twinOutDir(pkg), MANIFEST)
   if (!existsSync(manifest)) return new Set()
   return new Set(JSON.parse(readFileSync(manifest, "utf8")))
 }
@@ -173,7 +188,7 @@ const srcModules = (pkg) =>
  * partial twin's imports of modules not twinned yet still run.
  */
 const linkPartialTwin = (pkg, work) => {
-  const out = join(work, "out", "src-vibe")
+  const out = twinOutDir(pkg)
   const twinned = srcModules(pkg).filter(({ rel }) =>
     ["vibe", "ts", "tsx"].some((x) => existsSync(join(pkg, "src-vibe", `${rel}.${x}`)))
   )
@@ -196,7 +211,7 @@ const linkPartialTwin = (pkg, work) => {
  * that are not twinned yet with the TypeScript's own specifiers (rootDirs).
  */
 export const fallbackFor = (source, importer, pkg) => {
-  const twinRoot = join(pkg, ".vibe-twin", "out", "src-vibe") + sep
+  const twinRoot = twinOutDir(pkg) + sep
   if (!importer.startsWith(twinRoot) || !source.startsWith(".")) return undefined
   const target = resolve(dirname(importer), source.split("?")[0])
   const base = target.replace(/\.(?:js|mjs|ts|tsx|vibe)$/, "")
@@ -410,7 +425,7 @@ const sameNamedPair = (pkg, work, text) => {
   return pairs.every(([rel, name]) => {
     const read = (dir) => existsSync(join(dir, `${rel}.d.ts`)) ? parseDts(readFileSync(join(dir, `${rel}.d.ts`), "utf8")) : []
     const a = read(join(work, "ts-dts")).find((e) => e.name === name)
-    const b = read(join(work, "out", "src-vibe")).find((e) => e.name === name)
+    const b = read(twinOutDir(pkg)).find((e) => e.name === name)
     return a !== undefined && b !== undefined && normalizeDts(a.text) === normalizeDts(b.text)
   })
 }
@@ -422,7 +437,7 @@ const sameNamedPair = (pkg, work, text) => {
  * instance types, must be identical (checked by the compiler).
  */
 const apiCheck = (pkg, work) => {
-  const twinOut = join(work, "out", "src-vibe")
+  const twinOut = twinOutDir(pkg)
   const twinDts = new Set(walk(twinOut).filter((f) => f.endsWith(".d.ts")))
   const api = {
     modules: 0, identicalFiles: 0, checked: 0, missingModules: [], missingExports: [], extraExports: [],
@@ -711,7 +726,7 @@ const runUnlocked = (pkgArg) => {
 
   tsconfig(pkg, join(work, "tsconfig.twin.json"), {
     ...common,
-    rootDir: "..",
+    rootDir: relative(work, repoRoot(pkg)) || ".",
     rootDirs: [join("..", sourceRoot(pkg)), "../src-vibe"],
     outDir: "out",
     declaration: true,
@@ -733,7 +748,7 @@ const runUnlocked = (pkgArg) => {
   const twin = { ...compiled, errors: split.twin, typescriptErrors: split.typescript }
   const twinned = linkPartialTwin(pkg, work)
   const ts = compile(join(work, "tsconfig.ts.json"), pkg)
-  const missingOutputs = twinned.flatMap((rel) => ["js", "d.ts"].map((ext) => join(work, "out", "src-vibe", `${rel}.${ext}`))).filter((file) => !existsSync(file))
+  const missingOutputs = twinned.flatMap((rel) => ["js", "d.ts"].map((ext) => join(twinOutDir(pkg), `${rel}.${ext}`))).filter((file) => !existsSync(file))
   const missingDeclarations = srcModules(pkg).map(({ rel }) => join(work, "ts-dts", `${rel}.d.ts`)).filter((file) => !existsSync(file))
   // C-3: a VibeLang error in unchanged TypeScript exits non-zero but is a finding; a crash
   // or a missing output is not.
@@ -779,7 +794,7 @@ import { createRequire } from "node:module"
 const require = createRequire(import.meta.url)
 const pairs = ${JSON.stringify(twinned.map((rel) => [
         ["ts", "tsx", "mts"].map((x) => join(pkg, sourceRoot(pkg), `${rel}.${x}`)).find(existsSync),
-        join(work, "out", "src-vibe", `${rel}.js`)
+        join(twinOutDir(pkg), `${rel}.js`)
       ]))}
 for (const [src, twin] of pairs) mock.module(src, () => require(twin))
 `
