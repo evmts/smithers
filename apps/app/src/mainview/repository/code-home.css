@@ -69,7 +69,6 @@
 .repo-code-home-dialog-close { position: absolute; right: 12px; top: 12px; }
 .repo-code-home-dialog .repo-frame-state { border: 0; padding: 20px 0 0; }
 @media (min-width: 1200px) and (max-width: 1540px) {
-  .repo-frame[data-ask-open="true"] .repo-code-home-layout { grid-template-columns: minmax(0, 1fr) 200px; gap: 22px; }
   .repo-frame[data-ask-open="true"] .repo-code-home-ref-count { gap: 3px; }
   .repo-frame[data-ask-open="true"] .repo-code-home-toolbar { gap: 9px; flex-wrap: wrap; }
   .repo-frame[data-ask-open="true"] .repo-code-home-latest > .repo-ui-time { display: none; }
