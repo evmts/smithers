@@ -148,7 +148,7 @@ export const runJourney = async (page: Page, definition: Journey, options: RunOp
         assertions.push({ kind: "action", ok: false, expected: step, actual: null, reason: String(error) })
       }
       await mkdir(dirname(screenshot), { recursive: true })
-      await page.screenshot({ path: screenshot, fullPage: true })
+      await page.screenshot({ path: screenshot, fullPage: true, animations: "disabled", timeout: 30000 })
       steps.push({ caption: step.caption, spec: step.spec ?? definition.spec, status: assertions.some(a => a.ok === false) ? "failed" : assertions.some(a => a.ok === null) ? "skipped" : "passed", assertions, screenshot, ms: Date.now() - at })
     }
     return { ...base, state: steps.some(s => s.status === "failed") ? (options.mode === "mock" ? "stale" : "unverified") : "unverified", reason: "Pair mock/live evidence in drift before assigning shipped or ahead" }

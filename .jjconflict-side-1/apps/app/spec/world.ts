@@ -13,6 +13,6 @@ export interface World {
   readonly ahead: Readonly<Partial<Record<RuntimeCapability, string>>>
   readonly viewer: { readonly username: string } | null
   readonly repos: ReadonlyArray<SpecRepository>
-  readonly variants: { readonly as: "out" | "member"; readonly data: "full" | "empty"; readonly net: "ok" | "slow" | "error" }
+  readonly variants: { readonly access?: "allowed" | "denied"; readonly as: "out" | "member"; readonly data: "full" | "empty"; readonly net: "ok" | "slow" | "error" }
 }
 export const world = (value: World): World => value

@@ -2,6 +2,8 @@ import { z } from "zod"
 
 /** Accessible element, deliberately independent of execution mode. */
 export interface Element {
+  /** Zero-based position among matching accessible elements. */
+  readonly nth?: number
   readonly within?: Element
   readonly role: string
   readonly name?: string
@@ -10,7 +12,7 @@ export interface Element {
   readonly level?: number
 }
 export type Assertion =
-  | { readonly see: Element; readonly count?: number; readonly text?: string }
+  | { readonly see: Element; readonly count?: number; readonly text?: string | { readonly pattern: string } }
   | { readonly text: string; readonly source?: "html" }
   | { readonly absent: string | { readonly pattern: string } }
   | { readonly url: string | { readonly startsWith: string; readonly includes?: ReadonlyArray<string>; readonly matches?: string; readonly absent?: ReadonlyArray<string> }; readonly on?: Element; readonly status?: number }
@@ -43,9 +45,9 @@ export interface Journey {
   readonly expect?: ReadonlyArray<Assertion>
   readonly judge?: { readonly agent: string }
 }
-const elementSchema: z.ZodType<Element> = z.lazy(() => z.strictObject({ within: elementSchema.optional(), role: z.string().min(1), href: z.string().optional(), editable: z.boolean().optional(), name: z.string().optional(), level: z.number().int().positive().optional() }))
+const elementSchema: z.ZodType<Element> = z.lazy(() => z.strictObject({ nth: z.number().int().nonnegative().optional(), within: elementSchema.optional(), role: z.string().min(1), href: z.string().optional(), editable: z.boolean().optional(), name: z.string().optional(), level: z.number().int().positive().optional() }))
 const assertionSchema = z.union([
-  z.strictObject({ see: elementSchema, count: z.number().int().nonnegative().optional(), text: z.string().optional() }),
+  z.strictObject({ see: elementSchema, count: z.number().int().nonnegative().optional(), text: z.union([z.string(), z.strictObject({ pattern: z.string().min(1).refine(value => { try { new RegExp(value); return true } catch { return false } }, "invalid pattern") })]).optional() }),
   z.strictObject({ text: z.string(), source: z.literal("html").optional() }), z.strictObject({ absent: z.union([z.string().min(1), z.strictObject({ pattern: z.string().min(1).refine(value => { try { new RegExp(value); return true } catch { return false } }, "invalid pattern") })]) }),
   z.strictObject({ url: z.union([z.string(), z.strictObject({ startsWith: z.string(), includes: z.array(z.string()).optional(), matches: z.string().optional(), absent: z.array(z.string()).optional() })]), on: elementSchema.optional(), status: z.number().int().min(100).max(599).optional() }),
   z.strictObject({ sent: z.string().regex(/^GET \//) }),

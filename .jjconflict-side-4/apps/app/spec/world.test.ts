@@ -24,3 +24,11 @@ test("route matching preserves encoded names and cannot swallow extra segments",
   expect(matchRoute("/api/repos/:owner/:repo", "/api/repos/maya/tinyhttp/home")).toBeUndefined()
   expect(matchRoute("/api/repos/:owner/:repo/contents/*path", "/api/repos/maya/tinyhttp/contents/docs/a%20b.md")).toEqual({ owner: "maya", repo: "tinyhttp", path: "docs/a b.md" })
 })
+
+test("P1 denied repository uses the existing read-error wire contract", () => {
+  const w = defaultWorld(new URLSearchParams({ as: "member", access: "denied" }))
+  const handler = readRoutes.find(r => r.path === "/api/repos/:owner/:repo")!
+  const response = handler.handle({ url: new URL("http://spec.test/api/repos/maya/tinyhttp"), params: { owner: "maya", repo: "tinyhttp" } }, w)
+  expect(response.status).toBe(403)
+  expect(handler.schema.parse(response.body)).toEqual({ message: "Repository access denied" })
+})

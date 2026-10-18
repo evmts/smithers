@@ -16,7 +16,8 @@ export const element = (page: Page, target: Element): Locator => {
   ...(target.level === undefined ? {} : { level: target.level })
 })
   if (target.editable !== undefined) locator = locator.and(page.locator(target.editable ? ":read-write" : ":read-only"))
-  return target.href === undefined ? locator : locator.and(page.locator(`[href=${JSON.stringify(target.href)}]`))
+  if (target.href !== undefined) locator = locator.and(page.locator(`[href=${JSON.stringify(target.href)}]`))
+  return target.nth === undefined ? locator : locator.nth(target.nth)
 }
 export const observe = async (page: Page, assertion: Assertion, exchanges: ReadonlyArray<Exchange>, decode: Decode, timeoutMs = 5000): Promise<AssertionResult> => {
   const check = expect.configure({ timeout: timeoutMs })
@@ -28,7 +29,7 @@ export const observe = async (page: Page, assertion: Assertion, exchanges: Reado
       const locator = element(page, assertion.see)
       if (assertion.count !== undefined) await check(locator).toHaveCount(assertion.count)
       else await check(locator).toBeVisible()
-      if (assertion.text !== undefined) await check(locator).toContainText(assertion.text)
+      if (assertion.text !== undefined) await check(locator).toContainText(typeof assertion.text === "string" ? assertion.text : new RegExp(assertion.text.pattern, "i"))
       actual = await locator.count()
     } else if ("absent" in assertion) {
       await check(page.getByText(typeof assertion.absent === "string" ? assertion.absent : new RegExp(assertion.absent.pattern, "i"), { exact: false })).toHaveCount(0)

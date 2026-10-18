@@ -24,5 +24,5 @@ export const defaultWorld = (query = new URLSearchParams()) => world({
       "docs/user/src/001-onboarding.md": longGuide
     }, home: { kind: "blocks", blocks: [{ type: "text", title: "Install Effeck", text: "npm create effeck@latest my-app" }, { type: "markdown", path: "README.md", markdown: effeckReadme }] }, issues: [] }
   ],
-  variants: { as: query.get("as") === "member" ? "member" : "out", data: query.get("data") === "empty" ? "empty" : "full", net: query.get("net") === "slow" ? "slow" : query.get("net") === "error" ? "error" : "ok" }
+  variants: { ...(query.get("access") === "denied" ? { access: "denied" as const } : {}), as: query.get("as") === "member" ? "member" : "out", data: query.get("data") === "empty" ? "empty" : "full", net: query.get("net") === "slow" ? "slow" : query.get("net") === "error" ? "error" : "ok" }
 })
