@@ -922,3 +922,19 @@ describe("repositoryInputTarget", () => {
     expect("error" in answer ? answer.error : "").not.toContain("ghp_")
   })
 })
+
+test("an unreadable signed-out repository returns after sign-in to its prefilled Import offer", async () => {
+  const { missingRepositoryOffer } = await import("./RepositoryEntryOffer")
+  const { store, controller } = await fixture()
+  const repo = "ada/unimported"
+  const http = async (input: RequestInfo | URL) => String(input).includes("github-access")
+    ? jsonResponse({ verdict: "ok", surface: "issues", installation_id: 42, install_url: "https://github.com/apps/smithers/installations/new" })
+    : jsonResponse({ code: "not_found" }, 404)
+  try {
+    await openRequestedRepo(controller, http, repo)
+    expect(signInReturnTo({ pathname: `/${repo}`, search: "" })).toBe(`/${repo}`)
+    store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ada", admin: false, scopesPlain: null })
+    await openRequestedRepo(controller, http, repo)
+    expect(missingRepositoryOffer(repo, store.collections.githubAppStatuses.get(repo)).action).toEqual({ flow: "repos.import", args: repo, label: "Import" })
+  } finally { await store.dispose?.() }
+})

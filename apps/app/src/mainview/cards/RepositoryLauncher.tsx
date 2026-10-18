@@ -3,7 +3,7 @@ import type { LeadBlock, JourneyChoice } from "@smthrs/rpc/FrontDoor"
 import { Fragment, useState, useSyncExternalStore } from "react"
 import { Button, Input } from "@smthrs/ui"
 import { flowAction } from "../flows/FlowAction"
-import { repositoryInputTarget } from "../RepoLink"
+import { RepositoryOpenForm } from "./RepositoryOpenForm"
 import type { RunCommand } from "./CardFamily"
 import { useController } from "../ControllerContext"
 import type { LauncherCatalogAnswer, SmithersUpdate, SmithersUpdatesAnswer } from "../state/seams/LauncherSeam"
@@ -64,8 +64,7 @@ export const LAUNCHER_ROWS = 8
 /** A repository's own address. Lower-cased, as the served app documents are. */
 export const repositoryHref = (id: string): string => `/${id.toLowerCase()}/`
 
-/** Where the Open box's refusal is written, so the field can point at it. */
-export const LAUNCHER_OPEN_ERROR_ID = "repository-launcher-open-error"
+export { LAUNCHER_OPEN_ERROR_ID } from "./RepositoryOpenForm"
 
 /** The page's own navigation; a caller supplies its own in a test. */
 const goToRepository = (href: string): void => { globalThis.location?.assign(href) }
@@ -108,13 +107,6 @@ export function RepositoryLauncher({
 }: RepositoryLauncherProps) {
   /* The typed repository name is transient chrome no reader would miss after a reload. */
   const [name, setName] = useState("")
-  /*
-   * So is the Open box and the sentence it answers with: a form, not a second
-   * state engine. The sentence is one of `repositoryInputTarget`'s two
-   * authored refusals — never a raw error and never the typed text.
-   */
-  const [opening, setOpening] = useState("")
-  const [openNotice, setOpenNotice] = useState<string | null>(null)
   const own = repositories.filter(repository => repository.catalog !== true)
   const explore = repositories.filter(repository => repository.catalog === true)
   const trimmed = name.trim()
@@ -130,26 +122,10 @@ export function RepositoryLauncher({
         * address it navigates to is where sign-in, import, the GitHub App
         * installation path and every refusal already live.
         */}
-      <form className="repository-launcher-open" onSubmit={event => {
-        event.preventDefault()
-        const parsed = repositoryInputTarget(opening)
-        if ("error" in parsed) { setOpenNotice(parsed.error); return }
-        setOpenNotice(null)
-        onOpenRepository(repositoryHref(parsed.repo))
-      }}>
-        <Input aria-label="Open an existing repository" placeholder="owner/name"
-          name="repository" autoComplete="off" spellCheck={false}
-          value={opening} aria-invalid={openNotice === null ? undefined : true}
-          aria-describedby={openNotice === null ? undefined : LAUNCHER_OPEN_ERROR_ID}
-          onChange={event => { setOpening(event.currentTarget.value); setOpenNotice(null) }} />
-        <Button type="submit" variant="outline">Open</Button>
-      </form>
-      {openNotice === null
-        ? <p className="repository-launcher-note">
-            A repository lives at <code>/owner/name</code>, the same path GitHub uses; its github.com URL works here too.
-          </p>
-        : <p className="repository-launcher-note" id={LAUNCHER_OPEN_ERROR_ID}
-            data-testid="repository-launcher-open-error" role="alert">{openNotice}</p>}
+      <RepositoryOpenForm onOpenRepository={onOpenRepository} />
+      <p className="repository-launcher-note">
+        A repository lives at <code>/owner/name</code>, the same path GitHub uses; its github.com URL works here too.
+      </p>
     </section>
     ),
     "open": (
