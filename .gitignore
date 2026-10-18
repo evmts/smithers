@@ -247,3 +247,6 @@ __pycache__/
 
 # Backend SSH host keys from a dev run at the repository root (ssh.host_key_dir defaults to ./data/ssh).
 /data/ssh/
+
+# VibeLang twin harness output (.smithers/flows/vibe-twin)
+.vibe-twin/
