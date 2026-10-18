@@ -245,3 +245,89 @@ describe("the header on other hosts", () => {
     expect(host.querySelector("[data-header-select]")).toBeNull()
   })
 })
+
+import { CodeHome } from "./repository/CodeHome"
+
+describe("repository Code home availability", () => {
+  test("files wait for an authoritative default branch before becoming links", () => {
+    const tree = { id:"copy:", copyId:"copy", path:"", state:"loaded" as const, entries:[{name:"README.md",kind:"file" as const}], expanded:true, loadedAt:1 }
+    const unknown = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" tree={tree}/>)
+    expect(unknown.textContent).toContain("README.md")
+    expect(unknown.querySelector('a[href*="/HEAD/"]')).toBeNull()
+    expect(unknown.querySelector('a[href*="/blob/"]')).toBeNull()
+    const known = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="trunk" tree={tree}/>)
+    expect(known.querySelector('a[href="/maya/tinyhttp/blob/trunk/README.md"]')).not.toBeNull()
+  })
+  test("a missing tree copy is an unavailable state rather than an endless spinner", () => {
+    const host = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" treeAvailable={false}/>)
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe("Couldn't load repository files.")
+    expect(host.querySelector('[role="status"]')).toBeNull()
+  })
+})
+
+test("declared home blocks stay above Files in spec order and README stays below", () => {
+  const host = mount(<CodeHome repo="maya/tinyhttp" onRunCommand={() => false} treeAvailable={false} home={{ kind:"blocks", blocks:[
+    {type:"links",links:[{label:"Documentation",url:"https://example.com/docs"}]},
+    {type:"prompt",placeholder:"Ask a question"}, {type:"text",text:"Repository introduction"},
+    {type:"markdown",path:"README.md",markdown:"# Project README"}
+  ] }}/>)
+  const home = host.querySelector('[data-testid="repository-home"]')!
+  expect(home).not.toBeNull()
+  const copy = home.textContent!
+  expect(copy.indexOf("Repository introduction")).toBeLessThan(copy.indexOf("Ask a question"))
+  expect(copy.indexOf("Ask a question")).toBeLessThan(copy.indexOf("Documentation"))
+  expect(copy).not.toContain("Project README")
+  const files = host.querySelector('[aria-label="Files"]')!
+  const readme = host.querySelector('[aria-label="README"]')!
+  expect(home.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  expect(files.compareDocumentPosition(readme) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  expect(readme.querySelector("h1")?.textContent).toBe("Project README")
+})
+
+// The repository page projects only the authoritative head and complete branch list.
+import type { ChangeRow } from "./state/AppState"
+
+const repositoryCommit: ChangeRow = {
+  id: "maya/tinyhttp#change", repoId: "maya/tinyhttp", changeId: "change", commitId: "a".repeat(40),
+  description: "Fix parser\nPrivate body", authorName: "Maya", timestamp: "2026-10-18T10:00:00Z",
+  hasConflict: false, parentChangeIds: [], currentSeq: null, revisionCount: null, updatedAt: 1, revision: 1
+}
+
+describe("repository Code home metadata", () => {
+  test("only the exact repository head supplies latest-commit metadata", () => {
+    const host = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="main" headCommit={repositoryCommit.commitId} changes={[repositoryCommit]}/>)
+    expect(host.querySelector('[aria-label="Latest commit"]')?.textContent).toContain("Maya")
+    expect(host.textContent).toContain("Fix parser")
+    expect(host.textContent).not.toContain("Private body")
+    expect(host.querySelector("time")?.dateTime).toBe(repositoryCommit.timestamp!)
+    expect(host.querySelector('[aria-label="Latest commit"] code')?.textContent).toBe("a".repeat(40))
+  })
+  for (const [name, repo, head] of [["another repository", "other/repo", "a".repeat(40)], ["old head", "maya/tinyhttp", "b".repeat(40)], ["unloaded head", "maya/tinyhttp", null]] as const) {
+    test(`does not label ${name} as latest`, () => {
+      const host = mount(<CodeHome onRunCommand={() => false} repo={repo} headCommit={head} changes={[repositoryCommit]}/>)
+      expect(host.querySelector('[aria-label="Latest commit"] strong')).toBeNull()
+      expect(host.querySelector('[aria-label="Latest commit"] time')).toBeNull()
+      expect(host.textContent).not.toContain("Fix parser")
+      expect(host.querySelector('[aria-label="Latest commit"] code')?.textContent).toBe(head ?? undefined)
+    })
+  }
+  test("a complete bookmark read supplies names and branch count; failures stay visible", () => {
+    const host = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="main" branches={{ id:"maya/tinyhttp", state:"ready", names:["main", "docs/ui"] }}/>)
+    expect(host.textContent).toContain("2 branches")
+    expect(host.querySelector('a[href="/maya/tinyhttp/tree/docs%2Fui"]')?.textContent).toBe("docs/ui")
+    const failed = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="main" branches={{ id:"maya/tinyhttp", state:"failed", names:["stale"], error:"Permission denied" }}/>)
+    expect(failed.querySelector('[role="alert"]')?.textContent).toBe("Permission denied")
+    expect(failed.textContent).not.toContain("stale")
+    expect(failed.textContent).not.toContain("1 branch")
+  })
+})
+
+test("Code home uses a fresh default-branch head instead of older inventory metadata", () => {
+  const fresh = { ...repositoryCommit, commitId:"b".repeat(40), description:"Fresh head", authorName:"New author" }
+  const host = mount(<CodeHome repo="maya/tinyhttp" branch="main" onRunCommand={() => false} headCommit={repositoryCommit.commitId}
+    changes={[repositoryCommit,fresh]} branches={{ id:"maya/tinyhttp", state:"ready", names:["main"], commits:{main:fresh.commitId} }}/>)
+  const latest = host.querySelector('[aria-label="Latest commit"]')!
+  expect(latest.textContent).toContain("Fresh head")
+  expect(latest.textContent).not.toContain("Fix parser")
+  expect(latest.querySelector("code")?.textContent).toBe(fresh.commitId)
+})

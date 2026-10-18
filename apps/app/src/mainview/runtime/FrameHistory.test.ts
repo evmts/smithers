@@ -60,6 +60,16 @@ const root: FrameLocation = { workspaceId: "workspace-default", branchId: "branc
 const card: FrameLocation = { workspaceId: "workspace-default", branchId: "branch-main", frameId: "frame-card:branch-main:card-1" }
 
 describe("browser frame history", () => {
+  test("code URLs retain line and display choices through frame writes and reload", () => {
+    const { host } = browser("/alpha/one/blob/main/src/index.ts?L=2-4&raw=1&tutorial")
+    const history = createBrowserFrameHistory(host)
+    history.replace(root)
+    expect(host.location.search).toBe("?L=2-4&raw=1")
+    host.history.replaceState(host.history.state, "", "/alpha/one/blob/main/src/index.ts?L=5&view=code")
+    history.push(card)
+    expect(host.location.search).toBe("?L=5&view=code")
+    expect(createBrowserFrameHistory(host).current()).toEqual(card)
+  })
   test("legacy tutorial query does not change repository frame navigation", () => {
     const { host, entries } = browser("/smithersai/smithers/?tutorial")
     const history = createBrowserFrameHistory(host)

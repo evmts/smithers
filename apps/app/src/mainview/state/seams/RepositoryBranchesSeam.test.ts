@@ -280,3 +280,19 @@ describe("a branch off an install is a bookmark of the selected repository", () 
     expect(h.selection()).toEqual({ repository: "acme/api", branch: "docs" })
   })
 })
+
+test("branch reads expose only full commit IDs for permalinks", async () => {
+  const full = "abcdef0123".repeat(4), upper = full.toUpperCase()
+  const h = await harness(url => url.pathname.endsWith("/bookmarks") ? Response.json({ items: [
+    { ...bookmark("trunk"), target_commit_id: full },
+    { ...bookmark("upper"), target_commit_id: upper },
+    { ...bookmark("short"), target_commit_id: full.slice(0, 7) },
+    { ...bookmark("invalid"), target_commit_id: "z".repeat(40) },
+    { ...bookmark("missing"), target_commit_id: null }
+  ], next_cursor: "" }) : undefined)
+  await h.controller.repositoryBranches.load("acme/api")
+  expect(h.controller.repositoryBranches.rows.get("acme/api")).toMatchObject({
+    state: "ready", commits: { trunk: full, upper }
+  })
+  expect(Object.keys(h.controller.repositoryBranches.rows.get("acme/api")!.commits!)).toEqual(["trunk", "upper"])
+})

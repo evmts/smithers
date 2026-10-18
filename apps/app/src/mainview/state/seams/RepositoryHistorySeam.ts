@@ -5,7 +5,6 @@
 import type { MythicalItem, MythicalStack } from "@smthrs/rpc/Mythical"
 import { mythicalRoute, MythicalStackSchema } from "@smthrs/rpc/Mythical"
 import { ACTIVE_ITEM_STATES, itemReason, itemStateLabel, itemTitle } from "@smthrs/rpc/StackView"
-import { Data } from "effect"
 import { actorSharedState } from "../ActorBindings"
 import type { Card } from "../AppState"
 import type { FailureController } from "../controller/failures"
@@ -32,9 +31,6 @@ export interface RepositorySnapshots {
   readonly get: (repo: string) => RepositorySnapshot | undefined
   readonly subscribe: (listener: () => void) => () => void
 }
-
-/** The history's event stream said this viewer lost access; the read fails as a 403. */
-class HistoryAccessRevoked extends Data.TaggedError("HistoryAccessRevoked")<Record<never, never>> {}
 
 export interface RepositoryHistorySeam {
   /** One snapshot without a card: the watched one, else a single read. */
@@ -113,6 +109,8 @@ export const createRepositoryHistorySeam = (
     watches: new Map<string, Watch>(),
     acts: new Map<string, Promise<unknown>>(),
     homes: new Set<string>(),
+    // A terminal permission refusal survives automatic re-subscriptions for this account.
+    refused: new Set<string>(),
     values: new Map<string, RepositorySnapshot>(),
     listeners: new Set<() => void>(),
     owner: login(),
@@ -239,6 +237,7 @@ export const createRepositoryHistorySeam = (
     // Only the stack's own changes raise the generation; an older one is a stale answer.
     if (watch.stack !== null && stack.generation < watch.stack.generation) return
     const previous = watch.stack
+    shared.refused.delete(watch.repo)
     watch.stack = stack
     publish(watch.repo, { stack, error: null })
     observeItems(watch, previous, stack)
@@ -249,6 +248,7 @@ export const createRepositoryHistorySeam = (
   }
   const readFailed = (watch: Watch, failure: CloudFailure): void => {
     if (!watch.current()) return
+    if (final(failure)) shared.refused.add(watch.repo)
     publish(watch.repo, { stack: watch.stack, error: failure.error })
     if (final(failure)) stopWatch(watch.repo, failure.error)
   }
@@ -316,8 +316,7 @@ export const createRepositoryHistorySeam = (
         const blocks = buffer.split(/\r?\n\r?\n/)
         buffer = blocks.pop() ?? ""
         if (blocks.some((block) => /^event:\s*revoked\s*$/m.test(block))) {
-          const failure = cloudUnreachable(new HistoryAccessRevoked())
-          return { ...failure, status: 403 }
+          return cloudFailure(Response.json({ message: "Repository access revoked." }, { status: 403 }), "Repository access revoked.")
         }
         if (blocks.some((block) => /^event:\s*mythical\s*$/m.test(block))) void refresh(watch)
       }
@@ -482,7 +481,7 @@ export const createRepositoryHistorySeam = (
     }
     shared.homes.clear()
     shared.homes.add(repo)
-    if (login() !== null && shared.watches.get(repo)?.current() !== true) void refresh(watch(repo))
+    if (login() !== null && !shared.refused.has(repo) && shared.watches.get(repo)?.current() !== true) void refresh(watch(repo))
   }
   const resume: RepositoryHistorySeam["resume"] = () => {
     if (disposed()) return
@@ -492,6 +491,7 @@ export const createRepositoryHistorySeam = (
       shared.owner = owner
       for (const repo of [...shared.watches.keys()]) stopWatch(repo)
       shared.values.clear()
+      shared.refused.clear()
       for (const listener of shared.listeners) listener()
     }
     if (owner === null) return
@@ -499,7 +499,7 @@ export const createRepositoryHistorySeam = (
     for (const value of ctx.store.collections.cards.values()) if (value.kind === "stack") repos.add(value.payload.repo)
     for (const repo of repos) {
       // A watch already live for this account has nothing to reconnect.
-      if (shared.watches.get(repo)?.current()) continue
+      if (shared.refused.has(repo) || shared.watches.get(repo)?.current()) continue
       const handle = watch(repo)
       void refresh(handle)
       if (card(repo)?.payload.bootstrap !== undefined && !shared.acts.has(actKey(repo, "bootstrap", repo))) {
@@ -538,7 +538,8 @@ export const createRepositoryHistorySeam = (
   const heldStack: RepositoryHistorySeam["heldStack"] = (repo) => {
     const current = login()
     if (current === null || current !== shared.owner) return undefined
-    return shared.values.get(repo)?.stack ?? undefined
+    const snapshot = shared.values.get(repo)
+    return snapshot?.error == null ? snapshot?.stack ?? undefined : undefined
   }
 
   /** One snapshot for a reader that shows no card (search.history): the live one when watched, else one read. */

@@ -699,6 +699,7 @@ describe("files seam — reading at a revision", () => {
       repo: "will/flows",
       path: "README.md",
       content: README_TEXT,
+      originalSize: README_TEXT.length,
       truncated: false,
       address: "/will/flows/README.md",
       ref: REVISION
@@ -940,4 +941,25 @@ test("repeated session observations retain the roster without exhausting install
     await settled()
     expect(rosterReads).toBeGreaterThan(initial)
   } finally { await controller.dispose() }
+})
+
+test("a signed-out revision read retains the contents response's resolved commit", async () => {
+  const commit = "b".repeat(40)
+  const { store, controller } = await freshController(base => async (input, init) => {
+    const response = await base(input, init)
+    if (String(input).includes("/contents/README.md")) response.headers.set("X-Contents-Commit", commit)
+    return response
+  })
+  await ready(store)
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, admin: false, scopesPlain: null }).isPersisted.promise
+  await controller.readFile("README.md", "will/flows", undefined, REVISION)
+  expect(fileCard(store, `file-will/flows-README.md@${REVISION}`)?.payload).toMatchObject({ ref: REVISION, readAt: { commitId: commit, changeId: null } })
+})
+
+test("a capped read retains original bytes independently of the displayed portion", async () => {
+  const { store, controller } = await freshController()
+  await ready(store)
+  await controller.readFile("big.txt", "will/flows")
+  expect(fileCard(store, "file-will/flows-big.txt")?.payload).toMatchObject({ truncated: true, originalSize: BIG_TEXT.length })
+  expect(fileCard(store, "file-will/flows-big.txt")?.payload.content.length).toBe(16 * 1024)
 })

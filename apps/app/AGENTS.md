@@ -22,6 +22,13 @@ A signed-out visitor of the hosted web app opens on the login screen, in the mid
 
 Follow [mvp.md §8](../../.specs/product/mvp.md#8-what-we-cut) and J1. The signup poll, first-run checklist, practice repository and five-job setup are cut. Keep the shared first-sight hint and keyboard access.
 
+## Repository routes (Will, 2026-10-18)
+
+Repository routes follow the stage 1 mock (`.specs/design/mock/`), per Will's
+2026-10-18 decision. They open in the repository frame. The EMBED LAW
+continues to govern chat and the Ask panel: answers and capability output
+embed as cards in the existing conversation.
+
 ## ⚖️ THE EMBED LAW — read this before anything else (will, 2026-08-09, permanent)
 
 **Everything embeds in the chat. Nothing opens full-screen unless the user explicitly asks.**

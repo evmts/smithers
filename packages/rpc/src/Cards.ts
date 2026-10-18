@@ -1808,6 +1808,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       workspaceId: z.string().optional(),
       path: z.string(),
       content: z.string(),
+      /** Original byte size returned by the file read; absent on older cards. */
+      originalSize: z.number().int().nonnegative().optional(),
       /** True when the read was cut at the card cap; the full file stays upstream. */
       truncated: z.boolean(),
       /*

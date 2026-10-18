@@ -727,9 +727,47 @@ test("a stack the host stops serving is not left on the landing as live work", a
   const refused = host.querySelector<HTMLElement>('[data-testid="repository-home-stack"]')!
   expect(refused.dataset.stack).toBe("refused")
   expect(refused.querySelector('[role="status"]')?.textContent ?? "").not.toBe("")
+  expect(refused.querySelector('[role="status"]')?.textContent).toContain("revoked")
   // The work it last read is gone, not presented as current.
   expect(refused.textContent).not.toContain("#2 Wire the deep link")
   expect(refused.querySelector('[data-testid="repository-home-stack-counts"]')).toBeNull()
   // The tree is still one press away.
   expect(host.querySelector(".repository-home-files")).not.toBeNull()
+})
+
+test("an admission lost during branch loading settles its code read as failed", async () => {
+  const { codeReadKey, repositoryCodeReads } = await import("./repository/RepositoryCodeRead")
+  const backend = ownedRepository({ [`${ROOT}/bookmarks`]: bookmarks("main") })
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  window.history.replaceState(null, "", `/${REPO}/blob/main/index.ts`)
+  const target = requestedTarget(window.location)!
+  const controller = createAppController(store, silentAgent, { bootstrap: WEB, repositoryApp: target.repo, ...backend.services })
+  await controller.loadSession()
+  const requestId = beginRepositoryEntry(store, target.repo)
+  await openRequestedRepo(controller, backend.fetchImpl, target.repo, requestId)
+  await openRequestedSubject({ ...controller, repositoryBranches: {
+    ...controller.repositoryBranches,
+    load: async () => { beginRepositoryEntry(store, target.repo) }
+  } }, target.repo, target.subject, { requestId })
+  expect(repositoryCodeReads.get(codeReadKey(target.repo, "blob", "main/index.ts", requestId))).toMatchObject({
+    state: "failed", error: "Repository access changed while reading branches."
+  })
+})
+
+test("a throwing branch read settles its code read as failed", async () => {
+  const { codeReadKey, repositoryCodeReads } = await import("./repository/RepositoryCodeRead")
+  const backend = ownedRepository({ [`${ROOT}/bookmarks`]: bookmarks("main") })
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  window.history.replaceState(null, "", `/${REPO}/blob/main/index.ts`)
+  const target = requestedTarget(window.location)!
+  const controller = createAppController(store, silentAgent, { bootstrap: WEB, repositoryApp: target.repo, ...backend.services })
+  await controller.loadSession()
+  const requestId = beginRepositoryEntry(store, target.repo)
+  await openRequestedRepo(controller, backend.fetchImpl, target.repo, requestId)
+  await openRequestedSubject({ ...controller, repositoryBranches: {
+    ...controller.repositoryBranches, load: async () => { throw new Error("transport stopped") }
+  } }, target.repo, target.subject, { requestId })
+  expect(repositoryCodeReads.get(codeReadKey(target.repo, "blob", "main/index.ts", requestId))).toMatchObject({
+    state: "failed", error: "Could not read repository branches."
+  })
 })
