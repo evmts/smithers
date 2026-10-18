@@ -143,6 +143,28 @@ require('node:fs').writeFileSync(${JSON.stringify(marker)},String(holder.pid));s
       }).pipe(Effect.scoped))
   }
 
+  it.live("waits for a target that exits after receiving SIGTERM", () =>
+    Effect.gen(function*() {
+      const directory = yield* fixture
+      const ready = join(directory, "ready")
+      const stopped = join(directory, "stopped")
+      const spawner = yield* ChildProcessSpawner
+      const handle = yield* spawner.spawn(ChildProcess.make(process.execPath, [
+        "-e",
+        `const fs=require('node:fs');
+process.on('SIGTERM',()=>setTimeout(()=>{fs.writeFileSync(${JSON.stringify(stopped)},'stopped');process.exit(0)},75));
+fs.writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},1000)`
+      ], { forceKillAfter: 1000 }))
+      while (!existsSync(ready)) yield* Effect.sleep(5)
+      yield* handle.kill({ killSignal: "SIGTERM", forceKillAfter: 1000 })
+      expect(readFileSync(stopped, "utf8")).toBe("stopped")
+      expect(yield* handle.isRunning).toBe(false)
+    }).pipe(
+      Effect.provide(contained),
+      Effect.provide(ProcessLedger.layerMemory({ hostId: "delayed-term", ownerPid: process.pid })),
+      Effect.scoped
+    ))
+
   it.live("shares native and private-channel unref/reref state and re-references explicit cleanup", () =>
     Effect.gen(function*() {
       const raw = yield* ChildProcessSpawner

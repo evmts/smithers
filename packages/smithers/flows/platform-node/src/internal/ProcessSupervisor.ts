@@ -607,8 +607,12 @@ export const prepare = (
         // the kernel cannot: a group still holding zombies, or an unknown one.
         // A live member keeps both answers false. This host is alive, so a
         // vacant group is never this host's own group.
-        const vacant = grouped && system.vacant(raw.pid)
+        let vacant = grouped && system.vacant(raw.pid)
         const observed = grouped && !vacant ? snapshot() : undefined
+        // A synchronous process-table query can outlive both the remaining
+        // group and this deadline. Recheck the kernel after it returns rather
+        // than refuse cleanup from a live member sampled before it exited.
+        if (grouped && !vacant) vacant = system.vacant(raw.pid)
         settled = !control.cleanupFailed && (!requireCleanupReceipt || control.cleanupAcknowledged) && (grouped
           ? vacant ||
             observed !== undefined && observed.ownGroup !== raw.pid && observed.members.every((member) => member.zombie)
