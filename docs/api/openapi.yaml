@@ -13446,6 +13446,127 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/repos/{owner}/{repo}/github/metadata/{path}:
+    get:
+      summary: GET /api/repos/{owner}/{repo}/github/metadata/{path}
+      description: >-
+        Reads the imported GitHub issues and pull requests of a public
+        repository from the metadata mirror, with the repository's ordinary
+        read permission and no GitHub credential. A repository that is not
+        public answers 404.
+      operationId: get_api_repos_owner_repo_github_metadata_path
+      tags:
+        - Repositories
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: path
+          required: true
+          description: >-
+            `issues` or `pulls`, optionally followed by `/{number}` and then
+            `/comments`. Any other path is refused.
+          example: pulls/7
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [open, closed, all]
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: direction
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: per_page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: labels
+          in: query
+          required: false
+          description: Issues only.
+          schema:
+            type: string
+        - name: head
+          in: query
+          required: false
+          description: Pull requests only.
+          schema:
+            type: string
+        - name: base
+          in: query
+          required: false
+          description: Pull requests only.
+          schema:
+            type: string
+      security:
+        - {}
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: 'The GitHub-shaped record or page, served with `Cache-Control: no-store`.'
+          headers:
+            Link:
+              description: Contains rel=next when another page is available.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: The GitHub source or its metadata mirror is unavailable; the request may be retried.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/repos/{owner}/{repo}/hooks:
     get:
       summary: GET /api/repos/{owner}/{repo}/hooks
