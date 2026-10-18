@@ -625,7 +625,28 @@ func Load(configFile string) (*Config, error) {
 		"compile_endpoint": "", "receipt_seed": "", "proxy_origin": "", "proxy_secret": "",
 	} {
 		v.SetDefault("guest."+key, value)
-		_ = v.BindEnv("guest."+key, "SMITHERS_GUEST_"+strings.ToUpper(key))
+	}
+	// Guest env names stay literal so config tests can find every bound key.
+	for _, b := range [][2]string{
+		{"guest.repositories", "SMITHERS_GUEST_REPOSITORIES"},
+		{"guest.provider", "SMITHERS_GUEST_PROVIDER"},
+		{"guest.model", "SMITHERS_GUEST_MODEL"},
+		{"guest.sponsor_id", "SMITHERS_GUEST_SPONSOR_ID"},
+		{"guest.ip_secret", "SMITHERS_GUEST_IP_SECRET"},
+		{"guest.disabled", "SMITHERS_GUEST_DISABLED"},
+		{"guest.request_nanos", "SMITHERS_GUEST_REQUEST_NANOS"},
+		{"guest.daily_nanos", "SMITHERS_GUEST_DAILY_NANOS"},
+		{"guest.window_nanos", "SMITHERS_GUEST_WINDOW_NANOS"},
+		{"guest.window_start", "SMITHERS_GUEST_WINDOW_START"},
+		{"guest.window_end", "SMITHERS_GUEST_WINDOW_END"},
+		{"guest.requests_per_ip", "SMITHERS_GUEST_REQUESTS_PER_IP"},
+		{"guest.output_tokens", "SMITHERS_GUEST_OUTPUT_TOKENS"},
+		{"guest.compile_endpoint", "SMITHERS_GUEST_COMPILE_ENDPOINT"},
+		{"guest.receipt_seed", "SMITHERS_GUEST_RECEIPT_SEED"},
+		{"guest.proxy_origin", "SMITHERS_GUEST_PROXY_ORIGIN"},
+		{"guest.proxy_secret", "SMITHERS_GUEST_PROXY_SECRET"},
+	} {
+		_ = v.BindEnv(b[0], b[1])
 	}
 
 	// iOS + remote-sandbox rollout flags (ticket 0112) — all default false.

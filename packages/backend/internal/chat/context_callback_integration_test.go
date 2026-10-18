@@ -76,7 +76,7 @@ func newContextFixture(t *testing.T) contextFixture {
 	}}
 	router := chi.NewRouter()
 	router.Group(func(public chi.Router) {
-		public.Use(middleware.AuthLoader(q, config.AuthConfig{SessionCookieName: "context_session"}))
+		public.Use(middleware.AuthLoader(q, config.AuthConfig{}))
 		public.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				ctx := middleware.ContextWithRepoContext(r.Context(), &middleware.RepoContext{Repository: &repo}, middleware.PermissionWrite)
@@ -91,7 +91,7 @@ func newContextFixture(t *testing.T) contextFixture {
 	require.NoError(t, err)
 	origin, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	jar.SetCookies(origin, []*http.Cookie{{Name: "context_session", Value: "context-session-credential"}})
+	jar.SetCookies(origin, []*http.Cookie{{Name: config.DefaultSessionCookieName, Value: "context-session-credential", Path: "/"}})
 	server.Client().Jar = jar
 	t.Cleanup(server.Close)
 	return contextFixture{handler, scope, server}

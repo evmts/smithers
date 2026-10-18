@@ -206,6 +206,23 @@ var allEnvKeys = []string{
 	"SMITHERS_CHAT_CONCURRENCY",
 	"SMITHERS_CHAT_QUEUE_SIZE",
 	"SMITHERS_CHAT_LEASE_SECONDS",
+	"SMITHERS_GUEST_REPOSITORIES",
+	"SMITHERS_GUEST_PROVIDER",
+	"SMITHERS_GUEST_MODEL",
+	"SMITHERS_GUEST_SPONSOR_ID",
+	"SMITHERS_GUEST_IP_SECRET",
+	"SMITHERS_GUEST_DISABLED",
+	"SMITHERS_GUEST_REQUEST_NANOS",
+	"SMITHERS_GUEST_DAILY_NANOS",
+	"SMITHERS_GUEST_WINDOW_NANOS",
+	"SMITHERS_GUEST_WINDOW_START",
+	"SMITHERS_GUEST_WINDOW_END",
+	"SMITHERS_GUEST_REQUESTS_PER_IP",
+	"SMITHERS_GUEST_OUTPUT_TOKENS",
+	"SMITHERS_GUEST_COMPILE_ENDPOINT",
+	"SMITHERS_GUEST_RECEIPT_SEED",
+	"SMITHERS_GUEST_PROXY_ORIGIN",
+	"SMITHERS_GUEST_PROXY_SECRET",
 }
 
 // clearConfigEnv unsets all SMITHERS_ env vars that config.Load() reads,
@@ -817,6 +834,13 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			TerminalActiveMax:    5,
 			ApprovalDecidePerMin: 30,
 			BuildCachePerMinute:  1200,
+		},
+		Guest: GuestConfig{
+			RequestNanos:  100_000_000,
+			DailyNanos:    100_000_000_000,
+			WindowNanos:   500_000_000_000,
+			RequestsPerIP: 10,
+			OutputTokens:  1024,
 		},
 	}
 	assert.Equal(t, expected, cfg)
@@ -1703,6 +1727,7 @@ func TestLoad_MapstructureTagsMatchViperKeys(t *testing.T) {
 		"FeatureFlags":        "feature_flags",
 		"RateLimit":           "rate_limit",
 		"Chat":                "chat",
+		"Guest":               "guest",
 		"WikiSync":            "wiki_sync",
 	}
 
