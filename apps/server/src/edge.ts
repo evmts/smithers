@@ -4,7 +4,7 @@ import * as Layer from "effect/Layer"
 import { runRequest } from "./Boundary"
 import { DEFAULT_UPSTREAM_TIMEOUT_MS, discardBody, fetchWithDeadline, TransportLive, transportFrom } from "./Http"
 import type { Transport, TransportShape } from "./Http"
-import { catalogDocumentPath, DEFAULT_APP_DOCUMENT_PATH, isFramePath, isRepositoryPath, repositorySubjectRoot } from "./appDocument"
+import { catalogDocumentPath, DEFAULT_APP_DOCUMENT_PATH, isFramePath, isRepositoryPath, repositoryRedirectPath, repositorySubjectRoot } from "./appDocument"
 import { withIsolationHeaders } from "./Responses"
 
 // Storage identities survive the authority change. These classes have no product
@@ -92,6 +92,11 @@ export const handleEdgeRequest = (request: Request, configuredOrigin: string | u
      * readable, importable, installed — stays the backend's and the app's
      * answer, which is reached only by serving the app.
      */
+    const redirect = repositoryRedirectPath(url.pathname)
+    if (redirect !== undefined) {
+      url.pathname = redirect
+      return Response.redirect(url.toString(), 301)
+    }
     const subjectRoot = repositorySubjectRoot(url.pathname)
     const catalog = catalogDocumentPath(subjectRoot ?? url.pathname)
     if (catalog !== undefined) {
