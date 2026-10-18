@@ -1,3 +1,7 @@
+import { RepoFrame } from "./repository/RepoFrame"
+import { CodeHome } from "./repository/CodeHome"
+import { RepositoryCodeView } from "./repository/RepositoryCodeView"
+import { pathTarget as codePathTarget } from "./RepoLink"
 import { rememberComposerFocus, restoreComposerFocus } from "./runtime/ComposerFocus"
 import { useSharedConversation } from "./state/useSharedConversation"
 import { useTodoRole } from "./cards/TodoCard"
@@ -34,7 +38,6 @@ import { InputModeMenu } from "./InputModeMenu"
 import type { InitMessage } from "./HostOpening"
 import { cloudWebHost, initMessage } from "./HostOpening"
 import { LAUNCHER_ENTRY_ID, RepositoryLauncherCard } from "./cards/RepositoryLauncher"
-import { REPOSITORY_HOME_ENTRY_ID, RepositoryHomeView } from "./cards/RepositoryHomeView"
 import { SHORTCUT_KEYS,ShortcutButton } from "./ShortcutButton"
 import { pathRepo, treeCopyOf } from "./RepoLink"
 import { missingRepositoryOffer } from "./RepositoryEntryOffer"
@@ -119,6 +122,7 @@ function AppContent() {
     }))
   )
   const { data: worldDocumentRows } = useLiveQuery(collections.worldDocuments)
+  const { data: codeBranchRows } = useLiveQuery(controller.repositoryBranches.rows)
   const cardRows = useCardRows(collections.cards)
   const workflowCatalogs = useWorkflowCatalogRows(collections.cards)
   const triggerCatalogs = useTriggerListRows(collections.cards)
@@ -126,6 +130,8 @@ function AppContent() {
   const fileCards = useFileCardRows(collections.cards)
   const { data: identityRows } = useLiveQuery(collections.identitySessions)
   const { data: connectorRows } = useLiveQuery(collections.connectors)
+  const { data: repositoryChanges } = useLiveQuery(collections.changes)
+  const { data: repoTreeRows } = useLiveQuery(collections.repoTree)
   const { data: repositoryRows } = useLiveQuery(collections.repositories)
   const { data: repositoryFlowRows } = useLiveQuery(collections.repositoryFlows)
   /* The GitHub App's coverage of the URL's repository, when the entry read it. */
@@ -195,7 +201,7 @@ function AppContent() {
   }
   const restoreComposerOrigin = (): void => {
     const doc = chatTriggerRef.current?.ownerDocument ?? composerWrapRef.current?.ownerDocument
-    if (doc) restoreComposerFocus(doc, chatTriggerRef.current)
+    if (doc) restoreComposerFocus(doc, doc.querySelector<HTMLButtonElement>(".repo-frame-ask-button") ?? chatTriggerRef.current)
   }
   const dismissComposer = (): void => {
     controller.closePalette(controller.store.session().draft)
@@ -250,6 +256,11 @@ function AppContent() {
   // pending/failed request, or reject a repository added since this build.
   const bootEntry = session.repositoryEntry?.repo.toLowerCase() === bootRepository?.toLowerCase()
     ? session.repositoryEntry : undefined
+  const codeTarget = typeof window === "undefined" ? null : codePathTarget(window.location.pathname)
+  const codeRoute = codeTarget?.subject?.kind === "tree" || codeTarget?.subject?.kind === "blob"
+  const codeBranches = codeBranchRows.find(row => row.id.toLowerCase() === codeTarget?.repo.toLowerCase())
+  const codeDefaultRef = repositoryRows.find(row => row.id.toLowerCase() === codeTarget?.repo.toLowerCase())?.head?.bookmark
+  const codeRefs = [...new Set([...(codeBranches?.names ?? []), ...(codeDefaultRef ? [codeDefaultRef] : [])])]
   const bootPending = bootRepository !== null && (bootEntry === undefined || bootEntry.phase === "pending")
   const bootUnavailable = bootEntry?.phase === "failed" && bootEntry.failureKind !== "not-public"
   const missingBootRepository = bootEntry?.phase === "failed" && bootEntry.failureKind === "not-public"
@@ -504,17 +515,17 @@ function AppContent() {
   </MessageScrollerItem>
 
   // Chat stays mounted when closed.
-  const composerWrap = (
-    <div className="composer-wrap" data-keyboard-pane="Chat input" ref={composerWrapRef} hidden={session.paletteOpen !== true}>
+  const composerWrap = (inAsk: boolean) => (
+    <div className="composer-wrap" data-keyboard-pane="Chat input" ref={composerWrapRef} hidden={!inAsk && session.paletteOpen !== true}>
       <Composer
         typing={typing}
-        autoFocus={authMessage === undefined}
+        autoFocus={!inAsk && authMessage === undefined}
         placeholder="Ask Smithers to work on something…"
       />
     </div>
   )
 
-  return (
+  const chat = (inAsk = false) => (
     // data-flows is the live registry manifest (visible AND hidden names):
     // under commands-are-the-app the registry is not secret — the agent tool
     // lists it to the model — and the launch checklist verifies every
@@ -607,6 +618,7 @@ function AppContent() {
         view — the first thing a first visit sees would be the page's end
         rather than the launcher it came for (#4041).
       */}
+
       <MessageScrollerProvider key={transcriptKey} scrollAnchor={launcherOpening ? "none" : "bottom"}
             initialMessageId={controller.sharedConversation ? sharedConversation.view?.scroll_anchor : initialReadId}
             readAnchor={controller.sharedConversation && readEntry === undefined && !(latestEntry?.kind === "card" && latestEntry.card.kind === "docs") ? undefined : { messageId: latestReadId ?? "",
@@ -670,11 +682,7 @@ function AppContent() {
             {loginScreen && <MessageScrollerItem messageId="login" style={{ contentVisibility: "visible" }}>
               <LoginScreen onRunCommand={controller.runCommand} />
             </MessageScrollerItem>}
-            {repositoryHome !== undefined && !missingRepositoryScope && <MessageScrollerItem messageId={REPOSITORY_HOME_ENTRY_ID} style={{ contentVisibility: "visible" }}>
-              <RepositoryHomeView repo={bootRepository!} home={repositoryHome} treeCopyId={homeTreeCopy}
-                onRunCommand={(flow, args) => controller.runCommand(flow, args)} />
-            </MessageScrollerItem>}
-            {!earlier && !repositoryNotice && home && <MessageScrollerItem messageId={HOME_ENTRY_ID}>{homeCard}</MessageScrollerItem>}
+            {bootRepository === null && !earlier && !repositoryNotice && home && <MessageScrollerItem messageId={HOME_ENTRY_ID}>{homeCard}</MessageScrollerItem>}
             {!loginScreen && !repositoryNotice && <BranchNavigation saving={savingNavigation} onView={setBranchNavigationView} />}
             {!earlier && controller.sharedConversation && <SharedConversation source={controller.sharedConversation} localCardIds={new Set(visibleEntries.flatMap(entry => entry.kind === "card" ? [entry.card.id] : []))} localEntries={visibleEntries.map(entry => ({ id: entryId(entry), content: renderEntry(entry) }))} />}
             {!earlier && !controller.sharedConversation && visibleEntries.map(renderEntry)}
@@ -709,8 +717,8 @@ function AppContent() {
 
       {/* Card tabs; hidden while inactive, never unmounted. */}
       {/* Keep Chat reachable while a terminal or another tab owns the view. */}
-      <div className="composer-overlay" data-testid="composer-overlay" hidden={session.paletteOpen !== true}>
-        {composerWrap}
+      <div className="composer-overlay" data-testid="composer-overlay" hidden={!inAsk && session.paletteOpen !== true}>
+        {composerWrap(inAsk)}
       </div>
       {/* The login screen owns the page: Chat's controls arrive once there is something to ask it (⌘K still opens the composer). */}
       {loginScreen ? null : <footer data-keyboard-pane="Chat controls" className="app-chat-controls" aria-label="Chat controls">
@@ -747,6 +755,25 @@ function AppContent() {
       <WikiDeleteDialog />
     </div>
   )
+  if (bootRepository === null || (bootEntry?.phase !== "ready" && !(bootUnavailable && codeRoute))) return chat()
+  const repository = repositoryRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())
+  const rootRoute = window.location.pathname.replace(/\/$/, "") === `/${bootRepository}`
+  if (!rootRoute && !codeRoute) return chat()
+  return <RepoFrame repo={bootRepository} publicRepo={repository?.catalog === true}
+    login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
+    member={identity?.state === "signed-in" && repository !== undefined && repository.catalog !== true}
+    onAsk={() => controller.runCommand("chat.open")} onSignIn={() => controller.runCommand("sign-in")} ask={(visible: boolean) => chat(visible)}>
+    {codeRoute ? <RepositoryCodeView repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
+      admitted={bootEntry?.phase === "ready"} requestId={bootEntry?.requestId} error={bootUnavailable ? bootEntry?.error : undefined} onAsk={text => controller.changeDraft(text)} /> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
+      branches={codeBranchRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())}
+      onBranchesOpen={() => { void controller.repositoryBranches.load(bootRepository) }}
+      headCommit={repository?.head?.commitId}
+      changes={repositoryChanges}
+      treeAvailable={homeTreeCopy !== undefined}
+      treeCopyId={homeTreeCopy} onRunCommand={controller.runCommand}
+      tree={repoTreeRows.find(row => row.copyId === homeTreeCopy && row.path === "")}
+      home={repositoryHome}/>}
+  </RepoFrame>
 }
 
 function App() {

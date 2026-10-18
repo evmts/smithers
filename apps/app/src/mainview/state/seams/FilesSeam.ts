@@ -336,16 +336,25 @@ export const createFilesSeam = (ctx: SeamContext, branchOptions?: BranchFileOpti
        * revision it asked for instead.
        */
       const { readAt } = cloudAddressing(ctx.store, repo, normalized)
-      const commit = install ? response.headers.get("X-Contents-Commit") : null
+      const commit = response.headers.get("X-Contents-Commit")
       const at = ref !== undefined ? { ref }
         : commit ? { readAt: { changeId: null, commitId: commit, source: "head" as const } }
         : readAt === undefined ? {} : { readAt }
-      const shown = (content: string, binary: boolean) =>
-        fileReadCard(
+      const shown = (content: string, binary: boolean) => {
+        const result = fileReadCard(
           { repo, path: normalized, content, binary, ...at, ...(binary ? {} : anchored(anchor)) },
           ctx.nextOrdinal(),
           Date.now()
         )
+        // The contents response resolves the requested ref; a bookmark read
+        // is not evidence of which commit supplied these bytes.
+        const originalSize = typeof body.size === "number" && Number.isSafeInteger(body.size) && body.size >= 0 ? body.size : undefined
+        return { ...result, card: { ...result.card, payload: {
+          ...result.card.payload,
+          ...(commit ? { readAt: { changeId: null, commitId: commit } } : {}),
+          ...(originalSize === undefined ? {} : { originalSize })
+        } } }
+      }
       if (branchFile?.success) {
         const result = shown(rawContent, branchFile.data.content.kind === "binary")
         const model: FileCard = { ...branchFile.data, mode: "read_only",
