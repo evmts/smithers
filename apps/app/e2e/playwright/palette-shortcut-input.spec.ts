@@ -6,13 +6,13 @@ test.beforeEach(async ({ page }) => {
     apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
     capabilities: ["agent", "identity", "cloud", "cloud.terminal"], authFlow: "native-handoff", sandbox: null,
   } }))
-  await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute(null))
-  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithersai/smithers" }] } }))
+  await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute())
+  await page.route("**/api/repos/smithersai/smithers", route => route.fulfill({ json: { is_public: true, default_bookmark: "main" } }))
   await page.route("**/api/repos/smithersai/smithers/contents", route => route.fulfill({ json: [] }))
 })
 
 test("Cmd+K opens the composer from a focused text input, and typing still works", async ({ page }) => {
-  await page.goto("/smithersai/smithers/")
+  await page.goto("/smithersai/smithers/?design=off")
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
   await page.keyboard.press("Control+k")
   const composer = page.getByTestId("composer-input")

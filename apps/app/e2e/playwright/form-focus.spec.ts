@@ -16,16 +16,19 @@ test.beforeEach(async ({ page }) => {
     apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
     capabilities: ["agent", "identity", "cloud", "cloud.terminal"], authFlow: "native-handoff", sandbox: null,
   } }))
-  await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute(null))
-  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithersai/smithers" }] } }))
+  await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute())
+  await page.route("**/api/repos/smithersai/smithers", route => route.fulfill({ json: { is_public: true, default_bookmark: "main" } }))
   await page.route("**/api/repos/smithersai/smithers/contents", route => route.fulfill({ json: [] }))
+  await page.route("**/api/agent/conversations", route => route.fulfill({ json: { status: "ok", conversations: [], next: null } }))
+  await page.route("**/api/conversations/main", route => route.fulfill({ json: { id: "main", entries: [] } }))
+  await page.route("**/api/conversations/main/view-state", route => route.fulfill({ json: {} }))
 })
 
 const README = { path: "README.md", name: "README.md", type: "file", encoding: "utf-8", content: "# Smithers\n", size: 11 }
 
 /** Open the repository, then Ctrl+K, `/file`, Enter: the Path form for the selected repository. */
 const askForPath = async (page: Page) => {
-  await page.goto("/smithersai/smithers/")
+  await page.goto("/smithersai/smithers/?design=off")
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
   await page.keyboard.press("Control+k")
   const composer = page.getByTestId("composer-input")
@@ -54,7 +57,7 @@ test("T1: the slash door hands the keyboard to the missing Path field, and Tab s
   await expect(form.getByTestId("flow-form-cancel")).toBeFocused()
   await page.keyboard.press(controlTabKey(page))
   await expect(form.getByTestId("flow-form-submit")).toBeFocused()
-  await page.reload()
+  await page.goto("/smithersai/smithers/?design=off")
   await expect(page.getByTestId("flow-form-path")).toHaveValue("README.md")
 })
 
@@ -85,13 +88,19 @@ test("T1: a maximized form stays open while editing and reveals the submitted re
 })
 
 test("T1: a restored form after reload does not take the keyboard; Cancel returns it to the next control", async ({ page }) => {
+  await page.route("**/api/conversations/main", route => route.fulfill({ json: { id: "main", entries: [{
+    id: "prior-turn", author: 1, authorLogin: "codeplanesmithers", runId: "prior-run",
+    prompt: "Earlier question", state: "completed", startedAt: 1, finishedAt: 2, frames: []
+  }] } }))
   const { path } = await askForPath(page)
   await expect(path).toBeFocused()
-  await page.reload()
+  await page.goto("/smithersai/smithers/?design=off")
   const form = page.locator(".flow-form[data-flow-name='file']")
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
   await expect(form).toBeVisible()
   expect(await activeElement(page)).not.toBe("flow-form-path")
+  await expect(page.getByRole("button", { name: "Repository smithersai/smithers", exact: true })).toBeVisible()
+  await expect(page.getByText("Earlier question", { exact: true }).first()).toBeVisible()
   await form.getByTestId("flow-form-cancel").focus()
   await page.keyboard.press("Enter")
   await expect(form).toHaveCount(0)
