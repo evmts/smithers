@@ -76,6 +76,9 @@ export const UNSCENARIOED_ACTIONS: Readonly<Record<Deferral, readonly string[]>>
   /** Host-backed; a real scenario is owed. */
   owed: [
     ...Object.values(OWED_ACTIONS_BY_FAMILY).flat(),
+    // Guest chat and conversions (68f1d894, 4c2be497; catalog rows aba09c54) owe real-host scenarios; production ships them off.
+    "convert",
+    "guest.chat",
     // Frontrun additions: host-backed actions owe real scenarios (#2290).
     "agent",
     "branch.bring-in",

@@ -48,7 +48,7 @@ import { landingCopy } from "../data/landingCopy"
     }
     const landing = document.getElementById("landing")!
     const homeSheets = [...document.querySelectorAll<HTMLLinkElement | HTMLStyleElement>('link[rel="stylesheet"], style')]
-    const appDocument = new URL(landing.dataset.appDocument!, location.href).href
+    const appDocument = sameOriginUrl(landing.dataset.appDocument!, location.href, location.origin)
     const response = await fetch(appDocument, { credentials: "same-origin" })
     if (!response.ok) return
     const pageUrl = sameOriginUrl(response.url || appDocument, appDocument, location.origin)
