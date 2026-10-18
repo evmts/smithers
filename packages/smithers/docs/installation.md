@@ -146,8 +146,13 @@ npx smthrs targets
 ```
 
 The loader and declarations must resolve the same physical Effect and Smithers
-packages. The CLI and authoring packages take `effect` as a `^4.0.4` peer,
-so npm selects one shared runtime without an explicit pin. A separately
+packages. The rc.12 CLI requires exactly `effect@4.0.4` as its peer. Authoring
+packages accept `^4.0.4`, but that range does not widen the CLI requirement.
+If your application pins another Effect version, keep the CLI installed
+globally and use `smthrs generate flow <name>`, `smthrs flow plan`, and
+`smthrs flow start` to author and operate flows. Workspace target commands
+require a compatible local CLI installation; the global flow path does not
+make an incompatible workspace eligible for target execution. A separately
 installed global CLI reports `declaration_dependency_mismatch` even when
 versions match. The
 [first-target tutorial](https://github.com/smithersai/smithers/blob/main/packages/smithers/build/docs/getting-started/first-build.md) walks
