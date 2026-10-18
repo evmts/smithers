@@ -288,7 +288,11 @@ const common = {
   // D261 (VibeLang 0.0.2): Smithers' own TypeScript packages are trusted, so a call into a sibling
   // package that isn't twinned yet is a plain call (no EK4401) whose exceptions are defects.
   get vibelang() {
-    return atLeast([0, 0, 2]) ? { trustedPackages: ["@smthrs/*", "@smithers/*"] } : undefined
+    // EK4403 (a clock or randomness read) is adjustable (D34): Smithers' plain helpers read
+    // Date.now(), so the twin keeps them and the receipt lists the warnings.
+    return atLeast([0, 0, 2])
+      ? { trustedPackages: ["@smthrs/*", "@smithers/*"], diagnostics: { EK4403: "warning" } }
+      : undefined
   },
   noEmit: false,
   noEmitOnError: false,
