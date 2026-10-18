@@ -63,7 +63,9 @@ const scaffoldExample = (): string => {
     "utf8"
   )
   const fence = /```ts\n([\s\S]*?)\n```/.exec(document)
-  if (fence === null) throw new Error(".smithers/flows/create-flow/scaffold/flow.mdx no longer holds a TypeScript example")
+  if (fence === null) {
+    throw new Error(".smithers/flows/create-flow/scaffold/flow.mdx no longer holds a TypeScript example")
+  }
   return `${fence[1]!}\n`
 }
 

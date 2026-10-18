@@ -49,7 +49,9 @@ const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/
  * @category test
  */
 const thirdPartyNotices = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"), ["--check"]),
+  runner: Smithers.entrypoint(Smithers.file("//packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"), [
+    "--check"
+  ]),
   srcs: [
     Smithers.file("//packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"),
     Smithers.file("//packages/smithers/flows/jj/scripts/third-party-notices.template.md"),
@@ -70,7 +72,9 @@ const thirdPartyNotices = Smithers.NodeTest({
  * @category test
  */
 const thirdPartyNoticesUnit = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//packages/smithers/flows/jj/scripts/generate-third-party-notices.test.mjs")]),
+  runner: Smithers.testRunner([
+    Smithers.file("//packages/smithers/flows/jj/scripts/generate-third-party-notices.test.mjs")
+  ]),
   srcs: [
     Smithers.file("//packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"),
     Smithers.file("//packages/smithers/flows/jj/scripts/third-party-notices.template.md"),

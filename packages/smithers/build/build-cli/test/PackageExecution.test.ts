@@ -1465,7 +1465,9 @@ export const Package = S.Package({ targets: { dist } })
       root,
       "PACKAGE.ts",
       `import { Smithers as S } from "@smthrs/targets"
-export const Package = S.Package({ targets: { tool: S.Shell.Test({ bin: S.NodeModule.Bin("mytool", ${JSON.stringify(bin)}) }) } })
+export const Package = S.Package({ targets: { tool: S.Shell.Test({ bin: S.NodeModule.Bin("mytool", ${
+        JSON.stringify(bin)
+      }) }) } })
 `
     )
     await write(root, "node_modules/mytool/package.json", `{ "name": "mytool", "version": "1.0.0" }\n`)

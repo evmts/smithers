@@ -268,7 +268,9 @@ describe("apply over a single-file JSX project", () => {
         if (unit !== "workflow:simple-workflow") return emptyAnswer(unit)
         written.push(unit)
         return [
-          `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
+          `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${
+            JSON.stringify(golden)
+          } })`,
           `await ctx.call("write", { path: "tests/simple-workflow.test.ts", content: "made the tests pass" })`,
           `await ctx.call("write", { path: "scratch/notes.md", content: "notes" })`,
           Layers.done({
@@ -312,7 +314,9 @@ describe("apply over a single-file JSX project", () => {
           if (unit !== "workflow:simple-workflow") return emptyAnswer(unit)
           written.push(unit)
           return [
-            `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
+            `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${
+              JSON.stringify(golden)
+            } })`,
             `await ctx.call("write", { path: "tests/simple-workflow.test.ts", content: "changed outside the unit" })`,
             `await ctx.call("write", { path: "scratch/operator-note.md", content: "created while migration ran" })`,
             Layers.done({
@@ -373,7 +377,9 @@ describe("apply over a single-file JSX project", () => {
       const workflow = report.units.find((unit) => unit.id === "workflow:simple-workflow")
       expect(workflow?.status).toBe("failed")
       expect(readFileSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"), "utf8")).toBe(theirs)
-      expect(hashTree(root).get(".smithers/flows/simple-workflow/flow.ts")).toBe(before.get(".smithers/flows/simple-workflow/flow.ts"))
+      expect(hashTree(root).get(".smithers/flows/simple-workflow/flow.ts")).toBe(
+        before.get(".smithers/flows/simple-workflow/flow.ts")
+      )
       expect(hashTree(root).get("simple-workflow.jsx")).toBe(before.get("simple-workflow.jsx"))
       // A restored target is a restore, not a deletion with a recovery copy.
       expect(workflow?.unresolved.some((entry) => entry.construct === "rollback deleted a post-checkpoint file"))
@@ -397,7 +403,9 @@ describe("apply over a single-file JSX project", () => {
         if (unit !== "workflow:simple-workflow") return emptyAnswer(unit)
         written.push(unit)
         return [
-          `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
+          `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${
+            JSON.stringify(golden)
+          } })`,
           `await ctx.call("write", { path: "src/pnpm-lock.yaml", content: "lockfileVersion: 9" })`,
           `await ctx.call("write", { path: "pnpm-lock.yaml", content: "lockfileVersion: 9" })`,
           Layers.done({
@@ -435,7 +443,9 @@ describe("apply over a single-file JSX project", () => {
           if (unit !== "workflow:simple-workflow") return emptyAnswer(unit)
           written.push(unit)
           return [
-            `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
+            `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${
+              JSON.stringify(golden)
+            } })`,
             `await ctx.call("write", { path: "pnpm-lock.yaml", content: "lockfileVersion: 9" })`,
             Layers.done({
               unit,
@@ -641,7 +651,9 @@ describe("apply over a project that still holds run state", () => {
         if (unit !== "workflow:simple-workflow") return emptyAnswer(unit)
         written.push(unit)
         return [
-          `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
+          `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${
+            JSON.stringify(golden)
+          } })`,
           `await ctx.call("write", { path: ".smithers/scratch.txt", content: "resume this" })`,
           Layers.done({
             unit,
@@ -684,7 +696,9 @@ describe("apply over a project that still holds run state", () => {
           // A refused call resolves rather than throws, so the answer is a
           // value the cell can put in its report entry.
           `const answered = await ctx.call("write", { path: ".smithers/smithers.db", content: "clobbered" })`,
-          `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
+          `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${
+            JSON.stringify(golden)
+          } })`,
           `ctx.done(JSON.stringify({`,
           `  unit: ${JSON.stringify("workflow:simple-workflow")},`,
           `  changedFiles: [".smithers/flows/simple-workflow/flow.ts"],`,
@@ -737,7 +751,9 @@ describe("apply over a project that still holds run state", () => {
             `const listed = await ctx.call("ls", { path: ".smithers/executions" })`,
             `const log = await ctx.call("read", { path: ".smithers/executions/run-1783757199651/stdout.log" })`,
             `const source = await ctx.call("read", { path: "simple-workflow.jsx" })`,
-            `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
+            `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${
+              JSON.stringify(golden)
+            } })`,
             `ctx.done(JSON.stringify({`,
             `  unit: ${JSON.stringify("workflow:simple-workflow")},`,
             `  changedFiles: [".smithers/flows/simple-workflow/flow.ts"],`,

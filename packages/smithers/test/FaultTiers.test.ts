@@ -140,8 +140,14 @@ describe("fault tiers", () => {
     expect(referenceDeclaration).toContain("SMITHERS_FAULT_HOST: \"reference\"")
     expect(referenceDeclaration).toContain("SMITHERS_FAULT_INSTALL_BUNDLE: \".artifacts/fault-install-bundle\"")
     expect(referenceDeclaration).toContain("node packages/smithers/scripts/fault-reference-host.mjs &&")
-    expect(reference.inputs).toContainEqual({ kind: "file", path: "packages/smithers/scripts/fault-reference-host.mjs" })
-    expect(reference.inputs).toContainEqual({ kind: "file", path: "packages/smithers/test/support/reference-hosts.json" })
+    expect(reference.inputs).toContainEqual({
+      kind: "file",
+      path: "packages/smithers/scripts/fault-reference-host.mjs"
+    })
+    expect(reference.inputs).toContainEqual({
+      kind: "file",
+      path: "packages/smithers/test/support/reference-hosts.json"
+    })
     const native = target("//packages/smithers:faultNative")
     expect(native.dependencies).toContain("//:nativeFfiLib")
     expect(native.dependencies).toContain("//:rehearsalNative")

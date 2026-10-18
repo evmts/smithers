@@ -771,7 +771,9 @@ export const Package = S.Package({ targets: { retain } })
     const argvFile = NodePath.join(root, "argv.txt")
     await writeExecutable(
       NodePath.join(stubBin, "smithers"),
-      `#!/usr/bin/env node\nrequire("node:fs").writeFileSync(${JSON.stringify(argvFile)}, process.argv.slice(2).join(" ") + "\\n")\n`
+      `#!/usr/bin/env node\nrequire("node:fs").writeFileSync(${
+        JSON.stringify(argvFile)
+      }, process.argv.slice(2).join(" ") + "\\n")\n`
     )
     const called = await serve(root, ["//:retain"], {
       environment: { ...process.env, PATH: [stubBin, process.env["PATH"]].join(NodePath.delimiter) }

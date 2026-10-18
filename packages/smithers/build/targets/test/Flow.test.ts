@@ -100,7 +100,11 @@ describe("FlowCatalog.rows", () => {
   const lint = Flow.Flow({ flow: "lint", summary: "Lint the named files.", featured: true })
   const notes = Flow.Flow({ flow: "release-notes", summary: "Draft the notes." })
   const found = [
-    discovered("release-notes", { kind: "ts", path: ".smithers/flows/release-notes/flow.ts", model: "openai:gpt-5.6-sol" }),
+    discovered("release-notes", {
+      kind: "ts",
+      path: ".smithers/flows/release-notes/flow.ts",
+      model: "openai:gpt-5.6-sol"
+    }),
     discovered("create-flow/scaffold"),
     discovered("lint", { modelInvocable: false }),
     discovered("review", { kind: "skill", path: ".smithers/flows/review/SKILL.md", capabilities: [] }),

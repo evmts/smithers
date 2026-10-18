@@ -32,7 +32,9 @@ describe("agent/run settlement success", () => {
     expect(Exit.isSuccess(await encode(AgentSession.settlementSuccess(undefined)))).toBe(true)
   })
 
-  it.each([{ value: null }, { value: 0 }, { value: false }, { value: "" }, { value: "done" }, { value: { messages: ["a"] } }, {
+  it.each([{ value: null }, { value: 0 }, { value: false }, { value: "" }, { value: "done" }, {
+    value: { messages: ["a"] }
+  }, {
     value: [1, 2]
   }])("keeps the JSON value $value unchanged", async ({ value }) => {
     expect(AgentSession.settlementSuccess(value)).toEqual(value)

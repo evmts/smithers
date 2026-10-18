@@ -788,7 +788,11 @@ const quality = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/quality/output.test.mjs"),
     Smithers.file("//.smithers/flows/quality/flow.test.ts")
   ]),
-  srcs: [sources, Smithers.glob("//.smithers/flows/quality/**/*.mjs"), Smithers.glob("//.smithers/flows/quality/fixtures/*.json")],
+  srcs: [
+    sources,
+    Smithers.glob("//.smithers/flows/quality/**/*.mjs"),
+    Smithers.glob("//.smithers/flows/quality/fixtures/*.json")
+  ],
   deps: [automationModules],
   cwd
 })

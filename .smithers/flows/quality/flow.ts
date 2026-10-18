@@ -31,9 +31,23 @@ export const layer = Measure.toLayer(
 )
 
 export default Flow.make("quality", {
-  description: "Import 26 UTC weeks of request lead time and source coverage; use main red time when paperwork exceeds 40%.",
-  capabilities: ["fs:read:**", "fs:write:.flows/quality/**", "proc:spawn:node *", "proc:spawn:jj *", "net:get:https://api.github.com/**", "net:post:https://api.github.com/graphql"],
-  effects: { reads: ["**"], writes: [".flows/quality/**"], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+  description:
+    "Import 26 UTC weeks of request lead time and source coverage; use main red time when paperwork exceeds 40%.",
+  capabilities: [
+    "fs:read:**",
+    "fs:write:.flows/quality/**",
+    "proc:spawn:node *",
+    "proc:spawn:jj *",
+    "net:get:https://api.github.com/**",
+    "net:post:https://api.github.com/graphql"
+  ],
+  effects: {
+    reads: ["**"],
+    writes: [".flows/quality/**"],
+    mode: "expected",
+    onConflict: "serialize",
+    tier: "irreversible"
+  },
   modelInvocable: false,
   payload: Request,
   success: Schema.Void,
