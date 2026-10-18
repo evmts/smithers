@@ -17,3 +17,15 @@ describe("repository code routes", () => {
     expect(tokenize(Array.from({ length: 6000 }, () => "const x = 1").join("\n"))).toHaveLength(6000)
   })
 })
+
+test("read receipts from different admission requests cannot satisfy one another", async () => {
+  const { codeReadKey, repositoryCodeReads, setCodeRead } = await import("./RepositoryCodeRead")
+  const old = codeReadKey("alpha/one", "blob", "main/index.ts", "old")
+  const next = codeReadKey("alpha/one", "blob", "main/index.ts", "next")
+  setCodeRead(old, "ready")
+  expect(repositoryCodeReads.get(next)).toBeUndefined()
+  setCodeRead(next, "failed", "Path not found")
+  setCodeRead(next, "loading")
+  expect(repositoryCodeReads.get(next)?.error).toBeUndefined()
+  expect(repositoryCodeReads.get(old)?.state).toBe("ready")
+})

@@ -5,8 +5,6 @@
 .repository-code a:hover { text-decoration: underline; }
 .repository-code :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 @media(max-width: 767px) { .repository-code { padding: 16px; } }
-.tab-body:has(> .repository-code) { overflow-y: auto; }
-.tab-body:has(> .repository-code) > :not(.repository-code) { display: none; }
 .repo-code-token-keyword { color: var(--code-keyword); }
 .repo-code-token-string { color: var(--code-string); }
 .repo-code-token-type { color: var(--code-type); }
@@ -30,3 +28,5 @@
   --code-comment: var(--ink-400);
   --code-fn: var(--brand);
 }
+.repo-frame .repository-code { padding: 0; overflow: visible; }
+.repo-frame .repository-code .repo-code-permalink { color: var(--on-action-primary); background: var(--brand); border-color: var(--brand); }
