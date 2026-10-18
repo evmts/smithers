@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { fallbackFor, normalizeDts, parseDts, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
+import { fallbackFor, normalizeDts, parseDts, quality, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
 
 test("declarations that differ only in relative import extensions are equal", () => {
   const ts = `import { type A } from "./ErrorCode.ts";\nexport { B } from "../x/y.ts";\nexport declare const c: import("./z.ts").Z;\n`
@@ -136,4 +136,18 @@ test("a flat package's modules sit at its root, beside test/ (the .smithers/flow
   assert.equal(sourceRoot(pkg), ".")
   assert.equal(twinFor(join(pkg, "coding", "atoms.ts"), pkg), join(out, "coding", "atoms.js"))
   assert.equal(twinFor(join(pkg, "test", "atoms.test.ts"), pkg), undefined)
+})
+
+test("quality counts the twin's hatch share, added casts and the held-template workaround", () => {
+  const pkg = mkdtempSync(join(tmpdir(), "vibe-twin-"))
+  mkdirSync(join(pkg, "src"), { recursive: true })
+  mkdirSync(join(pkg, "src-vibe"), { recursive: true })
+  writeFileSync(join(pkg, "src", "a.ts"), "export const a = 1 as unknown as number\n")
+  writeFileSync(join(pkg, "src-vibe", "a.vibe"), "export const a = 1 as unknown as number\nconst x = y as any\n;(sql`CREATE TABLE t`)()\n")
+  writeFileSync(join(pkg, "src-vibe", "hatch.ts"), "export const h = 1\n")
+  const q = quality(pkg)
+  assert.equal(q.castsAdded, 1)
+  assert.equal(q.heldCalls, 1)
+  assert.equal(q.vibeLines, 4)
+  assert.equal(q.hatchLines, 2)
 })

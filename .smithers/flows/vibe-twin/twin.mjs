@@ -439,6 +439,34 @@ const apiCheck = (pkg, work) => {
   return api
 }
 
+/**
+ * Translation quality, report-only: how much of the twin is real VibeLang, and
+ * what it adds that the TypeScript lacks. Casts and suppressions are counted
+ * net of the TypeScript's own; `heldCalls` counts the B-1 workaround, a held
+ * tagged template called by hand, which the rules forbid.
+ */
+export const quality = (pkg) => {
+  const count = (dir, re, ext) =>
+    walkSources(dir).filter((f) => ext.test(f)).reduce((n, f) => n + (readFileSync(join(dir, f), "utf8").match(re) ?? []).length, 0)
+  const lines = (dir, ext) =>
+    walkSources(dir).filter((f) => ext.test(f)).reduce((n, f) => n + readFileSync(join(dir, f), "utf8").split("\n").length, 0)
+  const twin = join(pkg, "src-vibe")
+  const src = join(pkg, sourceRoot(pkg))
+  const anyTs = /\.(?:ts|tsx|mts)$/
+  const casts = /\bas unknown as\b|\bas any\b/g
+  const suppress = /@ts-(?:ignore|expect-error|nocheck)|eslint-disable/g
+  const vibeLines = lines(twin, /\.vibe$/)
+  const hatchLines = lines(twin, anyTs)
+  return {
+    vibeLines,
+    hatchLines,
+    hatchShare: vibeLines + hatchLines === 0 ? 0 : Math.round((1000 * hatchLines) / (vibeLines + hatchLines)) / 1000,
+    castsAdded: count(twin, casts, /\.(?:vibe|ts|tsx)$/) - count(src, casts, anyTs),
+    suppressionsAdded: count(twin, suppress, /\.(?:vibe|ts|tsx)$/) - count(src, suppress, anyTs),
+    heldCalls: count(twin, /`\s*\)\s*\(\s*\)/g, /\.vibe$/)
+  }
+}
+
 const apiOk = (api) =>
   api.missingExports.length + api.extraExports.length + api.typeDiffers.length + api.valueDiffers.length + api.errors.length === 0
 
@@ -610,6 +638,8 @@ export async function resolve(specifier, context, next) {
     : vitest(pkg, config, join(work, "vibe.json"))
   // A regression is a test that passed on the TypeScript and did not pass on the
   // twin: it failed, or its file never loaded (Bun's JUnit report omits those).
+  // The B-1 workaround (a held tagged template called by hand) hides a VibeLang bug: it fails.
+  const heldCalls = quality(pkg).heldCalls
   const vibePassed = new Set((vibe.passed ?? []).map(stableName))
   const regressions = (baseline.passed ?? []).filter((name) => !vibePassed.has(stableName(name)))
   // A twin's unhandled rejection can fail the process while every test passes (guardian-review):
@@ -625,8 +655,9 @@ export async function resolve(specifier, context, next) {
     api,
     tests: { ts: { ...baseline, failed: undefined, passed: undefined }, vibe: { ...vibe, failed: undefined, passed: undefined } },
     regressions,
+    quality: quality(pkg),
     ok: compileOk && twin.errors.length === 0 && apiOk(api) && baseline.ran && !baseline.signal && !baseline.error && vibe.ran
-      && regressions.length === 0 && vibe.pass >= baseline.pass,
+      && regressions.length === 0 && vibe.pass >= baseline.pass && heldCalls === 0,
     complete: false
   }
   // W46 covers the Effect code: a module that never imports effect may stay TypeScript.
@@ -656,6 +687,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         `  compile: ${receipt.compile.twinErrors.length} errors, ${receipt.compile.twinWarnings.length} warnings, ${receipt.compile.vibelangErrorsInTypeScript.length} VibeLang errors in unchanged TypeScript (findings, not blocking)`,
         ...receipt.compile.vibelangErrorsInTypeScript.slice(0, 5).map((e) => `  finding: ${e}`),
         `  api: ${receipt.api.modules} modules twinned (${receipt.api.identicalFiles} with identical .d.ts), ${receipt.api.missingEffectModules.length} Effect modules not yet (${receipt.api.missingModules.length} in all), ${receipt.api.checked} type checks`,
+        `  quality: ${receipt.quality.vibeLines} VibeLang lines, hatch share ${receipt.quality.hatchShare}, casts added ${receipt.quality.castsAdded}, suppressions added ${receipt.quality.suppressionsAdded}${receipt.quality.heldCalls ? `, ${receipt.quality.heldCalls} held-template calls (B-1 workaround)` : ""}`,
         `  tests: ts ${t.ts.pass} pass ${t.ts.fail} fail ${t.ts.skip} skip | vibe ${t.vibe.pass} pass ${t.vibe.fail} fail ${t.vibe.skip} skip`,
         ...receipt.compile.twinErrors.slice(0, 20).map((e) => `  ${e}`),
         ...["missingExports", "extraExports", "typeDiffers", "valueDiffers", "errors"].flatMap((k) =>
