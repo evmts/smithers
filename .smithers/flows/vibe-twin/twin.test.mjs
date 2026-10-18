@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { fallbackFor, normalizeDts, parseDts, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
+import { fallbackFor, normalizeDts, parseDts, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
 
 test("declarations that differ only in relative import extensions are equal", () => {
   const ts = `import { type A } from "./ErrorCode.ts";\nexport { B } from "../x/y.ts";\nexport declare const c: import("./z.ts").Z;\n`
@@ -49,6 +49,7 @@ test("an import that resolves into src/ goes to the compiled twin when it exists
   const pkg = mkdtempSync(join(tmpdir(), "vibe-twin-"))
   const out = join(pkg, ".vibe-twin", "out", "src-vibe")
   mkdirSync(join(out, "a"), { recursive: true })
+  mkdirSync(join(pkg, "src"), { recursive: true })
   writeFileSync(join(out, "a", "b.js"), "")
   writeFileSync(join(out, "a", "stub.js"), "")
   writeFileSync(join(out, ".vibe-twin-modules.json"), JSON.stringify(["a/b"]))
@@ -124,4 +125,15 @@ test("test names compare without run-dependent dates and numbers", () => {
   )
   assert.equal(stableName("at 2026-10-18T21:44:41.123Z id 1760823881000"), stableName("at 2026-10-18T21:51:02Z id 1760824262000"))
   assert.notEqual(stableName("retries 3 times"), stableName("retries 4 times"))
+})
+
+test("a flat package's modules sit at its root, beside test/ (the .smithers/flows layout)", () => {
+  const pkg = mkdtempSync(join(tmpdir(), "vibe-twin-"))
+  const out = join(pkg, ".vibe-twin", "out", "src-vibe")
+  mkdirSync(join(out, "coding"), { recursive: true })
+  writeFileSync(join(out, "coding", "atoms.js"), "")
+  writeFileSync(join(out, ".vibe-twin-modules.json"), JSON.stringify(["coding/atoms"]))
+  assert.equal(sourceRoot(pkg), ".")
+  assert.equal(twinFor(join(pkg, "coding", "atoms.ts"), pkg), join(out, "coding", "atoms.js"))
+  assert.equal(twinFor(join(pkg, "test", "atoms.test.ts"), pkg), undefined)
 })
