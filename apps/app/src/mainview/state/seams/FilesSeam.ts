@@ -1,3 +1,4 @@
+import { Data } from "effect"
 import { preparedView,type ViewAction,type ViewResult } from "../PreparedView"
 /*
  * The repo files seam: GET /api/repos/{owner}/{repo}/contents[/path] lists a
@@ -708,6 +709,9 @@ const branchFileOperations = (ctx: SeamContext, options?: BranchFileOptions): Br
   return operations
 }
 
+/** A rejected repository read retains its diagnostic and HTTP status. */
+export class RepositoryFileReadFailed extends Data.TaggedError("RepositoryFileReadFailed")<{ readonly message: string; readonly status?: number }> {}
+
 /** Read complete hosted file bytes for a repository page, without creating a chat card. */
 export const readFilePage = async (
   ctx: Pick<SeamContext, "http" | "baseUrl">,
@@ -715,8 +719,8 @@ export const readFilePage = async (
   path: string,
   ref?: string,
 ): Promise<FilePage> => {
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || unsafePath(path) || !path) throw new Error("Invalid repository file path")
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || unsafePath(path) || !path) throw new RepositoryFileReadFailed({ message: "Invalid repository file path" })
   const response = await ctx.http(`${ctx.baseUrl}/api/repos/${repo.split("/").map(encodeURIComponent).join("/")}/contents/${encodeRepoPath(path)}${ref === undefined ? "" : `?ref=${encodeURIComponent(ref)}`}`)
-  if (!response.ok) throw new Error(`File read failed (${response.status})`)
+  if (!response.ok) throw new RepositoryFileReadFailed({ message: `File read failed (${response.status})`, status: response.status })
   return decodeFilePage(await response.json())
 }

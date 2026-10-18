@@ -56,7 +56,7 @@
 .repo-code-source pre { margin: 0; padding: 12px 0; min-width: max-content; font: 13px/20px var(--font-mono); }
 .repo-code-source-line { display: flex; align-items: baseline; min-height: 20px; }
 .repo-code-source-line[data-selected] { background: var(--surface-2); }
-.repo-code-line-number { flex: 0 0 var(--repo-code-number-width); width: var(--repo-code-number-width); box-sizing: border-box; padding-right: 6px; padding-left: 6px; text-align: right; color: var(--text-faint); user-select: none; }
+.repo-code-line-number { flex: 0 0 var(--repo-code-number-width, calc(3ch + 12px)); width: var(--repo-code-number-width, calc(3ch + 12px)); box-sizing: border-box; padding-right: 6px; padding-left: 6px; text-align: right; color: var(--text-faint); user-select: none; }
 .repo-code-line-number:hover { color: var(--brand); }
 .repo-code-source-line[data-selected] > .repo-code-line-number { color: var(--text-muted); }
 .repo-code-diagnostic-gutter { width: 18px; flex: 0 0 18px; text-align: center; user-select: none; }
@@ -101,7 +101,7 @@
 .repo-code-blame-range .repo-code-source pre { padding: 10px 0; }
 .repo-code-blame-range:hover .repo-code-blame-meta, .repo-code-blame-range:focus-within .repo-code-blame-meta { background: var(--surface-2); }
 .repo-code-blame-range:hover .repo-code-source-line:not([data-selected]), .repo-code-blame-range:focus-within .repo-code-source-line:not([data-selected]) { background: var(--surface-2); }
-.repo-code-main :where(a, button, input, summary, [tabindex]):focus-visible, .repo-code-sidebar :where(a, button, summary):focus-visible, .repo-code-symbol-card a:focus-visible, .repo-code-dialog :where(button, input, a):focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.repo-code-main :where(a, button, input, summary, [tabindex]):focus-visible, .repo-code-sidebar :where(a, button, summary):focus-visible, .repo-code-symbol-card a:focus-visible, .repo-code-dialog :where(button, input, a):focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
 @media (min-width: 768px) and (max-width: 1200px) {
   .repo-code-layout[data-sidebar="true"] { grid-template-columns: 160px minmax(0, 1fr); gap: 16px; }
   .repo-code-blame-range { grid-template-columns: 195px minmax(0, 1fr); }

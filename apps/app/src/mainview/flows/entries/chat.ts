@@ -62,6 +62,9 @@ export const chatFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   flow({ name: "chat.open", summary: "Open Chat using the selected input mode (C)", input: NoPayload,
     agent: "never" as const, agentReason: "opening Chat is the human's focus gesture",
     handler: (_payload, _signal, _call, gesture) => gesture?.chatInputCurrent?.() === false ? undefined : actions.openChat() }),
+  flow({ name: "chat.close", summary: "Close Chat", hidden: true, visibility: "in-card", input: NoPayload,
+    agent: "never", agentReason: "closing Chat is the human's focus gesture",
+    handler: () => actions.closePalette() }),
   flow(RETRY),
   flow({
     name: "stop",

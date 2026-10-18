@@ -3,7 +3,7 @@
 .repository-code button, .repository-code select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-2); padding: 6px 10px; cursor: pointer; }
 .repository-code a { text-decoration: none; }
 .repository-code a:hover { text-decoration: underline; }
-.repository-code :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.repository-code :focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
 @media(max-width: 767px) { .repository-code { padding: 16px; } }
 .repo-code-token-keyword { color: var(--code-keyword); }
 .repo-code-token-string { color: var(--code-string); }
@@ -12,21 +12,5 @@
 .repo-code-token-comment { color: var(--code-comment); }
 .repo-code-token-fn { color: var(--code-fn); }
 .repo-code-token-plain { color: var(--text); }
-:root {
-  --code-keyword: var(--water-600);
-  --code-string: var(--sediment-600);
-  --code-type: var(--slate-600);
-  --code-number: var(--ember-600);
-  --code-comment: var(--ink-500);
-  --code-fn: var(--water-700);
-}
-:root[data-theme="dark"] {
-  --code-keyword: var(--water-300);
-  --code-string: var(--sediment-300);
-  --code-type: var(--slate-400);
-  --code-number: var(--ember-400);
-  --code-comment: var(--ink-400);
-  --code-fn: var(--brand);
-}
 .repo-frame .repository-code { padding: 0; overflow: visible; }
 .repo-frame .repository-code .repo-code-permalink { color: var(--on-action-primary); background: var(--brand); border-color: var(--brand); }

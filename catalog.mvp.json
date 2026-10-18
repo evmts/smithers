@@ -2865,6 +2865,30 @@
       }
     },
     {
+      "name": "chat.close",
+      "slash": null,
+      "cli": null,
+      "journey": [],
+      "group": "",
+      "visibility": "in-card",
+      "actors": [
+        "person"
+      ],
+      "minimumRole": "member",
+      "credentialScope": "write:repository",
+      "agent": "never",
+      "summary": "Close Chat",
+      "http": null,
+      "payload": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "additionalProperties": false
+        },
+        "definitions": {}
+      }
+    },
+    {
       "name": "chat.copy-message",
       "slash": null,
       "cli": null,
@@ -3382,6 +3406,50 @@
             "path",
             "line",
             "column"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
+    },
+    {
+      "name": "code.view",
+      "slash": null,
+      "cli": null,
+      "journey": [],
+      "group": "",
+      "visibility": "in-card",
+      "actors": [
+        "person"
+      ],
+      "minimumRole": "member",
+      "credentialScope": "write:repository",
+      "agent": "never",
+      "summary": "Change the repository file view",
+      "http": null,
+      "payload": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "pathname": {
+              "type": "string"
+            },
+            "field": {
+              "type": "string",
+              "enum": [
+                "raw",
+                "L"
+              ]
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "pathname",
+            "field",
+            "value"
           ],
           "additionalProperties": true
         },
