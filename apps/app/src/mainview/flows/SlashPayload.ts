@@ -402,6 +402,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "chat.queue.edit": args => required("id", args, "Choose a queued prompt"),
   "chat.queue.remove": args => required("id", args, "Choose a queued prompt"),
   "chat.send": (args) => required("text", args, "send needs the text to submit"),
+  "bug.report": jsonObject("bug.report"),
   "guest.chat": args => required("text", args, "Choose a prompt"),
   "browser.open": (args) => required("url", args, "browser needs a URL: /browser.open https://example.com"),
   /*

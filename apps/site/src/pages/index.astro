@@ -52,6 +52,14 @@ const subheadParts = landingCopy.subhead.split(/(`[^`]+`)/)
     if (!response.ok) return
     const pageUrl = sameOriginUrl(response.url || appDocument, appDocument, location.origin)
     const page = new DOMParser().parseFromString(await response.text(), "text/html")
+    // Retain the frontend build's stamp when the app mounts in this document.
+    for (const name of ["smithers-build-sha", "smithers-build-at"]) {
+      const source = page.querySelector<HTMLMetaElement>(`meta[name="${name}"]`)
+      if (source !== null) {
+        document.querySelector(`meta[name="${name}"]`)?.remove()
+        document.head.append(source.cloneNode(true))
+      }
+    }
     const chunk = page.querySelector("astro-island[component-url]")?.getAttribute("component-url")
     if (!chunk) return
     const appSheets: Array<HTMLLinkElement | HTMLStyleElement> = []

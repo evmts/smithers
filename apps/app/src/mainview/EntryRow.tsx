@@ -1,16 +1,20 @@
+import { ControllerContext } from "./ControllerContext"
+import { flowAction } from "./flows/FlowAction"
+import { flowArgs } from "./flows/FlowArgs"
 import type { CardProps } from "@smthrs/rpc/CardAction"
-import { useState, type ReactNode } from "react"
+import { useContext, useState, type ReactNode } from "react"
 import { Lock } from "lucide-react"
 import type { EntryRowCard } from "@smthrs/rpc/EntryRowCard"
 import { ActorChip, actorName } from "./cards/views/ActorChip"
 import { StateWord } from "./cards/views/StateWord"
 import { ContextLine, type ContextLineProps } from "./ContextLine"
-export type EntryRowProps = EntryRowCard & { card?: ReactNode; contextActions?: Pick<ContextLineProps, "items" | "actions" | "onAction">; source?: { origin?: string; session?: string; correlation?: string; participant?: string }; onAction: CardProps<unknown>["onAction"] }
+export type EntryRowProps = EntryRowCard & { card?: ReactNode; contextActions?: Pick<ContextLineProps, "items" | "actions" | "onAction">; source?: { origin?: string; session?: string; correlation?: string; failureCode?: string; participant?: string }; onAction: CardProps<unknown>["onAction"] }
 
 export function OnlyYouChip() { return <span className="locked">
     <Lock size={12} aria-hidden="true" />Only you</span> }
 
 export function EntryRow({ kind, author, title, summary, tone, state, context, contextActions, action, private: onlyYou, card, tombstone, source, onAction }: EntryRowProps) {
+  const controller = useContext(ControllerContext)
   const [expanded, setExpanded] = useState(false)
   if (tombstone) return <div className="tombstone">{title}
     </div>
@@ -27,5 +31,7 @@ export function EntryRow({ kind, author, title, summary, tone, state, context, c
     </button>{action.disabled ? <span className="mvp-disabled-reason">{action.disabled.reason}
     </span> : null}
     </div> : null}
+    {tone === "failed" && source?.correlation && controller ? <button type="button"
+      {...flowAction(controller.runCommand, "bug.report", flowArgs("bug.report", { correlationId: source.correlation, ...(source.failureCode === undefined ? {} : { failureCode: source.failureCode }) }))}>Report a bug</button> : null}
     </article>
 }
