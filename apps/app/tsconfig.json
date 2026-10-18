@@ -26,6 +26,7 @@
     "scripts",
     "e2e",
     "proof",
+    "spec",
     "vite.config.ts",
     "playwright*.config.ts"
   ],

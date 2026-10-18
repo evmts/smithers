@@ -16,6 +16,14 @@ const developerToken = (): string | undefined => {
   }
 }
 
+let transportFetch: FetchLike | undefined
+
+/** Install a host transport before the first application client is created. */
+export const configureApplicationFetch = (fetchImpl: FetchLike): void => {
+  if (clientRead !== undefined) throw new Error("Application transport already started")
+  transportFetch = fetchImpl
+}
+
 let clientRead: Promise<ApplicationClient> | undefined
 
 /** One runtime-selected transport, shared by preload, bootstrap, and controllers. */
@@ -26,7 +34,7 @@ export const loadRuntimeApplicationClient = (): Promise<ApplicationClient> => {
     native: async () => selected
   }).then((target) =>
     createApplicationClient(target, {
-      fetchImpl: createAppFetch(),
+      fetchImpl: createAppFetch({ fetchImpl: transportFetch }),
       token: selected === undefined
         ? developerToken : () => selectedBackendToken(target, location.origin)
     })
@@ -51,7 +59,7 @@ export const runtimeClientErrorFetch: FetchLike = async (input, init) => {
     // bearer token; a hosted web page can still report to its serving origin.
     if (typeof location === "undefined" || !/^https?:$/.test(location.protocol)) throw error
     const sameOrigin = resolveApplicationTarget(SAME_ORIGIN_SESSION_TARGET, location.origin)
-    return createApplicationClient(sameOrigin, { fetchImpl: createAppFetch() }).fetch(input, init)
+    return createApplicationClient(sameOrigin, { fetchImpl: createAppFetch({ fetchImpl: transportFetch }) }).fetch(input, init)
   }
   // If a selected target lacks its token or refuses the POST, fail closed.
   // Reporting must never downgrade an authenticated external target to cookies.
