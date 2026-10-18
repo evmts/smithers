@@ -46,6 +46,7 @@ func composeGitHubSync(pool *pgxpool.Pool, credentials services.GitHubAppCredent
 		services.WithGitHubUserReposSyncedStore(synced))
 	connections.SetGitHubRepoAccessVerifier(userRepositories)
 	synced.SetPushAccess(userRepositories)
+	synced.SetInstallationResolver(userRepositories.SyncedRepoInstallationResolver(connections))
 	if topology.hosted() {
 		synced.SetFetcherFactory(userRepositories.SyncedRepoInstallationFetcherFactory(connections))
 	} else {

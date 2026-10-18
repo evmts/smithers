@@ -139,7 +139,7 @@ func (s *GitHubUserReposService) SyncedRepoConditionalFetcherFactory(issuer GitH
 		return func(ctx context.Context, resource string, query url.Values, etag string) (GitHubSyncedRepoConditionalPage, error) {
 			var page GitHubSyncedRepoConditionalPage
 			switch resource {
-			case GitHubRepoMetadataIssues, GitHubRepoMetadataPulls, gitHubIssueEvents, gitHubConversationComments, gitHubReviewComments:
+			case "", GitHubRepoMetadataIssues, GitHubRepoMetadataPulls, gitHubIssueEvents, gitHubConversationComments, gitHubReviewComments:
 			default:
 				if !gitHubIndividualPullResource(resource) && !gitHubIndividualIssueResource(resource) && !gitHubPullFactResource(resource) {
 					return page, errors.New("unsupported GitHub install stream")
@@ -149,7 +149,10 @@ func (s *GitHubUserReposService) SyncedRepoConditionalFetcherFactory(issuer GitH
 			if err != nil {
 				return page, err
 			}
-			path := landingGitHubRepoPath(row.OwnerLogin, row.RepoName) + "/" + resource
+			path := landingGitHubRepoPath(row.OwnerLogin, row.RepoName)
+			if resource != "" {
+				path += "/" + resource
+			}
 			if encoded := query.Encode(); encoded != "" {
 				path += "?" + encoded
 			}
