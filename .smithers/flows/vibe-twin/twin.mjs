@@ -88,6 +88,42 @@ export const localDeclarations = (text) =>
     .map((body) => normalizeDts(body).replaceAll(/, \{ with: \{ "resolution-mode": "import" \} \}/g, ""))
     .sort()
 
+/**
+ * A module's private names and the normalized text that defines each: imported
+ * bindings and non-exported declarations. An export's meaning depends only on
+ * the private names its own text mentions (B-5).
+ */
+export const localNames = (text) => {
+  const names = new Map()
+  for (const body of localDeclarations(text)) {
+    const imp = body.match(/^import\s+(?:type\s+)?([\s\S]*?)\s+from\s+(["'][^"']+["'])/)
+    if (imp) {
+      const [, clause, from] = imp
+      const ns = clause.match(/\*\s+as\s+([\w$]+)/)
+      if (ns) names.set(ns[1], `* from ${from}`)
+      const def = clause.match(/^([\w$]+)\s*(?:,|$)/)
+      if (def) names.set(def[1], `default from ${from}`)
+      for (const part of (clause.match(/\{([\s\S]*)\}/)?.[1] ?? "").split(",")) {
+        const m = part.trim().replace(/^type\s+/, "").match(/^([\w$]+)(?:\s+as\s+([\w$]+))?$/)
+        if (m) names.set(m[2] ?? m[1], `${m[1]} from ${from}`)
+      }
+      continue
+    }
+    const decl = body.match(/^(?:declare\s+)?(?:abstract\s+)?(?:const|let|var|function|class|interface|type|enum|namespace)\s+([\w$]+)/)
+    if (decl) names.set(decl[1], [names.get(decl[1]), body].filter(Boolean).join("\n"))
+  }
+  return names
+}
+
+/** Whether every private name an export's text mentions means the same in both modules. */
+export const sameReferencedLocals = (exportText, tsLocals, vbLocals) => {
+  for (const name of new Set([...tsLocals.keys(), ...vbLocals.keys()])) {
+    if (!new RegExp(`(?<![\\w$.])${name.replaceAll("$", "\\$")}(?![\\w$])`).test(exportText)) continue
+    if (tsLocals.get(name) !== vbLocals.get(name)) return false
+  }
+  return true
+}
+
 export const parseDts = (text) => {
   const byName = new Map()
   for (const statement of statementsOf(text)) {
@@ -378,7 +414,8 @@ const apiCheck = (pkg, work) => {
     }
     const ts = new Map(parseDts(tsText).map((e) => [e.name, e]))
     const vb = new Map(parseDts(vbText).map((e) => [e.name, e]))
-    const sameLocals = JSON.stringify(localDeclarations(tsText)) === JSON.stringify(localDeclarations(vbText))
+    const tsLocals = localNames(tsText)
+    const vbLocals = localNames(vbText)
     for (const name of vb.keys()) if (!ts.has(name)) api.extraExports.push(`${file}: ${name}`)
     const mod = file.replace(/\.d\.ts$/, "")
     const srcFile = ["ts", "tsx", "mts"].map((x) => `${mod}.${x}`).find((f) => existsSync(join(pkg, sourceRoot(pkg), f)))
@@ -398,6 +435,7 @@ const apiCheck = (pkg, work) => {
       }
       // Equal export text may refer to different private aliases or imports (guardian-review):
       // it is proof only when the module's private context matches too.
+      const sameLocals = sameReferencedLocals(e.text, tsLocals, vbLocals)
       if (normalizeDts(e.text) === normalizeDts(v.text) && (sameLocals || e.kind === "reexport")) continue
       if (e.kind === "type") {
         if (e.generic) api.typeDiffers.push(`${file}: ${name} (generic: keep its text${sameLocals ? "" : " and its module's private declarations"})`)

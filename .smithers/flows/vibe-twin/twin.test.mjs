@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { fallbackFor, normalizeDts, parseDts, quality, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
+import { fallbackFor, localNames, normalizeDts, parseDts, quality, sameReferencedLocals, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
 
 test("declarations that differ only in relative import extensions are equal", () => {
   const ts = `import { type A } from "./ErrorCode.ts";\nexport { B } from "../x/y.ts";\nexport declare const c: import("./z.ts").Z;\n`
@@ -150,4 +150,12 @@ test("quality counts the twin's hatch share, added casts and the held-template w
   assert.equal(q.heldCalls, 1)
   assert.equal(q.vibeLines, 4)
   assert.equal(q.hatchLines, 2)
+})
+
+test("identical export text passes unless a private name it mentions changed (B-5, guardian alias drift)", () => {
+  const ts = localNames(`import * as Effect from "effect/Effect";\ntype Hidden = string;\ndeclare const Box_base: any;\nexport declare const answer: Hidden;\n`)
+  const vb = localNames(`import * as Effect from "effect/Effect";\ntype Hidden = number;\ndeclare const Other_base: any;\nexport declare const answer: Hidden;\n`)
+  assert.equal(sameReferencedLocals("export declare const answer: Hidden;", ts, vb), false, "Hidden changed")
+  assert.equal(sameReferencedLocals("export interface Page<A> { items: ReadonlyArray<A>; run: Effect.Effect<A> }", ts, vb), true, "only Effect is mentioned, and it matches")
+  assert.equal(sameReferencedLocals("export declare const x: HiddenThing;", ts, vb), true, "a longer name is not Hidden")
 })
