@@ -1621,3 +1621,8 @@ describe("HumanTask.decode", () => {
       makeInstance(Host, "human-decode")
     ))
 })
+
+it("refuses misplaced, mistyped and duplicate assertion markers at schema admission", () => {
+  const marker = { format: "webauthn-assertion" }
+  for (const schema of [marker, { properties: { meta: { properties: { proof: marker } } } }, { properties: { proof: { ...marker, type: "string" } } }, { properties: { a: marker, b: marker } }, { items: marker }]) expect(HumanTask.validateSchema(schema)).toBeDefined()
+})

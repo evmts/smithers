@@ -208,7 +208,7 @@ describe("reading a gateway row", () => {
   test("preserves the schema and exact wait execution for signed JSON answers", () => {
     const schema = { type: "object", properties: { evidence: { format: "webauthn-assertion" } } }
     expect(questionOf({ ...base, waitRunId: "child-execution", request: { kind: "json", prompt: "Sign", name: "answer", schema } }))
-      .toEqual({ kind: "json", prompt: "Sign", name: "answer", schema, waitRunId: "child-execution" })
+      .toEqual({ kind: "json", prompt: "Sign", name: "answer", schema, waitRunId: "child-execution", askId: "coding-clarification#1" })
   })
 
   test("takes the question from a wait held below the run", () => {
@@ -254,4 +254,8 @@ test("the answer box restores the projected draft and every input uses its exact
     flushSync(() => root.unmount())
     host.remove()
   }
+})
+
+test("ask identity falls back to the snapshot ask time", () => {
+  expect(questionOf({ runId: "run", requestId: "", title: "Ask", payload: {} as never, requestedAt: 42, status: "pending", waitRunId: "run", request: { kind: "json", schema: {} } })?.askId).toBe("42")
 })
