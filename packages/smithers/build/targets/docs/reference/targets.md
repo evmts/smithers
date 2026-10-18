@@ -73,6 +73,51 @@ known-red lists.
 `--lifecycle evergreen|artifact|all`, filtering roots without dropping their
 required dependencies or overriding wildcard omission.
 
+## Factory judges and spec
+
+`Factory({ judges: S.Judge.Policy({...}), spec: {...} })` projects both keys
+into `.smithers/factory.json`. Both are optional. No `judges` policy means no
+judge runs; `S.judgePolicyOf(factory)` returns `undefined`. Like
+`Lifecycle.Policy`, `Judge.Policy` requires every policy field and supplies no
+implicit limits. Unknown keys throw `TypeError` naming the key, including
+nested judge options and spec options.
+
+```ts
+const judges = S.Judge.Policy({
+  engines: {
+    rubric: { engine: "claude", model: "claude-opus-5-5" },
+    fuzzy: { engine: "claude", model: "claude-opus-5-5" }
+  },
+  budget: {
+    perRun: { modelCalls: 150, promptTokens: 2_000_000, wallMs: 1_800_000 },
+    perDay: { modelCalls: 600 }
+  },
+  trials: 3,
+  maxAge: "30d",
+  promote: { minLabels: 20, minAgreement: 0.9, seededDefectsFail: true },
+  blocking: { exact: true, shape: true, rubric: "promoted", fuzzy: false, visual: false, agent: false }
+})
+const spec = { live: { default: "https://example.com", effect: null }, aheadMaxDays: 14 }
+const factory = S.Factory({ summary: "Repository checks", judges, spec })
+```
+
+| Field                             | Contract                                                                                                   |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `engines.rubric`, `engines.fuzzy` | `engine`: `"claude"` or `"codex"`; nonempty pinned `model`. Seat credentials are host configuration.       |
+| `budget.perRun`                   | `ReviewBudget`: optional positive integer `modelCalls`, `promptTokens`, `wallMs`.                          |
+| `budget.perDay.modelCalls`        | Positive integer daily call limit.                                                                         |
+| `trials`                          | Positive integer trial count.                                                                              |
+| `maxAge`                          | Duration string with `ms`, `s`, `m`, `h` or `d` suffix.                                                    |
+| `promote`                         | Positive integer `minLabels`, `minAgreement` in [0, 1], boolean `seededDefectsFail`.                       |
+| `blocking`                        | Boolean `exact`, `shape`, `fuzzy`, `visual`, `agent`; `rubric` is boolean or `"promoted"`.                 |
+| `spec.live`                       | Site name to HTTP(S) URL or `null` for no live target. Deployment URLs belong here, never in product code. |
+| `spec.aheadMaxDays`               | Positive integer maximum age of ahead journeys.                                                            |
+
+Smithers requires exact and shape to block; rubric blocks only after promotion
+(20 labels, agreement ≥0.9, seeded defects fail, 3/3 trials pass).
+Fuzzy, visual and agent judgments remain advisory. This API declares policy;
+judge dispatch, calibration and budget accounting consume it separately.
+
 ## Namespaces
 
 `src/index.ts` declares one namespace export:
