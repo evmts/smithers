@@ -1,0 +1,4433 @@
+{
+  "version": 1,
+  "added": [
+    {
+      "name": "@smthrs/cli",
+      "subpath": "./tui-native",
+      "development": {
+        "types": "./vendor/opentui-native/runtime.d.ts",
+        "bun": "./vendor/opentui-native/runtime.bun.mjs",
+        "default": "./vendor/opentui-native/runtime.node.mjs"
+      },
+      "published": {
+        "types": "./vendor/opentui-native/runtime.d.ts",
+        "bun": "./vendor/opentui-native/runtime.bun.mjs",
+        "default": "./vendor/opentui-native/runtime.node.mjs"
+      },
+      "reason": "Pinned corrected OpenTUI native artifact path for source and published TUI bootstrap through the existing setRenderLibPath seam. Node resolves the packaged file; Bun embeds the same file in compiled distribution. Help and print remain lazy; unsupported or missing artifacts refuse instead of selecting an unpatched library. See vendor/opentui-native/README.md and issue #2403."
+    },
+    {
+      "name": "@smthrs/testing",
+      "subpath": "./ProcessTable",
+      "development": "./src/ProcessTable.ts",
+      "published": {
+        "types": "./dist/esm/ProcessTable.d.ts",
+        "import": "./dist/esm/ProcessTable.js",
+        "require": "./dist/cjs/ProcessTable.js"
+      },
+      "reason": "Shared bounded explicit-column process-table probes for real-process tests; a separate Node-only subpath keeps browser test hosts independent of child_process."
+    },
+    {
+      "name": "@smthrs/canonical",
+      "subpath": "./Serializer",
+      "development": "./src/Serializer.ts",
+      "published": {
+        "types": "./dist/esm/Serializer.d.ts",
+        "import": "./dist/esm/Serializer.js",
+        "require": "./dist/cjs/Serializer.js"
+      },
+      "reason": "Runtime-free entry for the existing exact canonical serializer and errors, used by browser and Worker wire contracts without importing the Effect schema. No digest algorithm or output change; the package tests prove a dependency-free browser bundle."
+    },
+    {
+      "name": "@smthrs/platform-node",
+      "subpath": "./ScopedProcess",
+      "development": "./src/ScopedProcess.ts",
+      "published": {
+        "types": "./dist/esm/ScopedProcess.d.ts",
+        "import": "./dist/esm/ScopedProcess.js",
+        "require": "./dist/cjs/ScopedProcess.js"
+      },
+      "reason": "Shared transient process ownership for build commands, model runners, discovery and services. The public wrapper preserves target status, literal pipe IO and native Windows arguments; the private supervisor protocol stays internal. Durable host ledger composition remains in NodeHost."
+    },
+    {
+      "name": "@smthrs/canonical",
+      "subpath": "./BoundedJson",
+      "development": "./src/BoundedJson.ts",
+      "published": {
+        "types": "./dist/esm/BoundedJson.d.ts",
+        "import": "./dist/esm/BoundedJson.js",
+        "require": "./dist/cjs/BoundedJson.js"
+      },
+      "reason": "Shared bounded JSON admission and encoded-byte accounting used by flow, run-store, and step-cache; explicitly re-exported and documented by canonical. Persistence-specific error vocabulary remains with each caller."
+    },
+    {
+      "name": "@smthrs/memory",
+      "subpath": "./Migrations",
+      "development": "./src/Migrations.ts",
+      "published": {
+        "types": "./dist/esm/Migrations.d.ts",
+        "import": "./dist/esm/Migrations.js",
+        "require": "./dist/cjs/Migrations.js"
+      },
+      "reason": "Host-composable memory migration set and installation layer on the shared durable database ladder. NodeControl composes this public set with lower engine/control blocks; SQL schema implementation remains private."
+    },
+    {
+      "name": "@smthrs/engine-store",
+      "subpath": "./DeferredClockFold",
+      "development": "./src/DeferredClockFold.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/DeferredClockFold.d.ts",
+          "default": "./dist/esm/DeferredClockFold.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DeferredClockFold.d.ts",
+          "default": "./dist/cjs/DeferredClockFold.js"
+        }
+      },
+      "reason": "Intentional public journal-to-deferred/clock rebuild port (#2054), exposed by engine-store's source and publication maps, barrel and API reference. Journal records carry references and digests only; completion values stay in their rows, and an unjoinable reference fails fold_incomplete."
+    },
+    {
+      "name": "@smthrs/engine-store",
+      "subpath": "./StepCacheFold",
+      "development": "./src/StepCacheFold.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/StepCacheFold.d.ts",
+          "default": "./dist/esm/StepCacheFold.js"
+        },
+        "require": {
+          "types": "./dist/cjs/StepCacheFold.d.ts",
+          "default": "./dist/cjs/StepCacheFold.js"
+        }
+      },
+      "reason": "Intentional public journal-to-step-cache head rebuild port introduced in 9ed6aa98c50e5990eda6d3072e8c7649632995af (#2053), explicitly exposed by engine-store's source and publication maps, barrel and API reference. Cache results remain in the append-only recorded ledger; ambiguous, compacted or rewound history refuses rebuilt heads. Retention limitations remain tracked in #2053."
+    },
+    {
+      "name": "@smthrs/engine-store",
+      "subpath": "./ExecutionSnapshot",
+      "development": "./src/ExecutionSnapshot.ts",
+      "published": {
+        "types": "./dist/esm/ExecutionSnapshot.d.ts",
+        "import": "./dist/esm/ExecutionSnapshot.js",
+        "require": "./dist/cjs/ExecutionSnapshot.js"
+      },
+      "reason": "Deliberate public revisioned execution observation port, documented in engine-store's observe-executions guide and API reference; reviewed in execution-snapshots.md. Internal SQL readers remain private."
+    },
+    {
+      "name": "@smthrs/engine-store",
+      "subpath": "./RunChangeFeed",
+      "development": "./src/RunChangeFeed.ts",
+      "published": {
+        "types": "./dist/esm/RunChangeFeed.d.ts",
+        "import": "./dist/esm/RunChangeFeed.js",
+        "require": "./dist/cjs/RunChangeFeed.js"
+      },
+      "reason": "Deliberate public bounded revision catch-up port with durable deletion tombstones, documented in engine-store's observe-executions guide and API reference; reviewed in execution-snapshots.md."
+    },
+    {
+      "name": "@smthrs/journal",
+      "subpath": "./Consensus",
+      "development": "./src/Consensus.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Consensus.d.ts",
+          "default": "./dist/esm/Consensus.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Consensus.d.ts",
+          "default": "./dist/cjs/Consensus.js"
+        }
+      },
+      "reason": "The injectable journal ownership strategy introduced in 3ff0127860c48343447492e2601715e88e43794f (#2055) owns exclusive claims, exact activation grants, monotone heartbeats, evidence-bound stale takeover and commit-time fences; run-store Ownership delegates to this service while preserving its existing API. The public barrel and owner-fence guide intentionally expose the strategy for deployments and browser/local embedding; reviewed under #3183 with shared consensus conformance and fenced journal boundary tests."
+    },
+    {
+      "name": "@smthrs/journal",
+      "subpath": "./SqlConsensus",
+      "development": "./src/SqlConsensus.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/SqlConsensus.d.ts",
+          "default": "./dist/esm/SqlConsensus.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SqlConsensus.d.ts",
+          "default": "./dist/cjs/SqlConsensus.js"
+        }
+      },
+      "reason": "The default SQL implementation of journal Consensus introduced in 3ff0127860c48343447492e2601715e88e43794f (#2055) arbitrates the private flows_consensus_leases table through DurableWriter and participates in commit-time journal fences. The public barrel and owner-fence guide intentionally expose make/layer for host composition; reviewed under #3183 with real database conformance, displaced-writer refusal and persistence-failure tests; existing journal exports remain recorded."
+    },
+    {
+      "name": "@smthrs/journal",
+      "subpath": "./EngineEvent",
+      "development": "./src/EngineEvent.ts",
+      "published": {
+        "types": "./dist/esm/EngineEvent.d.ts",
+        "import": "./dist/esm/EngineEvent.js",
+        "require": "./dist/cjs/EngineEvent.js"
+      },
+      "reason": "Shared versioned engine event schemas and explicit consumer admission, documented in journal's state-event-authority guide; reviewed in state-event-contracts.md. Additive contracts do not cut over existing writers or expose engine projection internals."
+    },
+    {
+      "name": "@smthrs/control",
+      "subpath": "./ApprovalAuthority",
+      "development": "./src/ApprovalAuthority.ts",
+      "published": {
+        "types": "./dist/esm/ApprovalAuthority.d.ts",
+        "import": "./dist/esm/ApprovalAuthority.js",
+        "require": "./dist/cjs/ApprovalAuthority.js"
+      },
+      "reason": "Host-owned approval authority, distinct from authenticated principal attribution and workflow capability grants; enforced before mutation/replay and at decision commit."
+    },
+    {
+      "name": "@smthrs/control",
+      "subpath": "./DispatchReader",
+      "development": "./src/DispatchReader.ts",
+      "published": {
+        "types": "./dist/esm/DispatchReader.d.ts",
+        "import": "./dist/esm/DispatchReader.js",
+        "require": "./dist/cjs/DispatchReader.js"
+      },
+      "reason": "Read port from the control plane into a host's trigger store, so Control.list answers the triggers and fires variants; the port lives in control because @smthrs/triggers already depends on it, and layerNone is the typed refusal for a host without a store."
+    },
+    {
+      "name": "@smthrs/triggers",
+      "subpath": "./DispatchReader",
+      "development": "./src/DispatchReader.ts",
+      "published": {
+        "types": "./dist/esm/DispatchReader.d.ts",
+        "import": "./dist/esm/DispatchReader.js",
+        "require": "./dist/cjs/DispatchReader.js"
+      },
+      "reason": "Adapter that serves the @smthrs/control DispatchReader port from a TriggerStore, so a host composes Control.list triggers and fires over the same store the scheduler writes; the adapter lives here because only this package can read the store."
+    },
+    {
+      "name": "@smthrs/engine-store",
+      "subpath": "./PlanMergeStore",
+      "development": "./src/PlanMergeStore.ts",
+      "published": {
+        "types": "./dist/esm/PlanMergeStore.d.ts",
+        "import": "./dist/esm/PlanMergeStore.js",
+        "require": "./dist/cjs/PlanMergeStore.js"
+      },
+      "reason": "Authoritative owner-fenced merge intent/completion state. Required on the scheduler's database so a stopped attempt and its atomic plan/input extension survive recovery independently of redacted journal projections."
+    },
+    {
+      "name": "@smthrs/engine-store",
+      "subpath": "./ReplayOnly",
+      "development": "./src/ReplayOnly.ts",
+      "published": {
+        "types": "./dist/esm/ReplayOnly.d.ts",
+        "import": "./dist/esm/ReplayOnly.js",
+        "require": "./dist/cjs/ReplayOnly.js"
+      },
+      "reason": "The replay-only engine (1587e5f24a) behind smthrs runs verify: it serves recorded steps and reports the first step a resume would execute, running no action body."
+    },
+    {
+      "name": "@smthrs/engine-store",
+      "subpath": "./PlanInputStore",
+      "development": "./src/PlanInputStore.ts",
+      "published": {
+        "types": "./dist/esm/PlanInputStore.d.ts",
+        "import": "./dist/esm/PlanInputStore.js",
+        "require": "./dist/cjs/PlanInputStore.js"
+      },
+      "reason": "Authoritative owner-fenced input observations for durable plan execution; explicitly composed on the run database, separate from approval plans, redacted journal projections and evictable caches."
+    },
+    {
+      "name": "@smthrs/plan",
+      "subpath": "./Scheduling",
+      "development": "./src/Scheduling.ts",
+      "published": {
+        "types": "./dist/esm/Scheduling.d.ts",
+        "import": "./dist/esm/Scheduling.js",
+        "require": "./dist/cjs/Scheduling.js"
+      },
+      "reason": "Shared ready-work priority, aging and capacity policy; deliberately public for execution adapters. Does not execute effects or determine conditional readiness."
+    },
+    {
+      "name": "@smthrs/scorers",
+      "subpath": "./ScoreGate",
+      "development": "./src/ScoreGate.ts",
+      "published": {
+        "types": "./dist/esm/ScoreGate.d.ts",
+        "import": "./dist/esm/ScoreGate.js",
+        "require": "./dist/cjs/ScoreGate.js"
+      },
+      "reason": "Pure runtime grading contract extracted from testing so published evaluations do not execute a test package; testing delegates with unchanged verdicts and error identity."
+    },
+    {
+      "name": "@smthrs/canonical",
+      "subpath": "./Record",
+      "development": "./src/Record.ts",
+      "published": {
+        "types": "./dist/esm/Record.d.ts",
+        "import": "./dist/esm/Record.js",
+        "require": "./dist/cjs/Record.js"
+      },
+      "reason": "Retains main's safe own-property record operations."
+    },
+    {
+      "name": "@smthrs/journal",
+      "subpath": "./JournalGeneration",
+      "development": "./src/JournalGeneration.ts",
+      "published": {
+        "types": "./dist/esm/JournalGeneration.d.ts",
+        "import": "./dist/esm/JournalGeneration.js",
+        "require": "./dist/cjs/JournalGeneration.js"
+      },
+      "reason": "Retains main's generation-aware journal cursor contract."
+    },
+    {
+      "name": "@smthrs/kernel",
+      "subpath": "./ChildProcessEnvironment",
+      "development": "./src/ChildProcessEnvironment.ts",
+      "published": {
+        "types": "./dist/esm/ChildProcessEnvironment.d.ts",
+        "import": "./dist/esm/ChildProcessEnvironment.js",
+        "require": "./dist/cjs/ChildProcessEnvironment.js"
+      },
+      "reason": "Retains main's declared child-process environment policy."
+    },
+    {
+      "name": "@smthrs/kernel",
+      "subpath": "./Rooted",
+      "development": "./src/Rooted.ts",
+      "published": {
+        "types": "./dist/esm/Rooted.d.ts",
+        "import": "./dist/esm/Rooted.js",
+        "require": "./dist/cjs/Rooted.js"
+      },
+      "reason": "Binds filesystem, path and process services to one root so hosts serve a directory other than the process cwd; apps/tui/src/host.ts imports it (#2201)."
+    },
+    {
+      "name": "@smthrs/std",
+      "subpath": "./Relocate",
+      "development": "./src/Relocate.ts",
+      "published": {
+        "types": "./dist/esm/Relocate.d.ts",
+        "import": "./dist/esm/Relocate.js",
+        "require": "./dist/cjs/Relocate.js"
+      },
+      "reason": "Checkpoint input relocation for the supported read and shell flows, including explicit refusal of writes, absolute paths and parent traversal. Covered by Relocate.test.ts against the owning flow input schemas."
+    },
+    {
+      "name": "@smthrs/build-cli",
+      "subpath": "./TargetIndex",
+      "development": "./src/TargetIndex.ts",
+      "published": {
+        "types": "./dist/esm/TargetIndex.d.ts",
+        "import": "./dist/esm/TargetIndex.js",
+        "require": "./dist/cjs/TargetIndex.js"
+      },
+      "reason": "Declaration-derived target listing and text rendering used by the index command; keeps planning, host state and cache digests out of the committed metadata contract."
+    },
+    {
+      "name": "@smthrs/flows",
+      "subpath": "./Runtime",
+      "development": "./src/Runtime.ts",
+      "published": {
+        "types": "./dist/esm/Runtime.d.ts",
+        "import": "./dist/esm/Runtime.js",
+        "require": "./dist/cjs/Runtime.js"
+      },
+      "reason": "Shared durable runtime with injected host and SQL services; NodeRuntime and BunRuntime preserve the same native API over it."
+    },
+    {
+      "name": "@smthrs/flows",
+      "subpath": "./BunRuntime",
+      "development": "./src/BunRuntime.ts",
+      "published": {
+        "types": "./dist/esm/BunRuntime.d.ts",
+        "import": "./dist/esm/BunRuntime.js",
+        "require": "./dist/cjs/BunRuntime.js"
+      },
+      "reason": "Bun lifecycle and database composition over the shared runtime; imported only through its explicit Bun entrypoint."
+    },
+    {
+      "name": "@smthrs/database",
+      "subpath": "./bun/BunDatabase",
+      "development": "./src/bun/BunDatabase.ts",
+      "published": {
+        "types": "./dist/esm/bun/BunDatabase.d.ts",
+        "import": "./dist/esm/bun/BunDatabase.js",
+        "require": "./dist/cjs/bun/BunDatabase.js"
+      },
+      "reason": "Explicit Bun SQLite entrypoint that shares migration and write contracts while keeping bun:sqlite outside the Node root import."
+    },
+    {
+      "name": "@smthrs/model",
+      "subpath": "./ModelCatalog",
+      "development": "./src/ModelCatalog.ts",
+      "published": {
+        "types": "./dist/esm/ModelCatalog.d.ts",
+        "import": "./dist/esm/ModelCatalog.js",
+        "require": "./dist/cjs/ModelCatalog.js"
+      },
+      "reason": "Provider-neutral context window lookup already exposed by the development manifest and root barrel; publication must expose the same public module to installed consumers."
+    },
+    {
+      "name": "@smthrs/model",
+      "subpath": "./Pricing",
+      "development": "./src/Pricing.ts",
+      "published": {
+        "types": "./dist/esm/Pricing.d.ts",
+        "import": "./dist/esm/Pricing.js",
+        "require": "./dist/cjs/Pricing.js"
+      },
+      "reason": "USD rate cards generated from the backend price table (#1840); @smthrs/agent Budget prices usage records through it."
+    },
+    {
+      "name": "@smthrs/engine-store",
+      "subpath": "./EventTypes",
+      "development": "./src/EventTypes.ts",
+      "published": {
+        "types": "./dist/esm/EventTypes.d.ts",
+        "import": "./dist/esm/EventTypes.js",
+        "require": "./dist/cjs/EventTypes.js"
+      },
+      "reason": "Shared persisted journal event names already exposed by current main; replay consumers use this stable identity vocabulary."
+    },
+    {
+      "name": "@smthrs/gateway",
+      "subpath": "./bun/BunGateway",
+      "development": "./src/bun/BunGateway.ts",
+      "published": {
+        "types": "./dist/esm/bun/BunGateway.d.ts",
+        "import": "./dist/esm/bun/BunGateway.js",
+        "require": "./dist/cjs/bun/BunGateway.js"
+      },
+      "reason": "Bun adapter already exposed by current main for the authenticated gateway; it preserves the same protocol and policy as the Node host."
+    },
+    {
+      "name": "@smthrs/control",
+      "subpath": "./Health",
+      "development": "./src/Health.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Health.d.ts",
+          "default": "./dist/esm/Health.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Health.d.ts",
+          "default": "./dist/cjs/Health.js"
+        }
+      },
+      "reason": "Documented public Health namespace for Effect checks, bounded observation policies, provenance and shared status rollup, re-exported by control/src/index.ts and consumed by gateway. This adds the public contract without exposing private projection state or changing prior runtime entries."
+    },
+    {
+      "name": "@smthrs/canonical",
+      "subpath": "./IssuePath",
+      "development": "./src/IssuePath.ts",
+      "published": {
+        "types": "./dist/esm/IssuePath.d.ts",
+        "import": "./dist/esm/IssuePath.js",
+        "require": "./dist/cjs/IssuePath.js"
+      },
+      "reason": "Existing main export centralizing Effect Schema issue-path formatting used by control validation. Retains the previous validation-path behavior; record the shared entry without changing the original baseline."
+    },
+    {
+      "name": "@smthrs/canonical",
+      "subpath": "./ReadonlyMap",
+      "development": "./src/ReadonlyMap.ts",
+      "published": {
+        "types": "./dist/esm/ReadonlyMap.d.ts",
+        "import": "./dist/esm/ReadonlyMap.js",
+        "require": "./dist/cjs/ReadonlyMap.js"
+      },
+      "reason": "Existing main export for a copied immutable map facade used by filesystem and plugin views. It preserves read semantics without exposing source-map mutation; record the shared entry in the explicit surface audit."
+    },
+    {
+      "name": "@smthrs/model",
+      "subpath": "./Classifier",
+      "development": "./src/Classifier.ts",
+      "published": {
+        "types": "./dist/esm/Classifier.d.ts",
+        "import": "./dist/esm/Classifier.js",
+        "require": "./dist/cjs/Classifier.js"
+      },
+      "reason": "Typed questions over JSON state, answered by Jev through the Evaluator service and decoded into probabilities and confidence; the classifier declaration the classify flows are built from."
+    },
+    {
+      "name": "@smthrs/model",
+      "subpath": "./Evaluator",
+      "development": "./src/Evaluator.ts",
+      "published": {
+        "types": "./dist/esm/Evaluator.d.ts",
+        "import": "./dist/esm/Evaluator.js",
+        "require": "./dist/cjs/Evaluator.js"
+      },
+      "reason": "The Jev transport service: the Vercel AI Gateway layer, a scripted layer for tests, and the unavailable layer a host without a key installs."
+    },
+    {
+      "name": "@smthrs/platform-node",
+      "subpath": "./EgressHttpClient",
+      "development": "./src/EgressHttpClient.ts",
+      "published": {
+        "types": "./dist/esm/EgressHttpClient.d.ts",
+        "import": "./dist/esm/EgressHttpClient.js",
+        "require": "./dist/cjs/EgressHttpClient.js"
+      },
+      "reason": "The one constructor for the outbound Undici client a Node process should use: it routes through the egress proxy HTTP_PROXY/HTTPS_PROXY/NO_PROXY name and is the plain pool when they name none. Every host composition installs it instead of NodeHttpClient.layerUndici, whose bare Agent dials every origin directly and is dropped by a default-deny sandbox. A separate subpath keeps it reachable without importing the jj-bearing host bundle."
+    },
+    {
+      "name": "@smthrs/plan",
+      "subpath": "./Effects",
+      "development": "./src/Effects.ts",
+      "published": {
+        "types": "./dist/esm/Effects.d.ts",
+        "import": "./dist/esm/Effects.js",
+        "require": "./dist/cjs/Effects.js"
+      },
+      "reason": "The one effect envelope model, relocated here from @smthrs/core so a single declaration serves the plan compiler, the flow graph builder and the pattern library."
+    },
+    {
+      "name": "@smthrs/plan",
+      "subpath": "./Placement",
+      "development": "./src/Placement.ts",
+      "published": {
+        "types": "./dist/esm/Placement.d.ts",
+        "import": "./dist/esm/Placement.js",
+        "require": "./dist/cjs/Placement.js"
+      },
+      "reason": "The one placement model and its annotation key, relocated here from @smthrs/core so the typed directive and the key @smthrs/flow annotates with are the same declaration."
+    },
+    {
+      "name": "@smthrs/plan",
+      "subpath": "./test/PlanFixtures",
+      "development": "./src/test/PlanFixtures.ts",
+      "published": {
+        "types": "./dist/esm/test/PlanFixtures.d.ts",
+        "import": "./dist/esm/test/PlanFixtures.js",
+        "require": "./dist/cjs/test/PlanFixtures.js"
+      },
+      "reason": "Draft and compile fixtures shared with @smthrs/plan-store, which drives them against the persisted form. The same test-support convention as @smthrs/database's ./test/TestDatabase."
+    },
+    {
+      "name": "@smthrs/plan",
+      "subpath": "./CachePolicy",
+      "development": "./src/CachePolicy.ts",
+      "published": {
+        "types": "./dist/esm/CachePolicy.d.ts",
+        "import": "./dist/esm/CachePolicy.js",
+        "require": "./dist/cjs/CachePolicy.js"
+      },
+      "reason": "The one cache-policy declaration: the scope vocabulary, the policy schema, the annotation key @smthrs/engine-store reads at dispatch, and the annotator. It was declared twice, in @smthrs/flow and @smthrs/patterns, tied together only by a re-typed identifier string; @smthrs/plan is the package both already depend on. The identifier is unchanged, so every policy already written is still read."
+    },
+    {
+      "name": "@smthrs/plan",
+      "subpath": "./Repetition",
+      "development": "./src/Repetition.ts",
+      "published": {
+        "types": "./dist/esm/Repetition.d.ts",
+        "import": "./dist/esm/Repetition.js",
+        "require": "./dist/cjs/Repetition.js"
+      },
+      "reason": "The one bounded-repetition ceiling vocabulary, taken by @smthrs/flow Poll as onTimeout and @smthrs/patterns Loop as onMaxReached. It was the same two literals written out in both packages with no edge between them."
+    },
+    {
+      "name": "@smthrs/agent",
+      "subpath": "./ScriptedJudge",
+      "development": "./src/ScriptedJudge.ts",
+      "published": {
+        "types": "./dist/esm/ScriptedJudge.d.ts",
+        "import": "./dist/esm/ScriptedJudge.js",
+        "require": "./dist/cjs/ScriptedJudge.js"
+      },
+      "reason": "Explicit offline completion-judge fixture shared by whole-host tests. It rejects unknown questions and malformed evidence; production hosts must supply their configured evaluator."
+    },
+    {
+      "name": "@smthrs/agent",
+      "subpath": "./SeatRouter",
+      "development": "./src/SeatRouter.ts",
+      "published": {
+        "types": "./dist/esm/SeatRouter.d.ts",
+        "import": "./dist/esm/SeatRouter.js",
+        "require": "./dist/cjs/SeatRouter.js"
+      },
+      "reason": "Jev seat and system-variant routing added in #1929; the TUI host and the native equipment supply its Catalog. A declared seat always wins, and an unanswerable judge fails the run as SeatUnrouted instead of picking a default seat."
+    },
+    {
+      "name": "@smthrs/agent",
+      "subpath": "./SmithersPlugin",
+      "development": "./src/SmithersPlugin.ts",
+      "published": {
+        "types": "./dist/esm/SmithersPlugin.d.ts",
+        "import": "./dist/esm/SmithersPlugin.js",
+        "require": "./dist/cjs/SmithersPlugin.js"
+      },
+      "reason": "Cell plugin that teaches the core agent Smithers through the existing cellModelRequest and cellFlows hooks; the TUI composes it. It adds no second flow model and reaches flow runs only through host-supplied ports."
+    },
+    {
+      "name": "@smthrs/harness",
+      "subpath": "./CompletionClaim",
+      "development": "./src/CompletionClaim.ts",
+      "published": {
+        "types": "./dist/esm/CompletionClaim.d.ts",
+        "import": "./dist/esm/CompletionClaim.js",
+        "require": "./dist/cjs/CompletionClaim.js"
+      },
+      "reason": "Shared completion evidence schema and classifier used by the offline scripted judge and native host completion gates."
+    },
+    {
+      "name": "@smthrs/harness",
+      "subpath": "./Judgement",
+      "development": "./src/Judgement.ts",
+      "published": {
+        "types": "./dist/esm/Judgement.d.ts",
+        "import": "./dist/esm/Judgement.js",
+        "require": "./dist/cjs/Judgement.js"
+      },
+      "reason": "The one metered, fail-closed Jev reader added in #1929; @smthrs/agent and the TUI host ask every supervisor, relevance, compaction, monitor and routing question through it. A host with no Evaluator fails the reading instead of guessing."
+    },
+    {
+      "name": "@smthrs/harness",
+      "subpath": "./Monitor",
+      "development": "./src/Monitor.ts",
+      "published": {
+        "types": "./dist/esm/Monitor.d.ts",
+        "import": "./dist/esm/Monitor.js",
+        "require": "./dist/cjs/Monitor.js"
+      },
+      "reason": "Declarative supervisor monitors added in #1929; @smthrs/agent composes them into the supervisor reading and gates delivery at the recorded steering drain against a durable ledger. Monitors are silent by default."
+    },
+    {
+      "name": "@smthrs/harness",
+      "subpath": "./Relevance",
+      "development": "./src/Relevance.ts",
+      "published": {
+        "types": "./dist/esm/Relevance.d.ts",
+        "import": "./dist/esm/Relevance.js",
+        "require": "./dist/cjs/Relevance.js"
+      },
+      "reason": "The Jev relevance gate added in #1929 for memory rows, catalog flows, skills and instruction-file chunks; @smthrs/agent applies it. An item is withheld only at P(unnecessary) >= 0.9, and an unjudged reading keeps everything."
+    },
+    {
+      "name": "@smthrs/harness",
+      "subpath": "./Supervisor",
+      "development": "./src/Supervisor.ts",
+      "published": {
+        "types": "./dist/esm/Supervisor.d.ts",
+        "import": "./dist/esm/Supervisor.js",
+        "require": "./dist/cjs/Supervisor.js"
+      },
+      "reason": "The non-blocking Jev supervisor: its snapshot schema, classifier, thresholds and memory port, read by the offline SWE-bench replay and by hosts that adapt a memory store to it."
+    },
+    {
+      "name": "@smthrs/std",
+      "subpath": "./TreeFingerprint",
+      "development": "./src/TreeFingerprint.ts",
+      "published": {
+        "types": "./dist/esm/TreeFingerprint.d.ts",
+        "import": "./dist/esm/TreeFingerprint.js",
+        "require": "./dist/cjs/TreeFingerprint.js"
+      },
+      "reason": "Container-side directory measurement shared by bash mutation accounting and host workspace observations."
+    },
+    {
+      "name": "@smthrs/std",
+      "subpath": "./RemoteSearch",
+      "development": "./src/RemoteSearch.ts",
+      "published": {
+        "types": "./dist/esm/RemoteSearch.d.ts",
+        "import": "./dist/esm/RemoteSearch.js",
+        "require": "./dist/cjs/RemoteSearch.js"
+      },
+      "reason": "The two-round-trip search over a tree on another machine, added in 425bbbf974 so a benchmark container behind docker exec answers grep without one process start per file."
+    },
+    {
+      "name": "@smthrs/crypto",
+      "subpath": "./Identity",
+      "development": "./src/Identity.ts",
+      "published": {
+        "types": "./dist/esm/Identity.d.ts",
+        "import": "./dist/esm/Identity.js",
+        "require": "./dist/cjs/Identity.js"
+      },
+      "reason": "Canonical function identity and explicit capture metadata shared by plan and core node construction."
+    },
+    {
+      "name": "@smthrs/gateway",
+      "subpath": "./RuntimeBridge",
+      "development": "./src/RuntimeBridge.ts",
+      "published": {
+        "types": "./dist/esm/RuntimeBridge.d.ts",
+        "import": "./dist/esm/RuntimeBridge.js",
+        "require": "./dist/cjs/RuntimeBridge.js"
+      },
+      "reason": "Versioned JSON adapter from the Go product backend to the canonical Flow and Control runtime."
+    },
+    {
+      "name": "@smthrs/gateway",
+      "subpath": "./EngineTrace",
+      "development": "./src/EngineTrace.ts",
+      "published": {
+        "types": "./dist/esm/EngineTrace.d.ts",
+        "import": "./dist/esm/EngineTrace.js",
+        "require": "./dist/cjs/EngineTrace.js"
+      },
+      "reason": "Shared projection of native engine evidence into the run trace consumed by browser and terminal hosts."
+    },
+    {
+      "name": "@smthrs/gateway",
+      "subpath": "./RunTrace",
+      "development": "./src/RunTrace.ts",
+      "published": {
+        "types": "./dist/esm/RunTrace.d.ts",
+        "import": "./dist/esm/RunTrace.js",
+        "require": "./dist/cjs/RunTrace.js"
+      },
+      "reason": "Portable run-trace projection and step expansion shared by the browser and terminal run monitors."
+    },
+    {
+      "name": "@smthrs/agent",
+      "subpath": "./RunawayGuard",
+      "development": "./src/RunawayGuard.ts",
+      "published": {
+        "types": "./dist/esm/RunawayGuard.d.ts",
+        "import": "./dist/esm/RunawayGuard.js",
+        "require": "./dist/cjs/RunawayGuard.js"
+      },
+      "reason": "The frozen incident facts a Runaway or Stuck guard parks a run on, and the Timeout failure Stop settles it with, so a restarted host presents and decides the incident it was made on (#2120)."
+    },
+    {
+      "name": "@smthrs/model",
+      "subpath": "./EvaluatorBackup",
+      "development": "./src/EvaluatorBackup.ts",
+      "published": {
+        "types": "./dist/esm/EvaluatorBackup.d.ts",
+        "import": "./dist/esm/EvaluatorBackup.js",
+        "require": "./dist/cjs/EvaluatorBackup.js"
+      },
+      "reason": "Model-backed Evaluator judgments with the same answer validation as a resolved seat, and a transport-only fallback that consults the backup only when the primary is unavailable; the CLI composes it as Jev's GPT-6 Luna backup (4da531c75)."
+    },
+    {
+      "name": "@smthrs/engine",
+      "subpath": "./Hosts",
+      "development": "./src/Hosts.ts",
+      "published": {
+        "types": "./dist/esm/Hosts.d.ts",
+        "import": "./dist/esm/Hosts.js",
+        "require": "./dist/cjs/Hosts.js"
+      },
+      "reason": "The injected table a composing host uses to bind a flow's serializable Flow.Placement target to Here or to a Proxy engine; with no table every placement runs here, as before (2ed052e5a)."
+    },
+    {
+      "name": "@smthrs/engine",
+      "subpath": "./PlacedAction",
+      "development": "./src/PlacedAction.ts",
+      "published": {
+        "types": "./dist/esm/PlacedAction.d.ts",
+        "import": "./dist/esm/PlacedAction.js",
+        "require": "./dist/cjs/PlacedAction.js"
+      },
+      "reason": "Implements an action with a body that runs where the Hosts table binds its placement, otherwise on the holder's engine through a served one-node flow, so a secret the body uses lives only on its holder (a4b3e02ab)."
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "subpath": "./CommandSandbox",
+      "development": "./src/CommandSandbox/index.ts",
+      "published": {
+        "types": "./dist/esm/CommandSandbox/index.d.ts",
+        "import": "./dist/esm/CommandSandbox/index.js",
+        "require": "./dist/cjs/CommandSandbox/index.js"
+      },
+      "reason": "The argv-prefix Sandbox.Provider: commands, reads and writes travel through nothing, ssh <args> or docker exec -i <container>, so a session reaches a remote host such as a Smithers Cloud workspace (6d08bf3b2)."
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "subpath": "./CommandSandbox/*",
+      "development": null,
+      "published": null,
+      "reason": "Closes the CommandSandbox directory's deep paths, as every other provider directory in this package does, so ./CommandSandbox is its only entrypoint."
+    },
+    {
+      "name": "@smthrs/build-cli",
+      "subpath": "./KnownRed",
+      "development": "./src/KnownRed.ts",
+      "published": {
+        "types": "./dist/esm/KnownRed.d.ts",
+        "import": "./dist/esm/KnownRed.js",
+        "require": "./dist/cjs/KnownRed.js"
+      },
+      "reason": "The parser, fingerprint and verdict rendering for the --known-red file smthrs ci already reads, so the CI coverage check that owns every main red imports them by package name instead of reaching into src (#2482)."
+    },
+    {
+      "name": "@smthrs/agent",
+      "subpath": "./Memory",
+      "development": "./src/Memory.ts",
+      "published": {
+        "types": "./dist/esm/Memory.d.ts",
+        "import": "./dist/esm/Memory.js",
+        "require": "./dist/cjs/Memory.js"
+      },
+      "reason": "The memory capability as one sealed flow a cell calls with ctx.call(\"memory\", ...): deterministic seeds and shortlists over the wiki, a README-guided repository walk, commits and facts, each kept by one Jev boolean; hosts bind it with plugin and run opening before frame 0 (5b745c566)."
+    },
+    {
+      "name": "@smthrs/agent",
+      "subpath": "./MemoryCalibration",
+      "development": "./src/MemoryCalibration.ts",
+      "published": {
+        "types": "./dist/esm/MemoryCalibration.d.ts",
+        "import": "./dist/esm/MemoryCalibration.js",
+        "require": "./dist/cjs/MemoryCalibration.js"
+      },
+      "reason": "The threshold math behind every memory routing decision: cost-derived thresholds over calibrated Jev probabilities, and the bounded refit memory/calibrate runs, which refuses moves past maxMove or fits on too few labels (5b745c566)."
+    },
+    {
+      "name": "@smthrs/agent",
+      "subpath": "./MemoryMine",
+      "development": "./src/MemoryMine.ts",
+      "published": {
+        "types": "./dist/esm/MemoryMine.d.ts",
+        "import": "./dist/esm/MemoryMine.js",
+        "require": "./dist/cjs/MemoryMine.js"
+      },
+      "reason": "Mines a finished run's transcript once for durable facts and steering decisions, judged by one Jev reading, and is the one redacted writer of a mined fact; the memory/mine file flow reads it (45e4f3ca6)."
+    },
+    {
+      "name": "@smthrs/cli",
+      "subpath": "./BunControl",
+      "development": "./src/BunControl.ts",
+      "published": {
+        "types": "./dist/esm/BunControl.d.ts",
+        "import": "./dist/esm/BunControl.js",
+        "require": "./dist/cjs/BunControl.js"
+      },
+      "reason": "Public Bun composition of the existing native control host (the private internal/BunControl adapters), so a Bun process such as apps/tui runs a project's file flows in-process without the Node SQLite adapters. No new host behavior."
+    },
+    {
+      "name": "@smthrs/cli",
+      "subpath": "./CloudSession",
+      "development": "./src/CloudSession.ts",
+      "published": {
+        "types": "./dist/esm/CloudSession.d.ts",
+        "import": "./dist/esm/CloudSession.js",
+        "require": "./dist/cjs/CloudSession.js"
+      },
+      "reason": "The signed-in Smithers Cloud session for hosts other than the CLI: the origin and an authenticated GET resolved from where smthrs auth login and smthrs config put them, so apps/tui reads the factory's issue list. It reuses the CLI's session resolution and stores or prints no token."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./core/AccessToken",
+      "development": "./src/core/AccessToken.ts",
+      "published": {
+        "types": "./dist/esm/core/AccessToken.d.ts",
+        "import": "./dist/esm/core/AccessToken.js",
+        "require": "./dist/cjs/core/AccessToken.js"
+      },
+      "reason": "Provider-neutral connection, token, source-record and sync primitives the new provider integrations share; previously internal to the package and needed by hosts that configure connections or run record syncs."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./core/Connection",
+      "development": "./src/core/Connection.ts",
+      "published": {
+        "types": "./dist/esm/core/Connection.d.ts",
+        "import": "./dist/esm/core/Connection.js",
+        "require": "./dist/cjs/core/Connection.js"
+      },
+      "reason": "Provider-neutral connection, token, source-record and sync primitives the new provider integrations share; previously internal to the package and needed by hosts that configure connections or run record syncs."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./core/OAuthToken",
+      "development": "./src/core/OAuthToken.ts",
+      "published": {
+        "types": "./dist/esm/core/OAuthToken.d.ts",
+        "import": "./dist/esm/core/OAuthToken.js",
+        "require": "./dist/cjs/core/OAuthToken.js"
+      },
+      "reason": "Provider-neutral connection, token, source-record and sync primitives the new provider integrations share; previously internal to the package and needed by hosts that configure connections or run record syncs."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./core/Source",
+      "development": "./src/core/Source.ts",
+      "published": {
+        "types": "./dist/esm/core/Source.d.ts",
+        "import": "./dist/esm/core/Source.js",
+        "require": "./dist/cjs/core/Source.js"
+      },
+      "reason": "Provider-neutral connection, token, source-record and sync primitives the new provider integrations share; previously internal to the package and needed by hosts that configure connections or run record syncs."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./core/SourceRecord",
+      "development": "./src/core/SourceRecord.ts",
+      "published": {
+        "types": "./dist/esm/core/SourceRecord.d.ts",
+        "import": "./dist/esm/core/SourceRecord.js",
+        "require": "./dist/cjs/core/SourceRecord.js"
+      },
+      "reason": "Provider-neutral connection, token, source-record and sync primitives the new provider integrations share; previously internal to the package and needed by hosts that configure connections or run record syncs."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./core/SourceStore",
+      "development": "./src/core/SourceStore.ts",
+      "published": {
+        "types": "./dist/esm/core/SourceStore.d.ts",
+        "import": "./dist/esm/core/SourceStore.js",
+        "require": "./dist/cjs/core/SourceStore.js"
+      },
+      "reason": "Provider-neutral connection, token, source-record and sync primitives the new provider integrations share; previously internal to the package and needed by hosts that configure connections or run record syncs."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./core/Sync",
+      "development": "./src/core/Sync.ts",
+      "published": {
+        "types": "./dist/esm/core/Sync.d.ts",
+        "import": "./dist/esm/core/Sync.js",
+        "require": "./dist/cjs/core/Sync.js"
+      },
+      "reason": "Provider-neutral connection, token, source-record and sync primitives the new provider integrations share; previously internal to the package and needed by hosts that configure connections or run record syncs."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./github/Sync",
+      "development": "./src/github/Sync.ts",
+      "published": {
+        "types": "./dist/esm/github/Sync.d.ts",
+        "import": "./dist/esm/github/Sync.js",
+        "require": "./dist/cjs/github/Sync.js"
+      },
+      "reason": "GitHub issue, pull request and comment change feed into source records, alongside the existing GitHub client and webhook subpaths."
+    },
+    {
+      "name": "@smthrs/harness",
+      "subpath": "./FailedCall",
+      "development": "./src/FailedCall.ts",
+      "published": {
+        "types": "./dist/esm/FailedCall.d.ts",
+        "import": "./dist/esm/FailedCall.js",
+        "require": "./dist/cjs/FailedCall.js"
+      },
+      "reason": "Refuses a cell's success claim when a call in the same cell failed; the harness index already re-exports it and the transcript and cell turn depend on it (0d0b24df4)."
+    },
+    {
+      "name": "@smthrs/harness",
+      "subpath": "./ExternalTranscript",
+      "development": "./src/ExternalTranscript.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/ExternalTranscript.d.ts",
+          "default": "./dist/esm/ExternalTranscript.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ExternalTranscript.d.ts",
+          "default": "./dist/cjs/ExternalTranscript.js"
+        }
+      },
+      "reason": "Pure, read-only decoding of the Codex and Claude Code transcripts a person runs beside Smithers into ordered entries (mvp.md M-38, T-UI-07 S2); apps/model-host tails them. It reads only caller-supplied bytes and refuses unknown records with tagged errors."
+    },
+    {
+      "name": "@smthrs/model",
+      "subpath": "./FailureCopy",
+      "development": "./src/FailureCopy.ts",
+      "published": {
+        "types": "./dist/esm/FailureCopy.d.ts",
+        "import": "./dist/esm/FailureCopy.js",
+        "require": "./dist/cjs/FailureCopy.js"
+      },
+      "reason": "Compact, safe copy for typed model and harness failures that the TUI renders on failure cards (26b84458c)."
+    },
+    {
+      "name": "@smthrs/create-app",
+      "subpath": "./worker",
+      "development": "./src/worker.ts",
+      "published": {
+        "types": "./dist/esm/worker.d.ts",
+        "import": "./dist/esm/worker.js",
+        "require": "./dist/cjs/worker.js"
+      },
+      "reason": "Turn host a scaffolded Worker serves POST /api/turn with; the default template imports it so a new app answers its first chat turn (b6875f96e)."
+    },
+    {
+      "name": "@smthrs/create-app",
+      "subpath": "./http",
+      "development": "./src/http.ts",
+      "published": {
+        "types": "./dist/esm/http.d.ts",
+        "import": "./dist/esm/http.js",
+        "require": "./dist/cjs/http.js"
+      },
+      "reason": "Bearer check and capped JSON body read that turnResponse requires; import-free so a template's Worker router guards its routes without loading the agent runtime (security fix: unauthenticated paid turns)."
+    },
+    {
+      "name": "@smthrs/artifacts",
+      "subpath": "./FileLease",
+      "development": "./src/FileLease.ts",
+      "published": {
+        "types": "./dist/esm/FileLease.d.ts",
+        "import": "./dist/esm/FileLease.js",
+        "require": "./dist/cjs/FileLease.js"
+      },
+      "reason": "Cross-process lock-file lease that @smthrs/engine-store uses so a killed owner cannot hold the workspace commit lock forever (9194f67c4)."
+    },
+    {
+      "name": "@smthrs/flow",
+      "subpath": "./Stall",
+      "development": "./src/Stall.ts",
+      "published": {
+        "types": "./dist/esm/Stall.d.ts",
+        "import": "./dist/esm/Stall.js",
+        "require": "./dist/cjs/Stall.js"
+      },
+      "reason": "The stall breaker Loop, ReviewLoop and Supervisor share to end a round loop whose signals stopped moving (b58bf93b8, #1692)."
+    },
+    {
+      "name": "@smthrs/flow",
+      "subpath": "./Deadline",
+      "development": "./src/Deadline.ts",
+      "published": {
+        "types": "./dist/esm/Deadline.d.ts",
+        "import": "./dist/esm/Deadline.js",
+        "require": "./dist/cjs/Deadline.js"
+      },
+      "reason": "Documented host API for starting, inspecting and applying a run deadline from its durable first start, including inherited trampoline deadlines. Explicit development and publication entrypoints match the flow API and reference documentation; reviewed in #3275."
+    },
+    {
+      "name": "@smthrs/flow",
+      "subpath": "./Fault",
+      "development": "./src/Fault.ts",
+      "published": {
+        "types": "./dist/esm/Fault.d.ts",
+        "import": "./dist/esm/Fault.js",
+        "require": "./dist/cjs/Fault.js"
+      },
+      "reason": "One typed fault class per failure, registered by each error owner and stamped on failed runs (failure model S7 slice 1)."
+    },
+    {
+      "name": "@smthrs/evals",
+      "subpath": "./Trials",
+      "development": "./src/Trials.ts",
+      "published": {
+        "types": "./dist/esm/Trials.d.ts",
+        "import": "./dist/esm/Trials.js",
+        "require": "./dist/cjs/Trials.js"
+      },
+      "reason": "pass@k and pass^k statistics over repeated live runs of one case (cfcbf1e56, #1850). A pure module over recorded trial outcomes; it adds no runner, store or model call."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./core/IssueSync",
+      "development": "./src/core/IssueSync.ts",
+      "published": {
+        "types": "./dist/esm/core/IssueSync.d.ts",
+        "import": "./dist/esm/core/IssueSync.js",
+        "require": "./dist/cjs/core/IssueSync.js"
+      },
+      "reason": "Shared issue/comment mirror contract the Slack and Telegram adapters implement against the backend's issue API (b662d687b). The backend owns identities, mappings, claims and receipts; this module owns no store or worker."
+    },
+    {
+      "name": "@smthrs/scorers",
+      "subpath": "./Checks",
+      "development": "./src/Checks.ts",
+      "published": {
+        "types": "./dist/esm/Checks.d.ts",
+        "import": "./dist/esm/Checks.js",
+        "require": "./dist/cjs/Checks.js"
+      },
+      "reason": "Pure, deterministic text and action checks for agent output and a scorer over them, so a suite grades length, wording, links, truncation, routing and leakage without a model (abf5d626e, #1849)."
+    },
+    {
+      "name": "@smthrs/scorers",
+      "subpath": "./Rubric",
+      "development": "./src/Rubric.ts",
+      "published": {
+        "types": "./dist/esm/Rubric.d.ts",
+        "import": "./dist/esm/Rubric.js",
+        "require": "./dist/cjs/Rubric.js"
+      },
+      "reason": "Model-agnostic rubric judge: a scorer that asks a caller-supplied judge to grade output against named criteria (abf5d626e, #1849)."
+    },
+    {
+      "name": "@smthrs/build-cli",
+      "subpath": "./Positionals",
+      "development": "./src/Positionals.ts",
+      "published": {
+        "types": "./dist/esm/Positionals.d.ts",
+        "import": "./dist/esm/Positionals.js",
+        "require": "./dist/cjs/Positionals.js"
+      },
+      "reason": "Refuses positional arguments no command argument consumes, shared by the smthrs and smithers-build CLIs because incur silently drops extras (711503d58, #2109)."
+    },
+    {
+      "name": "@smthrs/database",
+      "subpath": "./Dialect",
+      "development": "./src/Dialect.ts",
+      "published": {
+        "types": "./dist/esm/Dialect.d.ts",
+        "import": "./dist/esm/Dialect.js",
+        "require": "./dist/cjs/Dialect.js"
+      },
+      "reason": "SQL dialect primitives that let the durable stores target SQLite or PostgreSQL through one injectable seam (866fccee5)."
+    },
+    {
+      "name": "@smthrs/database",
+      "subpath": "./postgres/PostgresDatabase",
+      "development": "./src/postgres/PostgresDatabase.ts",
+      "published": {
+        "types": "./dist/esm/postgres/PostgresDatabase.d.ts",
+        "import": "./dist/esm/postgres/PostgresDatabase.js",
+        "require": "./dist/cjs/postgres/PostgresDatabase.js"
+      },
+      "reason": "Injectable PostgreSQL storage layer over @effect/sql-pg, an optional peer (866fccee5); its integration cases wait on a CI database (#2154)."
+    },
+    {
+      "name": "@smthrs/cli",
+      "subpath": "./ExecutionEnvironment",
+      "development": "./src/ExecutionEnvironment.ts",
+      "published": {
+        "types": "./dist/esm/ExecutionEnvironment.d.ts",
+        "import": "./dist/esm/ExecutionEnvironment.js",
+        "require": "./dist/cjs/ExecutionEnvironment.js"
+      },
+      "reason": "Generic execution environments and their CLI projection share persistent locations without provider credential imports; local execution and SSH boundaries have behavioral and integration coverage."
+    },
+    {
+      "name": "@smthrs/cli",
+      "subpath": "./cli/EnvironmentCommands",
+      "development": "./src/cli/EnvironmentCommands.ts",
+      "published": {
+        "types": "./dist/esm/cli/EnvironmentCommands.d.ts",
+        "import": "./dist/esm/cli/EnvironmentCommands.js",
+        "require": "./dist/cjs/cli/EnvironmentCommands.js"
+      },
+      "reason": "Generic execution environments and their CLI projection share persistent locations without provider credential imports; local execution and SSH boundaries have behavioral and integration coverage."
+    },
+    {
+      "name": "@smthrs/cli",
+      "subpath": "./cli/TokenCommands",
+      "development": "./src/cli/TokenCommands.ts",
+      "published": {
+        "types": "./dist/esm/cli/TokenCommands.d.ts",
+        "import": "./dist/esm/cli/TokenCommands.js",
+        "require": "./dist/cjs/cli/TokenCommands.js"
+      },
+      "reason": "`smthrs token mint` (#1791): mints a scoped, expiring gateway token under SMITHERS_TOKEN; never offered over MCP."
+    },
+    {
+      "name": "@smthrs/control",
+      "subpath": "./ScopedToken",
+      "development": "./src/ScopedToken.ts",
+      "published": {
+        "types": "./dist/esm/ScopedToken.d.ts",
+        "import": "./dist/esm/ScopedToken.js",
+        "require": "./dist/cjs/ScopedToken.js"
+      },
+      "reason": "Scoped, expiring gateway tokens (#1791): HMAC-signed under the bearer credential, verified in ControlAuth per procedure, run and flow; the gateway admits them only toward the in-band-authenticated mounts."
+    },
+    {
+      "name": "@smthrs/cli",
+      "subpath": "./CloudSandbox",
+      "development": "./src/CloudSandbox.ts",
+      "published": {
+        "types": "./dist/esm/CloudSandbox.d.ts",
+        "import": "./dist/esm/CloudSandbox.js",
+        "require": "./dist/cjs/CloudSandbox.js"
+      },
+      "reason": "Scoped Smithers Cloud workspace Sandbox.Provider with stable per-session names, fresh pinned SSH grants, and deletion on scope release; shared by any sandbox-backed flow (#2924)."
+    },
+    {
+      "name": "@smthrs/cli",
+      "subpath": "./Catalog",
+      "development": "./src/Catalog.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Catalog.d.ts",
+          "default": "./dist/esm/Catalog.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Catalog.d.ts",
+          "default": "./dist/cjs/Catalog.js"
+        }
+      },
+      "reason": "The generated product catalog (catalog.mvp.json) as typed descriptors, so the model host derives its product tools from the same operations the CLI and app expose instead of a second list. Read-only data; no transport or credentials."
+    },
+    {
+      "name": "@smthrs/cli",
+      "subpath": "./BackendCommands",
+      "development": "./src/BackendCommands.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/BackendCommands.d.ts",
+          "default": "./dist/esm/BackendCommands.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BackendCommands.d.ts",
+          "default": "./dist/cjs/BackendCommands.js"
+        }
+      },
+      "reason": "The argument and option schemas of the backend commands the CLI mounts, so the catalog generator writes the host command reference from the same table instead of reaching into src/internal (#3765). Read-only schemas; no handler, transport or credentials."
+    },
+    {
+      "name": "@smthrs/cli",
+      "subpath": "./IssueTodoDraft",
+      "development": "./src/IssueTodoDraft.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/IssueTodoDraft.d.ts",
+          "default": "./dist/esm/IssueTodoDraft.js"
+        },
+        "require": {
+          "types": "./dist/cjs/IssueTodoDraft.d.ts",
+          "default": "./dist/cjs/IssueTodoDraft.js"
+        }
+      },
+      "reason": "The tool-free issue-to-TODO drafting request and its refusing reader, shared by the installed CLI and the app's TODO seam (#3457), so the app imports it by package name instead of reaching into src/ (#3765). Pure: no model call, transport or credentials."
+    },
+    {
+      "name": "@smthrs/cli",
+      "subpath": "./CatalogRequest",
+      "development": "./src/CatalogRequest.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/CatalogRequest.d.ts",
+          "default": "./dist/esm/CatalogRequest.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CatalogRequest.d.ts",
+          "default": "./dist/cjs/CatalogRequest.js"
+        }
+      },
+      "reason": "Encodes one catalog operation's HTTP request from its generated binding for the CLI and the model host, refusing an unavailable or invalid binding or field with a typed CatalogRequestError. Payload validation and actor authorization stay at the invoking boundary."
+    },
+    {
+      "name": "@smthrs/capability",
+      "subpath": "./CapabilitySet",
+      "development": "./src/CapabilitySet.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/CapabilitySet.d.ts",
+          "default": "./dist/esm/CapabilitySet.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CapabilitySet.d.ts",
+          "default": "./dist/cjs/CapabilitySet.js"
+        }
+      },
+      "reason": "The monotone authority implementation moved from @smthrs/kernel into @smthrs/capability (48776efd43) so flow declarations, execution and recovery enforce one capability ceiling; @smthrs/kernel/CapabilitySet re-exports it unchanged, so the kernel's reviewed contract stays addressable."
+    },
+    {
+      "name": "@smthrs/gateway",
+      "subpath": "./RunHistory",
+      "development": "./src/RunHistory.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/RunHistory.d.ts",
+          "default": "./dist/esm/RunHistory.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunHistory.d.ts",
+          "default": "./dist/cjs/RunHistory.js"
+        }
+      },
+      "reason": "Run.Fork and Run.Verify (#3242, #3243): the wire shapes and the host service the gateway calls, so the app, the terminal and smthrs runs fork/verify fork one way and read one verification report."
+    },
+    {
+      "name": "@smthrs/gateway",
+      "subpath": "./RunDevTools",
+      "development": "./src/RunDevTools.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/RunDevTools.d.ts",
+          "default": "./dist/esm/RunDevTools.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunDevTools.d.ts",
+          "default": "./dist/cjs/RunDevTools.js"
+        }
+      },
+      "reason": "The DevTools projection of one run (#2931, 28e0fcf2a9): a pure view over the RunTrace fold of run-events, so the app pane, the terminal's /devtools and smthrs runs devtools inspect a run the same way with no second node model or data source."
+    },
+    {
+      "name": "@smthrs/scorers",
+      "subpath": "./Scorers",
+      "development": "./src/Scorers.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Scorers.d.ts",
+          "default": "./dist/esm/Scorers.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Scorers.d.ts",
+          "default": "./dist/cjs/Scorers.js"
+        }
+      },
+      "reason": "Built-in deterministic scoring required by #1849: normalized equality/containment, sandbox command exit verdicts with inconclusive launch failures, and unified-diff line/file budgets. Uses existing scorer identities, durable runner observations and sandbox Session; rubric delegates to the existing Rubric contract."
+    },
+    {
+      "name": "@smthrs/registry",
+      "subpath": "./Prompt",
+      "development": "./src/Prompt.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Prompt.d.ts",
+          "default": "./dist/esm/Prompt.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Prompt.d.ts",
+          "default": "./dist/cjs/Prompt.js"
+        }
+      },
+      "reason": "Typed MDX prompt compiler and concrete Component<Props>/Content authoring contract; compilation parses without evaluating expressions. Existing captured-module loader retains content checks and authority. Reviewed upstream 3017c54ddf (#2271), public Node/Bun rendering and concrete-prop consumer controls; admitted under #3184 without changing the original 48-package surface."
+    },
+    {
+      "name": "@smthrs/registry",
+      "subpath": "./Prompt/jsx-runtime",
+      "development": "./src/Prompt/jsx-runtime.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Prompt/jsx-runtime.d.ts",
+          "default": "./dist/esm/Prompt/jsx-runtime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Prompt/jsx-runtime.d.ts",
+          "default": "./dist/cjs/Prompt/jsx-runtime.js"
+        }
+      },
+      "reason": "Text JSX runtime explicitly required by compiled typed MDX prompts; Fragment/jsx/jsxs/render produce Markdown, with no second flow or host model. Reviewed upstream 3017c54ddf (#2271), public Node/Bun rendering and concrete-prop consumer controls; admitted under #3184 without changing the original 48-package surface."
+    },
+    {
+      "name": "@smthrs/kernel",
+      "subpath": "./ProcessConfinement",
+      "development": "./src/ProcessConfinement.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/ProcessConfinement.d.ts",
+          "default": "./dist/esm/ProcessConfinement.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ProcessConfinement.d.ts",
+          "default": "./dist/cjs/ProcessConfinement.js"
+        }
+      },
+      "reason": "Kernel host confinement service and conservative effective-grant Profile derivation. makeNoop/layerNoop explicitly opt out; missing service refuses guarded spawning, with no implied native confinement. Reviewed upstream 6490adb4c2 (#3140/#1790/#3234), source/docs, public import/type controls and owning native tests under #3184; original 48-package history retained."
+    },
+    {
+      "name": "@smthrs/platform-node",
+      "subpath": "./ProcessConfinement",
+      "development": "./src/ProcessConfinement.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/ProcessConfinement.d.ts",
+          "default": "./dist/esm/ProcessConfinement.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ProcessConfinement.d.ts",
+          "default": "./dist/cjs/ProcessConfinement.js"
+        }
+      },
+      "reason": "Node host implementation of the kernel seam: default missing-mechanism refusal, explicit warned unconfined option, scoped temporary lifecycle and shell/pipeline wrapping; no second execution model. Reviewed upstream 6490adb4c2 (#3140/#1790/#3234), source/docs, public import/type controls and owning native tests under #3184; original 48-package history retained."
+    },
+    {
+      "name": "@smthrs/platform-node",
+      "subpath": "./ProcessSandbox",
+      "development": "./src/ProcessSandbox.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/ProcessSandbox.d.ts",
+          "default": "./dist/esm/ProcessSandbox.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ProcessSandbox.d.ts",
+          "default": "./dist/cjs/ProcessSandbox.js"
+        }
+      },
+      "reason": "Shared native mechanism selection/planning/wrapping for declared build inputs and guarded agent profiles; concrete refusal types and host probes preserve enforced-or-refused behavior. Reviewed upstream 6490adb4c2 (#3140/#1790/#3234), source/docs, public import/type controls and owning native tests under #3184; original 48-package history retained."
+    },
+    {
+      "name": "@smthrs/patterns",
+      "subpath": "./Burndown",
+      "development": "./src/Burndown.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Burndown.d.ts",
+          "default": "./dist/esm/Burndown.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Burndown.d.ts",
+          "default": "./dist/cjs/Burndown.js"
+        }
+      },
+      "reason": "Reviewed upstream cb79039728 declaration: canonical Flow pattern plus claimed bounded round, ordered landing, release-on-failure and capacity wait/resume helpers. It adds one explicit subpath over the existing @smthrs/flow model; it does not authorize issue claims, provider credentials or history writes by itself. Required injected callbacks remain the host authority."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./github/Proxy",
+      "development": "./src/github/Proxy.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/github/Proxy.d.ts",
+          "default": "./dist/esm/github/Proxy.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Proxy.d.ts",
+          "default": "./dist/cjs/github/Proxy.js"
+        }
+      },
+      "reason": "Preserves GitHub transport already exported before MVP cuts at clean main 2ad6fe2afcd2e45d81587b62f79d51b4ab02ae0d. Exact source maps retained; GitHubProxy and GitHubRateLimit behavioral suites verify these contracts. #3389."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./github/RateLimit",
+      "development": "./src/github/RateLimit.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/github/RateLimit.d.ts",
+          "default": "./dist/esm/github/RateLimit.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/RateLimit.d.ts",
+          "default": "./dist/cjs/github/RateLimit.js"
+        }
+      },
+      "reason": "Preserves GitHub transport already exported before MVP cuts at clean main 2ad6fe2afcd2e45d81587b62f79d51b4ab02ae0d. Exact source maps retained; GitHubProxy and GitHubRateLimit behavioral suites verify these contracts. #3389."
+    },
+    {
+      "name": "@smthrs/registry",
+      "subpath": "./ExecutionSnapshot",
+      "development": "./src/ExecutionSnapshot.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/ExecutionSnapshot.d.ts",
+          "default": "./dist/esm/ExecutionSnapshot.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ExecutionSnapshot.d.ts",
+          "default": "./dist/cjs/ExecutionSnapshot.js"
+        }
+      },
+      "reason": "Required execution snapshot recovery already exported at clean main 2ad6fe2afcd2e45d81587b62f79d51b4ab02ae0d; source and both maps verified identical during MVP cuts. No implementation or declaration change. #3389."
+    },
+    {
+      "name": "@smthrs/flow",
+      "subpath": "./ExternalJob",
+      "development": "./src/ExternalJob.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/ExternalJob.d.ts",
+          "default": "./dist/esm/ExternalJob.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ExternalJob.d.ts",
+          "default": "./dist/cjs/ExternalJob.js"
+        }
+      },
+      "reason": "Retained core API already exported at clean main 2ad6fe2afcd2e45d81587b62f79d51b4ab02ae0d; source and both maps verified identical during MVP cuts. No production implementation or declaration changed. #3389."
+    },
+    {
+      "name": "@smthrs/kernel",
+      "subpath": "./Unreachable",
+      "development": "./src/Unreachable.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Unreachable.d.ts",
+          "default": "./dist/esm/Unreachable.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Unreachable.d.ts",
+          "default": "./dist/cjs/Unreachable.js"
+        }
+      },
+      "reason": "Retained core API already exported at clean main 2ad6fe2afcd2e45d81587b62f79d51b4ab02ae0d; source and both maps verified identical during MVP cuts. No production implementation or declaration changed. #3389."
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "subpath": "./SandboxMerge",
+      "development": "./src/SandboxMerge/index.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/SandboxMerge/index.d.ts",
+          "default": "./dist/esm/SandboxMerge/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SandboxMerge/index.d.ts",
+          "default": "./dist/cjs/SandboxMerge/index.js"
+        }
+      },
+      "reason": "Retained core API already exported at clean main 2ad6fe2afcd2e45d81587b62f79d51b4ab02ae0d; source and both maps verified identical during MVP cuts. No production implementation or declaration changed. #3389."
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "subpath": "./SandboxMerge/*",
+      "development": null,
+      "published": null,
+      "reason": "Retained core API already exported at clean main 2ad6fe2afcd2e45d81587b62f79d51b4ab02ae0d; source and both maps verified identical during MVP cuts. No production implementation or declaration changed. #3389."
+    },
+    {
+      "name": "@smthrs/flows",
+      "subpath": "./test/TestNodeRuntime",
+      "development": "./src/test/TestNodeRuntime.ts",
+      "published": {
+        "types": "./dist/esm/test/TestNodeRuntime.d.ts",
+        "import": "./dist/esm/test/TestNodeRuntime.js",
+        "require": "./dist/cjs/test/TestNodeRuntime.js"
+      },
+      "reason": "Test support: a durable Node engine over one SQLite file with a recording-nothing Jj. The runnable examples in @smthrs/flows, @smthrs/agent and @smthrs/mcp share it once they live beside the packages they demonstrate (#4089); like engine-store's ./test/TestStores it is not a host."
+    }
+  ],
+  "removed": [
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./core/migrations/0001_integration_cursors",
+      "reason": "Schema-install implementation lives at src/core/IntegrationCursorMigration.ts, which the export map does not name; Core.Migrations remains public."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./github/Webhook",
+      "reason": "GitHub webhooks enter through the Smithers backend, which decides whether an event may start work; the package's GitHub channel and its author_association gate were a second trust rule."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./github/ListenerRegistry",
+      "reason": "Declared hooks pointed at the removed GitHub webhook channel; nothing else received them."
+    },
+    {
+      "name": "@smthrs/build-cli",
+      "subpath": "./effect-resolution.d",
+      "reason": "Declaration-only source file; no corresponding emitted runtime module. Preserve the explicit ./effect-resolution JavaScript hook and its declaration."
+    },
+    {
+      "name": "@smthrs/plan",
+      "subpath": "./Migrations",
+      "reason": "The plan schema moved to @smthrs/plan-store with the store it belongs to, so compiling a plan no longer installs a database. Import @smthrs/plan-store/Migrations."
+    },
+    {
+      "name": "@smthrs/plan",
+      "subpath": "./PlanStore",
+      "reason": "Append-only plan persistence moved to @smthrs/plan-store, so compiling a plan no longer installs a database. Import @smthrs/plan-store/PlanStore."
+    },
+    {
+      "name": "@smthrs/gateway",
+      "subpath": "./SuperviseRuntime",
+      "reason": "Removed in 703ae262c: an unimplemented host port whose only bundled layers were no-ops, and no host composed it. Run recovery belongs to the durable engine driver."
+    },
+    {
+      "name": "@smthrs/gateway",
+      "subpath": "./test/TestSuperviseRuntime",
+      "reason": "Removed in 703ae262c with the SuperviseRuntime port it doubled."
+    },
+    {
+      "name": "@smthrs/cli",
+      "subpath": "./McpServer",
+      "reason": "The 0.x named-tool MCP server duplicated `smthrs --mcp`, which serves the canonical command tree through Incur (#2152)."
+    },
+    {
+      "name": "@smthrs/cli",
+      "subpath": "./CodexAuth",
+      "reason": "Codex subscription seats use the vendor CLI; Smithers no longer reads, forwards or refreshes vendor credentials (#2804)."
+    },
+    {
+      "name": "@smthrs/build-cli",
+      "subpath": "./CreateApp",
+      "reason": "Application scaffolding is deferred from the MVP. #3386."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./linear",
+      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./linear/Actions",
+      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./linear/Config",
+      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./linear/LinearClient",
+      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./linear/Payload",
+      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./linear/Webhook",
+      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./telegram",
+      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./telegram/Actions",
+      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./telegram/Approval",
+      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./telegram/Chunk",
+      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./telegram/Config",
+      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./telegram/InitData",
+      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./telegram/Markdown",
+      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./telegram/Payload",
+      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./telegram/Source",
+      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./telegram/TelegramClient",
+      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    }
+  ],
+  "packages": [
+    {
+      "name": "@smthrs/errors",
+      "directory": "packages/errors",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./ErrorCode",
+        "./SmithersError",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/cli",
+      "directory": "packages/smithers",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Agents",
+        "./Application",
+        "./Audience",
+        "./Bug",
+        "./ClaudeMirror",
+        "./Cli",
+        "./CliError",
+        "./CodexAuth",
+        "./Command",
+        "./Detached",
+        "./Doctor",
+        "./Environment",
+        "./ExecutorOwnership",
+        "./Forensics",
+        "./Gc",
+        "./Init",
+        "./Legacy",
+        "./McpServer",
+        "./NodeControl",
+        "./NodeOutput",
+        "./Output",
+        "./Project",
+        "./Providers",
+        "./Serve",
+        "./Suggest",
+        "./Ui",
+        "./Unsupported",
+        "./Update",
+        "./Verb",
+        "./Version",
+        "./bin",
+        "./cli/Arguments",
+        "./cli/Compatibility",
+        "./cli/ControlBridge",
+        "./cli/ControlCommands",
+        "./cli/Entry",
+        "./cli/Generate",
+        "./cli/HistoryCommands",
+        "./cli/LegacyBin",
+        "./cli/Presentation",
+        "./cli/RunProgress",
+        "./evaluation/EvalCli",
+        "./evaluation/Evaluation",
+        "./history/History",
+        "./history/ExecutionTarget",
+        "./history/Workspace",
+        "./index",
+        "./operator/Credentials",
+        "./operator/Integrations",
+        "./operator/Memory",
+        "./operator/Store",
+        "./operator/TriggerPlans",
+        "./operator/Triggers",
+        "./package.json",
+        "./suggest/Brief",
+        "./suggest/Checklist",
+        "./suggest/SuggestFlow"
+      ]
+    },
+    {
+      "name": "@smthrs/agent",
+      "directory": "packages/smithers/agent",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Agent",
+        "./AgentAction",
+        "./AgentSession",
+        "./Budget",
+        "./CellPlugin",
+        "./Checkpointed",
+        "./ChildFlows",
+        "./EngineChildren",
+        "./EventSink",
+        "./FlowEngineLike",
+        "./FlowStore",
+        "./InMemoryWorkspaceSandbox",
+        "./MemorySnapshotRecorder",
+        "./PromoteFlows",
+        "./QuotaPolicy",
+        "./Seat",
+        "./SeatResolver",
+        "./StandardFlows",
+        "./WorkspaceObservation",
+        "./WorkspaceSandbox",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/evals",
+      "directory": "packages/smithers/agent/evals",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Baseline",
+        "./CaseExecutor",
+        "./EvalError",
+        "./Gate",
+        "./Regression",
+        "./Report",
+        "./Runner",
+        "./Suite",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/harness",
+      "directory": "packages/smithers/agent/harness",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./AgentEvent",
+        "./CallLedger",
+        "./Cell",
+        "./CellCalls",
+        "./CellHistory",
+        "./CellTurn",
+        "./CellValidation",
+        "./Compaction",
+        "./ContextWindow",
+        "./EngineLike",
+        "./FlowBinding",
+        "./HarnessError",
+        "./NarrowedCheck",
+        "./Notifications",
+        "./Plan",
+        "./QuickJSSandbox",
+        "./Sandbox",
+        "./Steering",
+        "./StructuredOutput",
+        "./Sufficiency",
+        "./Tokens",
+        "./Transcript",
+        "./TruncatedOutput",
+        "./UnmovedTree",
+        "./UnresolvedFailure",
+        "./VacuousVerification",
+        "./VariablesPanel",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/integrations",
+      "directory": "packages/smithers/agent/integrations",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Environment",
+        "./core",
+        "./core/ActionFailure",
+        "./core/AuthorizationUrl",
+        "./core/Channel",
+        "./core/CursorStore",
+        "./core/ExternalEvent",
+        "./core/IntegrationError",
+        "./core/JsonPath",
+        "./core/Pkce",
+        "./core/SignalName",
+        "./core/Signature",
+        "./core/migrations/0001_integration_cursors",
+        "./github",
+        "./github/Actions",
+        "./github/Config",
+        "./github/GitHubClient",
+        "./github/ListenerRegistry",
+        "./github/Payload",
+        "./github/Repository",
+        "./github/Webhook",
+        "./index",
+        "./linear",
+        "./linear/Actions",
+        "./linear/Config",
+        "./linear/LinearClient",
+        "./linear/Payload",
+        "./linear/Webhook",
+        "./package.json",
+        "./telegram",
+        "./telegram/Actions",
+        "./telegram/Approval",
+        "./telegram/Chunk",
+        "./telegram/Config",
+        "./telegram/InitData",
+        "./telegram/Markdown",
+        "./telegram/Payload",
+        "./telegram/Source",
+        "./telegram/TelegramClient"
+      ]
+    },
+    {
+      "name": "@smthrs/memory",
+      "directory": "packages/smithers/agent/memory",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./migrations/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./migrations/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Bank",
+        "./Database",
+        "./Embedding",
+        "./Flows",
+        "./Maintenance",
+        "./MemoryError",
+        "./MemoryStore",
+        "./MemoryTrellis",
+        "./Namespace",
+        "./Recall",
+        "./RecallFts",
+        "./RecallKeyword",
+        "./RecallSemantic",
+        "./SnapshotRecorder",
+        "./Source",
+        "./WithMemory",
+        "./index",
+        "./package.json",
+        "./test/TestMemory"
+      ]
+    },
+    {
+      "name": "@smthrs/model",
+      "directory": "packages/smithers/agent/model",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./AnthropicMessages",
+        "./Auth",
+        "./CanonicalJson",
+        "./DeferredTools",
+        "./Endpoint",
+        "./Framing",
+        "./Model",
+        "./ModelError",
+        "./ModelEvent",
+        "./ModelRequest",
+        "./OpenAIChatCompletions",
+        "./OpenAIChatGPT",
+        "./OpenAIResponses",
+        "./Protocol",
+        "./RequestExecutor",
+        "./Route",
+        "./ToolStream",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/plugin",
+      "directory": "packages/smithers/agent/plugin",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Config",
+        "./Hooks",
+        "./Kernel",
+        "./Plugin",
+        "./PluginError",
+        "./Plugins",
+        "./Resolve",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/registry",
+      "directory": "packages/smithers/agent/registry",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Descriptor",
+        "./Disclosure",
+        "./Discovery",
+        "./Executable",
+        "./MarkdownFlow",
+        "./Pack",
+        "./Registry",
+        "./RegistryError",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/scorers",
+      "directory": "packages/smithers/agent/scorers",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./migrations/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./migrations/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Binding",
+        "./Runner",
+        "./RunnerLive",
+        "./Sampling",
+        "./ScoreStore",
+        "./Scorer",
+        "./ScorerError",
+        "./SqlScoreStore",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/std",
+      "directory": "packages/smithers/agent/std",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./ApplyPatch",
+        "./Bash",
+        "./Checkpoints",
+        "./Container",
+        "./Edit",
+        "./ExaWebSearch",
+        "./Explore",
+        "./Fetch",
+        "./Glob",
+        "./Grep",
+        "./HttpPost",
+        "./LanguageServer",
+        "./Ls",
+        "./Lsp",
+        "./Manifest",
+        "./NativeSearch",
+        "./NodeLanguageServer",
+        "./PortableSearch",
+        "./Probe",
+        "./Read",
+        "./Search",
+        "./SearchConformance",
+        "./SearchContract",
+        "./ShellCommand",
+        "./StdError",
+        "./TestRun",
+        "./TestRunner",
+        "./UpdatePlan",
+        "./WebFetch",
+        "./WebSearch",
+        "./Write",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/triggers",
+      "directory": "packages/smithers/agent/triggers",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./migrations/*": null,
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./migrations/*": null,
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./CatchUp",
+        "./Channel",
+        "./Cron",
+        "./Overlap",
+        "./Schedule",
+        "./Scheduler",
+        "./SqlTriggerStore",
+        "./Trigger",
+        "./TriggerError",
+        "./TriggerStore",
+        "./Webhook",
+        "./index",
+        "./package.json",
+        "./test/TestTriggers"
+      ]
+    },
+    {
+      "name": "@smthrs/build",
+      "directory": "packages/smithers/build",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./Install": "./src/Install.ts",
+        "./PackageManager": "./src/PackageManager.ts",
+        "./Runtime": "./src/Runtime.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./Install": {
+          "types": "./dist/esm/Install.d.ts",
+          "import": "./dist/esm/Install.js",
+          "require": "./dist/cjs/Install.js"
+        },
+        "./PackageManager": {
+          "types": "./dist/esm/PackageManager.d.ts",
+          "import": "./dist/esm/PackageManager.js",
+          "require": "./dist/cjs/PackageManager.js"
+        },
+        "./Runtime": {
+          "types": "./dist/esm/Runtime.d.ts",
+          "import": "./dist/esm/Runtime.js",
+          "require": "./dist/cjs/Runtime.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Install",
+        "./PackageManager",
+        "./Runtime",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/build-cli",
+      "directory": "packages/smithers/build/build-cli",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./effect-resolution": "./src/effect-resolution.js",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./effect-resolution": {
+          "types": "./dist/esm/effect-resolution.d.ts",
+          "import": "./dist/esm/effect-resolution.js",
+          "require": "./dist/cjs/effect-resolution.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./index": null
+      },
+      "subpaths": [
+        ".",
+        "./Affected",
+        "./AgentFake",
+        "./AgentSession",
+        "./Ansi",
+        "./AnvilExec",
+        "./Audience",
+        "./Cache",
+        "./CacheAdmin",
+        "./Cli",
+        "./CreateApp",
+        "./Diagnostic",
+        "./DockerExec",
+        "./Entry",
+        "./Environment",
+        "./Executor",
+        "./FetchExec",
+        "./FoundryExec",
+        "./GitCommit",
+        "./GitHooks",
+        "./GitSubmoduleExec",
+        "./GithubRender",
+        "./GoExec",
+        "./GraphOutput",
+        "./Label",
+        "./MarkdownCodeBlocks",
+        "./MemoryBackend",
+        "./NixExec",
+        "./OutputStream",
+        "./OverlayExec",
+        "./Owners",
+        "./PackageDiscovery",
+        "./PackageError",
+        "./PackageExec",
+        "./PackageIndex",
+        "./PackageLoader",
+        "./PackageTree",
+        "./Planner",
+        "./Query",
+        "./RepoResolution",
+        "./Reporter",
+        "./Resolver",
+        "./RspackRunner",
+        "./ServiceSupervisor",
+        "./StampExec",
+        "./TargetExecution",
+        "./Watch",
+        "./Workspace",
+        "./WorkspaceLoader",
+        "./WorkspaceToolchain",
+        "./effect-resolution",
+        "./effect-resolution.d",
+        "./engine",
+        "./main",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/control",
+      "directory": "packages/smithers/control",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./migrations/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./migrations/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Cancellation",
+        "./Channels",
+        "./Control",
+        "./ControlClient",
+        "./ControlError",
+        "./ControlExecutor",
+        "./ControlLive",
+        "./ControlRpcs",
+        "./ControlRuntime",
+        "./ControlSchema",
+        "./ControlServer",
+        "./Credential",
+        "./CredentialCipher",
+        "./CredentialStore",
+        "./Lineage",
+        "./Migrations",
+        "./Monitor",
+        "./SqlControlRuntime",
+        "./SqlCredentialStore",
+        "./Steering",
+        "./SystemFlows",
+        "./WebCryptoCipher",
+        "./WebhookChannel",
+        "./index",
+        "./package.json",
+        "./test/TestControl"
+      ]
+    },
+    {
+      "name": "@smthrs/create-app",
+      "directory": "packages/smithers/create-app",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./app": "./src/app.ts",
+        "./package": "./src/package.ts",
+        "./ui": "./src/ui.ts",
+        "./runtime": "./src/runtime.ts",
+        "./router": "./src/router.ts",
+        "./vite": "./src/vite.ts",
+        "./testing": {
+          "types": "./src/testing.ts",
+          "import": "./src/testing.ts"
+        },
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./app": {
+          "types": "./dist/esm/app.d.ts",
+          "import": "./dist/esm/app.js",
+          "require": "./dist/cjs/app.js"
+        },
+        "./package": {
+          "types": "./dist/esm/package.d.ts",
+          "import": "./dist/esm/package.js",
+          "require": "./dist/cjs/package.js"
+        },
+        "./ui": {
+          "types": "./dist/esm/ui.d.ts",
+          "import": "./dist/esm/ui.js",
+          "require": "./dist/cjs/ui.js"
+        },
+        "./runtime": {
+          "types": "./dist/esm/runtime.d.ts",
+          "import": "./dist/esm/runtime.js",
+          "require": "./dist/cjs/runtime.js"
+        },
+        "./router": {
+          "types": "./dist/esm/router.d.ts",
+          "import": "./dist/esm/router.js",
+          "require": "./dist/cjs/router.js"
+        },
+        "./vite": {
+          "types": "./dist/esm/vite.d.ts",
+          "import": "./dist/esm/vite.js",
+          "require": "./dist/cjs/vite.js"
+        },
+        "./testing": {
+          "types": "./dist/esm/testing.d.ts",
+          "import": "./dist/esm/testing.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./app",
+        "./index",
+        "./package",
+        "./package.json",
+        "./router",
+        "./routesBin",
+        "./runtime",
+        "./testing",
+        "./ui",
+        "./vite"
+      ]
+    },
+    {
+      "name": "@smthrs/flows",
+      "directory": "packages/smithers/flows",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./NodeRuntime",
+        "./SandboxedFlow",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/artifacts",
+      "directory": "packages/smithers/flows/artifacts",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./ArtifactBackupLease",
+        "./ArtifactStore",
+        "./ArtifactStoreMetrics",
+        "./ArtifactSweep",
+        "./CombinedArtifacts",
+        "./RemoteArtifacts",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/canonical",
+      "directory": "packages/smithers/flows/canonical",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Canonical",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/capability",
+      "directory": "packages/smithers/flows/capability",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Capability",
+        "./Permission",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/core",
+      "directory": "packages/smithers/flows/core",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Annotations",
+        "./Digest",
+        "./Effects",
+        "./Flow",
+        "./Graph",
+        "./KeyMaterial",
+        "./Markdown",
+        "./Node",
+        "./Placement",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/crypto",
+      "directory": "packages/smithers/flows/crypto",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Sha256",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/database",
+      "directory": "packages/smithers/flows/database",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "import": {
+            "types": "./dist/esm/index.d.ts",
+            "default": "./dist/esm/index.js"
+          },
+          "require": {
+            "types": "./dist/cjs/index.d.ts",
+            "default": "./dist/cjs/index.js"
+          }
+        },
+        "./*": {
+          "import": {
+            "types": "./dist/esm/*.d.ts",
+            "default": "./dist/esm/*.js"
+          },
+          "require": {
+            "types": "./dist/cjs/*.d.ts",
+            "default": "./dist/cjs/*.js"
+          }
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./DatabaseMetrics",
+        "./DurableWriter",
+        "./Migrations",
+        "./UnsupportedBackend",
+        "./index",
+        "./node/NodeDatabase",
+        "./package.json",
+        "./test/TestDatabase"
+      ]
+    },
+    {
+      "name": "@smthrs/engine",
+      "directory": "packages/smithers/flows/engine",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./FlowEngine": "./src/FlowEngine/index.ts",
+        "./FlowEngine/*": null,
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./FlowEngine": {
+          "types": "./dist/esm/FlowEngine/index.d.ts",
+          "import": "./dist/esm/FlowEngine/index.js",
+          "require": "./dist/cjs/FlowEngine/index.js"
+        },
+        "./FlowEngine/*": null,
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./FlowEngine",
+        "./FlowProxy",
+        "./FlowProxyServer",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/engine-store",
+      "directory": "packages/smithers/flows/engine-store",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./migrations/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./migrations/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./ArtifactGc",
+        "./ArtifactSync",
+        "./CacheSync",
+        "./DisasterRecovery",
+        "./DurableEngineState",
+        "./EngineStore",
+        "./EngineStoreMetrics",
+        "./Errors",
+        "./Inconsistency",
+        "./Migrations",
+        "./OwnerIdentity",
+        "./PlanScheduler",
+        "./Reconciliation",
+        "./Retention",
+        "./RunCatalogRead",
+        "./RunState",
+        "./Selection",
+        "./SelectionStore",
+        "./StepBoundary",
+        "./StepSandbox",
+        "./WakeBus",
+        "./WorkspaceSandbox",
+        "./index",
+        "./package.json",
+        "./test/TestStores"
+      ]
+    },
+    {
+      "name": "@smthrs/flow",
+      "directory": "packages/smithers/flows/flow",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./Action": "./src/Action/index.ts",
+        "./Action/*": null,
+        "./CacheEnvironment": "./src/Action/CacheEnvironment.ts",
+        "./FileBoundary": "./src/Action/FileBoundary.ts",
+        "./FileInput": "./src/Action/FileInput.ts",
+        "./Flow": "./src/Flow/index.ts",
+        "./Flow/*": null,
+        "./FlowRuntime": "./src/FlowRuntime/index.ts",
+        "./FlowRuntime/*": null,
+        "./StepIdentity": "./src/Action/StepIdentity.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./Action": {
+          "types": "./dist/esm/Action/index.d.ts",
+          "import": "./dist/esm/Action/index.js",
+          "require": "./dist/cjs/Action/index.js"
+        },
+        "./Action/*": null,
+        "./CacheEnvironment": {
+          "types": "./dist/esm/Action/CacheEnvironment.d.ts",
+          "import": "./dist/esm/Action/CacheEnvironment.js",
+          "require": "./dist/cjs/Action/CacheEnvironment.js"
+        },
+        "./FileBoundary": {
+          "types": "./dist/esm/Action/FileBoundary.d.ts",
+          "import": "./dist/esm/Action/FileBoundary.js",
+          "require": "./dist/cjs/Action/FileBoundary.js"
+        },
+        "./FileInput": {
+          "types": "./dist/esm/Action/FileInput.d.ts",
+          "import": "./dist/esm/Action/FileInput.js",
+          "require": "./dist/cjs/Action/FileInput.js"
+        },
+        "./Flow": {
+          "types": "./dist/esm/Flow/index.d.ts",
+          "import": "./dist/esm/Flow/index.js",
+          "require": "./dist/cjs/Flow/index.js"
+        },
+        "./Flow/*": null,
+        "./FlowRuntime": {
+          "types": "./dist/esm/FlowRuntime/index.d.ts",
+          "import": "./dist/esm/FlowRuntime/index.js",
+          "require": "./dist/cjs/FlowRuntime/index.js"
+        },
+        "./FlowRuntime/*": null,
+        "./StepIdentity": {
+          "types": "./dist/esm/Action/StepIdentity.d.ts",
+          "import": "./dist/esm/Action/StepIdentity.js",
+          "require": "./dist/cjs/Action/StepIdentity.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Action",
+        "./CacheEnvironment",
+        "./DurableClock",
+        "./DurableDeferred",
+        "./DurableQueue",
+        "./FileBoundary",
+        "./FileInput",
+        "./Flow",
+        "./FlowRuntime",
+        "./Graph",
+        "./HumanTask",
+        "./Interpreter",
+        "./Poll",
+        "./RetryPolicy",
+        "./Sleep",
+        "./StepIdentity",
+        "./WaitFor",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/jj",
+      "directory": "packages/smithers/flows/jj",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./wasm/flows_jj.wasm": "./wasm/flows_jj.wasm",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./wasm/flows_jj.wasm": "./wasm/flows_jj.wasm",
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Jj",
+        "./browser/BrowserJj",
+        "./browser/WasiFs",
+        "./browser/WasiPreview1",
+        "./bun/BunJj",
+        "./index",
+        "./node/NodeJj",
+        "./node/resolveJjBinary",
+        "./package.json",
+        "./wasm/flows_jj.wasm"
+      ]
+    },
+    {
+      "name": "@smthrs/journal",
+      "directory": "packages/smithers/flows/journal",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./migrations/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./migrations/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Journal",
+        "./JournalEvent",
+        "./JournalMetrics",
+        "./Migrations",
+        "./OwnerId",
+        "./Projection",
+        "./RedactedLogger",
+        "./Redaction",
+        "./SqlJournal",
+        "./index",
+        "./package.json",
+        "./test/Notifying",
+        "./test/TestJournal"
+      ]
+    },
+    {
+      "name": "@smthrs/kernel",
+      "directory": "packages/smithers/flows/kernel",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./test/contract": "./src/test/HostContract.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./test/contract": {
+          "types": "./dist/esm/test/HostContract.d.ts",
+          "import": "./dist/esm/test/HostContract.js",
+          "require": "./dist/cjs/test/HostContract.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./CapabilitySet",
+        "./ChildProcessSpawner",
+        "./CommandLine",
+        "./ContainedSpawner",
+        "./FileSystem",
+        "./GrantEvent",
+        "./GrantStore",
+        "./HostError",
+        "./HostServices",
+        "./HttpClient",
+        "./Jj",
+        "./JournalGrantStore",
+        "./Path",
+        "./ProcessLedger",
+        "./Workspace",
+        "./index",
+        "./package.json",
+        "./test/HostContract",
+        "./test/TestGrantStore",
+        "./test/contract"
+      ]
+    },
+    {
+      "name": "@smthrs/keys",
+      "directory": "packages/smithers/flows/keys",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Key",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/observability",
+      "directory": "packages/smithers/flows/observability",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts"
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        }
+      },
+      "subpaths": [
+        ".",
+        "./BrowserOtel",
+        "./Endpoint",
+        "./JournalLogger",
+        "./Logger",
+        "./Metric",
+        "./NodeOtel",
+        "./Otel",
+        "./Otlp",
+        "./Resource",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/patterns",
+      "directory": "packages/smithers/flows/patterns",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Bounded",
+        "./CheckSuite",
+        "./Debate",
+        "./DelegationChain",
+        "./DriftDetector",
+        "./Escalation",
+        "./Intervene",
+        "./Kanban",
+        "./Loop",
+        "./MapReduce",
+        "./MergeQueue",
+        "./Optimizer",
+        "./Panel",
+        "./Pattern",
+        "./PatternError",
+        "./Quarantine",
+        "./Recursion",
+        "./ReviewLoop",
+        "./Runbook",
+        "./Saga",
+        "./ScanFixVerify",
+        "./Sidecar",
+        "./Supervisor",
+        "./Trellis",
+        "./TryCatchFinally",
+        "./WithApproval",
+        "./WithCache",
+        "./WithRetry",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/plan",
+      "directory": "packages/smithers/flows/plan",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./GraphBuildError": "./src/GraphBuildError.ts",
+        "./Node": "./src/Node.ts",
+        "./Planned": "./src/Planned.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./GraphBuildError": {
+          "types": "./dist/esm/GraphBuildError.d.ts",
+          "import": "./dist/esm/GraphBuildError.js",
+          "require": "./dist/cjs/GraphBuildError.js"
+        },
+        "./Node": {
+          "types": "./dist/esm/Node.d.ts",
+          "import": "./dist/esm/Node.js",
+          "require": "./dist/cjs/Node.js"
+        },
+        "./Planned": {
+          "types": "./dist/esm/Planned.d.ts",
+          "import": "./dist/esm/Planned.js",
+          "require": "./dist/cjs/Planned.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./FileSet",
+        "./GraphBuildError",
+        "./KeyMaterial",
+        "./Migrations",
+        "./Node",
+        "./Plan",
+        "./PlanDiff",
+        "./PlanStore",
+        "./Planned",
+        "./StepKey",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/platform-browser",
+      "directory": "packages/smithers/flows/platform-browser",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./BrowserChildProcessSpawner": "./src/BrowserChildProcessSpawner/index.ts",
+        "./BrowserChildProcessSpawner/*": null,
+        "./BrowserFileSystem": "./src/BrowserFileSystem/index.ts",
+        "./BrowserFileSystem/*": null,
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./BrowserChildProcessSpawner": {
+          "types": "./dist/esm/BrowserChildProcessSpawner/index.d.ts",
+          "import": "./dist/esm/BrowserChildProcessSpawner/index.js",
+          "require": "./dist/cjs/BrowserChildProcessSpawner/index.js"
+        },
+        "./BrowserChildProcessSpawner/*": null,
+        "./BrowserFileSystem": {
+          "types": "./dist/esm/BrowserFileSystem/index.d.ts",
+          "import": "./dist/esm/BrowserFileSystem/index.js",
+          "require": "./dist/cjs/BrowserFileSystem/index.js"
+        },
+        "./BrowserFileSystem/*": null,
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./BrowserChildProcessSpawner",
+        "./BrowserFileSystem",
+        "./BrowserHost",
+        "./BrowserServices",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/platform-bun",
+      "directory": "packages/smithers/flows/platform-bun",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./BunFileSystem",
+        "./BunHost",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/platform-node",
+      "directory": "packages/smithers/flows/platform-node",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./AtomicFileSystem",
+        "./HostLiveness",
+        "./NodeHost",
+        "./ProcessReaper",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/run-store",
+      "directory": "packages/smithers/flows/run-store",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./migrations/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./migrations/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./AttemptStore",
+        "./Heartbeat",
+        "./Migrations",
+        "./Ownership",
+        "./RunStore",
+        "./RunStoreMetrics",
+        "./index",
+        "./package.json",
+        "./test/TestRunStore"
+      ]
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "directory": "packages/smithers/flows/sandbox",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./ContainerSandbox": "./src/ContainerSandbox/index.ts",
+        "./ContainerSandbox/*": null,
+        "./DirectorySandbox": "./src/DirectorySandbox/index.ts",
+        "./DirectorySandbox/*": null,
+        "./ProviderConformance": "./src/ProviderConformance/index.ts",
+        "./ProviderConformance/*": null,
+        "./RemoteChildProcessSpawner": "./src/RemoteChildProcessSpawner/index.ts",
+        "./RemoteChildProcessSpawner/*": null,
+        "./Sandbox": "./src/Sandbox/index.ts",
+        "./Sandbox/*": null,
+        "./SandboxConformance": "./src/SandboxConformance/index.ts",
+        "./SandboxConformance/*": null,
+        "./SandboxHealth": "./src/SandboxHealth/index.ts",
+        "./SandboxHealth/*": null,
+        "./SandboxSupervision": "./src/SandboxSupervision/index.ts",
+        "./SandboxSupervision/*": null,
+        "./AwsSandbox": "./src/AwsSandbox/index.ts",
+        "./AwsSandbox/*": null,
+        "./CloudflareSandbox": "./src/CloudflareSandbox/index.ts",
+        "./CloudflareSandbox/*": null,
+        "./DaytonaSandbox": "./src/DaytonaSandbox/index.ts",
+        "./DaytonaSandbox/*": null,
+        "./JustBashSandbox": "./src/JustBashSandbox/index.ts",
+        "./JustBashSandbox/*": null,
+        "./KubernetesSandbox": "./src/KubernetesSandbox/index.ts",
+        "./KubernetesSandbox/*": null,
+        "./MicrosandboxSandbox": "./src/MicrosandboxSandbox/index.ts",
+        "./MicrosandboxSandbox/*": null,
+        "./VercelSandbox": "./src/VercelSandbox/index.ts",
+        "./VercelSandbox/*": null,
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./ContainerSandbox": {
+          "types": "./dist/esm/ContainerSandbox/index.d.ts",
+          "import": "./dist/esm/ContainerSandbox/index.js",
+          "require": "./dist/cjs/ContainerSandbox/index.js"
+        },
+        "./ContainerSandbox/*": null,
+        "./DirectorySandbox": {
+          "types": "./dist/esm/DirectorySandbox/index.d.ts",
+          "import": "./dist/esm/DirectorySandbox/index.js",
+          "require": "./dist/cjs/DirectorySandbox/index.js"
+        },
+        "./DirectorySandbox/*": null,
+        "./ProviderConformance": {
+          "types": "./dist/esm/ProviderConformance/index.d.ts",
+          "import": "./dist/esm/ProviderConformance/index.js",
+          "require": "./dist/cjs/ProviderConformance/index.js"
+        },
+        "./ProviderConformance/*": null,
+        "./RemoteChildProcessSpawner": {
+          "types": "./dist/esm/RemoteChildProcessSpawner/index.d.ts",
+          "import": "./dist/esm/RemoteChildProcessSpawner/index.js",
+          "require": "./dist/cjs/RemoteChildProcessSpawner/index.js"
+        },
+        "./RemoteChildProcessSpawner/*": null,
+        "./Sandbox": {
+          "types": "./dist/esm/Sandbox/index.d.ts",
+          "import": "./dist/esm/Sandbox/index.js",
+          "require": "./dist/cjs/Sandbox/index.js"
+        },
+        "./Sandbox/*": null,
+        "./SandboxConformance": {
+          "types": "./dist/esm/SandboxConformance/index.d.ts",
+          "import": "./dist/esm/SandboxConformance/index.js",
+          "require": "./dist/cjs/SandboxConformance/index.js"
+        },
+        "./SandboxConformance/*": null,
+        "./SandboxHealth": {
+          "types": "./dist/esm/SandboxHealth/index.d.ts",
+          "import": "./dist/esm/SandboxHealth/index.js",
+          "require": "./dist/cjs/SandboxHealth/index.js"
+        },
+        "./SandboxHealth/*": null,
+        "./SandboxSupervision": {
+          "types": "./dist/esm/SandboxSupervision/index.d.ts",
+          "import": "./dist/esm/SandboxSupervision/index.js",
+          "require": "./dist/cjs/SandboxSupervision/index.js"
+        },
+        "./SandboxSupervision/*": null,
+        "./AwsSandbox": {
+          "types": "./dist/esm/AwsSandbox/index.d.ts",
+          "import": "./dist/esm/AwsSandbox/index.js",
+          "require": "./dist/cjs/AwsSandbox/index.js"
+        },
+        "./AwsSandbox/*": null,
+        "./CloudflareSandbox": {
+          "types": "./dist/esm/CloudflareSandbox/index.d.ts",
+          "import": "./dist/esm/CloudflareSandbox/index.js",
+          "require": "./dist/cjs/CloudflareSandbox/index.js"
+        },
+        "./CloudflareSandbox/*": null,
+        "./DaytonaSandbox": {
+          "types": "./dist/esm/DaytonaSandbox/index.d.ts",
+          "import": "./dist/esm/DaytonaSandbox/index.js",
+          "require": "./dist/cjs/DaytonaSandbox/index.js"
+        },
+        "./DaytonaSandbox/*": null,
+        "./JustBashSandbox": {
+          "types": "./dist/esm/JustBashSandbox/index.d.ts",
+          "import": "./dist/esm/JustBashSandbox/index.js",
+          "require": "./dist/cjs/JustBashSandbox/index.js"
+        },
+        "./JustBashSandbox/*": null,
+        "./KubernetesSandbox": {
+          "types": "./dist/esm/KubernetesSandbox/index.d.ts",
+          "import": "./dist/esm/KubernetesSandbox/index.js",
+          "require": "./dist/cjs/KubernetesSandbox/index.js"
+        },
+        "./KubernetesSandbox/*": null,
+        "./MicrosandboxSandbox": {
+          "types": "./dist/esm/MicrosandboxSandbox/index.d.ts",
+          "import": "./dist/esm/MicrosandboxSandbox/index.js",
+          "require": "./dist/cjs/MicrosandboxSandbox/index.js"
+        },
+        "./MicrosandboxSandbox/*": null,
+        "./VercelSandbox": {
+          "types": "./dist/esm/VercelSandbox/index.d.ts",
+          "import": "./dist/esm/VercelSandbox/index.js",
+          "require": "./dist/cjs/VercelSandbox/index.js"
+        },
+        "./VercelSandbox/*": null,
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./AwsSandbox",
+        "./CloudflareSandbox",
+        "./ContainerSandbox",
+        "./DaytonaSandbox",
+        "./DirectorySandbox",
+        "./JustBashSandbox",
+        "./KubernetesSandbox",
+        "./MicrosandboxSandbox",
+        "./ProviderConformance",
+        "./RemoteChildProcessSpawner",
+        "./Sandbox",
+        "./SandboxConformance",
+        "./SandboxHealth",
+        "./SandboxSupervision",
+        "./VercelSandbox",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/step-cache",
+      "directory": "packages/smithers/flows/step-cache",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./migrations/*": null,
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./migrations/*": null,
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./CacheStore",
+        "./CacheStoreMetrics",
+        "./CombinedCacheStore",
+        "./Migrations",
+        "./RemoteCacheStore",
+        "./index",
+        "./package.json",
+        "./test/TestCacheStore"
+      ]
+    },
+    {
+      "name": "@smthrs/sync",
+      "directory": "packages/smithers/flows/sync",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./BranchCommands",
+        "./BranchIds",
+        "./BranchPresence",
+        "./BranchProjection",
+        "./BranchProtocol",
+        "./BranchRpcs",
+        "./BranchServer",
+        "./BranchShare",
+        "./RunCatalog",
+        "./SyncAuth",
+        "./SyncClient",
+        "./SyncError",
+        "./SyncPrincipal",
+        "./SyncProtocol",
+        "./SyncRpcs",
+        "./SyncServer",
+        "./WorkspaceShare",
+        "./index",
+        "./package.json",
+        "./test/TestSocket",
+        "./test/TestSync"
+      ]
+    },
+    {
+      "name": "@smthrs/time-travel",
+      "directory": "packages/smithers/flows/time-travel",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./CompensationHandlers",
+        "./EffectBoundary",
+        "./Frame",
+        "./MemoryTimeTravelStore",
+        "./Migrations",
+        "./SqlTimeTravelStore",
+        "./TimeTravel",
+        "./TimeTravelError",
+        "./TimeTravelStore",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/gateway",
+      "directory": "packages/smithers/gateway",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Diagnosis",
+        "./GatewayError",
+        "./GatewayProjection",
+        "./GatewayRpcs",
+        "./GatewaySchema",
+        "./GatewayServer",
+        "./Projections",
+        "./SuperviseRuntime",
+        "./index",
+        "./node/NodeGateway",
+        "./package.json",
+        "./test/TestSuperviseRuntime"
+      ]
+    },
+    {
+      "name": "@smthrs/mcp",
+      "directory": "packages/smithers/mcp",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Diagnostics",
+        "./McpClient",
+        "./McpError",
+        "./McpFlows",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/migrate",
+      "directory": "packages/smithers/migrate",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./flow/internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./flow/internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Checks",
+        "./Constructs",
+        "./Detect",
+        "./Inventory",
+        "./Mapping",
+        "./MigrateError",
+        "./PromptHints",
+        "./Report",
+        "./RunState",
+        "./Scan",
+        "./Units",
+        "./ZodSchemaHints",
+        "./flow/Archive",
+        "./flow/Checkpoint",
+        "./flow/Cli",
+        "./flow/Command",
+        "./flow/Contract",
+        "./flow/Gate",
+        "./flow/Layers",
+        "./flow/Lock",
+        "./flow/MigrateFlow",
+        "./flow/Options",
+        "./flow/Repair",
+        "./flow/Transform",
+        "./flow/Verify",
+        "./flow/bin",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/notifications",
+      "directory": "packages/smithers/notifications",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Alerts",
+        "./Notification",
+        "./NotificationEvent",
+        "./NotificationQueue",
+        "./NotificationState",
+        "./Projection",
+        "./SteerPayload",
+        "./index",
+        "./package.json"
+      ]
+    },
+    {
+      "name": "@smthrs/testing",
+      "directory": "packages/testing",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./Vitest": {
+          "types": "./src/Vitest.ts",
+          "import": "./src/Vitest.ts"
+        },
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./Vitest": {
+          "types": "./dist/esm/Vitest.d.ts",
+          "import": "./dist/esm/Vitest.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./CachedModel",
+        "./Conformance",
+        "./Divergence",
+        "./EngineSubject",
+        "./Faults",
+        "./Fixture",
+        "./FixtureStore",
+        "./FlowEngineLike",
+        "./HostSuite",
+        "./JournalAssertions",
+        "./MemoryEngine",
+        "./ModelLike",
+        "./Plan",
+        "./PlanAssertions",
+        "./PlanLike",
+        "./RecordedModel",
+        "./RecordingModel",
+        "./RestartableEngine",
+        "./ScoreGate",
+        "./TestHost",
+        "./TestLayers",
+        "./TestingError",
+        "./Vitest",
+        "./index",
+        "./package.json",
+        "./pins/Identity",
+        "./pins/Interrupt",
+        "./pins/Race",
+        "./pins/Replay"
+      ]
+    },
+    {
+      "name": "@smthrs/plan-store",
+      "directory": "packages/smithers/flows/plan-store",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Migrations",
+        "./PlanStore",
+        "./index",
+        "./package.json"
+      ]
+    }
+  ],
+  "retiredPackages": [
+    {
+      "name": "@smthrs/create-app",
+      "reason": "Application scaffolding is deferred from the MVP; reviewed historical exports remain recorded for restoration. #3386."
+    }
+  ],
+  "retiredAdditions": [
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./gmail",
+      "development": "./src/gmail.ts",
+      "published": {
+        "types": "./dist/esm/gmail.d.ts",
+        "import": "./dist/esm/gmail.js",
+        "require": "./dist/cjs/gmail.js"
+      },
+      "reason": "Gmail integration (client, header-injection-safe MIME, change feed, reconcilable draft/send actions) as tested library code; no host wiring yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./gmail/Actions",
+      "development": "./src/gmail/Actions.ts",
+      "published": {
+        "types": "./dist/esm/gmail/Actions.d.ts",
+        "import": "./dist/esm/gmail/Actions.js",
+        "require": "./dist/cjs/gmail/Actions.js"
+      },
+      "reason": "Gmail integration (client, header-injection-safe MIME, change feed, reconcilable draft/send actions) as tested library code; no host wiring yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./gmail/Capabilities",
+      "development": "./src/gmail/Capabilities.ts",
+      "published": {
+        "types": "./dist/esm/gmail/Capabilities.d.ts",
+        "import": "./dist/esm/gmail/Capabilities.js",
+        "require": "./dist/cjs/gmail/Capabilities.js"
+      },
+      "reason": "Gmail integration (client, header-injection-safe MIME, change feed, reconcilable draft/send actions) as tested library code; no host wiring yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./gmail/Config",
+      "development": "./src/gmail/Config.ts",
+      "published": {
+        "types": "./dist/esm/gmail/Config.d.ts",
+        "import": "./dist/esm/gmail/Config.js",
+        "require": "./dist/cjs/gmail/Config.js"
+      },
+      "reason": "Gmail integration (client, header-injection-safe MIME, change feed, reconcilable draft/send actions) as tested library code; no host wiring yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./gmail/GmailClient",
+      "development": "./src/gmail/GmailClient.ts",
+      "published": {
+        "types": "./dist/esm/gmail/GmailClient.d.ts",
+        "import": "./dist/esm/gmail/GmailClient.js",
+        "require": "./dist/cjs/gmail/GmailClient.js"
+      },
+      "reason": "Gmail integration (client, header-injection-safe MIME, change feed, reconcilable draft/send actions) as tested library code; no host wiring yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./gmail/Mime",
+      "development": "./src/gmail/Mime.ts",
+      "published": {
+        "types": "./dist/esm/gmail/Mime.d.ts",
+        "import": "./dist/esm/gmail/Mime.js",
+        "require": "./dist/cjs/gmail/Mime.js"
+      },
+      "reason": "Gmail integration (client, header-injection-safe MIME, change feed, reconcilable draft/send actions) as tested library code; no host wiring yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./gmail/Reconcile",
+      "development": "./src/gmail/Reconcile.ts",
+      "published": {
+        "types": "./dist/esm/gmail/Reconcile.d.ts",
+        "import": "./dist/esm/gmail/Reconcile.js",
+        "require": "./dist/cjs/gmail/Reconcile.js"
+      },
+      "reason": "Gmail integration (client, header-injection-safe MIME, change feed, reconcilable draft/send actions) as tested library code; no host wiring yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./gmail/Records",
+      "development": "./src/gmail/Records.ts",
+      "published": {
+        "types": "./dist/esm/gmail/Records.d.ts",
+        "import": "./dist/esm/gmail/Records.js",
+        "require": "./dist/cjs/gmail/Records.js"
+      },
+      "reason": "Gmail integration (client, header-injection-safe MIME, change feed, reconcilable draft/send actions) as tested library code; no host wiring yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./gmail/Sync",
+      "development": "./src/gmail/Sync.ts",
+      "published": {
+        "types": "./dist/esm/gmail/Sync.d.ts",
+        "import": "./dist/esm/gmail/Sync.js",
+        "require": "./dist/cjs/gmail/Sync.js"
+      },
+      "reason": "Gmail integration (client, header-injection-safe MIME, change feed, reconcilable draft/send actions) as tested library code; no host wiring yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./googlecalendar",
+      "development": "./src/googlecalendar.ts",
+      "published": {
+        "types": "./dist/esm/googlecalendar.d.ts",
+        "import": "./dist/esm/googlecalendar.js",
+        "require": "./dist/cjs/googlecalendar.js"
+      },
+      "reason": "Google Calendar integration (client, deterministic event ids, retry-safe event actions, syncToken change feed) as tested library code; no host wiring yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./googlecalendar/Actions",
+      "development": "./src/googlecalendar/Actions.ts",
+      "published": {
+        "types": "./dist/esm/googlecalendar/Actions.d.ts",
+        "import": "./dist/esm/googlecalendar/Actions.js",
+        "require": "./dist/cjs/googlecalendar/Actions.js"
+      },
+      "reason": "Google Calendar integration (client, deterministic event ids, retry-safe event actions, syncToken change feed) as tested library code; no host wiring yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./googlecalendar/CalendarClient",
+      "development": "./src/googlecalendar/CalendarClient.ts",
+      "published": {
+        "types": "./dist/esm/googlecalendar/CalendarClient.d.ts",
+        "import": "./dist/esm/googlecalendar/CalendarClient.js",
+        "require": "./dist/cjs/googlecalendar/CalendarClient.js"
+      },
+      "reason": "Google Calendar integration (client, deterministic event ids, retry-safe event actions, syncToken change feed) as tested library code; no host wiring yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./googlecalendar/Config",
+      "development": "./src/googlecalendar/Config.ts",
+      "published": {
+        "types": "./dist/esm/googlecalendar/Config.d.ts",
+        "import": "./dist/esm/googlecalendar/Config.js",
+        "require": "./dist/cjs/googlecalendar/Config.js"
+      },
+      "reason": "Google Calendar integration (client, deterministic event ids, retry-safe event actions, syncToken change feed) as tested library code; no host wiring yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./googlecalendar/Event",
+      "development": "./src/googlecalendar/Event.ts",
+      "published": {
+        "types": "./dist/esm/googlecalendar/Event.d.ts",
+        "import": "./dist/esm/googlecalendar/Event.js",
+        "require": "./dist/cjs/googlecalendar/Event.js"
+      },
+      "reason": "Google Calendar integration (client, deterministic event ids, retry-safe event actions, syncToken change feed) as tested library code; no host wiring yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./googlecalendar/EventId",
+      "development": "./src/googlecalendar/EventId.ts",
+      "published": {
+        "types": "./dist/esm/googlecalendar/EventId.d.ts",
+        "import": "./dist/esm/googlecalendar/EventId.js",
+        "require": "./dist/cjs/googlecalendar/EventId.js"
+      },
+      "reason": "Google Calendar integration (client, deterministic event ids, retry-safe event actions, syncToken change feed) as tested library code; no host wiring yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./googlecalendar/Sync",
+      "development": "./src/googlecalendar/Sync.ts",
+      "published": {
+        "types": "./dist/esm/googlecalendar/Sync.d.ts",
+        "import": "./dist/esm/googlecalendar/Sync.js",
+        "require": "./dist/cjs/googlecalendar/Sync.js"
+      },
+      "reason": "Google Calendar integration (client, deterministic event ids, retry-safe event actions, syncToken change feed) as tested library code; no host wiring yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./slack",
+      "development": "./src/slack.ts",
+      "published": {
+        "types": "./dist/esm/slack.d.ts",
+        "import": "./dist/esm/slack.js",
+        "require": "./dist/cjs/slack.js"
+      },
+      "reason": "Slack integration (Web API client, Events API and Socket Mode doors with fail-closed allowlists, durable post/update/reconcile actions, Block Kit approvals, env and broker connection glue) for the local organization host's Slack intake."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./slack/Actions",
+      "development": "./src/slack/Actions.ts",
+      "published": {
+        "types": "./dist/esm/slack/Actions.d.ts",
+        "import": "./dist/esm/slack/Actions.js",
+        "require": "./dist/cjs/slack/Actions.js"
+      },
+      "reason": "Slack integration (Web API client, Events API and Socket Mode doors with fail-closed allowlists, durable post/update/reconcile actions, Block Kit approvals, env and broker connection glue) for the local organization host's Slack intake."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./slack/Approval",
+      "development": "./src/slack/Approval.ts",
+      "published": {
+        "types": "./dist/esm/slack/Approval.d.ts",
+        "import": "./dist/esm/slack/Approval.js",
+        "require": "./dist/cjs/slack/Approval.js"
+      },
+      "reason": "Slack integration (Web API client, Events API and Socket Mode doors with fail-closed allowlists, durable post/update/reconcile actions, Block Kit approvals, env and broker connection glue) for the local organization host's Slack intake."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./slack/Config",
+      "development": "./src/slack/Config.ts",
+      "published": {
+        "types": "./dist/esm/slack/Config.d.ts",
+        "import": "./dist/esm/slack/Config.js",
+        "require": "./dist/cjs/slack/Config.js"
+      },
+      "reason": "Slack integration (Web API client, Events API and Socket Mode doors with fail-closed allowlists, durable post/update/reconcile actions, Block Kit approvals, env and broker connection glue) for the local organization host's Slack intake."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./slack/Connections",
+      "development": "./src/slack/Connections.ts",
+      "published": {
+        "types": "./dist/esm/slack/Connections.d.ts",
+        "import": "./dist/esm/slack/Connections.js",
+        "require": "./dist/cjs/slack/Connections.js"
+      },
+      "reason": "Slack integration (Web API client, Events API and Socket Mode doors with fail-closed allowlists, durable post/update/reconcile actions, Block Kit approvals, env and broker connection glue) for the local organization host's Slack intake."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./slack/Payload",
+      "development": "./src/slack/Payload.ts",
+      "published": {
+        "types": "./dist/esm/slack/Payload.d.ts",
+        "import": "./dist/esm/slack/Payload.js",
+        "require": "./dist/cjs/slack/Payload.js"
+      },
+      "reason": "Slack integration (Web API client, Events API and Socket Mode doors with fail-closed allowlists, durable post/update/reconcile actions, Block Kit approvals, env and broker connection glue) for the local organization host's Slack intake."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./slack/SlackClient",
+      "development": "./src/slack/SlackClient.ts",
+      "published": {
+        "types": "./dist/esm/slack/SlackClient.d.ts",
+        "import": "./dist/esm/slack/SlackClient.js",
+        "require": "./dist/cjs/slack/SlackClient.js"
+      },
+      "reason": "Slack integration (Web API client, Events API and Socket Mode doors with fail-closed allowlists, durable post/update/reconcile actions, Block Kit approvals, env and broker connection glue) for the local organization host's Slack intake."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./slack/SocketSource",
+      "development": "./src/slack/SocketSource.ts",
+      "published": {
+        "types": "./dist/esm/slack/SocketSource.d.ts",
+        "import": "./dist/esm/slack/SocketSource.js",
+        "require": "./dist/cjs/slack/SocketSource.js"
+      },
+      "reason": "Slack integration (Web API client, Events API and Socket Mode doors with fail-closed allowlists, durable post/update/reconcile actions, Block Kit approvals, env and broker connection glue) for the local organization host's Slack intake."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./slack/Sync",
+      "development": "./src/slack/Sync.ts",
+      "published": {
+        "types": "./dist/esm/slack/Sync.d.ts",
+        "import": "./dist/esm/slack/Sync.js",
+        "require": "./dist/cjs/slack/Sync.js"
+      },
+      "reason": "Slack integration (Web API client, Events API and Socket Mode doors with fail-closed allowlists, durable post/update/reconcile actions, Block Kit approvals, env and broker connection glue) for the local organization host's Slack intake."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./slack/Webhook",
+      "development": "./src/slack/Webhook.ts",
+      "published": {
+        "types": "./dist/esm/slack/Webhook.d.ts",
+        "import": "./dist/esm/slack/Webhook.js",
+        "require": "./dist/cjs/slack/Webhook.js"
+      },
+      "reason": "Slack integration (Web API client, Events API and Socket Mode doors with fail-closed allowlists, durable post/update/reconcile actions, Block Kit approvals, env and broker connection glue) for the local organization host's Slack intake."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./x",
+      "development": "./src/x.ts",
+      "published": {
+        "types": "./dist/esm/x.d.ts",
+        "import": "./dist/esm/x.js",
+        "require": "./dist/cjs/x.js"
+      },
+      "reason": "X integration, read-only: client, scope capabilities, mention and direct-message change feeds into private source records. Writes are not durable actions yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./x/Capabilities",
+      "development": "./src/x/Capabilities.ts",
+      "published": {
+        "types": "./dist/esm/x/Capabilities.d.ts",
+        "import": "./dist/esm/x/Capabilities.js",
+        "require": "./dist/cjs/x/Capabilities.js"
+      },
+      "reason": "X integration, read-only: client, scope capabilities, mention and direct-message change feeds into private source records. Writes are not durable actions yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./x/Config",
+      "development": "./src/x/Config.ts",
+      "published": {
+        "types": "./dist/esm/x/Config.d.ts",
+        "import": "./dist/esm/x/Config.js",
+        "require": "./dist/cjs/x/Config.js"
+      },
+      "reason": "X integration, read-only: client, scope capabilities, mention and direct-message change feeds into private source records. Writes are not durable actions yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./x/Records",
+      "development": "./src/x/Records.ts",
+      "published": {
+        "types": "./dist/esm/x/Records.d.ts",
+        "import": "./dist/esm/x/Records.js",
+        "require": "./dist/cjs/x/Records.js"
+      },
+      "reason": "X integration, read-only: client, scope capabilities, mention and direct-message change feeds into private source records. Writes are not durable actions yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./x/Sync",
+      "development": "./src/x/Sync.ts",
+      "published": {
+        "types": "./dist/esm/x/Sync.d.ts",
+        "import": "./dist/esm/x/Sync.js",
+        "require": "./dist/cjs/x/Sync.js"
+      },
+      "reason": "X integration, read-only: client, scope capabilities, mention and direct-message change feeds into private source records. Writes are not durable actions yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./x/XClient",
+      "development": "./src/x/XClient.ts",
+      "published": {
+        "types": "./dist/esm/x/XClient.d.ts",
+        "import": "./dist/esm/x/XClient.js",
+        "require": "./dist/cjs/x/XClient.js"
+      },
+      "reason": "X integration, read-only: client, scope capabilities, mention and direct-message change feeds into private source records. Writes are not durable actions yet."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./slack/IssueSync",
+      "development": "./src/slack/IssueSync.ts",
+      "published": {
+        "types": "./dist/esm/slack/IssueSync.d.ts",
+        "import": "./dist/esm/slack/IssueSync.js",
+        "require": "./dist/cjs/slack/IssueSync.js"
+      },
+      "reason": "Slack transport for mirroring issue conversations through core/IssueSync: a host schedules drain() and feeds its existing SocketSource to ingest() (b662d687b)."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./telegram/IssueSync",
+      "development": "./src/telegram/IssueSync.ts",
+      "published": {
+        "types": "./dist/esm/telegram/IssueSync.d.ts",
+        "import": "./dist/esm/telegram/IssueSync.js",
+        "require": "./dist/cjs/telegram/IssueSync.js"
+      },
+      "reason": "Telegram transport for mirroring issue conversations through core/IssueSync, with the same host-scheduled drain() and ingest() shape as Slack (b662d687b)."
+    }
+  ]
+}

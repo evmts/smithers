@@ -1,0 +1,1285 @@
+import { preparedView, type ViewAction, type ViewResult, invalidatePreparedViews } from "../PreparedView"
+import { readRepositoryDetail } from "../RepositoryReadReceipts"
+import { readRepositoryListError, repositoryListRead, type RepositoryForm } from "./RepositoryListSeam"
+/*
+ * The landings seam ("PRs"): /api/repos/{owner}/{repo}/landings* through the
+ * product Worker's platform proxy. Landing a PR QUEUES it (202 Accepted) — the
+ * card states "queued", never a terminal claim the platform hasn't made yet.
+ * Reference: multi src/smithersCloud/landings.ts + landingComments.ts +
+ * commitStatuses.ts; the create payload assembly mirrors multi
+ * src/landings/landingsStore.ts executeCreate + src/smithersCloud/repoChanges.ts.
+ */
+import { conversationTabIdOf, type Card } from "../AppState"
+import type { FieldOption } from "@smthrs/ui/flow-form"
+import { parseUnifiedFile } from "@smthrs/ui/diff-paginate"
+
+type PrPayload = Extract<Card, { kind: "pr" }>["payload"]
+type FileRow = NonNullable<PrPayload["files"]>[number]
+/** The most changes a PR card reads (two requests each); a taller stack shows its top. */
+const STACK_CAP = 20
+import { resolveTargetRepo } from "../RepoContext"
+import type { SeamContext } from "./SeamContext"
+import { captureCloudOwner, readErrorMessage, readResult } from "./SeamContext"
+
+export interface LandingsSeam {
+  readonly setTab: (cardId: string, tab: "conversation" | "commits" | "checks" | "files") => Promise<string | void>
+  readonly listLandings: ViewAction<[repo?: string]>
+  readonly viewLanding: ViewAction<[number: number, repo?: string]>
+  /**
+   * One pull request as the context a review flow reads (the Review a PR
+   * app, `review`): its title, description, state, author, commits and
+   * files with the patches the diff read carried. No card; the run card is
+   * what follows.
+   */
+  readonly readLandingContext: (number: number, repo?: string) => Promise<string | LandingContext>
+  readonly reviewLanding: (
+    number: number,
+    type: "approve" | "request_changes" | "comment",
+    body: string,
+    repo?: string
+  ) => Promise<string | void>
+}
+
+/** What `readLandingContext` answers: the pull request as data for a review flow. */
+export interface LandingContext {
+  readonly repo: string
+  readonly number: number
+  readonly title: string
+  readonly body: string
+  readonly state: string
+  readonly author: string | null
+  readonly baseBranch?: string
+  readonly commits?: PrPayload["commits"]
+  readonly files?: PrPayload["files"]
+  /** The GitHub source and complete diff when this Cloud repo is an import. */
+  readonly sourceRepo?: string
+  readonly diff?: string
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+
+const stringOrNull = (value: unknown): string | null => (typeof value === "string" ? value : null)
+
+interface LandingRow {
+  readonly number: number
+  readonly title: string
+  readonly state: string
+  readonly author: string | null
+  readonly updatedAt: string | null
+}
+
+interface LandingDetail extends LandingRow {
+  readonly body: string
+  /** The jj change ids (bottom → top); the tip is the checks status ref. */
+  readonly changeIds: readonly string[]
+  readonly targetBookmark: string | null
+  readonly createdAt: string | null
+}
+
+/**
+ * GitHub's merge fact beside a closed pull request.
+ *
+ * [#3880](https://github.com/smithersai/smithers/issues/3880): GitHub states a
+ * merged pull request as `state: "closed"`, with `merged: true` on the detail
+ * and only `merged_at` on a list row (verified on roninjin10/e2e-verify#6,
+ * 2026-10-14), so taking `state` verbatim rendered a merged pull request as
+ * CLOSED. A closed row carrying the fact is `merged`; a closed row without it
+ * stays closed, and no other state is touched — plue's own landing row already
+ * says "merged" (services/landing.go `landingStateMerged`, written with
+ * `merged_at`), so the platform's words pass through unchanged.
+ */
+const mergedState = (value: Record<string, unknown>, state: string): string =>
+  state.toLowerCase() === "closed" && (value.merged === true || typeof value.merged_at === "string")
+    ? "merged"
+    : state
+
+/**
+ * One landing row, read defensively (multi parseLanding, loosened): number and
+ * title are required, everything else degrades instead of failing the payload.
+ */
+const parseLandingRow = (value: unknown): LandingRow | null => {
+  if (!isRecord(value)) return null
+  if (typeof value.number !== "number" || !Number.isInteger(value.number)) return null
+  if (typeof value.title !== "string") return null
+  return {
+    number: value.number,
+    title: value.title,
+    state: mergedState(value, typeof value.state === "string" && value.state !== "" ? value.state : "unknown"),
+    author: isRecord(value.author) ? stringOrNull(value.author.login)
+      : isRecord(value.user) ? stringOrNull(value.user.login) : null,
+    updatedAt: stringOrNull(value.updated_at)
+  }
+}
+
+const parseLandingDetail = (value: unknown): LandingDetail | null => {
+  const row = parseLandingRow(value)
+  if (row === null || !isRecord(value)) return null
+  return {
+    ...row,
+    body: typeof value.body === "string" ? value.body : "",
+    changeIds: Array.isArray(value.change_ids)
+      ? value.change_ids.filter((id): id is string => typeof id === "string")
+      : [],
+    targetBookmark: stringOrNull(value.target_bookmark) ?? (isRecord(value.base) ? stringOrNull(value.base.ref) : null),
+    createdAt: stringOrNull(value.created_at)
+  }
+}
+
+interface ReviewRow {
+  readonly author: string | null
+  readonly type: string
+  readonly reviewBody: string
+}
+
+/**
+ * A review verdict row. Plue's current payload exposes only reviewer_id — no
+ * login — so author stays null unless a login-shaped field is present.
+ */
+const parseReviewRow = (value: unknown): ReviewRow | null => {
+  if (!isRecord(value)) return null
+  if (typeof value.type !== "string") return null
+  return {
+    author: isRecord(value.author)
+      ? stringOrNull(value.author.login)
+      : stringOrNull(value.reviewer_login),
+    type: value.type,
+    reviewBody: typeof value.body === "string" ? value.body : ""
+  }
+}
+
+interface CheckRow {
+  readonly context: string
+  readonly state: string
+  readonly createdAt: string
+}
+
+const parseCheckRow = (value: unknown): CheckRow | null => {
+  if (!isRecord(value)) return null
+  if (typeof value.context !== "string" || value.context === "") return null
+  if (typeof value.status !== "string") return null
+  return {
+    context: value.context,
+    state: value.status,
+    createdAt: typeof value.created_at === "string" ? value.created_at : ""
+  }
+}
+
+/*
+ * Commit status rows repeat contexts across re-runs and arrive created_at
+ * DESC, so the NEWEST row per context wins, decided by created_at — a naive
+ * last-write-wins keeps the OLDEST row and shows "pending" forever after a
+ * green re-run (multi commitStatuses.ts).
+ */
+const newestPerContext = (
+  rows: readonly CheckRow[]
+): Array<{ context: string; state: string }> => {
+  const byContext = new Map<string, CheckRow>()
+  for (const row of rows) {
+    const existing = byContext.get(row.context)
+    if (existing === undefined || row.createdAt > existing.createdAt) byContext.set(row.context, row)
+  }
+  return [...byContext.values()].map(({ context, state }) => ({ context, state }))
+}
+
+const repoApiRoot = (repo: string): string => {
+  const [owner = "", name = ""] = repo.split("/")
+  return `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+}
+
+type PullSource =
+  | { readonly kind: "native" }
+  | { readonly kind: "github"; readonly repo: string }
+  | { readonly error: string }
+
+/** A ready import in the repository response is the only source mapping. */
+const pullSource = async (ctx: Pick<SeamContext, "http" | "baseUrl">, repo: string): Promise<PullSource> => {
+  let response: Response
+  try {
+    response = await ctx.http(`${ctx.baseUrl}${repoApiRoot(repo)}`)
+  } catch {
+    return { error: `The source of pull requests for ${repo} couldn't be checked.` }
+  }
+  if (!response.ok) {
+    return { error: await readErrorMessage(response, `The source of pull requests for ${repo} couldn't be checked.`) }
+  }
+  const body: unknown = await response.json().catch(() => null)
+  if (!isRecord(body) || typeof body.full_name !== "string" || body.full_name.toLowerCase() !== repo.toLowerCase()) {
+    return { error: `The source of pull requests for ${repo} answered with a different repository.` }
+  }
+  if (body.github_source_unavailable === true) return { error: `The source of pull requests for ${repo} is unavailable.` }
+  if (body.github_source_ambiguous === true) return { error: `This repository has more than one GitHub source, so its pull requests cannot be reviewed here.` }
+  if (body.github_source === undefined) return { kind: "native" }
+  const source = body.github_source
+  if (!isRecord(source) || typeof source.owner !== "string" || typeof source.repo !== "string"
+    || !/^[A-Za-z0-9_.-]+$/.test(source.owner) || !/^[A-Za-z0-9_.-]+$/.test(source.repo)) {
+    return { error: `The GitHub source of ${repo} could not be verified.` }
+  }
+  return { kind: "github", repo: `${source.owner}/${source.repo}` }
+}
+
+const githubRepoRoot = (ctx: Pick<SeamContext, "baseUrl">, sourceRepo: string): string => {
+  const [owner = "", name = ""] = sourceRepo.split("/")
+  return `${ctx.baseUrl}/api/user/github-repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+}
+
+const githubPullsRoot = (ctx: Pick<SeamContext, "baseUrl">, sourceRepo: string): string =>
+  `${githubRepoRoot(ctx, sourceRepo)}/pulls`
+
+/** A pull request a review can still act on: not merged, closed or landed. */
+const reviewable = (state: string): boolean => !["merged", "closed", "landed"].includes(state.toLowerCase())
+
+/**
+ * GitHub's own review vocabulary for the three verdicts this app offers.
+ * `event` is what the submit names; `state` is what GitHub calls the review
+ * it recorded, so the readback can only confirm the verdict that was asked
+ * for (REST: "Create a review for a pull request").
+ */
+const GITHUB_REVIEW_EVENT = { approve: "APPROVE", request_changes: "REQUEST_CHANGES", comment: "COMMENT" } as const
+const GITHUB_REVIEW_STATE = { approve: "APPROVED", request_changes: "CHANGES_REQUESTED", comment: "COMMENTED" } as const
+
+/** The durable states a review operation can still move on; any other is terminal. */
+const REVIEW_REQUEST_PENDING = new Set(["accepted", "dispatching", "running", "waiting"])
+
+/**
+ * How long this seam reads one admitted review before reporting it as still
+ * running. The operation stays on the server either way, so running out is
+ * never a reason to submit the verdict a second time.
+ */
+const reviewRequestPollMs = 500
+const reviewRequestAttempts = 60
+
+/**
+ * The sentence for one settled review operation. Each reason names a
+ * different act, and none of them reports a review the server did not read
+ * back from GitHub under this intent.
+ */
+const githubPullReviewAnswer = (
+  number: number,
+  sourceRepo: string,
+  type: "approve" | "request_changes" | "comment",
+  reviewed: string,
+  state: string,
+  status: unknown
+): string | void => {
+  const code = isRecord(status) && typeof status.code === "string" ? status.code : ""
+  if (state === "completed") {
+    const verified = isRecord(status) && status.verified === true
+      && status.commit_id === reviewed && status.review_state === GITHUB_REVIEW_STATE[type]
+    if (verified) return
+    return `GitHub didn't confirm the review on #${number}. Read the pull request again before reviewing it — it may already carry this review.`
+  }
+  if (state === "uncertain") {
+    return `Whether the review on #${number} reached ${sourceRepo} is unknown, so it was not sent again. Read the pull request on GitHub before reviewing it a second time.`
+  }
+  switch (code) {
+    case "review_head_moved":
+      return `Pull request #${number} on ${sourceRepo} moved to a new head commit before the review was sent, so nothing was posted. Read it again and review the new head.`
+    case "pull_request_not_open":
+      return `Pull request #${number} on ${sourceRepo} is no longer open, so the review was not posted.`
+    case "pull_request_mismatch":
+      return `GitHub answered with a different pull request than #${number} on ${sourceRepo}, so nothing was posted.`
+    case "reauthorize_github":
+      return `GitHub didn't accept the credential linked to this account, so the review on #${number} was not posted. Sign in with GitHub again.`
+    case "github_permission":
+      return `GitHub refused this account the review on #${number} of ${sourceRepo}.`
+    case "actor_changed":
+      return `The signed-in GitHub account changed, so the review on #${number} was not posted.`
+    case "rate_limited":
+      return `GitHub is rate-limiting this account, so the review on #${number} was not posted. Try again in a few minutes.`
+    case "github_rejected_review":
+      return `GitHub refused the review on #${number} of ${sourceRepo}.`
+    default:
+      return `The review on #${number} couldn't be posted to GitHub.`
+  }
+}
+
+/**
+ * The files of one unified patch, one row per `diff --git` section.
+ *
+ * GitHub answers a pull request's whole diff as a single patch, and the Files
+ * changed tab renders one file at a time, so the sections ARE the rows. Each
+ * section is read by the diff domain the tab's own renderer parses with
+ * (`@smthrs/ui/diff-paginate` `parseUnifiedFile`) rather than by a second
+ * counter here, so the counts and the drawn hunks cannot disagree, and the
+ * section's text rides along verbatim as that file's patch — binary markers,
+ * renames, mode lines and empty patches included, exactly as the renderer
+ * reads them.
+ *
+ * `null` when ANY section names no file: a patch this cannot split whole is
+ * an unreadable answer, never a shorter list of files presented as complete
+ * (a mixed valid/unreadable patch used to drop the sections it could not read
+ * and claim the rest was every change).
+ */
+const unifiedPatchFiles = (diff: string): FileRow[] | null => {
+  const rows: FileRow[] = []
+  for (const patch of diff.split(/(?=^diff --git )/m)) {
+    if (patch.trim() === "") continue
+    const file = parseUnifiedFile(patch)
+    if (file.path === "") return null
+    const status: FileRow["status"] | undefined = file.status === "deleted" ? "removed"
+      : file.status === "added" || file.status === "modified" || file.status === "renamed" ? file.status : undefined
+    rows.push({
+      path: file.path,
+      ...(file.oldPath !== undefined ? { oldPath: file.oldPath } : {}),
+      ...(status !== undefined ? { status } : {}),
+      additions: file.add,
+      deletions: file.del,
+      patch
+    })
+  }
+  return rows
+}
+
+/**
+ * GitHub's page size maximum for both of a pull request's list reads, and how
+ * many pages of each this asks for.
+ *
+ * Three pages of commits reach 300, past the 250 a pull request's own commit
+ * list will ever answer, so the walk ends where GitHub's answer does; ten
+ * pages of check runs reach 1,000, the suites GitHub itself stops at. Both
+ * are also the guard against a source that keeps answering full pages: the
+ * walk ends, and says it ended early.
+ */
+const GITHUB_PAGE_SIZE = 100
+const GITHUB_COMMIT_PAGES = 3
+const GITHUB_CHECK_PAGES = 10
+
+/**
+ * The most commits GitHub answers for ONE pull request, however it is paged
+ * (docs.github.com/rest/pulls/pulls, "List commits on a pull request"). A
+ * walk that reaches exactly this many has read a page that looks like the end
+ * of the list and is also exactly where the endpoint stops, so without the
+ * pull request's own count there is no evidence which one it was.
+ */
+const GITHUB_PULL_COMMIT_CAP = 250
+const GITHUB_PULL_COMMIT_CAP_REASON =
+  `GitHub answers at most ${GITHUB_PULL_COMMIT_CAP} commits for one pull request, and this one reports no count of its own.`
+
+/**
+ * A count a source reports about its own list, when it is usable as evidence
+ * that a read is whole or short.
+ *
+ * Only a whole, non-negative, representable count is: comparing rows against
+ * a negative number says a short read is complete (nothing is `< -5`), a
+ * fraction or a number past integer precision counts rows against something
+ * that is not a number of rows, and either one would print into the sentence
+ * a person reads. Anything else is no count, and then only a short page can
+ * end a list.
+ */
+const boundedCount = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+
+/**
+ * The sentence a tab carries when its rows are real but not all of them.
+ * `undefined` when they ARE all of them: nothing to say, and no notice drawn.
+ *
+ * `total` is the source's own count (a pull request's `commits`, a ref's
+ * `total_count`) — the only thing that can prove a read short, since the last
+ * page GitHub answers looks the same whether it is the end of the list or the
+ * end of what the endpoint will serve. `reason` is why the walk stopped,
+ * already bounded by `readErrorMessage`.
+ */
+const partialRead = (
+  shown: number,
+  total: number | undefined,
+  noun: string,
+  reason: string | undefined
+): string | undefined => {
+  // A source that counts its own rows settles it either way: rows that reach
+  // the count are the whole list, whatever stopped the walk after them.
+  if (total !== undefined) return shown < total ? sentenceFor(shown, total, noun, reason) : undefined
+  return reason === undefined ? undefined : sentenceFor(shown, total, noun, reason)
+}
+
+const sentenceFor = (
+  shown: number,
+  total: number | undefined,
+  noun: string,
+  reason: string | undefined
+): string => {
+  const short = total !== undefined && shown < total
+  const counted = short
+    ? `Showing ${shown} of ${total} ${noun}.`
+    : `Showing the ${shown} ${noun} this read could reach.`
+  return reason === undefined ? counted : `${counted} ${reason}`
+}
+
+/** One commit of GitHub's own pull request commit list (…/pulls/{number}/commits). */
+const parseGitHubCommitRow = (value: unknown): NonNullable<PrPayload["commits"]>[number] | null => {
+  if (!isRecord(value) || typeof value.sha !== "string" || value.sha === "") return null
+  const commit = isRecord(value.commit) ? value.commit : undefined
+  if (commit === undefined || typeof commit.message !== "string") return null
+  const wrote = isRecord(commit.author) ? commit.author : undefined
+  const committed = isRecord(commit.committer) ? commit.committer : undefined
+  return {
+    commitId: value.sha,
+    message: commit.message,
+    author: (isRecord(value.author) ? stringOrNull(value.author.login) : null) ?? stringOrNull(wrote?.name),
+    timestamp: stringOrNull(wrote?.date) ?? stringOrNull(committed?.date)
+  }
+}
+
+/**
+ * One check run of a commit (…/commits/{sha}/check-runs). A finished run is
+ * its conclusion ("success", "failure", "timed_out", …); a run still going
+ * is its status ("queued", "in_progress"), which is the same distinction the
+ * card's `checkDisplay` already draws for the platform's own statuses.
+ */
+const parseCheckRunRow = (value: unknown): CheckRow | null => {
+  if (!isRecord(value) || typeof value.name !== "string" || value.name === "") return null
+  if (typeof value.status !== "string" || value.status === "") return null
+  const conclusion = typeof value.conclusion === "string" && value.conclusion !== "" ? value.conclusion : undefined
+  return {
+    context: value.name,
+    state: conclusion ?? value.status,
+    createdAt: typeof value.started_at === "string" ? value.started_at : ""
+  }
+}
+
+/**
+ * A repository's open pull requests as a form's options (the Review a PR
+ * app's picker, controller/forms.ts `pull-requests`), one bounded page read
+ * exactly as the pull request list reads it. A refusal answers no options
+ * and its reason; nothing is invented.
+ */
+export const readLandingOptions = async (
+  ctx: Pick<SeamContext, "http" | "baseUrl">,
+  repo: string
+): Promise<{ readonly options: ReadonlyArray<FieldOption>; readonly error?: string }> => {
+  const source = await pullSource(ctx, repo)
+  if ("error" in source) return { options: [], error: source.error }
+  const url = source.kind === "github"
+    ? `${githubPullsRoot(ctx, source.repo)}?state=open&per_page=100`
+    : `${ctx.baseUrl}${repoApiRoot(repo)}/landings?limit=100`
+  let response: Response
+  try {
+    response = await ctx.http(url)
+  } catch {
+    return { options: [], error: `Pull requests for ${repo} couldn't be listed — the platform didn't answer.` }
+  }
+  if (!response.ok) return { options: [], error: await readRepositoryListError(response, `Pull requests for ${repo} couldn't be listed.`) }
+  const body: unknown = await response.json().catch(() => undefined)
+  if (!Array.isArray(body)) return { options: [], error: `Pull requests for ${repo} answered with a payload this app couldn't read.` }
+  return { options: body.map(parseLandingRow).filter((row): row is LandingRow => row !== null && reviewable(row.state))
+    .map((row) => ({ value: String(row.number), label: `#${row.number} ${row.title}` })) }
+}
+
+/*
+ * The tab someone is reading survives re-reading the SAME pull request — a
+ * refresh after a review, or the Retry a refused tab offers. The card that
+ * carries the choice is the one on screen, and the repository pane reuses ONE
+ * card id for every location it shows (state/EmbeddedHistory.ts `paneTarget`),
+ * so a pull request opened from the Activity card lives under the pane's id,
+ * not under `pr-<repo>-<number>`. Reading the fixed id found no card there
+ * and every Retry dropped the person back on Conversation.
+ *
+ * `live` is the card as it stands when the read publishes, so a tab clicked
+ * WHILE the read was in flight is the newer choice and wins. `replaced` is
+ * the card from before the loading placeholder covered it, which is all a
+ * retried failed read has left. Neither inherits across entities: another
+ * number or repository is another pull request, and the same number on a
+ * GitHub import and on a native landing are two different ones.
+ */
+const carrySelectedTab = (card: Card, live: Card | undefined, replaced: Card | undefined): Card => {
+  if (card.kind !== "pr") return card
+  const sameLanding = (other: Card | undefined): PrPayload["tab"] =>
+    other?.kind === "pr" && other.payload.repo === card.payload.repo && other.payload.number === card.payload.number
+      && other.payload.sourceRepo === card.payload.sourceRepo
+      ? other.payload.tab
+      : undefined
+  const tab = sameLanding(live) ?? sameLanding(replaced)
+  return tab === undefined ? card : { ...card, payload: { ...card.payload, tab } }
+}
+
+export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: RepositoryForm): LandingsSeam => {
+  const landingsUrl = (repo: string): string => `${ctx.baseUrl}${repoApiRoot(repo)}/landings`
+
+  /** Reviews for the detail card; a section failure degrades to [] (multi's section() stance). */
+  const fetchReviews = async (repo: string, number: number): Promise<ReviewRow[]> => {
+    try {
+      const response = await ctx.http(`${landingsUrl(repo)}/${number}/reviews?limit=100`)
+      if (!response.ok) return []
+      const body: unknown = await response.json().catch(() => undefined)
+      if (!Array.isArray(body)) return []
+      return body.map(parseReviewRow).filter((row): row is ReviewRow => row !== null)
+    } catch {
+      return []
+    }
+  }
+
+  /** Checks for the tip change id; no ref or a section failure degrades to []. */
+  const fetchChecks = async (
+    repo: string,
+    ref: string | undefined
+  ): Promise<Array<{ context: string; state: string }>> => {
+    if (ref === undefined || ref === "") return []
+    try {
+      const response = await ctx.http(
+        `${ctx.baseUrl}${repoApiRoot(repo)}/commits/${encodeURIComponent(ref)}/statuses?limit=100`
+      )
+      if (!response.ok) return []
+      const body: unknown = await response.json().catch(() => undefined)
+      if (!Array.isArray(body)) return []
+      return newestPerContext(body.map(parseCheckRow).filter((row): row is CheckRow => row !== null))
+    } catch {
+      return []
+    }
+  }
+
+  /** The commit at the request's tip change — what a land names; an unreadable tip is an honest refusal, never a guessed commit. */
+  const fetchTipCommit = async (
+    repo: string,
+    number: number
+  ): Promise<{ readonly commitId: string } | { readonly error: string }> => {
+    let response: Response
+    try {
+      response = await ctx.http(`${landingsUrl(repo)}/${number}`)
+    } catch {
+      return { error: `Pull request #${number} couldn't be read — the platform didn't answer.` }
+    }
+    if (!response.ok) {
+      return { error: await readErrorMessage(response, `Pull request #${number} on ${repo} couldn't be read before submitting.`) }
+    }
+    const landing = parseLandingDetail(await response.json().catch(() => undefined))
+    const tip = landing?.changeIds.at(-1)
+    if (landing === null || tip === undefined || tip === "") {
+      return { error: `Pull request #${number} names no tip change.` }
+    }
+    let changeResponse: Response
+    try {
+      changeResponse = await ctx.http(`${ctx.baseUrl}${repoApiRoot(repo)}/changes/${encodeURIComponent(tip)}`)
+    } catch {
+      return { error: `The tip change ${tip} of #${number} couldn't be read — the platform didn't answer.` }
+    }
+    if (!changeResponse.ok) {
+      return { error: await readErrorMessage(changeResponse, `The tip change ${tip} of #${number} couldn't be read.`) }
+    }
+    const body: unknown = await changeResponse.json().catch(() => undefined)
+    const commitId = isRecord(body) && typeof body.commit_id === "string" && body.commit_id !== "" ? body.commit_id : null
+    if (commitId === null) return { error: `The tip change ${tip} of #${number} carries no commit id.` }
+    return { commitId }
+  }
+
+  /*
+   * The landing's retained stack for the PR card's Commits and Files changed
+   * tabs: GET …/landings/{number}/changes and its revision-pinned aggregate
+   * diff. Files merge by path:
+   * counts add up, and the patch rides only when one change touched the file
+   * (a later change's patch alone is not the file's diff). A tab's field is
+   * set only when every read answered, so a failed read never looks empty.
+   */
+  const fetchStack = async (repo: string, number: number): Promise<Pick<PrPayload, "commits" | "files" | "readErrors">> => {
+    const root = `${ctx.baseUrl}${repoApiRoot(repo)}/landings/${number}`
+    const read = async (url: string): Promise<{ readonly body?: unknown; readonly error?: string }> => {
+      try {
+        const response = await ctx.http(url)
+        if (!response.ok) return { error: await readErrorMessage(response, "Read failed.") }
+        return { body: await response.json().catch(() => undefined) }
+      } catch {
+        return { error: "The platform didn't answer." }
+      }
+    }
+    const [changesRead, diffRead] = await Promise.all([read(`${root}/changes?limit=${STACK_CAP}`), read(`${root}/diff`)])
+    const changes = Array.isArray(changesRead.body) ? changesRead.body : undefined
+    type RetainedChange = Record<string, unknown> & { change_id: string; commit_id: string; description: string; timestamp: string }
+    const validChange = (change: unknown): change is RetainedChange => isRecord(change) &&
+      typeof change.change_id === "string" && change.change_id !== "" &&
+      typeof change.commit_id === "string" && change.commit_id !== "" &&
+      typeof change.description === "string" && typeof change.timestamp === "string"
+    const commits: NonNullable<PrPayload["commits"]> = (changes ?? []).flatMap((change) => validChange(change) ? [{
+      changeId: change.change_id,
+      commitId: change.commit_id,
+      message: change.description,
+      author: stringOrNull(change.author_name),
+      timestamp: stringOrNull(change.timestamp)
+    }] : [])
+    const count = (value: unknown): number => typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0
+    const statusOf = (value: unknown): FileRow["status"] =>
+      value === "added" || value === "renamed" ? value : value === "deleted" || value === "removed" ? "removed" : value === "modified" ? "modified" : undefined
+    const files = new Map<string, FileRow & { touched: number }>()
+    const diffChanges = isRecord(diffRead.body) && Array.isArray(diffRead.body.changes) ? diffRead.body.changes : undefined
+    let malformedDiff = false
+    for (const diff of diffChanges ?? []) {
+      if (!isRecord(diff) || typeof diff.change_id !== "string" || !Array.isArray(diff.file_diffs)) { malformedDiff = true; continue }
+      for (const value of diff.file_diffs) {
+        if (!isRecord(value) || typeof value.path !== "string" || value.path === "") { malformedDiff = true; continue }
+        const prior = files.get(value.path)
+        const oldPath = stringOrNull(value.old_path)
+        const status = statusOf(value.change_type)
+        const patch = stringOrNull(value.patch)
+        const touched = (prior?.touched ?? 0) + 1
+        files.set(value.path, {
+          path: value.path,
+          ...(oldPath !== null ? { oldPath } : prior?.oldPath !== undefined ? { oldPath: prior.oldPath } : {}),
+          ...(status !== undefined ? { status } : {}),
+          additions: (prior?.additions ?? 0) + count(value.additions),
+          deletions: (prior?.deletions ?? 0) + count(value.deletions),
+          ...(touched === 1 && patch !== null ? { patch } : {}),
+          touched
+        })
+      }
+    }
+    const commitError = changesRead.error ?? (changes === undefined || !changes.every(validChange) ? "The platform returned an unreadable response." : undefined)
+    const diffError = diffRead.error ?? (diffChanges === undefined || malformedDiff ? "The platform returned an unreadable response." : undefined)
+    return {
+      ...(commitError === undefined ? { commits } : {}),
+      ...(diffError === undefined ? { files: [...files.values()].map(({ touched: _touched, ...file }) => file) } : {}),
+      ...(commitError !== undefined || diffError !== undefined ? { readErrors: {
+        ...(commitError !== undefined ? { commits: `Commits unavailable (${commitError})` } : {}),
+        ...(diffError !== undefined ? { files: `Files unavailable (${diffError})` } : {})
+      } } : {})
+    }
+  }
+
+  /*
+   * The Conversation, Commits, Checks and Files changed tabs of a
+   * GITHUB-source pull request.
+   *
+   * Read in production on UI 10a823b3 (roninjin10/e2e-verify#2 — one commit
+   * and README.md +3 −0 per GitHub's own pulls/2/commits and pulls/2/files):
+   * the detail read answered a GitHub source's whole stack as `{}`, so
+   * `files` and `commits` were undefined with no `readErrors` beside them and
+   * `checks` was an empty list. The card painted the bare "Files unavailable."
+   * and "Commits unavailable.", and its Checks tab painted nothing at all —
+   * no reason, no status, no Retry — on a pull request that has all three.
+   *
+   * The platform proxies one GET per tab, all read-only, all through the
+   * caller's own GitHub credential (`routes/github_user_repos.go`):
+   *   …/pulls/{number}/diff            the raw unified patch (GetGitHubPullDiff)
+   *   …/pulls/{number}/commits         the pull request's commits
+   *   …/commits/{sha}/check-runs       the head commit's check runs
+   * Nothing is written and no read is invented. Each tab keeps its own three
+   * outcomes distinct: an answer is its rows, an EMPTY answer is zero rows
+   * (the card's "No file changes" / "No commits" / "No checks reported"), and
+   * a refused or unanswered read is that tab's `readErrors` entry carrying
+   * the bounded refusal and its HTTP status — the same words `fetchStack`
+   * gives the native tabs, never the upstream's body, a header or a URL.
+   *
+   * A FOURTH outcome the first version of this got wrong: rows that are real
+   * but not all of them. Both list reads are paged (see `readGitHubRows`), so
+   * one request answers at most 100 rows, and the first hundred of a longer
+   * pull request used to be rendered as the whole of it. Whatever ends a read
+   * early — the end of the pages this asks for, a later page refused, a later
+   * page unreadable — the rows already read STAY and `readLimits` says how
+   * many of how many they are.
+   */
+  const unreadableAnswer = "The platform returned an unreadable response."
+
+  /** One bounded GET of a proxied GitHub read: its JSON, or the reason there is none. */
+  const readGitHubJson = async (url: string): Promise<{ readonly body: unknown } | { readonly error: string }> => {
+    let response: Response
+    try {
+      response = await ctx.http(url)
+    } catch {
+      return { error: "The platform didn't answer." }
+    }
+    if (!response.ok) return { error: await readErrorMessage(response, `Read failed (HTTP ${response.status}).`) }
+    const body: unknown = await response.json().catch(() => undefined)
+    return body === undefined ? { error: unreadableAnswer } : { body }
+  }
+
+  /**
+   * Every row of one proxied GitHub list, a page at a time.
+   *
+   * GitHub pages both list reads with `per_page` (100 maximum) and `page`, so
+   * one request is one page. The page is asked for as a NUMBER on the
+   * platform's own fixed path: a `Link` header names an upstream URL, and
+   * following one of those with this session's credential is not something
+   * this app does.
+   *
+   * The walk stops at the first short page, which is the end of the list, and
+   * otherwise after `maxPages` — the bound that keeps a source answering full
+   * pages forever from looping. The caller is told which happened:
+   *   `error`  nothing was read at all; that tab says why.
+   *   `rows`   with no `limit`, every row the list has.
+   *   `rows`   with a `limit`, the rows that were read and the reason the
+   *            rest were not. Never dropped, never called complete.
+   *
+   * Each page is validated THROUGH `parseRow` before any of it is kept, so a
+   * page whose JSON is a list of the right shape but whose rows are not these
+   * rows ends the walk exactly as an unreadable page does: the pages already
+   * verified stay and the bad page is the limit. Validating only the envelope
+   * per page and the rows after the whole walk threw a hundred verified
+   * commits away for one malformed row on page two.
+   */
+  const readGitHubRows = async <Row>(
+    path: string,
+    maxPages: number,
+    rowsOf: (body: unknown) => { readonly rows: readonly unknown[]; readonly total?: number } | null,
+    parseRow: (value: unknown) => Row | null
+  ): Promise<
+    { readonly rows: readonly Row[]; readonly total?: number; readonly limit?: string } | { readonly error: string }
+  > => {
+    const rows: Row[] = []
+    let total: number | undefined
+    for (let page = 1; page <= maxPages; page += 1) {
+      const read = await readGitHubJson(`${path}?per_page=${GITHUB_PAGE_SIZE}&page=${page}`)
+      const shape = "error" in read ? null : rowsOf(read.body)
+      const parsed = shape === null ? null : shape.rows.map(parseRow)
+      if (shape === null || parsed === null || parsed.some((row) => row === null)) {
+        const reason = "error" in read ? read.error : unreadableAnswer
+        // Page one IS the read: with no rows, the tab can only say why.
+        if (page === 1) return { error: reason }
+        return { rows, ...(total !== undefined ? { total } : {}), limit: reason }
+      }
+      if (shape.total !== undefined) total = shape.total
+      rows.push(...parsed as Row[])
+      if (shape.rows.length < GITHUB_PAGE_SIZE) return { rows, ...(total !== undefined ? { total } : {}) }
+    }
+    return {
+      rows,
+      ...(total !== undefined ? { total } : {}),
+      limit: `This read stops after ${maxPages * GITHUB_PAGE_SIZE} rows.`
+    }
+  }
+
+  const fetchGitHubTabs = async (
+    sourceRepo: string,
+    number: number,
+    headCommit: string | undefined,
+    /** The commit count the pull request object itself reports, when it does. */
+    commitCount: number | undefined
+  ): Promise<{
+    readonly checks?: ReadonlyArray<{ readonly context: string; readonly state: string }>
+    readonly tabs: Pick<PrPayload, "commits" | "files" | "readErrors" | "readLimits">
+  }> => {
+    const pull = `${githubPullsRoot(ctx, sourceRepo)}/${number}`
+    const [diffRead, commitsRead, checksRead] = await Promise.all([
+      (async (): Promise<{ readonly diff: string } | { readonly error: string }> => {
+        let response: Response
+        try {
+          response = await ctx.http(`${pull}/diff`)
+        } catch {
+          return { error: "The platform didn't answer." }
+        }
+        if (!response.ok) return { error: await readErrorMessage(response, `Read failed (HTTP ${response.status}).`) }
+        const diff = await response.text().catch(() => undefined)
+        return diff === undefined ? { error: unreadableAnswer } : { diff }
+      })(),
+      // How many commits there are is the pull request's own count, not the
+      // number of rows read: GitHub stops this list at 250 whatever page is
+      // asked for, so 250 rows of a 400-commit stack look like the end of it.
+      readGitHubRows(
+        `${pull}/commits`,
+        GITHUB_COMMIT_PAGES,
+        (body) => Array.isArray(body) ? { rows: body, ...(commitCount !== undefined ? { total: commitCount } : {}) } : null,
+        parseGitHubCommitRow
+      ),
+      // The checks of a pull request are the check runs of its head commit;
+      // a detail that names no head commit has no ref to read them at, which
+      // is a refusal with a reason rather than an empty Checks tab.
+      headCommit === undefined || headCommit === ""
+        ? Promise.resolve({ error: "This pull request names no head commit." } as const)
+        : readGitHubRows(
+          `${githubRepoRoot(ctx, sourceRepo)}/commits/${encodeURIComponent(headCommit)}/check-runs`,
+          GITHUB_CHECK_PAGES,
+          // GitHub counts the runs it has for the ref in `total_count`; rows
+          // short of it are rows short of it, however the read ended.
+          (body) => {
+            if (!isRecord(body) || !Array.isArray(body.check_runs)) return null
+            const total = boundedCount(body.total_count)
+            return { rows: body.check_runs, ...(total !== undefined ? { total } : {}) }
+          },
+          parseCheckRunRow
+        )
+    ])
+
+    const files = "diff" in diffRead ? (diffRead.diff.trim() === "" ? [] : unifiedPatchFiles(diffRead.diff)) : null
+    const filesError = "error" in diffRead ? diffRead.error : files === null ? unreadableAnswer : undefined
+
+    const commits = "rows" in commitsRead ? [...commitsRead.rows] : undefined
+    const commitsError = "error" in commitsRead ? commitsRead.error : undefined
+    // Reaching the 250 GitHub will answer with no count of its own is a
+    // bounded read, not a finished one, even though the last page was short.
+    const commitsReason = !("rows" in commitsRead)
+      ? undefined
+      : commitsRead.limit
+        ?? (commitsRead.total === undefined && commitsRead.rows.length >= GITHUB_PULL_COMMIT_CAP
+          ? GITHUB_PULL_COMMIT_CAP_REASON
+          : undefined)
+    const commitsLimit = commits === undefined || !("rows" in commitsRead)
+      ? undefined
+      : partialRead(commits.length, commitsRead.total, "commits", commitsReason)
+
+    const checks = "rows" in checksRead ? newestPerContext(checksRead.rows) : undefined
+    const checksError = "error" in checksRead ? checksRead.error : undefined
+    // The runs READ, not the rows drawn: `newestPerContext` folds a re-run
+    // onto the check it re-ran, so the fold is never the count of the list.
+    const checksLimit = checks === undefined || !("rows" in checksRead)
+      ? undefined
+      : partialRead(checksRead.rows.length, checksRead.total, "check runs", checksRead.limit)
+
+    return {
+      ...(checksError === undefined ? { checks } : {}),
+      tabs: {
+        ...(commitsError === undefined ? { commits } : {}),
+        ...(filesError === undefined && files !== null ? { files } : {}),
+        ...(filesError !== undefined || commitsError !== undefined || checksError !== undefined
+          ? { readErrors: {
+            ...(commitsError !== undefined ? { commits: `Commits unavailable (${commitsError})` } : {}),
+            ...(checksError !== undefined ? { checks: `Checks unavailable (${checksError})` } : {}),
+            ...(filesError !== undefined ? { files: `Files unavailable (${filesError})` } : {})
+          } }
+          : {}),
+        ...(commitsLimit !== undefined || checksLimit !== undefined
+          ? { readLimits: {
+            ...(commitsLimit !== undefined ? { commits: commitsLimit } : {}),
+            ...(checksLimit !== undefined ? { checks: checksLimit } : {})
+          } }
+          : {})
+      }
+    }
+  }
+
+  /*
+   * The one detail door: GET the landing, its reviews, and its checks, then
+   * upsert the "pr" card. `stateOverride` lets a mutation pin the state the
+   * platform just answered (a land pins "queued") over a racing re-read.
+   */
+  const readLanding = async (
+    repo: string,
+    number: number,
+    stateOverride?: string,
+    resolvedSource?: Exclude<PullSource, { readonly error: string }>
+  ): Promise<ViewResult> => {
+    /* The caller that already resolved the source hands it over: the read and
+     * the notification it acknowledges then name the SAME fact, and the
+     * repository is asked for its source once per navigation, not twice. */
+    const source = resolvedSource ?? await pullSource(ctx, repo)
+    if ("error" in source) return source.error
+    let response: Response
+    try {
+      response = await ctx.http(source.kind === "github" ? `${githubPullsRoot(ctx, source.repo)}/${number}` : `${landingsUrl(repo)}/${number}`)
+    } catch {
+      return `Pull request #${number} couldn't be read — the platform didn't answer.`
+    }
+    if (!response.ok) {
+      return readErrorMessage(response, `Pull request #${number} on ${repo} couldn't be read.`)
+    }
+    const raw: unknown = await response.json().catch(() => undefined)
+    const landing = parseLandingDetail(raw)
+    if (landing === null || landing.number !== number) {
+      return `Pull request #${number} on ${repo} answered with a payload this app couldn't read.`
+    }
+    // A GitHub source has no proxied native reviews to read (plue reviews
+    // belong to a landing, not to someone else's pull request), so the card
+    // offers no review verdicts for it. Its commits, checks and files come
+    // from the three reads the platform does proxy for them.
+    const githubHead = isRecord(raw) && isRecord(raw.head) && typeof raw.head.sha === "string" ? raw.head.sha : undefined
+    // The pull request's own commit count: what the Commits tab's rows are
+    // measured against, because the commit list alone cannot say it is whole.
+    const githubCommitCount = isRecord(raw) ? boundedCount(raw.commits) : undefined
+    const github = source.kind === "github"
+      ? await fetchGitHubTabs(source.repo, number, githubHead, githubCommitCount)
+      : undefined
+    const [reviews, checks, stack] = github !== undefined
+      ? [[], github.checks ?? [], github.tabs] as const
+      : await Promise.all([
+        fetchReviews(repo, number),
+        fetchChecks(repo, landing.changeIds.at(-1)),
+        fetchStack(repo, number)
+      ])
+    const payload: PrPayload = {
+      repo,
+      number,
+      /*
+       * `headCommit` is the head this card was built from — the head the
+       * person is looking at. A review typed against this card names it, so
+       * a force-push between the read and the verdict is refused instead of
+       * approving an unseen head (#4038).
+       */
+      ...(source.kind === "github" ? { sourceRepo: source.repo, ...(typeof githubHead === "string" && githubHead !== "" ? { headCommit: githubHead.toLowerCase() } : {}), ...(isRecord(raw) && typeof raw.draft === "boolean" ? { draft: raw.draft } : {}), ...(isRecord(raw) && Array.isArray(raw.labels) ? { labels: raw.labels.flatMap(label => isRecord(label) && typeof label.name === "string" ? [label.name] : []) } : {}), ...(isRecord(raw) && isRecord(raw.head) && typeof raw.head.ref === "string" ? { branch: raw.head.ref } : {}) } : {}),
+      title: landing.title,
+      state: stateOverride ?? landing.state,
+      author: landing.author,
+      prBody: landing.body,
+      reviews: [...reviews],
+      checks: [...checks],
+      ...(landing.targetBookmark !== null ? { baseBranch: landing.targetBookmark } : {}),
+      ...(landing.createdAt !== null ? { createdAt: landing.createdAt } : {}),
+      ...stack
+    }
+    const card: Card = {
+      id: `pr-${repo}-${number}`,
+      kind: "pr",
+      title: `#${number} ${landing.title} · ${repo}`,
+      status: "active",
+      createdAt: Date.now(),
+      ordinal: ctx.nextOrdinal(),
+      payload
+    }
+    return { card, ...readResult([
+      `${payload.repo} · #${payload.number} ${payload.title} · ${payload.state}`,
+      `Author: ${payload.author ?? "unknown"}`,
+      payload.prBody,
+      ...payload.reviews.map((review) => `Review by ${review.author ?? "unknown"} · ${review.type}:\n${review.reviewBody}`),
+      ...payload.checks.map((check) => `Check: ${check.context} · ${check.state}`),
+      ...(payload.commits ?? []).map((commit) => `Commit ${commit.changeId?.slice(0, 8) ?? ""}: ${commit.message.split("\n")[0] ?? ""}`),
+      ...(payload.files ?? []).map((file) => `File: ${file.path} +${file.additions ?? 0} −${file.deletions ?? 0}`)
+    ].join("\n")) }
+  }
+
+  const listView = preparedView(ctx, (repoArg?: string) => {
+    const target = resolveTargetRepo(ctx.store, repoArg)
+    if ("error" in target) return target.error
+    const repo = target.repo
+    return { id: `prs-${repo}`, title: `Pull requests · ${repo}`, pane: repo, read: async (): Promise<ViewResult> => {
+      const source = await pullSource(ctx, repo)
+      if ("error" in source) return source.error
+      let response: Response
+      try {
+        // One bounded page. Omitting `state` lists every lifecycle state —
+        // plue has no "all" filter value and 422s an unknown one.
+        response = await ctx.http(source.kind === "github" ? `${githubPullsRoot(ctx, source.repo)}?state=all&per_page=100` : `${landingsUrl(repo)}?limit=100`)
+      } catch {
+        return `Pull requests for ${repo} couldn't be listed — the platform didn't answer.`
+      }
+      if (!response.ok) {
+        return readRepositoryListError(response, `Pull requests for ${repo} couldn't be listed.`)
+      }
+      const body: unknown = await response.json().catch(() => undefined)
+      if (!Array.isArray(body)) {
+        return `Pull requests for ${repo} answered with a payload this app couldn't read.`
+      }
+      const landings = body
+        .map(parseLandingRow)
+        .filter((row): row is LandingRow => row !== null)
+        .map(({ number, title, state, author, updatedAt }) => ({
+          number,
+          title,
+          state,
+          author,
+          updatedAt
+        }))
+      const card: Card = {
+        id: `prs-${repo}`,
+        kind: "pr-list",
+        title: `Pull requests · ${repo}`,
+        status: "active",
+        createdAt: Date.now(),
+        ordinal: ctx.nextOrdinal(),
+        payload: { repo, landings }
+      }
+      return { card, ...readResult(landings.length === 0
+        ? `No pull requests in ${repo}.`
+        : `Pull requests · ${repo}\n${landings.map((landing) => `#${landing.number} ${landing.title} · ${landing.state}`).join("\n")}`) }
+    } }
+  })
+  const landingView = preparedView(ctx, (number: number, repoArg?: string, stateOverride?: string, source?: Exclude<PullSource, { readonly error: string }>) => {
+    const target = resolveTargetRepo(ctx.store, repoArg)
+    if ("error" in target) return target.error
+    const repo = target.repo
+    const id = `pr-${repo}-${number}`
+    return { id, title: `Pull request #${number} · ${repo}`, pane: repo,
+      key: JSON.stringify(["pr", repo, number, stateOverride, source]),
+      project: (card, replaced) => carrySelectedTab(card, ctx.store.collections.cards.get(replaced?.id ?? id), replaced),
+      read: () => readLanding(repo, number, stateOverride, source) }
+  })
+  const surfaceLanding = (repo: string, number: number, stateOverride?: string) => {
+    invalidatePreparedViews(ctx.store)
+    return landingView(number, repo, stateOverride)
+  }
+
+  const readLandingContext: LandingsSeam["readLandingContext"] = async (number, repoArg) => {
+    const target = resolveTargetRepo(ctx.store, repoArg)
+    if ("error" in target) return target.error
+    const repo = target.repo
+    const source = await pullSource(ctx, repo)
+    if ("error" in source) return source.error
+    if (source.kind === "github") {
+      const root = githubPullsRoot(ctx, source.repo)
+      let detail: Response, patch: Response
+      try {
+        detail = await ctx.http(`${root}/${number}`)
+      } catch {
+        return `Pull request #${number} on ${source.repo} couldn't be read from GitHub.`
+      }
+      if (!detail.ok) return readErrorMessage(detail, `Pull request #${number} on ${source.repo} couldn't be read from GitHub.`)
+      const body: unknown = await detail.json().catch(() => null)
+      const row = parseLandingRow(body)
+      if (row === null || !isRecord(body) || row.number !== number || !reviewable(row.state)) {
+        return `Pull request #${number} on ${source.repo} is unavailable for review.`
+      }
+      try {
+        patch = await ctx.http(`${root}/${number}/diff`)
+      } catch {
+        return `The diff for pull request #${number} on ${source.repo} couldn't be read.`
+      }
+      if (!patch.ok) return readErrorMessage(patch, `The diff for pull request #${number} on ${source.repo} couldn't be read.`)
+      const diff = await patch.text().catch(() => "")
+      if (!diff.trim()) return `The diff for pull request #${number} on ${source.repo} is empty.`
+      const base = isRecord(body.base) ? body.base.ref : undefined
+      return { repo, sourceRepo: source.repo, number, title: row.title, body: typeof body.body === "string" ? body.body : "",
+        state: row.state, author: row.author, ...(typeof base === "string" ? { baseBranch: base } : {}), diff }
+    }
+    let response: Response
+    try {
+      response = await ctx.http(`${landingsUrl(repo)}/${number}`)
+    } catch {
+      return `Pull request #${number} couldn't be read — the platform didn't answer.`
+    }
+    if (!response.ok) return readErrorMessage(response, `Pull request #${number} on ${repo} couldn't be read.`)
+    const landing = parseLandingDetail(await response.json().catch(() => undefined))
+    if (landing === null) return `Pull request #${number} on ${repo} answered with a payload this app couldn't read.`
+    const stack = await fetchStack(repo, number)
+    return {
+      repo, number, title: landing.title, body: landing.body, state: landing.state, author: landing.author,
+      ...(landing.targetBookmark === null ? {} : { baseBranch: landing.targetBookmark }),
+      ...(stack.commits === undefined ? {} : { commits: stack.commits }),
+      ...(stack.files === undefined ? {} : { files: stack.files })
+    }
+  }
+
+  /*
+   * The actual GitHub pull request review (#4038).
+   *
+   * A person's verdict on an imported pull request belongs to THAT pull
+   * request on GitHub, pinned to the head THEY READ — the head the mounted
+   * card was built from, not whatever GitHub holds at click time. A card is
+   * therefore required: without one nobody has read this pull request here,
+   * and there is no reviewed head to name.
+   *
+   * The door (POST /api/user/github-repos/{owner}/{repo}/pulls/{number}/reviews)
+   * is person-only and carries the caller's own GitHub credential: there is
+   * no actor field on this wire, so an agent's analysis can never ride in as
+   * someone's approval. It admits a DURABLE operation and answers 202; the
+   * verdict reaches GitHub ONCE, on the worker, behind the credential
+   * re-proof and the head fence, and is believed only on the receipt this
+   * seam then reads from the operation's own door.
+   *
+   * The key is the server's, derived from the actor and this intent, so
+   * submitting the same verdict again — after a closed browser, a reload or
+   * a restart — joins that one operation and READS it. `uncertain` is never
+   * retried here.
+   */
+  const reviewGitHubPull = async (
+    sourceRepo: string,
+    repo: string,
+    number: number,
+    type: "approve" | "request_changes" | "comment",
+    text: string,
+    ownerCurrent: () => boolean,
+    conversation: string | undefined
+  ): Promise<string | void> => {
+    /*
+     * The head the person SAW. It comes off the mounted card, so a remote
+     * head that moved after the read cannot be approved — the refusal below
+     * asks for a re-read instead.
+     */
+    const card = ctx.store.collections.cards.get(`pr-${repo}-${number}`)
+    const reviewed = card?.kind === "pr" && typeof card.payload.headCommit === "string"
+      ? card.payload.headCommit.toLowerCase()
+      : ""
+    if (reviewed === "") {
+      return `Read pull request #${number} on ${sourceRepo} before reviewing it, so the verdict names the head you read: /prs.view ${number}`
+    }
+    const root = githubPullsRoot(ctx, sourceRepo)
+    let detail: Response
+    try {
+      detail = await ctx.http(`${root}/${number}`)
+    } catch {
+      return `Pull request #${number} on ${sourceRepo} couldn't be read from GitHub before submitting, so nothing was posted.`
+    }
+    if (!detail.ok) return readErrorMessage(detail, `Pull request #${number} on ${sourceRepo} couldn't be read from GitHub before submitting.`)
+    const payload: unknown = await detail.json().catch(() => null)
+    const row = parseLandingRow(payload)
+    const head = isRecord(payload) && isRecord(payload.head) && typeof payload.head.sha === "string" ? payload.head.sha.toLowerCase() : ""
+    if (row === null || row.number !== number || head === "") {
+      return `Pull request #${number} on ${sourceRepo} is unavailable for review.`
+    }
+    if (!reviewable(row.state)) {
+      return `Pull request #${number} on ${sourceRepo} is ${row.state.toLowerCase()}, so it can no longer be reviewed.`
+    }
+    if (head !== reviewed) {
+      /*
+       * The pull request moved after the card was read. The verdict is about
+       * the code on screen, so nothing is submitted and nothing is
+       * retargeted: the person re-reads and reviews what is there now.
+       */
+      await surfaceLanding(repo, number)
+      return `Pull request #${number} on ${sourceRepo} moved to a new head commit after you read it, so nothing was posted. Read it again and review the new head.`
+    }
+    // The detail read was in flight too; re-check before the one write.
+    if (!ownerCurrent() || conversationTabIdOf(ctx.store.session()) !== conversation) {
+      return `The repository or account changed while the review on #${number} was being submitted, so nothing was posted.`
+    }
+    let response: Response
+    try {
+      response = await ctx.http(`${root}/${number}/reviews`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ event: GITHUB_REVIEW_EVENT[type], body: text, commit_id: reviewed })
+      })
+    } catch {
+      /*
+       * The admission's answer did not come back. The operation may exist, so
+       * this is never a second submit: pressing the same verdict again
+       * reaches the same server-derived key and joins it.
+       */
+      return `The review on #${number} wasn't acknowledged, so whether it was admitted is unknown. Read the pull request again before reviewing it — it may already carry this review.`
+    }
+    if (!response.ok) return readErrorMessage(response, `The review on #${number} couldn't be posted to GitHub.`)
+    const admitted: unknown = await response.json().catch(() => null)
+    const operation = isRecord(admitted) && typeof admitted.operationId === "string" && admitted.operationId !== ""
+      ? admitted.operationId
+      : null
+    if (operation === null) {
+      return `The review on #${number} was admitted, but this app couldn't read which request it is. Read the pull request again before reviewing it.`
+    }
+    const settled = await readGitHubPullReviewRequest(operation, number, sourceRepo, type, reviewed, ownerCurrent, conversation)
+    if (typeof settled === "string") return settled
+    const refreshError = await surfaceLanding(repo, number)
+    if (typeof refreshError !== "string") return
+    return `The review on #${number} was posted to ${sourceRepo}, but the pull request couldn't be re-read: ${refreshError}`
+  }
+
+  /*
+   * Reading what became of one admitted review. The operation lives in the
+   * server's durable store, so this survives a reload: the same verdict
+   * pressed again joins the same operation and lands back here.
+   *
+   * Only `completed` is a review. `uncertain` says the submit may have
+   * reached GitHub and is NEVER turned into a fresh retry; a still-running
+   * operation is reported as still running, which is true.
+   */
+  const readGitHubPullReviewRequest = async (
+    operation: string,
+    number: number,
+    sourceRepo: string,
+    type: "approve" | "request_changes" | "comment",
+    reviewed: string,
+    ownerCurrent: () => boolean,
+    conversation: string | undefined
+  ): Promise<string | void> => {
+    const door = `${ctx.baseUrl}/api/user/github-pull-review-requests/${encodeURIComponent(operation)}`
+    for (let attempt = 0; attempt < reviewRequestAttempts; attempt++) {
+      let answer: Response
+      try {
+        answer = await ctx.http(door)
+      } catch {
+        return `The review on #${number} was admitted, but this app couldn't read what became of it. Read the pull request again — it may already carry this review.`
+      }
+      if (!answer.ok) return readErrorMessage(answer, `The review on #${number} was admitted, but this app couldn't read what became of it.`)
+      if (!ownerCurrent() || conversationTabIdOf(ctx.store.session()) !== conversation) {
+        return `The repository or account changed while the review on #${number} was being submitted. The request is on the server; read the pull request again.`
+      }
+      const status: unknown = await answer.json().catch(() => null)
+      const state = isRecord(status) && typeof status.state === "string" ? status.state : ""
+      if (state === "") return `The review on #${number} was admitted, but this app couldn't read what became of it.`
+      if (!REVIEW_REQUEST_PENDING.has(state)) {
+        return githubPullReviewAnswer(number, sourceRepo, type, reviewed, state, status)
+      }
+      await new Promise<void>(resolve => setTimeout(resolve, reviewRequestPollMs))
+    }
+    return `The review on #${number} is still being submitted. Nothing was repeated; read the pull request again in a moment.`
+  }
+
+  return {
+    readLandingContext,
+    setTab: async (cardId, tab) => {
+      const card = ctx.store.collections.cards.get(cardId)
+      if (card?.kind !== "pr") return "That pull request card is no longer available."
+      await ctx.dispatch({ type: "card.updated", actor: ctx.actor(), id: cardId, patch: { payload: { tab } } }).isPersisted.promise
+    },
+    listLandings: Object.assign((repoArg?: string) => repositoryListRead(ctx, "prs", repoArg, "all", renderRepositoryForm, repo => listView(repo)), { preload: listView.preload }),
+
+    viewLanding: Object.assign(async (number: number, repoArg?: string) => {
+      const target = resolveTargetRepo(ctx.store, repoArg)
+      if ("error" in target) return target.error
+      /*
+       * Which notification this read answers is the source this repository
+       * reads pull requests from NOW: an import's #2 is GitHub's pull
+       * request, and the platform's own #2 is a different one under the same
+       * number. The source is resolved once, by the one canonical resolver,
+       * before the versions are captured, so the read and the receipt name
+       * the same fact. The account and the conversation it was resolved for
+       * are captured first: the source read is in flight, and its answer must
+       * not open a card, read, or acknowledge anything in a context the
+       * person has already left.
+       */
+      const ownerCurrent = captureCloudOwner(ctx, false)
+      const conversation = conversationTabIdOf(ctx.store.session())
+      const source = await pullSource(ctx, target.repo)
+      if (!ownerCurrent() || conversationTabIdOf(ctx.store.session()) !== conversation) return "The repository or account changed while its pull request was loading."
+      if ("error" in source) return source.error
+      return readRepositoryDetail(ctx, target.repo, "pr", number,
+        () => landingView(number, target.repo, undefined, source), source.kind === "github" ? "github" : "smithers")
+    }, {
+      /*
+       * Speculation has to prepare the read the activation will actually ask
+       * for. The read is keyed by the RESOLVED source, because the same
+       * number is a different pull request on an import and on the platform
+       * (#4036), so a preload that skips resolving it prepares a read under
+       * another key: the activation never found it and every rest gesture on
+       * a pull request affordance paid for a second whole landing read — the
+       * detail, its reviews, its retained changes and its diff — whose answer
+       * was thrown away. The source is resolved here exactly as the
+       * activation resolves it, under the same account and conversation
+       * guard, so ONE read feeds both and it is the read of the source the
+       * receipt will name. Speculation publishes and acknowledges nothing, so
+       * a context that has moved on simply prepares nothing.
+       */
+      preload: async (number: number, repoArg?: string) => {
+        const target = resolveTargetRepo(ctx.store, repoArg)
+        if ("error" in target) return
+        const ownerCurrent = captureCloudOwner(ctx, false)
+        const conversation = conversationTabIdOf(ctx.store.session())
+        const source = await pullSource(ctx, target.repo)
+        if (!ownerCurrent() || conversationTabIdOf(ctx.store.session()) !== conversation || "error" in source) return
+        await landingView.preload(number, target.repo, undefined, source)
+      }
+    }),
+
+    reviewLanding: async (number, type, body, repoArg) => {
+      const target = resolveTargetRepo(ctx.store, repoArg)
+      if ("error" in target) return target.error
+      const repo = target.repo
+      const text = body.trim()
+      if (type !== "approve" && text === "") {
+        // Plue 422s an empty body on these verbs; answer before the wire does.
+        const verb = type === "comment" ? "comment" : "request-changes"
+        return `A ${verb} review needs text: /prs.review ${number} ${verb} <why>`
+      }
+      /*
+       * Which pull request this verdict is about is the source this
+       * repository reads pull requests from NOW — the same canonical
+       * resolver the detail card read it with (#4036). An import's #2 is
+       * GitHub's pull request and the platform's own #2 is a different one
+       * under the same number, so a review that skips the resolution writes
+       * whichever subject the native door happens to hold (#4038). The
+       * account and the conversation are captured BEFORE the resolution: a
+       * verdict must never be submitted on behalf of a context the person
+       * has already left.
+       */
+      const ownerCurrent = captureCloudOwner(ctx, false)
+      const conversation = conversationTabIdOf(ctx.store.session())
+      const source = await pullSource(ctx, repo)
+      if (!ownerCurrent() || conversationTabIdOf(ctx.store.session()) !== conversation) {
+        return `The repository or account changed while the review on #${number} was being submitted, so nothing was posted.`
+      }
+      if ("error" in source) return source.error
+      if (source.kind === "github") {
+        return reviewGitHubPull(source.repo, repo, number, type, text, ownerCurrent, conversation)
+      }
+      const tip = await fetchTipCommit(repo, number)
+      if ("error" in tip) return tip.error
+      let response: Response
+      try {
+        response = await ctx.http(`${landingsUrl(repo)}/${number}/reviews`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ type, body: text, commit_id: tip.commitId })
+        })
+      } catch {
+        return `The review on #${number} couldn't be posted — the platform didn't answer.`
+      }
+      if (!response.ok) {
+        return readErrorMessage(response, `The review on #${number} couldn't be posted.`)
+      }
+      const refreshError = await surfaceLanding(repo, number)
+      if (typeof refreshError !== "string") return
+      return `The review on #${number} was posted, but the pull request couldn't be re-read: ${refreshError}`
+    }
+  }
+}

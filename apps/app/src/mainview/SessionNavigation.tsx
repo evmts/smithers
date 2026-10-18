@@ -70,6 +70,8 @@ export function SessionNavigation() {
           element: [...root.querySelectorAll<HTMLElement>('[aria-keyshortcuts]')].find(button => button.getAttribute('aria-keyshortcuts')?.toLowerCase().split(' ').includes(shortcut)), activate,
         })
         if ((event.metaKey || event.ctrlKey) && !event.altKey && key === 'k') {
+          const ask = !event.shiftKey && root.querySelector<HTMLButtonElement>('.repo-frame-ask-button')
+          if (ask) return { element: ask, activate: () => ask.click() }
           if (event.shiftKey) return action(() => {
             if (!controller.store.session().paletteOpen) rememberComposerFocus(doc)
             controller.runCommand('palette.open', controller.store.session().paletteLastQuery ?? '')

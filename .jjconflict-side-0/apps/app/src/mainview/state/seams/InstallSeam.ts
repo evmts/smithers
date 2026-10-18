@@ -1,0 +1,522 @@
+import { serviceFailureSentence } from "../ServiceFailureCopy"
+import { submitGitHubAppManifest } from "../../flows/cardActions"
+import type { CommandGesture } from "../../flows/CommandGesture"
+import type { SeamContext } from "./SeamContext"
+import { TOAST_SUPERSEDED, type FailureController } from "../controller/failures"
+import { MODEL_CREDENTIALS, ModelCredentialRequestSchema, ModelCredentialResultSchema } from "@smthrs/rpc/ConfiguredModel"
+import { actorSharedState } from "../ActorBindings"
+import { InstallErrorSchema, InstallModelSchema, InstallReceiptSchema, type InstallManifest, type InstallError, type InstallModel, type InstallStepId } from "./InstallModel"
+import { randomUuid } from "../../runtime/RandomUuid"
+import { Data } from "effect"
+
+/** T-APP-03: the shared /api/live transport supplies complete install projections after snapshots/deltas. */
+export interface InstallTopic {
+  readonly subscribe: (topic: "install", receive: (data: unknown) => void, refuse: (error: InstallError) => void) => () => void
+}
+export interface InstallSnapshot { readonly model?: InstallModel; readonly error?: InstallError; readonly seed?: true }
+export interface InstallSnapshots {
+  readonly get: () => InstallSnapshot
+  readonly subscribe: (listener: () => void) => () => void
+}
+export interface InstallSeamOptions {
+  readonly fastModelHandoff?: (url: string) => void
+  readonly handoff?: (receipt: InstallManifest) => void
+  readonly topic?: InstallTopic
+  readonly present?: (kind: "setup" | "settings") => void | Promise<void>
+  /**
+   * MOCK SEAM (state/seams/DesignWorld): while the seed stands in, a host with no install route (GET /api/install
+   * answers 404, or a page that is not an install's JSON) opens quietly. An install that exists and is unreachable
+   * or errors keeps its visible, retryable failure.
+   */
+  readonly quietWithoutInstall?: boolean
+  /** How often the card re-reads the install while the repository step waits on the App's installation on GitHub. */
+  readonly installPollMs?: number
+}
+export interface InstallAddress { readonly listen: "mac" | "network"; readonly bind: string; readonly origins: readonly string[] }
+export interface SetupInput { readonly step: InstallStepId; readonly owner?: string; readonly repository?: string; readonly bind?: string; readonly origins?: readonly string[] }
+export interface ModelKeyInput { readonly role: "fast" | "coding" | "jev"; readonly provider: string; readonly model?: string; readonly action?: "remove" }
+const error = (code: string, message: string, fault: InstallError["class"] = "infra"): InstallError => ({ code, class: fault, message })
+const permission = error("owner_required", "Owner access required", "permission")
+/** A fast model sign-in or sign-out that did not finish; the request fails as "Smithers sign-in unavailable". */
+class FastModelAccessFailed extends Data.TaggedError("FastModelAccessFailed")<{ readonly reason: "refused" | "expired" | "unreachable" }> {}
+/** GET /api/install found no install route on this host (see quietWithoutInstall). */
+export const NO_INSTALL = "no_install"
+/**
+ * The App step's lease (packages/backend github_app_manifest.go Begin: ten minutes, and the state cookie's Max-Age).
+ * GET /api/install serves no expiry and still serves a lapsed lease as running, so the request row carries its own,
+ * stamped before the POST leaves, never later than the host's. Delete it once the host serves a lapsed lease as failed.
+ */
+const APP_LEASE_MS = 10 * 60_000
+/**
+ * The repository step is blocked on "Install the GitHub App": the person installs it in another tab, on GitHub, and
+ * GitHub's return lands there. This card re-reads the install until the repository is listed, so it needs no reload.
+ */
+const awaitingAppInstall = (model?: InstallModel) =>
+  !!model && !model.repositories?.length && model.steps.find(step => step.id === "repository")?.state === "blocked"
+/**
+ * openai-chat has no default address (@smthrs/rpc MODEL_PROTOCOL_DEFAULTS), and the model host appends
+ * /v1/chat/completions to the base URL, so each chat provider's base URL omits /v1.
+ */
+const CHAT_BASE_URLS: Readonly<Record<string, string>> = {
+  OPENROUTER_API_KEY: "https://openrouter.ai/api", CEREBRAS_API_KEY: "https://api.cerebras.ai", AI_GATEWAY_API_KEY: "https://ai-gateway.vercel.sh"
+}
+
+export const createInstallSeam = (ctx: SeamContext, withToast: FailureController["withToast"], options: InstallSeamOptions = {}) => {
+  const shared = actorSharedState(ctx, "install", () => ({
+    snapshot: {} as InstallSnapshot, authoritative: undefined as InstallModel | undefined, listeners: new Set<() => void>(), pending: new Map<string, Promise<unknown>>(),
+    stop: undefined as (() => void) | undefined, disposed: false, generation: 0, installPoll: undefined as ReturnType<typeof setTimeout> | undefined,
+    fastGeneration: 0, cancel: new Set<() => void>(), tail: Promise.resolve() as Promise<unknown>, subscribing: false
+  }))
+  type SetupRequest = NonNullable<ReturnType<typeof ctx.store.session>["installRequests"]>[number]
+  const requests = () => (ctx.store.session().installRequests ?? []).filter(row => row.origin === ctx.baseUrl && row.body.fast_model === undefined)
+  const fastRequests = () => (ctx.store.session().installRequests ?? []).filter(row => row.origin === ctx.baseUrl && row.body.fast_model !== undefined)
+  const saveRequest = (row: SetupRequest) => ctx.dispatch({ type: "install.requests.changed", actor: ctx.actor(),
+    requests: [...(ctx.store.session().installRequests ?? []).filter(each => each.id !== row.id), row].slice(-32) }).isPersisted.promise
+  /** An App request whose lease has run out: its handoff would reach GitHub with a state the host no longer accepts. */
+  const lapsed = (row: SetupRequest) => row.step === "app_manifest" && !(Date.parse(row.expires_at ?? "") > Date.now())
+  const current = () => !shared.disposed && ctx.isDisposed?.() !== true
+  const publish = (snapshot: InstallSnapshot) => {
+    if (!current()) return
+    shared.snapshot = snapshot
+    for (const listener of shared.listeners) listener()
+  }
+  const snapshots: InstallSnapshots = {
+    get: () => shared.snapshot,
+    subscribe: listener => { shared.listeners.add(listener); return () => { shared.listeners.delete(listener) } }
+  }
+  /**
+   * Settings is owner-only. The `settings` flow presents its card before the install answers (the seed stands in on a
+   * host with no install), so an install that refuses the viewer takes that card back out of the conversation.
+   */
+  const withdrawSettings = () => {
+    if (current() && ctx.store.collections.cards.get("settings")?.kind === "settings") ctx.dispatch({ type: "card.removed", actor: ctx.actor(), id: "settings" })
+  }
+  const revoke = (failure: InstallError) => {
+    shared.generation++
+    shared.stop?.(); shared.stop = undefined
+    publish({ error: failure })
+    withdrawSettings()
+  }
+  /**
+   * The served install with this browser's own requests over it: a step it asked for reads running, an App lease
+   * that ran out reads failed (retryable, like the host's own failure), and the App's owner is the one it asked for.
+   */
+  const projection = (served: InstallModel): InstallModel => {
+    const active = requests().filter(row => (row.state === "requested" || row.state === "running") && !lapsed(row))
+    const app = requests().filter(row => row.step === "app_manifest").at(-1)
+    const previous = shared.snapshot.model?.address
+    const refused = previous?.change_failed
+    const sameAddress = previous?.bind === served.address.bind &&
+      JSON.stringify(previous.origins) === JSON.stringify(served.address.origins)
+    return { ...served,
+      address: refused && sameAddress && !served.address.change_failed
+        ? { ...served.address, change_failed: refused } : served.address,
+      github: served.github.owner === undefined && typeof app?.body.owner === "string" ? { ...served.github, owner: app.body.owner } : served.github,
+      steps: served.steps.map(step => step.state === "pending" && active.some(row => row.step === step.id) ? { ...step, state: "running" }
+        : step.id === "app_manifest" && step.state === "running" && app && lapsed(app) ? { ...step, state: "failed" } : step) }
+  }
+  const watchAppInstall = () => {
+    if (shared.installPoll !== undefined || !current() || !awaitingAppInstall(shared.snapshot.model)) return
+    shared.installPoll = setTimeout(() => {
+      shared.installPoll = undefined
+      if (current() && awaitingAppInstall(shared.snapshot.model)) void readInstall().finally(watchAppInstall)
+    }, options.installPollMs ?? 3000)
+  }
+  const receive = (data: unknown) => {
+    const parsed = InstallModelSchema.safeParse(data)
+    if (!parsed.success) { publish({ ...shared.snapshot, error: error("invalid_install", "Install response unavailable") }); return }
+    shared.generation++
+    shared.authoritative = parsed.data
+    publish({ model: projection(parsed.data) })
+    watchAppInstall()
+    if (parsed.data.github.signed_in && !shared.stop && !shared.subscribing && options.topic) {
+      shared.subscribing = true
+      try {
+        const stop = options.topic.subscribe("install", data => {
+          // The shared topic carries install facts. Viewer authority and App
+          // callback fixes belong to this browser's authenticated HTTP read.
+          receive(typeof data === "object" && data !== null ? { ...data,
+            can_assign_models: shared.authoritative?.can_assign_models,
+            callback_fixes: shared.authoritative?.callback_fixes } : data)
+        }, failure => {
+          shared.generation++
+          if (failure.class === "permission") revoke(failure)
+          else publish({ ...shared.snapshot, error: failure })
+        })
+        if (current() && shared.snapshot.model?.github.signed_in) shared.stop = stop
+        else stop()
+      } catch { publish({ ...shared.snapshot, error: error("subscription_failed", "Install updates unavailable") }) }
+      finally { shared.subscribing = false }
+    }
+  }
+  const request = async (path: string, init?: RequestInit): Promise<InstallModel | InstallError | ReturnType<typeof InstallReceiptSchema.parse>> => {
+    try {
+      const response = await ctx.http(`${ctx.baseUrl.replace(/\/$/, "")}/api${path}`, {
+        credentials: "same-origin", ...init,
+        headers: { ...(init?.body ? { "Content-Type": "application/json" } : {}), ...init?.headers }
+      })
+      const body: unknown = await response.json().catch(() => undefined)
+      // No install route on this host: a 404, or a page that is not JSON (the hosted site's HTML fallback).
+      if (response.status === 404 || (response.ok && body === undefined)) return error(NO_INSTALL, "No install on this host")
+      if (!response.ok) {
+        const parsed = InstallErrorSchema.safeParse(body)
+        return parsed.success ? parsed.data : error("invalid_error", "Install request failed")
+      }
+      if (path.startsWith("/install/setup/") && response.ok) {
+        const receipt = InstallReceiptSchema.safeParse(body)
+        if (receipt.success) return receipt.data
+      }
+      const parsed = InstallModelSchema.safeParse(body)
+      return parsed.success ? parsed.data : error("invalid_install", "Install response unavailable")
+    } catch { return error("unreachable", "Could not reach this install") }
+  }
+  const readInstall = async (): Promise<InstallError | undefined> => {
+    const generation = shared.generation
+    const result = await request("/install")
+    if (!current() || generation !== shared.generation) return
+    if ("class" in result) {
+      if (result.class === "permission") revoke(result)
+      else publish({ ...shared.snapshot, error: result })
+      return result
+    }
+    if ("steps" in result) receive(result)
+    else { const failure = error("invalid_install", "Install response unavailable"); publish({ ...shared.snapshot, error: failure }); return failure }
+  }
+  const background = (key: string, title: string, work: () => Promise<boolean | string | typeof TOAST_SUPERSEDED>, doneTitle = "Saved") => {
+    if (!current()) return "Install is closed"
+    if (!shared.pending.has(key)) {
+      // Register before work begins, including synchronous fake transports.
+      const job = Promise.resolve().then(() => current() ? withToast(`install:${key}`, title, doneTitle, work) : false)
+      shared.pending.set(key, job)
+      void job.catch(() => publish({ ...shared.snapshot, error: error("request_failed", "Install request failed") }))
+        .finally(() => { if (shared.pending.get(key) === job) shared.pending.delete(key) })
+    }
+    return { value: "Requested" }
+  }
+  const open = (kind: "setup" | "settings") => background(`open:${kind}`, kind === "setup" ? "Setup" : "Settings", async () => {
+    const failure = await readInstall()
+    // Only a host with no install route is quiet while the seed stands in; an unreachable or failing install stays visible.
+    if (failure && options.quietWithoutInstall && failure.code === NO_INSTALL) return TOAST_SUPERSEDED
+    if (failure) return serviceFailureSentence(failure)
+    if (!current() || !shared.snapshot.model) return false
+    if (kind === "settings" && !shared.snapshot.model.github.signed_in) {
+      publish({ error: permission }); withdrawSettings(); return serviceFailureSentence(permission)
+    }
+    await options.present?.(kind)
+    for (const row of fastRequests().filter(row => row.state === "requested" || row.state === "running")) {
+      // A request whose effect the install already serves is complete; replaying it would repeat the act.
+      const signedIn = shared.snapshot.model.fast_model?.signed_in
+      if (row.body.fast_model === "sign-in" ? signedIn === true : signedIn === false) await saveRequest({...row,state:"completed"})
+      else if (!(Date.parse(row.expires_at ?? "") > Date.now())) await saveRequest({...row,state:"failed"})
+      else fastModelAccess(row.body.fast_model === "sign-out" ? "sign-out" : "sign-in",row)
+    }
+    // Recovery restores state and never navigates: the GitHub handoff runs only on a person's press (setupStep).
+    for (const row of requests().filter(row => row.state === "requested" || row.state === "running")) {
+      const served = shared.authoritative?.steps.find(step => step.id === row.step)?.state
+      if (served === "done") await saveRequest({ ...row, state: "completed" })
+      else if (served === "running" && !lapsed(row)) { if (row.state === "requested") await saveRequest({ ...row, state: "running" }) }
+      // An unsent setup write resumes under its Idempotency-Key. An App request never replays: its answer is a handoff.
+      else if (served === "pending" && row.state === "requested" && row.step !== "app_manifest") write(`setup:${row.step}`, `/install/setup/${row.step}`, row.body, true, row)
+      // Failed, blocked, lapsed or no longer running on the install: dropped, so the step's own control starts again.
+      else await saveRequest({ ...row, state: "failed" })
+    }
+    if (!current() || !shared.authoritative) return false
+    publish({ ...shared.snapshot, model: projection(shared.authoritative) })
+    if (!shared.snapshot.model) return false
+    const running = shared.snapshot.model.steps.find(step => step.state === "running")
+    if (kind === "setup" && running) {
+      const outcome = await waitStep(running.id)
+      // A refused write of this browser's own ends the wait, but a request the host still runs stays.
+      const served = shared.authoritative?.steps.find(step => step.id === running.id)?.state
+      if (current()) for (const row of requests().filter(row => row.step === running.id && (row.state === "requested" || row.state === "running")))
+        if (outcome === true || served !== "running" || lapsed(row)) await saveRequest({ ...row, state: outcome === true ? "completed" : "failed" })
+      return outcome
+    }
+    return true
+  }, kind === "setup" ? "Setup" : "Settings")
+  /** GitHub's manifest form POST leaves the app, so it runs only as the direct result of a person's press. */
+  const handOff = (receipt: InstallManifest): InstallError | undefined => {
+    try { (options.handoff ?? submitGitHubAppManifest)(receipt); return undefined }
+    catch {
+      const failure = error("handoff_failed", "GitHub App handoff unavailable")
+      publish({ ...shared.snapshot, error: failure, model: shared.snapshot.model && { ...shared.snapshot.model,
+        steps: shared.snapshot.model.steps.map(step => step.id === "app_manifest" ? { ...step, state: "failed", error: failure } : step) } })
+      return failure
+    }
+  }
+  const write = (key: string, path: string, body: unknown, setup = false, recovered?: SetupRequest) => {
+    const model = shared.snapshot.model
+    if (!model || (!setup && !model.github.signed_in)) { publish({ error: permission }); return serviceFailureSentence(permission) }
+    if (setup && shared.pending.has(key)) return { value: "Requested" }
+    const stepId = (path.endsWith("/app") ? "app_manifest" : path.split("/").at(-1)) as InstallStepId
+    const row: SetupRequest | undefined = setup ? recovered ?? { id: randomUuid(), origin: ctx.baseUrl, step: stepId,
+      body: body as Record<string, unknown>, state: "requested",
+      ...(stepId === "app_manifest" ? { expires_at: new Date(Date.now() + APP_LEASE_MS).toISOString() } : {}) } : undefined
+    const saved = row ? saveRequest(row) : Promise.resolve()
+    if (setup) publish({ model: { ...model, steps: model.steps.map(step => step.id === stepId ? { id: step.id, state: "running" } : step) } })
+    return background(setup ? key : key + ":" + JSON.stringify(body), setup ? "Setup" : "Saving", async () => {
+      const prior = shared.tail
+      let release!: () => void
+      shared.tail = new Promise<void>(done => { release = done })
+      await prior
+      try {
+        await saved
+        if (!current()) return false
+        // Fence GETs begun before this write; their old model cannot suppress its response.
+        const generation = ++shared.generation
+        const result = await request(path, { method: path === "/install" ? "PUT" : "POST",
+          headers: { "Idempotency-Key": row?.id ?? randomUuid() }, body: JSON.stringify(body) })
+        if (!current()) return false
+        if ("class" in result) {
+          if (generation !== shared.generation) return setup ? await waitStep(stepId) : TOAST_SUPERSEDED
+          if (row) await saveRequest({ ...row, state: "failed" })
+          // A refused setup write fails its own step and keeps the card; a refused read or settings write takes it away.
+          if (result.class === "permission" && !setup) revoke(result)
+          else {
+            const model = shared.snapshot.model
+            const address = path === "/install" && typeof body === "object" && body !== null && "bind" in body && "origins" in body
+              ? body as Pick<InstallAddress, "bind" | "origins"> : undefined
+            const failedStep = setup ? (path.endsWith("/app") ? "app_manifest" : path.split("/").at(-1)) as InstallStepId : undefined
+            publish({ ...shared.snapshot, error: result, model: model && address ? { ...model, address: { ...model.address,
+              change_failed: { from: model.address.origins[0] ?? "", to: address.origins[0] ?? "", reason: result.message, bind: address.bind, origins: [...address.origins] } } }
+              : model && path === "/install" && typeof body === "object" && body !== null && "wiki_sync.obsidian" in body
+                ? { ...model, wiki_sync: { obsidian: { ...model.wiki_sync?.obsidian, path: model.wiki_sync?.obsidian?.path ?? "", error: result.message } } }
+              : model && failedStep ? { ...model, steps: model.steps.map(step => step.id === failedStep
+                ? { ...step, state: "failed", error: result } : step) } : model })
+          }
+          return serviceFailureSentence(result)
+        }
+        if ("steps" in result) {
+          if (generation === shared.generation) {
+            if (path === "/install" && typeof body === "object" && body !== null && "bind" in body && shared.snapshot.model) {
+              const { change_failed: _refusal, ...address } = shared.snapshot.model.address
+              shared.snapshot = { ...shared.snapshot, model: { ...shared.snapshot.model, address } }
+            }
+            receive(result)
+          }
+        } else {
+          if (row) await saveRequest({ ...row, state: "running", ...("action_url" in result ? { handoff: result } : {}) })
+          // The answer to the person's own press, unless the step finished meanwhile.
+          if ("action_url" in result && shared.snapshot.model?.steps.find(step => step.id === stepId)?.state !== "done") {
+            const failure = handOff(result)
+            if (failure) { if (row) await saveRequest({ ...row, state: "failed" }); return serviceFailureSentence(failure) }
+          }
+        }
+        release()
+        if (setup) {
+          const outcome = await waitStep(stepId)
+          if (current() && row) await saveRequest({ ...row, state: outcome === true ? "completed" : "failed" })
+          return outcome
+        }
+        return true
+      } finally { release() }
+    }, setup ? path.endsWith("/source") ? "Source ready" : path.endsWith("/machine") ? "Machine ready" : "Setup" : "Saved")
+  }
+  const waitStep = (id: InstallStepId): Promise<boolean | string> => new Promise(resolve => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const cancel = () => { cleanup(); resolve(false) }
+    const cleanup = () => { if (timer !== undefined) clearTimeout(timer); shared.listeners.delete(check); shared.cancel.delete(cancel) }
+    const poll = () => {
+      if (!current()) return cancel()
+      timer = setTimeout(() => {
+        timer = undefined
+        void readInstall().then(() => {
+          if (shared.listeners.has(check) && !shared.stop) poll()
+        })
+      }, 1000)
+    }
+    const check = () => {
+      const step = shared.snapshot.model?.steps.find(step => step.id === id)
+      if (!current()) return cancel()
+      if (shared.snapshot.error || step?.state === "failed" || step?.state === "blocked") {
+        cleanup(); resolve((shared.snapshot.error ? serviceFailureSentence(shared.snapshot.error) : undefined) ?? (step?.error ? serviceFailureSentence(step.error) : undefined) ?? step?.blocked?.line ?? "Setup failed")
+      } else if (step?.state === "done") {
+        cleanup(); resolve(true)
+      }
+    }
+    shared.listeners.add(check); shared.cancel.add(cancel); check()
+    if (shared.listeners.has(check) && !shared.stop) poll()
+  })
+  const setupStep = (input: SetupInput) => {
+    const model = shared.snapshot.model
+    const index = model?.steps.findIndex(step => step.id === input.step) ?? -1
+    const step = model?.steps[index]
+    if (!step || model?.steps.slice(0, index).some(step => step.state !== "done")) return "Complete the earlier step"
+    // A press while the host runs this browser's App attempt for the same owner continues it to GitHub.
+    const attempt = input.step === "app_manifest" && shared.authoritative?.steps[index]?.state === "running"
+      ? requests().filter(row => row.step === "app_manifest" && row.state === "running" && row.handoff && !lapsed(row)).at(-1) : undefined
+    if (attempt?.handoff && (input.owner === undefined || input.owner === attempt.body.owner)) {
+      const failure = handOff(attempt.handoff)
+      if (failure) { void saveRequest({ ...attempt, state: "failed" }); return serviceFailureSentence(failure) }
+      return { value: "Requested" }
+    }
+    // Any other press on the running App step starts again; write joins one already in flight and the host refuses a live lease.
+    // A done Address runs again while setup is unfinished (the install allows it); once setup is done Settings changes it.
+    const reopen = input.step === "address" && step.state === "done" && model.steps.some(step => step.state !== "done")
+    if ((step.state === "running" && input.step !== "app_manifest") || (step.state === "done" && !reopen)) return { value: "Requested" }
+    const id = input.step
+    const body = id === "address" ? { bind: input.bind, origins: input.origins }
+      : id === "app_manifest" ? { owner: input.owner }
+      : id === "repository" ? { repository: input.repository } : {}
+    if (id === "address" && (!input.bind || !input.origins?.length)) return "Enter bind and origins"
+    if (id === "app_manifest" && !input.owner) return "Enter owner"
+    if (id === "repository" && !input.repository) return "Choose repository"
+    return write(`setup:${id}`, `/install/setup/${id === "app_manifest" ? "app" : id}`, body, true)
+  }
+  const setInstallCapacity = (capacity: number) => {
+    const model = shared.snapshot.model
+    if (!Number.isInteger(capacity) || capacity < 1 || (model && capacity > model.this_mac.capacity)) return "Machines exceed this Mac"
+    return write("capacity", "/install", { capacity })
+  }
+  const setInstallDailyAdmissions = (todo_daily_admissions: number) => {
+    if (!Number.isSafeInteger(todo_daily_admissions) || todo_daily_admissions < 1) return "TODOs per day must be a positive integer"
+    return write("todo_daily_admissions", "/install", { todo_daily_admissions })
+  }
+  const setInstallParallel = (parallel: number) => {
+    if (!Number.isInteger(parallel) || parallel < 1 || parallel > 8) return "Choose 1 to 8 TODOs at once"
+    return write("parallel", "/install", { parallel })
+  }
+  // T-FLW-12: no seed or host-config mutation; an authoritative setting enables this door.
+  const setInstallObsidian = (path: string) => {
+    if (!shared.snapshot.model?.wiki_sync) return "Obsidian settings unavailable"
+    if (!path.startsWith("/") || path.includes("\0")) return "Choose an absolute folder path"
+    return write("obsidian", "/install", { "wiki_sync.obsidian": { path } })
+  }
+  const saveInstallModelKey = (input: ModelKeyInput, gesture?: CommandGesture) => {
+    let value = gesture?.takeWriteOnly?.("value")
+    gesture?.release()
+    if (!value && input.action !== "remove") return "Enter a key"
+    if (!shared.snapshot.model?.github.signed_in) { value = undefined; publish({ error: permission }); return serviceFailureSentence(permission) }
+    const name = input.role === "jev" ? "AI_GATEWAY_API_KEY" : input.provider.toUpperCase().replace(/[ -]/g, "_") + "_API_KEY"
+    const credential = MODEL_CREDENTIALS.find(credential => credential.name === name)
+    if (!credential) { value = undefined; return "Choose a provider" }
+    // One provider's key is one credential: a key another role already saved (the AI Gateway's, for coding and
+    // Decisions) is rotated, never enrolled twice.
+    const rotate = shared.snapshot.model.models.some(role => role.provider === input.provider && role.key === "saved")
+    if (shared.pending.has(`key:${input.role}`)) { value = undefined; return { value: "Requested" } }
+    const mark = (key: "validating" | "failed", reason?: string) => {
+      const model = shared.snapshot.model
+      if (model) publish({ ...shared.snapshot, model: { ...model, models: model.models.map(role => role.role !== input.role ? role
+        : { role: role.role, provider: input.provider, key, ...(reason === undefined ? {} : { error: reason }) }) } })
+    }
+    return background(`key:${input.role}`, input.action === "remove" ? "Removing key" : "Saving key", async () => {
+      if (!current()) { value = undefined; return false }
+      // A key is Validating while its one request is in flight; only the authoritative read below marks it Saved.
+      mark("validating")
+      // Values live only until the one HTTP request is constructed, never in install/card state.
+      const requestId = randomUuid()
+      const request = ModelCredentialRequestSchema.safeParse({ requestId, name: credential.name, ...(input.action === "remove" ? {} : { value }),
+        ...(input.action === "remove" ? { action: "remove" } : rotate ? { action: "rotate" } : { action: "enroll", origin: credential.origins[0] }) })
+      value = undefined
+      if (!request.success) { publish({ ...shared.snapshot, error: error("invalid_key", "Key refused", "user") }); return "Key refused" }
+      const body = JSON.stringify(request.data)
+      if ("value" in request.data) request.data.value = ""
+      try {
+        const response = await ctx.http(`${ctx.baseUrl.replace(/\/$/, "")}/api/model/credential`, {
+          method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", "Idempotency-Key": requestId }, body
+        })
+        if (!current()) return false
+        const payload: unknown = await response.json().catch(() => undefined)
+        const receipt = ModelCredentialResultSchema.safeParse(payload)
+        if (!response.ok || !receipt.success || !receipt.data.ok || receipt.data.credential.name !== credential.name || receipt.data.credential.present !== (input.action !== "remove")) {
+          const parsed = InstallErrorSchema.safeParse(payload)
+          // The provider's own refusal, when the host relays one, is the reason the role shows.
+          const refusal = receipt.success && !receipt.data.ok && receipt.data.failure.code === "host_refused" ? receipt.data.failure.refusal : null
+          const failure = parsed.success ? parsed.data : receipt.success && !receipt.data.ok
+            ? error(receipt.data.failure.code, refusal ?? "Key refused", receipt.data.fault === "infra" ? "infra" : "user")
+            : error("key_refused", "Key refused")
+          // A refused key fails its own role, permission included: the rest of the card stays.
+          mark("failed", serviceFailureSentence(failure)); publish({ ...shared.snapshot, error: failure })
+          return serviceFailureSentence(failure)
+        }
+        if (input.action !== "remove" && input.role === "coding" && input.model) {
+          const protocol = input.provider.toLowerCase() === "anthropic" ? "anthropic-messages"
+            : input.provider.toLowerCase() === "openai" ? "openai-responses" : "openai-chat"
+          const baseUrl = protocol === "openai-chat" ? CHAT_BASE_URLS[credential.name] : undefined
+          const response = await ctx.http(`${ctx.baseUrl.replace(/\/$/, "")}/api/model/default`, {
+            method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json", "Idempotency-Key": randomUuid() },
+            body: JSON.stringify({ model: { protocol, modelId: input.model, credential: credential.name, ...(baseUrl ? { baseUrl } : {}) } })
+          })
+          if (!current()) return false
+          const payload: unknown = await response.json().catch(() => undefined)
+          if (!response.ok || typeof payload !== "object" || payload === null || !("ok" in payload) || payload.ok !== true) {
+            const parsed = InstallErrorSchema.safeParse(payload)
+            const failure = parsed.success ? parsed.data : error("model_refused", "Could not save model")
+            mark("failed", serviceFailureSentence(failure)); publish({ ...shared.snapshot, error: failure })
+            return serviceFailureSentence(failure)
+          }
+        }
+        // Only the authoritative read can mark a key saved. Credential responses are never retained.
+        const failure = await readInstall()
+        return (failure ? serviceFailureSentence(failure) : undefined) ?? true
+      } catch { const failure = error("unreachable", "Could not save key"); mark("failed", serviceFailureSentence(failure)); publish({ ...shared.snapshot, error: failure }); return serviceFailureSentence(failure) }
+      finally { value = undefined }
+    })
+  }
+  const fastModelAccess = (action: "sign-in" | "sign-out", recovered?: SetupRequest) => {
+    if (!shared.snapshot.model?.github.signed_in) return permission.message
+    const key = `fast-model:${action}`
+    const existing = recovered ?? fastRequests().filter(row => row.body.fast_model === action && row.state === "running" && Date.parse(row.expires_at ?? "") > Date.now()).at(-1)
+    const handoff = (url: string) => (options.fastModelHandoff ?? (url => window.location.assign(url)))(url)
+    if (shared.pending.has(key)) {
+      if (!recovered && typeof existing?.body.url === "string") handoff(existing.body.url)
+      return { value: "Requested" }
+    }
+    const row: SetupRequest = existing ?? {id:randomUuid(),origin:ctx.baseUrl,step:"models",body:{fast_model:action},state:"requested",expires_at:new Date(Date.now()+APP_LEASE_MS).toISOString()}
+    const superseded = fastRequests().filter(each => each.body.fast_model !== action && (each.state === "requested" || each.state === "running"))
+    const saved = Promise.all([...superseded.map(each => saveRequest({...each,state:"failed"})), saveRequest(row)])
+    const generation = ++shared.fastGeneration
+    const active = () => current() && generation === shared.fastGeneration
+    return background(key, "Fast model", async () => {
+      try {
+        await saved
+        if (!active()) return false
+        let target = typeof row.body.url === "string" ? row.body.url : undefined
+        if (!target || action === "sign-out") {
+          const response = await ctx.http(`${ctx.baseUrl.replace(/\/$/, "")}/api/model/fast${action === "sign-in" ? "/sign-in" : ""}`, {
+            method: action === "sign-in" ? "POST" : "DELETE", credentials:"same-origin", headers:{"Content-Type":"application/json","Idempotency-Key":row.id}
+          })
+          if (!active()) return false
+          const data: unknown = await response.json().catch(() => undefined)
+          if (!response.ok || typeof data !== "object" || data === null) throw new FastModelAccessFailed({ reason: "refused" })
+          if (action === "sign-in") {
+            if (!("url" in data) || typeof data.url !== "string") throw new FastModelAccessFailed({ reason: "refused" })
+            const url = new URL(data.url)
+            if (url.protocol !== "https:" && !(url.protocol === "http:" && ["127.0.0.1","localhost"].includes(url.hostname))) throw new FastModelAccessFailed({ reason: "refused" })
+            target = url.href
+            await saveRequest({...row,state:"running",body:{...row.body,url:target}})
+          } else if (!("ok" in data) || data.ok !== true) throw new FastModelAccessFailed({ reason: "refused" })
+        }
+        if (action === "sign-in") {
+          if (!recovered) handoff(target!)
+          while (active() && !shared.snapshot.model?.fast_model?.signed_in) {
+            if (!(Date.parse(row.expires_at ?? "") > Date.now())) throw new FastModelAccessFailed({ reason: "expired" })
+            await new Promise(resolve => setTimeout(resolve,1000))
+            if (!active()) return false
+            const failure = await readInstall(); if (failure) throw new FastModelAccessFailed({ reason: "unreachable" })
+          }
+        } else { const failure = await readInstall(); if (failure) throw new FastModelAccessFailed({ reason: "unreachable" }) }
+        if (!active()) return false
+        await saveRequest({...row,state:"completed"})
+        return true
+      } catch {
+        if (!active()) return false
+        await saveRequest({...row,state:"failed"})
+        return "Smithers sign-in unavailable"
+      }
+    })
+  }
+
+ return {
+    fastModelAccess, snapshots, readInstall, showSetup: () => open("setup"), showSettings: () => open("settings"),
+    setupStep, setInstallAddress: (input: InstallAddress) => write("address", "/install", { bind: input.bind, origins: input.origins }),
+    setInstallPreapproveDefault: (todo_preapprove_default: boolean) => write("todo_preapprove_default", "/install", { todo_preapprove_default }),
+    setInstallCapacity, setInstallDailyAdmissions, setInstallParallel, setInstallObsidian, saveInstallModelKey,
+    dispose: () => { shared.disposed = true; shared.generation++; shared.stop?.(); shared.stop = undefined
+      if (shared.installPoll !== undefined) clearTimeout(shared.installPoll)
+      shared.installPoll = undefined
+      for (const cancel of shared.cancel) cancel()
+      shared.listeners.clear() }
+  }
+}
+export type InstallSeam = ReturnType<typeof createInstallSeam>
