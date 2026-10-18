@@ -103,7 +103,7 @@ export function checkAssetHeaders(root) {
   return failures
 }
 
-/** The static landing carries exactly one action and its two reference links. */
+/** The static landing carries exactly one action and its Start app, Docs and Source buttons. */
 export function checkLandingActions(root) {
   const landing = join(root, "index.html")
   if (!existsSync(landing)) return ["index.html: missing from the build"]
@@ -112,8 +112,10 @@ export function checkLandingActions(root) {
   const open = /<form\b[^>]*class="repository-launcher-open"/.test(html)
   if (install === open) return ["index.html: render exactly one install or open action"]
   const failures = []
-  if (!html.includes('href="/docs/installation/"') || !html.includes('href="https://github.com/smithersai/smithers"')) failures.push("index.html: missing Docs or Source")
-  if (install && (!html.includes("npm i -g smthrs@next") || !html.includes("packages/smithers/docs/guides/change-code.md"))) failures.push("index.html: missing install command or coding guide")
+  for (const href of ["/?tutorial", "/docs/installation/", "https://github.com/smithersai/smithers"]) {
+    if (!new RegExp(`<a class="landing-button[^"]*" href="${href.replace(/[?.]/g, "\\$&")}"`).test(html)) failures.push(`index.html: missing the ${href} button`)
+  }
+  if (install && !/<span id="run-command">npx smthrs@next [^<]+<\/span>/.test(html)) failures.push("index.html: missing the npx run command")
   return failures
 }
 

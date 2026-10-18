@@ -1,6 +1,7 @@
 import { expect,test } from "@playwright/test"
 import { identityRoute, signedOutVisitor } from "../playwright/identity"
 import { fillComposer } from "../playwright/composer"
+import { landingCopy } from "../../../site/src/data/landingCopy"
 
 async function hostedAccount(page: import("@playwright/test").Page) {
   await page.route("**/api/**", route => route.fulfill({ status: 404, json: { code: "not_found" } }))
@@ -140,7 +141,7 @@ test("the signed-out root keeps its install action while identity is unresolved"
   try {
     await page.goto("/", { waitUntil: "domcontentloaded" })
     await expect(page.getByRole("button", { name: "Copy", exact: true })).toBeVisible()
-    await expect(page.locator(".landing-command")).toContainText("npm i -g smthrs@next")
+    await expect(page.locator(".landing-command")).toContainText(landingCopy.commands.npx)
     await expect(page.getByTestId("composer-input")).toHaveCount(0)
     await expect(page).toHaveURL("/")
   } finally { release() }
@@ -155,7 +156,7 @@ for (const failure of ["chunk", "page"] as const) {
     await page.goto("/?tutorial")
     await expect.poll(() => aborted).toBeGreaterThan(0)
     await expect(page.getByRole("button", { name: "Copy", exact: true })).toBeVisible()
-    await expect(page.locator(".landing-command")).toContainText("npm i -g smthrs@next")
+    await expect(page.locator(".landing-command")).toContainText(landingCopy.commands.npx)
     await expect(page.getByRole("link", { name: "Sign in", exact: true })).toBeVisible()
     await expect(page.locator(".app-shell")).toHaveCount(0)
     await page.reload()
