@@ -2026,16 +2026,24 @@ describe("AgentSession", () => {
     expect(result).toBe("accepted")
   })
 
-  it.each<{ delegate: string; timedOut: boolean; permanent?: boolean; changed?: boolean }>([
+  it.each<{
+    delegate: string
+    timedOut: boolean
+    permanent?: boolean
+    changed?: boolean
+    sibling?: "before" | "after"
+  }>([
     { delegate: "test/Module", timedOut: false },
     { delegate: "test/OutsideEnvelope", timedOut: false },
     { delegate: "test/Module", timedOut: true },
     { delegate: "test/OutsideEnvelope", timedOut: true },
     { delegate: "test/Module", timedOut: true, changed: true },
-    { delegate: "test/Module", timedOut: false, permanent: true }
+    { delegate: "test/Module", timedOut: false, permanent: true },
+    { delegate: "test/Module", timedOut: false, sibling: "before" },
+    { delegate: "test/Module", timedOut: false, sibling: "after" }
   ])(
-    "checks module delegation to $delegate after catalog timeout: $timedOut",
-    async ({ delegate, timedOut, permanent = false, changed = false }) => {
+    "checks module delegation to $delegate after catalog timeout: $timedOut (sibling: $sibling)",
+    async ({ delegate, timedOut, permanent = false, changed = false, sibling }) => {
       const runnable = delegate === "test/Module" && !changed && !permanent
       const seen: Array<unknown> = []
       const Read = Action.make("test/ModuleRead", {
@@ -2074,6 +2082,17 @@ describe("AgentSession", () => {
       }
       let loads = 0
       const entries = timedOut || permanent ? [] : [executable]
+      if (sibling !== undefined) {
+        const other = {
+          ...executable,
+          descriptor: new Descriptor.FlowDescriptor({
+            ...moduleDescriptor,
+            body: new Descriptor.BodyRefModule({ path: "/flows/agents/module/flow.ts", contentDigest: "d".repeat(64) })
+          })
+        }
+        if (sibling === "before") entries.unshift(other)
+        else entries.push(other)
+      }
       const refusals = timedOut || permanent ?
         [
           new Executable.ExecutableError({

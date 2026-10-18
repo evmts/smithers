@@ -197,6 +197,8 @@ export interface HostState {
    * awaited one would hang the command instead of answering it.
    */
   catalog: Executable.Catalog | undefined
+  /** Approved historical modules available for replay, never for new admission. */
+  replayDescriptors?: ReadonlySet<Descriptor.FlowDescriptor>
   /**
    * The workspace revision the catalog above was read out of, or `undefined`
    * when this host cannot name one.
@@ -233,8 +235,15 @@ export interface HostState {
     | {
       readonly registry: Registry.Registry
       readonly refresh: Executable.Refresh | undefined
-      /** Joins this run's local module handlers before replacing its source registration. */
-      readonly prepareAdoption?: ((flowId: string, runId: string) => Effect.Effect<void>) | undefined
+      /**
+       * Joins this run's local module handlers before replacing its source.
+       * The caller supplies its identity without reopening its control transaction.
+       */
+      readonly prepareAdoption?:
+        | (
+          (flowId: string, runId: string, executionDigest: string | undefined) => Effect.Effect<void>
+        )
+        | undefined
       /**
        * Runs `effect` in the host's transaction-free context. A resume
        * adopts inside the control mutation's SQL transaction, and a body
@@ -916,7 +925,10 @@ export const make = (
     // Read at LIST time, which the control runtime performs per plan: a host
     // that has since built its catalog offers the hook, and one that never
     // builds a catalog keeps planning exactly as it did, with no nodes.
-    const executable = host.catalog?.executables.find((entry) => entry.descriptor.name === descriptor.name)
+    const executable = host.catalog?.executables.find((entry) =>
+      entry.descriptor.name === descriptor.name &&
+      Descriptor.executionDigest(entry.descriptor) === Descriptor.executionDigest(descriptor)
+    )
     // A module whose delegate this host never registered is driven by the host
     // program that registers it: it plans with no nodes and is accepted pending,
     // where every other refusal (an unreadable body) is refused before admission.
@@ -1109,7 +1121,16 @@ export const make = (
               if (Option.isNone(found)) return undefined
               // Metadata refresh is safe for active callbacks; rebuilding their
               // shared module scope requires every other root to be terminal.
-              const loaded = host.catalog?.executables.find((entry) => entry.descriptor.name === flowId)
+              const persisted = yield* controlSql<{ readonly stateJson: string }>`
+                SELECT state_json AS "stateJson" FROM flows_runs WHERE run_id = ${runId}
+              `
+              const identity = persisted[0] === undefined ?
+                undefined :
+                (yield* Effect.try(() => JSON.parse(persisted[0]!.stateJson) as { executionDigest?: string }))
+                  .executionDigest
+              const loaded = host.catalog?.executables.find((entry) =>
+                entry.descriptor.name === flowId && Descriptor.executionDigest(entry.descriptor) === identity
+              )
               if (found.value.body._tag !== "Module") return durableFlow(found.value, root, host)
               if (
                 loaded !== undefined &&
@@ -1127,7 +1148,7 @@ export const make = (
                 if (summary.flowId === flowId) return undefined
               }
               const descriptor = yield* executor.onHost(Effect.gen(function*() {
-                yield* executor.prepareAdoption?.(flowId, runId) ?? Effect.void
+                yield* executor.prepareAdoption?.(flowId, runId, identity) ?? Effect.void
                 // A module's body is the executable the catalog holds, so the
                 // catalog is rebuilt from the bytes on disk. The operator asked
                 // for exactly this code, which is why an adopt may import it
@@ -1172,9 +1193,13 @@ export const make = (
                   // the run it authorizes is then refused `execution_changed`
                   // against the file on disk. Every replacement plan carries
                   // the same stale digest, so the refusal never clears.
-                  const rebuilt = new Map(
-                    (host.catalog?.executables ?? []).map((entry) => [entry.descriptor.name, entry.descriptor] as const)
-                  )
+                  // Fresh entries precede replay-only snapshots of the same name.
+                  const rebuilt = new Map<string, Descriptor.FlowDescriptor>()
+                  for (const entry of host.catalog?.executables ?? []) {
+                    if (!host.replayDescriptors?.has(entry.descriptor) && !rebuilt.has(entry.descriptor.name)) {
+                      rebuilt.set(entry.descriptor.name, entry.descriptor)
+                    }
+                  }
                   const named = new Set(discovered.map((flow) => flow.name))
                   return [
                     ...systemFlows,
@@ -1261,6 +1286,7 @@ export const make = (
     } = options
     // Observing commands keep discovery metadata-only. A run-capable local
     // host registers file modules after its engine and agent services exist.
+    const adoptedAdapters = new Map<string, string>()
     const modules = suppliedModules ?? (options.startsRuns === false && options.plansFlows !== true
       ? undefined
       : Layer.unwrap(Effect.gen(function*() {
@@ -1323,9 +1349,12 @@ export const make = (
               // the same registered adapter. Its durable child is authoritative
               // on restart; deriving the tag from that newer plan loses replay.
               if (retained !== undefined && /^[a-f0-9]{64}$/.test(retained)) {
-                adapterDigests.set(summary.flowId, retained)
-              } else if (!adapterDigests.has(summary.flowId)) {
-                adapterDigests.set(summary.flowId, card.executionDigest)
+                adapterDigests.set(`${summary.flowId}/${summary.executionDigest ?? card.executionDigest}`, retained)
+              } else if (!adapterDigests.has(`${summary.flowId}/${summary.executionDigest ?? card.executionDigest}`)) {
+                adapterDigests.set(
+                  `${summary.flowId}/${summary.executionDigest ?? card.executionDigest}`,
+                  card.executionDigest
+                )
               }
             }
           }
@@ -1341,16 +1370,23 @@ export const make = (
             // the pre-claim CodeDrift check reports the refusal.
             Effect.result
           )
-          if (restored._tag === "Success") pinned.set(restored.success.name, restored.success)
+          if (restored._tag === "Success") {
+            pinned.set(`${restored.success.name}/${summary.executionDigest}`, restored.success)
+          }
         }
+        engine.host.replayDescriptors = new Set(pinned.values())
         const listing = Registry.Registry.of({
           ...registryService,
           list: () =>
             registryService.list().pipe(Effect.map((descriptors) => {
-              const named = new Set(descriptors.map((entry) => entry.name))
+              const identities = new Set(
+                descriptors.map((entry) => `${entry.name}/${Descriptor.executionDigest(entry)}`)
+              )
               return [
-                ...descriptors.map((entry) => pinned.get(entry.name) ?? entry),
-                ...[...pinned.values()].filter((entry) => !named.has(entry.name))
+                ...descriptors,
+                ...[...pinned.values()].filter((entry) =>
+                  !identities.has(`${entry.name}/${Descriptor.executionDigest(entry)}`)
+                )
               ]
             }))
         })
@@ -1358,13 +1394,11 @@ export const make = (
           delegates: [],
           snapshots,
           adapterExecutionDigest: (descriptor) => {
-            // A fresh host has no persisted plan yet. Keep the first adapter
-            // identity when this same host later adopts edited code, just as
-            // the plan rows above restore it after a restart. Changing it would
-            // rebind the module's durable child to a different flow identity.
-            const original = adapterDigests.get(descriptor.name) ?? Descriptor.executionDigest(descriptor)
-            if (original !== undefined) adapterDigests.set(descriptor.name, original)
-            return original
+            // New sources get their own adapter. Replay and explicit adoption
+            // retain only the adapter recorded for that execution identity.
+            const digest = Descriptor.executionDigest(descriptor)
+            const identity = `${descriptor.name}/${digest}`
+            return adoptedAdapters.get(identity) ?? adapterDigests.get(identity) ?? digest
           },
           ...(options.executionRoot === undefined || resolve(options.executionRoot) === resolve(root)
             ? {}
@@ -1813,7 +1847,7 @@ export const make = (
           refresh: registrations === undefined
             ? undefined
             : Option.getOrUndefined(Context.getOption(Executable.Refresh)(registrations)),
-          prepareAdoption: (flowId, runId) =>
+          prepareAdoption: (flowId, runId, executionDigest) =>
             Effect.gen(function*() {
               const executions = yield* nativeSql<{ readonly executionId: string }>`
               WITH RECURSIVE children(child_id, parent_id) AS (
@@ -1824,7 +1858,21 @@ export const make = (
                 UNION SELECT children.child_id FROM children JOIN owned ON children.parent_id = owned.run_id
               ) SELECT run_id AS "executionId" FROM owned
             `.pipe(Effect.orDie)
-              const executable = engine.host.catalog?.executables.find((entry) => entry.descriptor.name === flowId)
+              const executable = engine.host.catalog?.executables.find((entry) =>
+                entry.descriptor.name === flowId && Descriptor.executionDigest(entry.descriptor) === executionDigest
+              )
+              const prefix = "registry/entry/"
+              const suffix = `/${flowId}`
+              const tag = executable?.flow._tag
+              if (tag?.startsWith(prefix) && tag.endsWith(suffix)) {
+                const current = yield* engine.host.executor!.registry.getOption(flowId)
+                if (Option.isSome(current)) {
+                  adoptedAdapters.set(
+                    `${flowId}/${Descriptor.executionDigest(current.value)}`,
+                    tag.slice(prefix.length, -suffix.length)
+                  )
+                }
+              }
               if (executable?.quiesce !== undefined) {
                 yield* executable.quiesce(executions.map((row) => row.executionId))
               }

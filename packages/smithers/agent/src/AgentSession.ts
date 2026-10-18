@@ -3625,7 +3625,9 @@ export const make = (
     ): Effect.Effect<Executable.Executable, LaunchFailed> =>
       Effect.gen(function*() {
         const catalog = Option.getOrUndefined(executables)
-        let executable = catalog?.executables.find((entry) => entry.descriptor.name === card.flowId)
+        let executable = catalog?.executables.find((entry) =>
+          entry.descriptor.name === card.flowId && Descriptor.executionDigest(entry.descriptor) === executionDigest
+        )
         if (
           executable === undefined && catalog?.load !== undefined &&
           catalog.refused.some((entry) => entry.flow === card.flowId && entry.code === "load_timeout")
