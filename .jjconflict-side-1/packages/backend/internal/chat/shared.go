@@ -1,0 +1,474 @@
+package chat
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"math"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+)
+
+// SharedTurn is a public projection, not a journal capability. Private request
+// context, writer tokens, approvals and the member's queue never enter it.
+type SharedContextPreflight struct {
+	Context    []json.RawMessage `json:"context"`
+	Candidates []json.RawMessage `json:"candidates"`
+	Model      string            `json:"model"`
+	DurationMs float64           `json:"durationMs"`
+}
+
+type SharedTurn struct {
+	*ExternalDraft
+	Subject         *SubjectEntry           `json:"subject,omitempty"`
+	EntrySequences  map[string]int64        `json:"entry_sequences,omitempty"`
+	Summary         *string                 `json:"summary,omitempty"`
+	SummaryRevision int64                   `json:"summary_rev,omitempty"`
+	Sequence        int64                   `json:"sequence"`
+	ID              string                  `json:"id"`
+	Title           string                  `json:"title"`
+	Tone            string                  `json:"tone"`
+	Author          int64                   `json:"author"`
+	AuthorLogin     string                  `json:"authorLogin"`
+	AuthorName      string                  `json:"authorName,omitempty"`
+	RunID           string                  `json:"runId"`
+	Prompt          string                  `json:"prompt"`
+	State           State                   `json:"state"`
+	Frames          []json.RawMessage       `json:"frames"`
+	Context         *[]json.RawMessage      `json:"context,omitempty"`
+	Preflight       *SharedContextPreflight `json:"preflight,omitempty"`
+	StartedAt       int64                   `json:"startedAt,omitempty"`
+	FinishedAt      int64                   `json:"finishedAt,omitempty"`
+	externalActor   map[string]any
+	externalAt      int64
+	externalOrdinal int
+}
+type SharedConversation struct {
+	ID      string       `json:"id"`
+	Entries []SharedTurn `json:"entries"`
+}
+
+// SharedEntries rereads active install membership and the committed journal in
+// one snapshot. Branch access is resolved by the HTTP/live composition before
+// this read. Legacy private rows are never promoted into the shared transcript.
+func (s *Store) SharedEntries(ctx context.Context, scope Scope, branch string, trace ...bool) (SharedConversation, error) {
+	if scope.RepositoryID == 0 && branch == "main" {
+		branch = accountConversationID(scope.UserID)
+	}
+	if scope.RepositoryID < 0 || scope.UserID <= 0 || !validIdentity(branch) {
+		return SharedConversation{ID: branch, Entries: []SharedTurn{}}, ErrInvalidRequest
+	}
+	if scope.RepositoryID == 0 && branch != accountConversationID(scope.UserID) {
+		return SharedConversation{ID: branch, Entries: []SharedTurn{}}, ErrInvalidRequest
+	}
+	// The baseline also feeds model context and older clients. Only the chat
+	// viewer opts into progress; membership still determines whose trace it reads.
+	return s.sharedEntries(ctx, scope, branch, len(trace) > 0 && trace[0])
+}
+
+// activeReader rechecks, inside the caller's snapshot, that the scope still
+// reads conversations: an active account for a private chat, an active member
+// of the installed repository for a shared one.
+func activeReader(ctx context.Context, tx pgx.Tx, scope Scope) error {
+	var active bool
+	if scope.RepositoryID == 0 {
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND username=$2 AND NOT prohibit_login)`, scope.UserID, scope.Owner).Scan(&active); err != nil {
+			return err
+		}
+	} else {
+		installedID, err := db.New(tx).InstallRepositoryID(ctx)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrForbidden
+		}
+		if err != nil {
+			return err
+		}
+		if installedID != scope.RepositoryID {
+			return ErrForbidden
+		}
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM collaborators c JOIN users u ON u.id=c.user_id WHERE c.repository_id=$1 AND c.user_id=$2 AND c.suspended_at IS NULL AND NOT u.prohibit_login)`, scope.RepositoryID, scope.UserID).Scan(&active); err != nil {
+			return err
+		}
+	}
+	if !active {
+		return ErrForbidden
+	}
+	return nil
+}
+
+// sharedEntries projects the turns stored under one conversation key: a live
+// branch key, or an archived chat's key once its archive row admitted the reader.
+func (s *Store) sharedEntries(ctx context.Context, scope Scope, branch string, withTrace bool) (SharedConversation, error) {
+	result := SharedConversation{ID: branch, Entries: []SharedTurn{}}
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return result, err
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if err = activeReader(ctx, tx, scope); err != nil {
+		return result, err
+	}
+	rows, err := tx.Query(ctx, `SELECT `+turnColumns+` FROM chat_turns WHERE repository_id=$1 AND conversation_id=$2 AND producer_generation>0 AND state NOT IN ('queued','retired')
+	 AND (($1>0 AND request_payload->>'sharedConversation'='true') OR ($1=0 AND user_id=$3 AND request_payload->>'privateConversation'='true')) ORDER BY entry_seq,id`, scope.RepositoryID, branch, scope.UserID)
+	if err != nil {
+		return result, err
+	}
+	turns := []turnRecord{}
+	for rows.Next() {
+		turn, e := scanTurn(rows)
+		if e != nil {
+			rows.Close()
+			return result, e
+		}
+		turns = append(turns, turn)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return result, err
+	}
+	for _, turn := range turns {
+		_, prompt, e := conversationMetadata(turn)
+		if e != nil {
+			return result, e
+		}
+		acceptance, _, e := checkHead(turn)
+		if e != nil {
+			return result, e
+		}
+		entry := SharedTurn{ID: turn.ID, Author: turn.UserID, RunID: turn.RunID, Prompt: prompt, Title: entryTitle(prompt), Tone: entryTone(turn.State), State: turn.State, Frames: []json.RawMessage{}}
+
+		if externalTurn(turn) {
+			var request struct {
+				External ExternalDraft `json:"external"`
+			}
+			if json.Unmarshal(turn.Request, &request) != nil || !request.External.valid() {
+				return result, ErrCorrupt
+			}
+			entry.ExternalDraft = &request.External
+			if err := tx.QueryRow(ctx, `SELECT display_name FROM users WHERE id=$1`, turn.UserID).Scan(&entry.AuthorName); err != nil {
+				return result, err
+			}
+		}
+		if err := tx.QueryRow(ctx, `SELECT entry_seq,summary,summary_rev FROM chat_turns WHERE id=$1`, turn.ID).Scan(&entry.Sequence, &entry.Summary, &entry.SummaryRevision); err != nil {
+			return result, err
+		}
+		if err := tx.QueryRow(ctx, `SELECT username FROM users WHERE id=$1`, turn.UserID).Scan(&entry.AuthorLogin); err != nil {
+			return result, err
+		}
+		if entry.ExternalDraft != nil {
+			owner, err := db.New(tx).GetUserByID(ctx, turn.UserID)
+			if err != nil {
+				return result, err
+			}
+			var color int
+			// Match the shared member roster's owner-first, admission order. The
+			// history keeps a removed author's portrait without granting access.
+			err = tx.QueryRow(ctx, `SELECT coalesce((SELECT color FROM (
+ SELECT c.user_id, ((row_number() OVER (ORDER BY coalesce(c.user_id=o.user_id,false) DESC,c.id)-1)%6)::int AS color
+ FROM collaborators c CROSS JOIN self_host_owners o
+ WHERE c.repository_id=$1 AND (c.user_id IS NOT NULL OR c.github_id IS NOT NULL)
+ ) roster WHERE user_id=$2 LIMIT 1),0)`, scope.RepositoryID, turn.UserID).Scan(&color)
+			if err != nil {
+				return result, err
+			}
+			entry.externalActor = externalActor(owner, *entry.ExternalDraft, color)
+			entry.externalAt = turn.CreatedAt.UnixMilli()
+			entry.externalOrdinal = len(result.Entries)
+		}
+		// Reserve a range for this immutable publication and its capped journal.
+		// A turn cannot contain a million frames within the journal's 8 MiB limit.
+		if !externalTurn(turn) && entry.Sequence > 0 && entry.Sequence <= maxSafeInteger/1_000_000 {
+			base := entry.Sequence * 1_000_000
+			entry.EntrySequences = map[string]int64{turn.ID + ":prompt": base, turn.ID + ":answer": base + 1}
+		}
+		cursor := initialCursor(acceptance)
+		var preflight sharedPreflight
+		for {
+			page, e := s.replayVerified(ctx, tx, turn, cursor, maxReplayBatches)
+			if e != nil {
+				return result, e
+			}
+			for _, batch := range page.Batches {
+				for frameIndex, frame := range batch.Frames {
+					if err := preflight.apply(frame); err != nil {
+						return result, err
+					}
+					entry.Context = preflight.context
+					entry.Preflight = preflight.result
+					if sharedFrame(frame, withTrace && turn.UserID == scope.UserID) {
+						entry.Frames = append(entry.Frames, frame)
+						var card struct {
+							Type string `json:"type"`
+							Card struct {
+								ID string `json:"id"`
+							} `json:"card"`
+						}
+						if entry.EntrySequences != nil && json.Unmarshal(frame, &card) == nil && card.Type == "card" && card.Card.ID != "" {
+							if _, exists := entry.EntrySequences[card.Card.ID]; !exists {
+								entry.EntrySequences[card.Card.ID] = entry.Sequence*1_000_000 + 2 + batch.From + int64(frameIndex)
+							}
+						}
+					}
+				}
+			}
+			if !page.More {
+				break
+			}
+			cursor = page.Next
+		}
+		if withTrace && !externalTurn(turn) {
+			var terminalAt *time.Time
+			if turn.Terminal {
+				if err := tx.QueryRow(ctx, `SELECT max(created_at) FROM chat_turn_batches WHERE turn_id=$1`, turn.ID).Scan(&terminalAt); err != nil {
+					return result, err
+				}
+			}
+			entry.StartedAt, entry.FinishedAt = turnTiming(turn, terminalAt)
+		}
+		var subjectBytes []byte
+		if err := tx.QueryRow(ctx, `SELECT entry_subject FROM chat_turns WHERE id=$1`, turn.ID).Scan(&subjectBytes); err != nil {
+			return result, err
+		}
+		if len(subjectBytes) > 0 {
+			var subject struct {
+				SubjectEntry
+				Card json.RawMessage `json:"card"`
+			}
+			if json.Unmarshal(subjectBytes, &subject) != nil {
+				return result, ErrCorrupt
+			}
+			entry.Subject = &subject.SubjectEntry
+			entry.Title, entry.Tone = subject.Title, subject.Tone
+			frame, err := json.Marshal(map[string]any{"runId": entry.RunID, "type": "card", "card": subject.Card})
+			if err != nil {
+				return result, err
+			}
+			entry.Frames = []json.RawMessage{frame}
+		}
+		result.Entries = append(result.Entries, entry)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+// turnTiming reads a turn's elapsed work from its admission and the receipt of
+// its last journal batch. A terminal turn's last batch is sealed, so a later
+// metadata update (summary, subject) never extends a finished duration.
+func turnTiming(turn turnRecord, terminalAt *time.Time) (startedAt, finishedAt int64) {
+	if turn.AcceptedAtMS == nil {
+		return 0, 0
+	}
+	startedAt = *turn.AcceptedAtMS
+	// A lost producer's last receipt cannot establish when its work ended.
+	if turn.State == StateUncertain {
+		return startedAt, 0
+	}
+	if turn.Terminal && terminalAt != nil && terminalAt.UnixMilli() >= startedAt {
+		finishedAt = terminalAt.UnixMilli()
+	}
+	return startedAt, finishedAt
+}
+
+// Only visible answer output crosses the shared audience. Tool arguments,
+// reasoning, preflight internals and private card kinds remain outside it.
+// The requester alone also reads their own turn's reasoning and code-mode
+// activity: authored scripts, call names and rejected gates.
+// A docs card holds only the install's bundled product docs.
+func sharedFrame(raw json.RawMessage, requester bool) bool {
+	var frame struct {
+		Type string `json:"type"`
+		Kind string `json:"kind"`
+		Card struct {
+			Kind string `json:"kind"`
+		} `json:"card"`
+	}
+	if json.Unmarshal(raw, &frame) != nil {
+		return false
+	}
+	switch frame.Type {
+	case "delta":
+		return frame.Kind == "text" || requester && frame.Kind == "reasoning"
+	case "link.authored", "call.started", "call.settled", "gate.rejected":
+		return requester
+	case "done", "error":
+		return true
+	case "card":
+		switch frame.Card.Kind {
+		case "todo", "file", "diff", "change", "run-trace", "home", "flow", "wiki", "docs":
+			return true
+		}
+	}
+	return false
+}
+
+func (h *Handler) Conversation(w http.ResponseWriter, r *http.Request) {
+	scope, ok := h.publicScope(w, r)
+	if !ok {
+		return
+	}
+	branch, err := h.branch(w, r, scope)
+	if err != nil {
+		return
+	}
+	result, err := h.Store.SharedEntries(r.Context(), scope, branch, r.Header.Get("X-Smithers-Chat-Trace") == "1")
+	if err != nil {
+		if errors.Is(err, ErrForbidden) {
+			queueError(w, err)
+		} else {
+			publicError(w, err)
+		}
+		return
+	}
+	if h.Store.OnConversationRead != nil {
+		_ = h.Store.OnConversationRead(r.Context(), scope, branch)
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// sharedContext projects only the completed selection. Candidate contents,
+// model inputs and arbitrary producer fields are never shared with the answer.
+// Historical frames without a phase are completed selections too.
+func sharedContext(raw json.RawMessage) []json.RawMessage {
+	var frame struct {
+		Type   string `json:"type"`
+		Phase  string `json:"phase"`
+		Result struct {
+			Context []map[string]json.RawMessage `json:"context"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(raw, &frame) != nil || frame.Type != "context.preflight" || (frame.Phase != "" && frame.Phase != "completed") {
+		return nil
+	}
+	result := make([]json.RawMessage, 0, len(frame.Result.Context))
+	for _, item := range frame.Result.Context {
+		selected := make(map[string]json.RawMessage)
+		for _, key := range []string{"kind", "label", "ref", "revision", "reason"} {
+			if value, ok := item[key]; ok {
+				selected[key] = value
+			}
+		}
+		encoded, err := json.Marshal(selected)
+		if err != nil {
+			return nil
+		}
+		result = append(result, encoded)
+	}
+	return result
+}
+
+// sharedPreflight assembles numbered selections across replay pages. A partial
+// phase is never a shared context list; a new page zero fences interrupted work.
+type sharedPreflight struct {
+	result       *SharedContextPreflight
+	candidates   []json.RawMessage
+	context      *[]json.RawMessage
+	pending      []json.RawMessage
+	phase, model string
+	duration     float64
+	next, total  int
+}
+
+func (p *sharedPreflight) apply(raw json.RawMessage) error {
+	var frame struct {
+		Type, Phase string
+		Page        *struct{ Index, Total float64 }
+		Result      struct {
+			Model      string
+			DurationMs float64
+			Candidates []map[string]json.RawMessage
+		}
+	}
+	if json.Unmarshal(raw, &frame) != nil {
+		return ErrInvalidFrame
+	}
+	if frame.Type != "context.preflight" {
+		return nil
+	}
+	if frame.Page == nil {
+		*p = sharedPreflight{}
+		if selected := sharedContext(raw); selected != nil {
+			p.context = &selected
+			p.result = &SharedContextPreflight{Context: selected, Candidates: sharedCandidateItems(frame.Result.Candidates), Model: frame.Result.Model, DurationMs: frame.Result.DurationMs}
+		}
+		return nil
+	}
+	page := frame.Page
+	if page.Index < 0 || page.Total <= page.Index || page.Index != math.Trunc(page.Index) || page.Total != math.Trunc(page.Total) || page.Total > 9007199254740991 || !oneOf(frame.Phase, "started", "completed") {
+		return ErrInvalidFrame
+	}
+	if page.Index == 0 {
+		*p = sharedPreflight{phase: frame.Phase, model: frame.Result.Model, duration: frame.Result.DurationMs, total: int(page.Total), pending: []json.RawMessage{}, candidates: []json.RawMessage{}}
+	} else if float64(p.next) != page.Index || float64(p.total) != page.Total || p.phase != frame.Phase || p.model != frame.Result.Model || p.duration != frame.Result.DurationMs {
+		return ErrInvalidFrame
+	}
+	if frame.Phase == "completed" {
+		p.pending = append(p.pending, sharedContext(raw)...)
+	}
+	p.candidates = append(p.candidates, sharedCandidateItems(frame.Result.Candidates)...)
+	p.next++
+	if p.next == p.total && frame.Phase == "completed" {
+		selected := p.pending
+		p.context = &selected
+		p.result = &SharedContextPreflight{Context: selected, Candidates: p.candidates, Model: p.model, DurationMs: p.duration}
+	}
+	return nil
+}
+
+// Non-TODO turns have no TODO state. Their label and tone come solely from
+// committed host facts, shared by HTTP and live subscribers.
+func entryTitle(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		if title := strings.TrimSpace(line); title != "" {
+			return title
+		}
+	}
+	return ""
+}
+func entryTone(state State) string {
+	switch state {
+	case StateAccepted, StateRunning:
+		return "live"
+	case StateFailed:
+		return "failed"
+	case StateCompleted:
+		return "done"
+	default:
+		return "quiet"
+	}
+}
+
+// Inspect shares only pinned source identities; repository bytes and extra
+// fields in a provider frame never cross this audience projection.
+func sharedCandidateItems(items []map[string]json.RawMessage) []json.RawMessage {
+	result := make([]json.RawMessage, 0, len(items))
+	for _, item := range items {
+		var kind, label, ref string
+		var revision *string
+		if json.Unmarshal(item["kind"], &kind) != nil || !oneOf(kind, "file", "page", "todo", "run") ||
+			json.Unmarshal(item["label"], &label) != nil || label == "" ||
+			json.Unmarshal(item["ref"], &ref) != nil || ref == "" {
+			continue
+		}
+		if value, present := item["revision"]; present && (json.Unmarshal(value, &revision) != nil || revision == nil) {
+			continue
+		}
+		if (kind == "file" || kind == "page") && (revision == nil || *revision == "") {
+			continue
+		}
+		selected := map[string]json.RawMessage{}
+		for _, key := range []string{"kind", "label", "ref", "revision"} {
+			if value, ok := item[key]; ok {
+				selected[key] = value
+			}
+		}
+		encoded, _ := json.Marshal(selected)
+		result = append(result, encoded)
+	}
+	return result
+}

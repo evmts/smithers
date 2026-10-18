@@ -1,0 +1,133 @@
+package services
+
+import (
+	"encoding/json"
+	"sort"
+	"time"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+)
+
+// TodoWait is an independent reason the item needs a member. Settled waits stay
+// in checks as evidence; projection considers only the open ones.
+type TodoWait struct {
+	Paths              []string           `json:"paths,omitempty"`
+	ConflictChange     string             `json:"conflict_change,omitempty"`
+	OntoRevision       string             `json:"onto_revision,omitempty"`
+	ID                 string             `json:"id"`
+	Kind               string             `json:"kind"`
+	Prompt             string             `json:"prompt"`
+	Since              time.Time          `json:"since"`
+	AnsweredBy         string             `json:"answered_by,omitempty"`
+	DecisionRequest    string             `json:"decision_request,omitempty"`
+	DecisionCredential string             `json:"decision_credential,omitempty"`
+	Return             *TodoReturnRequest `json:"return,omitempty"`
+	SettledAt          *time.Time         `json:"settled_at,omitempty"`
+	// SHA binds a foreign-push wait to the observed commit shown on its card.
+	SHA string `json:"sha,omitempty"`
+	// By is the wait's TodoCard actor: the pusher for a foreign push, or the
+	// answering person for a settled question. Answer is the question's answer;
+	// a settled question without these fields was withdrawn by its run.
+	Answer string          `json:"answer,omitempty"`
+	By     json.RawMessage `json:"by,omitempty"`
+	// Signal is where an answer goes: the parked run's wait point.
+	Signal *TodoWaitSignal `json:"signal,omitempty"`
+}
+
+// todoState is the single product-state projection of the stored engine facts.
+func todoState(item db.MythicalItem) string {
+	switch item.State {
+	case "landed":
+		return "merged"
+	case "cancelled", "rejected", "declined":
+		return "dropped"
+	}
+	checks := mythicalChecksOf(item)
+	if len(todoOpenWaits(item)) > 0 {
+		return "needs_you"
+	}
+	if checks.Pause != nil && checks.Pause.Resuming {
+		if checks.Pause.Delivered {
+			return "starting"
+		}
+		return "queued"
+	}
+	if item.PausedAt.Valid {
+		return "paused"
+	}
+	switch item.State {
+	case "retrying":
+		return "retrying"
+	case "blocked":
+		return "failed"
+	case "proposed":
+		return "in_review"
+	case "queued":
+		// Accepted work queues a new attempt; the previous run and PR
+		// remain historical facts until admission replaces the live binding.
+		if todoRetryPending(item) {
+			return "queued"
+		}
+		if checks.RunLaunched && !checks.RunAttached {
+			return "starting"
+		}
+		if item.PRState == "open" {
+			return "in_review"
+		}
+		return "queued"
+	case "skipped":
+		return "queued"
+	default:
+		if checks.RunLaunched && !checks.RunAttached {
+			return "starting"
+		}
+		if mythicalRebuilding(item) {
+			// in_review → in_review: the pull request stays open while it
+			// rebuilds on the moved prefix (§4.1).
+			return "in_review"
+		}
+		return "working"
+	}
+}
+
+// todoRetryPending identifies a new attempt awaiting admission after Retry or
+// work on a reopened or ended review run. The row
+// still names the ended attempt until its successor is granted a machine.
+// Projection and runtime ingestion share this fact; an old run cannot become
+// live again during that interval.
+func todoRetryPending(item db.MythicalItem) bool {
+	if item.State != "queued" {
+		return false
+	}
+	checks := mythicalChecksOf(item)
+	if item.Attempt > 0 && checks.AttemptBase == item.Attempt && !checks.RunLaunched {
+		return true
+	}
+	for _, retry := range checks.Retries {
+		if retry.Attempt == item.Attempt+1 {
+			return true
+		}
+	}
+	return false
+}
+
+func todoOpenWaits(item db.MythicalItem) []TodoWait {
+	waits := []TodoWait{}
+	switch item.State {
+	case "landed", "cancelled", "rejected", "declined":
+		return waits
+	}
+	for _, wait := range mythicalChecksOf(item).Waits {
+		if wait.SettledAt == nil {
+			waits = append(waits, wait)
+		}
+	}
+	rank := map[string]int{"moved_off": 0, "conflict": 1, "foreign_push": 2, "approval": 3, "question": 4}
+	sort.SliceStable(waits, func(i, j int) bool {
+		if rank[waits[i].Kind] != rank[waits[j].Kind] {
+			return rank[waits[i].Kind] < rank[waits[j].Kind]
+		}
+		return waits[i].Since.Before(waits[j].Since)
+	})
+	return waits
+}

@@ -1,0 +1,621 @@
+/*
+ * THE FORM LAW, measured as a DIFFERENTIAL over the WHOLE door space against
+ * `main@origin`.
+ *
+ * Three passes of this chain shipped a rule stated over a class and tested on
+ * a sample. R102 compared seven lines, R102b compared seven, and R102d's own
+ * table compared eighteen; a reviewer who swept every (flow, args) pair found
+ * that the rule those tables passed had deleted 81 distinct sentences over 87
+ * flows — 1054 rows — while the report said it cost one. A differential over a
+ * sample proves nothing about a rule stated over a class, so this file does
+ * not hold a table of lines. It ENUMERATES: every flow the registry answers
+ * with, times an argument set generated from that flow's own declared fields,
+ * through the real door (`controller.renderFlowForm`), and compares every row
+ * to the card `main@origin` opens for it.
+ *
+ * A flow added later is swept without anyone editing anything, and a flow the
+ * baseline has never seen is still held to the law below rather than skipped.
+ *
+ * `FormCardsAgainstMain.main.json` is that baseline, captured through this
+ * same harness at the `main@origin` its own `capturedAt` names. It was read
+ * twice — at `0e876a2566fe` and again at `6cc28aec6f9a`, 41 commits later —
+ * and all 8719 rows were byte-identical, so those 41 commits changed no card
+ * and the baseline describes main today. Re-capture it with
+ * `FORM_CARDS_BASELINE=write bun test src/mainview/flows/FormCardsAgainstMain.test.ts`
+ * IN A WORKSPACE ON `main@origin` AND NOWHERE ELSE, and say in the commit
+ * which revision it was read at — a baseline captured on a branch is the
+ * branch agreeing with itself, which is the failure this file exists to stop.
+ *
+ * `DECLARED` is every move this branch makes on purpose, with the reason and
+ * the number of rows it moves. A difference that is not declared, and a
+ * declared move whose row count has changed, are both failures.
+ */
+import type { StorageApi } from "@tanstack/db"
+import { describe, expect, test } from "bun:test"
+import { AGENT_ROLES, AgentRoleSchema } from "@smthrs/rpc/AgentRoles"
+import type { AgentRole } from "@smthrs/rpc/AgentRoles"
+import { RuntimeCapabilitySchema } from "@smthrs/rpc/AppBootstrap"
+import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
+import type { Harness } from "@smthrs/rpc/LocalApp"
+
+import type { AgentPort } from "../runtime/AgentPort"
+import { createAppController } from "../state/AppController"
+import { createAppStore } from "../state/AppStore"
+import type { AppStore } from "../state/AppStore"
+import type { Card } from "../state/AppState"
+
+const memoryStorage = (): StorageApi => {
+  const data = new Map<string, string>()
+  return {
+    getItem: (key) => data.get(key) ?? null,
+    setItem: (key, value) => void data.set(key, value),
+    removeItem: (key) => void data.delete(key)
+  }
+}
+
+const unavailableAgent: AgentPort = {
+  available: false,
+  startTurn: async () => ({ status: "error", message: "unavailable" }),
+  cancelTurn: async () => {},
+  subscribe: () => () => {}
+}
+
+
+const EVERYTHING: AppBootstrap = {
+  apiVersion: 1,
+  host: "local",
+  version: "test",
+  buildSha: "test",
+  capabilities: [...RuntimeCapabilitySchema.options],
+  authFlow: "both",
+  sandbox: { platform: "darwin", mode: "enforced" }
+}
+
+const HARNESSES: ReadonlyArray<Harness> = [
+  {
+    id: "claude",
+    displayName: "Claude Code",
+    status: "signed-in",
+    binary: "/usr/local/bin/claude",
+    version: "1.0.0",
+    account: { email: "will@example.com" },
+    launch: { argv: ["claude"] },
+    models: { suggestions: ["claude-fable-5"], listable: false }
+  },
+  {
+    id: "codex",
+    displayName: "Codex",
+    status: "api-key",
+    binary: "/usr/local/bin/codex",
+    version: "1.0.0",
+    account: { label: "OPENAI_API_KEY" },
+    launch: { argv: ["codex"] },
+    models: { suggestions: ["gpt-5.6-sol"], listable: false }
+  }
+]
+
+const settle = async (ticks = 8): Promise<void> => {
+  for (let index = 0; index < ticks; index += 1) await new Promise((resolve) => setTimeout(resolve, 1))
+}
+
+const json = (status: number, body: unknown): Response =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+
+const boot = async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const agents: Array<AgentRole> = [...AGENT_ROLES]
+  const controller = createAppController(store, unavailableAgent, {
+    bootstrap: EVERYTHING,
+    fetchImpl: async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      const path = new URL(url, "http://local.test").pathname
+      const method = init?.method ?? "GET"
+      if (path === "/api/harnesses") return json(200, { harnesses: HARNESSES })
+      if (path === "/api/agents" && method === "GET") return json(200, { agents })
+      const put = /^\/api\/agents\/([^/]+)$/.exec(path)
+      if (put !== null && method === "PUT") {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+        agents.push(AgentRoleSchema.parse({ id: put[1]!, ...body, delegates: false, builtin: false, createdAt: 100, updatedAt: 101 }))
+        return json(201, { agent: agents[agents.length - 1] })
+      }
+      const models = /^\/api\/harnesses\/([^/]+)\/models$/.exec(path)
+      if (models !== null) return json(200, { harnessId: models[1], models: [], source: "suggestions", reason: "no list command" })
+      return json(404, { error: { code: "absent", message: `no stub for ${method} ${path}` } })
+    }
+  })
+  store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", admin: true, scopesPlain: null })
+  await settle()
+  return { store, controller }
+}
+
+const formOf = (store: AppStore, flow: string): Extract<Card, { kind: "flow-form" }> | undefined => {
+  const card = store.collections.cards.get(`form-${flow}`)
+  return card?.kind === "flow-form" ? card : undefined
+}
+
+
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+import { formFieldsFor } from "@smthrs/ui/flow-form"
+import { nameOf } from "./registry"
+
+/** What a person can see after typing one line: the door's answer and the card it opened. */
+interface CardAsRead {
+  readonly rendered: boolean
+  /** The fields the door reports still unanswered. */
+  readonly missing: ReadonlyArray<string> | null
+  /** Every field label on the card, in order. */
+  readonly fields: ReadonlyArray<string> | null
+  /** What the line put in them. */
+  readonly draft: Readonly<Record<string, unknown>> | null
+  /** The one sentence under them, or `null` for a card that says nothing. */
+  readonly error: string | null
+  /** Nothing may throw at a door a person can type at. */
+  readonly threw: string | null
+}
+
+interface Row extends CardAsRead {
+  readonly flow: string
+  readonly shape: string
+  readonly args: string | undefined
+  /** Restored saved flag case absent from the current visible form fields. */
+  readonly historical: boolean
+}
+
+const REPO = "codeplanesmithers/canary"
+
+/**
+ * The argument set. The fixed shapes are the ones a person actually types —
+ * nothing, one word, several, a repository, a cron, malformed JSON, a flag the
+ * door knows and one it does not — and the derived shapes come off each flow's
+ * OWN declared fields, so a flow that grows a field grows its own coverage.
+ */
+const shapesFor = (names: ReadonlyArray<string>): ReadonlyArray<readonly [string, string | undefined]> => {
+  const first = names[0]
+  const second = names[1]
+  const fixed: Array<readonly [string, string | undefined]> = [
+    ["bare", undefined],
+    ["empty", ""],
+    ["one-positional", "one"],
+    ["two-positionals", "one two"],
+    ["three-positionals", "one two three"],
+    ["four-positionals", "one two three four"],
+    ["eight-positionals", "a b c d e f g h"],
+    ["one-number", "7"],
+    ["two-numbers", "7 8"],
+    ["three-numbers", "7 8 9"],
+    ["zero", "0"],
+    ["repo-token", REPO],
+    ["repo-token-plus-one", `${REPO} nightly`],
+    ["repo-token-plus-two", `${REPO} nightly extra`],
+    ["repo-token-plus-cron", `${REPO} nightly 0 9 * * *`],
+    ["malformed-json", "{invalid"],
+    ["positional-then-malformed-json", `one ${REPO} {invalid`],
+    ["json-object", '{"input":1}'],
+    ["repo-then-json", `${REPO} {"a":1}`],
+    ["unknown-flag", "--nope"],
+    ["unknown-flag-with-value", "--nope value"],
+    ["positional-then-unknown-flag", "one --nope value"],
+    ["quoted-phrase", '"hello world"'],
+    ["cron-stars", "* * * * *"],
+    ["long-number", "500000"]
+  ]
+  /* The lines walk W1 typed, at every door rather than only at the one that failed. */
+  const walk: Array<readonly [string, string | undefined]> = [
+    ["w1-tokens-over", "--tokens 500000"],
+    ["w1-tokens-inside", "--tokens 150000"],
+    ["w1-minutes-inside", "--minutes 20"],
+    ["w1-summarize", "--summarize"],
+    ["w1-repo-then-tokens", `${REPO} --tokens 500000`],
+    ["w1-both-limits", "--tokens 150000 --minutes 20"]
+  ]
+  const derived: Array<readonly [string, string | undefined]> = []
+  if (first !== undefined && second !== undefined) derived.push([`known-flags:${first}+${second}`, `--${first} one --${second} two`])
+  for (const name of names.slice(0, 6)) {
+    derived.push([`known-flag:${name}`, `--${name} one`])
+    derived.push([`known-flag-number:${name}`, `--${name} 500000`])
+  }
+  return [...fixed, ...walk, ...derived]
+}
+
+const sweep = async (): Promise<ReadonlyArray<Row>> => {
+  const initial = await boot()
+  const entries = [...initial.controller.commands.entries()]
+  await initial.controller.dispose()
+  const rows: Array<Row> = []
+  const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8")) as Baseline
+  // Each flow still exercises every shape against the same fixture. Bound its
+  // persistence history here instead of queueing the whole registry's writes
+  // in one store; the baseline and all differential assertions stay identical.
+  for (const entry of entries) {
+    const { store, controller } = await boot()
+    try {
+      const flow = nameOf(entry)
+      const fields = entry.input === undefined ? [] : formFieldsFor(entry.input, entry.metadata.form)
+      const shapes = new Map(shapesFor(fields.map(field => field.name)))
+      const generatedShapes = new Set(shapes.keys())
+      // Exercise old flag names too: a retained flow's historical door remains in the differential.
+      for (const name of Object.keys(baseline.rows)) {
+        const [baselineFlow, shape] = name.split(SEPARATOR)
+        if (baselineFlow !== flow || shape === undefined || shapes.has(shape)) continue
+        if (shape.startsWith("known-flags:")) {
+          const [first, second] = shape.slice("known-flags:".length).split("+")
+          shapes.set(shape, `--${first} one --${second} two`)
+        } else if (shape.startsWith("known-flag-number:")) shapes.set(shape, `--${shape.slice("known-flag-number:".length)} 500000`)
+        else if (shape.startsWith("known-flag:")) shapes.set(shape, `--${shape.slice("known-flag:".length)} one`)
+        else throw new Error(`Unrecognized baseline shape: ${name}`)
+      }
+      for (const [shape, args] of shapes) {
+        try {
+          const rendered = controller.renderFlowForm({ name: flow, args, via: "user" })
+          const card = formOf(store, flow)
+          rows.push({
+            flow, shape, args, historical: !generatedShapes.has(shape),
+            rendered: rendered !== undefined,
+            threw: null,
+            missing: rendered === undefined ? null : [...rendered.missing],
+            fields: rendered === undefined ? null : card?.payload.fields.map((field) => field.label) ?? null,
+            draft: rendered === undefined ? null : card?.payload.draft ?? null,
+            error: rendered === undefined ? null : card?.payload.error ?? null
+          })
+        } catch (cause) {
+          rows.push({ flow, shape, args, historical: !generatedShapes.has(shape), rendered: false, threw: String(cause), missing: null, fields: null, draft: null, error: null })
+        }
+      }
+    } finally {
+      // Compaction FIRST: a sweep of every form otherwise retains thousands of
+      // optimistic journal preparations, and a store is not released by being
+      // dropped while its live queries still reference its collections — the
+      // whole suite slows to a crawl without this. Then dispose, which closes
+      // the owner a compaction writes through, so the other order throws.
+      await store.compactEvents()
+      await controller.dispose()
+    }
+  }
+  return rows
+}
+
+/** A value as a reader compares it: a draft is a set of named values, so key order is not a difference. */
+const shown = (value: unknown): string =>
+  JSON.stringify(value, (_key, inner: unknown) =>
+    inner !== null && typeof inner === "object" && !Array.isArray(inner)
+      ? Object.fromEntries(Object.entries(inner as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)))
+      : inner)
+
+/** Everything about the card except its one sentence, as one short stable value. */
+const cardDigest = (row: CardAsRead): string => {
+  const text = shown([row.rendered, row.threw, row.missing, row.fields, row.draft])
+  let hash = 0x811c9dc5
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash.toString(16).padStart(8, "0")
+}
+
+/** One swept row's name. The separator is a character no flow name or shape name contains. */
+const SEPARATOR = "::"
+const key = (row: { readonly flow: string; readonly shape: string }): string => `${row.flow}${SEPARATOR}${row.shape}`
+
+interface Baseline {
+  readonly capturedAt: string
+  readonly sentences: ReadonlyArray<string>
+  /** Per row: the index of its sentence, or -1 for a card that says nothing, then the card's digest. */
+  readonly rows: Readonly<Record<string, readonly [number, string]>>
+}
+
+const BASELINE_PATH = join(import.meta.dir, "FormCardsAgainstMain.main.json")
+
+/** What this branch moves on purpose, why, and over how many of the swept rows. */
+interface DeclaredMove {
+  readonly flow: string
+  /** `card` is the fields, the draft and what is still missing; `sentence` is the one line under them. */
+  readonly kind: "card" | "sentence"
+  readonly rows: number
+  readonly because: string
+}
+
+/** Only these app doors left; the persisted oracle is unchanged. */
+const CUT_FLOW_NAMES = new Set([/* renamed to their mvp.md Appendix A names, or replaced by /help */ "issue.implement", "appearance.dark-mode", "history.show", "branches.list", "secrets.list", "flow.create", "chat.stop", "search.open", "auth.sign-in", "auth.sign-out", "chat.commands", "chat.filter", "chat.filter.grep", "chat.filter.reset", "chat.filter.toggle", "chat.clear", "tab.card", "tab.close", "tab.select", "world", "world.delete", "world.delete.cancel", "world.delete.confirm", "world.new-note", "world.select", "subagents", "flows", "connect", "smithers.who", "workspace.rename", "workspace.rename.edit", "app.first-run.dismiss", "notifications.read-update", "notifications.tag", "search.targets", "search.boxes", "box.select", "files.add", "change.request", "change.split", "change.revert", "prs.create", "issues", "issues.fix", "issues.verify", "issues.set", "issues.comment.react", "issues.comment.retry", "wiki.ask", "runs.takeover", "runs.release", "runs.handoff", "runs.burndown.filter", "runs.burndown.select", "agent.session.list", "agent.session.new", "agent.session.say", "agent.session.stop", "agent.session.view", "notifications.list", "notifications.read", "admin.grant", "admin.grant.confirm", "admin.grant.cancel", "admin.health", "repository.register", "signup.account", "signup.finish", "signup.next", "signup.repo", "signup.set", "setup.ask", "setup.configure", "setup.discard", "setup.discard.confirm", "setup.guide", "setup.retry", "setup.run", "setup.view", "setup.work", "issues.setup", "review.setup", "ci.setup", "feature.setup", "chores.setup", "feature.prototype", "system.recommend", "issue-sweep"])
+
+const DECLARED: ReadonlyArray<DeclaredMove> = [
+  { flow: "flow.run", kind: "card", rows: 2,
+    because: "Installed flow launches retain a hidden workspace identity in incomplete JSON forms so submission uses the selected branch machine." },
+  ...(["box.resume", "box.suspend"] as const).map(flow => ({ flow, kind: "card" as const, rows: 33,
+    because: "Installed branch sleep and wake controls now carry a branch identity alongside the legacy workspace id." })),
+  // Main's restored owner model editor (263c41d3d8) uses record ids, role/model
+  // assignment and protocol fields; it no longer parses laboratory seat args.
+  ...(["model.show", "model.edit", "model.remove", "model.test"] as const).flatMap(flow => [
+    { flow, kind: "card" as const, rows: 33, because: "The restored owner model editor takes one model record id instead of the retired laboratory fields." },
+    { flow, kind: "sentence" as const, rows: 15, because: "The restored model record grammar accepts a record id instead of the retired laboratory syntax." }
+  ]),
+  { flow: "model.save", kind: "card", rows: 44, because: "Owner model records declare protocol, modelId, credential and optional endpoint fields in the restored editor." },
+  { flow: "model.save", kind: "sentence", rows: 4, because: "The restored model editor reports Invalid model for non-JSON record submissions." },
+  { flow: "model.assign", kind: "card", rows: 36, because: "Model assignment names a role and model instead of the retired seat and recordId fields." },
+  { flow: "model.assign", kind: "sentence", rows: 8, because: "Role/model assignment replaces the retired seat grammar." },
+  ...(["repo.choose", "repo.create"] as const).map(flow => ({ flow, kind: "card" as const, rows: 33,
+    because: "The deferred multi-repository doors accept no payload and present Setup; their removed picker fields cannot reappear." })),
+  { flow: "runs.trace.filter", kind: "sentence", rows: 13, because: "The trace filter includes messages beside all, running, failed, model and flow." },
+  { flow: "issues.create", kind: "sentence", rows: 1,
+    because: "62c494462e (#3434) adds structured repository-bound confirmation input; malformed JSON is refused before creating or confirming an issue." },
+  ...(["runs.list", "github.mirror.retry-ref"] as const).map(flow => ({
+    flow, kind: "sentence" as const, rows: 2,
+    because: "Structured button arguments preserve their explicit repository without inventory (#2082). Malformed JSON and unknown fields now receive a grammar diagnostic rather than being interpreted as an identifier or filter."
+  })),
+  ...(["issues.list"] as const).map(flow => ({
+    flow, kind: "sentence" as const, rows: 1,
+    because: "A repository-only issues listing now accepts an explicit unloaded repository with the default open filter (#2082), so the obsolete filter error and its incorrect draft disappear."
+  })),
+
+  {
+    flow: "issues.list", kind: "card", rows: 36,
+    because: "The issues list narrows to chats or tasks with `--kind` (smithers-ui-DESIGN.md §3.1), so the list form gains an optional Kind field: every swept line's card lists it beside Filter and Repository, and the one #2082 row keeps its move. Restoring the saved known-flags:filter+repo case adds one covered card to the original 35."
+  },
+  {
+    flow: "triggers.pause", kind: "card", rows: 6,
+    because: "An optional repository slot is skipped while the required slots behind it need every token left, so `/triggers.pause canary-w1-not-registered` fills Slug and the form asks for the repository instead of for the name the person just typed (walk W1, W1-d-doors.json pauseFormFields)."
+  },
+  {
+    flow: "triggers.pause", kind: "sentence", rows: 13,
+    because: "A typed `/triggers.pause` line opens the Slug and Repository form without quoting the button-only refusal `triggers.pause takes the values its button carries`, because a person typing the line has no button (#1732). The form still asks for every missing field."
+  },
+  {
+    flow: "triggers.register", kind: "card", rows: 44,
+    because: "The Run it every night app (PRODUCT.md D-18): the register form is one input, the flow, and one button, Schedule; the name, schedule, input and limits are the advanced path's and ride as given (entries/triggers.ts). Every swept line's card lists one field instead of six, and a positional line fills it whole. The eleven restored flag cases for hidden repo, slug, schedule, input and tokens fields exercise this same change: 33 + 11 cards."
+  },
+  {
+    flow: "triggers.approve", kind: "card", rows: 12,
+    because: "The same skip on the approval's own optional repository. The door is hidden, so no one types these lines; the rows move because the rule is the schema's, not the door's."
+  },
+  {
+    flow: "issue.add-flow", kind: "card", rows: 5,
+    because: "Four scalar JSON lines now open a form instead of throwing (#2554), beside the existing row that skips the optional repository before the description."
+  },
+  {
+    flow: "issues.create", kind: "card", rows: 36,
+    because: "A chat thread is an issue created with `--kind chat` (smithers-ui-DESIGN.md §3.1), so the create form gains an optional Kind field: every swept line's card now lists that field beside Title and Repository; no draft or missing field changes. The same 36 cards now also list the optional Source field below, for the reason the three write doors below give."
+  },
+  /*
+   * A connected repository's GitHub issues and its Smithers Cloud issues
+   * number independently, so `#6` names two different objects and a write
+   * that named no tracker addressed the Cloud row for ANY number — the wrong
+   * issue whenever the act came off a GitHub-source card, reported as if it
+   * had been GitHub's (#4022). Every issue write now carries its tracker, so
+   * each of these forms lists one optional Source field beside the fields it
+   * already had; no draft and no missing field changes. `issues.comment`
+   * sweeps two argument shapes more than the numeric doors because its line
+   * also takes the comment text.
+   */
+  ...(["issues.close", "issues.reopen"] as const).map(flow => ({ flow, kind: "card" as const, rows: 36,
+    because: "Issue writes carry the tracker they address (IssuesSeam `writeSource`, #4022), so the card lists an optional Source field beside Number and Repository." })),
+  {
+    flow: "issues.comment", kind: "card", rows: 38,
+    because: "Issue writes carry the tracker they address (IssuesSeam `writeSource`, #4022), so the card lists an optional Source field beside Number, Text and Repository."
+  },
+  {
+    flow: "runs.trace.view", kind: "sentence", rows: 13,
+    because: "The graph IS the third view of a run and the step list the fourth, so the line that refuses a bad one has to name them: main@origin says `runs.trace.view needs turns, timeline or graph` and this branch says `runs.trace.view needs turns, timeline, graph or steps` (SlashPayload.ts). Every swept line whose second token is not a view reads the new sentence; no card moves."
+  },
+  {
+    flow: "triggers.register", kind: "sentence", rows: 20,
+    because: "A limit the LINE names meets the rule the FIELD meets: `--tokens 500000` reached the Tokens field and was told nothing on production, while 500000 typed into that field and prepared is refused with the range before any network call (walk W1 item 4c). The register form routes to TriggersSeam.limitsRefusal, so two rows that used to read the grammar's usage line read the range instead, and four that said nothing now say it. With the one-input form (D-18) a positional line fills its whole card, so twelve more rows keep the grammar's own sentence about a line that parsed into nothing askable (R102d B1d) where main@origin's six-field card still had a field to ask for. Restoring known-flag:tokens and known-flag-number:tokens exercises the same existing limits refusal on two more saved cases: 18 + 2."
+  },
+  ...(["review.done", "review.ack", "review.reopen"] as const).flatMap(flow => [
+    {
+      flow, kind: "card" as const, rows: 36,
+      because: "Product words (#2144): the numeric field the review flows collect is labelled Comment id, not Thread id, so every card these lines open renames that one field."
+    },
+    {
+      flow, kind: "sentence" as const, rows: 1,
+      because: "Product words (#2144): the refusal names the id the user types as a comment id; the wire field and route still say thread."
+    }
+  ]),
+  /* The #3311 `appearance.dark-mode` moves left with the name: `/theme` (mvp.md Appendix A) has no main@origin rows. */
+
+]
+
+/** The exact saved cases hidden form fields no longer generate. */
+const HISTORICAL_CASES = [
+  "triggers.register::known-flags:repo+flow",
+  ...["repo", "slug", "schedule", "input", "tokens"].flatMap(field => [
+    `triggers.register::known-flag:${field}`,
+    `triggers.register::known-flag-number:${field}`
+  ]),
+  "issues.list::known-flags:filter+repo",
+  "repo.choose::known-flag-number:repo",
+  "repo.choose::known-flag:repo",
+  "repo.create::known-flag-number:name",
+  "repo.create::known-flag:name",
+  "model.assign::known-flags:seat+recordId",
+  ...["seat", "recordId"].flatMap(field => [`model.assign::known-flag:${field}`, `model.assign::known-flag-number:${field}`])
+].sort()
+
+/**
+ * These six rows were already declared on committed main (#2082, #2075).
+ * Removing their doors removes each door's CURRENT diagnostics, including its
+ * declared change from the older saved baseline. The net change is +4.
+ */
+const CUT_DIAGNOSTIC_MOVES = [
+  { flow: "feature.prototype", shape: "malformed-json", before: false, after: true },
+  { flow: "feature.prototype", shape: "json-object", before: false, after: true },
+  { flow: "issues", shape: "repo-token", before: true, after: false },
+  { flow: "agent.session.view", shape: "repo-token", before: false, after: true },
+  { flow: "agent.session.stop", shape: "repo-token", before: false, after: true },
+  { flow: "change.split", shape: "quoted-phrase", before: false, after: true }
+] as const
+
+/*
+ * Cut names the MVP design re-declares as new mvp.md Appendix A flows with their own grammar
+ * (entries/subjects.ts `issues`, entries/flow.ts `flows`). main@origin's rows for the old doors
+ * stay cut; the new flows have no main@origin baseline to match.
+ */
+const REVIVED_FLOW_NAMES = new Set(["issues", "flows"])
+
+/* One exhaustive sweep for the whole file; every test below reads the same rows. */
+let swept: Promise<ReadonlyArray<Row>> | undefined
+const swipe = (): Promise<ReadonlyArray<Row>> =>
+  (swept ??= sweep().then(rows => rows.filter(row => !REVIVED_FLOW_NAMES.has(row.flow))))
+
+describe("the card every slash line opens, against main@origin", () => {
+  test("every (flow, args) row matches main@origin except where this branch declares the move", async () => {
+    const rows = await swipe()
+    if (process.env["FORM_CARDS_BASELINE"] === "write") {
+      const sentences = [...new Set(rows.map((row) => row.error).filter((error): error is string => error !== null))].sort()
+      const baseline: Baseline = {
+        capturedAt: process.env["FORM_CARDS_BASELINE_AT"] ?? "unknown revision",
+        sentences,
+        rows: Object.fromEntries(rows.map((row) => [key(row), [row.error === null ? -1 : sentences.indexOf(row.error), cardDigest(row)] as const]))
+      }
+      writeFileSync(BASELINE_PATH, `${JSON.stringify(baseline)}\n`)
+      return
+    }
+    expect(existsSync(BASELINE_PATH)).toBe(true)
+    const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8")) as Baseline
+    const allowed = new Map(DECLARED.map((move) => [`${move.flow}${SEPARATOR}${move.kind}`, move]))
+    const counted = new Map<string, number>()
+    const drift: Array<string> = []
+    let compared = 0
+    for (const row of rows) {
+      const at = baseline.rows[key(row)]
+      if (at === undefined) continue
+      compared += 1
+      const [sentenceIndex, digest] = at
+      const wasSaying = sentenceIndex === -1 ? null : baseline.sentences[sentenceIndex] ?? null
+      const line = row.args === undefined ? `/${row.flow}` : `/${row.flow} ${row.args}`
+      const same = { card: digest === cardDigest(row), sentence: wasSaying === row.error }
+      for (const kind of ["card", "sentence"] as const) {
+        if (same[kind]) continue
+        const name = `${row.flow}${SEPARATOR}${kind}`
+        if (allowed.get(name) === undefined) {
+          drift.push(kind === "sentence"
+            ? `${line} — sentence: main@origin says ${shown(wasSaying)}, this branch says ${shown(row.error)}, and nothing declares the move`
+            : `${line} — card: its fields, draft or missing list differ from main@origin, and nothing declares the move`)
+          continue
+        }
+        counted.set(name, (counted.get(name) ?? 0) + 1)
+      }
+    }
+    expect(drift).toEqual([])
+    expect(rows.filter(row => row.historical).map(key).sort()).toEqual(HISTORICAL_CASES)
+    /* A declared move that has grown or shrunk is a different claim from the one that was reviewed. */
+    expect(DECLARED.map((move) => `${move.flow} ${move.kind}: ${counted.get(`${move.flow}${SEPARATOR}${move.kind}`) ?? 0}`))
+      .toEqual(DECLARED.map((move) => `${move.flow} ${move.kind}: ${move.rows}`))
+    /* And the sweep has to have been a sweep: a sample cannot see what a sample let through. */
+    const activeFlows = new Set(rows.map(row => row.flow))
+    const retainedBaselineKeys = Object.keys(baseline.rows).filter(name => {
+      const flow = name.split(SEPARATOR)[0]!
+      return !CUT_FLOW_NAMES.has(flow) && activeFlows.has(flow)
+    }).sort()
+    expect(rows.filter(row => baseline.rows[key(row)] !== undefined).map(key).sort()).toEqual(retainedBaselineKeys)
+    expect(compared).toBe(retainedBaselineKeys.length)
+  }, 1_800_000)
+
+  /*
+   * The narrowness of the rule, counted rather than asserted. The pass before
+   * this one stated "the grammar's reason reaches NO form card" and reported
+   * that it cost one sentence; the measured cost was 81 distinct sentences
+   * over 87 flows. So this test does not take anyone's word for the size of
+   * the subtraction: it counts the sentence-carrying rows at `main@origin`
+   * from the baseline and at this branch from the sweep, and states both
+   * numbers. Nothing is allowed to go missing, and what is added is the six
+   * rows DECLARED above.
+   */
+  test("baseline diagnostics remain except the declared errors on now-valid repository targets", async () => {
+    const rows = await swipe()
+    const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8")) as Baseline
+    const atMain = Object.values(baseline.rows).filter(([index]) => index !== -1).length
+    const here = rows.filter((row) => row.error !== null && baseline.rows[key(row)] !== undefined).length
+    expect(Object.entries(baseline.rows).filter(([name, [index]]) => name.startsWith("github.app::") && index !== -1)).toHaveLength(30)
+    expect(rows.some(row => row.flow === "github.app")).toBe(false)
+    expect(Object.fromEntries(["env.view", "env.set", "env.remove-token"].map(flow => [flow,
+      Object.entries(baseline.rows).filter(([name, [index]]) => name.startsWith(`${flow}::`) && index !== -1).length
+    ]))).toEqual({ "env.view": 30, "env.set": 0, "env.remove-token": 0 })
+    expect(rows.some(row => row.flow.startsWith("env."))).toBe(false)
+    const retiredFileDoors = ["files.read", "files.list", "box.file", "box.files", "repo.tree"]
+    expect(Object.fromEntries(retiredFileDoors.map(flow => [flow,
+      Object.entries(baseline.rows).filter(([name, [index]]) => name.startsWith(`${flow}::`) && index !== -1).length
+    ]))).toEqual({ "files.read": 8, "files.list": 10, "box.file": 10, "box.files": 12, "repo.tree": 0 })
+    expect(rows.some(row => retiredFileDoors.includes(row.flow))).toBe(false)
+    const retiredDiffDoors = ["change.view", "change.diff", "change.pins", "change.checks", "files.open-diff"]
+    expect(Object.fromEntries(retiredDiffDoors.map(flow => [flow,
+      Object.entries(baseline.rows).filter(([name, [index]]) => name.startsWith(`${flow}::`) && index !== -1).length
+    ]))).toEqual({ "change.view": 14, "change.diff": 0, "change.pins": 4, "change.checks": 1, "files.open-diff": 0 })
+    expect(rows.some(row => retiredDiffDoors.includes(row.flow))).toBe(false)
+    const retiredRunDoors = ["flow.run.stop", "flow.run.retry", "flow.run.stop-all"]
+    expect(Object.fromEntries(retiredRunDoors.map(flow => [flow,
+      Object.entries(baseline.rows).filter(([name, [index]]) => name.startsWith(`${flow}::`) && index !== -1).length
+    ]))).toEqual({ "flow.run.stop": 0, "flow.run.retry": 0, "flow.run.stop-all": 33 })
+    expect(rows.some(row => retiredRunDoors.includes(row.flow))).toBe(false)
+    const retiredWorkspaceDoors = ["box.open", "box.view", "box.list"]
+    expect(Object.fromEntries(retiredWorkspaceDoors.map(flow => [flow,
+      Object.entries(baseline.rows).filter(([name, [index]]) => name.startsWith(`${flow}::`) && index !== -1).length
+    ]))).toEqual({ "box.open": 27, "box.view": 0, "box.list": 30 })
+    expect(rows.some(row => retiredWorkspaceDoors.includes(row.flow))).toBe(false)
+    const retiredPullDoors = ["prs", "prs.list", "prs.view"]
+    expect(Object.fromEntries(retiredPullDoors.map(flow => [flow,
+      Object.entries(baseline.rows).filter(([name, [index]]) => name.startsWith(`${flow}::`) && index !== -1).length
+    ]))).toEqual({ prs: 30, "prs.list": 30, "prs.view": 3 })
+    expect(rows.some(row => retiredPullDoors.includes(row.flow))).toBe(false)
+    const lost = rows.filter((row) => {
+      const at = baseline.rows[key(row)]
+      return at !== undefined && at[0] !== -1 && row.error === null
+    })
+    /* The thirteen `/triggers.pause` lines lose only the button-only refusal the move above declares (#1732). */
+    const pause = lost.filter((row) => row.flow === "triggers.pause")
+    expect(pause.length).toBe(13)
+    expect(pause.every((row) => baseline.sentences[baseline.rows[key(row)]![0]] === "triggers.pause takes the values its button carries")).toBe(true)
+    expect(lost.filter((row) => row.flow !== "triggers.pause" && !row.flow.startsWith("model.")).map((row) => `/${row.flow} ${row.args ?? ""}`)).toEqual([
+      "/issues.list codeplanesmithers/canary"
+    ])
+    const modelLost = lost.filter(row => row.flow.startsWith("model."))
+    expect(Object.fromEntries(["model.show", "model.edit", "model.remove", "model.test", "model.assign"].map(name =>
+      [name, modelLost.filter(row => row.flow === name).length]))).toEqual({ "model.show": 15, "model.edit": 15, "model.remove": 15, "model.test": 15, "model.assign": 8 })
+    /* `here` counts only flows that still exist: the three `change.pick` rows left with the flow (#1904). */
+    /* 1448: `/issues.create --nope value` and friends now read the create grammar's own --kind refusal instead of a usage line (smithers-ui-DESIGN.md §3.1). */
+    /* 1462: the one-input register form (D-18) fills whole from a positional line, so 14 such lines keep the grammar's sentence main@origin's six-field card withheld. */
+    /* 1449: the thirteen typed `/triggers.pause` lines no longer quote a button-only refusal (#1732). */
+    /* 1454: `/flow.new` and `/feature.prototype` read box-chooser JSON, so malformed JSON and unknown fields get the grammar's diagnostic. */
+    /* 1483: the 29 `/theme` lines that name no mode read `dark-mode takes light or dark` (#3311). */
+    /* 1359: the MVP cut (#3385) removed the desktop, forge, integration, model-lab and time-travel doors; their rows left with them. */
+    /* 1361: malformed recovery rejection refuses two unknown box.open flags (099995ffa, #3318). */
+    const removedDeltas = new Map<string, number>()
+    for (const move of CUT_DIAGNOSTIC_MOVES) {
+      expect(CUT_FLOW_NAMES.has(move.flow)).toBe(true)
+      const saved = baseline.rows[key(move)]
+      expect(saved).toBeDefined()
+      expect(saved![0] !== -1).toBe(move.before)
+      removedDeltas.set(move.flow,
+        (removedDeltas.get(move.flow) ?? 0) + Number(move.after) - Number(move.before))
+    }
+    expect(Object.fromEntries(removedDeltas)).toEqual({
+      "feature.prototype": 2,
+      issues: -1,
+      "agent.session.view": 1,
+      "agent.session.stop": 1,
+      "change.split": 1
+    })
+    const historicalDiagnostics = rows.filter(row => row.historical && row.error !== null)
+    expect(historicalDiagnostics.map(key).sort()).toEqual([
+      "issues.list::known-flags:filter+repo",
+      "triggers.register::known-flag-number:tokens",
+      "triggers.register::known-flag:tokens"
+    ])
+    // Committed main's 1361 count generated only visible-field flags. We now
+    // retain every saved case, adding these three diagnostic-bearing rows.
+    expect({ atMain, here }).toEqual({
+      atMain: 1437,
+      // 12: #3457 retires the Fix picker and its alias-only grammar diagnostics.
+      // 29: the #3311 `/appearance.dark-mode` sentences counted in 1361 left with the rename to `/theme`.
+      // github.app and env.view no longer register duplicate Settings doors or their 60 parser diagnostics.
+      // github.app.open and github.reconcile retire 60 additional executable-alias diagnostics; saved inputs decode via GitHubPayload.
+      // The three retired Runs aliases remove 63 parser diagnostics; the retired workspace catalog removes 33 more; RunsPayload retains recorded source and operation.
+      here: 458 // The three retired PR aliases remove sixty-three diagnostics; recorded repository targets remain readable.
+    })
+    /* Every slash line must be answerable without a dispatch exception, including scalar JSON. */
+    expect(rows.filter((row) => row.threw !== null).map((row) => `/${row.flow} ${row.args ?? ""}`)).toEqual([])
+  }, 1_800_000)
+
+  test("every declared move states why it is one", () => {
+    expect(DECLARED.filter((move) => move.because.trim().length < 40).map((move) => move.flow)).toEqual([])
+  })
+})

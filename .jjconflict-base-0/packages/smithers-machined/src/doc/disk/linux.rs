@@ -1,0 +1,502 @@
+//! No path-based or non-Linux filesystem fallback. The startup owner supplies
+//! already opened workspace/store descriptors after the kernel probes pass.
+use super::super::{
+    state::{Digest, Record},
+    Error, Result, MAX_TEXT_BYTES,
+};
+use super::{Disk, Displaced, Recovery, Removal, Swap};
+use rustix::fs::{self, AtFlags, Mode, OFlags, RenameFlags};
+use std::{
+    collections::BTreeMap,
+    fs::File,
+    io::Write,
+    os::unix::fs::{MetadataExt, PermissionsExt},
+};
+
+use crate::confine::RESOLVE;
+
+/// T-COL-04a's recorded-version adapter supplies this; no local blob substitute.
+pub trait Versions: Send {
+    fn own_delete(&mut self, _path: &str, _actor: Option<&str>) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+    fn outside(&mut self, path: &str, bytes: &[u8], actor: &str) -> Result<String>;
+    fn before_write(&mut self, path: &str, actor: Option<&str>) -> Result<()>;
+    fn own_write(&mut self, path: &str, bytes: &[u8], mode: u32, actor: Option<&str>)
+        -> Result<()>;
+}
+struct Inode {
+    parent: File,
+    name: String,
+    file: File,
+}
+pub struct LinuxDisk<V: Versions> {
+    workspace: File,
+    store: File,
+    versions: V,
+    inodes: BTreeMap<u64, Inode>,
+    next: u64,
+}
+fn io(error: rustix::io::Errno) -> Error {
+    std::io::Error::from(error).into()
+}
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+fn random() -> Result<String> {
+    let mut bytes = [0u8; 16];
+    let mut done = 0;
+    while done < bytes.len() {
+        match rustix::rand::getrandom(&mut bytes[done..], rustix::rand::GetRandomFlags::empty()) {
+            Ok(0) => return Err(Error::Invalid),
+            Ok(n) => done += n,
+            Err(rustix::io::Errno::INTR) => continue,
+            Err(error) => return Err(io(error)),
+        }
+    }
+    Ok(hex(&bytes))
+}
+fn meta(temp: &str) -> String {
+    format!("displaced-{}", temp.trim_start_matches(".smithers-doc-"))
+}
+fn confined_error(error: std::io::Error) -> Error {
+    if error.kind() == std::io::ErrorKind::InvalidInput {
+        Error::Invalid
+    } else {
+        error.into()
+    }
+}
+fn regular(file: &File) -> Result<()> {
+    crate::confine::regular(file).map_err(confined_error)
+}
+fn read(file: &mut File, limit: usize) -> Result<Vec<u8>> {
+    crate::confine::read(file, limit).map_err(confined_error)
+}
+fn open(parent: &File, name: &str, flags: OFlags, mode: Mode) -> Result<File> {
+    crate::confine::open(parent, name, flags, mode).map_err(Into::into)
+}
+impl<V: Versions> LinuxDisk<V> {
+    pub fn new(workspace: File, store: File, versions: V) -> Result<Self> {
+        // A branch build is never usable by root, even if it is called directly.
+        if rustix::process::geteuid().as_raw() != 19998
+            || rustix::process::getuid().as_raw() != 19998
+        {
+            return Err(Error::Unsupported);
+        }
+        let metadata = store.metadata()?;
+        if !workspace.metadata()?.is_dir()
+            || !metadata.is_dir()
+            || metadata.uid() != 19998
+            || metadata.permissions().mode() & 0o077 != 0
+        {
+            return Err(Error::Invalid);
+        }
+        Ok(Self {
+            workspace,
+            store,
+            versions,
+            inodes: BTreeMap::new(),
+            next: 1,
+        })
+    }
+    fn parent(&self, path: &str) -> Result<(File, String)> {
+        crate::confine::parent(&self.workspace, path).map_err(confined_error)
+    }
+    fn existing_parent(&self, path: &str) -> Result<Option<(File, String)>> {
+        match crate::confine::parent(&self.workspace, path) {
+            Ok(parent) => Ok(Some(parent)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(confined_error(error)),
+        }
+    }
+    fn keep(&mut self, parent: File, name: String, file: File) -> Result<Displaced> {
+        regular(&file)?;
+        let token = self.next;
+        self.next = self.next.checked_add(1).ok_or(Error::Invalid)?;
+        self.inodes.insert(token, Inode { parent, name, file });
+        Ok(token)
+    }
+    fn load_named(&mut self, name: &str) -> Result<Option<Record>> {
+        let mut file = match open(&self.store, name, OFlags::RDONLY, Mode::empty()) {
+            Ok(file) => file,
+            Err(_) => return Ok(None),
+        };
+        let bytes = match read(&mut file, crate::doc::state::MAX_RECORD_BYTES) {
+            Ok(bytes) => bytes,
+            Err(_) => return Ok(None),
+        };
+        Ok(Record::decode(&bytes).ok())
+    }
+    fn store_named(&mut self, name: &str, record: &Record) -> Result<()> {
+        let bytes = record.encode()?;
+        let temp = format!(".record-{name}-{}", random()?);
+        let mut file = open(
+            &self.store,
+            &temp,
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL,
+            Mode::from_raw_mode(0o600),
+        )?;
+        let result: Result<()> = (|| {
+            file.write_all(&bytes)?;
+            file.sync_all()?;
+            fs::renameat(&self.store, &temp, &self.store, name).map_err(io)?;
+            self.store.sync_all()?;
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = fs::unlinkat(&self.store, &temp, AtFlags::empty());
+        }
+        result
+    }
+    fn remove_meta(&self, temp: &str) -> Result<()> {
+        let name = meta(temp);
+        match fs::unlinkat(&self.store, &name, AtFlags::empty()) {
+            Ok(()) | Err(rustix::io::Errno::NOENT) => (),
+            Err(error) => return Err(io(error)),
+        }
+        self.store.sync_all()?;
+        Ok(())
+    }
+}
+impl<V: Versions> Disk for LinuxDisk<V> {
+    fn admit_write(&mut self, path: &str, actor: &str) -> Result<()> {
+        self.versions.before_write(path, Some(actor))
+    }
+
+    fn read(&mut self, path: &str) -> Result<Option<Vec<u8>>> {
+        let Some((parent, name)) = self.existing_parent(path)? else {
+            return Ok(None);
+        };
+        match fs::openat2(
+            &parent,
+            &name,
+            OFlags::RDONLY | OFlags::NONBLOCK | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+            Mode::empty(),
+            RESOLVE,
+        ) {
+            Ok(fd) => {
+                let mut file = File::from(fd);
+                Ok(Some(read(&mut file, MAX_TEXT_BYTES)?))
+            }
+            Err(rustix::io::Errno::NOENT) => Ok(None),
+            Err(error) => Err(io(error)),
+        }
+    }
+    fn load_record(&mut self, key: Digest) -> Result<Option<Record>> {
+        self.load_named(&hex(&key))
+    }
+    fn store_record(&mut self, key: Digest, record: &Record) -> Result<()> {
+        self.store_named(&hex(&key), record)
+    }
+    fn swap_text(
+        &mut self,
+        path: &str,
+        key: Digest,
+        bytes: &[u8],
+        actor: Option<&str>,
+    ) -> Result<Swap> {
+        if bytes.len() > MAX_TEXT_BYTES {
+            return Err(Error::Invalid);
+        }
+        // Drain outside changes and close another author's pending burst before
+        // replacing bytes. This callback runs on the same daemon mutation lock.
+        self.versions.before_write(path, actor)?;
+        let (parent, name) =
+            crate::confine::create_parent(&self.workspace, path).map_err(confined_error)?;
+        let old = match fs::openat2(
+            &parent,
+            &name,
+            OFlags::RDONLY | OFlags::NONBLOCK | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+            Mode::empty(),
+            RESOLVE,
+        ) {
+            Ok(fd) => Some(File::from(fd)),
+            Err(rustix::io::Errno::NOENT) => None,
+            Err(error) => return Err(io(error)),
+        };
+        let mode = if let Some(old) = &old {
+            regular(old)?;
+            let metadata = old.metadata()?;
+            super::saved_mode(metadata.mode())? | 0o020
+        } else {
+            // New working-copy files remain writable by the shared team.
+            0o664
+        };
+        let temp = format!(".smithers-doc-{}-{}", hex(&key), random()?);
+        // Persist the displaced inode's original merge base before the swap.
+        // Later saves may replace the path record while this writer stays open.
+        let record = self.load_record(key)?.ok_or(Error::Invalid)?;
+        self.store_named(&meta(&temp), &record)?;
+        let mut file = open(
+            &parent,
+            &temp,
+            OFlags::RDWR | OFlags::CREATE | OFlags::EXCL,
+            Mode::from_raw_mode(0o600),
+        )?;
+        let result: Result<()> = (|| {
+            file.write_all(bytes)?;
+            let gid = match &old {
+                Some(old) => old.metadata()?.gid(),
+                None => parent.metadata()?.gid(),
+            };
+            fs::fchown(&file, None, Some(rustix::process::Gid::from_raw(gid))).map_err(io)?;
+            fs::fchmod(&file, Mode::from_raw_mode(mode)).map_err(io)?;
+            file.sync_all()?;
+            #[cfg(all(feature = "killpoints", debug_assertions))]
+            crate::events::killpoint("write_swap");
+            fs::renameat_with(
+                &parent,
+                &temp,
+                &parent,
+                &name,
+                if old.is_some() {
+                    RenameFlags::EXCHANGE
+                } else {
+                    RenameFlags::NOREPLACE
+                },
+            )
+            .map_err(io)?;
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = fs::unlinkat(&parent, &temp, AtFlags::empty());
+            self.remove_meta(&temp)?;
+            result?;
+        }
+        if old.is_none() {
+            parent.sync_all()?;
+            self.remove_meta(&temp)?;
+            return Ok(Swap {
+                displaced: None,
+                mode,
+            });
+        }
+        let displaced = match open(&parent, &temp, OFlags::RDONLY, Mode::empty()).and_then(|f| {
+            regular(&f)?;
+            Ok(f)
+        }) {
+            Ok(file) => file,
+            Err(error) => {
+                // Never exchange back: another outside save may now occupy
+                // the destination. Keep the displaced entry and its metadata
+                // for recovery, even when it cannot be read as a regular file.
+                parent.sync_all()?;
+                return Err(error);
+            }
+        };
+        // Keep displaced bytes through any failed directory fsync or restart.
+        let retained_parent = parent.try_clone()?;
+        let token = self.keep(retained_parent, temp, displaced)?;
+        parent.sync_all()?;
+        Ok(Swap {
+            displaced: Some(token),
+            mode,
+        })
+    }
+    fn recover_temps(&mut self, path: &str, key: Digest) -> Result<Vec<Recovery>> {
+        let Some((parent, _)) = self.existing_parent(path)? else {
+            return Ok(vec![]);
+        };
+        let prefix = format!(".smithers-doc-{}-", hex(&key));
+        let mut directory = fs::Dir::read_from(&parent).map_err(io)?;
+        let mut tokens = vec![];
+        while let Some(entry) = directory.read() {
+            let entry = entry.map_err(io)?;
+            let Some(name) = entry
+                .file_name()
+                .to_str()
+                .ok()
+                .filter(|name| name.starts_with(&prefix))
+            else {
+                continue;
+            };
+            let file = open(&parent, name, OFlags::RDONLY, Mode::empty())?;
+            let record = self.load_named(&meta(name))?.ok_or(Error::Invalid)?;
+            if record.deleted_path.is_some() {
+                continue;
+            }
+            let token = self.keep(parent.try_clone()?, name.into(), file)?;
+            tokens.push(Recovery { token, record });
+        }
+        // Reclaim metadata left by an interrupted, unswapped temp creation or
+        // deletion. Only this open path's digest can select entries to remove.
+        let meta_prefix = format!("displaced-{}-", hex(&key));
+        let mut records = fs::Dir::read_from(&self.store).map_err(io)?;
+        while let Some(entry) = records.read() {
+            let entry = entry.map_err(io)?;
+            let Some(name) = entry
+                .file_name()
+                .to_str()
+                .ok()
+                .filter(|name| name.starts_with(&meta_prefix))
+            else {
+                continue;
+            };
+            let temp = format!(".smithers-doc-{}", name.trim_start_matches("displaced-"));
+            match open(&parent, &temp, OFlags::RDONLY, Mode::empty()) {
+                Ok(file) => regular(&file)?,
+                Err(Error::Io(_)) => {
+                    // Use a raw lookup to distinguish absence from confinement
+                    // refusal; a symlink or permission failure is never absence.
+                    match fs::openat2(
+                        &parent,
+                        &temp,
+                        OFlags::RDONLY | OFlags::NONBLOCK | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+                        Mode::empty(),
+                        RESOLVE,
+                    ) {
+                        Err(rustix::io::Errno::NOENT) => self.remove_meta(&temp)?,
+                        Err(error) => return Err(io(error)),
+                        Ok(_) => (),
+                    }
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(tokens)
+    }
+    fn remove_file(&mut self, path: &str, key: Digest, actor: Option<&str>) -> Result<Removal> {
+        self.versions.before_write(path, actor)?;
+        let Some((parent, name)) = self.existing_parent(path)? else {
+            return Ok(Removal {
+                displaced: None,
+                error: None,
+            });
+        };
+        // Validate type/permissions before mutation; a later replacement is retained,
+        // never followed and never exchanged back over a new outside writer.
+        match open(&parent, &name, OFlags::RDONLY, Mode::empty()) {
+            Ok(file) => regular(&file)?,
+            Err(_) => {
+                match fs::openat2(
+                    &parent,
+                    &name,
+                    OFlags::RDONLY | OFlags::NONBLOCK | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+                    Mode::empty(),
+                    RESOLVE,
+                ) {
+                    Err(rustix::io::Errno::NOENT) => {
+                        return Ok(Removal {
+                            displaced: None,
+                            error: None,
+                        })
+                    }
+                    Err(e) => return Err(io(e)),
+                    Ok(fd) => regular(&File::from(fd))?,
+                }
+            }
+        }
+        let record = self.load_record(key)?.ok_or(Error::Invalid)?;
+        if record.deleted_path.as_deref() != Some(path)
+            || key != super::super::state::digest(path.as_bytes())
+        {
+            return Err(Error::Invalid);
+        }
+        let temp = format!(".smithers-doc-{}-{}", hex(&key), random()?);
+        self.store_named(&meta(&temp), &record)?;
+        if let Err(e) = fs::renameat_with(&parent, &name, &parent, &temp, RenameFlags::NOREPLACE) {
+            self.remove_meta(&temp)?;
+            if e == rustix::io::Errno::NOENT {
+                return Ok(Removal {
+                    displaced: None,
+                    error: None,
+                });
+            }
+            return Err(io(e));
+        }
+        let retained = (|| {
+            let file = open(&parent, &temp, OFlags::RDONLY, Mode::empty())?;
+            regular(&file)?;
+            self.keep(parent.try_clone()?, temp, file)
+        })();
+        let durable = parent.sync_all().map_err(Error::from);
+        Ok(match retained {
+            Ok(token) => Removal {
+                displaced: Some(token),
+                error: durable.err(),
+            },
+            Err(error) => Removal {
+                displaced: None,
+                error: Some(error),
+            },
+        })
+    }
+    fn recover_deletions(&mut self) -> Result<Vec<(String, Recovery)>> {
+        let mut names = vec![];
+        let mut entries = fs::Dir::read_from(&self.store).map_err(io)?;
+        while let Some(entry) = entries.read() {
+            let entry = entry.map_err(io)?;
+            let name = entry.file_name().to_str().map_err(|_| Error::Invalid)?;
+            if name.starts_with("displaced-") {
+                names.push(name.to_owned());
+            }
+        }
+        let mut recovered = vec![];
+        for name in names {
+            let suffix = name.strip_prefix("displaced-").ok_or(Error::Invalid)?;
+            if suffix.len() != 97
+                || suffix.as_bytes()[64] != b'-'
+                || !suffix[..64]
+                    .bytes()
+                    .chain(suffix[65..].bytes())
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            {
+                return Err(Error::Invalid);
+            }
+            let record = self.load_named(&name)?.ok_or(Error::Invalid)?;
+            let Some(path) = record.deleted_path.clone() else {
+                continue;
+            };
+            if hex(&super::super::state::digest(path.as_bytes())) != suffix[..64] {
+                return Err(Error::Invalid);
+            }
+            let (parent, _) = self.parent(&path)?;
+            let temp = format!(".smithers-doc-{suffix}");
+            match fs::openat2(
+                &parent,
+                &temp,
+                OFlags::RDONLY | OFlags::NONBLOCK | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+                Mode::empty(),
+                RESOLVE,
+            ) {
+                Ok(fd) => {
+                    let token = self.keep(parent, temp, File::from(fd))?;
+                    recovered.push((path, Recovery { token, record }));
+                }
+                Err(rustix::io::Errno::NOENT) => (),
+                Err(e) => return Err(io(e)),
+            }
+        }
+        Ok(recovered)
+    }
+    fn own_delete(&mut self, path: &str, actor: Option<&str>) -> Result<()> {
+        self.versions.own_delete(path, actor)
+    }
+    fn read_displaced(&mut self, token: u64) -> Result<Vec<u8>> {
+        let inode = self.inodes.get_mut(&token).ok_or(Error::Invalid)?;
+        let bytes = read(&mut inode.file, MAX_TEXT_BYTES)?;
+        if bytes.len() > MAX_TEXT_BYTES {
+            // Keep the displaced inode and recovery metadata. A bounded
+            // prefix cannot establish a digest or an exact version receipt.
+            return Err(Error::ReadOnly);
+        }
+        Ok(bytes)
+    }
+    fn remove_displaced(&mut self, token: u64) -> Result<()> {
+        let inode = self.inodes.get(&token).ok_or(Error::Invalid)?;
+        match fs::unlinkat(&inode.parent, &inode.name, AtFlags::empty()) {
+            Ok(()) | Err(rustix::io::Errno::NOENT) => (),
+            Err(error) => return Err(io(error)),
+        }
+        inode.parent.sync_all()?;
+        self.remove_meta(&inode.name)?;
+        self.inodes.remove(&token);
+        Ok(())
+    }
+    fn record_outside(&mut self, path: &str, text: &[u8], actor: &str) -> Result<String> {
+        self.versions.outside(path, text, actor)
+    }
+    fn own_write(&mut self, path: &str, text: &[u8], mode: u32, actor: Option<&str>) -> Result<()> {
+        self.versions.own_write(path, text, mode, actor)
+    }
+}

@@ -1,0 +1,34 @@
+import { expect } from "@playwright/test"
+import { showcase } from "../showcase"
+
+export default showcase({
+  id: "command-palette",
+  order: 20,
+  title: "⌘K and slash commands",
+  summary: "⌘K opens Chat; / lists every flow; a flow answers with a card.",
+  flows: ["palette.open", "agents", "theme"],
+  run: async ({ page, app, backend }) => {
+    await backend.cloud()
+    await app.open("/")
+    await expect(page.getByTestId("composer-input")).toBeAttached()
+    await app.press("ControlOrMeta+k")
+    const input = page.getByTestId("composer-input")
+    await expect(input).toBeFocused()
+    await app.type(input, "/")
+    const palette = page.getByTestId("palette")
+    await expect(palette.locator('[role="option"]').nth(8)).toBeAttached()
+    await app.beat(800)
+    for (let step = 0; step < 5; step++) await app.press("ArrowDown")
+    await app.type(input, "/agents")
+    await app.beat(900)
+    await app.press("Enter")
+    const card = page.getByTestId("transcript").locator('.smithers-card[data-kind="agents"]')
+    await expect(card).toBeVisible()
+    await app.show(card)
+    const shade = () => page.evaluate(() => document.documentElement.dataset.theme ?? document.documentElement.className)
+    const before = await shade()
+    await app.slash("/theme")
+    await expect.poll(shade).not.toBe(before)
+    await app.beat(1200)
+  }
+})

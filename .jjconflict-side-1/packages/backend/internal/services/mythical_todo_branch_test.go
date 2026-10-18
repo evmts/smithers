@@ -1,0 +1,171 @@
+package services
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/microsandbox"
+)
+
+// A TODO's card keeps naming its branch after its lane is released: in
+// review after the verdict and merged it names its latest coding lane (never
+// a review lane), asleep once stopped, under the pull request's head branch;
+// while it holds a lane it names that lane. A TODO that never had a lane
+// names none.
+func TestTodoCardKeepsItsBranchAfterReleaseRealPostgres(t *testing.T) {
+	pool := newProductTestPool(t)
+	ctx := context.Background()
+	var userID, repoID int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(username,lower_username) VALUES('owner','owner') RETURNING id`).Scan(&userID))
+	_, err := pool.Exec(ctx, `INSERT INTO self_host_owners(singleton,user_id) VALUES(true,$1)`, userID)
+	require.NoError(t, err)
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(user_id,name,lower_name) VALUES($1,'repo','repo') RETURNING id`, userID).Scan(&repoID))
+	q := db.New(pool)
+	_, err = q.RequestMythicalBootstrap(ctx, repoID, userID, 1, false)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `UPDATE mythical_stacks SET state='active' WHERE repository_id=$1`, repoID)
+	require.NoError(t, err)
+	s := NewMythicalService(pool, nil)
+	ctx = middleware.ContextWithAuthInfo(ctx, &middleware.AuthInfo{User: &db.User{ID: userID}, SessionHash: "session"})
+	ctx = registerTestInstallCredential(t, pool, ctx, repoID)
+	for _, title := range []string{"Add a greeting", "Second"} {
+		_, err = s.FileTodo(ctx, repoID, userID, MythicalTodoInput{Title: title, Prompt: "Change " + title, Request: title})
+		require.NoError(t, err)
+	}
+	item, err := q.GetMythicalItemByNumber(ctx, repoID, 1)
+	require.NoError(t, err)
+	lane := func(name, status string) string {
+		row, err := q.CreateWorkspace(ctx, db.CreateWorkspaceParams{RepositoryID: repoID, UserID: userID, Name: name, Kind: "agent",
+			Status: status, TargetBookmark: "mythical", EnvironmentSource: defaultWorkspaceEnvironmentSource})
+		require.NoError(t, err)
+		_, _, err = q.BindMythicalLane(ctx, db.MythicalLane{WorkspaceID: row.ID, RepositoryID: repoID, ItemID: item.ID, Name: name})
+		require.NoError(t, err)
+		return row.ID
+	}
+	coding := lane("TODO 1 attempt 1 g1", "stopped")
+	review := lane("TODO 1 review g2", "running")
+	branch := func(n int64) any {
+		card, err := s.Todo(ctx, repoID, n)
+		require.NoError(t, err)
+		return card["branch"]
+	}
+
+	// Working on its coding lane before any publication: the card names the
+	// branch its title derives, never the lane's internal name or bookmark,
+	// and the lane's machine reads by that name too.
+	_, err = pool.Exec(ctx, `UPDATE mythical_items SET state='running', workspace_id=$2 WHERE id=$1`, item.ID, coding)
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"id": coding, "name": "smithers/add-a-greeting", "machine": map[string]any{"state": "asleep"}}, branch(1))
+	_, err = pool.Exec(ctx, `UPDATE workspaces SET status='releasing' WHERE id=$1`, coding)
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"id": coding, "name": "smithers/add-a-greeting", "machine": map[string]any{"state": "awake"}}, branch(1), "release is not a confirmed stop and remains a valid card state")
+	_, err = pool.Exec(ctx, `UPDATE workspaces SET status='stopped' WHERE id=$1`, coding)
+	require.NoError(t, err)
+	machine, err := q.GetWorkspace(ctx, coding)
+	require.NoError(t, err)
+	name, err := BranchName(ctx, q, machine)
+	require.NoError(t, err)
+	require.Equal(t, "smithers/add-a-greeting", name)
+	other, err := q.GetWorkspace(ctx, review)
+	require.NoError(t, err)
+	name, err = BranchName(ctx, q, other)
+	require.NoError(t, err)
+	require.Equal(t, "mythical", name, "a lane that is not the TODO's workspace keeps the stack's bookmark")
+
+	// In review, holding its review lane: the card names that lane.
+	_, err = pool.Exec(ctx, `UPDATE mythical_items SET state='proposed', workspace_id=$2, pr_number=1, pr_url='https://github.com/o/r/pull/1',
+		pr_head='abc', pr_state='open', checks = COALESCE(checks,'{}'::jsonb) || '{"branch":"smithers/add-a-greeting"}'::jsonb WHERE id=$1`, item.ID, review)
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"id": review, "name": "smithers/add-a-greeting", "machine": map[string]any{"state": "awake"}}, branch(1))
+
+	// The review answered and its lane was released: the card names the
+	// TODO's own coding lane, asleep, under its pull request's branch.
+	_, err = pool.Exec(ctx, `UPDATE mythical_items SET workspace_id='' WHERE id=$1`, item.ID)
+	require.NoError(t, err)
+	want := map[string]any{"id": coding, "name": "smithers/add-a-greeting", "machine": map[string]any{"state": "asleep"}}
+	require.Equal(t, want, branch(1))
+	require.NoError(t, pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		read := db.New(tx)
+		selected, err := branchWorkspaceByName(ctx, tx, read, repoID, "smithers/add-a-greeting")
+		require.NoError(t, err)
+		require.Equal(t, coding, selected.ID, "the public name resolves the same retained coding branch as the TODO card")
+		_, err = branchWorkspaceByName(ctx, tx, read, repoID+1, "smithers/add-a-greeting")
+		require.ErrorIs(t, err, pgx.ErrNoRows, "a public name cannot cross repositories")
+		_, err = branchWorkspaceByName(ctx, tx, read, repoID, "smithers/unknown")
+		require.ErrorIs(t, err, pgx.ErrNoRows)
+		return nil
+	}))
+	_, err = pool.Exec(ctx, `UPDATE mythical_items SET state='landed' WHERE id=$1`, item.ID)
+	require.NoError(t, err)
+	require.Equal(t, want, branch(1), "a merged TODO keeps naming its branch")
+
+	require.Nil(t, branch(2), "a TODO that never had a lane names none")
+	cards, err := s.Todos(ctx, repoID)
+	require.NoError(t, err)
+	for _, card := range cards {
+		if card["n"].(int64) == 1 {
+			require.Equal(t, want, card["branch"], "the list agrees")
+		}
+	}
+}
+
+// A TODO whose lane waits for a machine on a full host says so: its branch
+// machine is waiting with its place in line and its card carries the queue
+// reason "machine", as the TODO card renders "Waiting for a machine · #2".
+func TestTodoCardShowsItsLaneWaitingForAMachineRealPostgres(t *testing.T) {
+	pool := newProductTestPool(t)
+	ctx := context.Background()
+	var userID, repoID int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(username,lower_username) VALUES('owner','owner') RETURNING id`).Scan(&userID))
+	_, err := pool.Exec(ctx, `INSERT INTO self_host_owners(singleton,user_id) VALUES(true,$1)`, userID)
+	require.NoError(t, err)
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(user_id,name,lower_name) VALUES($1,'repo','repo') RETURNING id`, userID).Scan(&repoID))
+	q := db.New(pool)
+	_, err = q.RequestMythicalBootstrap(ctx, repoID, userID, 1, false)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `UPDATE mythical_stacks SET state='active' WHERE repository_id=$1`, repoID)
+	require.NoError(t, err)
+	queue := new(microsandbox.Runtime)
+	s := NewMythicalService(pool, nil)
+	s.lanes = NewWorkspaceMythicalLanes(NewWorkspaceService(q, WithWorkspaceRuntime(queue)))
+	ctx = middleware.ContextWithAuthInfo(ctx, &middleware.AuthInfo{User: &db.User{ID: userID}, SessionHash: "session"})
+	ctx = registerTestInstallCredential(t, pool, ctx, repoID)
+	_, err = s.FileTodo(ctx, repoID, userID, MythicalTodoInput{Title: "Add a greeting", Prompt: "Change it", Request: "one"})
+	require.NoError(t, err)
+	item, err := q.GetMythicalItemByNumber(ctx, repoID, 1)
+	require.NoError(t, err)
+	lanes := []string{}
+	for _, name := range []string{"other lane", "TODO 1 attempt 1 g1"} {
+		row, err := q.CreateWorkspace(ctx, db.CreateWorkspaceParams{RepositoryID: repoID, UserID: userID, Name: name, Kind: "agent",
+			Status: "pending", TargetBookmark: "mythical", EnvironmentSource: defaultWorkspaceEnvironmentSource})
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, `UPDATE workspaces SET provisioning_stage=$2 WHERE id=$1`, row.ID, workspaceWaitingForMachine)
+		require.NoError(t, err)
+		holder := machineQueueHolder(row.ID)
+		_, err = queue.Request("todo", holder, holder, workspaceMachineReason)
+		require.NoError(t, err)
+		lanes = append(lanes, row.ID)
+	}
+	_, err = pool.Exec(ctx, `UPDATE mythical_items SET state='running', workspace_id=$2, checks = COALESCE(checks,'{}'::jsonb) || '{"run_launched":true}'::jsonb WHERE id=$1`, item.ID, lanes[1])
+	require.NoError(t, err)
+	card, err := s.Todo(ctx, repoID, 1)
+	require.NoError(t, err)
+	require.Equal(t, "starting", card["state"])
+	require.Equal(t, map[string]any{"id": lanes[1], "name": "smithers/add-a-greeting", "machine": map[string]any{"state": "waiting", "position": 2}}, card["branch"])
+	require.Equal(t, map[string]any{"reason": "machine", "position": int64(2)}, card["queue"])
+
+	// The lane got its machine: no wait is shown.
+	queue.CancelAdmission(machineQueueHolder(lanes[1]), machineQueueHolder(lanes[1]), time.Now())
+	_, err = pool.Exec(ctx, `UPDATE workspaces SET status='running', provisioning_stage='' WHERE id=$1`, lanes[1])
+	require.NoError(t, err)
+	card, err = s.Todo(ctx, repoID, 1)
+	require.NoError(t, err)
+	require.NotContains(t, card, "queue")
+	require.Equal(t, map[string]any{"state": "awake"}, card["branch"].(map[string]any)["machine"])
+}

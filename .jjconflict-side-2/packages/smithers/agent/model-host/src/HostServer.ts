@@ -1,0 +1,499 @@
+/**
+ * Authenticated Fetch binding for the shared model turn host.
+ *
+ * @since 1.0.0-rc.0
+ */
+
+import type * as Model from "@smthrs/model/Model"
+import { ModelError } from "@smthrs/model/ModelError"
+import { AgentTurnCursorSchema } from "@smthrs/rpc/AgentTurnJournal"
+import { ContextPreflightInputSchema } from "@smthrs/rpc/ContextPreflight"
+import type { ContextPreflightInput } from "@smthrs/rpc/ContextPreflight"
+import type { DocsPage } from "@smthrs/rpc/DocsPages"
+import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { Cause, Effect, Exit, Metric, Option } from "effect"
+import { createHash, timingSafeEqual } from "node:crypto"
+import { z } from "zod"
+import { runContextPreflight } from "./ContextPreflight.ts"
+import { runDurableChatTurn } from "./DurableChatProducer.ts"
+import type { DurableChatGrant } from "./DurableChatProducer.ts"
+import { createHostDiagnostics } from "./HostDiagnostics.ts"
+import type { HostDiagnosticFields, HostDiagnostics } from "./HostDiagnostics.ts"
+import { boundedJson } from "./internal/BoundedJson.ts"
+import type { ProducerError, ResolveFailed } from "./ModelHostError.ts"
+import { StreamTooLarge } from "./ModelHostError.ts"
+import { runModelTurn } from "./ModelTurnHost.ts"
+import type { ModelTurnOptions } from "./ModelTurnHost.ts"
+
+/** The model host wire protocol identifier.
+ *
+ * @category protocol
+ * @since 1.0.0-rc.0
+ */
+export const MODEL_HOST_PROTOCOL = "smithers.chat-model-host/v1"
+/** The authenticated model turn endpoint.
+ *
+ * @category protocol
+ * @since 1.0.0-rc.0
+ */
+export const MODEL_HOST_TURN_PATH = "/v1/chat/turn"
+/** The authenticated sealed model stream endpoint.
+ *
+ * @category protocol
+ * @since 1.0.0-rc.0
+ */
+export const MODEL_HOST_STREAM_PATH = "/v1/model/stream"
+/** The authenticated selection-only endpoint: the shared context preflight
+ * selector without a chat turn, as a TODO plan step uses it over wiki pages.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const MODEL_HOST_CONTEXT_SELECT_PATH = "/v1/context/select"
+/** The protocol identity endpoint.
+ *
+ * @category protocol
+ * @since 1.0.0-rc.0
+ */
+export const MODEL_HOST_HEALTH_PATH = "/health"
+
+const Identity = z.string().min(1).max(160)
+const WireGrantSchema = z.object({
+  turnId: z.string().min(1).max(160),
+  ownerId: z.number().int().positive(),
+  repositoryId: z.number().int().positive().optional(),
+  runId: Identity,
+  legId: Identity,
+  generation: z.number().int().positive(),
+  token: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/),
+  cursor: AgentTurnCursorSchema,
+  expiresAt: z.string().min(1).max(64),
+  request: z.unknown(),
+  producerBaseUrl: z.string().url(),
+  installOrigin: z.string().url().refine((raw) => {
+    try {
+      const origin = new URL(raw)
+      return (origin.protocol === "http:" || origin.protocol === "https:") &&
+        origin.username === "" && origin.password === "" && origin.pathname === "/" &&
+        origin.search === "" && origin.hash === ""
+    } catch {
+      return false
+    }
+  }).transform((raw) => new URL(raw).origin).optional(),
+  source: z.object({ repository: z.string().regex(/^[^/\s]+\/[^/\s]+$/).max(201) }).strict().optional(),
+  agentInstructions: z.string().max(66000).optional(),
+  api: z.object({ author: Identity, token: z.string().regex(/^smithers_[a-f0-9]{40}$/u) }).strict().optional()
+}).strict()
+
+/**
+ * The model and projection options resolved inside the trusted host.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface ModelTurnResolution {
+  readonly model: Model.Model
+  readonly options: ModelTurnOptions
+  /** Authorized SharedEntries and pinned repository data, resolved on the host. */
+  readonly preflight?: {
+    readonly input: ContextPreflightInput
+    readonly model: Model.Model
+    readonly options: ModelTurnOptions
+  }
+}
+
+/** Resolves the owner's configured provider inside the trusted host process.
+ * Provider credentials stay in this result and never cross the Go grant wire.
+ * `selection` is the selection-only endpoint's validated input; a chat turn
+ * never supplies one, so its preflight always reads authorized SharedEntries.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type ModelTurnResolver = (
+  grant: DurableChatGrant,
+  selection?: ContextPreflightInput
+) => Effect.Effect<ModelTurnResolution, ResolveFailed>
+
+/**
+ * Dependencies for the authenticated model host request handler.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface ModelTurnHandlerOptions {
+  readonly authorization: string
+  /** Public install origin; configure when the callback is a private listener. */
+  readonly installOrigin?: string
+  readonly callbackBaseUrl: string
+  readonly resolve: ModelTurnResolver
+  readonly fetchImpl?: FetchLike
+  /** The in-app docs pages this host's build bundles; host-owned turns read them through `docs`. */
+  readonly docs?: ReadonlyArray<DocsPage>
+}
+
+const normalizedBaseUrl = (raw: string): string => {
+  const value = new URL(raw)
+  if (
+    (value.protocol !== "http:" && value.protocol !== "https:") || value.username !== "" || value.password !== "" ||
+    value.search !== "" || value.hash !== ""
+  ) {
+    throw new Error("invalid model host callback URL")
+  }
+  value.pathname = "/"
+  return value.toString()
+}
+
+const turnRequest = (value: unknown): StartAgentTurnRequest | undefined => {
+  if (typeof value !== "object" || value === null) return undefined
+  const body = value as Record<string, unknown>
+  if (typeof body.runId !== "string" || typeof body.instructions !== "string" || !Array.isArray(body.messages)) {
+    return undefined
+  }
+  if (body.tools !== undefined && !Array.isArray(body.tools)) return undefined
+  return value as StartAgentTurnRequest
+}
+
+const decodeGrant = (value: unknown, callbackBaseUrl: string): DurableChatGrant | undefined => {
+  const parsed = WireGrantSchema.safeParse(value)
+  if (!parsed.success) return undefined
+  const wire = parsed.data
+  const request = turnRequest(wire.request)
+  let producerBaseUrl: string
+  try {
+    producerBaseUrl = normalizedBaseUrl(wire.producerBaseUrl)
+  } catch {
+    return undefined
+  }
+  if (
+    request === undefined || request.runId !== wire.runId || wire.cursor.runId !== wire.runId ||
+    wire.cursor.legId !== wire.legId || producerBaseUrl !== callbackBaseUrl ||
+    !Number.isFinite(Date.parse(wire.expiresAt)) || Date.parse(wire.expiresAt) <= Date.now()
+  ) return undefined
+  return {
+    turnId: wire.turnId,
+    ownerId: wire.ownerId,
+    ...(wire.repositoryId === undefined ? {} : { repositoryId: wire.repositoryId }),
+    runId: wire.runId,
+    legId: wire.legId,
+    generation: wire.generation,
+    token: wire.token,
+    cursor: wire.cursor,
+    expiresAt: wire.expiresAt,
+    request,
+    producerBaseUrl: callbackBaseUrl,
+    ...(wire.installOrigin === undefined ? {} : { installOrigin: wire.installOrigin }),
+    ...(wire.source === undefined ? {} : { source: wire.source }),
+    ...(wire.agentInstructions === undefined ? {} : { agentInstructions: wire.agentInstructions }),
+    ...(wire.api === undefined ? {} : { api: wire.api })
+  }
+}
+
+/** A selection-only request carries host-read candidates, never a transcript. */
+const SelectionRequestSchema = z.object({
+  runId: Identity,
+  ownerId: z.number().int().positive(),
+  instructions: z.literal(""),
+  messages: z.array(z.never()).max(0),
+  contextSelection: ContextPreflightInputSchema
+}).strict()
+
+const streamRequest = (value: unknown): StartAgentTurnRequest | undefined => {
+  if (typeof value !== "object" || value === null) return undefined
+  const body = value as Record<string, unknown>
+  if (typeof body.runId !== "string" || !Array.isArray(body.messages)) return undefined
+  if (body.tools !== undefined && !Array.isArray(body.tools)) return undefined
+  return {
+    ...body,
+    instructions: typeof body.instructions === "string" ? body.instructions : ""
+  } as StartAgentTurnRequest
+}
+
+/** The most NDJSON bytes one sealed stream response holds; the Go reader caps at the same 16 MiB. */
+const MAX_STREAM_BYTES = 16 * 1024 * 1024
+
+/**
+ * Failed model host turns by failure class.
+ *
+ * @category metrics
+ * @since 1.0.0-rc.1
+ */
+export const turnFailures = Metric.counter("smithers_model_host_turn_failures", {
+  description: "Model host turns that ended in a refusal, by failure class"
+})
+
+/**
+ * Model host turn wall time in milliseconds, by outcome.
+ *
+ * @category metrics
+ * @since 1.0.0-rc.1
+ */
+export const turnDuration = Metric.histogram("smithers_model_host_turn_duration_ms", {
+  description: "Model host turn wall time in milliseconds, by outcome",
+  boundaries: Metric.exponentialBoundaries({ start: 100, factor: 2, count: 12 })
+})
+
+/**
+ * What a failed turn is: the failure class, its provider or producer status,
+ * and the response code the caller sees. Never the cause text.
+ */
+interface TurnFailure {
+  readonly failure: string
+  readonly status?: number
+  readonly code?: string
+  readonly response: "turn_failed" | "provider_quota" | "provider_auth" | "cancelled"
+  /**
+   * How far the callback that failed got on the wire. The attempt's own record
+   * is in the guest's log, which is gone once the turn's guest is, so a
+   * transport failure carries its phase out over the one connection a callback
+   * fault does not break: this answer to the caller. Phases, counts and short
+   * codes only — the same fields the observer is built to be safe to log.
+   */
+  readonly transport?: HostDiagnosticFields
+}
+
+/** The provider refusals a person acts on: wait or add credit, or replace the key. */
+const providerResponse = (code: string): TurnFailure["response"] =>
+  code === "rate_limited" || code === "quota_exceeded" || code === "out_of_credit" ?
+    "provider_quota"
+    : code === "authentication" ?
+    "provider_auth"
+    : "turn_failed"
+
+const classify = (
+  cause: Cause.Cause<ResolveFailed | ProducerError | Model.ModelFailure | StreamTooLarge>
+): TurnFailure => {
+  const error = Option.getOrUndefined(Cause.findErrorOption(cause))
+  if (error === undefined) {
+    return Cause.hasInterruptsOnly(cause)
+      ? { failure: "Interrupted", response: "cancelled" }
+      : { failure: "Defect", response: "turn_failed" }
+  }
+  if (error instanceof ModelError) {
+    return {
+      failure: "ModelFailure",
+      code: error.code,
+      response: providerResponse(error.code)
+    }
+  }
+  return {
+    failure: error._tag,
+    ...("status" in error ? { status: error.status } : {}),
+    ...("transport" in error && error.transport !== undefined ? { transport: error.transport } : {}),
+    response: "turn_failed"
+  }
+}
+
+/**
+ * The stage a sealed model stream stopped at, and what stopped it there:
+ * `classify`'s fixed tags, provider codes and statuses, which is what the
+ * turn route already answers with and what `createHostDiagnostics` is built
+ * to be safe to write. No message, destination, header or credential reaches
+ * either the record or the response.
+ *
+ * Why it exists: a bare `stream_failed` with a swallowed cause made a resolve
+ * refusal, a provider outage and an oversized stream the same answer. On
+ * 2026-10-14 a sealed stream that refused its owner's configured model
+ * (an origin the guest could not match) looked exactly like a provider that
+ * never answered, and the stage had to be found by bisecting the environment.
+ */
+const streamRefused = (
+  diagnostics: HostDiagnostics,
+  stage: "resolve" | "stream",
+  cause: Cause.Cause<ResolveFailed | Model.ModelFailure | StreamTooLarge>
+): Response => {
+  const classified = classify(cause)
+  // `classify` also carries the status a journal refused a callback with, and
+  // this route cannot produce one: a sealed model stream commits nothing, so
+  // its failures are a refused resolve, a model failure and an oversized
+  // stream, none of which has a status. Spreading one here left a branch no
+  // request could reach, and the narrowed cause type above is what keeps it
+  // unreachable — a producer failure at this call site is a type error now,
+  // rather than a status this response would silently drop.
+  const refusal = {
+    stage,
+    failure: classified.failure,
+    ...(classified.code === undefined ? {} : { providerCode: classified.code })
+  }
+  diagnostics.record("model_stream", "refused", refusal)
+  return Response.json({ status: "error", code: "stream_failed", ...refusal }, { status: 502 })
+}
+
+const digest = (value: string): Buffer => createHash("sha256").update(value).digest()
+
+/**
+ * The bearer check every model host route runs: compares the presented
+ * Authorization header with `Bearer <authorization>` in constant time. Equal
+ * length SHA-256 digests keep the comparison from leaking a prefix match.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const bearerAuthorization = (authorization: string): (request: Request) => boolean => {
+  const expected = digest(`Bearer ${authorization}`)
+  return (request) => {
+    const presented = request.headers.get("authorization")
+    return presented !== null && timingSafeEqual(digest(presented), expected)
+  }
+}
+
+/**
+ * Creates the Fetch handler shared by the local executable and Plue service.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const createModelTurnHandler = (options: ModelTurnHandlerOptions): (request: Request) => Promise<Response> => {
+  if (options.authorization.trim() === "") throw new Error("model host authorization is required")
+  const callbackBaseUrl = normalizedBaseUrl(options.callbackBaseUrl)
+  const authorized = bearerAuthorization(options.authorization)
+  return async (request) => {
+    const url = new URL(request.url)
+    if (url.pathname === MODEL_HOST_HEALTH_PATH && request.method === "GET") {
+      return Response.json({ protocol: MODEL_HOST_PROTOCOL })
+    }
+    if (url.pathname === MODEL_HOST_STREAM_PATH) {
+      if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })
+      if (!authorized(request)) {
+        return Response.json({ status: "error", code: "forbidden" }, { status: 401 })
+      }
+      const body = streamRequest(await boundedJson(request))
+      if (body === undefined) return Response.json({ status: "error", code: "request_invalid" }, { status: 400 })
+      const wireBody = body as unknown as Record<string, unknown>
+      const ownerId = typeof wireBody.ownerId === "number" && Number.isSafeInteger(wireBody.ownerId)
+        ? wireBody.ownerId :
+        0
+      const grant: DurableChatGrant = {
+        turnId: `model-stream-${body.runId}`,
+        ownerId,
+        runId: body.runId,
+        legId: body.runId,
+        generation: 1,
+        token: "model_stream_model_stream_model_stream_1234",
+        cursor: { version: 1, runId: body.runId, legId: body.runId, batch: 0, position: 0, hash: "0".repeat(64) },
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        request: body,
+        producerBaseUrl: callbackBaseUrl
+      }
+      const diagnostics = createHostDiagnostics({ turnId: grant.turnId })
+      const resolveExit = await Effect.runPromiseExit(options.resolve(grant), { signal: request.signal })
+      if (Exit.isFailure(resolveExit)) return streamRefused(diagnostics, "resolve", resolveExit.cause)
+      const resolved = resolveExit.value
+      const encoder = new TextEncoder()
+      const lines: Array<string> = []
+      let size = 0
+      const streamExit = await Effect.runPromiseExit(
+        runModelTurn(
+          resolved.model,
+          body,
+          resolved.options,
+          (frame: AgentTurnFrame) => {
+            const line = `${JSON.stringify(frame)}\n`
+            size += encoder.encode(line).byteLength
+            if (size > MAX_STREAM_BYTES) return Effect.fail(new StreamTooLarge({ limitBytes: MAX_STREAM_BYTES }))
+            lines.push(line)
+            return Effect.void
+          },
+          undefined,
+          diagnostics
+        ),
+        { signal: request.signal }
+      )
+      if (Exit.isFailure(streamExit)) return streamRefused(diagnostics, "stream", streamExit.cause)
+      return new Response(lines.join(""), {
+        status: 200,
+        headers: { "content-type": "application/x-ndjson", "cache-control": "no-store" }
+      })
+    }
+    if (url.pathname === MODEL_HOST_CONTEXT_SELECT_PATH) {
+      if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })
+      if (!authorized(request)) {
+        return Response.json({ status: "error", code: "forbidden" }, { status: 401 })
+      }
+      const body = SelectionRequestSchema.safeParse(await boundedJson(request))
+      if (!body.success) return Response.json({ status: "error", code: "request_invalid" }, { status: 400 })
+      const { runId, ownerId, contextSelection } = body.data
+      const grant: DurableChatGrant = {
+        turnId: `context-selection-${runId}`,
+        ownerId,
+        runId,
+        legId: runId,
+        generation: 1,
+        token: "context_selection_context_selection_12",
+        cursor: { version: 1, runId, legId: runId, batch: 0, position: 0, hash: "0".repeat(64) },
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        request: { runId, instructions: "", messages: [] },
+        producerBaseUrl: callbackBaseUrl
+      }
+      const exit = await Effect.runPromiseExit(
+        options.resolve(grant, contextSelection).pipe(
+          Effect.flatMap(({ preflight }) =>
+            preflight === undefined
+              ? Effect.fail(
+                new ModelError({ code: "invalid_provider_output", message: "context selector is unavailable" })
+              )
+              : runContextPreflight(contextSelection, preflight.model, preflight.options)
+          )
+        ),
+        { signal: request.signal }
+      )
+      if (Exit.isSuccess(exit)) return Response.json(exit.value.result)
+      return Response.json({ status: "error", code: classify(exit.cause).response }, { status: 502 })
+    }
+    if (url.pathname !== MODEL_HOST_TURN_PATH) return new Response("Not found", { status: 404 })
+    if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })
+    if (!authorized(request)) {
+      return Response.json({ status: "error", code: "forbidden" }, { status: 401 })
+    }
+    const grant = decodeGrant(await boundedJson(request), callbackBaseUrl)
+    if (grant === undefined) return Response.json({ status: "error", code: "request_invalid" }, { status: 400 })
+    const started = performance.now()
+    const exit = await Effect.runPromiseExit(
+      options.resolve(grant).pipe(
+        Effect.flatMap(({ model, options: modelOptions, preflight }) =>
+          runDurableChatTurn(
+            model,
+            { ...grant, ...(options.installOrigin === undefined ? {} : { installOrigin: options.installOrigin }) },
+            modelOptions,
+            callbackBaseUrl,
+            options.fetchImpl,
+            preflight,
+            options.docs
+          )
+        )
+      ),
+      { signal: request.signal }
+    )
+    const elapsed = performance.now() - started
+    if (Exit.isSuccess(exit)) {
+      await Effect.runPromise(Metric.update(Metric.withAttributes(turnDuration, { outcome: "success" }), elapsed))
+      return new Response(null, { status: 204 })
+    }
+    // Provider and transport causes can hold signed requests, so the log line
+    // and the response carry the failure class and status codes only. The
+    // durable Go boundary records the generic terminal receipt after this
+    // refusal.
+    const failed = classify(exit.cause)
+    await Effect.runPromise(
+      Effect.logError("model host turn failed").pipe(
+        Effect.annotateLogs({
+          failure: failed.failure,
+          ...(failed.status === undefined ? {} : { status: failed.status }),
+          ...(failed.code === undefined ? {} : { code: failed.code }),
+          ...(failed.transport === undefined ? {} : failed.transport),
+          turnId: grant.turnId,
+          runId: grant.runId,
+          generation: grant.generation,
+          elapsedMs: Math.round(elapsed)
+        }),
+        Effect.andThen(Metric.update(Metric.withAttributes(turnFailures, { failure: failed.failure }), 1)),
+        Effect.andThen(Metric.update(Metric.withAttributes(turnDuration, { outcome: "failure" }), elapsed))
+      )
+    )
+    return Response.json({
+      status: "error",
+      code: failed.response,
+      ...(failed.transport === undefined ? {} : { transport: failed.transport })
+    }, { status: 502 })
+  }
+}
