@@ -141,6 +141,25 @@ const installProjectorFixture = async (storage: StorageApi, version: number, ret
 }
 
 describe("the live store's authoritative event path", () => {
+  test("v37 transcript upgrade preserves old rows without assigning them to the selected repository (#4310)", async () => {
+    const storage = memoryStorage()
+    await installProjectorFixture(storage, 37)
+    const upgraded = await open(storage)
+    expect((await upgraded.eventHistory()).head.projectorVersion).toBe(38)
+    expect(upgraded.collections.messages.get("message-kept-user")?.text).toBe("Keep my work")
+    expect(upgraded.collections.cards.get("kept")?.kind).toBe("file")
+    await upgraded.dispatch({ type: "repository.upserted", actor: "system", repository: {
+      id: "other/repo", org: "other", name: "repo", ownerKind: "user", head: null, catalog: true
+    } }).isPersisted.promise
+    await upgraded.dispatch({ type: "repo.selected", actor: "user", id: "other/repo" }).isPersisted.promise
+    expect(upgraded.agentContextSnapshot().messages).toHaveLength(0)
+    expect(upgraded.collections.messages.has("message-kept-user")).toBe(true)
+    await upgraded.dispose?.()
+    const reopened = await open(storage)
+    expect(reopened.collections.cards.get("kept")?.kind).toBe("file")
+    expect(reopened.agentContextSnapshot().messages).toHaveLength(0)
+  })
+
   for (const stage of ["account", "poll", "ready", "done"] as const) for (const compact of stage === "account" ? [true, false] : [true])
     test(`a pre-v26 ${stage} signup with ${compact ? "compacted" : "live"} history retires once`, async () => {
     const storage = memoryStorage(), store = await open(storage)
@@ -672,7 +691,7 @@ describe("the live store's authoritative event path", () => {
      * out. Changing this list owes a bump and an upgrade test like the ones
      * below.
      */
-    expect({ version: APP_PROJECTOR_VERSION, roster: [...APP_PROJECTION_COLLECTION_NAMES].sort() }).toEqual({ version: 37, roster: [
+    expect({ version: APP_PROJECTOR_VERSION, roster: [...APP_PROJECTION_COLLECTION_NAMES].sort() }).toEqual({ version: 38, roster: [
       "agents", "approvalRequests", "billingAccounts", "branches", "cardHistories", "cards", "changes",
       "cloudSessions", "cloudWorkspaces", "commandIntents", "connectorOperations", "connectors", "flowDurations", "frames",
       "githubAppStatuses", "httpTurnLegs", "httpTurns", "identitySessions", "messages", "models",

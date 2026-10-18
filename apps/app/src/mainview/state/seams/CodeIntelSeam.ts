@@ -1,3 +1,4 @@
+import { conversationTabIdOf, currentConversationTabIdOf, inConversation } from "../AppState"
 import { Data } from "effect"
 export class CodeIntelUnavailable extends Data.TaggedError("CodeIntelUnavailable") {
   readonly message = "Code intelligence is unavailable"
@@ -128,7 +129,12 @@ interface Prepared {
 
 export const createCodeIntelSeam = (ctx: SeamContext, options: CodeIntelSeamOptions): CodeIntelSeam => {
   const startingAfterMs = options.startingAfterMs ?? 300
-  const cardIdOf = (repo: string, path: string): string => options.branchScope ? `file-branch-${repo}-${path}` : `file-${repo}-${path}`
+  const cardIdOf = (repo: string, path: string): string => {
+    if (options.branchScope) return `file-branch-${repo}-${path}`
+    const conversation = ctx.actor() === "user" ? currentConversationTabIdOf(ctx.store.session()) : conversationTabIdOf(ctx.store.session())
+    return [...ctx.store.collections.cards.values()].find(card => card.kind === "file" &&
+      card.payload.repo === repo && card.payload.path === path && card.payload.ref === undefined && inConversation(card, conversation))?.id ?? `file-${repo}-${path}`
+  }
 
   const fileCard = (id: string): Extract<Card, { kind: "file" }> | undefined => {
     const card = ctx.store.collections.cards.get(id)

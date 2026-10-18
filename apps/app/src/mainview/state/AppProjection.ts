@@ -71,6 +71,7 @@ WorkspaceSchema,
 WorldDocumentSchema,
 cardFrameId,
 conversationTabIdOf,
+currentConversationTabIdOf,
 inConversation,
 initialBillingAccount,
 initialCloudSession,
@@ -1123,6 +1124,8 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
   // Nested facts share one authoritative revision and use a stable position
   // suffix for rows which normally derive their identity from that revision.
   const transcriptAnchor = transition.transcriptAnchor
+  // Account-wide legacy replay carries no repository provenance.
+  const accountHistory = transition.type === "conversation.restored"
   const reduce = (nestedTransition: AppTransition = transition, position?: number | string): void => {
       const transition = nestedTransition
       const current = collections.sessions.get(SESSION_ID)!
@@ -1198,19 +1201,17 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
         }
       }
       /*
-       * The conversation every row written by this dispatch belongs to
-       * (docs/LOCAL-APP.md "Tabs"): undefined, the one Smithers conversation.
-       * Read from `current` so a turn's replies land where the turn started;
-       * the two helpers are the only way a message or a card enters its
-       * collection here.
+       * Each row belongs to the repository and branch that admitted it. Human acts
+       * address the current view; an active agent turn keeps its captured
+       * conversation. An explicitly captured row keeps its original scope.
        */
-      const conversationTabId = conversationTabIdOf(current)
+      const conversationTabId = accountHistory ? undefined : transition.actor === "user" ? currentConversationTabIdOf(current) : conversationTabIdOf(current)
       const insertMessage = (row: Message): void => {
-        collections.messages.insert(conversationTabId === undefined ? row : { ...row, tabId: conversationTabId })
+        collections.messages.insert(row.tabId !== undefined || conversationTabId === undefined ? row : { ...row, tabId: conversationTabId })
         anchorEntry(row.id, transition.transcriptAnchor ?? transcriptAnchor)
       }
       const insertCard = (row: Card): void => {
-        collections.cards.insert(conversationTabId === undefined ? row : { ...row, tabId: conversationTabId })
+        collections.cards.insert(row.tabId !== undefined || conversationTabId === undefined ? row : { ...row, tabId: conversationTabId })
         anchorEntry(row.id, transition.transcriptAnchor ?? transcriptAnchor)
       }
       const ensureCardFrame = (cardId: string): Frame => {
@@ -2626,7 +2627,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           if (existing === undefined) {
             insertCard(card)
           } else {
-            collections.cards.update(card.id, (draft) => { Object.assign(draft, { loading: undefined, viewKey: undefined, viewRepo: undefined }, card) })
+            collections.cards.update(card.id, (draft) => { Object.assign(draft, { loading: undefined, viewKey: undefined, viewRepo: undefined }, card, { tabId: card.tabId ?? existing.tabId }) })
           }
           if (transition.type === "card.view.loaded" && card.kind === "issue" && card.payload.conversation && card.payload.number > 0) {
             const seen = new Set<string>()

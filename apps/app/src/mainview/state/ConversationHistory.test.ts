@@ -15,7 +15,7 @@ import { afterEach, expect, test } from "bun:test"
 import { createConversationHistory } from "../native/ConversationHistory"
 import { emptyAppProjection, projectAppEvent, seedAppProjection } from "./AppProjection"
 import type { AppTransition } from "./AppState"
-import { rootFrameId } from "./AppState"
+import { currentConversationTabIdOf, inConversation, rootFrameId } from "./AppState"
 import { type AppStore, createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import {
@@ -104,12 +104,24 @@ const signed = (owner = "alice") =>
     scopesPlain: null,
     provider: "github"
   })
-const restore = (conversations = [saved()], owner = "alice"): AppTransition => ({
+const restore = (conversations = [saved()], owner = "alice"): Extract<AppTransition, { type: "conversation.restored" }> => ({
   type: "conversation.restored",
   actor: "system",
   owner,
   afterRevision: 1,
   conversations
+})
+
+test("account-wide legacy replay is retained without attributing it to the selected repository (#4310)", () => {
+  const known = step(signed(), { type: "repository.upserted", actor: "system", repository: {
+    id: "other/repo", org: "other", name: "repo", ownerKind: "user", head: null
+  } })
+  const selected = step(known, { type: "repo.selected", actor: "user", id: "other/repo" })
+  const restored = step(selected, { ...restore(), afterRevision: selected.sessions[0]!.revision })
+  const question = restored.messages.find(row => row.id === "message-turn-user")
+  expect(question?.text).toBe("Saved question")
+  expect(question?.tabId).toBeUndefined()
+  expect(inConversation(question!, currentConversationTabIdOf(restored.sessions[0]!))).toBe(false)
 })
 
 test("account replay uses the existing message reducer, frame navigation and run door without execution authority", () => {

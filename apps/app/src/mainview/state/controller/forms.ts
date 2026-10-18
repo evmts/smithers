@@ -1,3 +1,5 @@
+import { digest } from "@smthrs/core/Digest"
+import { conversationTabIdOf, currentConversationTabIdOf, inConversation } from "../AppState"
 import { historicalPullNavigation } from "../../flows/PullNavigationPayload"
 import { historicalWorkspaceNavigation } from "../../flows/WorkspaceNavigationPayload"
 import { currentFlowName } from "../../flows/FlowName"
@@ -175,9 +177,10 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     return undefined
   }
 
+  const formConversation = () => ctx.commandActor === "user" ? currentConversationTabIdOf(store.session()) : conversationTabIdOf(store.session())
   const formCard = (cardId: string): FlowFormCard | undefined => {
     const card = collections.cards.get(cardId)
-    return card?.kind === "flow-form" ? card : undefined
+    return card?.kind === "flow-form" && inConversation(card, formConversation()) ? card : undefined
   }
 
   /** The options a seam supplies for a provider, read at render; an empty list is a valid answer. */
@@ -421,7 +424,8 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       ? { error: refused }
       : "error" in parsed && grammar?.buttonOnly !== true && read.skipped.length === 0 && missingFields(resolved, draft).length === 0
         ? { error: parsed.error } : {}
-    const cardId = request.cardId ?? formCardId(request.name)
+    const conversation = formConversation()
+    const cardId = request.cardId ?? `${formCardId(request.name)}${conversation === undefined ? "" : `-${digest(conversation)}`}`
     // A human's menu action now continues in the form. Release the menu's
     // backdrop through the same transitions used by its close gestures.
     // Agent-created forms do not dismiss chrome the human is using.

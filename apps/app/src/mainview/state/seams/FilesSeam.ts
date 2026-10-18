@@ -396,7 +396,7 @@ export const createFilesSeam = (ctx: SeamContext, branchOptions?: BranchFileOpti
     /* The revision is part of the address: one path at two revisions is two files. */
     const id = install && kind === "files" ? `files-branch-${repo ?? branchOptions?.scope()?.branch ?? "main"}-${target.path || "/"}`
       : `${kind}-${repoId}-${target.path || "/"}${ref === undefined ? "" : `@${ref}`}`
-    return { id, title: `${kind === "file" ? "File" : "Files"} · ${label} · ${target.path || "/"}`, key: JSON.stringify([id, anchor]), target: pane,
+    return { id, scopeId: !install, title: `${kind === "file" ? "File" : "Files"} · ${label} · ${target.path || "/"}`, key: JSON.stringify([id, anchor]), target: pane,
       read: () => kind === "file" ? readers.readFile(path, repo, anchor, ref) : readers.listFiles(path, repo, ref),
     }
   }

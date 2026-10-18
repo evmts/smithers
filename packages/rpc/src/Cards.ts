@@ -215,9 +215,8 @@ const cardBaseShape = {
   createdAt: z.number(),
   ordinal: z.number().int().nonnegative(),
   /**
-   * The conversation this card belongs to (LOCAL-APP.md "Tabs"). There is
-   * one Smithers, so live cards carry no id; the field stays so cards
-   * persisted by a build that had conversation tabs parse unchanged.
+   * Durable local conversation identity: repository and branch, or a guest
+   * session. Earlier per-tab ids and unscoped root cards remain readable.
    */
   tabId: z.string().optional()
 }

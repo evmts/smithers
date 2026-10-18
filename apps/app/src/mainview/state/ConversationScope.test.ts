@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Suggestion, Tab } from "./AppState"
-import { conversationTabIdOf, inConversation, SuggestionSchema, TabSchema } from "./AppState"
+import { conversationTabIdOf, currentConversationTabIdOf, inConversation, SuggestionSchema, TabSchema } from "./AppState"
 
 /*
  * The conversation seam and the two types derived from their schemas. None of
@@ -12,6 +12,24 @@ import { conversationTabIdOf, inConversation, SuggestionSchema, TabSchema } from
 const session = (phase: "idle" | "responding", turnTabId?: string | null) => ({ phase, turnTabId })
 
 describe("conversation scope", () => {
+  test("a repository main conversation is independent of its working copy and changes with repository and branch", () => {
+    const main = { phase: "idle" as const, activeRepoKey: "owner/Repo", branchNavigation: { owner: "reader", open: false, selected_branch: "main", nodes: [] } }
+    const scope = currentConversationTabIdOf(main)
+    expect(scope).toBeDefined()
+    expect(currentConversationTabIdOf({ ...main, activeRepoKey: "owner/repo#some-copy" })).toBe(scope)
+    expect(currentConversationTabIdOf({ ...main, activeRepoKey: "other/repo" })).not.toBe(scope)
+    expect(currentConversationTabIdOf({ ...main, branchNavigation: { ...main.branchNavigation, selected_branch: "feature" } })).not.toBe(scope)
+    const responding = { ...main, phase: "responding" as const, turnTabId: "earlier-turn" }
+    expect(currentConversationTabIdOf(responding)).toBe(scope)
+    expect(conversationTabIdOf(responding)).toBe("earlier-turn")
+    const guest = "guest:owner/Repo:session"
+    expect(currentConversationTabIdOf({ ...main, guestConversation: guest })).toBe(guest)
+    const pending = { ...main, activeRepoKey: null, guestConversation: guest,
+      repositoryEntry: { requestId: "next", repo: "other/repo", phase: "pending" as const } }
+    expect(inConversation({ tabId: guest }, currentConversationTabIdOf(pending))).toBe(false)
+
+  })
+
   test("the seam reads the session alone: no tab lookup is needed to name the conversation", () => {
     expect(conversationTabIdOf.length).toBe(1)
     expect(conversationTabIdOf(session("responding", "tab-7"))).toBe("tab-7")

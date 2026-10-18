@@ -1,4 +1,5 @@
-import { conversationTabIdOf,type Card } from "./AppState";
+import { digest } from "@smthrs/core/Digest"
+import { conversationTabIdOf,currentConversationTabIdOf,inConversation,type Card } from "./AppState";
 import { paneTarget } from "./EmbeddedHistory";
 import { signInRequired } from "./seams/SeamContext";
 import type { SeamContext } from "./seams/SeamContext";
@@ -11,6 +12,8 @@ interface DirectView { readonly run: () => Promise<string | void | { readonly va
 interface ViewPlan {
   readonly id: string
   readonly title: string
+  /** A file address keeps independent retained views in each branch conversation. */
+  readonly scopeId?: boolean
   readonly placeholder?: Card
   /**
    * The read's card, and the card this activation replaces — the one the
@@ -92,15 +95,19 @@ export function preparedView<A extends unknown[]>(ctx: SeamContext, resolve: (..
     const scope = scopeOf(ctx)
     let activeScope = scope
     const actor = ctx.actor()
-    const previous = plan.target ?? (plan.pane ? paneTarget(ctx, plan.pane) : undefined) ?? ctx.store.collections.cards.get(plan.id)
-    const id = previous?.id ?? plan.id
+    const conversation = actor === "user" ? currentConversationTabIdOf(ctx.store.session()) : conversationTabIdOf(ctx.store.session())
+    const scopedId = !plan.scopeId || conversation === undefined ? plan.id : `${plan.id}-${digest(conversation)}`
+    const target = plan.target ?? (plan.pane ? paneTarget(ctx, plan.pane) : undefined)
+    const candidate = target && inConversation(target, conversation) ? target : ctx.store.collections.cards.get(scopedId)
+    const previous = candidate && inConversation(candidate, conversation) ? candidate : undefined
+    const id = previous?.id ?? scopedId
     const key = plan.key ?? plan.id
     const token = Symbol()
     state.active.set(id, token)
     const valid = () => live() && state.active.get(id) === token && scopeOf(ctx) === activeScope && ctx.store.collections.cards.has(id)
     const current = () => valid() && ctx.store.collections.cards.get(id)?.viewKey === key
     const navigates = plan.pane !== undefined || plan.target !== undefined
-    const common = { id, title: plan.title, viewKey: key, viewRepo: plan.pane ?? previous?.viewRepo, navigation: previous?.navigation, createdAt: previous?.createdAt ?? Date.now(), ordinal: navigates && previous ? previous.ordinal : ctx.nextOrdinal(), tabId: previous?.tabId }
+    const common = { id, title: plan.title, viewKey: key, viewRepo: plan.pane ?? previous?.viewRepo, navigation: previous?.navigation, createdAt: previous?.createdAt ?? Date.now(), ordinal: navigates && previous ? previous.ordinal : ctx.nextOrdinal(), tabId: conversation }
     const pending: Card = previous?.viewKey === key && !previous.loading && previous.status !== "error"
       ? { ...previous, ...common }
       : plan.placeholder ? { ...plan.placeholder, ...common, loading: true } : { ...common, kind: "status", status: "active", loading: true, payload: {} }

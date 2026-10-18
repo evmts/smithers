@@ -704,9 +704,8 @@ export const MessageSchema = z.object({
   createdAt: z.number(),
   ordinal: z.number().int().nonnegative(),
   /**
-   * The conversation this message belongs to (docs/LOCAL-APP.md "Tabs").
-   * There is one Smithers, so live rows carry no id; the field stays so rows
-   * persisted by a build that had conversation tabs parse unchanged.
+   * Durable local conversation identity: repository and branch, or a guest
+   * session. Earlier per-tab ids and unscoped root rows remain readable.
    */
   tabId: z.string().optional()
 }).superRefine((message, ctx) => {
@@ -1289,17 +1288,22 @@ export type TabRow = z.infer<typeof TabSchema>
 /* Distributive: every member of the union loses the collection's field, none of the others. */
 export type Tab = TabRow extends infer Row ? (Row extends TabRow ? Omit<Row, "ordinal"> : never) : never
 
-/**
- * The conversation a transcript row belongs to, as a tab id. There is ONE
- * Smithers: the first tab, aware of every other one — so the conversation is
- * always main's (undefined). The scoping seam stays so a turn in flight keeps
- * writing where it started, and so a persisted row that carries a `tabId`
- * from an earlier build still parses.
- */
-export const conversationTabIdOf = (session: Pick<Session, "phase" | "turnTabId" | "guestConversation">): string | undefined =>
-  session.phase === "responding" ? session.turnTabId ?? undefined : session.guestConversation
+/** The repository's shared branch conversation, independent of the visible frame. */
+export const currentConversationTabIdOf = (
+  session: Pick<Session, "guestConversation"> & Partial<Pick<Session, "activeRepoKey" | "branchNavigation" | "repositoryEntry">>
+): string | undefined => {
+  const selected = session.activeRepoKey == null ? undefined : parseRepoSelection(session.activeRepoKey)?.repoId
+  const repo = selected ?? session.repositoryEntry?.repo
+  if (session.guestConversation !== undefined && (repo === undefined || session.guestConversation.startsWith(`guest:${repo}:`))) return session.guestConversation
+  return repo === undefined ? undefined : `repository:${encodeURIComponent(JSON.stringify([repo.toLowerCase(), session.branchNavigation?.selected_branch ?? "main"]))}`
+}
 
-/** Whether a row (message or card) belongs to the given conversation. */
+/** Output from an active turn stays in the conversation that admitted it. */
+export const conversationTabIdOf = (
+  session: Pick<Session, "phase" | "turnTabId" | "guestConversation"> & Partial<Pick<Session, "activeRepoKey" | "branchNavigation" | "repositoryEntry">>
+): string | undefined => session.phase === "responding" ? session.turnTabId ?? undefined : currentConversationTabIdOf(session)
+
+/** An unscoped legacy row stays in the old root conversation, never a repository's. */
 export const inConversation = (row: { readonly tabId?: string | undefined }, tabId: string | undefined): boolean =>
   (row.tabId ?? undefined) === tabId
 

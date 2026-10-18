@@ -65,7 +65,8 @@ export const APP_EVENT_FORMAT_VERSION = 1
  * reprojects to a state its sealed hash does not name, so saved streams rotate
  * from their materialized rows instead of replaying old bytes.
  */
-export const APP_PROJECTOR_VERSION = 37
+// 38: local transcript rows retain their repository and branch conversation (#4310).
+export const APP_PROJECTOR_VERSION = 38
 
 const JsonSchema: z.ZodType<EventJson> = z.lazy(() => z.union([
   z.null(), z.boolean(), z.number().finite(), z.string(), z.array(JsonSchema), z.record(z.string(), JsonSchema)

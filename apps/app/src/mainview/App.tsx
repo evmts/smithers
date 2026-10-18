@@ -42,7 +42,7 @@ import { SHORTCUT_KEYS,ShortcutButton } from "./ShortcutButton"
 import { pathRepo, treeCopyOf } from "./RepoLink"
 import { missingRepositoryOffer } from "./RepositoryEntryOffer"
 import type { Card,Message } from "./state/AppState"
-import { conversationTabIdOf,diagnosticVisible,inConversation,readScopeOf } from "./state/AppState"
+import { currentConversationTabIdOf,diagnosticVisible,inConversation,readScopeOf } from "./state/AppState"
 import { catalogRepositoryOf } from "./state/RepoContext"
 import { useCardRows,useFileCardRows,useFlowDurationRows,useTriggerListRows,useWorkflowCatalogRows } from "./state/useCardRows"
 import { ConfirmDialog } from "./SurfaceChrome"
@@ -104,7 +104,7 @@ function AppContent() {
     q.from({ session: collections.sessions }).select(({ session }) => ({
       id: session.id,
       phase: session.phase,
-      guestConversation: session.guestConversation,
+
       theme: session.theme,
       surface: session.surface,
       maximizedCardId: session.maximizedCardId,
@@ -118,6 +118,7 @@ function AppContent() {
       resetConfirmOpen: session.resetConfirmOpen,
       verbose: session.verbose,
       activeRepoKey: session.activeRepoKey,
+      guestConversation: session.guestConversation,
       repositoryEntry: session.repositoryEntry
     }))
   )
@@ -153,13 +154,14 @@ function AppContent() {
   const bootReadRef = useRef<{ boot: unknown; revision: number | undefined }>({ boot: controller, revision: session.requestedRead?.revision })
   if (bootReadRef.current.boot !== controller) bootReadRef.current = { boot: controller, revision: session.requestedRead?.revision }
   /*
-   * The conversation on screen (docs/LOCAL-APP.md "Tabs"): there is ONE
-   * Smithers, the first tab, aware of every other one — so the conversation is
-   * always main's. Rows keep their conversation stamp (a turn in flight writes
-   * where it started), and this filter reads it.
+   * The current repository's branch conversation. A turn in flight keeps
+   * its original stamp while navigation addresses the repository on screen;
+   * a visible frame never changes which transcript owns a retained row.
    */
   const earlier = session.branchNavigation?.open && session.branchNavigation.owner === (accountOwnerOf(identityRows[0]) ?? null) && session.branchNavigation.selected_branch === "earlier"
-  const conversationTabId = conversationTabIdOf(session)
+  const conversationTabId = currentConversationTabIdOf(session)
+  // A repository scope remains its main conversation, not a separate frame tab.
+  const mainConversation = conversationTabId === undefined || session.activeRepoKey != null
   // A recovery door is an acknowledgment only once its journal receipt exists.
   const messages = messageRows.filter((message) => (!controller.sharedConversation || session.guestConversation !== undefined || message.action !== undefined || diagnosticVisible(message, identityRows[0]?.login, session.branchNavigation?.selected_branch ?? "main")) && inConversation(message, conversationTabId) &&
     (message.action?.flow !== "sign-in" || savedSignInPrompts.some(receipt => receipt.id === message.id)))
@@ -378,7 +380,7 @@ function AppContent() {
    */
   const homeCard: ReactNode = renderHomeCard()
   // The login screen owns the page: no home beside its two doors.
-  const home = homeCard !== null && conversationTabId === undefined && !loginScreen
+  const home = homeCard !== null && mainConversation && !loginScreen
   // A cloud repository opens on its Welcome actions. Selection is durable and
   // precedes that card's load, so the technical success read never flashes first.
   const repositoryOpening = session.activeRepoKey != null
@@ -397,7 +399,7 @@ function AppContent() {
    * `/owner/repo` is the repository's own route.
    */
   const launcherPath = useMemo(() => typeof window !== "undefined" && window.location.pathname === "/", [])
-  const showLauncher = cloudWeb && launcherPath && conversationTabId === undefined && !earlier
+  const showLauncher = cloudWeb && launcherPath && mainConversation && !earlier
   /*
    * At the hosted root the launcher IS the opening (#4041), for everybody.
    *
@@ -427,11 +429,11 @@ function AppContent() {
    * still loading all leave the tree as the view; only an outright read
    * failure says so, and the Files act keeps the tree one press away.
    */
-  const repositoryHome = bootRepository === null || conversationTabId !== undefined || earlier
+  const repositoryHome = bootRepository === null || !mainConversation || earlier
     ? undefined
     : repositoryFlowRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())?.home
   const homeTreeCopy = bootRepository === null ? undefined : treeCopyOf(controller.store, bootRepository)
-  const openingMessage: InitMessage | undefined = gatedByAuth || cloudWeb || repositoryOpening || conversationTabId !== undefined || home ? undefined : initMessage({
+  const openingMessage: InitMessage | undefined = gatedByAuth || cloudWeb || repositoryOpening || !mainConversation || home ? undefined : initMessage({
     bootstrap: controller.bootstrap,
     flowCount: flows.length,
     connectors: connectorRows,
