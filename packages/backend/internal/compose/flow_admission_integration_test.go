@@ -78,7 +78,7 @@ func TestFlowWorkerRechecksMeteredAdmissionBeforeHostLaunch(t *testing.T) {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 	}))
 	defer server.Close()
-	launcher, err := newAdmittedFlowLauncher(refusingHostTransport{server.URL}, db.New(pool), policy)
+	launcher, err := newAdmittedFlowLauncher(refusingHostTransport{server.URL}, db.New(pool), policy, nil)
 	require.NoError(t, err)
 	codec, err := newSecretCodec(config.WebhookConfig{SecretEncryptionKey: "integration-only-secret"})
 	require.NoError(t, err)

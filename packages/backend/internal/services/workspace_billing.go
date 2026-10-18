@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -31,23 +32,27 @@ func (s *WorkspaceService) workspaceBillingContext(ctx context.Context, userID, 
 	if err != nil {
 		return nil, owner, err
 	}
-	return sandbox.WithBillingOwner(ctx, owner), owner, nil
+	// The payer's sandbox counts include exactly the organizations whose
+	// machines the service user pays for.
+	return sandbox.WithServicePayerOrgs(sandbox.WithBillingOwner(ctx, owner), s.servicePayerOrgs), owner, nil
 }
 
 func (s *WorkspaceService) repositorySandboxPayer(ctx context.Context, repo db.Repository) (sandbox.BillingOwner, error) {
-	return RepositorySandboxPayer(ctx, repo, s.billing, s.q)
+	return RepositorySandboxPayer(ctx, repo, s.billing, s.q, s.servicePayerOrgs)
 }
 
 // RepositorySandboxPayer is who pays for a machine on repo. Until organizations
-// have plans of their own (mvp.md M-09), a machine on an organization's
-// repository without a paid plan bills the machine service user that runs it:
-// the free organization plan cannot carry a factory's lanes (plue#839).
-// billing is read when it reports OwnerHasPaidPlan and machines when it
-// reports GetBranchMachineOwner; without either, or without the service user,
-// the organization keeps paying.
-func RepositorySandboxPayer(ctx context.Context, repo db.Repository, billing, machines any) (sandbox.BillingOwner, error) {
+// have plans of their own (mvp.md M-09), a machine on the repository of an
+// organization in servicePayerOrgs (billing.service_payer_org_ids) without a
+// paid plan bills the machine service user that runs it: the free
+// organization plan cannot carry a factory's lanes (plue#839). Signup is open
+// and anyone can create an organization, so every other organization pays
+// for its own machines (Security s-6tctk6). billing is read when it reports
+// OwnerHasPaidPlan and machines when it reports GetBranchMachineOwner;
+// without either, or without the service user, the organization keeps paying.
+func RepositorySandboxPayer(ctx context.Context, repo db.Repository, billing, machines any, servicePayerOrgs []int64) (sandbox.BillingOwner, error) {
 	owner, err := billingstore.RepositorySandboxOwner(repo)
-	if err != nil || owner.Type != BillingOwnerTypeOrg {
+	if err != nil || owner.Type != BillingOwnerTypeOrg || !slices.Contains(servicePayerOrgs, owner.ID) {
 		return owner, err
 	}
 	plans, ok := billing.(interface {

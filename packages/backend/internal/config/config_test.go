@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -104,6 +105,7 @@ var allEnvKeys = []string{
 	"SMITHERS_AUTH_WORKER_EXCHANGE_TOKEN",
 	// Billing
 	"SMITHERS_BILLING_MODE",
+	"SMITHERS_BILLING_SERVICE_PAYER_ORG_IDS",
 	"SMITHERS_BILLING_STRIPE_SECRET_KEY",
 	"SMITHERS_BILLING_STRIPE_WEBHOOK_SECRET",
 	"SMITHERS_BILLING_PORTAL_RETURN_URL",
@@ -677,6 +679,44 @@ func TestLoad_BillingConfigEnvOverrides(t *testing.T) {
 	assert.Equal(t, "price_max_monthly", cfg.Billing.MaxMonthlyPriceID)
 	assert.Equal(t, "price_max_annual", cfg.Billing.MaxAnnualPriceID)
 	assert.Equal(t, "price_pro_annual", cfg.Billing.ProAnnualPriceID)
+}
+
+// Security s-6tctk6 (plue#839): signup is open and anyone can create an
+// organization, so the machine service user pays only for the organizations a
+// deployment lists. The list is empty by default, so an open-source or
+// self-hosted install grants none, and a malformed list refuses to start
+// rather than guess which organizations it meant.
+func TestLoad_BillingServicePayerOrgIDs(t *testing.T) {
+	clearConfigEnv(t)
+	cfg, err := Load("")
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Billing.ServicePayerOrgIDs, "no organization by default")
+
+	for value, want := range map[string][]int64{"2": {2}, " 7, 2 ,7": {2, 7}, "2,,3": {2, 3}, " ": nil} {
+		t.Run("valid/"+value, func(t *testing.T) {
+			clearConfigEnv(t)
+			t.Setenv("SMITHERS_BILLING_SERVICE_PAYER_ORG_IDS", value)
+			cfg, err := Load("")
+			require.NoError(t, err)
+			assert.Equal(t, want, cfg.Billing.ServicePayerOrgIDs)
+		})
+	}
+	for _, value := range []string{"0", "-2", "two", "2;3", "2.5", "0x2", "2,x", "9223372036854775808"} {
+		t.Run("malformed/"+value, func(t *testing.T) {
+			clearConfigEnv(t)
+			t.Setenv("SMITHERS_BILLING_SERVICE_PAYER_ORG_IDS", value)
+			cfg, err := Load("")
+			require.ErrorContains(t, err, "billing.service_payer_org_ids")
+			require.Nil(t, cfg, "a malformed list refuses to start")
+		})
+	}
+
+	clearConfigEnv(t)
+	file := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(file, []byte("billing:\n  service_payer_org_ids: [2, 7]\n"), 0o600))
+	cfg, err = Load(file)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{2, 7}, cfg.Billing.ServicePayerOrgIDs, "a config file may list them")
 }
 
 // TestLoad_FullConfigDefaults verifies the complete Config struct when no env vars are set.

@@ -45,16 +45,17 @@ WHERE wr.status IN ('queued', 'running')
 // deployments override this through deploymentdb to include private gateways.
 // Child workspaces (#2802) have their own plan limit and are not counted.
 // Until organizations have plans (mvp.md M-09), the machine service user pays
-// for organization repositories' machines (plue#839).
+// for the machines of the organizations ctx lists (sandbox.WithServicePayerOrgs,
+// plue#839) and of no other organization.
 func (q *Queries) CountActiveSandboxesForUser(ctx context.Context, userID int64) (int, error) {
 	var count int
 	err := q.db.QueryRow(ctx, `
 SELECT COUNT(*) FROM workspaces w JOIN repositories r ON r.id=w.repository_id
-WHERE (($2='user' AND (r.user_id=$1 OR (r.org_id IS NOT NULL AND EXISTS (SELECT 1 FROM users m WHERE m.id=$1
+WHERE (($2='user' AND (r.user_id=$1 OR (r.org_id = ANY($3::bigint[]) AND EXISTS (SELECT 1 FROM users m WHERE m.id=$1
     AND m.lower_username='smithers-machines' AND m.user_type='service' AND m.prohibit_login AND m.deleted_at IS NULL))))
   OR ($2='org' AND r.org_id=$1)) AND w.deleted_at IS NULL
   AND w.status IN ('pending', 'starting', 'running')
   AND NOT EXISTS (SELECT 1 FROM workspace_children c WHERE c.workspace_id = w.id)
-`, userID, sandbox.BillingOwnerFromContext(ctx, userID).Type).Scan(&count)
+`, userID, sandbox.BillingOwnerFromContext(ctx, userID).Type, sandbox.ServicePayerOrgsFromContext(ctx)).Scan(&count)
 	return count, err
 }

@@ -575,6 +575,7 @@ type WorkspaceService struct {
 	// with the pending ticket; see workspaceSessionProvisionGrace.
 	sessionProvisionGrace time.Duration
 	billing               BillingPolicy
+	servicePayerOrgs      []int64 // WithWorkspaceServicePayerOrgs
 	audit                 *AuditService
 	sourceReader          WorkspaceSourceReader
 	burstPool             *pgxpool.Pool
@@ -1441,6 +1442,14 @@ func stringToUUID(s string) pgtype.UUID {
 
 func WithWorkspaceBillingPolicy(policy BillingPolicy) WorkspaceServiceOption {
 	return func(s *WorkspaceService) { s.billing = policy }
+}
+
+// WithWorkspaceServicePayerOrgs names the organizations whose repositories'
+// machines the machine service user pays for (config
+// billing.service_payer_org_ids, plue#839). Without it no organization's
+// machines bill the service user.
+func WithWorkspaceServicePayerOrgs(orgs []int64) WorkspaceServiceOption {
+	return func(s *WorkspaceService) { s.servicePayerOrgs = slices.Clone(orgs) }
 }
 
 // workspaceVendorLoginPaths are the vendor sign-ins a person makes inside
