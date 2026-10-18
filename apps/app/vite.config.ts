@@ -1,3 +1,4 @@
+import { validateFixtures } from "./spec/validate"
 import { openApiChunk } from "./scripts/openapi-chunk"
 import react from "@vitejs/plugin-react"
 import { dirname, resolve } from "node:path"
@@ -45,9 +46,27 @@ const entryChunkGuard = (): Plugin => ({
   }
 })
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   server: devBackendProxy(process.env.SMITHERS_DEV_BACKEND_ORIGIN),
-  plugins: [openApiChunk(), react(), buildStamp(), entryChunkGuard(), {
+  plugins: [...(mode !== "spec" ? [{
+    name: "smithers-production-spec-exclusion",
+    generateBundle() {
+      for (const id of this.getModuleIds()) {
+        if (id.replaceAll("\\", "/").includes("/apps/app/spec/")) this.error(`Production imports spec fixture: ${id}`)
+      }
+    }
+  } satisfies Plugin] : []), ...(mode === "spec" ? [{
+    name: "smithers-spec-entry",
+    buildStart() { validateFixtures() },
+    transformIndexHtml: { order: "pre" as const, handler(html: string) {
+      return html.replace('<head>', '<head><meta http-equiv="Content-Security-Policy" content="connect-src \'self\'">')
+        .replace('src="/main.tsx"', 'src="/spec-entry"')
+    } },
+    resolveId(id: string) { if (id === "/spec-entry") return "\0spec-entry" },
+    load(id: string) {
+      if (id === "\0spec-entry") return `import ${JSON.stringify(resolve(here, "spec/boot.ts"))}; import(${JSON.stringify(resolve(here, "src/mainview/main.tsx"))});`
+    }
+  }] : []), openApiChunk(), react(), buildStamp(), entryChunkGuard(), {
     name: "smithers-sqlite-worker",
     enforce: "pre",
     // The package's prebuilt worker embeds WASM as a 1.5 MB base64 string.
@@ -71,7 +90,7 @@ export default defineConfig({
   },
   root: `${here}src/mainview`,
   build: {
-    outDir: `${here}dist`,
+    outDir: resolve(here, mode === "spec" ? "dist-spec" : "dist"),
     emptyOutDir: true,
     rollupOptions: { input: { app: resolve(here, "src/mainview/index.html"), ...(process.env.SMITHERS_VIEW_STORIES === "1" ? { stories: resolve(here, "src/mainview/view-stories.html") } : {}) } },
     assetsInlineLimit: (filePath) => filePath.endsWith("/wa-sqlite.wasm") ? false : undefined,
@@ -81,4 +100,4 @@ export default defineConfig({
     // suppress size warnings by fracturing shared vendor initialization graphs.
     chunkSizeWarningLimit: 900
   }
-})
+}))

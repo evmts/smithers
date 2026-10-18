@@ -33,6 +33,41 @@ else fails the command. Precedence is the flag, then the `S.Cache({ directory })
 in the workspace declaration, then `.flows`. See
 [Caching](./concepts/caching.md).
 
+## Test lifecycle
+
+Targets can declare `lifecycle: "artifact"` with a required one-line `summary`.
+Omitted or `"evergreen"` lifecycle preserves ordinary behavior. Lifecycle is
+metadata, never a cache-key attribute; `smthrs index //...` and the generated
+`.smithers/target-index.json` show artifact rows.
+
+The repository chooses behavior in `.smithers/FACTORY.ts`:
+
+```ts
+export const factory = S.Factory({
+  summary: "Repository checks",
+  lifecycle: S.Lifecycle.Policy({
+    tests: { artifact: { blocking: false, run: "ci" } }
+  })
+})
+```
+
+Both `blocking` and `run` are required. With `blocking: false`, failed artifact
+targets print `advisory red (artifact lifecycle): <label>` and do not fail
+`test`, `ci`, or `affected`. Their results-file rows retain `status: "failed"`
+and add `blocking: false` and `failureDigest: "sha256:…"`; raw diagnostics are
+never included. Evergreen failures still block. Artifact labels are refused
+in `--known-red` lists: they need no temporary quarantine entry.
+
+`run: "ci"` keeps normal selection. `run: "never"` omits artifacts from bare
+wildcards; an explicit label still runs. `test`, `ci`, `affected`, and `docs`
+accept `--lifecycle evergreen|artifact|all` to filter selected roots. Omitted
+means all lifecycles; wildcard omission still applies. Dependencies remain
+required regardless of the root filter.
+
+There is no default factory policy. Without one, artifacts run and block as
+before, and `smthrs doctor` warns. `//:factoryProjection` includes a declared
+policy in `.smithers/factory.json`.
+
 ## Execution options
 
 `affected`, `clean`, `watch`, `build`, `test`, `lint`, `docs`, `run`,

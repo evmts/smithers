@@ -356,4 +356,10 @@ export class LiveChannel {
 
 /** Lazy module singleton: exactly one channel for the browser tab. */
 let browserChannel: LiveChannel | undefined
-export const liveChannel = (): LiveChannel => browserChannel ??= new LiveChannel({ documentFrames: true })
+let browserSocket: LiveChannelOptions["socket"]
+/** Install a host socket before the shared live channel is created. */
+export const configureLiveSocket = (socket: NonNullable<LiveChannelOptions["socket"]>): void => {
+  if (browserChannel !== undefined) throw new Error("Live channel already started")
+  browserSocket = socket
+}
+export const liveChannel = (): LiveChannel => browserChannel ??= new LiveChannel({ documentFrames: true, socket: browserSocket })

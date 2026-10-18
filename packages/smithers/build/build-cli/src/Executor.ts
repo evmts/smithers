@@ -39,6 +39,9 @@ import type * as Planner from "./Planner.ts"
  * @slop
  */
 export interface TargetReport {
+  /** Explicit advisory failures retain status and only a digest of diagnostics. */
+  readonly blocking?: boolean | undefined
+  readonly failureDigest?: string | undefined
   readonly label: string
   readonly target: string
   readonly status: "hit" | "ran" | "failed" | "skipped"

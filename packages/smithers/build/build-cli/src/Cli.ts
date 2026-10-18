@@ -72,6 +72,12 @@ const executionOptions = workspaceOption.extend({
   )
 })
 
+const lifecycleOptions = executionOptions.extend({
+  lifecycle: z.enum(["evergreen", "artifact", "all"]).optional().describe(
+    "Select targets by lifecycle; omitted selects all"
+  )
+})
+
 /** The flags outward and agent targets take: the commit message override, the sweep, and payload inputs. */
 const invocationOptions = {
   message: z.string().optional().describe("Commit message for a Git.Commit target; wins over the declared message"),
@@ -126,6 +132,7 @@ export interface WorkspaceFlags {
 export interface ExecutionFlags extends WorkspaceFlags {
   readonly plan: boolean
   readonly jobs?: number | undefined
+  readonly lifecycle?: "evergreen" | "artifact" | "all" | undefined
   readonly includeExclusive?: boolean | undefined
   readonly cache: boolean
 }
@@ -602,27 +609,31 @@ export const runPackageVerb = async (
     remoteCacheOf(index.workspace.cache.remote, config.cacheUrl),
     config
   )
-  return PackageExec.run({
+  return rememberExecution(
     index,
-    cacheDirectory,
-    ...(remoteCache === undefined ? {} : { remoteCache }),
-    verb,
-    patterns,
-    write: flags.write,
-    fix: flags.fix,
-    plan: flags.plan,
-    includeExclusive: flags.includeExclusive,
-    jobs: flags.jobs,
-    readCache: flags.cache,
-    signal: config.signal,
-    reporter,
-    message: flags.message,
-    sweep: flags.sweep,
-    inputs: parseInputs(flags.input),
-    environment: config.environment,
-    packageName: flags.name,
-    approvals: config.approvals
-  })
+    PackageExec.run({
+      index,
+      cacheDirectory,
+      ...(remoteCache === undefined ? {} : { remoteCache }),
+      verb,
+      patterns,
+      write: flags.write,
+      fix: flags.fix,
+      plan: flags.plan,
+      includeExclusive: flags.includeExclusive,
+      lifecycle: flags.lifecycle,
+      jobs: flags.jobs,
+      readCache: flags.cache,
+      signal: config.signal,
+      reporter,
+      message: flags.message,
+      sweep: flags.sweep,
+      inputs: parseInputs(flags.input),
+      environment: config.environment,
+      packageName: flags.name,
+      approvals: config.approvals
+    })
+  )
 }
 
 /**
@@ -743,6 +754,7 @@ const runCi = async (
               patterns: remaining,
               plan: flags.plan,
               includeExclusive: flags.includeExclusive,
+              lifecycle: flags.lifecycle,
               jobs: flags.jobs,
               readCache: flags.cache,
               signal: config.signal,
@@ -789,31 +801,46 @@ const runCi = async (
     const nodes = new Map(packagePlans.flatMap(({ plan }) => [...plan.nodes]))
     for (const target of merged.targets) nodes.set(target.label, target as PackageExec.PackageNode)
     const closures = new Map(packagePlans.flatMap(({ plan }) => [...plan.closures]))
-    return PackageExec.execute(
-      {
-        roots: merged.roots,
-        workList: merged.targets as ReadonlyArray<PackageExec.PackageNode>,
-        nodes,
-        closures
-      },
-      {
-        index,
-        cacheDirectory,
-        ...(remoteCache === undefined ? {} : { remoteCache }),
-        verb: "ci",
-        patterns,
-        jobs: flags.jobs,
-        readCache: flags.cache,
-        signal: config.signal,
-        reporter,
-        environment: config.environment
-      }
+    return rememberExecution(
+      index,
+      PackageExec.execute(
+        {
+          roots: merged.roots,
+          workList: merged.targets as ReadonlyArray<PackageExec.PackageNode>,
+          nodes,
+          closures
+        },
+        {
+          index,
+          cacheDirectory,
+          ...(remoteCache === undefined ? {} : { remoteCache }),
+          verb: "ci",
+          patterns,
+          jobs: flags.jobs,
+          readCache: flags.cache,
+          signal: config.signal,
+          reporter,
+          environment: config.environment
+        }
+      )
     )
   }
 }
 
 /** Every outcome an execution command can return before settling. */
 type Outcome = Planner.Plan | CiPlan | Executor.Summary | PackageExec.PlanReport
+
+/** Retain the exact declaration snapshot used by this execution, without serializing it. */
+const executionIndexes = new WeakMap<Executor.Summary, PackageIndex.PackageIndex>()
+
+const rememberExecution = async <A extends Executor.Summary | PackageExec.PlanReport>(
+  index: PackageIndex.PackageIndex,
+  pending: Promise<A>
+): Promise<A> => {
+  const outcome = await pending
+  if (isSummary(outcome)) executionIndexes.set(outcome, index)
+  return outcome
+}
 
 /** Whether an outcome is an execution summary rather than an inert plan. */
 const isSummary = (outcome: Outcome): outcome is Executor.Summary => "ok" in outcome
@@ -824,7 +851,7 @@ const failedSummary = (outcome: Outcome): outcome is Executor.Summary => isSumma
 const failureMessage = (summary: Executor.Summary): string =>
   `${summary.counts.failed} of ${summary.results.length} targets failed` +
   (summary.counts.skipped === 0 ? "" : ` (${summary.counts.skipped} skipped)`) +
-  ("knownRed" in summary
+  ("knownRed" in summary && (summary as KnownRed.JudgedSummary).knownRed.source !== ""
     ? `; ${(summary as KnownRed.JudgedSummary).knownRed.newlyRed.length} not on the known-red list` +
       `, ${(summary as KnownRed.JudgedSummary).knownRed.unrun.length} not run`
     : "")
@@ -882,12 +909,19 @@ const settle = <A extends Outcome>(
 /**
  * The machine-readable record of a run, written beside the human output so CI
  * keeps its readable log. A check receipt reads label statuses from it, never
- * from the log. Only `{label, status, key}` rows, `ok` and `counts` are written:
+ * from the log. Only status rows with optional advisory metadata, `ok` and `counts` are written:
  * a result's error carries raw child output, and CI publishes this file as an
  * artifact. The file is opened `wx` before any target runs.
  */
 const writeResults = async (file: FileHandle, summary: Executor.Summary): Promise<string | undefined> => {
-  const results = summary.results.map(({ durationMs, key, label, status }) => ({ label, status, key, durationMs }))
+  const results = summary.results.map(({ durationMs, key, label, status, blocking, failureDigest }) => ({
+    label,
+    status,
+    key,
+    durationMs,
+    ...(blocking === undefined ? {} : { blocking }),
+    ...(failureDigest === undefined ? {} : { failureDigest })
+  }))
   try {
     await file.writeFile(`${JSON.stringify({ ok: summary.ok, counts: summary.counts, results, version: 1 })}\n`)
     return undefined
@@ -963,22 +997,36 @@ const executeWithResults = async <A extends Outcome>(
   } finally {
     reporter.close()
   }
-  const knownRed = options?.knownRed
-  if (knownRed === undefined || !isSummary(outcome)) {
-    if (results !== undefined && isSummary(outcome)) {
-      const failed = await writeResults(results, outcome)
-      if (failed !== undefined) return context.error({ code, exitCode: 1, message: failed })
-    }
-    return settle(context, config, outcome)
-  }
-  let judged: KnownRed.JudgedSummary
+  if (!isSummary(outcome)) return settle(context, config, outcome)
+  let judged: Executor.Summary = outcome
   try {
-    const list = await KnownRed.read(context.options?.workspace ?? process.cwd(), knownRed)
-    judged = KnownRed.judge(outcome, list, { platform: process.platform, today: KnownRed.today() })
+    const index = executionIndexes.get(outcome) ??
+      await openPackageIndex({ workspace: options?.workspace ?? process.cwd() }, config)
+    const artifacts = new Set(
+      index.resolve("//...").filter((row) => Target.metadata(row.target).lifecycle === "artifact").map((row) =>
+        row.label
+      )
+    )
+    const advisory = index.factory?.factory.lifecycle?.tests.artifact.blocking === false
+      ? artifacts :
+      new Set<string>()
+    const list = options?.knownRed === undefined ?
+      { source: "", entries: [] } :
+      await KnownRed.read(options.workspace ?? process.cwd(), options.knownRed)
+    for (const entry of list.entries) {
+      if (artifacts.has(entry.label)) {
+        throw new Error(
+          `${entry.label}: artifact tests never block, so they need no known-red entry; remove it from ${list.source}`
+        )
+      }
+    }
+    if (options?.knownRed !== undefined || advisory.size > 0) {
+      judged = KnownRed.judge(outcome, list, { platform: process.platform, today: KnownRed.today(), advisory })
+    }
   } catch (cause) {
     return context.error({ code, exitCode: 1, message: failureText(context, cause) })
   }
-  const lines = KnownRed.describe(judged.knownRed)
+  const lines = "knownRed" in judged ? KnownRed.describe((judged as KnownRed.JudgedSummary).knownRed) : []
   if (lines.length > 0) terminalsOf(config).stderr.write(`${lines.join("\n")}\n`)
   if (results !== undefined) {
     const failed = await writeResults(results, judged)
@@ -1043,6 +1091,7 @@ const runSelected = async (
     environment: config.environment,
     plan: flags.plan,
     includeExclusive: flags.includeExclusive,
+    lifecycle: flags.lifecycle,
     approvals: config.approvals
   }
   const plans: Array<PackageExec.PackagePlan> = []
@@ -1070,7 +1119,8 @@ const runSelected = async (
         !(kind !== "auto" && bare(pattern) && PackageExec.wildcardOmits(entry.row.target, {
           verb: kind,
           unattended: verb === "ci",
-          includeExclusive: flags.includeExclusive
+          includeExclusive: flags.includeExclusive,
+          artifactRun: index.factory?.factory.lifecycle?.tests.artifact.run
         }))
       )
       if (eligible.some((entry) => selectedLabels.has(entry.row.label))) selectedPatterns.push(pattern)
@@ -1113,7 +1163,7 @@ const runSelected = async (
       }))
     }
   }
-  const summary = await PackageExec.execute(combined, { ...options, verb, patterns })
+  const summary = await rememberExecution(index, PackageExec.execute(combined, { ...options, verb, patterns }))
   // A planned target the executor holds no record of never ran; that is red.
   const missing = Affected.unrecorded(combined.workList.map((node) => node.label), summary)
   if (missing.length > 0) throw new Error(`Planned targets have no execution record: ${missing.join(", ")}`)
@@ -1323,7 +1373,7 @@ const makeCommands = (config: RuntimeConfig) =>
       description: "Execute targets affected by changed files, conservatively including ambient inputs",
       mcp: { annotations: { readOnlyHint: false } },
       args: selectionArgs,
-      options: executionOptions.extend({
+      options: lifecycleOptions.extend({
         base: z.string().default("HEAD").describe("Git base revision"),
         head: z.string().optional().describe(
           "Git head revision; defaults to the working tree including untracked files"
@@ -1371,13 +1421,18 @@ const makeCommands = (config: RuntimeConfig) =>
               index.resolve(pattern).some((row) => row.label === label)
             )
             const target = index.resolve(label)[0]!.target
+            if (
+              context.options.lifecycle !== undefined && context.options.lifecycle !== "all" &&
+              (Target.metadata(target).lifecycle ?? "evergreen") !== context.options.lifecycle
+            ) return true
             // An unattended plan drops a rule that spawns an agent however it was named.
             if (context.args.verb === "ci" && PackageExec.attended(target)) return true
             return selecting.length > 0 && selecting.every(bare) && kinds.some((kind) =>
               PackageExec.wildcardOmits(target, {
                 verb: kind,
                 unattended: context.args.verb === "ci",
-                includeExclusive: context.options.includeExclusive
+                includeExclusive: context.options.includeExclusive,
+                artifactRun: index.factory?.factory.lifecycle?.tests.artifact.run
               })
             )
           }
@@ -1592,7 +1647,7 @@ const makeCommands = (config: RuntimeConfig) =>
       description: "Execute test targets; wildcards omit exclusive tiers unless --include-exclusive is set",
       mcp: { annotations: { readOnlyHint: false } },
       args: patternsArgument,
-      options: executionOptions,
+      options: lifecycleOptions,
       alias: executionAlias,
       run: (context) =>
         executeCommand(
@@ -1623,7 +1678,7 @@ const makeCommands = (config: RuntimeConfig) =>
         "Execute the documentation targets selected by a pattern: parity checks, freshness stamps, and Docs.Page writers",
       mcp: { annotations: { readOnlyHint: false } },
       args: patternsArgument,
-      options: executionOptions.extend({
+      options: lifecycleOptions.extend({
         write: z.boolean().default(false).describe(
           "Refresh the Docs.Check stamps of the selected pages instead of checking them"
         )
@@ -1743,7 +1798,7 @@ const makeCommands = (config: RuntimeConfig) =>
         "Execute build, test, lint, and documentation targets; wildcards omit exclusive tiers unless --include-exclusive is set",
       mcp: { annotations: { readOnlyHint: false } },
       args: patternsArgument,
-      options: executionOptions,
+      options: lifecycleOptions,
       alias: executionAlias,
       run: (context) =>
         executeCommand(

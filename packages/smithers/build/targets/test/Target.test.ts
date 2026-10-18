@@ -575,3 +575,26 @@ const implementationContract = () => {
   })
 }
 void implementationContract
+
+describe("artifact lifecycle declarations", () => {
+  it("keeps lifecycle out of attrs and preserves evergreen metadata", () => {
+    const ordinary = Target.metadata(Shell.Test({ shell: "false" }))
+    const evergreen = Target.metadata(Shell.Test({ shell: "false", lifecycle: "evergreen" }))
+    const artifact = Target.metadata(Shell.Test({ shell: "false", lifecycle: "artifact", summary: "Captured failure" }))
+    expect(artifact.lifecycle).toBe("artifact")
+    expect(artifact.attrs).toEqual(ordinary.attrs)
+    expect(evergreen.attrs).toEqual(ordinary.attrs)
+    expect(evergreen).not.toHaveProperty("lifecycle")
+    expect(artifact.summary).toBe("Captured failure")
+  })
+
+  it("refuses missing summaries and invalid lifecycles where declared", () => {
+    expect(() => Shell.Test({ shell: "false", lifecycle: "artifact" })).toThrow(/requires a summary/)
+    for (const lifecycle of [null, "temporary", true]) {
+      expect(() => Shell.Test({ shell: "false", lifecycle } as never)).toThrow(/lifecycle must be/)
+    }
+    expect(() => Shell.Test({ shell: "false", lifecycle: "artifact", summary: " " })).toThrow(
+      /summary must not be empty/
+    )
+  })
+})

@@ -41,6 +41,8 @@ import * as FlowCatalog from "./FlowCatalog.ts"
 import { DriftError, resolveOutputPath, WriteFileError } from "./GeneratedFile.ts"
 import * as Home from "./Home.ts"
 import * as Input from "./Input.ts"
+import { ReviewBudget } from "./LlmLint.ts"
+import { Engine } from "./ModelEngine.ts"
 import * as Target from "./Target.ts"
 
 /**
@@ -568,6 +570,132 @@ const decodeIssueTransitions = (value: unknown): ReadonlyArray<IssueTransition> 
 }
 
 /**
+ * Explicit repository policy for artifact tests. Every field is required;
+ * absent policy preserves ordinary blocking and selection behavior.
+ * @category schemas
+ * @since 1.0.0
+ */
+export const LifecyclePolicy = Schema.Struct({
+  tests: Schema.Struct({
+    artifact: Schema.Struct({ blocking: Schema.Boolean, run: Schema.Literals(["ci", "never"]) })
+  })
+})
+
+/**
+ * Artifact lifecycle policy constructors.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const Lifecycle = Object.freeze({
+  Policy: (options: typeof LifecyclePolicy.Type): typeof LifecyclePolicy.Type => {
+    const plain = Home.plainOptions("Lifecycle.Policy", options, new Set(["tests"]))
+    const tests = Home.plainOptions("Lifecycle.Policy tests", plain["tests"], new Set(["artifact"]))
+    Home.plainOptions("Lifecycle.Policy tests.artifact", tests["artifact"], new Set(["blocking", "run"]))
+    return Home.freezeDeep(Home.decode("Lifecycle.Policy", LifecyclePolicy, plain))
+  }
+})
+
+const positiveInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
+const judgeEngine = Schema.Struct({ engine: Engine, model: Schema.NonEmptyString })
+
+/**
+ * Explicit judge limits and promotion rules. Every field is required; no policy runs no judges.
+ * @category schemas
+ * @since 0.1.0
+ */
+export const JudgePolicy = Schema.Struct({
+  engines: Schema.Struct({ rubric: judgeEngine, fuzzy: judgeEngine }),
+  budget: Schema.Struct({ perRun: ReviewBudget, perDay: Schema.Struct({ modelCalls: positiveInt }) }),
+  trials: positiveInt,
+  maxAge: Schema.NonEmptyString.check(Schema.isPattern(/^[1-9]\d*(?:ms|s|m|h|d)$/)),
+  promote: Schema.Struct({
+    minLabels: positiveInt,
+    minAgreement: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+    seededDefectsFail: Schema.Boolean
+  }),
+  blocking: Schema.Struct({
+    exact: Schema.Boolean,
+    shape: Schema.Boolean,
+    rubric: Schema.Union([Schema.Literal("promoted"), Schema.Boolean]),
+    fuzzy: Schema.Boolean,
+    visual: Schema.Boolean,
+    agent: Schema.Boolean
+  })
+})
+
+const decodeJudgePolicy = (value: unknown): typeof JudgePolicy.Type => {
+  const plain = Home.plainOptions(
+    "Judge.Policy",
+    value,
+    new Set(["engines", "budget", "trials", "maxAge", "promote", "blocking"])
+  )
+  const engines = Home.plainOptions("Judge.Policy engines", plain["engines"], new Set(["rubric", "fuzzy"]))
+  for (const kind of ["rubric", "fuzzy"]) {
+    Home.plainOptions(`Judge.Policy engines.${kind}`, engines[kind], new Set(["engine", "model"]))
+  }
+  const budget = Home.plainOptions("Judge.Policy budget", plain["budget"], new Set(["perRun", "perDay"]))
+  Home.plainOptions("Judge.Policy budget.perRun", budget["perRun"], new Set(["modelCalls", "promptTokens", "wallMs"]))
+  Home.plainOptions("Judge.Policy budget.perDay", budget["perDay"], new Set(["modelCalls"]))
+  Home.plainOptions(
+    "Judge.Policy promote",
+    plain["promote"],
+    new Set(["minLabels", "minAgreement", "seededDefectsFail"])
+  )
+  Home.plainOptions(
+    "Judge.Policy blocking",
+    plain["blocking"],
+    new Set(["exact", "shape", "rubric", "fuzzy", "visual", "agent"])
+  )
+  return Home.freezeDeep(Home.decode("Judge.Policy", JudgePolicy, plain))
+}
+
+/**
+ * Judge policy constructor, following Lifecycle.Policy; no implicit policy defaults.
+ * @category constructors
+ * @since 0.1.0
+ */
+export const Judge = Object.freeze({
+  Policy: (options: typeof JudgePolicy.Type): typeof JudgePolicy.Type => decodeJudgePolicy(options)
+})
+
+/**
+ * Live sites and the maximum age of ahead journeys. URLs belong to factory configuration.
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Spec = Schema.Struct({
+  live: Schema.Record(
+    Schema.NonEmptyString,
+    Schema.Union([
+      Schema.String.check(Schema.makeFilter<string>((value) => {
+        try {
+          const url = new URL(value)
+          return (url.protocol === "https:" || url.protocol === "http:") && url.hostname !== "" && !/\s/.test(value)
+            ? true :
+            "must be an HTTP(S) URL"
+        } catch {
+          return "must be an HTTP(S) URL"
+        }
+      })),
+      Schema.Null
+    ])
+  ),
+  aheadMaxDays: positiveInt
+})
+
+const decodeSpec = (value: unknown): typeof Spec.Type => {
+  const plain = Home.plainOptions("Factory spec", value, new Set(["live", "aheadMaxDays"]))
+  return Home.freezeDeep(Home.decode("Factory spec", Spec, plain))
+}
+
+/**
+ * Returns the explicit policy, or undefined: no policy authorizes no judges.
+ * @category accessors
+ * @since 0.1.0
+ */
+export const judgePolicyOf = (factory: Declaration | Projection): typeof JudgePolicy.Type | undefined => factory.judges
+
+/**
  * The factory declaration `.smithers/FACTORY.ts` exports as `factory`.
  *
  * @category schemas
@@ -582,6 +710,9 @@ export const Declaration = Schema.TaggedStruct("FactoryDeclaration", {
   on: On,
   /** Who writes `main` and how Changes and issues move. */
   github: GithubPolicy,
+  lifecycle: Schema.optionalKey(LifecyclePolicy),
+  judges: Schema.optionalKey(JudgePolicy),
+  spec: Schema.optionalKey(Spec),
   /** The machine the factory's TODO lanes need, when declared. */
   machine: Schema.optionalKey(Machine),
   /** The saved issue views, in declaration order, when declared. */
@@ -634,6 +765,9 @@ export interface FactoryOptions {
   readonly flows?: ReadonlyArray<Flow.Declaration> | undefined
   readonly on?: Readonly<Record<string, RuleOptions>> | undefined
   readonly github?: GithubPolicy | undefined
+  readonly lifecycle?: typeof LifecyclePolicy.Type | undefined
+  readonly judges?: typeof JudgePolicy.Type | undefined
+  readonly spec?: typeof Spec.Type | undefined
   readonly machine?: Machine | undefined
   readonly issueViews?: ReadonlyArray<IssueView> | undefined
   readonly issueTransitions?: ReadonlyArray<IssueTransition> | undefined
@@ -674,7 +808,18 @@ export const Factory = (options: FactoryOptions): Declaration => {
   const plain = Home.plainOptions(
     "Factory",
     options,
-    new Set(["summary", "flows", "on", "github", "machine", "issueViews", "issueTransitions"])
+    new Set([
+      "summary",
+      "flows",
+      "on",
+      "github",
+      "lifecycle",
+      "judges",
+      "spec",
+      "machine",
+      "issueViews",
+      "issueTransitions"
+    ])
   )
   const flows = plain["flows"] ?? []
   if (!Array.isArray(flows)) throw new TypeError("Factory flows must be an array of Smithers.Flow declarations")
@@ -720,6 +865,9 @@ export const Factory = (options: FactoryOptions): Declaration => {
     flows,
     on,
     github,
+    ...(plain["judges"] === undefined ? {} : { judges: decodeJudgePolicy(plain["judges"]) }),
+    ...(plain["spec"] === undefined ? {} : { spec: decodeSpec(plain["spec"]) }),
+    ...(plain["lifecycle"] === undefined ? {} : { lifecycle: plain["lifecycle"] }),
     ...(machine === undefined ? {} : { machine }),
     ...(issueViews === undefined ? {} : { issueViews }),
     ...(issueTransitions === undefined ? {} : { issueTransitions })
@@ -802,6 +950,9 @@ export const Projection = Schema.Struct({
   flows: Schema.Array(FlowCatalog.Row),
   on: Schema.Array(Rule),
   github: GithubProjection,
+  lifecycle: Schema.optionalKey(LifecyclePolicy),
+  judges: Schema.optionalKey(JudgePolicy),
+  spec: Schema.optionalKey(Spec),
   machine: Schema.optionalKey(Machine),
   issueViews: Schema.optionalKey(Schema.Array(IssueView)),
   issueTransitions: Schema.optionalKey(Schema.Array(IssueTransition))
@@ -849,6 +1000,9 @@ export const renderProjection = (declaration: Declaration, catalog: ReadonlyArra
           ...(declaration.github.todoSince === undefined ? {} : { todoSince: declaration.github.todoSince }),
           ...(declaration.github.dailyTokens === undefined ? {} : { dailyTokens: declaration.github.dailyTokens })
         },
+        ...(declaration.judges === undefined ? {} : { judges: declaration.judges }),
+        ...(declaration.spec === undefined ? {} : { spec: declaration.spec }),
+        ...(declaration.lifecycle === undefined ? {} : { lifecycle: declaration.lifecycle }),
         ...(declaration.machine === undefined ? {} : { machine: declaration.machine }),
         ...(declaration.issueViews === undefined || declaration.issueViews.length === 0 ?
           {}
