@@ -18,6 +18,9 @@ export const verifyPackagedNativeHelpers = async (nativePackage, required = fals
     const binary = join(nativePackage, "bin", platform, filename)
     const info = await stat(binary)
     if (!info.isFile()) throw new Error(`Installed native helper is not a regular file: ${binary}`)
+    if (process.platform !== "win32" && !platform.startsWith("win32") && (info.mode & 0o111) !== 0o111) {
+      throw new Error(`Installed native helper is not executable (mode 0${(info.mode & 0o777).toString(8)}): ${binary}`)
+    }
   }
   return true
 }

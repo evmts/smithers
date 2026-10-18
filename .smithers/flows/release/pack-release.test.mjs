@@ -6,6 +6,7 @@ import { chmod, cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os"
 import { dirname, join, resolve, sep } from "node:path"
 import test from "node:test"
+import { gunzipSync } from "node:zlib"
 import { pathToFileURL } from "node:url"
 import { parse, stringify } from "yaml"
 import { assertExportTargets, assertPackedExportTargets } from "./packed-export-targets.mjs"
@@ -849,7 +850,7 @@ test("the real staging and tarball retain authored template config and exclude r
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
-test("the platform package tarball carries all five native helpers including the Windows executable", async () => {
+for (const overlay of [true, false]) test(`the platform package tarball carries executable native helpers (overlay=${overlay})`, async () => {
   const publishedManifest = JSON.parse(readFileSync(join(repoRoot, "packages/smithers/flows/platform-node/package.json"), "utf8"))
   assert.ok(publishedManifest.files.includes("bin/**"))
   const directory = await mkdtemp(join(tmpdir(), "smithers-pack-native-"))
@@ -869,12 +870,25 @@ test("the platform package tarball carries all five native helpers including the
       await mkdir(parent, { recursive: true })
       const binary = join(parent, platform === "win32-x64" ? "smithers-jj-export.exe" : "smithers-jj-export")
       await writeFile(binary, platform === "win32-x64" ? "MZwindows-fixture" : `#!/bin/sh\necho ${platform}\n`)
-      await chmod(binary, 0o755)
+      await chmod(binary, 0o644)
     }
-    await stagePackage(source, staged, manifest, helpers)
+    if (!overlay) await cp(helpers, join(source, "bin"), { recursive: true })
+    await stagePackage(source, staged, manifest, overlay ? helpers : null)
     const packed = JSON.parse(execFileSync("pnpm", ["pack", "--json", "--config.ignore-scripts=true", "--pack-destination", directory], { cwd: staged, encoding: "utf8" }))
     const file = resolve(directory, packed[0]?.filename ?? packed.filename)
-    const entries = execFileSync("tar", ["-tzf", file], { encoding: "utf8" }).split("\n")
+    // Inspect archive headers, independently of extraction permissions and umask.
+    const archive = gunzipSync(readFileSync(file))
+    const modes = new Map()
+    for (let offset = 0; offset < archive.length && archive[offset] !== 0;) {
+      const header = archive.subarray(offset, offset + 512)
+      const field = (start, end) => header.subarray(start, end).toString().replace(/\0.*$/s, "").trim()
+      modes.set(field(0, 100), Number.parseInt(field(100, 108), 8))
+      offset += 512 + Math.ceil(Number.parseInt(field(124, 136), 8) / 512) * 512
+    }
+    const entries = [...modes.keys()]
+    for (const platform of platforms.filter((platform) => !platform.startsWith("win32"))) {
+      assert.equal(modes.get(`package/bin/${platform}/smithers-jj-export`), 0o755, platform)
+    }
     execFileSync("tar", ["-xzf", file, "-C", directory])
     for (const platform of platforms) {
       const filename = platform === "win32-x64" ? "smithers-jj-export.exe" : "smithers-jj-export"
@@ -928,6 +942,30 @@ test("the actual CLI tarball carries its native export and all eight verified ed
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test("native smoke refuses a non-executable POSIX helper", { skip: process.platform === "win32" }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "smithers-smoke-mode-"))
+  try {
+    for (const platform of ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64", "win32-x64"]) {
+      const parent = join(directory, "bin", platform)
+      await mkdir(parent, { recursive: true })
+      const binary = join(parent, platform === "win32-x64" ? "smithers-jj-export.exe" : "smithers-jj-export")
+      await writeFile(binary, "helper")
+      await chmod(binary, platform === "win32-x64" ? 0o644 : 0o755)
+    }
+    assert.equal(await verifyPackagedNativeHelpers(directory, true), true)
+    for (const platform of ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"]) {
+      const binary = join(directory, "bin", platform, "smithers-jj-export")
+      await chmod(binary, 0o644)
+      await assert.rejects(verifyPackagedNativeHelpers(directory, true), (error) => {
+        assert.match(error.message, /not executable.*0644/)
+        assert.ok(error.message.includes(binary))
+        return true
+      })
+      await chmod(binary, 0o755)
+    }
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test("native smoke distinguishes an early rehearsal from a missing or incomplete release bundle", async () => {
   const directory = await mkdtemp(join(tmpdir(), "smithers-smoke-native-"))
   try {
@@ -936,6 +974,7 @@ test("native smoke distinguishes an early rehearsal from a missing or incomplete
     const first = join(directory, "bin/darwin-arm64/smithers-jj-export")
     await mkdir(join(directory, "bin/darwin-arm64"), { recursive: true })
     await writeFile(first, "helper")
+    await chmod(first, 0o755)
     await assert.rejects(verifyPackagedNativeHelpers(directory), { code: "ENOENT" })
     await rm(first)
     await mkdir(first)
