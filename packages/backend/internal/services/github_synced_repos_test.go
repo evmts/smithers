@@ -843,3 +843,14 @@ func (f *fakeSyncedRepoStore) ListGitHubSyncedRepoMirrorBinders(context.Context)
 	}
 	return out, nil
 }
+
+func (f *fakeSyncedRepoStore) SetGitHubSyncedRepoVisibility(_ context.Context, arg db.SetGitHubSyncedRepoVisibilityParams) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, row := range f.repos {
+		if row.ID == arg.ID && row.InstallationID == arg.InstallationID && row.GithubRepositoryID == arg.GithubRepositoryID && row.OwnerLogin == arg.OwnerLogin && row.RepoName == arg.RepoName {
+			row.GithubPrivate = arg.GithubPrivate
+		}
+	}
+	return nil
+}

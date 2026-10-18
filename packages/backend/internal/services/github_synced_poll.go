@@ -89,6 +89,10 @@ func (s *GitHubSyncedRepoService) dueInstallStreams(row db.GithubSyncedRepo) []g
 // stream commits independently, so one refusal does not suppress other reads.
 func (s *GitHubSyncedRepoService) backfillInstallStreams(ctx context.Context, row db.GithubSyncedRepo, fetch gitHubSyncedRepoPageFetcher, plans []gitHubStreamPlan) error {
 	var runErrors []error
+	if err := s.refreshSourceVisibility(ctx, row, fetch); err != nil {
+		s.recordSyncError(row.ID, err)
+		return err
+	}
 	for _, plan := range plans {
 		if err := ctx.Err(); err != nil {
 			runErrors = append(runErrors, err)

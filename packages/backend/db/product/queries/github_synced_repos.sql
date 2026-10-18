@@ -54,6 +54,12 @@ SET owner_login     = EXCLUDED.owner_login,
     repo_name       = EXCLUDED.repo_name,
     installation_id = COALESCE(EXCLUDED.installation_id, github_synced_repos.installation_id),
     github_repository_id = COALESCE(EXCLUDED.github_repository_id, github_synced_repos.github_repository_id),
+    github_private = CASE
+        WHEN EXCLUDED.github_repository_id IS NOT NULL
+             AND github_synced_repos.github_repository_id IS DISTINCT FROM EXCLUDED.github_repository_id
+        THEN NULL
+        ELSE github_synced_repos.github_private
+    END,
     sync_refs       = github_synced_repos.sync_refs OR EXCLUDED.sync_refs,
     sync_metadata   = github_synced_repos.sync_metadata OR EXCLUDED.sync_metadata,
     -- A rebind restarts sync bookkeeping. An operator-disabled row stays
@@ -99,6 +105,7 @@ SET owner_login       = sqlc.arg(owner_login)::text,
     owner_login_lower = LOWER(sqlc.arg(owner_login)::text),
     repo_name         = sqlc.arg(repo_name)::text,
     repo_name_lower   = LOWER(sqlc.arg(repo_name)::text),
+    github_private    = NULL,
     updated_at        = NOW()
 WHERE id = sqlc.arg(id)
 RETURNING *;
@@ -412,3 +419,13 @@ JOIN LATERAL (
 ) b ON TRUE
 WHERE g.mirror_owner IS NOT NULL
   AND g.mirror_repo IS NOT NULL;
+
+-- name: SetGitHubSyncedRepoVisibility :exec
+-- Match the installation and immutable source identity observed by the sync.
+UPDATE github_synced_repos
+SET github_private = sqlc.arg(github_private), updated_at = NOW()
+WHERE id = sqlc.arg(id)
+  AND installation_id = sqlc.arg(installation_id)
+  AND github_repository_id = sqlc.arg(github_repository_id)
+  AND owner_login = sqlc.arg(owner_login)
+  AND repo_name = sqlc.arg(repo_name);

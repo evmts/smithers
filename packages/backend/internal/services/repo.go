@@ -1132,6 +1132,12 @@ func (s *RepoService) GetRepoView(ctx context.Context, viewer *db.User, owner, r
 		slog.WarnContext(ctx, "github import source unavailable", "repository_id", repository.ID, "error", err)
 		view.GitHubSourceUnavailable = true
 	}
+	if !view.CanWrite && view.GitHubSource != nil {
+		registry, lookupErr := db.New(s.pool).GetGitHubSyncedRepo(ctx, db.GetGitHubSyncedRepoParams{OwnerLogin: view.GitHubSource.Owner, RepoName: view.GitHubSource.Repo})
+		if lookupErr != nil || !registry.GithubPrivate.Valid || registry.GithubPrivate.Bool {
+			view.GitHubSource, view.GitHubSourceAmbiguous, view.GitHubSourceUnavailable = nil, false, true
+		}
+	}
 	if !repository.IsPublic && !view.CanWrite && (view.GitHubSource != nil || view.GitHubSourceAmbiguous) {
 		// A readable Cloud mirror does not grant GitHub source metadata.
 		view.GitHubSource, view.GitHubSourceAmbiguous, view.GitHubSourceUnavailable = nil, false, true

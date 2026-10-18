@@ -964,6 +964,7 @@ type GithubSyncedRepo struct {
 	ConsecutiveFailures int32              `json:"consecutive_failures"`
 	CreatedAt           time.Time          `json:"created_at"`
 	UpdatedAt           time.Time          `json:"updated_at"`
+	GithubPrivate       pgtype.Bool        `json:"github_private"`
 }
 
 type GithubSyncedRepoReadGrant struct {

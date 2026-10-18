@@ -67,6 +67,7 @@ const (
 // GitHubSyncedRepoStore is the registry + metadata store surface, satisfied by
 // the generated *db.Queries.
 type GitHubSyncedRepoStore interface {
+	SetGitHubSyncedRepoVisibility(context.Context, db.SetGitHubSyncedRepoVisibilityParams) error
 	GetGitHubSyncedRepo(ctx context.Context, arg db.GetGitHubSyncedRepoParams) (db.GithubSyncedRepo, error)
 	GetGitHubSyncedRepoByGitHubID(ctx context.Context, githubRepositoryID pgtype.Int8) (db.GithubSyncedRepo, error)
 	AdoptGitHubSyncedRepoSlug(ctx context.Context, arg db.AdoptGitHubSyncedRepoSlugParams) (db.GithubSyncedRepo, error)
@@ -1128,6 +1129,10 @@ func (s *GitHubSyncedRepoService) backfill(ctx context.Context, row db.GithubSyn
 			plans = append(plans, gitHubStreamPlan{resource: resource, scheduled: true})
 		}
 		return s.backfillInstallStreams(ctx, row, fetch, plans)
+	}
+	if err := s.refreshSourceVisibility(ctx, row, fetch); err != nil {
+		s.recordSyncError(row.ID, err)
+		return err
 	}
 	for _, resource := range []string{GitHubRepoMetadataIssues, GitHubRepoMetadataPulls} {
 		if err := s.backfillResource(ctx, row, resource, fetch); err != nil {
