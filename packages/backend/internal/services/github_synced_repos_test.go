@@ -24,6 +24,7 @@ import (
 // fakeSyncedRepoStore is an in-memory GitHubSyncedRepoStore. Keys mirror the
 // real unique indexes so upsert/dedup semantics are exercised for real.
 type fakeSyncedRepoStore struct {
+	now                func() time.Time
 	mu                 sync.Mutex
 	nextID             int64
 	repos              map[string]*db.GithubSyncedRepo
@@ -40,6 +41,7 @@ type fakeSyncedRepoStore struct {
 
 func newFakeSyncedRepoStore() *fakeSyncedRepoStore {
 	return &fakeSyncedRepoStore{
+		now:              time.Now,
 		repos:            map[string]*db.GithubSyncedRepo{},
 		issues:           map[string]db.GithubSyncedIssue{},
 		comments:         map[string]db.GithubSyncedIssueComment{},
@@ -216,7 +218,7 @@ func (f *fakeSyncedRepoStore) ListDueGitHubSyncedRepos(_ context.Context, rowLim
 	defer f.mu.Unlock()
 	out := make([]db.GithubSyncedRepo, 0, len(f.repos))
 	for _, row := range f.repos {
-		if !row.SyncMetadata || row.SyncState == "disabled" || row.SyncState == "failed" {
+		if !row.SyncMetadata || row.SyncState == "disabled" || row.SyncState == "failed" || (row.NextReconcileAt.Valid && row.NextReconcileAt.Time.After(f.now())) {
 			continue
 		}
 		if row.SyncingSince.Valid && time.Since(row.SyncingSince.Time) < 5*time.Minute {
@@ -231,6 +233,12 @@ func (f *fakeSyncedRepoStore) ListDueGitHubSyncedRepos(_ context.Context, rowLim
 		}
 		if a.LastSyncedAt.Valid && !a.LastSyncedAt.Time.Equal(b.LastSyncedAt.Time) {
 			return a.LastSyncedAt.Time.Before(b.LastSyncedAt.Time)
+		}
+		if a.NextReconcileAt.Valid != b.NextReconcileAt.Valid {
+			return !a.NextReconcileAt.Valid
+		}
+		if a.NextReconcileAt.Valid && !a.NextReconcileAt.Time.Equal(b.NextReconcileAt.Time) {
+			return a.NextReconcileAt.Time.Before(b.NextReconcileAt.Time)
 		}
 		return a.ID < b.ID
 	})
@@ -853,4 +861,41 @@ func (f *fakeSyncedRepoStore) SetGitHubSyncedRepoVisibility(_ context.Context, a
 		}
 	}
 	return nil
+}
+
+func (f *fakeSyncedRepoStore) DeferGitHubSyncedRepoSync(_ context.Context, arg db.DeferGitHubSyncedRepoSyncParams) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, row := range f.repos {
+		if row.ID == arg.ID {
+			row.NextReconcileAt = arg.NextReconcileAt
+		}
+	}
+	return nil
+}
+
+func (f *fakeSyncedRepoStore) ClaimGitHubSyncedRepoSkipLog(_ context.Context, id int64) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, row := range f.repos {
+		if row.ID == id && (!row.ReconcileSkipLoggedAt.Valid || time.Since(row.ReconcileSkipLoggedAt.Time) >= time.Hour) {
+			row.ReconcileSkipLoggedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
+			return 1, nil
+		}
+	}
+	return 0, nil
+}
+
+func (f *fakeSyncedRepoStore) BindGitHubSyncedRepoInstallation(_ context.Context, arg db.BindGitHubSyncedRepoInstallationParams) (db.GithubSyncedRepo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, row := range f.repos {
+		if row.ID == arg.ID && !row.InstallationID.Valid && strings.EqualFold(row.OwnerLogin, arg.OwnerLogin) && strings.EqualFold(row.RepoName, arg.RepoName) && (!row.GithubRepositoryID.Valid || row.GithubRepositoryID == arg.GithubRepositoryID) {
+			row.InstallationID = arg.InstallationID
+			row.GithubRepositoryID = arg.GithubRepositoryID
+			row.GithubPrivate = pgtype.Bool{}
+			return *row, nil
+		}
+	}
+	return db.GithubSyncedRepo{}, pgx.ErrNoRows
 }
