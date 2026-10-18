@@ -23368,6 +23368,216 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/repos/{owner}/{repo}/site:
+    parameters:
+      - name: owner
+        in: path
+        required: true
+        schema: { type: string }
+      - name: repo
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: get_repository_site
+      tags:
+        - Sites
+      summary: Read the owner site status and DNS records
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }, { tokenAuth: [] }]
+      responses:
+        '200':
+          description: Site and current saved host receipts
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnyJSON' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '503': { description: Site hosting is disabled or unavailable }
+    post:
+      operationId: repository_site_action
+      tags:
+        - Sites
+      summary: Run an owner site action
+      description: Enable, publish, activate a retained version, or add, verify and remove a domain through one typed owner action seam. Publication is an intentional public export. Activation compares the expected previous version. Hosted subdomains require an operator-allowlisted organization. A custom hostname is bound only after current DNS ownership and routing plus active hostname and SSL status.
+      x-smithers-opaque-body: true
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }, { tokenAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [status, enable, publish, activate, domain.add, domain.verify, domain.remove]
+                name: { type: string }
+                appPrefix: { type: string }
+                domain: { type: string }
+                version: { type: string }
+                expected: { type: string }
+                files:
+                  type: array
+                  maxItems: 512
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [path, data]
+                    properties:
+                      path: { type: string, maxLength: 8192 }
+                      data: { type: string, contentEncoding: base64 }
+      responses:
+        '200':
+          description: Completed action receipt; a pending DNS or certificate receipt does not mean bound
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnyJSON' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Name/domain collision, stale activation or domain removal awaiting cleanup }
+        '413': { description: Publication exceeds the bounded request or 16 MiB file-byte limit }
+        '503': { description: Site hosting or a required adapter is unavailable }
+  /api/sites/resolve:
+    get:
+      operationId: resolve_repository_site_host
+      tags:
+        - Sites
+      summary: Resolve a currently active public site Host
+      security: []
+      parameters:
+        - name: host
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Repository selection and current atomic publication version
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [repository, appPrefix, version]
+                properties:
+                  repository: { type: string }
+                  appPrefix: { type: string }
+                  version: { type: string }
+        '421': { description: Unknown, removed or unverified Host }
+        '503': { description: Host authority unavailable }
+  /api/sites/content:
+    parameters:
+      - name: host
+        in: query
+        required: true
+        schema: { type: string }
+      - name: path
+        in: query
+        required: true
+        schema: { type: string }
+    get:
+      operationId: get_repository_site_content
+      tags:
+        - Sites
+      summary: Read one exact published static path
+      security: []
+      responses:
+        '200':
+          description: Published bytes with verified media type, digest ETag and nosniff
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '304': { description: Digest is unchanged }
+        '404': { description: Path is unclaimed; the edge may serve the repository app }
+        '421': { description: Host is not bound }
+        '503': { description: Publication storage unavailable }
+    head:
+      operationId: head_repository_site_content
+      tags:
+        - Sites
+      summary: Probe one exact published static path
+      security: []
+      responses:
+        '200': { description: Published content headers }
+        '304': { description: Digest is unchanged }
+        '404': { description: Path is unclaimed }
+        '421': { description: Host is not bound }
+        '503': { description: Publication storage unavailable }
+  /api/auth/site/start:
+    get:
+      operationId: start_repository_site_sign_in
+      tags:
+        - Sites
+      summary: Start an explicit central sign-in from a verified site
+      security: []
+      parameters:
+        - name: return_to
+          in: query
+          schema: { type: string }
+      responses:
+        '302': { description: Host-only browser challenge and redirect to the configured central origin }
+        '400': { description: Unsafe return URL }
+        '421': { description: Unknown site Host }
+        '503': { description: Central identity unavailable }
+  /api/auth/site/authorize:
+    get:
+      operationId: authorize_repository_site_sign_in
+      tags:
+        - Sites
+      summary: Authorize a single-use proof with the central browser session
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: request
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Human confirmation form naming the destination; no proof is minted by GET }
+        '302': { description: Continue through the existing central GitHub callback }
+        '400': { description: Invalid request }
+        '401': { description: Browser session required; API tokens cannot mint unrestricted sessions }
+        '409': { description: Expired or already authorized request }
+        '421': { description: Wrong central Host }
+    post:
+      operationId: confirm_repository_site_sign_in
+      tags:
+        - Sites
+      summary: Confirm the destination using the central browser session and CSRF token
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [request, csrf]
+              properties:
+                request: { type: string }
+                csrf: { type: string }
+      responses:
+        '302': { description: Audience-bound single-use proof sent to the stored destination }
+        '400': { description: Invalid request }
+        '401': { description: Central browser session required }
+        '403': { description: Missing same-origin consent or CSRF proof }
+        '409': { description: Expired or already authorized request }
+        '421': { description: Wrong central Host }
+  /api/auth/site/complete:
+    get:
+      operationId: complete_repository_site_sign_in
+      tags:
+        - Sites
+      summary: Consume a host-bound proof and issue a host-only session
+      security: []
+      parameters:
+        - name: proof
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '303': { description: A fresh admitted session and CSRF cookie, then a clean relative URL; no-store and no-referrer }
+        '401': { description: Missing state, wrong audience, expired or replayed proof }
+        '503': { description: Existing identity/session authority unavailable }
   /api/telemetry/errors:
     post:
       summary: POST /api/telemetry/errors

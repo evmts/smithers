@@ -5,6 +5,9 @@ import { runRequest } from "./Boundary"
 import { DEFAULT_UPSTREAM_TIMEOUT_MS, discardBody, fetchWithDeadline, GIT_UPSTREAM_TIMEOUT_MS, TransportLive, transportFrom } from "./Http"
 import type { Transport, TransportShape } from "./Http"
 import { catalogDocumentPath, DEFAULT_APP_DOCUMENT_PATH, isFramePath, isRepositoryPath, repositoryRedirectPath, repositorySubjectRoot } from "./appDocument"
+import { RepositorySites, repositorySitesLayer } from "./RepositorySites"
+import type { RepositorySite } from "./RepositorySites"
+import { readBoundedText } from "./Http"
 import { withIsolationHeaders } from "./Responses"
 
 // Storage identities survive the authority change. These classes have no product
@@ -13,6 +16,7 @@ export { AccountModelVault, ClientErrorLog, GatewaySessionRegistry, RecommendLog
 
 export interface EdgeEnv {
   readonly SMITHERS_BACKEND_ORIGIN?: string
+  readonly SMITHERS_APP_HOSTS?: string
   readonly ASSETS: { readonly fetch: (request: Request) => Promise<Response> }
 }
 
@@ -94,10 +98,24 @@ const documentHeaders = (url: URL, response: Response): Response => {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
 
-export const handleEdgeRequest = (request: Request, configuredOrigin: string | undefined): Effect.Effect<Response, never, Transport | EdgeAssets> =>
+const siteDocument = (request: Request, url: URL, site: RepositorySite): Effect.Effect<Response, never, EdgeAssets> => Effect.gen(function* () {
+  const response = yield* asset(new Request(new URL(DEFAULT_APP_DOCUMENT_PATH, url), request))
+  if (!response.ok || !(response.headers.get("content-type") ?? "").includes("text/html")) return refusal(502,"app_document_unavailable")
+  const html = yield* readBoundedText(response, 4 << 20).pipe(Effect.catch(() => Effect.succeed(undefined)))
+  if (html === undefined) return refusal(502,"app_document_unavailable")
+  const metadata = JSON.stringify({ repository: site.repository, appPrefix: site.appPrefix }).replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;")
+  const headers = new Headers(response.headers)
+  headers.delete("content-length"); headers.delete("etag"); headers.set("cache-control","no-store")
+  return documentHeaders(url, withIsolationHeaders(new Response(request.method === "HEAD" ? null : html.replace(/<head([^>]*)>/i, `<head$1><meta name="smithers-repository-site" content="${metadata}">`), {status:200,headers})))
+})
+
+export const handleEdgeRequest = (request: Request, configuredOrigin: string | undefined, appHosts = "smithers.sh,canary.smithers.sh,www.smithers.sh,localhost,127.0.0.1,[::1]"): Effect.Effect<Response, never, Transport | EdgeAssets | RepositorySites> =>
   Effect.gen(function* () {
     const url = new URL(request.url)
     const visitor = yield* Effect.try(() => JSON.parse(request.headers.get("cf-visitor") ?? "null") as unknown).pipe(Effect.catch(() => Effect.succeed(undefined)))
+    const primary = appHosts.split(",").some(host => host.trim().toLowerCase() === url.hostname.toLowerCase())
+    const site = primary ? undefined : yield* RepositorySites.use(sites => sites.resolve(url.hostname))
+    if (!primary && site === undefined) return refusal(421,"unknown_site_host")
     if ((typeof visitor === "object" && visitor !== null && "scheme" in visitor && visitor.scheme === "http") || url.hostname === "www.smithers.sh") {
       url.protocol = "https:"
       if (url.hostname === "www.smithers.sh") url.hostname = "smithers.sh"
@@ -108,6 +126,21 @@ export const handleEdgeRequest = (request: Request, configuredOrigin: string | u
     if (route !== undefined) {
       const origin = backendOrigin(configuredOrigin, url)
       return origin === undefined ? refusal(503, "backend_not_configured") : yield* proxy(request, url, origin, route)
+    }
+    if (site !== undefined) {
+      let path: string
+      try { path = decodeURIComponent(url.pathname) } catch { return refusal(400,"invalid_site_path") }
+      if (path === "/api" || path.startsWith("/api/")) {
+        const origin = backendOrigin(configuredOrigin,url)
+        return origin === undefined ? refusal(503,"backend_not_configured") : yield* proxy(request,url,origin,"api")
+      }
+      if (path === "/__smithers" || path.startsWith("/__smithers/")) return yield* asset(request)
+      if (request.method !== "GET" && request.method !== "HEAD") return refusal(405,"method_not_allowed")
+      if (site.appPrefix !== "" && (path === site.appPrefix.slice(0,-1) || path.startsWith(site.appPrefix))) return yield* siteDocument(request,url,site)
+      const response = yield* RepositorySites.use(sites => sites.content(url.hostname,path,request))
+      if (response.status !== 404) return response
+      yield* discardBody(response)
+      return yield* siteDocument(request,url,site)
     }
     /*
      * A GitHub-shaped subject below a repository root is that repository's
@@ -162,7 +195,9 @@ export const handleEdgeRequest = (request: Request, configuredOrigin: string | u
 
 export default {
   fetch: (request: Request, env: EdgeEnv): Promise<Response> => runRequest(
-    handleEdgeRequest(request, env.SMITHERS_BACKEND_ORIGIN).pipe(Effect.provide(Layer.mergeAll(TransportLive, edgeAssets(env.ASSETS)))),
-    request.signal
+    handleEdgeRequest(request, env.SMITHERS_BACKEND_ORIGIN, env.SMITHERS_APP_HOSTS).pipe(Effect.provide(Layer.mergeAll(
+      repositorySitesLayer(backendOrigin(env.SMITHERS_BACKEND_ORIGIN, new URL(request.url))).pipe(Layer.provide(TransportLive)),
+      TransportLive, edgeAssets(env.ASSETS)
+    ))), request.signal
   )
 }

@@ -233,6 +233,12 @@ var allEnvKeys = []string{
 	"SMITHERS_GUEST_RECEIPT_SEED",
 	"SMITHERS_GUEST_PROXY_ORIGIN",
 	"SMITHERS_GUEST_PROXY_SECRET",
+	"SMITHERS_SITES_ENABLED",
+	"SMITHERS_SITES_SUFFIX",
+	"SMITHERS_SITES_FIRST_PARTY_ORG_IDS",
+	"SMITHERS_SITES_CNAME",
+	"SMITHERS_SITES_CLOUDFLARE_ZONE",
+	"SMITHERS_SITES_CLOUDFLARE_TOKEN",
 }
 
 // clearConfigEnv unsets all SMITHERS_ env vars that config.Load() reads,
@@ -735,6 +741,7 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 	require.NoError(t, err)
 
 	expected := &Config{
+		Sites:  RepositorySitesConfig{Suffix: "smithers.sh", CNAME: "sites.smithers.sh"},
 		Agents: AgentsConfig{NeverStartedTimeout: "1h"},
 		Server: ServerConfig{
 			Addr:             ":4000",
@@ -1787,6 +1794,7 @@ func TestLoad_MapstructureTagsMatchViperKeys(t *testing.T) {
 		"Chat":                "chat",
 		"Guest":               "guest",
 		"WikiSync":            "wiki_sync",
+		"Sites":               "sites",
 	}
 
 	cfgType := reflect.TypeOf(Config{})

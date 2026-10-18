@@ -83,6 +83,9 @@ func mountGuestPublic(router chi.Router, h *guest.Handler, queries *db.Queries, 
 					for _, candidate := range apiAllowedOrigins(cfg) {
 						allowed = allowed || middleware.SameOrigin(origin, candidate)
 					}
+					if site, ok := middleware.RepositorySiteFromContext(request.Context()); ok {
+						allowed = allowed || middleware.SameOrigin(origin, "https://"+site.Host)
+					}
 					if !allowed {
 						pkgerrors.WriteError(w, pkgerrors.Forbidden("Sign in to continue."))
 						return
