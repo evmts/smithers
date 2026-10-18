@@ -35,12 +35,13 @@ import project from "./src/data/project.json" with { type: "json" }
  * @category configuration
  */
 export default defineConfig({
+  build: { assets: "__smithers" },
   site: "https://smithers.sh",
   output: "static",
   prefetch: { defaultStrategy: "hover" },
   experimental: { clientPrerender: true },
   // Inter and IBM Plex Mono are the product UI's pairing. Astro downloads them
-  // at build time and serves them from /_astro/fonts, so no page waits on a
+  // at build time and serves them from /__smithers/fonts, so no page waits on a
   // cross-origin Google Fonts stylesheet. Each family names a generic family
   // last, which makes Astro generate a metric-adjusted local fallback; that is
   // what keeps the ASCII wordmark from reflowing when the real face swaps in.

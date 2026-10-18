@@ -292,11 +292,15 @@ func AuthLoader(queries AuthLoaderQuerier, cfg config.AuthConfig, boundaries ...
 					if !authorizeInstallationOwner(w, r, authInfo, ownerBoundary) {
 						return
 					}
+					if !validRepositorySiteSession(ctx, queries, cookie.Value, authInfo.User.ID) {
+						errors.WriteError(w, errors.Unauthorized("Session audience mismatch"))
+						return
+					}
 					// Scorecard reads (including policy refusals) never renew a session.
 					var refreshedSession *db.AuthSession
 					sessionExpiresAt := session.ExpiresAt
 					var refreshErr error
-					if InstallMemberCommand(r.Method, r.URL.EscapedPath()) != "install.scorecard" {
+					if !strings.HasPrefix(cookie.Value, RepositorySiteSessionPrefix) && InstallMemberCommand(r.Method, r.URL.EscapedPath()) != "install.scorecard" {
 						refreshedSession, sessionExpiresAt, refreshErr = refreshLoadedSession(ctx, queries, session, now, sessionDuration, sessionRefreshWindow)
 					}
 					if refreshErr != nil {

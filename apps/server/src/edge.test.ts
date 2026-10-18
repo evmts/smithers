@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as TestClock from "effect/testing/TestClock"
+import { RepositorySites } from "./RepositorySites"
 import edge, { edgeAssets, handleEdgeRequest } from "./edge"
 import { DEFAULT_UPSTREAM_TIMEOUT_MS, GIT_UPSTREAM_TIMEOUT_MS, Transport, transportFrom } from "./Http"
 
@@ -495,7 +496,7 @@ test("a push outlasts the API's header deadline and still has a backstop", async
   const pending = Layer.succeed(Transport, transportFrom(() => new Promise<Response>(() => {})))
   const run = (path: string) => Effect.runPromise(Effect.gen(function* () {
     const fiber = yield* handleEdgeRequest(new Request(`https://smithers.sh${path}`, { method: "POST", body: "0000" }), "https://backend.test")
-      .pipe(Effect.provide(Layer.mergeAll(pending, edgeAssets(assets))), Effect.forkChild)
+      .pipe(Effect.provide(Layer.mergeAll(pending, edgeAssets(assets), Layer.succeed(RepositorySites, { resolve: () => Effect.succeed(undefined), content: () => Effect.succeed(new Response(null, { status: 404 })) }))), Effect.forkChild)
     yield* TestClock.adjust(DEFAULT_UPSTREAM_TIMEOUT_MS + 1)
     const afterApiDeadline = fiber.pollUnsafe()
     yield* TestClock.adjust(GIT_UPSTREAM_TIMEOUT_MS)

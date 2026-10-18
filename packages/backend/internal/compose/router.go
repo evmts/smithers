@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -29,9 +30,14 @@ import (
 	"github.com/smithersai/smithers/packages/backend/ports"
 )
 
+var repositorySitePath = regexp.MustCompile(`^/api/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/site$`)
+
 var agentEnvironmentSetupPath = regexp.MustCompile(`^/api/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/agent-environment$`)
 
-func apiBodyLimit(r *http.Request) int64 {
+func apiBodyLimit(r *http.Request, sitesEnabled bool) int64 {
+	if sitesEnabled && r.Method == "POST" && repositorySitePath.MatchString(r.URL.EscapedPath()) {
+		return 24 << 20
+	}
 	if r.Method == http.MethodPut && agentEnvironmentSetupPath.MatchString(r.URL.EscapedPath()) {
 		// Bound the combined setup document, variables, and secrets.
 		return middleware.MaxAgentEnvironmentBodySize
@@ -40,6 +46,8 @@ func apiBodyLimit(r *http.Request) int64 {
 }
 
 type routerExtras struct {
+	SiteSignIn     *routes.SiteSignInHandler
+	Sites          *routes.RepositorySitesHandler
 	Qualification  *services.InstallQualification
 	AckDelay       *routes.InstallAckDelayHandler
 	InstallQuiesce *services.InstallQuiesce
@@ -388,7 +396,21 @@ func buildRouter(
 		if extras.GitHubAppSetup != nil && extras.GitHubAppSetup.Origins != nil {
 			origins = extras.GitHubAppSetup.Origins
 		}
-		r.Use(middleware.EffectiveOrigin(origins))
+		r.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				selected := origins()
+				host := r.Host
+				if cfg.Server.TrustedProxyHops > 0 && r.Header.Get("X-Forwarded-Host") != "" {
+					host = r.Header.Get("X-Forwarded-Host")
+				}
+				if extras.Sites != nil && extras.Sites.Service != nil {
+					if _, err := extras.Sites.Service.Resolve(r.Context(), host); err == nil {
+						selected = append(append([]string(nil), selected...), "https://"+host)
+					}
+				}
+				middleware.EffectiveOrigin(middleware.FixedOrigins(selected...))(next).ServeHTTP(w, r)
+			})
+		})
 		// Every GitHub OAuth operation, including CLI consent, uses the already
 		// resolved request origin rather than a global callback configuration.
 		r.Use(func(next http.Handler) http.Handler {
@@ -546,6 +568,27 @@ func buildRouter(
 	}
 
 	apiCORS := apiCORSOptions(cfg)
+	if extras.Sites != nil && extras.Sites.Service != nil {
+		original := apiCORS.AllowOriginFunc
+		apiCORS.AllowOriginFunc = func(r *http.Request, origin string) bool {
+			if original != nil && original(r, origin) {
+				return true
+			}
+			parsed, err := url.Parse(origin)
+			if err != nil || parsed.Scheme != "https" || parsed.User != nil || parsed.Port() != "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+				return false
+			}
+			target := r.Host
+			if cfg.Server.TrustedProxyHops > 0 && r.Header.Get("X-Forwarded-Host") != "" {
+				target = r.Header.Get("X-Forwarded-Host")
+			}
+			if !strings.EqualFold(target, parsed.Host) {
+				return false
+			}
+			_, err = extras.Sites.Service.Resolve(r.Context(), parsed.Host)
+			return err == nil
+		}
+	}
 
 	// Canonical LFS protocol endpoints intentionally resolve authorization in
 	// LFSService rather than LoadRepoContext: a git-lfs-authenticate credential
@@ -795,6 +838,17 @@ func buildRouter(
 	// Health check at /api/health so the Cloudflare Worker can proxy /api/health.
 	// Registered outside the /api route group to avoid JSON content-type enforcement.
 	r.Get("/api/health", routes.Health)
+	if extras.SiteSignIn != nil {
+		r.Get("/api/auth/site/start", extras.SiteSignIn.Start)
+		r.With(authLoader(queries, cfg.Auth)).Get("/api/auth/site/authorize", extras.SiteSignIn.Authorize)
+		r.With(authLoader(queries, cfg.Auth)).Post("/api/auth/site/authorize", extras.SiteSignIn.Authorize)
+		r.Get("/api/auth/site/complete", extras.SiteSignIn.Complete)
+	}
+	if extras.Sites != nil {
+		r.Get("/api/sites/resolve", extras.Sites.Resolve)
+		r.Get("/api/sites/content", extras.Sites.Content)
+		r.Head("/api/sites/content", extras.Sites.Content)
+	}
 	// The failure-code registry, served so a deployment can be asked which
 	// vocabulary it is actually running. Unauthenticated and read-only for the
 	// same reason /api/health is: it is a published contract.
@@ -1088,7 +1142,7 @@ func buildRouter(
 		r.Use(middleware.JSONTimeout(apiJSONTimeout))
 		r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
 		r.Use(middleware.JSONAllowContentType("application/json", routes.LFSJSONMediaType))
-		r.Use(middleware.MaxBodySizeForRequest(apiBodyLimit))
+		r.Use(middleware.MaxBodySizeForRequest(func(r *http.Request) int64 { return apiBodyLimit(r, cfg.Sites.Enabled) }))
 		r.Use(routes.PullPublicationAgentCredentialFirst(config.IsMultitenant(cfg.Auth)))
 		// Global API rate limit: 5000/hr auth, 600/hr anon. AuthLoader runs first
 		// so user context is available for limit selection. Search routes excluded
@@ -1550,6 +1604,10 @@ func buildRouter(
 					routes.RegisterDevtoolsSnapshotRoutes(r, queries, readRepo, devtoolsSnapshotWriteRepo, cfg.FeatureFlags.DevtoolsSnapshotEnabled, installPools...)
 				}
 
+				if extras.Sites != nil {
+					r.With(ownerRepo...).Get("/site", extras.Sites.Action)
+					r.With(ownerRepo...).Post("/site", extras.Sites.Action)
+				}
 				r.With(writeRepo...).Patch("/", repoHandler.PatchRepo)
 				r.With(writeRepo...).Put("/topics", repoHandler.ReplaceRepoTopics)
 				r.With(adminRepo...).Delete("/", repoHandler.DeleteRepo)

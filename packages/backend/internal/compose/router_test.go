@@ -2441,6 +2441,7 @@ func TestAPIBodyLimitOnlyWidensAgentEnvironmentPut(t *testing.T) {
 		path   string
 		want   int64
 	}{
+		{"disabled site POST", http.MethodPost, "/api/repos/will/flows/site", middleware.MaxRequestBodySize},
 		{"setup PUT", http.MethodPut, "/api/repos/will/flows/agent-environment", middleware.MaxAgentEnvironmentBodySize},
 		{"setup POST", http.MethodPost, "/api/repos/will/flows/agent-environment", middleware.MaxRequestBodySize},
 		{"secret PUT", http.MethodPut, "/api/repos/will/flows/agent-environment/secrets/TOKEN", middleware.MaxRequestBodySize},
@@ -2453,7 +2454,7 @@ func TestAPIBodyLimitOnlyWidensAgentEnvironmentPut(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, nil)
-			assert.Equal(t, tc.want, apiBodyLimit(req))
+			assert.Equal(t, tc.want, apiBodyLimit(req, false))
 		})
 	}
 }
@@ -3415,3 +3416,8 @@ func TestRepositorySearchFeatureFlagGate(t *testing.T) {
 		})
 	}
 }
+
+func TestAPIBodyLimitEnabledSitePost(t *testing.T) {
+	require.Equal(t, int64(24<<20), apiBodyLimit(httptest.NewRequest(http.MethodPost, "/api/repos/will/flows/site", nil), true))
+}
+
