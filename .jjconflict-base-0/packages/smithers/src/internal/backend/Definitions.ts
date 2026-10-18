@@ -7,6 +7,46 @@ import { z } from "incur"
  * @since 0.1.0
  */
 export const definitions = {
+  "site status": {
+    description: "Show repository site and DNS records",
+    args: z.object({}),
+    options: z.object({ repo: z.string().optional() })
+  },
+  "site enable": {
+    description: "Enable a repository site",
+    args: z.object({}),
+    options: z.object({
+      repo: z.string().optional(),
+      name: z.string().optional(),
+      "app-prefix": z.string().default("/repo/")
+    })
+  },
+  "site publish": {
+    description: "Publish a prebuilt directory atomically",
+    args: z.object({ directory: z.string() }),
+    options: z.object({ repo: z.string().optional(), expected: z.string().optional(), yes: z.boolean().default(false) })
+  },
+  "site activate": {
+    description: "Activate a retained site version",
+    args: z.object({ version: z.string() }),
+    options: z.object({ repo: z.string().optional(), expected: z.string().optional() })
+  },
+  "site domain add": {
+    description: "Add a domain and show exact DNS records",
+    args: z.object({ domain: z.string() }),
+    options: z.object({ repo: z.string().optional() })
+  },
+  "site domain verify": {
+    description: "Check ownership, routing and certificate status",
+    args: z.object({ domain: z.string() }),
+    options: z.object({ repo: z.string().optional() })
+  },
+  "site domain remove": {
+    description: "Unbind a custom domain",
+    args: z.object({ domain: z.string() }),
+    options: z.object({ repo: z.string().optional() })
+  },
+
   "host backup": {
     description: "Back up the installation",
     args: z.object({}),

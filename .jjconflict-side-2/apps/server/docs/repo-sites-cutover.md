@@ -78,7 +78,7 @@ in the transcript; work acknowledges after persistence and continues in the
 background. CLI publication uploads a directory built by the owner:
 
 ```sh
-smthrs site enable --repo effeck/effeck --appPrefix /repo/
+smthrs site enable --repo effeck/effeck --app-prefix /repo/
 smthrs site publish ./docs/dist --repo effeck/effeck --yes
 smthrs site status --repo effeck/effeck
 smthrs site domain add effeck.dev --repo effeck/effeck

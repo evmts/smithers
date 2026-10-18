@@ -182,6 +182,7 @@ export const stubCommandActions = (overrides: Partial<CommandActions> = {}): Com
   showBillingPlans: unexpected,
   startCheckout: unexpected,
   openBillingPortal: unexpected,
+  repositorySite: unexpected,
   listSecrets: unexpected,
   scopeSecret: unexpected,
   bindSecret: unexpected,

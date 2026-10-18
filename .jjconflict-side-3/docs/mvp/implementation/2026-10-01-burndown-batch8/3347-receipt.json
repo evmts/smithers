@@ -1,0 +1,11 @@
+{
+  "issue": 3347,
+  "at": "2026-10-01T10:15:27.893497+00:00",
+  "reviewer": "codex-burndown-20260930/root",
+  "sourceHashesVerified": true,
+  "rawReceiptHashesVerified": true,
+  "archiveEntriesVerified": 7,
+  "independentRebasedLandingGate": "PASS; see checkpoint43-postrebase.json and2081-independent-readiness.json",
+  "sourceStaging": "Issue-specific source.diff; shared ownership.csv rows split between2081 and3347",
+  "review": "Reviewed actual0096 migration provenance and exact missing product ownership row; unchanged strict real-PG schema gate green."
+}

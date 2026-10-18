@@ -1,0 +1,501 @@
+import { githubInput, githubArgs } from "../GitHubPayload"
+/*
+ * The Home card's flows through the production command dispatcher: `/stack`,
+ * Move up/down, Merge, a background run's Retry and Dismiss, and main's sync
+ * Retry act on the seeded design world. Expected values are the seed's literals.
+ * On an install, Move and Merge reach the served TODO instead.
+ */
+import { expect, test } from "bun:test"
+import { createAppController } from "../../state/AppController"
+import { createAppStore } from "../../state/AppStore"
+import { memoryStorage, signupProfileFetch, unavailableAgent, waitFor } from "../../state/TestFixtures"
+import { shellViewsOf } from "../../state/seams/DesignWorld/shell"
+import { modelInvocable, nameOf } from "../registry"
+import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
+import { fixtures } from "../../../../../../packages/rpc/test/fixtures/Todo"
+import { fixtures as homeFixtures } from "@smthrs/rpc/fixtures/Home"
+import type { LiveTopics } from "../../state/useTopic"
+
+const boot = async (options: { readonly bootstrap?: AppBootstrap; readonly live?: LiveTopics; readonly fetch?: (url: string, init?: RequestInit) => Response | undefined | Promise<Response | undefined> } = {}) => {
+  const storage = memoryStorage()
+  const store = await createAppStore({ kind: "localStorage", storage })
+  const requests: string[] = []
+  const profile = signupProfileFetch(async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+    requests.push(`${init?.method ?? "GET"} ${new URL(url, "http://local.test").pathname}`)
+    return (await options.fetch?.(url, init)) ?? new Response("{}", { status: 404 })
+  })
+  const controller = createAppController(store, unavailableAgent, { fetchImpl: profile.fetchImpl, ...(options.live ? { live: options.live } : {}), ...(options.bootstrap ? { bootstrap: options.bootstrap } : {}) })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maya", admin: false, scopesPlain: null }).isPersisted.promise
+  return { store, controller, requests, storage }
+}
+type Harness = Awaited<ReturnType<typeof boot>>
+const slash = (h: Harness, name: string, args?: string) => h.controller.runCommandForResult(name, args)
+const button = (h: Harness, name: string, payload: Record<string, unknown>) => h.controller.submitCommand({ name, payload, actor: "user" })
+const stack = (h: Harness) => h.controller.design.world().repo.stack
+
+test("the Home doors register, and every one has an agent door (a merge only ever opens the person's card)", async () => {
+  const h = await boot()
+  try {
+    const entries = h.controller.commands.entries().filter(entry => ["stack", "stack.move", "merge", "background.retry", "background.dismiss", "github"].includes(nameOf(entry)))
+    expect(entries.find(entry => nameOf(entry) === "github")?.metadata).toMatchObject({ agent: "run", minimumRole: "member", http: { method: "GET", path: "/api/github/sync", query: {} } })
+    expect(entries.map(nameOf).sort()).toEqual(["background.dismiss", "background.retry", "github", "merge", "stack", "stack.move"])
+    expect(entries.every(modelInvocable)).toBe(true)
+    expect(h.controller.commands.find("github.retry")).toBeUndefined()
+  } finally { h.controller.dispose() }
+})
+
+test("Move up and Move down reorder the stack by ref, through the slash line and the row's button", async () => {
+  const h = await boot()
+  try {
+    expect(stack(h)).toEqual(["t-stripe", "t-retry", "t-checkout", "t-log"])
+    expect(await slash(h, "stack.move", "T11 up")).toEqual({ status: "executed", value: "Moved T11 up" })
+    expect(stack(h)).toEqual(["t-stripe", "t-retry", "t-log", "t-checkout"])
+    expect((await button(h, "stack.move", { n: 11, direction: "down" })).status).toBe("executed")
+    expect(stack(h)).toEqual(["t-stripe", "t-retry", "t-checkout", "t-log"])
+    expect(await slash(h, "stack.move", "T8 up")).toMatchObject({ status: "failed" })
+    expect(await slash(h, "stack.move", "T99 up")).toMatchObject({ status: "failed", error: expect.stringContaining("No TODO T99") })
+    expect(stack(h)).toEqual(["t-stripe", "t-retry", "t-checkout", "t-log"])
+  } finally { h.controller.dispose() }
+})
+
+test("a bare Merge opens Review & merge; the reviewed head merges; one not in review is refused", async () => {
+  const h = await boot()
+  try {
+    expect(await slash(h, "merge", "T10")).toMatchObject({ status: "failed", error: expect.stringContaining("Not in review yet") })
+    expect(await slash(h, "merge", "T9")).toMatchObject({ status: "failed", error: expect.stringContaining("Needs you") })
+    expect((await slash(h, "merge", "T8")).status).toBe("executed")
+    expect(h.store.collections.cards.get("design:confirm:merge:t-stripe")).toMatchObject({ kind: "confirm", payload: { id: "merge:t-stripe" } })
+    expect(h.controller.design.world().todos.find(each => each.id === "t-stripe")?.state).toBe("in-review")
+    expect(await button(h, "merge", { n: 8, reviewed_head_sha: "stale" })).toMatchObject({ status: "failed", error: expect.stringContaining("changed since you reviewed") })
+    // The Review & merge card binds the revision it shows (the seed's evidence rev).
+    expect(await button(h, "merge", { n: 8, reviewed_head_sha: "3f9a2c1" })).toEqual({ status: "executed", value: "Merged #88" })
+    const world = h.controller.design.world()
+    expect(world.todos.find(each => each.id === "t-stripe")?.state).toBe("merged")
+    expect(world.repo.mainHead).toEqual({ text: "#88 merged" })
+    expect(await slash(h, "merge", "T8")).toMatchObject({ status: "failed", error: expect.stringContaining("already merged") })
+  } finally { h.controller.dispose() }
+})
+
+test("the agent's Merge opens the person's Review & merge and never merges; a head-bound one asks the person first", async () => {
+  const h = await boot()
+  try {
+    const state = () => h.controller.design.world().todos.find(each => each.id === "t-stripe")?.state
+    expect(await h.controller.commands.runForAgent("merge", "T8")).toEqual({ status: "executed", value: expect.any(String) })
+    expect(h.store.collections.cards.get("design:confirm:merge:t-stripe")).toMatchObject({ kind: "confirm", title: "Merge T8 into main?", payload: { id: "merge:t-stripe" } })
+    expect(state()).toBe("in-review")
+    // The agent naming the reviewed head still merges nothing: the person is asked, and their press is a bare /merge T8.
+    const asked = await h.controller.commands.runForAgent("merge", '{"n":8,"reviewed_head_sha":"3f9a2c1"}')
+    expect(asked).toMatchObject({ status: "executed", value: expect.stringContaining('asked the user to confirm "/merge T8"') })
+    expect(state()).toBe("in-review")
+    const confirmation = [...h.store.collections.messages.values()].find(message => message.action?.flow === "merge")
+    expect(confirmation?.action).toMatchObject({ flow: "merge", args: "T8", label: "Confirm: Review & merge" })
+    // Refusals keep the seed's words through the agent door too.
+    expect(await h.controller.commands.runForAgent("merge", "T9")).toMatchObject({ status: "failed", error: expect.stringContaining("Needs you") })
+    expect(await h.controller.commands.runForAgent("merge", "T99")).toMatchObject({ status: "failed", error: expect.stringContaining("No TODO T99") })
+    // Only the person's press bound to the reviewed head merges.
+    expect(await button(h, "merge", { n: 8, reviewed_head_sha: "3f9a2c1" })).toEqual({ status: "executed", value: "Merged #88" })
+    expect(state()).toBe("merged")
+  } finally { h.controller.dispose() }
+})
+
+test("a member's bare Merge is refused before any card opens", async () => {
+  const h = await boot()
+  try {
+    h.controller.design.patch("members", "maya", current => ({ ...current, role: "member" }))
+    expect(await slash(h, "merge", "T8")).toMatchObject({ status: "failed", error: expect.stringContaining("A maintainer merges") })
+    expect(h.store.collections.cards.get("design:confirm:merge:t-stripe")).toBeUndefined()
+  } finally { h.controller.dispose() }
+})
+
+test("a failed background run's Retry runs it again and Dismiss removes it for everyone", async () => {
+  const h = await boot()
+  try {
+    const run = () => h.controller.design.world().runs.find(each => each.id === "r-release")
+    expect(run()).toMatchObject({ state: "failed", detail: "GitHub API rate limited" })
+    expect(await slash(h, "background.retry", "r-release")).toEqual({ status: "executed", value: "Retrying" })
+    expect(run()?.state).toBe("running")
+    expect((await button(h, "background.dismiss", { id: "r-release" })).status).toBe("executed")
+    expect(run()).toBeUndefined()
+    expect(await slash(h, "background.retry", "r-release")).toMatchObject({ status: "failed", error: expect.stringContaining("No such run") })
+    expect(await slash(h, "background.dismiss", "nope")).toMatchObject({ status: "failed", error: expect.stringContaining("No such run") })
+  } finally { h.controller.dispose() }
+})
+
+test("main's sync Retry syncs now and clears a refused or limited health", async () => {
+  const h = await boot()
+  try {
+    h.controller.design.patch("repo", "repo", current => ({ ...current, syncedAgo: 400, mainHealth: { state: "limited", cause: "GitHub rate limit", retryAt: "2026-10-03T12:30:00.000Z" } }))
+    const before = h.controller.design.world().repo
+    expect(await slash(h, "github")).toEqual({ status: "executed", value: "Opened the stack" })
+    expect(h.controller.design.world().repo).toEqual(before)
+    expect(await button(h, "github", githubInput("retry", {}))).toEqual({ status: "executed", value: "Synced" })
+    expect(h.controller.design.world().repo.syncedAgo).toBe(3)
+    expect(h.controller.design.world().repo.mainHealth).toBeUndefined()
+  } finally { h.controller.dispose() }
+})
+
+test("on a host that serves GitHub sync, Retry calls that door (github.reconcile) and leaves the seed alone", async () => {
+  const bootstrap: AppBootstrap = { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "cloud"], authFlow: "redirect", sandbox: null }
+  const h = await boot({ bootstrap, fetch: (url, init) => url.endsWith("/github/reconcile") && init?.method === "POST"
+    ? Response.json({ id: 91, state: "queued", behind_refs: 0, failed_refs: 0, refs: [] }, { status: 202 }) : undefined })
+  try {
+    await h.store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "maya", expiresAt: null, scopes: null }).isPersisted.promise
+    await h.store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "acme/api", org: "acme", name: "api", ownerKind: "org", head: null }] }).isPersisted.promise
+    await h.store.dispatch({ type: "repo.selected", actor: "user", id: "acme/api" }).isPersisted.promise
+    h.controller.design.patch("repo", "repo", current => ({ ...current, syncedAgo: 400, mainHealth: { state: "limited", cause: "GitHub rate limit" } }))
+    await h.controller.runCommandForResult("github", githubArgs("retry"))
+    expect(h.requests).toContain("POST /api/repos/acme/api/github/reconcile")
+    expect(h.controller.design.world().repo).toMatchObject({ syncedAgo: 400, mainHealth: { state: "limited", cause: "GitHub rate limit" } })
+  } finally { h.controller.dispose() }
+})
+
+test("on an install, Retry asks its GitHub sync (POST /api/github/sync) and leaves the seed alone", async () => {
+  const bootstrap: AppBootstrap = { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "install"], authFlow: "redirect", sandbox: null }
+  const posts: RequestInit[] = []
+  const h = await boot({ bootstrap, fetch: (url, init) => {
+    if (!url.endsWith("/api/github/sync")) return undefined
+    if (init?.method === "POST") { posts.push(init); return Response.json({ state: "accepted" }, { status: 202 }) }
+    return Response.json({ state: "stale", last_success_at: "2026-10-05T08:00:00Z" })
+  } })
+  const stop = h.controller.githubSyncSnapshots.subscribe(() => {})
+  try {
+    await waitFor(() => h.controller.githubSyncSnapshots.get()?.state === "stale")
+    const before = h.controller.design.world().repo
+    expect(await button(h, "github", githubInput("retry", {}))).toEqual({ status: "executed", value: "Sync requested" })
+    expect(posts).toHaveLength(1)
+    expect(new Headers(posts[0]!.headers).get("Idempotency-Key")).toBeTruthy()
+    expect(h.requests).not.toContain("POST /api/repos/acme/api/github/reconcile")
+    expect(h.controller.design.world().repo).toEqual(before)
+  } finally { stop(); h.controller.dispose() }
+})
+
+test("/stack returns the member to main, where the Home card stands first", async () => {
+  const h = await boot()
+  try {
+    expect((await slash(h, "branch", "retry-webhooks")).status).toBe("executed")
+    const at = () => shellViewsOf(h.controller.design).get("maya")?.at
+    expect(at()).toBe("b-retry")
+    expect(await slash(h, "stack")).toEqual({ status: "executed", value: "Opened the stack" })
+    expect(at()).toBe("main")
+  } finally { h.controller.dispose() }
+})
+
+test("on an install, Move posts its direction to the served TODO and settles once the card shows the place it took", async () => {
+  const bootstrap: AppBootstrap = { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null }
+  const posts: unknown[] = []
+  let place = 4
+  const h = await boot({ bootstrap, fetch: (url, init) => {
+    const path = new URL(url, "http://local.test").pathname
+    if (path === "/api/todos/12" && init?.method === undefined) return Response.json({ ...fixtures.in_review.model, place })
+    if (path === "/api/todos/12" && init?.method === "POST") {
+      posts.push(JSON.parse(String(init.body)))
+      place = 3
+      return Response.json({ state: "accepted", place: 3 }, { status: 202 })
+    }
+    return undefined
+  } })
+  try {
+    const seeded = stack(h)
+    expect(await slash(h, "stack.move", "T12 up")).toEqual({ status: "executed", value: "Requested" })
+    await waitFor(() => posts.length === 1)
+    expect(posts).toEqual([{ op: "move", direction: "up" }])
+    const settled = () => [...h.store.collections.toasts.values()].filter(toast => toast.key.startsWith("todo.request."))
+    await waitFor(() => settled().some(toast => toast.status === "ok"), 5_000)
+    expect(settled()).toHaveLength(1)
+    expect(stack(h)).toEqual(seeded)
+  } finally { h.controller.dispose() }
+})
+
+test("on an install, a bare Merge opens the person's Review & merge for the served TODO, and its Merge posts the reviewed head", async () => {
+  const bootstrap: AppBootstrap = { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null }
+  const model = fixtures.in_review.model, head = model.pr!.head
+  const posts: unknown[] = []
+  const h = await boot({ bootstrap, fetch: (url, init) => {
+    const path = new URL(url, "http://local.test").pathname
+    if (path === "/api/todos/12" && init?.method === undefined) return Response.json(model)
+    if (path === "/api/todos/13" && init?.method === undefined) return Response.json({ ...fixtures.queued.model, n: 13 })
+    if (path === "/api/todos/12/merge" && init?.method === "POST") { posts.push(JSON.parse(String(init.body))); return Response.json({ state: "accepted" }, { status: 202 }) }
+    return undefined
+  } })
+  try {
+    expect(await slash(h, "merge", "T13")).toMatchObject({ status: "failed", error: expect.stringContaining("Not in review yet") })
+    expect(await h.controller.commands.runForAgent("merge", "T12")).toEqual({ status: "executed", value: "Opened Merge T12 into main?" })
+    expect(h.store.collections.cards.get("confirm:merge:todo:12")).toMatchObject({ kind: "confirm", audience_member_id: "maya", payload: { id: "merge:todo:12" } })
+    expect(posts).toEqual([])
+    expect(await button(h, "merge", { n: 12, reviewed_head_sha: head })).toEqual({ status: "executed", value: "Requested" })
+    await waitFor(() => posts.length === 1)
+    expect(posts).toEqual([{ reviewed_head_sha: head }])
+    expect((await button(h, "confirm.cancel", { confirmation: "merge:todo:12", revision: head })).status).toBe("executed")
+    expect(h.store.collections.cards.get("confirm:merge:todo:12")).toBeUndefined()
+  } finally { h.controller.dispose() }
+})
+
+
+test("removed history.show stays out of the slash catalog and bootstrap stays hidden", async () => {
+  const h = await boot()
+  try {
+    await slash(h, "branch", "retry-webhooks")
+    expect(shellViewsOf(h.controller.design).get(h.controller.design.viewer())?.at).toBe("b-retry")
+    expect(await slash(h, "history.show")).toEqual({ status: "unknown-command" })
+    expect(shellViewsOf(h.controller.design).get(h.controller.design.viewer())?.at).toBe("b-retry")
+    expect(h.controller.commands.entries().find(entry => nameOf(entry) === "history.bootstrap")?.metadata.visibility).toBe("hidden")
+    expect(h.requests.some(request => request.includes("mythical"))).toBe(false)
+  } finally { await h.controller.dispose() }
+})
+
+test("an install reconnects its persisted running Retry after controller restart without a second POST", async () => {
+  const storage = memoryStorage()
+  const first = await createAppStore({ kind: "localStorage", storage })
+  await first.dispatch({ type: "github.sync.request.changed", actor: "system", request: {
+    id: "recovered-sync", owner: "maya", phase: "running", lastSuccessAt: "2026-10-06T00:00:00Z"
+  } }).isPersisted.promise
+  const store = await createAppStore({ kind: "localStorage", storage })
+  expect(store.session().githubSyncRequest?.id).toBe("recovered-sync")
+  const calls: string[] = []
+  const fetchImpl = signupProfileFetch(async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+    if (url.endsWith("/api/github/sync")) {
+      calls.push(init?.method ?? "GET")
+      return Response.json({ state: "fresh", last_success_at: "2026-10-06T00:01:00Z" })
+    }
+    return new Response("{}", { status: 404 })
+  }).fetchImpl
+  const bootstrap: AppBootstrap = { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["identity", "install"], authFlow: "redirect", sandbox: null }
+  const controller = createAppController(store, unavailableAgent, { fetchImpl, bootstrap })
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maya", admin: false, scopesPlain: null }).isPersisted.promise
+    await waitFor(() => store.session().githubSyncRequest === undefined)
+    expect(calls.length).toBeGreaterThan(0)
+    expect(calls.every(method => method === "GET")).toBe(true)
+    await store.settled?.()
+    const recovered = await createAppStore({ kind: "localStorage", storage })
+    expect(recovered.session().githubSyncRequest).toBeUndefined()
+  } finally { controller.dispose() }
+})
+
+test("install background Retry returns before admission and execution, deduplicates, and keeps the toast through completion", async () => {
+  let admit!: (response: Response) => void
+  let status = "running"
+  const posts: RequestInit[] = []
+  const bootstrap: AppBootstrap = { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null }
+  const h = await boot({ bootstrap, fetch: (url, init) => {
+    const path = new URL(url, "http://local.test").pathname
+    if (path === "/api/runs/7" && init?.method === "POST") { posts.push(init); return new Promise<Response>(done => { admit = done }) }
+    if (path === "/api/runs/8/background-status") return Response.json({ run_id: 8, state: status })
+    return undefined
+  } })
+  try {
+    expect(await button(h, "background.retry", { id: "7" })).toMatchObject({ status: "executed", value: "Requested" })
+    await waitFor(() => posts.length === 1)
+    expect(h.store.session().homeBackgroundRequests).toMatchObject([{ id: "7", op: "retry", state: "requested" }])
+    expect(await slash(h, "background.retry", "7")).toMatchObject({ status: "executed", value: "Requested" })
+    expect(posts).toHaveLength(1)
+    expect(posts[0]?.body).toBe('{"op":"retry"}')
+    expect(await slash(h, "stack")).toMatchObject({ status: "executed" })
+    await waitFor(() => [...h.store.collections.toasts.values()].some(row => row.key.startsWith("background.") && row.status === "running"))
+    admit(Response.json({ state: "accepted", run_id: 8 }, { status: 202 }))
+    await waitFor(() => h.store.session().homeBackgroundRequests?.[0]?.state === "running")
+    expect([...h.store.collections.toasts.values()].filter(row => row.key.startsWith("background.")).map(row => row.status)).toEqual(["running"])
+    status = "success"
+    await waitFor(() => h.store.session().homeBackgroundRequests?.[0]?.state === "completed")
+    expect([...h.store.collections.toasts.values()].filter(row => row.key.startsWith("background.")).map(row => row.status)).toEqual(["ok"])
+  } finally { h.controller.dispose() }
+})
+
+test("install background Dismiss records failure, retains its retry key and never claims a refused write completed", async () => {
+  let refuse = true
+  const keys: string[] = []
+  const bootstrap: AppBootstrap = { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null }
+  const h = await boot({ bootstrap, fetch: (url, init) => {
+    if (new URL(url, "http://local.test").pathname !== "/api/runs/7" || init?.method !== "POST") return undefined
+    keys.push(new Headers(init.headers).get("Idempotency-Key")!)
+    return refuse ? new Response("", { status: 403 }) : Response.json({ state: "dismissed", run_id: 7 })
+  } })
+  try {
+    expect(await button(h, "background.dismiss", { id: "7" })).toMatchObject({ status: "executed", value: "Requested" })
+    await waitFor(() => h.store.session().homeBackgroundRequests?.[0]?.state === "failed")
+    expect(h.store.session().homeBackgroundRequests?.[0]?.error).toBe("Run action failed")
+    refuse = false
+    expect(await button(h, "background.dismiss", { id: "7" })).toMatchObject({ status: "executed", value: "Requested" })
+    await waitFor(() => h.store.session().homeBackgroundRequests?.[0]?.state === "completed")
+    expect(keys).toHaveLength(2)
+    expect(keys[0]).toBe(keys[1])
+  } finally { h.controller.dispose() }
+})
+
+test("install background Retry reconnects its persisted accepted run without admitting a second one", async () => {
+  const bootstrap: AppBootstrap = { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null }
+  const h = await boot({ bootstrap, fetch: (url, init) => {
+    const path = new URL(url, "http://local.test").pathname
+    if (path === "/api/runs/7" && init?.method === "POST") return Response.json({ run_id: 8, state: "accepted" }, { status: 202 })
+    if (path === "/api/runs/8/background-status") return Response.json({ run_id: 8, state: "running" })
+    return undefined
+  } })
+  let reloaded: ReturnType<typeof createAppController> | undefined
+  try {
+    await button(h, "background.retry", { id: "7" })
+    await waitFor(() => h.store.session().homeBackgroundRequests?.[0]?.state === "running")
+    h.controller.dispose()
+    const requests: string[] = []
+    const profile = signupProfileFetch(async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      const path = new URL(url, "http://local.test").pathname
+      requests.push(`${init?.method ?? "GET"} ${path}`)
+      return path === "/api/runs/8/background-status" ? Response.json({ run_id: 8, state: "success" }) : new Response("{}", { status: 404 })
+    })
+    const restoredStore = await createAppStore({ kind: "localStorage", storage: h.storage })
+    reloaded = createAppController(restoredStore, unavailableAgent, { bootstrap, fetchImpl: profile.fetchImpl })
+    await restoredStore.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maya", admin: false, scopesPlain: null }).isPersisted.promise
+    await waitFor(() => restoredStore.session().homeBackgroundRequests?.[0]?.state === "completed")
+    expect(requests).toContain("GET /api/runs/8/background-status")
+    expect(requests.filter(row => row === "POST /api/runs/7")).toEqual([])
+  } finally { h.controller.dispose(); reloaded?.dispose() }
+})
+
+test("an account change ignores an earlier background admission response", async () => {
+  let finish!: (response: Response) => void
+  const bootstrap: AppBootstrap = { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null }
+  const h = await boot({ bootstrap, fetch: (url, init) => {
+    if (new URL(url, "http://local.test").pathname === "/api/runs/7" && init?.method === "POST") return new Promise<Response>(resolve => { finish = resolve })
+    return undefined
+  } })
+  try {
+    await button(h, "background.retry", { id: "7" })
+    await waitFor(() => finish !== undefined)
+    await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    finish(Response.json({ state: "accepted", run_id: 8 }, { status: 202 }))
+    await Bun.sleep(10)
+    expect(h.store.session().homeBackgroundRequests).toMatchObject([{ owner: "maya", state: "requested" }])
+    expect(h.requests.filter(row => row.includes("/api/runs/8"))).toEqual([])
+  } finally { h.controller.dispose() }
+})
+
+test("install background failure keeps transport details out of the durable request and toast", async () => {
+  const bootstrap: AppBootstrap = { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null }
+  const h = await boot({ bootstrap, fetch: (url, init) => {
+    if (new URL(url, "http://local.test").pathname === "/api/runs/7" && init?.method === "POST") throw new Error("RAW PRIVATE TRANSPORT TRACE")
+    return undefined
+  } })
+  try {
+    expect(await button(h, "background.retry", { id: "7" })).toMatchObject({ status: "executed", value: "Requested" })
+    await waitFor(() => h.store.session().homeBackgroundRequests?.[0]?.state === "failed")
+    expect(h.store.session().homeBackgroundRequests?.[0]?.error).toBe("Run action failed")
+    await waitFor(() => [...h.store.collections.toasts.values()].some(row => row.key.startsWith("background.") && row.status === "failed"))
+    expect(JSON.stringify([...h.store.collections.toasts.values()])).not.toContain("RAW PRIVATE TRANSPORT TRACE")
+  } finally { await h.controller.dispose() }
+})
+
+test("main reset is an owner-only typed flow; agents cannot act or ask for confirmation", async () => {
+  const h = await boot()
+  const binding = { id: "force-19", old: "1".repeat(40), new: "2".repeat(40) }
+  try {
+    const entry = h.controller.commands.entries().find(each => nameOf(each) === "main.reset-to-github")!
+    expect(entry.metadata).toMatchObject({ agent: "never", minimumRole: "owner", visibility: "in-card", actors: ["person"], http: { method: "POST", path: "/api/stack/attention/{id}" } })
+    expect(modelInvocable(entry)).toBe(false)
+    const before = h.requests.length
+    expect(await h.controller.commands.runForAgent("main.reset-to-github", JSON.stringify(binding))).toMatchObject({ status: "failed", error: expect.stringContaining("Only a person") })
+    expect(h.requests.slice(before).filter(each => each.startsWith("POST"))).toEqual([])
+    expect([...h.store.collections.messages.values()].filter(each => each.action?.flow === "main.reset-to-github")).toEqual([])
+  } finally { h.controller.dispose() }
+})
+
+test("the owner reset flow persists and acknowledges before HTTP, with one bound POST", async () => {
+  const bootstrap: AppBootstrap = { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["identity", "install"], authFlow: "redirect", sandbox: null }
+  const binding = { id: "force-19", old: "1".repeat(40), new: "2".repeat(40) }
+  let health = { state: "stale", last_success_at: "2026-10-06T00:00:00Z" }
+  let release!: (response: Response) => void
+  const posts: RequestInit[] = []
+  const h = await boot({ bootstrap, fetch: (url, init) => {
+    if (url.endsWith("/api/members")) return Response.json({ members: [{ login: "maya", name: "Maya", avatar_url: "https://github.com/avatar.png", color_index: 0, role: "owner", suspended: false, needs_access: false, actions: [] }], access_url: "https://github.com/acme/app/settings/access" })
+    if (url.endsWith("/api/github/sync")) return Response.json(health)
+    if (url.endsWith("/api/stack/attention/force-19") && init?.method === "POST") { posts.push(init); return new Promise<Response>(resolve => { release = resolve }) }
+    return undefined
+  } })
+  const stop = h.controller.githubSyncSnapshots.subscribe(() => {})
+  try {
+    await waitFor(() => h.controller.githubSyncSnapshots.get()?.state === "stale" && h.controller.membersRoster.get().model?.members[0]?.role === "owner")
+    expect(await button(h, "main.reset-to-github", binding)).toEqual({ status: "executed", value: "Reset requested" })
+    expect(h.store.session().githubSyncRequest?.mainReset).toEqual(binding)
+    expect(await button(h, "main.reset-to-github", binding)).toEqual({ status: "executed", value: "Reset requested" })
+    await waitFor(() => posts.length === 1)
+    expect(JSON.parse(String(posts[0]!.body))).toEqual({ old: binding.old, new: binding.new })
+    expect(new Headers(posts[0]!.headers).get("Idempotency-Key")).toBe(h.store.session().githubSyncRequest!.id)
+    // The unrelated read returns its real unavailable answer while reset is unresolved.
+    const github = await slash(h, "github")
+    expect(github.status).toBe("failed")
+    expect(JSON.stringify(github)).not.toContain("Opened the stack")
+    expect(h.store.session().githubSyncRequest?.phase).toBe("requested")
+    release(Response.json({ state: "settled" }))
+    await waitFor(() => h.store.session().githubSyncRequest === undefined)
+    expect(health.state).toBe("stale") // Reset's bound settled receipt completed it, not an unrelated health delta.
+  } finally { stop(); h.controller.dispose() }
+}, 20_000)
+
+
+test("an install reconnects its persisted running reset after controller restart without a second POST", async () => {
+  const storage = memoryStorage()
+  const first = await createAppStore({ kind: "localStorage", storage })
+  await first.dispatch({ type: "github.sync.request.changed", actor: "system", request: {
+    id: "recovered-reset", owner: "maya", phase: "running", lastSuccessAt: "2026-10-06T00:00:00Z", mainReset: { id: "force-19", old: "1".repeat(40), new: "2".repeat(40) }
+  } }).isPersisted.promise
+  const store = await createAppStore({ kind: "localStorage", storage })
+  expect(store.session().githubSyncRequest?.id).toBe("recovered-reset")
+  expect(store.session().githubSyncRequest?.mainReset).toEqual({ id: "force-19", old: "1".repeat(40), new: "2".repeat(40) })
+  const calls: string[] = []
+  const fetchImpl = signupProfileFetch(async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+    if (url.endsWith("/api/github/sync")) {
+      calls.push(init?.method ?? "GET")
+      return Response.json({ state: "fresh", last_success_at: "2026-10-06T00:01:00Z" })
+    }
+    return new Response("{}", { status: 404 })
+  }).fetchImpl
+  const bootstrap: AppBootstrap = { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["identity", "install"], authFlow: "redirect", sandbox: null }
+  const controller = createAppController(store, unavailableAgent, { fetchImpl, bootstrap })
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maya", admin: false, scopesPlain: null }).isPersisted.promise
+    await waitFor(() => store.session().githubSyncRequest === undefined)
+    expect(calls.length).toBeGreaterThan(0)
+    expect(calls.every(method => method === "GET")).toBe(true)
+    await store.settled?.()
+    const recovered = await createAppStore({ kind: "localStorage", storage })
+    expect(recovered.session().githubSyncRequest).toBeUndefined()
+  } finally { controller.dispose() }
+})
+
+
+test("a member cannot change App wiring through the status flow", async () => {
+  const bootstrap: AppBootstrap = { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["identity", "install"], authFlow: "redirect", sandbox: null }
+  const h = await boot({ bootstrap, fetch: url => new URL(url, "http://local.test").pathname === "/api/members" ? Response.json({
+    members: [{ login: "maya", name: "Maya", avatar_url: "https://example.com/maya.png", color_index: 0, role: "member", needs_access: false, suspended: false, actions: [] }], access_url: "https://github.com/owner/repo/settings/access"
+  }) : undefined })
+  try {
+    await waitFor(() => h.controller.commands.state().viewerRole === "member")
+    for (const operation of ["app-open", "app-choose", "reconcile"]) {
+      expect(await h.controller.commands.run("github", JSON.stringify({ operation, installationId: "42", repo: "owner/repo" }))).toMatchObject({ status: "failed", error: "Owner required" })
+    }
+    expect(h.requests.filter(request => request.startsWith("POST "))).toEqual([])
+  } finally { h.controller.dispose() }
+})
+
+ test("an install wiki refresh retries the failed worker record through the shared Home run door", async () => {
+  const bootstrap: AppBootstrap = { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install", "identity"], authFlow: "redirect", sandbox: null }
+  const posts: unknown[] = []
+  const model = { ...homeFixtures.fresh.model, background_runs: [{ id: "41", title: "Refresh wiki", state: "failed", detail: "Review failed", actions: [{ tag: "background.retry", label: "Retry", args: { id: "41" } }, { tag: "background.dismiss", label: "Dismiss", args: { id: "41" } }] }] }
+  const live = { subscribe: () => () => {}, getSnapshot: (topic: string) => topic === "home" ? { data: model } : undefined } as LiveTopics
+  const h = await boot({ bootstrap, live, fetch: (url, init) => {
+    const path = new URL(url, "http://local.test").pathname
+    if (path === "/api/runs/41" && init?.method === "POST") { posts.push(JSON.parse(String(init.body))); return Response.json({ state: "accepted", run_id: 42 }, { status: 202 }) }
+    if (path === "/api/runs/42/background-status") return Response.json({ state: "success", run_id: 42 })
+  } })
+  try {
+    const results = await Promise.all([slash(h, "wiki.create", "smithersai/smithers"), slash(h, "wiki.create", "smithersai/smithers")])
+    expect(results).toEqual([{ status: "executed", value: "Requested" }, { status: "executed", value: "Requested" }])
+    await waitFor(() => h.store.session().homeBackgroundRequests?.some(row => row.state === "completed") === true)
+    expect(posts).toEqual([{ op: "retry" }])
+    expect(h.requests.some(path => path.includes("/mythical"))).toBe(false)
+    expect(h.store.session().wikiRequests ?? []).toEqual([])
+    expect([...h.store.collections.cards.values()].some(card => card.kind === "stack")).toBe(false)
+  } finally { await h.controller.dispose() }
+ })

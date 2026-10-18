@@ -29,6 +29,7 @@ export default defineConfig({
   use: {
     baseURL: BASE_URL,
     headless: true,
+    ...(process.env.SMITHERS_E2E_CHROMIUM_PATH ? { launchOptions: { executablePath: process.env.SMITHERS_E2E_CHROMIUM_PATH } } : {}),
     trace: "retain-on-failure"
   },
   projects: process.env.SMITHERS_E2E_BROWSER === "webkit"
