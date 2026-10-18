@@ -31,6 +31,10 @@ const (
 	hostedChatQueueSize   = 1024
 )
 
+// Hosted chat has no command grants. This policy also reaches recovered turns
+// and applies before any repository-change plan can be proposed to the person.
+const hostedChatInstructions = `This is hosted Smithers. You have no command grants to change repository files, create branches, commit or open pull requests. When the person asks for any code change (including changing your instructions), answer immediately with exactly this one sentence: Changes run on your machine today; [install Smithers](/docs/installation/). Do not start a coding run. Do not promise a branch, commit or pull request. Do not imply a change or pull request is coming. For questions that do not request a change, answer normally with the tools actually offered.`
+
 // chatRuntimeOptions sizes the dispatcher from configuration, falling back to
 // the default for the deployment role.
 func chatRuntimeOptions(cfg config.ChatConfig, hosted bool, logger *slog.Logger) (chat.RuntimeOptions, error) {
@@ -105,6 +109,9 @@ func newChatComposition(options runOptions, pool *pgxpool.Pool, sizing chat.Runt
 		host = presenceChatHost{ChatHost: host, presence: presence[0], pool: pool}
 	}
 	sizing.PrivateConversations = options.topology.hosted()
+	if options.topology.hosted() {
+		sizing.AppInstructions = hostedChatInstructions
+	}
 	runtime, err := chat.NewRuntime(pool, host, callbackURL, sizing)
 	if err != nil {
 		if listener != nil {

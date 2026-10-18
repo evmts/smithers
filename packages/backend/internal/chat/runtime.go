@@ -35,11 +35,14 @@ type RuntimeOptions struct {
 	// PrivateConversations enables account-owned hosted chat. Repository
 	// conversations retain their install membership and branch checks.
 	PrivateConversations bool
-	ContextRepository    ContextRepository
-	QueueSize            int
-	Concurrency          int
-	Lease                time.Duration
-	Logger               *slog.Logger
+	// AppInstructions are trusted composition policy appended to every turn,
+	// including recovered turns. They are never supplied by a browser request.
+	AppInstructions   string
+	ContextRepository ContextRepository
+	QueueSize         int
+	Concurrency       int
+	Lease             time.Duration
+	Logger            *slog.Logger
 	// Sources serves turns' reads of a mirrored main as the credential that
 	// admitted each turn; nil offers none.
 	Sources SourceReader
@@ -94,7 +97,7 @@ func NewRuntime(pool *pgxpool.Pool, host ports.ChatHost, producerBaseURL string,
 		return nil, err
 	}
 	credentials := newTurnCredentials()
-	dispatcher, err := NewDispatcher(store, PortHost{Host: host, ProducerBaseURL: callback.String(), InstallOrigin: options.InstallOrigin, Sources: options.Sources, API: options.API, credentials: credentials, logger: options.Logger}, options.QueueSize, options.Lease)
+	dispatcher, err := NewDispatcher(store, PortHost{Host: host, AppInstructions: options.AppInstructions, ProducerBaseURL: callback.String(), InstallOrigin: options.InstallOrigin, Sources: options.Sources, API: options.API, credentials: credentials, logger: options.Logger}, options.QueueSize, options.Lease)
 	if err != nil {
 		return nil, err
 	}
