@@ -39,10 +39,12 @@ test("CI command discovery retains diagnostic options and refuses unknown select
 test("browser typecheck plans its direct configuration without a native prerequisite", async () => {
   const plan = planned("build", "//apps/app:check")
   assert.deepEqual(plan.roots, ["//apps/app:check"])
-  assert.deepEqual(plan.targets.map((target) => target.label), plan.roots)
-  const check = plan.targets[0]
+  assert.deepEqual(plan.targets.map((target) => target.label).sort(), [
+    "//apps/app:check", "//packages/testing:check", "//packages/testing:lib"
+  ])
+  const check = plan.targets.find((target) => target.label === "//apps/app:check")
   assert.equal(check.rule, "Typecheck")
-  assert.deepEqual(check.dependencies, [])
+  assert.deepEqual(check.dependencies, ["//packages/testing:check"])
   assert.equal(check.cacheable, false, "a semantic check must run without an output restoration contract")
   const index = await packageIndex()
   const declaration = index.targets().find((target) => target.label === check.label)
