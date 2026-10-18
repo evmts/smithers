@@ -1052,3 +1052,25 @@ test.each([
   expect(runCard(store)).toBeUndefined()
 
 })
+
+test("a reader's hosted change instruction keeps the refusal in Ask without a conversation error", async () => {
+  const store=await webStore(), double=relay()
+  const controller=createAppController(store,silentAgent,{
+    ...double.services,
+    bootstrap:{apiVersion:1,host:"cloud",version:"test",buildSha:"test",capabilities:["agent","identity","cloud"],authFlow:"redirect",sandbox:null},
+    fetchImpl:async(input,init)=>{
+      const path=new URL(String(input),"https://app.test").pathname
+      if(path==="/api/conversations/main") return json(200,{id:"main",entries:[]})
+      if(path==="/api/conversations/main/view-state") return json(200,{instructions:[{id:"change-reader",command:"change.ask",payload:{request:"add slugify with tests"}}]})
+      if(path===`/api/repos/${REPO}`) return json(200,{permission:"read",can_write:false})
+      return double.services.fetchImpl!(input,init)
+    }
+  })
+  await signIn(store)
+  await controller.sharedConversation!.read()
+  await waitFor(()=>[...store.collections.messages.values()].some(message=>message.text===`Only people who can push to ${REPO} can start an agent.`))
+  expect([...store.collections.cards.values()].filter(card=>card.kind==="hosted-change"||card.kind==="flow-form")).toEqual([])
+  expect([...store.collections.toasts.values()].filter(toast=>toast.status==="failed")).toEqual([])
+  expect(double.state.launched).toEqual([])
+  await controller.dispose()
+})

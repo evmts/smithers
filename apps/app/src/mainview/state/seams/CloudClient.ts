@@ -21,6 +21,7 @@ export interface CloudFailure {
   readonly code: string | null
   readonly status: number | null
   readonly retryAfterSeconds: number | null
+  readonly responseBody?: unknown
   readonly details?: unknown
   readonly refusal: Refusal
 }
@@ -49,6 +50,7 @@ export const cloudFailure = async (response: Response, fallback: string): Promis
     retryAfterSeconds: retryAfterHeader(response.headers)
   })
   return {
+    responseBody: body,
     error: refusalLine(refusal, fallback),
     code: refusal.rawCode,
     status: refusal.status,

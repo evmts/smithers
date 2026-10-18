@@ -2279,6 +2279,8 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
       return systemText(provider.requests[0])
     }
     const cloud = await told(account)
+    expect(cloud).toContain("run change.ask with the person’s request in that turn")
+    expect(cloud).toContain("the person presses Start agent before any coding run starts")
     for (const line of [ASSISTANT_ACTS_LINE, FLOW_NEW_LINE, DOCS_LINE]) expect(cloud).toContain(line)
     // The rule sits after the commands it names and before the can't-yets.
     expect(cloud.indexOf(FLOW_NEW_COMMAND_LINE)).toBeLessThan(cloud.indexOf(FLOW_NEW_LINE))
@@ -2287,6 +2289,7 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
     for (const turn of [install, grant, https]) {
       const system = await told(turn)
       expect(system).toContain(ASSISTANT_ACTS_LINE)
+      expect(system).not.toContain("run change.ask with the person’s request")
       expect(system).not.toContain(FLOW_NEW_LINE)
       expect(system).not.toContain("form is on their screen")
     }

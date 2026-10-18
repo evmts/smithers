@@ -685,3 +685,17 @@ describe("a text field whose options are suggestions", () => {
     expect(form.refusals).toEqual([])
   })
 })
+
+test("a hosted change confirmation is one full-height card with native Start and Cancel", () => {
+  const card = { ...formCard({ flow: "change.ask", via: "agent", fields: [{name:"request",label:"Change request",kind:"textarea",required:true}],draft:{request:"add slugify(text) with tests"},given:{repo:"maya/tinyhttp",request:"add slugify(text) with tests"} }), title:"Start an agent on maya/tinyhttp?" }
+  const calls: unknown[]=[]
+  const host=mount(<FlowFormCardBody card={card} onRunCommand={(...args)=>{calls.push(args)}}/>)
+  expect(host.querySelectorAll(".hosted-change-card")).toHaveLength(1)
+  expect(host.querySelector("strong")?.textContent).toBe(card.title)
+  expect(host.querySelector("blockquote")?.textContent).toBe("“add slugify(text) with tests”")
+  expect(host.querySelectorAll("button")).toHaveLength(2)
+  const start=host.querySelector<HTMLButtonElement>("button")!
+  expect(start.textContent).toBe("Start agent");start.focus();expect(document.activeElement).toBe(start);start.click()
+  expect(calls).toEqual([["form.submit",card.id]])
+  expect(host.textContent).not.toContain("new branch")
+})

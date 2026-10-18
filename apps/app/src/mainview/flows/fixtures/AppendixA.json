@@ -1409,5 +1409,37 @@
     "minimumRole": "member",
     "agent": "run",
     "http": null
+  },
+  {
+    "name": "change.ask",
+    "summary": "Start an agent on a change",
+    "slash": "/change",
+    "cli": null,
+    "journey": [],
+    "group": "Ask",
+    "visibility": "core",
+    "actors": [
+      "person",
+      "app_agent"
+    ],
+    "minimumRole": "member",
+    "agent": "confirm",
+    "http": null
+  },
+  {
+    "name": "change.open-pull",
+    "summary": "Open pull request",
+    "slash": null,
+    "cli": null,
+    "journey": [],
+    "group": "Ask",
+    "visibility": "in-card",
+    "actors": [
+      "person",
+      "app_agent"
+    ],
+    "minimumRole": "member",
+    "agent": "confirm",
+    "http": null
   }
 ]

@@ -15,6 +15,8 @@ var formInstructionFields = map[string][]string{
 	"branch.rebase-now":   {"branch"},
 	"branches":            {"repo"},
 	"browser.open":        {"url"},
+	"change.ask":          {"request"},
+	"change.open-pull":    {"repo", "session"},
 	"change.resolve":      {"changeId", "path"},
 	"convert":             {"source", "idempotencyKey", "sourceLabel"},
 	"diff":                {"subject", "branch", "path", "entry", "changeId", "rev", "from", "to", "seq"},

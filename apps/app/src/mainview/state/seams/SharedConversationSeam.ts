@@ -109,6 +109,12 @@ export function createSharedConversationSeam(ctx: ControllerContext, live?: Live
         // form's draft, and nothing confirms or runs until the person submits.
         // No HTTP command, shared mutation or model continuation reaches this door.
         const outcome = await ctx.commands.submit({ name: command, payload: instruction.payload, actor: "agent", ...(ask ? { ask } : {}) })
+        // A reader's change request was understood and refused, not a broken conversation.
+        // Keep the same gate sentence in Ask; never offer a Start button or dispatch a write.
+        if (ask && command === "change.ask" && outcome.status === "failed") {
+          await ctx.store.dispatch({ type: "message.appended", actor: "system", text: outcome.error, spoken: true }).isPersisted.promise
+          return
+        }
         if (outcome.status !== "form" && (ask || outcome.status !== "executed")) throw new SharedConversationFailure({ sentence: `/${command} unavailable` })
       }).catch(error => { if (valid(revision)) ctx.failures.report("seam.failure", error, "conversation-ui") }).finally(() => applying.delete(id))
     }

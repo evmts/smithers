@@ -1,3 +1,4 @@
+import { HostedObservationSchema } from "./seams/HostedChangeSchema"
 import { historicalPullNavigation, savedPullNavigationArgs } from "../flows/PullNavigationPayload"
 import { historicalWorkspaceNavigation, savedWorkspaceNavigationArgs } from "../flows/WorkspaceNavigationPayload"
 import { historicalRunLifecycle, savedRunLifecycleArgs } from "../flows/RunLifecyclePayload"
@@ -1068,6 +1069,7 @@ export const SessionSchema = z.object({
     state: z.enum(["requested", "completed", "failed"])
   })).optional(),
   /* Repository secret writes (SecretsSeam.setSecret/deleteSecret): never a value, only what a reload needs to settle them. */
+  hostedChanges: z.array(HostedObservationSchema).optional(),
   repositoryImports: z.array(RepositoryImportRequestSchema).optional(),
   secretRequests: z.array(z.object({
     id: z.string(), owner: z.string(), repo: z.string(), name: z.string(), action: z.enum(["set", "delete", "scope"]),
@@ -1596,6 +1598,7 @@ type AppTransitionBody =
   | { type: "issue.create.requests.changed"; actor: Actor; requests: NonNullable<Session["issueCreateRequests"]> }
   | { type: "review.requests.changed"; actor: Actor; requests: NonNullable<Session["reviewRequests"]> }
   | { type: "install.requests.changed"; actor: Actor; requests: NonNullable<Session["installRequests"]> }
+  | { type: "hosted.changes.changed"; actor: Actor; requests: NonNullable<Session["hostedChanges"]> }
   | { type: "repository.imports.changed"; actor: Actor; requests: NonNullable<Session["repositoryImports"]> }
   | { type: "secret.requests.changed"; actor: Actor; requests: NonNullable<Session["secretRequests"]> }
   | { type: "branch.archive.requests.changed"; actor: Actor; requests: NonNullable<Session["branchArchiveRequests"]> }

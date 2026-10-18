@@ -241,6 +241,7 @@ export const APP_TRANSITION_TYPES = {
   "review.requests.changed": true,
   "issue.create.requests.changed": true,
   "install.requests.changed": true,
+  "hosted.changes.changed": true,
   "repository.imports.changed": true,
   "secret.requests.changed": true,
   "egress.requests.changed": true,
@@ -785,6 +786,7 @@ const forgetAccountState = (collections: ProjectionCollections, createdAt: numbe
     delete draft.issueTodoRequests
     delete draft.branchControlRequests
     delete draft.codingProviderRequests
+    delete draft.hostedChanges
     delete draft.repositoryImports
     delete draft.secretRequests
     delete draft.egressRequests
@@ -2189,6 +2191,10 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
         }
         case "install.requests.changed": {
           collections.sessions.update(SESSION_ID, draft => { draft.installRequests = transition.requests })
+          break
+        }
+        case "hosted.changes.changed": {
+          collections.sessions.update(SESSION_ID, draft => { draft.hostedChanges = transition.requests })
           break
         }
         case "repository.imports.changed": {
