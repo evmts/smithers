@@ -70,7 +70,7 @@ export const settingsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry>
         case "obsidian": return actions.setInstallObsidian(Schema.decodeUnknownSync(obsidian)(input).path)
         case "model-key": return actions.saveInstallModelKey(Schema.decodeUnknownSync(modelKey)(input), gesture)
         case "setup": return actions.setupStep(Schema.decodeUnknownSync(setup)(input))
-        default: await actions.presentCard("settings", "Settings"); return actions.showSettings()
+        default: return actions.showSettings()
       }
     }
   })

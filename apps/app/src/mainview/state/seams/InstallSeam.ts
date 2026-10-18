@@ -85,8 +85,8 @@ export const createInstallSeam = (ctx: SeamContext, withToast: FailureController
     subscribe: listener => { shared.listeners.add(listener); return () => { shared.listeners.delete(listener) } }
   }
   /**
-   * Settings is owner-only. The `settings` flow presents its card before the install answers (the seed stands in on a
-   * host with no install), so an install that refuses the viewer takes that card back out of the conversation.
+   * Settings is owner-only. A refusal withdraws a restored card, including
+   * one presented by the design fixture before the install answered.
    */
   const withdrawSettings = () => {
     if (current() && ctx.store.collections.cards.get("settings")?.kind === "settings") ctx.dispatch({ type: "card.removed", actor: ctx.actor(), id: "settings" })
@@ -197,7 +197,14 @@ export const createInstallSeam = (ctx: SeamContext, withToast: FailureController
     const failure = await readInstall()
     // Only a host with no install route is quiet while the seed stands in; an unreachable or failing install stays visible.
     if (failure && options.quietWithoutInstall && failure.code === NO_INSTALL) return TOAST_SUPERSEDED
-    if (failure) return serviceFailureSentence(failure)
+    if (failure) {
+      if (kind === "settings") {
+        // A card restored from an earlier build has no body without an install.
+        if (!shared.snapshot.model && !options.quietWithoutInstall) withdrawSettings()
+        ctx.report?.("settings.open", { stage: "read", code: failure.code, class: failure.class })
+      }
+      return serviceFailureSentence(failure)
+    }
     if (!current() || !shared.snapshot.model) return false
     if (kind === "settings" && !shared.snapshot.model.github.signed_in) {
       publish({ error: permission }); withdrawSettings(); return serviceFailureSentence(permission)

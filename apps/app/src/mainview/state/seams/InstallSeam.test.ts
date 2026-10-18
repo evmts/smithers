@@ -21,6 +21,7 @@ const harness = async (answer: (path: string, init?: RequestInit) => Promise<Res
   const toasts: Array<{ outcome?: unknown }> = []
   const jobs: Promise<unknown>[] = []
   const presentations: string[] = []
+  const reports: unknown[] = []
   let receive: ((data: unknown) => void) | undefined
   let refuse: ((error: InstallError) => void) | undefined
   let subscribed = 0, stopped = 0
@@ -30,9 +31,9 @@ const harness = async (answer: (path: string, init?: RequestInit) => Promise<Res
     const job = work().then(outcome => { toast.outcome = outcome; return outcome }); jobs.push(job); return job
   }
   const ctx: SeamContext = { http: async (path, init) => { requests.push({ path, init }); return answer(path, init) }, baseUrl: "", store,
-    dispatch: store.dispatch, actor: () => "user", nextOrdinal: store.nextOrdinal }
+    dispatch: store.dispatch, actor: () => "user", nextOrdinal: store.nextOrdinal, report: (subject, detail) => { reports.push({ subject, detail }) } }
   const seam = createInstallSeam(ctx, withToast, { topic, present: kind => { presentations.push(kind) }, ...options })
-  return { seam, store, requests, toasts, presentations, receive: (data: unknown) => receive?.(data), refuse: (data: InstallError) => refuse?.(data),
+  return { seam, store, requests, toasts, presentations, reports, receive: (data: unknown) => receive?.(data), refuse: (data: InstallError) => refuse?.(data),
     subscribed: () => subscribed, stopped: () => stopped, idle: async () => { await tick(); await Promise.all(jobs); await tick() } }
 }
 
@@ -143,7 +144,7 @@ describe("T-APP-03 install seam", () => {
     expect(h.seam.snapshots.get().error?.class).toBe("permission")
     expect(h.toasts[0]?.outcome).toBe("Owner access required")
   })
-  // The `settings` flow presents the card before the install answers; a refusing install takes it back out.
+  // A restored card or design fixture may precede the read; refusal takes Settings back out.
   const presented = async (h: Awaited<ReturnType<typeof harness>>) => {
     await h.store.dispatch({ type: "card.upsert", actor: "user", card: { id: "settings", kind: "settings", title: "Settings", status: "active", createdAt: 1, ordinal: 1, payload: {} } }).isPersisted.promise
     await h.store.dispatch({ type: "card.upsert", actor: "user", card: { id: "setup", kind: "setup", title: "Set up Smithers", status: "active", createdAt: 2, ordinal: 2, payload: {} } }).isPersisted.promise
@@ -188,6 +189,22 @@ describe("T-APP-03 install seam", () => {
       expect(h.toasts.map(toast => toast.outcome)).toEqual([outcome])
       expect(cards()).toEqual(["settings", "setup"])
     }
+  })
+  test("a real host with no install withdraws restored empty Settings, reports its stage, and can retry", async () => {
+    let available = false
+    const h = await harness(() => available ? Response.json(installFixture()) : new Response("private backend detail", { status: 404 }))
+    const cards = await presented(h)
+    h.seam.showSettings(); await h.idle()
+    expect(cards()).toEqual(["setup"])
+    expect(h.toasts.map(toast => toast.outcome)).toEqual(["No install on this host"])
+    expect(h.reports).toEqual([{ subject: "settings.open", detail: { stage: "read", code: "no_install", class: "infra" } }])
+    expect(JSON.stringify(h.reports)).not.toContain("private backend detail")
+    available = true
+    h.seam.showSettings(); await h.idle()
+    expect(h.presentations).toEqual(["settings"])
+    expect(h.toasts.at(-1)?.outcome).toBe(true)
+    expect(h.seam.snapshots.get().model).toEqual(installFixture())
+    h.seam.dispose()
   })
   test("a refused setup write and a disposed seam leave the Settings card alone", async () => {
     const refusal: InstallError = { code: "origin", class: "permission", message: "request origin differs from install origin" }

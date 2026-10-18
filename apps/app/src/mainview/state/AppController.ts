@@ -996,9 +996,9 @@ export const createAppController = (
       if (kind === "settings") await presentCard("settings", "Settings")
       services.presentInstallCard?.(kind)
     },
-    // A non-install backend has no setup route. An install that is unreachable
-    // or errors keeps its visible, retryable failure.
-    quietWithoutInstall: true }))
+    // Only the fixture has Settings to show when this route is absent. Real
+    // origins must surface the missing capability instead of a blank card.
+    quietWithoutInstall: services.designFixture === true || services.bootstrap === undefined }))
   ctx.onDispose(installSeam.dispose)
   const installHost = services.bootstrap?.capabilities.includes("install") === true
   const setupEntry = typeof window !== "undefined" && window.location.pathname === "/setup"
@@ -2519,7 +2519,14 @@ export const createAppController = (
       }
       return outcome
     },
-    showSettings: installSeam.showSettings, setupStep: installSeam.setupStep,
+    showSettings: () => {
+      // Only the design fixture has a body before the install answers. Real
+      // Settings is presented by the seam after its owner projection arrives.
+      if (design.enabled && installSeam.snapshots.get().model === undefined) {
+        void presentCard("settings", "Settings").catch(cause => ctx.failures.report("seam.failure", cause, "settings"))
+      }
+      return installSeam.showSettings()
+    }, setupStep: installSeam.setupStep,
     /* MOCK SEAM (DesignWorld/settings.ts designInstall): the Settings card shows the live install once it has a model, so the write goes there; the seed takes it only until then. */
     setInstallAddress: address => design.enabled && installSeam.snapshots.get().model === undefined ? designSettings(design).address(address) : installSeam.setInstallAddress(address),
     /* MOCK SEAM (DesignWorld/settings.ts designInstall): the Settings card shows the live install once it has a model, so the write goes there; the seed takes it only until then. */

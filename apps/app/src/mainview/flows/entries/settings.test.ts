@@ -61,6 +61,43 @@ describe("T-APP-03 settings command doors", () => {
       expect(h.requests.filter(request => request.path === "/api/install")).toEqual([])
     } finally { await h.controller.dispose() }
   })
+  test.each([404, 200, 503])("signed-in hosted Settings never leaves a header-only card after an unavailable install: HTTP %s", async status => {
+    const h = await harness({ apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "cloud"], authFlow: "redirect", sandbox: null },
+      () => status === 503 ? Response.json({ code: "unavailable", class: "infra", message: "private backend detail" }, { status })
+        : new Response("<!doctype html>", { status, headers: { "Content-Type": "text/html" } }))
+    try {
+      await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "owner", admin: false, scopesPlain: null }).isPersisted.promise
+      expect((await h.controller.commands.run("settings")).status).toBe("executed"); await tick()
+      expect(h.controller.design.enabled).toBe(false)
+      expect(h.store.collections.cards.has("settings")).toBe(false)
+      expect(h.cards).toEqual([])
+      expect(h.controller.installSnapshots.get().error?.code).toBe(status === 503 ? "unavailable" : "no_install")
+      const failures = [...h.store.collections.toasts.values()].filter(toast => toast.status === "failed")
+      expect(failures).toHaveLength(1)
+      expect(failures[0]!.detail).toBe(status === 503 ? "The operation failed." : "No install on this host")
+      expect(JSON.stringify(failures)).not.toContain("private backend detail")
+      expect(h.store.session().surface).toBe("chat")
+    } finally { await h.controller.dispose() }
+  })
+  test("a real Settings read acknowledges immediately without a blank card and presents its owner controls after the receipt", async () => {
+    let resolve!: (response: Response) => void
+    const read = new Promise<Response>(done => { resolve = done })
+    const h = await harness({ apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "none", sandbox: null }, () => read)
+    try {
+      expect((await h.controller.commands.submit({ name: "settings", payload: {}, actor: "user" })).status).toBe("executed")
+      expect((await h.controller.commands.run("settings")).status).toBe("executed"); await tick()
+      expect(h.requests.filter(request => request.path === "/api/install")).toHaveLength(1)
+      expect(h.store.collections.cards.has("settings")).toBe(false)
+      expect(h.store.session().surface).toBe("chat")
+      resolve(Response.json(installFixture())); await tick()
+      expect(h.store.collections.cards.has("settings")).toBe(true)
+      const html = renderToStaticMarkup(createElement(SettingsContainer, { View: SettingsView,
+        install: h.controller.installSnapshots, owner: true, origin: "https://mini.test", view: { maximized: false }, onView: () => {}, dispatch: () => {} }))
+      expect(html).toContain('data-operation="capacity"')
+      expect(html).toContain('data-operation="model-key"')
+      expect(h.cards).toEqual(["settings"])
+    } finally { resolve(Response.json(installFixture())); await h.controller.dispose() }
+  })
   test("hidden owner controls refuse agents and remain absent from slash suggestions", async () => {
     const h = await harness()
     try {
@@ -117,7 +154,7 @@ describe("T-APP-03 settings command doors", () => {
       expect([...h.store.collections.cards.keys()]).toEqual([])
       expect([...h.store.collections.toasts.values()]).toEqual([])
       expect((await h.controller.commands.submit({ name: "settings", payload: {}, actor: "user" })).status).toBe("executed"); await tick()
-      expect([...h.store.collections.cards.keys()]).toEqual(["settings"])
+      expect([...h.store.collections.cards.keys()]).toEqual(bootstrap === undefined ? ["settings"] : [])
       resolve(install()); await tick()
       expect([...h.store.collections.cards.keys()]).toEqual([])
       expect(h.cards).toEqual([])
@@ -210,14 +247,14 @@ describe("T-APP-03 settings command doors", () => {
       expect(h.controller.design.world().repo.setup.addresses).toEqual(seeded)
     } finally { await h.controller.dispose() }
   })
-  test("an advertised install with no route opens quietly; an unreachable install shows its failure", async () => {
+  test("an advertised install with no route reports its absence; an unreachable install shows its failure", async () => {
     const local: AppBootstrap = { apiVersion: 1, host: "local", version: "1.0.0", buildSha: "abcdef1234567890", capabilities: ["agent", "install"], authFlow: "none", sandbox: { platform: "darwin", mode: "enforced" } }
     const missing = await harness(local, () => new Response("Not found", { status: 404 }))
     try {
       await tick()
       expect(missing.requests).toEqual([])
       expect((await missing.controller.commands.run("settings")).status).toBe("executed"); await tick()
-      expect([...missing.store.collections.toasts.values()].filter(toast => toast.status === "failed")).toEqual([])
+      expect([...missing.store.collections.toasts.values()].filter(toast => toast.status === "failed").map(toast => toast.detail)).toEqual(["No install on this host"])
     } finally { await missing.controller.dispose() }
     const offline = await harness(local, () => { throw new Error("offline") })
     try {
