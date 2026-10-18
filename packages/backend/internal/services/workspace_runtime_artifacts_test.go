@@ -3,9 +3,11 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +20,147 @@ import (
 )
 
 type artifactRuntime struct{ workspaceapi.WorkspaceRuntime }
+
+// Fail real artifact doors; all successful staging/publication remains the
+// existing recording client. No seam is added to the production logger.
+type bootstrapEvidenceClient struct {
+	*runtimeArtifactClient
+	operation   workspaceArtifactOperation
+	cause       error
+	exitCode    *int32
+	missingExit bool
+}
+
+func (c *bootstrapEvidenceClient) Execute(ctx context.Context, id string, req sandbox.ExecRequest) (sandbox.ExecResult, error) {
+	command := strings.TrimPrefix(req.Command, workspaceArtifactGuestPath)
+	match := c.operation == workspaceArtifactInspectInstalled && strings.Contains(command, "then printf ready; else printf missing") ||
+		c.operation == workspaceArtifactStage && strings.HasPrefix(command, "owner=$(cat ") ||
+		c.operation == workspaceArtifactBootstrap && strings.HasPrefix(command, "if ! test -L ") ||
+		c.operation == workspaceArtifactVerifyCLI && strings.Contains(command, "workspace CLI missing")
+	if match {
+		if c.cause != nil {
+			return sandbox.ExecResult{}, c.cause
+		}
+		if c.exitCode != nil || c.missingExit {
+			return sandbox.ExecResult{StatusCode: c.exitCode, Stderr: leakSentence}, nil
+		}
+	}
+	if strings.HasPrefix(command, "tail -c 4096 ") {
+		return sandbox.ExecResult{StatusCode: new(int32), Stdout: leakSentence}, nil
+	}
+	return c.runtimeArtifactClient.Execute(ctx, id, req)
+}
+
+func bootstrapEvidenceFixture(t *testing.T, operation workspaceArtifactOperation) (*WorkspaceService, db.Workspace, *bootstrapEvidenceClient, *[]capturedLog) {
+	t.Helper()
+	artifactCallsiteFixture(t)
+	row := sampleDBWorkspace("bootstrap-private-row")
+	row.Status = "starting"
+	if operation == workspaceArtifactInspectInstalled {
+		row.Status = "running"
+	}
+	q := &mockWorkspaceQuerier{getWorkspaceFn: func(context.Context, string) (db.Workspace, error) { return row, nil }}
+	client := &bootstrapEvidenceClient{runtimeArtifactClient: &runtimeArtifactClient{artifactRecordingClient: newArtifactRecordingClient(), bootstrapStatus: "done"}, operation: operation}
+	svc := newWorkspaceServiceForTests(q, WithWorkspaceRuntime(&artifactRuntime{}), WithWorkspaceSandboxClient(client))
+	return svc, row, client, captureReconcilerLogs(t)
+}
+
+func assertBootstrapEvidence(t *testing.T, records *[]capturedLog, row db.Workspace, operation workspaceArtifactOperation, reason, exit, deadline string) capturedLog {
+	t.Helper()
+	entries := warnings(records, "workspace runtime bootstrap failed")
+	require.Len(t, entries, 1)
+	entry := entries[0]
+	require.Equal(t, workspaceCorrelationToken(row.ID), entry.attrs["workspace"])
+	require.Equal(t, "runtime_bootstrap", entry.attrs["stage"])
+	require.Equal(t, string(operation), entry.attrs["operation"])
+	require.Equal(t, reason, entry.attrs["reason"])
+	require.Equal(t, exit, entry.attrs["exit_code"])
+	require.Equal(t, deadline, entry.attrs["deadline_state"])
+	for _, key := range []string{"elapsed_ms", "operation_ms", "deadline_remaining_ms"} {
+		value, err := strconv.ParseInt(entry.attrs[key], 10, 64)
+		require.NoError(t, err)
+		require.GreaterOrEqual(t, value, int64(0))
+	}
+	for _, private := range []string{leakToken, leakURL, leakProse, leakHeader, leakRowID, leakVMID, row.ID, "placed-guest"} {
+		require.NotContains(t, entry.text, private)
+	}
+	return entry
+}
+
+func TestRuntimeBootstrapEvidenceExpiredParentSurvivesAPIAndOrdinaryWrapping(t *testing.T) {
+	records := captureReconcilerLogs(t)
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+	row := sampleDBWorkspace("expired-bootstrap-parent")
+	cause := fmt.Errorf("%s: %w", leakSentence, context.DeadlineExceeded)
+	api := pkgerrors.New(pkgerrors.CodeServiceUnavailable, leakSentence).WithCause(cause)
+	recordWorkspaceBootstrapFailure(ctx, row.ID, workspaceArtifactBootstrap, 3*time.Second, time.Second, fmt.Errorf("%s: %w", leakSentence, api))
+	entry := assertBootstrapEvidence(t, records, row, workspaceArtifactBootstrap, "deadline", "-1", "exceeded")
+	require.Equal(t, "0", entry.attrs["deadline_remaining_ms"])
+	require.Equal(t, "service_unavailable", entry.attrs["error_code"])
+}
+
+func TestRuntimeBootstrapEvidenceSurvivesWrappedDeadlineAtEveryDoor(t *testing.T) {
+	for _, operation := range []workspaceArtifactOperation{workspaceArtifactInspectInstalled, workspaceArtifactStage, workspaceArtifactBootstrap, workspaceArtifactVerifyCLI} {
+		t.Run(string(operation), func(t *testing.T) {
+			svc, row, client, records := bootstrapEvidenceFixture(t, operation)
+			client.cause = fmt.Errorf("%s: %w", leakSentence, context.DeadlineExceeded)
+			err := svc.ensureRuntimeWorkspaceArtifacts(t.Context(), row, row.UserID)
+			var api *pkgerrors.APIError
+			require.ErrorAs(t, err, &api)
+			require.Equal(t, pkgerrors.CodeServiceUnavailable, api.Code)
+			entry := assertBootstrapEvidence(t, records, row, operation, "deadline", "-1", "active")
+			require.Equal(t, "service_unavailable", entry.attrs["error_code"])
+			// The child failed while its parent budget was still live. Our own
+			// deferred cancel must not turn that into a cancellation diagnosis.
+			require.NotEqual(t, "0", entry.attrs["deadline_remaining_ms"])
+		})
+	}
+}
+
+func TestRuntimeBootstrapEvidenceKeepsExitWithoutGuestOutput(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		operation    workspaceArtifactOperation
+		status       string
+		exit         *int32
+		missing      bool
+		reason, code string
+	}{
+		{name: "bootstrap", operation: workspaceArtifactBootstrap, status: "failed:23", reason: "bootstrap_exit", code: "23"},
+		{name: "CLI", operation: workspaceArtifactVerifyCLI, exit: func() *int32 { value := int32(7); return &value }(), reason: "command_exit", code: "7"},
+		{name: "no status", operation: workspaceArtifactVerifyCLI, missing: true, reason: "missing_exit_status", code: "-1"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			svc, row, client, records := bootstrapEvidenceFixture(t, test.operation)
+			client.exitCode, client.missingExit = test.exit, test.missing
+			if test.status != "" {
+				client.bootstrapStatus = test.status
+			}
+			err := svc.ensureRuntimeWorkspaceArtifacts(t.Context(), row, row.UserID)
+			require.Error(t, err)
+			assertBootstrapEvidence(t, records, row, test.operation, test.reason, test.code, "active")
+		})
+	}
+}
+
+func TestRuntimeBootstrapEvidenceKeepsActualCancellationAndProviderStatus(t *testing.T) {
+	t.Run("cancelled", func(t *testing.T) {
+		svc, row, client, records := bootstrapEvidenceFixture(t, workspaceArtifactBootstrap)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		client.cancel = cancel
+		require.Error(t, svc.ensureRuntimeWorkspaceArtifacts(ctx, row, row.UserID))
+		assertBootstrapEvidence(t, records, row, workspaceArtifactBootstrap, "cancelled", "-1", "cancelled")
+	})
+	t.Run("provider", func(t *testing.T) {
+		svc, row, client, records := bootstrapEvidenceFixture(t, workspaceArtifactStage)
+		client.cause = fmt.Errorf("private wrapper: %w", &sandbox.StatusError{StatusCode: 503, Message: leakSentence})
+		require.Error(t, svc.ensureRuntimeWorkspaceArtifacts(t.Context(), row, row.UserID))
+		entry := assertBootstrapEvidence(t, records, row, workspaceArtifactStage, "provider_refusal", "-1", "active")
+		require.Equal(t, "503", entry.attrs["provider_status"])
+	})
+}
 
 func TestRuntimeWorkspaceCLIProbeExecutesGuestBinary(t *testing.T) {
 	bin := t.TempDir()

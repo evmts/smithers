@@ -14,6 +14,7 @@ import (
 	"path"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -135,10 +136,25 @@ func artifactCommand(ctx context.Context, client workspaceArtifactClient, id, co
 		return result, err
 	}
 	if result.StatusCode == nil || *result.StatusCode != 0 {
-		return result, fmt.Errorf("workspace artifact command failed: %s", strings.TrimSpace(result.Stderr))
+		failure := &workspaceArtifactExitFailure{kind: "command", message: fmt.Sprintf("workspace artifact command failed: %s", strings.TrimSpace(result.Stderr))}
+		if result.StatusCode != nil && *result.StatusCode >= 0 && *result.StatusCode <= 255 {
+			failure.exitCode, failure.hasExit = int(*result.StatusCode), true
+		}
+		return result, failure
 	}
 	return result, nil
 }
+
+// The sentence remains the existing row verdict. Only these finite fields may
+// enter the persistent bootstrap diagnostic; never render Error() into a log.
+type workspaceArtifactExitFailure struct {
+	kind     string
+	exitCode int
+	hasExit  bool
+	message  string
+}
+
+func (failure *workspaceArtifactExitFailure) Error() string { return failure.message }
 
 type workspaceArtifactSource struct{ source, target, label, digest string }
 
@@ -423,14 +439,18 @@ func waitForWorkspaceArtifactBootstrap(ctx context.Context, client workspaceArti
 // a shell in the guest. A log that cannot be read leaves the exit code alone.
 func workspaceBootstrapFailure(ctx context.Context, client workspaceArtifactClient, id, status string) error {
 	failure := fmt.Sprintf("workspace bootstrap failed (exit %s)", status)
+	resultError := &workspaceArtifactExitFailure{kind: "bootstrap", message: failure}
+	if code, err := strconv.Atoi(status); err == nil && code >= 0 && code <= 255 {
+		resultError.exitCode, resultError.hasExit = code, true
+	}
 	result, err := artifactCommand(ctx, client, id, "tail -c 4096 "+shellQuote(workspaceArtifactBootstrapLog)+" 2>/dev/null || true", 10_000)
 	if err != nil {
-		return errors.New(failure)
+		return resultError
 	}
 	if diagnostic := workspaceBootstrapDiagnostic(result.Stdout); diagnostic != "" {
-		return errors.New(failure + ": " + diagnostic)
+		resultError.message += ": " + diagnostic
 	}
-	return errors.New(failure)
+	return resultError
 }
 
 const (
