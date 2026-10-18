@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { landingCopy } from "../src/data/landingCopy.ts"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
@@ -240,7 +241,7 @@ test("the source public/_headers the build copies into dist already passes, so t
 })
 
 test("the landing has exactly one static install or open action", t => {
-  const install = '<h1>Durable agent coding</h1><a href="/docs/installation/">Docs</a><a href="https://github.com/smithersai/smithers">Source</a><div class="landing-command"><code>npm i -g smthrs@next</code><button id="copy-install">Copy</button></div><a href="https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md">Then follow the coding guide</a>'
+  const install = `<h1>Durable agent coding</h1><a href="/docs/installation/">Docs</a><a href="${landingCopy.source}">Source</a><div class="landing-command"><code>npm i -g smthrs@next</code><button id="copy-install">Copy</button></div><a href="${landingCopy.codingGuide}">Then follow the coding guide</a>`
   const open = install.replace(/<div class="landing-command">.*?<\/div><a href="https:.*?<\/a>$/, '<form class="repository-launcher-open"><input name="repository"><button>Open</button></form>')
   for (const html of [install, open]) assert.deepEqual(checkLandingActions(fixture(t, { "index.html": html })), [])
   for (const html of [install + open, '<h1>Empty</h1>']) assert.ok(checkLandingActions(fixture(t, { "index.html": html })).length > 0)

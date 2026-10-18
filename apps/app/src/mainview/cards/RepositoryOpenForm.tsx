@@ -1,5 +1,5 @@
 /* One open box for the static first screen and the signed-in launcher. */
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { repositoryInputTarget } from "../RepositoryInput"
 export { repositoryInputTarget } from "../RepositoryInput"
 
@@ -7,8 +7,9 @@ export { repositoryInputTarget } from "../RepositoryInput"
 export const LAUNCHER_OPEN_ERROR_ID = "repository-launcher-open-error"
 
 /** Navigate to the repository route; admission and import belong to that route. */
-export function RepositoryOpenForm({ onOpenRepository = href => globalThis.location?.assign(href), initialValue = "" }: {
+export function RepositoryOpenForm({ onOpenRepository = href => globalThis.location?.assign(href), initialValue = "", hint }: {
   readonly onOpenRepository?: (href: string) => void
+  readonly hint?: ReactNode
   readonly initialValue?: string
 }) {
   const [notice, setNotice] = useState<string | null>(null)
@@ -28,7 +29,7 @@ export function RepositoryOpenForm({ onOpenRepository = href => globalThis.locat
         onChange={() => setNotice(null)} />
       <button className="sui-button sui-button-outline" type="submit">Open</button>
     </form>
-    {notice === null ? null : <p className="repository-launcher-note" id={LAUNCHER_OPEN_ERROR_ID}
+    {notice === null ? hint ?? null : <p className="repository-launcher-note" id={LAUNCHER_OPEN_ERROR_ID}
       data-testid="repository-launcher-open-error" role="alert">{notice}</p>}
   </>
 }

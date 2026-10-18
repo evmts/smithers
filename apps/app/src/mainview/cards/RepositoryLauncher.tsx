@@ -122,10 +122,9 @@ export function RepositoryLauncher({
         * address it navigates to is where sign-in, import, the GitHub App
         * installation path and every refusal already live.
         */}
-      <RepositoryOpenForm onOpenRepository={onOpenRepository} />
-      <p className="repository-launcher-note">
+      <RepositoryOpenForm onOpenRepository={onOpenRepository} hint={<p className="repository-launcher-note">
         A repository lives at <code>/owner/name</code>, the same path GitHub uses; its github.com URL works here too.
-      </p>
+      </p>} />
     </section>
     ),
     "open": (

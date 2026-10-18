@@ -29,3 +29,14 @@ test("submit navigates to the repository and refuses an unsafe host without refl
   expect(opened).toEqual(["/ada/widgets/"])
   act(() => root.unmount())
 })
+
+test("the launcher hint gives way to the parser refusal", () => {
+  const host = document.createElement("div")
+  const root = createRoot(host)
+  act(() => root.render(<RepositoryOpenForm hint={<p>Repository hint</p>} />))
+  expect(host.textContent).toContain("Repository hint")
+  act(() => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })))
+  expect(host.textContent).not.toContain("Repository hint")
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Enter a repository")
+  act(() => root.unmount())
+})

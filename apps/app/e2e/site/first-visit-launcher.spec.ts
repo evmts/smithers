@@ -68,6 +68,17 @@ async function freshVisitor(page: Page, answers: { catalog?: number; releases?: 
 
 const launcherOf = (page: Page) => page.getByTestId("repository-launcher")
 
+/** Contrast of the focus indicator against the surface beside it. */
+const focusContrast = (outline: string, surface: string): number => {
+  const luminance = (color: string) => {
+    const channels = color.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(value => value / 255)
+      .map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+    return channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722
+  }
+  const a = luminance(outline), b = luminance(surface)
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+}
+
 for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
   test(`signed-out static install landing at ${viewport.width}`, async ({ page, context }) => {
     await page.setViewportSize(viewport)
@@ -79,7 +90,14 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     await expect(page.getByRole("link", { name: "Docs", exact: true })).toHaveAttribute("href", "/docs/installation/")
     await expect(page.getByRole("link", { name: "Source", exact: true })).toHaveAttribute("href", "https://github.com/smithersai/smithers")
     await expect(page.locator(".landing-command")).toContainText("npm i -g smthrs@next")
-    await page.getByRole("button", { name: "Copy", exact: true }).click()
+    for (let step = 0; step < 4; step++) await page.keyboard.press("Tab")
+    const copy = page.getByRole("button", { name: "Copy", exact: true })
+    await expect(copy).toBeFocused()
+    const focus = await copy.evaluate(button => ({ visible: button.matches(":focus-visible"), outline: getComputedStyle(button).outlineColor,
+      surface: getComputedStyle(button.closest("#landing")!).backgroundColor }))
+    expect(focus.visible).toBe(true)
+    expect(focusContrast(focus.outline, focus.surface)).toBeGreaterThanOrEqual(3)
+    await page.keyboard.press("Enter")
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("npm i -g smthrs@next")
     await expect(page.getByRole("button", { name: "Copied", exact: true })).toBeVisible()
     await expect(page.locator("body")).not.toContainText(/Explore|Smithers updates|couldn't load|Welcome to Smithers/)
@@ -263,17 +281,33 @@ test("empty rules leave the signed-out first screen unchanged", async ({ page })
   await expect(page.getByTestId("front-door-lead")).toHaveCount(0)
 })
 
-test("held open variant accepts a GitHub URL at the same repository route", async ({ page }) => {
+for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+test(`held open variant at ${viewport.width} accepts a GitHub URL at the same repository route`, async ({ page }) => {
   test.skip(process.env.SMITHERS_LANDING_TEST_ACTION !== "open", "Built with the install action")
+  await page.setViewportSize(viewport)
   await freshVisitor(page)
   await page.goto("/")
   await expect(page.getByRole("heading", { name: "Coding agents for your GitHub repo." })).toBeVisible()
   await expect(page.locator(".landing-command")).toHaveCount(0)
+  await expect(page.locator("astro-island[ssr]")).toHaveCount(0)
   await page.getByRole("textbox", { name: "Open an existing repository" }).fill("https://evil.example/private/name")
   await page.getByRole("button", { name: "Open", exact: true }).click()
   await expect(page.getByRole("alert")).toContainText("Enter owner/name")
   await expect(page.getByRole("alert")).not.toContainText("evil.example")
   await page.getByRole("textbox", { name: "Open an existing repository" }).fill("https://github.com/smithersai/smithers")
-  await page.getByRole("button", { name: "Open", exact: true }).click()
+  await page.getByRole("textbox", { name: "Open an existing repository" }).press("Enter")
   await expect(page).toHaveURL(/\/smithersai\/smithers\/?$/)
+})
+}
+
+test("signed-out auth markers never bypass the single-action landing", async ({ page }) => {
+  const reads = await freshVisitor(page)
+  for (const query of ["?tutorial", "?signed-in=github", "?auth=failed"]) {
+    const identityRead = page.waitForResponse(response => ["/api/user", "/api/auth/session"].includes(new URL(response.url()).pathname))
+    await page.goto(`/${query}`)
+    await identityRead
+    await expect(page.locator(".landing-command")).toBeVisible()
+    await expect(page.locator(".app-shell")).toHaveCount(0)
+  }
+  expect(reads.publicHeaders).toEqual([])
 })

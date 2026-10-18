@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
+import { landingCopy } from "../src/data/landingCopy.ts"
 import { APPLICATION_SIGN_IN_PATH } from "../../../packages/rpc/src/ApplicationAuth.ts"
 
 const siteRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
@@ -112,8 +113,8 @@ export function checkLandingActions(root) {
   const open = /<form\b[^>]*class="repository-launcher-open"/.test(html)
   if (install === open) return ["index.html: render exactly one install or open action"]
   const failures = []
-  if (!html.includes('href="/docs/installation/"') || !html.includes('href="https://github.com/smithersai/smithers"')) failures.push("index.html: missing Docs or Source")
-  if (install && (!html.includes("npm i -g smthrs@next") || !html.includes("packages/smithers/docs/guides/change-code.md"))) failures.push("index.html: missing install command or coding guide")
+  if (!html.includes('href="/docs/installation/"') || !html.includes(`href="${landingCopy.source}"`)) failures.push("index.html: missing Docs or Source")
+  if (install && (!html.includes("npm i -g smthrs@next") || !html.includes(`href="${landingCopy.codingGuide}"`))) failures.push("index.html: missing install command or coding guide")
   return failures
 }
 
@@ -306,7 +307,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (!existsSync(join(root, file))) result.failures.push(`${file}: missing from the build`)
   }
   result.failures.push(...checkAssetHeaders(root))
-  result.failures.push(...checkLandingActions(root, `/${AVAILABLE_REPOS[0].name}/`))
+  result.failures.push(...checkLandingActions(root))
   for (const name of ["llms.txt", "llms-full.txt"]) {
     if (
       !existsSync(join(root, name)) ||
