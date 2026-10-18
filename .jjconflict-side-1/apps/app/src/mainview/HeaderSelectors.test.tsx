@@ -245,3 +245,22 @@ describe("the header on other hosts", () => {
     expect(host.querySelector("[data-header-select]")).toBeNull()
   })
 })
+
+import { CodeHome } from "./repository/CodeHome"
+
+describe("repository Code home availability", () => {
+  test("files wait for an authoritative default branch before becoming links", () => {
+    const tree = { id:"copy:", copyId:"copy", path:"", state:"loaded" as const, entries:[{name:"README.md",kind:"file" as const}], expanded:true, loadedAt:1 }
+    const unknown = mount(<CodeHome repo="maya/tinyhttp" tree={tree}/>)
+    expect(unknown.textContent).toContain("README.md")
+    expect(unknown.querySelector('a[href*="/HEAD/"]')).toBeNull()
+    expect(unknown.querySelector('a[href*="/blob/"]')).toBeNull()
+    const known = mount(<CodeHome repo="maya/tinyhttp" branch="trunk" tree={tree}/>)
+    expect(known.querySelector('a[href="/maya/tinyhttp/blob/trunk/README.md"]')).not.toBeNull()
+  })
+  test("a missing tree copy is an unavailable state rather than an endless spinner", () => {
+    const host = mount(<CodeHome repo="maya/tinyhttp" treeAvailable={false}/>)
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe("Couldn't load repository files.")
+    expect(host.querySelector('[role="status"]')).toBeNull()
+  })
+})

@@ -24,8 +24,7 @@ Follow [mvp.md §8](../../.specs/product/mvp.md#8-what-we-cut) and J1. The signu
 
 ## Repository routes (Will, 2026-10-18)
 
-Repository routes follow the stage 1 mock and `repo-ui-spec.md`
-(`~/smithers-lanes/spec-ref/launch/smithers/repo-ui-spec.md`), per Will's
+Repository routes follow the stage 1 mock (`.specs/design/mock/`), per Will's
 2026-10-18 decision. They open in the repository frame. The EMBED LAW
 continues to govern chat and the Ask panel: answers and capability output
 embed as cards in the existing conversation.

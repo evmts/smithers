@@ -1,0 +1,221 @@
+/**
+ * The durable driver admits a join only when the caller's capability ceiling
+ * covers the authority the run row persisted (#2852), the same
+ * `FlowEngine.joinable` rule the in-memory engine applies. A join answers the
+ * result that authority produced, so a narrower caller never reads it.
+ */
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { describe, expect, it } from "@effect/vitest"
+import { Capability, CapabilityPattern } from "@smthrs/capability/Capability"
+import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
+import { FlowEngine } from "@smthrs/engine"
+import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Jj } from "@smthrs/kernel"
+import { RunStore } from "@smthrs/run-store"
+import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
+import * as EngineStore from "../src/EngineStore.ts"
+import * as StepBoundary from "../src/StepBoundary.ts"
+import * as TestStores from "../src/test/TestStores.ts"
+import { executeUntilParked } from "./ExecuteUntilParked.ts"
+import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
+
+const secret = new Capability({ action: "fs:read", resource: "secret/key" })
+const readSource = [new CapabilityPattern({ action: "fs:read", resource: "src/**" })]
+
+const jj = Layer.succeed(
+  Jj.Jj,
+  Jj.make({
+    snapshot: () => Effect.succeed({ commitId: "join" as never, changeId: "join" as never }),
+    restore: () => Effect.void,
+    diff: () => Effect.succeed(""),
+    workspaceAdd: () => Effect.void,
+    workspaceForget: () => Effect.void,
+    status: () => Effect.succeed("")
+  })
+)
+
+const conflictOf = (exit: Exit.Exit<unknown, unknown>) =>
+  Exit.isFailure(exit) ? exit.cause.reasons.find(Cause.isDieReason)?.defect : undefined
+
+const executeConflictOf = (exit: Exit.Exit<unknown, unknown>) =>
+  Exit.isFailure(exit) ? exit.cause.reasons.find(Cause.isFailReason)?.error : undefined
+
+describe("durable joins under a capability ceiling", () => {
+  it.effect("refuses a narrower caller and admits the same or a wider one", () =>
+    Effect.gen(function*() {
+      let runs = 0
+      const Read = Action.make("durable-join-authority/read", { payload: {}, success: Schema.String })
+      const flow = Flow.make("durable-join-authority/flow", {
+        payload: { id: Schema.String },
+        success: Schema.String,
+        body: () => Read.call({})
+      })
+      const engine = yield* EngineStore.make({
+        owner: { hostId: "durable-join-authority" },
+        journalSource: "durable-join-authority",
+        isAlive: () => Effect.succeed(false)
+      })
+      const layer = Layer.mergeAll(
+        Read.toLayer(() =>
+          Effect.map(CapabilitySet.current, (set) => {
+            runs++
+            return CapabilitySet.allows(set, secret) ? "secret contents" : "denied"
+          })
+        ),
+        Interpreter.layer(flow)
+      ).pipe(
+        Layer.provideMerge(Action.layerImplementations),
+        Layer.provideMerge(Layer.succeed(FlowRuntime.FlowRuntime, engine))
+      )
+      yield* Effect.gen(function*() {
+        expect(yield* flow.execute({ id: "a" }, { executionId: "wide" })).toBe("secret contents")
+        for (const discard of [false, true]) {
+          const exit = yield* Effect.exit(
+            CapabilitySet.attenuate(readSource)(flow.execute({ id: "a" }, { executionId: "wide", discard }))
+          )
+          expect(executeConflictOf(exit)).toBeInstanceOf(FlowEngine.ExecutionIdentityConflict)
+          expect(executeConflictOf(exit)).toMatchObject({ executionId: "wide", field: "capabilities" })
+        }
+        // The refused joins left the admitted row and its result untouched.
+        const row = yield* RunStore.RunStore.pipe(Effect.flatMap((store) => store.get("wide")))
+        expect(row.status).toBe("completed")
+        expect(yield* flow.execute({ id: "a" }, { executionId: "wide" })).toBe("secret contents")
+
+        expect(yield* CapabilitySet.attenuate(readSource)(flow.execute({ id: "b" }, { executionId: "narrow" })))
+          .toBe("denied")
+        expect(yield* CapabilitySet.attenuate(readSource)(flow.execute({ id: "b" }, { executionId: "narrow" })))
+          .toBe("denied")
+        expect(yield* flow.execute({ id: "b" }, { executionId: "narrow" })).toBe("denied")
+        expect(runs).toBe(2)
+
+        // Polling and resuming answer or drive the same admitted authority.
+        const polled = yield* Effect.exit(CapabilitySet.attenuate(readSource)(flow.poll("wide")))
+        expect(conflictOf(polled)).toMatchObject({ field: "capabilities", executionId: "wide" })
+        const resumed = yield* Effect.exit(CapabilitySet.attenuate(readSource)(engine.resume(flow, "wide")))
+        expect(conflictOf(resumed)).toMatchObject({ field: "capabilities", executionId: "wide" })
+        expect(Option.isSome(yield* flow.poll("wide"))).toBe(true)
+        expect(Option.isSome(yield* CapabilitySet.attenuate(readSource)(flow.poll("narrow")))).toBe(true)
+
+        // A declaration narrowed since admission does not reopen the wider result.
+        const Narrowed = flow.annotate(Flow.Capabilities, [])
+        const redeclared = yield* Effect.exit(Narrowed.execute({ id: "a" }, { executionId: "wide" }))
+        expect(executeConflictOf(redeclared)).toMatchObject({ field: "capabilities" })
+        expect(conflictOf(yield* Effect.exit(Narrowed.poll("wide")))).toMatchObject({ field: "capabilities" })
+        expect(runs).toBe(2)
+      }).pipe(Effect.provide(layer))
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(jj),
+      Effect.provide(StepBoundary.layerTest()),
+      Effect.provide(TestStores.layerAt(":memory:")),
+      Effect.provide(NodeCrypto.layer)
+    ))
+
+  it.effect("records a handoff successor's own declaration so its join compares what it ran under", () =>
+    Effect.gen(function*() {
+      const Next = Flow.make("durable-join-authority/next", {
+        payload: {},
+        success: Schema.String,
+        capabilities: ["fs:read:src/**"],
+        body: opaqueHandlerBody
+      })
+      const First = Flow.make("durable-join-authority/first", {
+        payload: {},
+        success: Schema.String,
+        body: opaqueHandlerBody
+      })
+      const engine = yield* EngineStore.make({
+        owner: { hostId: "durable-join-successor" },
+        journalSource: "durable-join-successor",
+        isAlive: () => Effect.succeed(false)
+      })
+      yield* engine.register(First, () =>
+        Effect.gen(function*() {
+          const instance = yield* FlowRuntime.FlowInstance
+          instance.handoff = new Flow.Handoff({ flow: Next._tag, payload: {}, capabilityCeilings: [] })
+          return "handed off"
+        }))
+      yield* engine.register(
+        Next,
+        () =>
+          Effect.map(CapabilitySet.current, (set) => CapabilitySet.allows(set, secret) ? "secret contents" : "denied")
+      )
+      expect(
+        yield* First.execute({}, { executionId: "successor" }).pipe(
+          Effect.provideService(FlowRuntime.FlowRuntime, engine)
+        )
+      ).toBe("denied")
+      const sql = yield* SqlClient.SqlClient
+      const rows = yield* sql<{ state_json: string }>`SELECT state_json FROM flows_runs`
+      const successor = rows.find((row) => JSON.parse(row.state_json).flowName === Next._tag)!
+      const state = JSON.parse(successor.state_json) as { capabilityCeilings: ReadonlyArray<ReadonlyArray<unknown>> }
+      expect(state.capabilityCeilings).toContainEqual([{ action: "fs:read", resource: "src/**" }])
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(jj),
+      Effect.provide(StepBoundary.layerTest()),
+      Effect.provide(TestStores.layerAt(":memory:")),
+      Effect.provide(NodeCrypto.layer)
+    ))
+
+  it.effect("drives a resumed run only for its own declaration and a covering caller", () =>
+    Effect.gen(function*() {
+      let drives = 0
+      const gate = DurableDeferred.make("durable-join-authority/gate", { success: Schema.String })
+      const Parked = Flow.make("durable-join-authority/parked", {
+        payload: {},
+        success: Schema.String,
+        body: opaqueHandlerBody
+      })
+      const Other = Flow.make("durable-join-authority/other", {
+        payload: {},
+        success: Schema.String,
+        body: opaqueHandlerBody
+      })
+      const engine = yield* EngineStore.make({
+        owner: { hostId: "durable-join-resume" },
+        journalSource: "durable-join-resume",
+        isAlive: () => Effect.succeed(false)
+      })
+      yield* engine.register(Parked, () => Effect.suspend(() => (drives++, DurableDeferred.await(gate))))
+      yield* engine.register(Other, () => Effect.succeed("other"))
+      yield* executeUntilParked(engine, Parked, { executionId: "parked", payload: {}, discard: true })
+      for (const cancel of [engine.interrupt]) {
+        const refused = yield* Effect.exit(CapabilitySet.attenuate(readSource)(cancel(Parked, "parked")))
+        expect(conflictOf(refused)).toMatchObject({ field: "capabilities", executionId: "parked" })
+        yield* cancel(Other, "parked")
+        yield* cancel(Parked, "never-admitted")
+        const row = yield* RunStore.RunStore.pipe(Effect.flatMap((store) => store.get("parked")))
+        expect(row.status).toBe("suspended")
+      }
+      const restrictedHost = yield* CapabilitySet.attenuate(readSource)(EngineStore.make({
+        owner: { hostId: "replacement-narrow-host" },
+        journalSource: "replacement-narrow-host",
+        isAlive: () => Effect.succeed(false)
+      }))
+      const hostRefusal = yield* Effect.exit(restrictedHost.interrupt(Parked, "parked"))
+      expect(conflictOf(hostRefusal)).toMatchObject({ field: "capabilities", executionId: "parked" })
+      const parkedDrives = drives
+      expect(parkedDrives).toBeGreaterThan(0)
+      // A restricted caller naming another flow's declaration drives nothing.
+      yield* CapabilitySet.attenuate(readSource)(engine.resume(Other, "parked"))
+      // An unknown id drives nothing either.
+      yield* CapabilitySet.attenuate(readSource)(engine.resume(Parked, "never-admitted"))
+      expect(drives).toBe(parkedDrives)
+      const refused = yield* Effect.exit(CapabilitySet.attenuate(readSource)(engine.resume(Parked, "parked")))
+      expect(conflictOf(refused)).toMatchObject({ field: "capabilities", executionId: "parked" })
+      expect(drives).toBe(parkedDrives)
+      yield* engine.resume(Parked, "parked")
+      expect(drives).toBeGreaterThan(parkedDrives)
+      yield* engine.interrupt(Parked, "parked")
+      const cancelled = yield* RunStore.RunStore.pipe(Effect.flatMap((store) => store.get("parked")))
+      expect(cancelled.cancelRequestedAtMs).not.toBeNull()
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(jj),
+      Effect.provide(StepBoundary.layerTest()),
+      Effect.provide(TestStores.layerAt(":memory:")),
+      Effect.provide(NodeCrypto.layer)
+    ))
+})
