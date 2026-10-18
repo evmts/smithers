@@ -39,6 +39,8 @@ test("generate-llms --check names the stale file and the fix command", () => {
     }
     copyPackageRoster(root)
     for (const entry of libraryPackages()) copy(root, join(entry.dir, "package.json"))
+    // llms-full.txt carries the coding guide second, read from its package docs.
+    copy(root, "packages/smithers/docs/guides/change-code.md")
     const generate = spawnSync(process.execPath, [join(root, "apps/site/scripts/generate-llms.mjs")], { encoding: "utf8", stdio: "pipe" })
     assert.equal(generate.status, 0, generate.stderr)
     assert.equal(check(root, "generate-llms.mjs").status, 0, "the copied tree starts clean")
