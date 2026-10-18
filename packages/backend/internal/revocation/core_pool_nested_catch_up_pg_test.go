@@ -2,10 +2,12 @@ package revocation
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -105,12 +107,49 @@ func fillCorePoolAroundTheBus(t *testing.T, pool *pgxpool.Pool) (release func())
 	return release
 }
 
+// arrangedNotifier pauses only the first notification wait. The real LISTEN
+// and startup catch-up have finished here; the test can fill the pool without
+// racing that legitimate startup read. All database operations remain real.
+type arrangedNotifier struct {
+	notifier
+	waiting chan struct{}
+	resume  <-chan struct{}
+	stop    <-chan struct{}
+}
+
+func (n *arrangedNotifier) WaitForNotification(ctx context.Context) (*pgconn.Notification, error) {
+	if n.waiting != nil {
+		close(n.waiting)
+		n.waiting = nil
+		select {
+		case <-n.resume:
+		case <-n.stop:
+			return nil, context.Canceled
+		}
+	}
+	return n.notifier.WaitForNotification(ctx)
+}
+
 // startResidentBus starts the bus exactly as compose does — over the product
 // pool, with the pool's own queries as its log reader — and waits until it
-// holds its LISTEN connection.
-func startResidentBus(t *testing.T, pool *pgxpool.Pool, bound time.Duration) *Bus {
+// holds its LISTEN connection and finishes its startup catch-up. The returned
+// resume lets it poll after the caller has arranged pool saturation.
+func startResidentBus(t *testing.T, pool *pgxpool.Pool, bound time.Duration) (*Bus, func()) {
 	t.Helper()
 	bus := NewBus(pool, db.New(pool))
+	waiting, proceed := make(chan struct{}), make(chan struct{})
+	resume := sync.OnceFunc(func() { close(proceed) })
+	t.Cleanup(resume)
+	acquire := bus.acquire
+	first := true
+	bus.acquire = func(ctx context.Context) (notifier, error) {
+		conn, err := acquire(ctx)
+		if err != nil || !first {
+			return conn, err
+		}
+		first = false
+		return &arrangedNotifier{notifier: conn, waiting: waiting, resume: proceed, stop: ctx.Done()}, nil
+	}
 	bus.PollInterval = 100 * time.Millisecond
 	bus.catchUpBound = bound
 	ctx, cancel := context.WithCancel(context.Background())
@@ -125,7 +164,12 @@ func startResidentBus(t *testing.T, pool *pgxpool.Pool, bound time.Duration) *Bu
 	require.NoError(t, bus.Start(ctx))
 	require.Eventually(t, bus.connectedNow, busObserveBound, 5*time.Millisecond,
 		"the bus never acquired its resident LISTEN connection")
-	return bus
+	select {
+	case <-waiting:
+	case <-time.After(busObserveBound):
+		t.Fatal("the bus never finished its startup catch-up")
+	}
+	return bus, resume
 }
 
 func publishUserDisabledOutOfPool(t *testing.T, conn *pgx.Conn, userID int64) db.RevocationEvent {
@@ -154,7 +198,7 @@ func TestResidentBusRefusesItsNestedCatchUpReadInsteadOfAbsorbingItsListenConnec
 
 	// THE RESIDENT. One of four connections, held before any backlog exists,
 	// in a composition that has not decided whether it serves HTTP at all.
-	bus := startResidentBus(t, pool, 500*time.Millisecond)
+	bus, resume := startResidentBus(t, pool, 500*time.Millisecond)
 	require.Eventually(t, func() bool { return pool.Stat().AcquiredConns() >= 1 }, busObserveBound, 5*time.Millisecond,
 		"the bus is connected but holds no pooled connection, so this test is measuring the wrong thing")
 	require.True(t, bus.connectedNow())
@@ -162,6 +206,7 @@ func TestResidentBusRefusesItsNestedCatchUpReadInsteadOfAbsorbingItsListenConnec
 
 	// THE OTHER THREE, taken by duties outside the bus, as production's are.
 	release := fillCorePoolAroundTheBus(t, pool)
+	resume()
 	refusalsBefore := testutil.ToFloat64(bus.metrics.catchUpRefusals)
 	cancellationsBefore := pool.Stat().CanceledAcquireCount()
 
@@ -197,7 +242,8 @@ func TestResidentBusRefusesItsNestedCatchUpReadInsteadOfAbsorbingItsListenConnec
 		"the bus never caught up after the pool had room again")
 	require.GreaterOrEqual(t, bus.Cursor(), event.ID, "the cursor did not advance past the event it applied")
 	require.True(t, bus.connectedNow(), "the bus is no longer listening after it converged")
-	require.Zero(t, bus.nestedReads.Load(), "a nested read leaked")
+	require.Eventually(t, func() bool { return bus.nestedReads.Load() == 0 }, busObserveBound, 5*time.Millisecond,
+		"a nested read leaked")
 }
 
 // TestResidentBusNestedReadIsPublishedWhileItHoldsItsListenConnection is the
@@ -208,12 +254,13 @@ func TestResidentBusRefusesItsNestedCatchUpReadInsteadOfAbsorbingItsListenConnec
 func TestResidentBusNestedReadIsPublishedWhileItHoldsItsListenConnection(t *testing.T) {
 	pool, url := postgresfixture.NewProductDatabase(t, residentCorePoolMaxConns)
 	observer := outOfPoolConn(t, url)
-	bus := startResidentBus(t, pool, 500*time.Millisecond)
+	bus, resume := startResidentBus(t, pool, 500*time.Millisecond)
 
 	// Hold the row the catch-up read wants to read, from outside the pool, so
 	// the read is genuinely in flight and not merely fast.
 	publishUserDisabledOutOfPool(t, observer, 4129)
 	release := fillCorePoolAroundTheBus(t, pool)
+	resume()
 	t.Cleanup(release)
 
 	require.Eventually(t, func() bool { return bus.nestedReads.Load() == 1 }, busObserveBound, time.Millisecond,
