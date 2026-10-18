@@ -14,6 +14,13 @@ import { repositoryJobWorkspace } from "./RepositoryJobs"
 import { cardContainsRun, runCardInScope, runScopeFromCard, sameRunScope, type RunScope } from "./RunReference"
 import type { Card } from "./AppState"
 
+/** Host authority is scoped to this controller's store, never persisted as a cloud row. */
+const gatewayHosts = new WeakMap<AppStore, { readonly repo: string; readonly workspaceId: string }>()
+export const bindGatewayHost = (store: AppStore, binding: { readonly repo: string; readonly workspaceId: string } | undefined): void => {
+  if (binding === undefined) gatewayHosts.delete(store)
+  else gatewayHosts.set(store, binding)
+}
+
 /** The `owner/repo` shape, shared by repository-scoped grammars. */
 export { REPO_TOKEN } from "@smthrs/ui/command-line"
 import { REPO_TOKEN } from "@smthrs/ui/command-line"
@@ -27,6 +34,8 @@ export type KnownRepositories = Pick<ReadonlySet<string>, "has">
 
 /** {@link KnownRepositories} read from the store. */
 export const knownRepositories = (store: AppStore): KnownRepositories => {
+  const local = gatewayHosts.get(store)
+  if (local !== undefined) return new Set([local.repo])
   const known = new Set<string>(store.collections.repositories.keys())
   // A completed import is authoritative before the repository inventory refreshes.
   // Use the returned repository, never the name of a pending import request.
@@ -109,6 +118,8 @@ export const resolveTargetRepo = (
   store: AppStore,
   explicit: string | undefined
 ): { readonly repo: string } | { readonly error: string } => {
+  const local = gatewayHosts.get(store)
+  if (local !== undefined) return !explicit || explicit === local.repo ? { repo: local.repo } : { error: "This host serves another repository." }
   if (explicit !== undefined && explicit !== "") {
     if (!REPO_TOKEN.test(explicit)) {
       return { error: `"${explicit}" is not an owner/repo name` }
@@ -308,9 +319,18 @@ export const recordedRunBinding = (scope: { readonly workspaceId?: string | unde
 /**
  * The box a flow call on `repo` runs on: a recorded run's own box, else the
  * selected box, else the repository's default box ({@link defaultBoxBinding}).
- * There is no box-less answer.
+ * An explicit local host binding uses serve's workspace identity.
  */
 export const gatewayBindingFor = (store: AppStore, repo: string, runId?: string): GatewayBinding => {
+  const local = gatewayHosts.get(store)
+  if (local !== undefined) {
+    if (local.repo !== repo) return { error: "This host serves another repository." }
+    if (runId !== undefined) {
+      const recorded = gatewayRunContextFor(store, runId)
+      if (recorded !== undefined && ("error" in recorded || recorded.repo !== repo || recorded.workspaceId !== local.workspaceId)) return { error: "This run belongs to another workspace." }
+    }
+    return { workspaceId: local.workspaceId }
+  }
   if (runId !== undefined) {
     const recorded = gatewayRunContextFor(store, runId)
     if (recorded !== undefined) {

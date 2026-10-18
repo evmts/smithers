@@ -5,6 +5,7 @@
  */
 
 import { z } from "zod"
+import { GatewayWorkspaceIdSchema } from "./GatewayWorkspace.ts"
 
 /**
  * Shared app api version used by the host and its clients.
@@ -72,6 +73,7 @@ export type RuntimeCapability = z.infer<typeof RuntimeCapabilitySchema>
  * @category schemas
  */
 export const AppBootstrapSchema = z.object({
+  gateway: z.object({ repo: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/), workspaceId: GatewayWorkspaceIdSchema }).optional(),
   apiVersion: z.literal(APP_API_VERSION),
   /**
    * The API surface: `cloud` is every web origin the product serves — the

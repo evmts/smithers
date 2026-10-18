@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { expect, test } from 'bun:test'
 // Erased by Bun, but keeps the isolated fixture inside the app's typecheck.
 import type {} from '../../e2e/fixtures/unit-entrypoints/Serve.child.test'
+import type {} from '../../e2e/fixtures/unit-entrypoints/Gateway.child.test'
 
 const cases = [['signal'], ['backend-failure'], ['stop-error'], ['hostile-origin']] as const
 const child = fileURLToPath(new URL('../../e2e/fixtures/unit-entrypoints/Serve.child.test.ts', import.meta.url))
@@ -25,4 +26,16 @@ test.each(cases)('serve entrypoint %s lifecycle runs in an isolated process', (s
   expect(result.status).toBe(0)
   expect(result.stderr).toContain('1 pass')
   expect(result.stderr).toContain('0 fail')
+})
+
+const gatewayChild = fileURLToPath(new URL('../../e2e/fixtures/unit-entrypoints/Gateway.child.test.ts', import.meta.url))
+test('serve gateway entrypoint runs in an isolated process', () => {
+  const result = spawnSync(process.execPath, ['test', '--config', childConfig, gatewayChild], {
+    cwd: fileURLToPath(new URL('../..', import.meta.url)), env: process.env, encoding: 'utf8', timeout: 20_000
+  })
+  expect(result.error).toBeUndefined()
+  expect(result.status, result.stderr).toBe(0)
+  expect(result.stderr).toContain('1 pass')
+  expect(result.stdout).not.toContain('server-only-credential')
+  expect(result.stderr).not.toContain('server-only-credential')
 })
