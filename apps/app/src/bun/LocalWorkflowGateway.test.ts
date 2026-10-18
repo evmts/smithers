@@ -8,9 +8,16 @@ const config = { url: "http://127.0.0.1:1234", repo: "local/fixture", workspaceI
 const request = (body: unknown, path = "/api/workflow/rpc") => new Request(`http://127.0.0.1:4444${path}`, { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", authorization: "browser", cookie: "private-cookie" } })
 
 test("startup refuses a nonliteral or nonloopback target, missing credential, unreachable serve and mismatched workspace", async () => {
-  for (const url of ["http://localhost:1", "http://example.com", "http://192.168.1.2", "http://127.0.0.1/rpc", "http://user@127.0.0.1", "http://2130706433"]) {
-    await expect(connectLocalGateway({ url, root, repo: config.repo, tokenFile: "/missing" })).rejects.toThrow()
-  }
+  const { mkdtemp, writeFile, rm } = await import("node:fs/promises")
+  const directory = await mkdtemp("/tmp/gateway-refusal-")
+  const tokenFile = directory + "/token"
+  try {
+    await writeFile(tokenFile, "private", { mode: 0o600 })
+    for (const url of ["http://localhost:1", "http://example.com", "http://192.168.1.2", "http://127.0.0.1/rpc", "http://user@127.0.0.1", "http://2130706433"]) {
+      await expect(connectLocalGateway({ url, root, repo: config.repo, tokenFile })).rejects.toThrow("loopback")
+      expect(() => createLocalWorkflowRelay({ ...config, url }, 1000)).toThrow("loopback")
+    }
+  } finally { await rm(directory, { recursive: true, force: true }) }
   await expect(connectLocalGateway({ url: config.url, root, repo: config.repo, tokenFile: "/missing" })).rejects.toThrow("token file")
 })
 
@@ -45,9 +52,9 @@ test("binding refusals happen before egress, including provision and streams", a
 
 test("preserves typed refusals and fails closed without leaking upstream bodies or errors", async () => {
   const body = { repo: config.repo, workspaceId: hash, procedure: "List", payload: {} }
-  const cause = [{ _tag: "Fail", error: { code: "unauthorized" } }]
+  const cause = [{ _tag: "Fail", error: { code: "unauthorized" } }, { _tag: "Die", defect: { stack: "private-stack" } }]
   const failed = createLocalWorkflowRelay(config, 1000, async () => new Response(JSON.stringify({ _tag: "Exit", requestId: 1, exit: { _tag: "Failure", cause } })))
-  expect(await (await failed(request(body))).json()).toMatchObject({ ok: false, error: { detail: cause } })
+  expect(await (await failed(request(body))).json()).toMatchObject({ ok: false, error: { detail: [cause[0]] } })
   for (const response of [new Response("private", { status: 401 }), new Response("private"), new Response("{}")]) {
     const answer = await createLocalWorkflowRelay(config, 1000, async () => response)(request(body))
     expect(answer.status).toBeGreaterThanOrEqual(400)
@@ -89,9 +96,8 @@ test("local API identifies an operator and exposes only the bound repository cat
     await mkdir(join(directory, ".smithers"))
     await writeFile(join(directory, ".smithers/factory.json"), '{"flows":[]}')
     expect(await (await api("/api/user")).json()).toMatchObject({ username: "local-operator", display_name: "Local operator", is_admin: false })
-    for (const path of ["repos", "orgs", "workspaces"]) expect(await (await api(`/api/user/${path}`)).json()).toEqual([])
+    for (const path of ["/api/user/repos", "/api/user/orgs", "/api/user/workspaces", "/api/conversations/main/view-state", `/api/repos/${config.repo}/home`]) expect((await api(path)).status).toBe(409)
     expect(await (await api(`/api/repos/${config.repo}/contents/.smithers/factory.json`)).json()).toEqual({ content: '{"flows":[]}', encoding: "utf-8" })
     expect((await api("/api/repos/wrong/repo/contents/.smithers/factory.json")).status).toBe(409)
-    expect(await (await api("/api/conversations/main/view-state")).json()).toEqual({})
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

@@ -136,6 +136,7 @@ const MAX_CLOUD_WS_UPSTREAM_BUFFER = 1024 * 1024
 const MAX_WS_BACKPRESSURE_BYTES = 4 * 1024 * 1024
 
 export interface LocalServerOptions {
+  readonly privateFiles?: ReadonlyArray<string>
   readonly localGateway?: LocalWorkflowGateway
   readonly publicHostname?: "localhost" | "127.0.0.1"
 
@@ -871,6 +872,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     return new Response(answer.response.body, { status: answer.response.status, headers })
   }
   router.add("POST", MODEL_STREAM_PATH, async ({ request }) => {
+    if (localGateway !== undefined) return json({ message: "Model streaming is not available in local mode." }, 409)
     const parsed = await readJson(request, MAX_BODY_BYTES)
     if ("error" in parsed) return parsed.error
     if (!isStartTurnRequest(parsed.body) || parsed.body.journal !== undefined) {
@@ -973,6 +975,11 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     if (decoded === undefined) return invalidPath()
     const relative = normalize(decoded).replace(/^\/+/, "")
     const candidate = resolve(distDir, relative)
+    if (options.privateFiles?.some(file => relative === file.split("/").at(-1))) return new Response(null, { status: 404 })
+    if (options.privateFiles?.length && existsSync(candidate)) {
+      const real = await import("node:fs/promises").then(fs => fs.realpath(candidate))
+      if (options.privateFiles.includes(real)) return new Response(null, { status: 404 })
+    }
     // Only a regular file is a body: `Bun.file(<directory>)` throws EISDIR,
     // and a dotted directory name passes the `relative.includes(".")` test.
     if (relative !== "" && candidate.startsWith(distDir + "/") && statSync(candidate, { throwIfNoEntry: false })?.isFile() === true) {
