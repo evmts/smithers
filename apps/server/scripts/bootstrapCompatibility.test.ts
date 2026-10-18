@@ -103,7 +103,8 @@ test("compatible bootstrap permits publication only after its live check", async
 test("the deploy path wires the candidate decoder before publish and retains its receipt", () => {
   const deploy = readFileSync(new URL("./deploy.ts", import.meta.url), "utf8")
   const beforePublish = deploy.slice(deploy.indexOf("beforePublish: async"), deploy.indexOf("publish: async"))
-  expect(beforePublish).toContain("checkBootstrapCompatibility(readWranglerConfig().vars.SMITHERS_BACKEND_ORIGIN!")
-  expect(beforePublish).toContain('PublicationRefusal("bootstrap-compatibility")')
+  expect(beforePublish).toContain("await checkBackend()")
+  expect(deploy).toContain("checkBootstrapCompatibility(readWranglerConfig().vars.SMITHERS_BACKEND_ORIGIN!")
+  expect(beforePublish).toContain("PublicationRefusal(backendRefusal)")
   expect(deploy.slice(deploy.indexOf("const receipt ="))).toContain("bootstrapCompatibility,")
 })

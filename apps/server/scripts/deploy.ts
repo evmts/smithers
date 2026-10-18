@@ -35,6 +35,9 @@
  * read afterwards, so `scripts/canary/build-probe.ts` can hold the deployment
  * to the claim.
  */
+import { Effect, Layer } from "effect"
+import { TransportLive } from "../src/Http"
+import { BackendRequirementsFileLive, backendRequirementsRefusal, checkBackendRequirements, type BackendRequirementsReceipt } from "./backendRequirements"
 import { PublicationRefusal, rollout, type RolloutReceipt } from "../../../.smithers/flows/rollout/runtime.ts"
 import { dryRunChecks, readPreviousRevision, workerRolloutHost, writeRolloutReceipt } from "./rollout"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -167,8 +170,30 @@ let rolloutReceipt: RolloutReceipt | null = null
 let activation: { readonly recordSHA256: string; readonly artifactSHA256: string } | null = null
 let rehearsalChecks: Awaited<ReturnType<typeof dryRunChecks>> | null = null
 let bootstrapCompatibility: BootstrapCompatibilityReceipt | null = null
+let backendRequirements: BackendRequirementsReceipt | null = null
+
+// The script is the platform boundary. Both checks use this one bootstrap read.
+const checkBackend = async (): Promise<"bootstrap-compatibility" | "backend-requirements" | null> => {
+  let bootstrapFailed = false
+  try {
+    bootstrapCompatibility = await checkBootstrapCompatibility(readWranglerConfig().vars.SMITHERS_BACKEND_ORIGIN!)
+  } catch (error) {
+    bootstrapFailed = true
+    console.error(`[deploy] ${error instanceof Error ? error.message : "BOOTSTRAP_COMPATIBILITY_FAILED"}`)
+  }
+  backendRequirements = await Effect.runPromise(checkBackendRequirements(
+    bootstrapCompatibility?.backendBuildSha ?? null, process.env.GITHUB_TOKEN
+  ).pipe(Effect.provide(Layer.merge(BackendRequirementsFileLive, TransportLive))))
+  if (backendRequirements.verdict === "refused") console.error(`[deploy] ${backendRequirementsRefusal(backendRequirements)}`)
+  if (bootstrapFailed) return "bootstrap-compatibility"
+  if (backendRequirements.verdict === "refused") return "backend-requirements"
+  console.log(`[deploy] bootstrap compatible: backend ${bootstrapCompatibility!.backendBuildSha}; backend requirements satisfied`)
+  return null
+}
+let backendRefusal: Awaited<ReturnType<typeof checkBackend>> = null
 
 if (dryRun) {
+  backendRefusal = await checkBackend()
   const outdir = mkdtempSync(join(tmpdir(), "smithers-mvp-web-dry-run-"))
   console.log(`[deploy] dry-run: wrangler deploy --dry-run --outdir ${outdir} (bundles the Worker, reads the assets, publishes nothing)...`)
   const plan = await run(wrangler("deploy", "--dry-run", "--outdir", outdir), { cwd: serverDir, env: wranglerEnv })
@@ -217,22 +242,16 @@ if (dryRun) {
     serverDir, accountId, worker: WORKER_IDENTITY.name, token: apiToken,
     run,
     record: async receipt => {
-      writeRolloutReceipt(join(serverDir, "deploy-receipts", "rollout"), receipt)
+      const evidence = { ...receipt, backendRequirements }
+      writeRolloutReceipt(join(serverDir, "deploy-receipts", "rollout"), evidence)
       console.log(`[deploy] rollout ${receipt.status}`)
     },
     beforePublish: async () => {
       // Baseline verification can take time; reject a moved target before publication.
       if ((await readLive(WORKER_IDENTITY.name)).versionId !== guard!.liveVersion)
         throw new Error("Live deployment changed")
-      // A healthy backend may still emit a bootstrap this candidate cannot
-      // decode. Check its configured upstream with the exact frontend schema.
-      try {
-        bootstrapCompatibility = await checkBootstrapCompatibility(readWranglerConfig().vars.SMITHERS_BACKEND_ORIGIN!)
-      } catch (error) {
-        console.error(`[deploy] ${error instanceof Error ? error.message : "BOOTSTRAP_COMPATIBILITY_FAILED"}`)
-        throw new PublicationRefusal("bootstrap-compatibility")
-      }
-      console.log(`[deploy] bootstrap compatible: backend ${bootstrapCompatibility.backendBuildSha}`)
+      backendRefusal = await checkBackend()
+      if (backendRefusal) throw new PublicationRefusal(backendRefusal)
     },
     publish: async () => {
       const deploy = await run(wrangler(...wranglerDeployArgs(verdict)), { cwd: serverDir, env: wranglerEnv, capture: true })
@@ -260,9 +279,10 @@ const receipt = {
   timestamp: new Date().toISOString(),
   wranglerVersionId: rolloutReceipt?.status === "rolled-back" ? rolloutReceipt.previous?.version :
     rolloutReceipt?.status === "rollback-failed" ? null : versionId,
-  rollout: rolloutReceipt,
+  rollout: rolloutReceipt === null ? null : { ...rolloutReceipt, backendRequirements },
   rehearsalChecks,
   bootstrapCompatibility,
+  backendRequirements,
   versionTag: verdict.tag,
   versionMessage: verdict.message,
   runUrl,
@@ -277,4 +297,4 @@ writeFileSync(receiptPath, `${JSON.stringify(receipt, null, "\t")}\n`)
 writeFileSync(`${receiptDir}/latest.json`, `${JSON.stringify(receipt, null, "\t")}\n`)
 
 console.log(`[deploy] receipt written to ${receiptPath}`)
-if ((rolloutReceipt && rolloutReceipt.status !== "passed") || rehearsalChecks?.checks.some(c => c.status === "failed")) process.exitCode = 1
+if (backendRefusal || (rolloutReceipt && rolloutReceipt.status !== "passed") || rehearsalChecks?.checks.some(c => c.status === "failed")) process.exitCode = 1

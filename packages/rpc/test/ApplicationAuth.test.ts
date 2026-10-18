@@ -6,6 +6,7 @@ import {
   AUTHENTICATED_USER_PATH,
   CSRF_COOKIE_NAME,
   CSRF_HEADER_NAME,
+  LEGACY_CSRF_COOKIE_NAME,
   SOCKET_TICKET_PATH,
   SocketTicketResponseSchema
 } from "../src/ApplicationAuth.ts"
@@ -89,13 +90,15 @@ describe("authentication route and capability names (unit)", () => {
       AUTHENTICATED_USER_PATH,
       APPLICATION_SIGN_IN_PATH,
       CSRF_COOKIE_NAME,
-      CSRF_HEADER_NAME
+      CSRF_HEADER_NAME,
+      LEGACY_CSRF_COOKIE_NAME
     }).toEqual({
       SOCKET_TICKET_PATH: "/api/auth/sse-ticket",
       AUTHENTICATED_USER_PATH: "/api/user",
       APPLICATION_SIGN_IN_PATH: "/api/auth/github",
       CSRF_COOKIE_NAME: "__Host-smithers_csrf",
-      CSRF_HEADER_NAME: "X-CSRF-Token"
+      CSRF_HEADER_NAME: "X-CSRF-Token",
+      LEGACY_CSRF_COOKIE_NAME: "__csrf"
     })
     expect(APPLICATION_TOKEN_SCOPES).toEqual([
       "write:user",

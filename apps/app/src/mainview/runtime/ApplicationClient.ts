@@ -6,6 +6,7 @@ import {
   ApplicationUserSchema,
   CSRF_COOKIE_NAME,
   LOCAL_CSRF_COOKIE_NAME,
+  LEGACY_CSRF_COOKIE_NAME,
   CSRF_HEADER_NAME,
   SOCKET_TICKET_PATH,
   SocketTicketResponseSchema
@@ -173,16 +174,19 @@ const assertTargetOrigin = (
 
 const browserCSRFToken = (): string | undefined => {
   if (typeof document === "undefined") return undefined
-  const cookieName = typeof location !== "undefined" && location.protocol === "http:" ? LOCAL_CSRF_COOKIE_NAME : CSRF_COOKIE_NAME
-  const prefix = `${cookieName}=`
-  for (const part of document.cookie.split(";")) {
-    const cookie = part.trim()
-    if (!cookie.startsWith(prefix)) continue
+  const names = typeof location !== "undefined" && location.protocol === "http:"
+    ? [LOCAL_CSRF_COOKIE_NAME]
+    : [CSRF_COOKIE_NAME, LEGACY_CSRF_COOKIE_NAME]
+  // Older backends need the legacy value. A new backend reads only the
+  // __Host- cookie, so a legacy value can never satisfy its CSRF check.
+  for (const name of names) {
+    const prefix = `${name}=`
+    const cookie = document.cookie.split(";").map(part => part.trim()).find(part => part.startsWith(prefix))
+    if (cookie === undefined) continue
     try {
-      return decodeURIComponent(cookie.slice(prefix.length)) || undefined
-    } catch {
-      return undefined
-    }
+      const token = decodeURIComponent(cookie.slice(prefix.length))
+      if (token) return token
+    } catch { /* An unreadable cookie has no token. */ }
   }
   return undefined
 }

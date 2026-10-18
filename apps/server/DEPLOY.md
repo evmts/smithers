@@ -98,7 +98,7 @@ to the shared backend and is never synthesized from that asset stamp.
 Use `bun scripts/deploy.ts --dry-run` for a local bundle check. A real deploy is
 the CI path below. Preserve the existing script,
 domain and migrations. The frontend and API build identities are separate
-receipts and both must name the integrated candidate.
+receipts; the backend must satisfy the candidate's declared requirements.
 
 Immediately before publication, `scripts/deploy.ts` reads `/api/bootstrap` from
 the candidate's configured `SMITHERS_BACKEND_ORIGIN` and decodes it with the
@@ -113,6 +113,27 @@ the tolerant frontend from [#3343](https://github.com/smithersai/smithers/issues
 before adding capabilities served to older strict clients. The frozen released
 input schema at `packages/rpc/contracts/app-bootstrap-v1.schema.json` is the
 backend release contract; keep it independent of candidate schema generation.
+
+### Backend requirements
+
+`apps/app/backend-requirements.json` declares backend commits the frontend needs:
+an array of `{ "commit": "<40 lowercase hex>", "reason": "...", "issue": "#NNNN" }`.
+Add an entry when a frontend change requires a route, cookie or field and cannot
+degrade gracefully on older backends. Prefer a tolerant client when possible.
+The initial list is empty: CSRF reads tolerate both HTTPS cookie names, and
+missing guest admission leaves guest chat unavailable. Delete an entry only
+when the frontend no longer needs it or every supported deployment target has
+advanced past it; one production upgrade alone does not prove that.
+
+Before publication, the gate reuses the bootstrap check's `buildSha` from the
+candidate's `SMITHERS_BACKEND_ORIGIN`. GitHub's compare API checks each required
+commit against that live SHA; only `ahead` or `identical` proves ancestry.
+The gate uses GITHUB_TOKEN when set and has no local ancestry fallback. An
+unknown live SHA, unreadable or malformed file, or API failure refuses a real
+deploy. `[]` is valid; an empty file is malformed. Dry runs report the same
+verdict without publishing. Fix an unmet requirement: deploy the backend first.
+The `backendRequirements` section in rollout and deployment receipts records
+each commit, reason, issue, verdict and live SHA, plus any gate error.
 
 ## CI (per release)
 
