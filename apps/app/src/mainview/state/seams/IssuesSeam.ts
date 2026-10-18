@@ -536,14 +536,25 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
    * address that repository's GitHub issues without `--source github` on
    * every act, while a Smithers Cloud repository keeps its own tracker.
    */
+  const repositoryRow = (repo: string) => ctx.store.collections.repositories.get(repo) ??
+    [...ctx.store.collections.repositories.values()].find((entry) => entry.id.toLowerCase() === repo.toLowerCase())
   const repositoryTracker = (repo: string): IssueSource | undefined => {
-    const row = ctx.store.collections.repositories.get(repo) ??
-      [...ctx.store.collections.repositories.values()].find((entry) => entry.id.toLowerCase() === repo.toLowerCase())
-    return row?.issueTracker
+    const row = repositoryRow(repo)
+    return row?.githubSource !== undefined ? "github" : row?.issueTracker
+  }
+
+  const githubSourceRefusal = (repo: string): string | undefined => {
+    const row = repositoryRow(repo)
+    return signedInOwner() !== undefined && row?.issueTracker === "github" &&
+      (row.catalog === true || row.documentOwner !== undefined) && row.githubSource === undefined
+      ? "GitHub source unavailable." : undefined
   }
 
   const issuesPath = (repo: string): string => issuesRoute(ctx, repo)
-  const githubSourceIssuesPath = (repo: string, filter: "open" | "closed" | "all"): string => githubIssuesRoute(ctx, repo, filter)
+  const githubSourceIssuesPath = (repo: string, filter: "open" | "closed" | "all"): string => {
+    const source = repositoryRow(repo)?.githubSource
+    return githubIssuesRoute(ctx, source === undefined ? repo : `${source.owner}/${source.repo}`, filter)
+  }
 
   /** Every issue card this seam has mounted for one `repo`/`number` pair. */
   const mountedIssues = (repo: string, number: number): ReadonlyArray<Extract<Card, { kind: "issue" }>> =>
@@ -712,6 +723,8 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     readonly issues: Array<IssueListRow & { readonly source: "github"; readonly htmlUrl?: string }>
     readonly meta?: { source: string; syncedAt: string | null; stale: boolean; syncError: string | null; refusal: string | null }
   }> => {
+    const refusal = githubSourceRefusal(repo)
+    if (refusal !== undefined) return { issues: [], meta: { source: "refused", syncedAt: null, stale: false, syncError: null, refusal } }
     let response: Response
     try {
       response = await (signedInOwner() === undefined ? fetchRepositoryMetadata(ctx, githubSourceIssuesPath(repo, filter)) : ctx.http(githubSourceIssuesPath(repo, filter)))
@@ -745,6 +758,8 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     repo: string,
     filter: "open" | "closed" | "all"
   ): Promise<ViewResult> => {
+    const refusal = githubSourceRefusal(repo)
+    if (refusal !== undefined) return refusal
     let response: Response
     try {
       response = await (signedInOwner() === undefined ? fetchRepositoryMetadata(ctx, githubSourceIssuesPath(repo, filter)) : ctx.http(githubSourceIssuesPath(repo, filter)))
@@ -767,7 +782,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       id: `issues-${repo}`,
       kind: "issue-list",
       title: `Issues · ${repo}`,
-      body: `Read from GitHub — import for full features: /repos.import ${repo}`,
+      ...(repositoryRow(repo)?.githubSource === undefined ? { body: `Read from GitHub — import for full features: /repos.import ${repo}` } : {}),
       status: "active",
       createdAt: Date.now(),
       ordinal: ctx.nextOrdinal(),
@@ -786,6 +801,8 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
 
   /** GitHub has a separate tracker. Its supported metadata routes expose full issue bodies in the list. */
   const readGithubIssue = async (repo: string, number: number): Promise<ViewResult> => {
+    const refusal = githubSourceRefusal(repo)
+    if (refusal !== undefined) return refusal
     const listPath = githubSourceIssuesPath(repo, "all")
     let issue: Record<string, unknown> | undefined
     for (let page = 1; page <= 50; page += 1) {
@@ -821,7 +838,8 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
   const githubIssueCard = (repo: string, number: number, issue: Record<string, unknown>, comments: ReadonlyArray<IssueCommentRow>): ViewResult => {
     const payload = parseDetail({ ...issue, author: issue.user }, repo, number, comments)!
     payload.source = "github"
-    payload.htmlUrl = `https://github.com/${repo}/issues/${number}`
+    const source = repositoryRow(repo)?.githubSource
+    payload.htmlUrl = `https://github.com/${source === undefined ? repo : `${source.owner}/${source.repo}`}/issues/${number}`
     const card: Card = {
       id: `issue-github-${repo}-${number}`, kind: "issue", title: `GitHub issue #${number} · ${repo}`,
       status: "active", createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload
@@ -991,6 +1009,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
   const issueListRead = (repo: string, filter: "open" | "closed" | "all", kind: IssueKindFilter, named: string | undefined) => async (): Promise<ViewResult> => {
     // An install has no Smithers tracker, conversations or saved views: its issues are GitHub's.
     if (install) return listFromInstall(repo, filter)
+    if (kind !== "conversation" && named === undefined && repositoryTracker(repo) === "github") return listFromGithubSource(repo, filter)
     // Plue 422s unknown states ("all" included) — omit the param to list every state.
     const search = new URLSearchParams()
     if (named !== undefined) search.set("view", named)
