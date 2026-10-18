@@ -281,6 +281,12 @@ const makeWithEngineJj = (
       forkOrigins.set(instance, origins)
       return origins
     })
+    // Run instances bound cache lifetime; each producer has independent provenance.
+    type PlanProvenance = { readonly lineageId: string; readonly sourceRevision: string | undefined }
+    const planProvenances = new WeakMap<
+      FlowRuntime.FlowInstance["Service"],
+      Map<string, Effect.Effect<PlanProvenance | undefined>>
+    >()
     // A resumed or copied plan keeps its original source revision, even when
     // coding changes the workspace. The journal still compares all plan content.
     const planProvenance = Effect.fnUntraced(function*(
@@ -290,30 +296,48 @@ const makeWithEngineJj = (
       const root = FlowEngine.Lineage.root(instance.executionId)
       const current = { lineageId: root, sourceRevision: sourceRevision() }
       if (record._tag !== "PlanRecorded") return current
-      const origins = yield* keyOrigins(instance)
-      const sourceId = `${options.journalSource}/${record.sourceId}`
-      let after: JournalEvent.Seq | undefined
-      while (true) {
-        const page = yield* journal.entries({
-          runId: instance.executionId as JournalEvent.RunId,
-          eventTypes: ["flows.engine.plan-recorded"],
-          limit: 256,
-          ...(after === undefined ? {} : { after })
-        }).pipe(Effect.orDie)
-        const inherited = page.entries.find((entry) => entry.sourceId === sourceId && entry.sourceSeq === 0)
-        if (inherited !== undefined) {
-          const { lineageId } = Schema.decodeUnknownSync(Schema.Struct({ lineageId: Schema.String }))(inherited.meta)
-          if (
-            lineageId !== root && !origins.some((origin) => FlowEngine.Lineage.root(origin) === lineageId)
-          ) return current
-          const payload = Schema.decodeUnknownSync(
-            Schema.Struct({ graph: Schema.Struct({ sourceRevision: Schema.optional(Schema.String) }) })
-          )(inherited.payload)
-          return { lineageId, sourceRevision: payload.graph.sourceRevision }
-        }
-        if (!page.hasMore) return current
-        after = page.entries[page.entries.length - 1]!.seq
+      let producers = planProvenances.get(instance)
+      if (producers === undefined) {
+        producers = new Map()
+        planProvenances.set(instance, producers)
       }
+      const sourceId = `${options.journalSource}/${record.sourceId}`
+      let lookup = producers.get(sourceId)
+      if (lookup === undefined) {
+        lookup = yield* Effect.cached(Effect.gen(function*() {
+          const origins = yield* keyOrigins(instance)
+          let after: JournalEvent.Seq | undefined
+          while (true) {
+            const page = yield* journal.entries({
+              runId: instance.executionId as JournalEvent.RunId,
+              eventTypes: ["flows.engine.plan-recorded"],
+              limit: 256,
+              ...(after === undefined ? {} : { after })
+            }).pipe(Effect.orDie)
+            const inherited = page.entries.find((entry) => entry.sourceId === sourceId && entry.sourceSeq === 0)
+            if (inherited !== undefined) {
+              const meta = Schema.decodeUnknownOption(Schema.Struct({ lineageId: Schema.String }))(inherited.meta)
+              const payload = Schema.decodeUnknownOption(
+                Schema.Struct({ graph: Schema.Struct({ sourceRevision: Schema.optional(Schema.String) }) })
+              )(inherited.payload)
+              // Legacy or malformed rows still reach content deduplication and
+              // its typed plan_changed refusal, rather than dying in the decoder.
+              if (Option.isNone(meta) || Option.isNone(payload)) return undefined
+              const { lineageId } = meta.value
+              if (
+                lineageId !== root && !origins.some((origin) => FlowEngine.Lineage.root(origin) === lineageId)
+              ) return undefined
+              return { lineageId, sourceRevision: payload.value.graph.sourceRevision }
+            }
+            if (!page.hasMore) return undefined
+            after = page.entries[page.entries.length - 1]!.seq
+          }
+        }))
+        producers.set(sourceId, lookup)
+      }
+      // A missing row does not pin the revision of a size measurement. The
+      // successful first write below replaces this cached absence.
+      return (yield* lookup) ?? current
     })
     const stepBoundary = yield* StepBoundary.StepBoundary
     /**
@@ -552,6 +576,16 @@ const makeWithEngineJj = (
               }, record),
               owner
             ).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  if (record._tag === "PlanRecorded") {
+                    planProvenances.get(parent)?.set(
+                      `${options.journalSource}/${record.sourceId}`,
+                      Effect.succeed(provenance)
+                    )
+                  }
+                })
+              ),
               Effect.catch((error) =>
                 error.code === "fence_lost" ?
                   Effect.interrupt :

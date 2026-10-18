@@ -13,7 +13,7 @@ import { Journal, JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { RunStore } from "@smthrs/run-store"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as NodeJournal from "../src/internal/NodeJournal.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
@@ -528,4 +528,120 @@ describe("original plan observations", () => {
       expect(observed.entry.payload).toEqual(observed.payload)
     }
   )
+})
+
+describe("plan provenance lookup", () => {
+  const record: FlowRuntimeTypes.PlanRecorded = {
+    _tag: "PlanRecorded",
+    sourceId: "plan/0/0",
+    flow: Empty._tag,
+    generation: 0,
+    page: 0,
+    pages: 1,
+    nodeCount: 0,
+    nodes: [],
+    edges: []
+  }
+
+  const check = <E>(
+    body: (
+      engine: FlowRuntimeTypes.FlowRuntime["Service"],
+      real: Journal.Service,
+      reads: ReturnType<typeof vi.fn>
+    ) => Effect.Effect<void, E, RunStore.RunStore>
+  ) =>
+    runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const real = yield* Journal.Journal
+        const reads = vi.fn(real.entries)
+        const engine = yield* EngineStore.make({
+          owner: { hostId: "provenance" },
+          journalSource: "provenance",
+          sourceRevision: () => revision
+        }).pipe(Effect.provideService(Journal.Journal, {
+          ...real,
+          entries: reads,
+          // This harness isolates journal content deduplication from ownership.
+          emitDurable: (entry) => real.emitDurableUnfenced(entry)
+        }))
+        yield* body(engine, real, reads)
+      })).pipe(
+        Effect.provide(jj),
+        Effect.provide(StepBoundary.layerTest()),
+        Effect.provide(TestStores.layerAt(":memory:"))
+      )
+    )
+
+  let revision = "first"
+  it.each(["missing-lineage", "invalid-lineage", "invalid-payload"])(
+    "refuses an undecodable %s row with plan_changed",
+    async (shape) => {
+      await check((engine, real) =>
+        Effect.gen(function*() {
+          const runId = "legacy-plan"
+          yield* (yield* RunStore.RunStore).create(
+            runId,
+            JSON.stringify({ version: 1, flowName: Empty._tag, payload: {} })
+          )
+          const entry = NodeJournal.entry({
+            runId,
+            sourceId: "provenance",
+            lineageId: FlowEngine.Lineage.root(runId),
+            sourceRevision: "old"
+          }, record)
+          yield* real.emitDurableUnfenced({
+            ...entry,
+            ...(shape === "missing-lineage" ?
+              { meta: {} } :
+              shape === "invalid-lineage" ?
+              { meta: { lineageId: 42 } } :
+              { payload: { graph: null } })
+          })
+          const result = yield* engine.recordNode!(record).pipe(
+            Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(Empty, runId)),
+            Effect.flip
+          )
+          expect(result).toMatchObject({ code: "plan_changed" })
+        })
+      )
+    }
+  )
+
+  it("reads once per instance and source and pins provenance after the first write", async () => {
+    revision = "first"
+    await check((engine, _real, reads) =>
+      Effect.gen(function*() {
+        const runId = "memoized-plan"
+        yield* (yield* RunStore.RunStore).create(
+          runId,
+          JSON.stringify({ version: 1, flowName: Empty._tag, payload: {} })
+        )
+        const instance = FlowEngine.makeInstance(Empty, runId)
+        const observe = (input: FlowRuntimeTypes.PlanRecorded) =>
+          Effect.gen(function*() {
+            yield* engine.nodeRecordBytes!(input)
+            yield* engine.recordNode!(input)
+            yield* engine.nodeRecordBytes!(input)
+            yield* engine.recordNode!(input)
+          }).pipe(Effect.provideService(FlowRuntime.FlowInstance, instance))
+        // A size measurement before a write must not pin a revision never written.
+        yield* engine.nodeRecordBytes!(record).pipe(Effect.provideService(FlowRuntime.FlowInstance, instance))
+        revision = "written"
+        yield* observe(record)
+        revision = "later"
+        yield* observe(record)
+        expect(reads).toHaveBeenCalledTimes(1)
+        yield* observe({ ...record, sourceId: "plan/1/0", generation: 1 })
+        expect(reads).toHaveBeenCalledTimes(2)
+        yield* Effect.gen(function*() {
+          yield* Effect.all([engine.nodeRecordBytes!(record), engine.nodeRecordBytes!(record)], {
+            concurrency: "unbounded"
+          })
+          yield* engine.recordNode!(record)
+          yield* engine.nodeRecordBytes!(record)
+        }).pipe(Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(Empty, runId)))
+        expect(reads).toHaveBeenCalledTimes(3)
+      })
+    )
+  })
 })
