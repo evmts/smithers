@@ -251,7 +251,7 @@ export function helper(marker: string) { appendFileSync(marker, "${version}\\n")
     })
   }, 240_000)
 
-  it.each(["pinned", "missing-manifest", "lockfile", "adopt"] as const)(
+  it.each(["pinned", "missing-manifest", "lockfile", "adopt", "adopt-missing-manifest", "adopt-lockfile"] as const)(
     "resumes after SIGKILL with execution authority (%s)",
     async (mode) => {
       await withHost(async (root, command) => {
@@ -305,12 +305,15 @@ export function helper(marker: string) { appendFileSync(marker, "${version}\\n")
           expect(await readFile(join(root, "observed-1"), "utf8"))
             .toBe("approved-entry/approved-helper/approved-layer/1")
           await expect(readFile(join(root, "observed-2"))).rejects.toMatchObject({ code: "ENOENT" })
-          if (mode === "missing-manifest") {
+          if (mode === "missing-manifest" || mode === "adopt-missing-manifest") {
             await rm(join(root, ".flows", "executions"), { recursive: true, force: true })
           }
-          if (mode === "lockfile") await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n# changed\n")
+          if (mode === "lockfile" || mode === "adopt-lockfile") {
+            await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n# changed\n")
+          }
           await rm(join(root, "pause"))
-          const arguments_ = ["runs", "resume", "run-1", ...(mode === "adopt" ? ["--allow-code-drift"] : []), "--json"]
+          const adopt = mode.startsWith("adopt")
+          const arguments_ = ["runs", "resume", "run-1", ...(adopt ? ["--allow-code-drift"] : []), "--json"]
           const deadline = Date.now() + 60_000
           let resumed = await command(arguments_)
           while (resumed.code === 1 && JSON.parse(resumed.stdout).code === "ClaimLost" && Date.now() < deadline) {
@@ -330,9 +333,9 @@ export function helper(marker: string) { appendFileSync(marker, "${version}\\n")
             for (const index of [2, 3]) {
               expect(await readFile(join(root, `observed-${index}`), "utf8"))
                 .toBe(
-                  `${mode === "adopt" ? "unapproved" : "approved"}-entry/${
-                    mode === "adopt" ? "unapproved" : "approved"
-                  }-helper/${mode === "adopt" ? "unapproved" : "approved"}-layer/${index}`
+                  `${adopt ? "unapproved" : "approved"}-entry/${adopt ? "unapproved" : "approved"}-helper/${
+                    adopt ? "unapproved" : "approved"
+                  }-layer/${index}`
                 )
             }
             expect(controlRows(root)[0]?.status).toBe("completed")

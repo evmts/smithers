@@ -1287,6 +1287,7 @@ export const make = (
     // Observing commands keep discovery metadata-only. A run-capable local
     // host registers file modules after its engine and agent services exist.
     const adoptedAdapters = new Map<string, string>()
+    const adapterDigests = new Map<string, string>()
     const modules = suppliedModules ?? (options.startsRuns === false && options.plansFlows !== true
       ? undefined
       : Layer.unwrap(Effect.gen(function*() {
@@ -1312,7 +1313,6 @@ export const make = (
           liveIds.has(row.runId) || !["completed", "failed", "cancelled"].includes(row.status)
         )
         const pinned = new Map<string, Descriptor.FlowDescriptor>()
-        const adapterDigests = new Map<string, string>()
         for (const row of rows) {
           const summary = yield* Effect.try(() =>
             JSON.parse(row.stateJson) as {
@@ -1864,12 +1864,17 @@ export const make = (
               const prefix = "registry/entry/"
               const suffix = `/${flowId}`
               const tag = executable?.flow._tag
-              if (tag?.startsWith(prefix) && tag.endsWith(suffix)) {
+              // An unrestorable snapshot has no catalog entry, but its durable
+              // child still records the adapter identity adoption must retain.
+              const adapter = tag?.startsWith(prefix) && tag.endsWith(suffix)
+                ? tag.slice(prefix.length, -suffix.length)
+                : adapterDigests.get(`${flowId}/${executionDigest}`)
+              if (adapter !== undefined) {
                 const current = yield* engine.host.executor!.registry.getOption(flowId)
                 if (Option.isSome(current)) {
                   adoptedAdapters.set(
                     `${flowId}/${Descriptor.executionDigest(current.value)}`,
-                    tag.slice(prefix.length, -suffix.length)
+                    adapter
                   )
                 }
               }
