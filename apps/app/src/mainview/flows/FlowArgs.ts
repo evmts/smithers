@@ -3,6 +3,8 @@ import { fileArgs } from "@smthrs/rpc/FileRead"
 
 /** The typed input of every flow a card raises with structured values. */
 export interface FlowInput {
+  readonly "chat.copy-message": { readonly text: string }
+  readonly "code.view": { readonly pathname: string; readonly field: "raw" | "L"; readonly value: string }
   readonly "convert": import("../state/controller/conversion").ConversionRequest
   readonly "diff": { readonly operation?: "change" | "change-diff" | "pins" | "checks" | "file"; readonly subject?: string; readonly branch?: string; readonly path?: string; readonly entry?: string; readonly changeId?: string; readonly rev?: number; readonly from?: string; readonly to?: string; readonly seq?: number; readonly cardId?: string }
   readonly "runs": NonNullable<import("@smthrs/rpc/CardAction").CardCommandInput["runs"]>
@@ -161,6 +163,8 @@ const graphLine = (payload: Payload, target: string, value: string): string => {
  * of the line.
  */
 const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } = {
+  "chat.copy-message": payload => String(payload.text ?? ""),
+  "code.view": payload => JSON.stringify(payload),
   "convert": payload => JSON.stringify(payload),
   "diff": payload => JSON.stringify(payload),
   "background.retry": payload => token(payload, "id")!,

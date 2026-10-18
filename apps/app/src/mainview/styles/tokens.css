@@ -82,6 +82,12 @@
 	--info: var(--slate-600);
 	--code-bg: var(--paper-2);
 	--code-text: var(--ink-900);
+	--code-keyword: var(--water-600);
+	--code-string: var(--sediment-600);
+	--code-type: var(--slate-600);
+	--code-number: var(--ember-600);
+	--code-comment: var(--ink-500);
+	--code-fn: var(--water-700);
 	--inline-code-bg: rgb(33 29 24 / 6%);
 	--shadow-rgb: 33 29 24;
 
@@ -234,6 +240,12 @@
 	--info: var(--slate-400);
 	--code-bg: #101917;
 	--code-text: #ece7db;
+	--code-keyword: var(--water-300);
+	--code-string: var(--sediment-300);
+	--code-type: var(--slate-400);
+	--code-number: var(--ember-400);
+	--code-comment: var(--ink-400);
+	--code-fn: var(--brand);
 	--inline-code-bg: rgb(236 231 219 / 8%);
 	--shadow-rgb: 0 0 0;
 

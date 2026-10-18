@@ -1,8 +1,12 @@
+import { Data } from "effect"
 /** Anonymous GitHub metadata reads through the repository permission boundary.
  * @since 0.1.0
  */
 import { PublicRepositoryRecordSchema, PublicRepositoryRecordsSchema } from "@smthrs/rpc/PublicRepositoryMetadata"
 import type { SeamContext } from "./SeamContext"
+
+/** A rejected repository read retains its diagnostic and HTTP status. */
+export class RepositoryMetadataReadFailed extends Data.TaggedError("RepositoryMetadataReadFailed")<{ readonly message: string; readonly status?: number }> {}
 
 /** Read a public issue/pull list or detail without using a personal GitHub credential.
  * @since 0.1.0
@@ -14,10 +18,10 @@ export const readPublicRepositoryMetadata = async (
   resource: string,
   query?: URLSearchParams,
 ) => {
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !/^(issues|pulls)(\/[1-9][0-9]*)?$/.test(resource)) throw new Error("Invalid repository metadata path")
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !/^(issues|pulls)(\/[1-9][0-9]*)?$/.test(resource)) throw new RepositoryMetadataReadFailed({ message: "Invalid repository metadata path" })
   const suffix = query?.toString()
   const response = await ctx.http(`${ctx.baseUrl}/api/repos/${repo.split("/").map(encodeURIComponent).join("/")}/github/metadata/${resource}${suffix ? `?${suffix}` : ""}`)
-  if (!response.ok) throw new Error(`Repository metadata read failed (${response.status})`)
+  if (!response.ok) throw new RepositoryMetadataReadFailed({ message: `Repository metadata read failed (${response.status})`, status: response.status })
   const body: unknown = await response.json()
   return /^(issues|pulls)\/[0-9]+$/.test(resource)
     ? PublicRepositoryRecordSchema.parse(body)
