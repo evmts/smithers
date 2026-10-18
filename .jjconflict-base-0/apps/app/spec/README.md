@@ -274,3 +274,7 @@ REST issue checks; failed reads remain unverified. No GitHub writes occur.
 Product can declare a mock failure stale with `stale: { by, reason }` on the
 journey metadata. A failure alone never proves the app moved past its spec.
 The previous feed retains shipped history across failed cycles. Preserve it.
+
+The private spec host reads that feed for the player header and injects a
+same-origin status banner into mock HTML. Missing feeds show no fabricated
+counts. The banner polls once a minute; the production build has no banner.

@@ -62,6 +62,9 @@ export const startHost = async (options: HostOptions = {}) => {
   const bundle = await Bun.build({ entrypoints: [resolve(import.meta.dirname, "player/client.ts")], target: "browser", minify: true })
   if (!bundle.success) throw new Error(bundle.logs.join("\n"))
   const script = await bundle.outputs[0]!.text()
+  const bannerBundle = await Bun.build({ entrypoints: [resolve(import.meta.dirname, "driftBanner.ts")], target: "browser", minify: true })
+  if (!bannerBundle.success) throw new Error(bannerBundle.logs.join("\n"))
+  const bannerScript = await bannerBundle.outputs[0]!.text()
   const screenshotPaths = new Map<string, string>()
   const data = async () => {
     const value = await catalog(resultsDirectory)
@@ -90,6 +93,11 @@ export const startHost = async (options: HostOptions = {}) => {
     return counts
   }
   const mockRevision = async () => { const stamp = await Bun.file(resolve(dist, "__build.json")).json().catch(() => null) as { gitSha?: unknown } | null; return typeof stamp?.gitSha === "string" ? stamp.gitSha : null }
+  const readDrift = async () => {
+    const value = await Bun.file(resolve(resultsDirectory, "drift.json")).json().catch(() => null) as { builtAt?: string; builtMinutes?: number } | null
+    if (value?.builtAt && Number.isFinite(Date.parse(value.builtAt))) return { ...value, builtMinutes: Math.max(0, Math.floor((Date.now() - Date.parse(value.builtAt)) / 60_000)) }
+    return value
+  }
   const reports = () => agreementReports(options.policyPath ?? resolve(import.meta.dirname, "../../../.smithers/factory.json"), labelsDirectory, options.owner ?? process.env.SPEC_HOST_OWNER ?? "will").catch(() => null)
   let writes = Promise.resolve()
   const server = Bun.serve({
@@ -137,15 +145,20 @@ export const startHost = async (options: HostOptions = {}) => {
         return json({ counts: await countLabels(), agreement: await reports() }, 201)
       }
       if (request.method !== "GET" && request.method !== "HEAD") return reply(null, 405)
-      if (url.pathname === "/__spec/data") return json({ ...await data(), counts: await countLabels(), agreement: await reports(), mockRevision: await mockRevision(), live: JSON.parse(process.env.SPEC_LIVE_URLS ?? '{"default":"https://smithers.sh","smithers":"https://smithers.sh","effeck":"https://effeck.dev"}'), drift: await Bun.file(resolve(resultsDirectory, "drift.json")).json().catch(() => null) })
-      if (url.pathname === "/__spec/player.js") return reply(script, 200, { "Content-Type": "text/javascript" })
+      if (url.pathname === "/__spec/data") return json({ ...await data(), counts: await countLabels(), agreement: await reports(), mockRevision: await mockRevision(), live: JSON.parse(process.env.SPEC_LIVE_URLS ?? '{"default":"https://smithers.sh","smithers":"https://smithers.sh","effeck":"https://effeck.dev"}'), drift: await readDrift() })
+      if (url.pathname === "/__spec/drift") {
+        const value = await readDrift()
+        return value ? json(value) : reply(null, 404)
+      }
+      if (url.pathname === "/__spec/drift.js") return reply(bannerScript, 200, { "Content-Type": "text/javascript; charset=utf-8" })
+      if (url.pathname === "/__spec/player.js") return reply(script, 200, { "Content-Type": "text/javascript; charset=utf-8" })
       if (url.pathname === "/__spec/player.css") return reply(await Bun.file(resolve(import.meta.dirname, "player/player.css")).text(), 200, { "Content-Type": "text/css" })
       if (url.pathname === "/__spec/capture") {
         await data()
         const path = screenshotPaths.get(url.searchParams.get("id") ?? "")
         return path ? reply(Bun.file(path), 200, { "Content-Type": "image/png" }) : reply("Capture unavailable", 404)
       }
-      if (url.pathname === "/" && !url.searchParams.has("__spec_mock")) return reply(await Bun.file(resolve(import.meta.dirname, "player/player.html")).text(), 200, { "Content-Type": "text/html", "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; frame-src 'self' https:; connect-src 'self'; frame-ancestors 'self'" })
+      if (url.pathname === "/" && !url.searchParams.has("__spec_mock")) return reply(await Bun.file(resolve(import.meta.dirname, "player/player.html")).text(), 200, { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; frame-src 'self' https:; connect-src 'self'; frame-ancestors 'self'" })
       if (url.pathname.startsWith("/__spec/") || url.pathname.startsWith("/api/") || url.pathname === "/live") return reply(null, 404)
       try {
         const base = await realpath(dist)
@@ -153,6 +166,10 @@ export const startHost = async (options: HostOptions = {}) => {
         if (!within(base, path) && path !== base) return reply(null, 403)
         try { path = await realpath(path); if ((await stat(path)).isDirectory()) path = await realpath(resolve(path, "index.html")) } catch { path = await realpath(resolve(base, "index.html")) }
         if (!within(base, path)) return reply(null, 403)
+        if (extname(path) === ".html") {
+          const html = await Bun.file(path).text()
+          return reply(html.replace(/<head(?:\s[^>]*)?>/i, match => match + '<script src="/__spec/drift.js"></script>'), 200, { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "connect-src 'self'; frame-ancestors 'self'" })
+        }
         return reply(Bun.file(path), 200, { "Content-Security-Policy": "connect-src 'self'; frame-ancestors 'self'" })
       } catch { return reply("Spec build unavailable", 404) }
     }
