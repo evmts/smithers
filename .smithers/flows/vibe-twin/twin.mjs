@@ -40,8 +40,9 @@ export const parseDts = (text) => {
   let current = ""
   let depth = 0
   let quote = ""
+  let comment = false
   for (const line of text.split("\n")) {
-    const opens = depth === 0 && quote === "" && current.trim() !== "" && !current.trimEnd().endsWith("*/")
+    const opens = depth === 0 && quote === "" && !comment && current.trim() !== "" && !current.trimEnd().endsWith("*/")
       && /^(?:\/\*\*|export |declare |import |interface |type )/.test(line)
     if (opens) {
       statements.push(current)
@@ -50,10 +51,19 @@ export const parseDts = (text) => {
     current += `${line}\n`
     for (let i = 0; i < line.length; i++) {
       const c = line[i]
-      if (quote) {
+      if (comment) {
+        if (c === "*" && line[i + 1] === "/") {
+          comment = false
+          i++
+        }
+      } else if (quote) {
         if (c === "\\") i++
         else if (c === quote) quote = ""
-      } else if (c === "\"" || c === "'" || c === "`") quote = c
+      } else if (c === "/" && line[i + 1] === "*") {
+        comment = true
+        i++
+      } else if (c === "/" && line[i + 1] === "/") break
+      else if (c === "\"" || c === "'" || c === "`") quote = c
       else if (c === "{" || c === "(" || c === "[") depth++
       else if (c === "}" || c === ")" || c === "]") depth--
     }
@@ -61,7 +71,7 @@ export const parseDts = (text) => {
   statements.push(current)
   const byName = new Map()
   for (const statement of statements.map((s) => s.trim()).filter(Boolean)) {
-    const body = statement.replace(/^\/\*\*[\s\S]*?\*\/\s*/, "")
+    const body = statement.replace(/^(?:\/\*[\s\S]*?\*\/\s*)+/, "")
     if (!body.startsWith("export ") || /^export \{\s*\};?$/.test(body)) continue
     const m = body.match(/^export (?:declare )?(?:abstract )?(const|let|var|function|class|interface|type|enum|namespace|default)\b\s*([A-Za-z_$][\w$]*)?/)
     const entry = m === null
@@ -170,8 +180,9 @@ const common = {
 }
 
 /** vibelang -p, returning its diagnostics split by category. */
-const compile = (project) => {
+const compile = (project, cwd) => {
   const run = spawnSync(process.execPath, [join(root, "node_modules/vibelang/bin/vibelang"), "-p", project, "--pretty", "false"], {
+    cwd,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024
   })
@@ -179,6 +190,16 @@ const compile = (project) => {
   const errors = lines.filter((l) => /\berror (?:TS|EK)\d+:/.test(l))
   const warnings = lines.filter((l) => /\bwarning (?:TS|EK)\d+:/.test(l))
   return { status: run.status, errors, warnings }
+}
+
+/**
+ * Splits the twin compile's errors: those in the twin (src-vibe/, or the
+ * harness's own files) block it; those in unchanged TypeScript that tsc accepts
+ * are VibeLang findings (C-3: EK4820 on a .ts generator) and do not stop the run.
+ */
+export const splitTwinErrors = (errors) => {
+  const inTypeScript = (line) => /^(?!src-vibe\/|\.vibe-twin\/)[^(]*\.(?:ts|tsx|mts)\(\d+,\d+\)/.test(line)
+  return { twin: errors.filter((l) => !inTypeScript(l)), typescript: errors.filter(inTypeScript) }
 }
 
 const vitest = (pkg, config, outputFile) => {
@@ -275,7 +296,7 @@ const apiCheck = (pkg, work) => {
       ...common, noEmit: true, rootDir: "..", rootDirs: ["../src", "../src-vibe"], allowImportingTsExtensions: true,
       declaration: false
     }, ["api-check.ts"])
-    for (const line of compile(join(work, "tsconfig.api.json")).errors) {
+    for (const line of splitTwinErrors(compile(join(work, "tsconfig.api.json"), pkg).errors).twin) {
       const at = line.match(/api-check\.ts\((\d+),\d+\)/)
       const label = at ? checks.get(Number(at[1])) : undefined
       if (label === undefined) api.errors.push(line)
@@ -288,6 +309,13 @@ const apiCheck = (pkg, work) => {
 
 const apiOk = (api) =>
   api.missingExports.length + api.extraExports.length + api.typeDiffers.length + api.valueDiffers.length + api.errors.length === 0
+
+/** A test name without the run-dependent parts some suites put in it: dates, times, long numbers. */
+export const stableName = (name) =>
+  name
+    .replaceAll(/\b[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT[+-]\d{4}(?: \([^)]*\))?/g, "<date>")
+    .replaceAll(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, "<date>")
+    .replaceAll(/\d{6,}/g, "<n>")
 
 /** Results from a JUnit XML report: Bun's `--reporter=junit`. */
 export const parseJunit = (xml, pkg) => {
@@ -348,7 +376,9 @@ export const run = (pkgArg) => {
     declaration: true,
     emitDeclarationOnly: true
   }, ["../src/**/*"], testGlobs)
-  const twin = compile(join(work, "tsconfig.twin.json"))
+  const compiled = compile(join(work, "tsconfig.twin.json"), pkg)
+  const split = splitTwinErrors(compiled.errors)
+  const twin = { ...compiled, errors: split.twin, typescriptErrors: split.typescript }
   const twinned = linkPartialTwin(pkg, work)
   const ts = compile(join(work, "tsconfig.ts.json"))
 
@@ -404,13 +434,13 @@ for (const [src, twin] of pairs) mock.module(src, () => require(twin))
     : vitest(pkg, config, join(work, "vibe.json"))
   // A regression is a test that passed on the TypeScript and did not pass on the
   // twin: it failed, or its file never loaded (Bun's JUnit report omits those).
-  const vibePassed = new Set(vibe.passed ?? [])
-  const regressions = (baseline.passed ?? []).filter((name) => !vibePassed.has(name))
+  const vibePassed = new Set((vibe.passed ?? []).map(stableName))
+  const regressions = (baseline.passed ?? []).filter((name) => !vibePassed.has(stableName(name)))
   const receipt = {
     package: relative(root, pkg),
     runner: tests.kind,
     twinFiles: walk(join(pkg, "src-vibe")).length,
-    compile: { twinErrors: twin.errors, twinWarnings: twin.warnings, tsErrors: ts.errors.length },
+    compile: { twinErrors: twin.errors, twinWarnings: twin.warnings, vibelangErrorsInTypeScript: twin.typescriptErrors, tsErrors: ts.errors.length },
     api,
     tests: { ts: { ...baseline, failed: undefined, passed: undefined }, vibe: { ...vibe, failed: undefined, passed: undefined } },
     regressions,
@@ -438,7 +468,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.stdout.write(
       [
         `${receipt.package}: ${receipt.complete ? "COMPLETE" : receipt.ok ? "OK (partial)" : "NOT OK"}`,
-        `  compile: ${receipt.compile.twinErrors.length} errors, ${receipt.compile.twinWarnings.length} warnings`,
+        `  compile: ${receipt.compile.twinErrors.length} errors, ${receipt.compile.twinWarnings.length} warnings, ${receipt.compile.vibelangErrorsInTypeScript.length} VibeLang errors in unchanged TypeScript (findings, not blocking)`,
+        ...receipt.compile.vibelangErrorsInTypeScript.slice(0, 5).map((e) => `  finding: ${e}`),
         `  api: ${receipt.api.modules} modules twinned (${receipt.api.identicalFiles} with identical .d.ts), ${receipt.api.missingEffectModules.length} Effect modules not yet (${receipt.api.missingModules.length} in all), ${receipt.api.checked} type checks`,
         `  tests: ts ${t.ts.pass} pass ${t.ts.fail} fail ${t.ts.skip} skip | vibe ${t.vibe.pass} pass ${t.vibe.fail} fail ${t.vibe.skip} skip`,
         ...receipt.compile.twinErrors.slice(0, 20).map((e) => `  ${e}`),

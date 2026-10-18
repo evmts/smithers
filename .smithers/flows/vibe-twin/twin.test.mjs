@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { fallbackFor, normalizeDts, parseDts, twinFor } from "./twin.mjs"
+import { fallbackFor, normalizeDts, parseDts, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
 
 test("declarations that differ only in relative import extensions are equal", () => {
   const ts = `import { type A } from "./ErrorCode.ts";\nexport { B } from "../x/y.ts";\nexport declare const c: import("./z.ts").Z;\n`
@@ -74,4 +74,54 @@ test("twin code falls back to src/ for a module the twin does not have yet", () 
   assert.equal(fallbackFor("../flow-form.js", importer, pkg), join(pkg, "src", "flow-form.ts"))
   assert.equal(fallbackFor("effect", importer, pkg), undefined, "packages resolve normally")
   assert.equal(fallbackFor("./b.js", join(pkg, "test", "x.ts"), pkg), undefined, "only twin code falls back")
+})
+
+test("quotes inside comments do not swallow later exports (finding B-3)", () => {
+  const dts = `/**
+ * Don't read this as a quote: it's prose.
+ */
+declare const helper: () => void;
+/** The caller's error. */
+export declare const toPlatformError: (e: unknown) => Error;
+export declare class PermissionRequired {
+}
+`
+  assert.deepEqual(parseDts(dts).map((e) => e.name), ["toPlatformError", "PermissionRequired"])
+})
+
+test("a module comment directly above an export's JSDoc keeps the export (finding D-1)", () => {
+  const dts = `/**
+ * Strict SHA-256 hashing.
+ *
+ * @since 1.0.0
+ */
+/**
+ * Hashes a string.
+ */
+export declare const digest: (s: string) => string;
+`
+  assert.deepEqual(parseDts(dts).map((e) => [e.name, e.kind]), [["digest", "value"]])
+})
+
+test("VibeLang errors in unchanged TypeScript are findings, not twin errors (finding C-3)", () => {
+  const errors = [
+    "src-vibe/a.vibe(1,2): error EK1002: x",
+    "src/Ownership.ts(363,5): error EK4820: never succeeds",
+    "../canonical/src/x.ts(1,1): error TS2307: y",
+    ".vibe-twin/api-check.ts(4,14): error TS2322: z",
+    "src-vibe/hatch.ts(3,3): error TS2322: w"
+  ]
+  assert.deepEqual(splitTwinErrors(errors), {
+    twin: [errors[0], errors[3], errors[4]],
+    typescript: [errors[1], errors[2]]
+  })
+})
+
+test("test names compare without run-dependent dates and numbers", () => {
+  assert.equal(
+    stableName("rejects roots: Sun Oct 18 2026 14:44:41 GMT-0700 (Pacific Daylight Time)"),
+    stableName("rejects roots: Sun Oct 18 2026 14:51:02 GMT-0700 (Pacific Daylight Time)")
+  )
+  assert.equal(stableName("at 2026-10-18T21:44:41.123Z id 1760823881000"), stableName("at 2026-10-18T21:51:02Z id 1760824262000"))
+  assert.notEqual(stableName("retries 3 times"), stableName("retries 4 times"))
 })
