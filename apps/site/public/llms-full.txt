@@ -5,9 +5,25 @@ https://smithers.sh/docs/installation/
 
 Smithers maintains your codebase. It turns issues into tested changes for you to review and, when enabled, keeps the project wiki current. Flows beside your code define how.
 
-## Install
+## Install the CLI
 
-**Planned.** The Homebrew package is not released. Prepare:
+The 1.0 release candidate is available from npm. Use Node.js 26.4.0 or later.
+Install Jujutsu (`jj`) and `jq`; on macOS with Homebrew:
+
+```bash
+brew install jj jq
+npm install -g smthrs@next
+smthrs --version
+```
+
+Follow [CLI installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli)
+for Node downloads, other platforms and model sign-in. Then
+[change your code with a flow](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md),
+review its diff, run your tests, and commit and push it yourself.
+
+## Mac host (planned)
+
+**Planned.** The Homebrew host package is not released. The host installation, startup and setup below apply once it ships. Prepare:
 
 - An Apple Silicon Mac running macOS 15 or later, Homebrew, and at least 44 GiB free on the state volume.
 - A GitHub repository with squash merging enabled.
@@ -41,6 +57,142 @@ Open the printed setup link. The setup card guides you in this order:
 5. **Model access:** connect the three roles: **fast** for the app agent and summaries (Cerebras by default), **coding** through a provider key or ChatGPT sign-in, and **Decisions** through an AI Gateway key. Without a fast-model key, the app agent uses the coding model.
 
 The rest of the docs are in the app at `/docs`.
+
+---
+
+# Change your code with a flow
+https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md
+
+Run a coding agent on your subscription, inspect its changes, then commit and push them yourself. Smithers does not review or land this change. You review the diff and tests and push with your own tools. A [person-only local landing route](https://github.com/smithersai/smithers/issues/4261) is planned.
+
+## Install
+
+Use Node 26.4.0 or later and install jj as described in [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md).
+
+```bash
+npm install -g smthrs@next
+smthrs --version
+```
+
+The tested prerelease printed `1.0.0-rc.15`.
+
+## Create a project
+
+```bash
+mkdir slug
+cd slug
+printf '{"name":"slug","type":"module","scripts":{"test":"node --test"}}\n' > package.json
+printf 'export const name = "slug"\n' > index.js
+jj git init .
+jj config set --repo user.name 'Docs Test User'
+jj config set --repo user.email docs@example.invalid
+jj describe -m 'Initial tiny project'
+jj new
+```
+
+Use your own name and email. For an existing project, start in its directory instead. If you use Git, replace the jj commands above with:
+
+```bash
+git init -b main
+git config user.name 'Docs Test User'
+git config user.email docs@example.invalid
+git add .
+git commit -m 'Initial tiny project'
+```
+
+Smithers uses jj to show changes, including in Git projects. In a Git project, also run `jj git init --colocate .` before continuing.
+
+## Choose your subscription
+
+```bash
+smthrs generate flow coding
+```
+
+Open `.smithers/flows/coding/flow.ts`. Set both `seat` and `model` to `"openai:gpt-6.1-sol"` for Codex, or `"opus"` for Claude. Keep credentials out of the file.
+
+For an existing Codex login:
+
+```bash
+export SMITHERS_OPENAI_AUTH=chatgpt
+unset ANTHROPIC_API_KEY OPENAI_API_KEY AI_GATEWAY_API_KEY
+```
+
+If you have not connected a subscription, follow [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#requirements) first. The Codex path below was tested on a Pro subscription. The Claude alternative was not tested in this walkthrough.
+
+## Ask for the change
+
+```bash
+smthrs flow start coding --data '{"args":"Add an exported slugify(text) function to index.js with tests in index.test.js using node:test and node:assert/strict. Lowercase text, replace spaces with hyphens, remove punctuation, trim hyphens. Actually write code and tests, run node --test. Do not commit, approve, merge, land or move main."}'
+```
+
+Trimmed output from the subscription run:
+
+```text
+_tag: Accepted
+receiptId: "approve:plan-2"
+runId: run-2
+```
+
+Use the run id printed by your command:
+
+```bash
+smthrs runs show run-2
+```
+
+Trimmed output:
+
+```text
+runId: run-2
+flowId: coding
+status: completed
+```
+
+Continue only after `status: completed`. If it failed or parked, inspect the diagnosis in `runs show` and follow [Diagnose a run](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/diagnose-a-run.md).
+
+## If the run stops
+
+If the process running this generated flow dies during coding, `smthrs runs show <id>` still shows the run.
+Run `smthrs runs resume <id>` to continue the same run. See [Diagnose a run](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/diagnose-a-run.md).
+
+## Review and test
+
+```bash
+smthrs change diff
+node --test
+```
+
+The recorded diff included `Modified regular file index.js` and `Added regular file index.test.js`. The test output ended with:
+
+```text
+ℹ tests 6
+ℹ pass 6
+ℹ fail 0
+```
+
+Read the whole diff, including generated flow files. Check that the tests cover the behavior you requested. Your agent may produce different code and a different test count.
+
+## Commit and push yourself
+
+Configure `origin` for your repository if it is not already set. With jj:
+
+```bash
+jj git remote add origin /path/to/your/origin.git
+jj describe -m 'Add slugify'
+jj bookmark set main -r @
+jj new
+jj git push --remote origin --bookmark main --allow-new
+```
+
+With Git, use these commands instead:
+
+```bash
+git remote add origin /path/to/your/origin.git
+git add .
+git commit -m 'Add slugify'
+git push -u origin main
+```
+
+Replace the example remote path with your own remote. Skip `remote add` when `origin` already exists. Follow your repository's branch and pull request policy when it requires review before main.
 
 ---
 

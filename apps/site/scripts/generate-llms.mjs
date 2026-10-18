@@ -77,12 +77,28 @@ const groupLabel = {
 const byGroup = (g) => pages.filter((p) => p.group === g).sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
 const startOrder = ["index.mdx", "quickstart.mdx", "pricing.mdx", "self-hosting.mdx", "developers.mdx", "installation.mdx", "cli-quickstart.mdx"]
 const root = pages.filter((p) => p.group === "").sort((a, b) => startOrder.indexOf(a.rel) - startOrder.indexOf(b.rel))
-const link = (p) => `- [${p.title}](${origin}${p.route})${p.description ? `: ${p.description}` : ""}`
+
+// The smithers.sh Copy Prompt hands an agent llms-full.txt, so the coding guide follows the
+// install page: install, then a first change on the person's own subscription. The guide is
+// package documentation on GitHub, not a site page; its relative links resolve there.
+const guidePath = "packages/smithers/docs/guides/change-code.md"
+const guideUrl = `https://github.com/smithersai/smithers/blob/main/${guidePath}`
+const guideText = readFileSync(join(siteRoot, "../..", guidePath), "utf8")
+const guide = {
+  title: guideText.match(/^# (.+)$/m)[1],
+  url: guideUrl,
+  description: "Run a coding agent on your subscription, review its diff, and commit it yourself.",
+  body: guideText.replace(/^# .+\n+/, "").replace(/\]\((\.\.?\/[^)\s]+)\)/g, (_, path) => `](${new URL(path, guideUrl).href})`).trimEnd()
+}
+const installAt = root.findIndex((p) => p.rel === "installation.mdx")
+const start = [...root.slice(0, installAt + 1), guide, ...root.slice(installAt + 1)]
+const pageUrl = (p) => p.url ?? `${origin}${p.route}`
+const link = (p) => `- [${p.title}](${pageUrl(p)})${p.description ? `: ${p.description}` : ""}`
 
 const sections = []
 sections.push("# Smithers\n")
 sections.push(`> ${project.description}\n`)
-sections.push("## Start here\n\n" + root.map(link).join("\n"))
+sections.push("## Start here\n\n" + start.map(link).join("\n"))
 for (const g of groups) {
   if (g === "examples") continue
   const list = byGroup(g)
@@ -94,10 +110,10 @@ sections.push("## Package documentation\n\n" + libraryPackages().filter(({ manif
 sections.push("## Optional\n\n" + byGroup("examples").map(link).join("\n"))
 const llmsTxt = sections.join("\n\n").trimEnd() + "\n"
 
-const ordered = [...root, ...groups.flatMap((g) => byGroup(g))]
+const ordered = [...start, ...groups.flatMap((g) => byGroup(g))]
 const llmsFull =
   "# Smithers documentation (full)\n\n" +
-  ordered.map((p) => `# ${p.title}\n${origin}${p.route}\n\n${p.body}`).join("\n\n---\n\n") +
+  ordered.map((p) => `# ${p.title}\n${pageUrl(p)}\n\n${p.body}`).join("\n\n---\n\n") +
   "\n"
 
 const outputs = [

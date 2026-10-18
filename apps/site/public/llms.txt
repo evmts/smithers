@@ -6,7 +6,8 @@
 
 ## Start here
 
-- [Install Smithers](https://smithers.sh/docs/installation/): Install on your Mac and open the setup link.
+- [Install Smithers](https://smithers.sh/docs/installation/): Install the CLI from npm, or check the planned Mac host setup.
+- [Change your code with a flow](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md): Run a coding agent on your subscription, review its diff, and commit it yourself.
 
 ## Reference
 
