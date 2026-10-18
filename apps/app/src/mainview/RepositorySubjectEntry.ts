@@ -48,7 +48,7 @@ export const subjectCommand = (repo: string, subject: RepositorySubjectView): { 
     : subject.kind === "pulls" ? { name: "pr", args: flowArgs("pr", { operation: "list", repo }) }
       : subject.kind === "issue"
         ? { name: "issues.view", args: flowArgs("issues.view", { number: subject.number, repo, source: "github" }) }
-        : { name: "issues.list", args: flowArgs("issues.list", { repo }) }
+        : { name: "issues.list", args: flowArgs("issues.list", { repo, filter: "all" }) }
 
 /** The pull request card this URL's subject names, under whichever id the surface mounted it with. */
 const landingCardId = (store: AppStore, repo: string, number: number): string | undefined =>

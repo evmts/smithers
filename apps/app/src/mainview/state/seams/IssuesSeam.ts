@@ -752,7 +752,9 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     }
     // A source 404 too: the repo is nowhere — the plain honest error, no card.
     if (!response.ok) {
-      return readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
+      return ctx.store.collections.identitySessions.get("identity")?.state === "signed-out"
+        ? readErrorMessage(response, `Listing issues for ${repo} failed (${response.status})`)
+        : readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
     }
     const body: unknown = await response.json().catch(() => null)
     if (!Array.isArray(body)) {
@@ -841,7 +843,9 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     } catch (error) {
       return unreachable(`list issues for ${repo}`, error)
     }
-    if (!response.ok) return readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
+    if (!response.ok) return ctx.store.collections.identitySessions.get("identity")?.state === "signed-out"
+        ? readErrorMessage(response, `Listing issues for ${repo} failed (${response.status})`)
+        : readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
     const body: unknown = await response.json().catch(() => null)
     if (!Array.isArray(body)) return `The backend answered issues for ${repo} with an unreadable payload`
     const issues = body.flatMap((entry) => {
@@ -1010,7 +1014,9 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       if (response.status === 404 && named !== undefined) return readRepositoryListError(response, `Listing the ${named} view of ${repo} failed (${response.status})`)
       if (response.status === 404) return listFromGithubSource(repo, filter)
       if (response.status === 401) ctx.dispatch({ type: "card.removed", actor: ctx.actor(), id: `issues-${repo}` })
-      return readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
+      return ctx.store.collections.identitySessions.get("identity")?.state === "signed-out"
+        ? readErrorMessage(response, `Listing issues for ${repo} failed (${response.status})`)
+        : readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
     }
     const body: unknown = await response.json().catch(() => null)
     if (!Array.isArray(body)) {
@@ -1029,7 +1035,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
      * linked, not mirrored) is stated, never a silent absence.
      */
     // Read before GitHub: a GitHub 401 re-probes the session, and the view must settle in the scope it started in.
-    const views = await readIssueViews(repo)
+    const views = ctx.store.collections.identitySessions.get("identity")?.state === "signed-out" ? [] : await readIssueViews(repo)
     // Conversations and saved views live in Smithers' own tracker; GitHub's rows join the unfiltered and issues lists.
     const github = kind === "conversation" || named !== undefined ? { issues: [], meta: undefined } : await readGithubIssues(repo, filter)
     const issues = [...native, ...github.issues]
