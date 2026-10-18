@@ -1820,6 +1820,128 @@ describe("the host's catalog", () => {
       ])
     }).pipe(Effect.provide(registryLayer), Effect.provide(platform)))
 
+  it.live("names the package a flow imports and cannot find, and a top-level throw's first line", () =>
+    Effect.gen(function*() {
+      // The refusal's own sentence only says the body did not load. The module
+      // it could not find, or what its top level threw, is what an operator
+      // acts on, so the warning carries that one line and never the stack.
+      const fs = yield* FileSystem.FileSystem
+      const root = yield* fs.makeTempDirectoryScoped({ directory: modulesRoot, prefix: ".cause-" })
+      const declaration = (name: string) =>
+        `export default ({ name: "${name}", description: "d", capabilities: ["*"], flows: ["test/echo"] })\n`
+      const sources = {
+        missing: `import "@smthrs/does-not-exist-probe"\n${declaration("missing")}`,
+        thrower: `${declaration("thrower")}throw new Error("top-level throw first line\\nsecond line of the throw")\n`
+      }
+      for (const [name, text] of Object.entries(sources)) {
+        yield* fs.makeDirectory(`${root}/.smithers/flows/${name}`, { recursive: true })
+        yield* fs.writeFileString(`${root}/.smithers/flows/${name}/flow.ts`, text)
+      }
+      const warnings: Array<Readonly<Record<string, unknown>>> = []
+      const capture = Logger.make((entry) => {
+        const [, fields] = entry.message as ReadonlyArray<Readonly<Record<string, unknown>>>
+        if (fields !== undefined) warnings.push(fields)
+      })
+      const built = yield* Executable.catalog(options()).pipe(
+        Effect.provide(Registry.layerProject({ root })),
+        Effect.provide(Logger.layer([capture]))
+      )
+      expect(built.refused.map((failure) => `${failure.flow}:${failure.code}`).sort()).toEqual([
+        "missing:body_unavailable",
+        "thrower:body_unavailable"
+      ])
+      const missing = warnings.find((fields) => fields["flow"] === "missing")
+      const thrower = warnings.find((fields) => fields["flow"] === "thrower")
+      expect(missing?.["cause"]).toEqual(expect.stringContaining("@smthrs/does-not-exist-probe"))
+      expect(thrower?.["cause"]).toBe("Error: top-level throw first line")
+      for (const fields of [missing, thrower]) {
+        expect(String(fields?.["cause"])).not.toContain("\n")
+        expect(String(fields?.["cause"])).not.toMatch(/\bat .+:\d+:\d+/)
+      }
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  const thrownMessage = new Error("hidden")
+  Object.defineProperty(thrownMessage, "message", {
+    get: () => {
+      throw new Error("message getter")
+    }
+  })
+  for (
+    const [label, cause, expected] of [
+      ["a multi-line Error", new Error("first line\n    at stack (file.ts:1:1)"), "Error: first line"],
+      ["a thrown string", "thrown string\nsecond line", "thrown string"],
+      ["an over-long Error", new Error("x".repeat(1000)), `Error: ${"x".repeat(249)}`],
+      ["an empty first line", "\nsecond line", undefined],
+      ["a non-Error value", { message: "not an error" }, undefined],
+      ["an Error whose message getter throws", thrownMessage, undefined]
+    ] as const
+  ) {
+    it.effect(`bounds the warning's cause to one line for ${label}`, () =>
+      Effect.gen(function*() {
+        const descriptor = yield* descriptorNamed("greet")
+        const registry = yield* Registry.Registry
+        const warnings: Array<Readonly<Record<string, unknown>>> = []
+        const capture = Logger.make((entry) => {
+          const [, fields] = entry.message as ReadonlyArray<Readonly<Record<string, unknown>>>
+          if (fields !== undefined) warnings.push(fields)
+        })
+        const built = yield* Executable.catalog(options({ load: () => Effect.fail(cause) })).pipe(
+          Effect.provideService(Registry.Registry, { ...registry, list: () => Effect.succeed([descriptor]) }),
+          Effect.provide(Logger.layer([capture]))
+        )
+        expect(built.refused).toHaveLength(1)
+        expect(built.refused[0]!.cause).toBe(cause)
+        expect(warnings).toHaveLength(1)
+        expect(warnings[0]).toMatchObject({ flow: "greet", code: "body_unavailable" })
+        expect(warnings[0]!["cause"]).toBe(expected)
+      }).pipe(Effect.provide(registryLayer), Effect.provide(platform)))
+  }
+
+  it.effect("carries the cause of a refusal a first-use retry registers", () =>
+    Effect.gen(function*() {
+      const descriptor = yield* descriptorNamed("greet")
+      const registry = yield* Registry.Registry
+      const warnings: Array<Readonly<Record<string, unknown>>> = []
+      const capture = Logger.make((entry) => {
+        const [message, fields] = entry.message as ReadonlyArray<unknown>
+        if (message === "refreshed flow is not runnable on this host") {
+          warnings.push(fields as Readonly<Record<string, unknown>>)
+        }
+      })
+      const runtime = Layer.succeed(FlowRuntime.FlowRuntime, { register: () => Effect.void } as never)
+      const entered = yield* Deferred.make<void>()
+      let attempts = 0
+      const pending = yield* Effect.forkChild(
+        Effect.gen(function*() {
+          const catalog = yield* Executable.Catalog
+          expect(warnings).toEqual([])
+          const failure = yield* Effect.flip(catalog.load!("greet"))
+          expect(failure).toMatchObject({ code: "body_unavailable", flow: "greet" })
+          expect(warnings).toHaveLength(1)
+          expect(warnings[0]).toMatchObject({
+            flow: "greet",
+            code: "body_unavailable",
+            cause: "Error: retry first line"
+          })
+        }).pipe(
+          Effect.provide(
+            Executable.layer(options({
+              loadTimeoutMs: 10,
+              load: () =>
+                ++attempts === 1
+                  ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
+                  : Effect.fail(new Error("retry first line\n    at stack (file.ts:1:1)"))
+            })).pipe(Layer.provideMerge(Layer.mergeAll(runtime, Action.layerImplementations, NodeCrypto.layer)))
+          ),
+          Effect.provideService(Registry.Registry, { ...registry, list: () => Effect.succeed([descriptor]) }),
+          Effect.provide(Logger.layer([capture]))
+        )
+      )
+      yield* Deferred.await(entered)
+      yield* TestClock.adjust(10)
+      yield* Fiber.join(pending)
+    }).pipe(Effect.scoped, Effect.provide(registryLayer), Effect.provide(platform)))
+
   it.effect("looks one flow up by registry name", () =>
     Effect.gen(function*() {
       const executable = yield* Executable.fromRegistry("greet", options())

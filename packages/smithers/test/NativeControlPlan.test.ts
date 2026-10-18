@@ -24,6 +24,7 @@ import { DatabaseSync } from "node:sqlite"
 import { describe, expect, it, vi } from "vitest"
 
 import { settledKind } from "../src/internal/EngineJournalSupervisor.ts"
+import * as Failure from "../src/internal/Failure.ts"
 import * as NodeControl from "../src/NodeControl.ts"
 
 const definition = {
@@ -356,11 +357,14 @@ ${source}`
       }),
       "Install the native helper or set SMITHERS_WORKSPACE_JJ_EXPORT_BINARY to its absolute path"
     ],
-    [new Error("opaque host failure"), "Flow source cannot be read"],
+    [new Error("opaque host failure"), "Error: opaque host failure; Flow source cannot be read"],
     [
       PlatformError.systemError({ _tag: "PermissionDenied", module: "AtomicFileSystem", method: "readFile" }),
       "Flow source cannot be read"
-    ]
+    ],
+    [new Error("first line\n    at stack (flow.ts:1:1)"), "Error: first line; Flow source cannot be read"],
+    ["thrown string\nsecond line", "thrown string; Flow source cannot be read"],
+    [{ message: "not an error" }, "Flow source cannot be read"]
   ])("retains the catalog's designed body refusal before any admission", async (cause, message) => {
     const root = await project()
     try {
@@ -397,6 +401,108 @@ ${source}`
       } finally {
         database.close()
       }
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  /** The `InvalidInput` a plan of `native` fails with on a host whose catalog holds `modules`. */
+  const refusedPlan = (root: string, modules: NodeControl.ModuleRegistration) =>
+    Effect.runPromise(
+      Effect.flatMap(Control.Control, (control) =>
+        Effect.flip(control.plan({ flowId: "native", input: { value: "planned" } }))).pipe(
+          Effect.provide(
+            NodeControl.layerControl(
+              { root, evaluator: ScriptedJudge.layer },
+              NodeControl.layerRegistry(root),
+              undefined,
+              modules
+            )
+          ),
+          Effect.scoped
+        )
+    )
+
+  it("names the package a flow imports and cannot find, within the reported field bound", async () => {
+    // The registry's own sentence only says the body did not load. Before the
+    // cause led the issue, `smthrs flow plan` hid the missing package even with
+    // `--verbose`, and two investigations blamed the wrong one (#4253).
+    const root = await project()
+    try {
+      await writeFile(
+        join(root, ".smithers", "flows", "native", "flow.ts"),
+        `import "@smthrs/does-not-exist-probe"\n${source}`
+      )
+      const modules = Executable.layer({ delegates: [Planned] }).pipe(
+        Layer.provideMerge(
+          Layer.mergeAll(Interpreter.layer(Planned), Probe.toLayer(({ value }) => Effect.succeed(value)))
+        ),
+        Layer.orDie
+      )
+      const failure = await refusedPlan(root, modules)
+      expect(failure).toMatchObject({ _tag: "/control/InvalidInput" })
+      const issue = (failure as { readonly issue: string }).issue
+      expect(issue).toMatch(/^Cannot load flow native: /)
+      expect(issue).not.toContain("\n")
+      // What the reporter prints: every field cut at `fieldValueLimit`.
+      expect(Failure.fields(failure as Error)).toContain("@smthrs/does-not-exist-probe")
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it("names what a timed-out module's retry threw, without its stack", async () => {
+    const root = await project()
+    let loads = 0
+    try {
+      const modules = Executable.layer({
+        delegates: [Planned],
+        loadTimeoutMs: 1_000,
+        load: () =>
+          Effect.suspend(() =>
+            ++loads === 1
+              ? Effect.never
+              : Effect.fail(new Error("retry cannot import\n    at secretFrame (flow.ts:1:1)"))
+          )
+      }).pipe(
+        Layer.provideMerge(
+          Layer.mergeAll(Interpreter.layer(Planned), Probe.toLayer(({ value }) => Effect.succeed(value)))
+        ),
+        Layer.orDie
+      )
+      const failure = await refusedPlan(root, modules)
+      expect(loads).toBe(2)
+      expect(failure).toMatchObject({ _tag: "/control/InvalidInput" })
+      const issue = (failure as { readonly issue: string }).issue
+      expect(issue).toMatch(/^Cannot load flow native: Error: retry cannot import; the body of flow "native"/)
+      expect(issue).not.toContain("secretFrame")
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it("redacts a credential a refusal's cause carries", async () => {
+    const root = await project()
+    try {
+      const modules = Layer.succeed(Executable.Catalog, {
+        executables: [],
+        refused: [
+          new Executable.ExecutableError({
+            code: "body_unavailable",
+            flow: "native",
+            available: [],
+            message: "Flow source cannot be read",
+            cause: new Error("sshpass -p synthetic3196 Authorization Token synthetic3196auth failed")
+          })
+        ]
+      })
+      const failure = await refusedPlan(root, modules)
+      expect(failure).toMatchObject({ _tag: "/control/InvalidInput" })
+      const issue = (failure as { readonly issue: string }).issue
+      expect(issue).toMatch(/^Cannot load flow native: Error: /)
+      expect(issue).toContain("[REDACTED]")
+      expect(issue).not.toContain("synthetic3196")
+      expect(issue).toMatch(/; Flow source cannot be read$/)
     } finally {
       await rm(root, { recursive: true, force: true })
     }

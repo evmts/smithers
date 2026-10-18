@@ -1818,6 +1818,26 @@ const isUnregisteredAgent = (failure: ExecutableError, options: Options): boolea
   failure.code === "missing_delegate" && failure.delegate === (options.agent ?? defaultAgent)
 
 /**
+ * The first line of a refusal's underlying cause, for its warning.
+ *
+ * A refusal's own sentence only says the body did not load. What the module
+ * imported and could not find, or what its top level threw, is what an
+ * operator acts on (#4253). An `Error` answers `name: message` and a thrown
+ * string answers itself; the stack never travels, and the line is bounded.
+ * Anything else, a blank first line, or a value that throws while it is read
+ * answers nothing. The host's logger redacts the line.
+ */
+const causeLine = (cause: unknown): string | undefined => {
+  try {
+    const text = cause instanceof Error ? String(cause) : typeof cause === "string" ? cause : ""
+    const line = [...text.split(/\r?\n/, 1)[0]!.trim()].slice(0, 256).join("")
+    return line === "" ? undefined : line
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Makes every discovered flow runnable, reporting the ones it could not.
  *
  * A project's `.smithers/flows/` directory is a mixed set: some entries delegate to a
@@ -1885,7 +1905,8 @@ export const catalog = (
         code: failure.code,
         delegate: failure.delegate,
         available: failure.available,
-        reason: failure.message
+        reason: failure.message,
+        cause: causeLine(failure.cause)
       })
     }
     return { executables, refused }
@@ -2129,7 +2150,8 @@ const makeRefresh = (
                   code: result.failure.code,
                   delegate: result.failure.delegate,
                   available: result.failure.available,
-                  reason: result.failure.message
+                  reason: result.failure.message,
+                  cause: causeLine(result.failure.cause)
                 })
               }
               return { _tag: "Refused", error: result.failure } as const
