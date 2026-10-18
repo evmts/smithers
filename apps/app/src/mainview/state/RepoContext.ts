@@ -6,6 +6,7 @@
  * repository's head); otherwise the answer is an honest error naming the
  * choice — the target is a genuine user decision, never a guess.
  */
+import { bootstrapGatewayBinding } from "../runtime/Runtime"
 import { parseRepoSelection } from "./AppState"
 import type { CloudRepository, CloudWorkspaceRow } from "./AppState"
 import type { AppStore } from "./AppStore"
@@ -311,6 +312,8 @@ export const recordedRunBinding = (scope: { readonly workspaceId?: string | unde
  * There is no box-less answer.
  */
 export const gatewayBindingFor = (store: AppStore, repo: string, runId?: string): GatewayBinding => {
+  const local = bootstrapGatewayBinding()
+  if (local) return local.repo === repo ? { workspaceId: local.workspaceId } : { error: "This host serves another repository." }
   if (runId !== undefined) {
     const recorded = gatewayRunContextFor(store, runId)
     if (recorded !== undefined) {

@@ -53,6 +53,9 @@ export class BootstrapFailure extends Data.TaggedError("BootstrapFailure")<{
   }
 }
 
+let localGateway: AppBootstrap["gateway"]
+export const bootstrapGatewayBinding = () => localGateway
+
 export const loadBootstrap = async (http: FetchLike): Promise<AppBootstrap> => {
   let response: Response
   try {
@@ -63,6 +66,7 @@ export const loadBootstrap = async (http: FetchLike): Promise<AppBootstrap> => {
   if (!response.ok) throw new BootstrapFailure(response.status === 404 ? "missing" : "server", response.status)
   const parsed = AppBootstrapSchema.safeParse(await response.json().catch(() => undefined))
   if (!parsed.success) throw new BootstrapFailure("invalid")
+  localGateway = parsed.data.gateway
   return parsed.data
 }
 

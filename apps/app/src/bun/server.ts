@@ -139,6 +139,7 @@ export interface LocalServerOptions {
   /** L7 prototype: explicit local project binding; null disables the environment override. */
   readonly localGateway?: LocalWorkflowGateway | null
   /** 0 (the default) picks a free port. */
+  readonly publicHostname?: "localhost" | "127.0.0.1"
   readonly port?: number
   /** The built SPA: index.html plus assets/. */
   readonly distDir: string
@@ -696,6 +697,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
 
   router.add("GET", APP_BOOTSTRAP_PATH, () =>
     json({
+      ...(localGateway == null ? {} : { gateway: { repo: localGateway.repo, workspaceId: localGateway.workspaceId } }),
       apiVersion: APP_API_VERSION,
       host: "local",
       version,
@@ -704,11 +706,11 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       // doors (`cloud.terminal`, `cloud.pat`) ride the Smithers Cloud upstream.
       capabilities: localCapabilities({
         agent: false,
-        identity: identityUpstream !== null,
+        identity: identityUpstream !== null || localGateway != null,
         balance: identityUpstream !== null,
         overview: identityUpstream !== null,
         plans: identityUpstream !== null,
-        cloud: cloudUpstream !== null,
+        cloud: cloudUpstream !== null || localGateway != null,
         browser: remoteEnabled
       }),
       authFlow: identityUpstream === null ? "none" : "both",
@@ -1124,6 +1126,8 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
           ? refuse("feature_unavailable_here", "The cloud seam is disabled in this build.")
           : proxyCloud(request, url, cloudUpstream, cloudAuth?.token(), upstreamTimeoutMs, log)
       }
+      if (localGateway != null && pathname === "/api/user") return json({ id: 1, username: "local-operator", display_name: "Local operator", is_admin: false })
+      if (localGateway != null && pathname === "/api/workflow/provision") return json({ status: "ready", workspaceId: localGateway.workspaceId, gatewayId: "local" })
       if (pathname === "/api/auth/session") return jsonError("not_found", `No route for ${request.method} ${pathname}.`)
       if (localWorkflowRelay !== undefined && pathname.startsWith("/api/workflow/")) return localWorkflowRelay(request)
       if (pathname.startsWith(AUTH_ROUTE_PREFIX) || pathname.startsWith(IDENTITY_ROUTE_PREFIX)) {
@@ -1326,8 +1330,8 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   })
 
   const port = server.port ?? 0
-  origin = `http://127.0.0.1:${port}`
-  expectedHost = `127.0.0.1:${port}`
+  origin = `http://${options.publicHostname ?? "127.0.0.1"}:${port}`
+  expectedHost = `${options.publicHostname ?? "127.0.0.1"}:${port}`
   log(`SMITHERS_LOCAL_ORIGIN=${origin}`)
 
   const local: LocalServer = {

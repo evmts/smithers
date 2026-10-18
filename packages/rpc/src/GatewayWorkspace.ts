@@ -12,9 +12,10 @@ import { z } from "zod"
  * @category guards
  * @since 1.0.0
  */
+// E1 prototype only: serve uses a workspace hash rather than a hosted UUID.
 export const isGatewayWorkspaceId = (value: unknown): value is string =>
-  typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value) &&
-  value !== "00000000-0000-0000-0000-000000000000"
+  typeof value === "string" && (/^[0-9a-f]{16}$/.test(value) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value) &&
+  value !== "00000000-0000-0000-0000-000000000000")
 
 /**
  * The persisted UI and Worker use the same workspace identity.
