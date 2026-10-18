@@ -352,7 +352,8 @@ restores the frame's recorded jj operation, undoing bookmark moves, rebases,
 descriptions, and abandons made after it. Active runs and
 unsafe effect boundaries are refused. Evaluation artifacts live under
 `.flows/evals/runs/`; baselines default to `evals/<encoded-suite>.baseline.json`
-and require `--force` to overwrite. Evaluation comparison exits 1 for
+and require `--force` to overwrite. If the output exists, `eval baseline` exits 1
+and names the file and `--force`; the original file stays unchanged. Evaluation comparison exits 1 for
 regressions and 5 for inconclusive results. Cancellation interrupts evaluation
 suite effects, cases, and scorers, waits for their finalizers, and prevents
 publication of unfinished results. Embedded invocations pass `RuntimeConfig.signal`

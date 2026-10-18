@@ -1,5 +1,6 @@
 import { CaseExecutor, Suite } from "@smthrs/evals"
 import { Effect } from "effect"
+import { spawnSync } from "node:child_process"
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
@@ -63,6 +64,43 @@ const result = async (score: number): Promise<Evaluation.RunArtifact> => {
 }
 
 describe("evaluation CLI", () => {
+  it("baseline process names an existing output and replaces it only with --force", async () => {
+    const root = await fixture()
+    const file = join(root, "baseline.json")
+    const run = join(root, "run.json")
+    const executable = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
+    const invoke = (...flags: Array<string>) =>
+      spawnSync(process.execPath, [
+        "--no-warnings",
+        executable,
+        "eval",
+        "baseline",
+        run,
+        "--root",
+        root,
+        "--output",
+        file,
+        ...flags
+      ], { cwd: root, encoding: "utf8", timeout: 60_000 })
+    await writeFile(run, JSON.stringify(await result(1)))
+    const first = invoke("--json")
+    expect(first.status, first.stdout + first.stderr).toBe(0)
+    const original = await readFile(file, "utf8")
+    await writeFile(run, JSON.stringify(await result(0)))
+    const refused = invoke("--json")
+    expect(refused.status, refused.stdout + refused.stderr).toBe(1)
+    expect(JSON.parse(refused.stdout)).toMatchObject({
+      code: "eval_baseline_exists",
+      message: `${file} already exists; rerun with --force to replace it`
+    })
+    expect(await readFile(file, "utf8")).toBe(original)
+    expect((await readdir(root)).filter((name) => name.endsWith(".tmp"))).toEqual([])
+    const forced = invoke("--force", "--json")
+    expect(forced.status, forced.stdout + forced.stderr).toBe(0)
+    expect(await readFile(file, "utf8")).toBe(await Evaluation.baseline(await result(0)))
+    expect((await readdir(root)).filter((name) => name.endsWith(".tmp"))).toEqual([])
+  }, 240_000)
+
   it("CLI runs three trials and reports pass@k", async () => {
     const root = await fixture()
     await mkdir(join(root, "evals"))

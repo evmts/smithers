@@ -126,7 +126,18 @@ export const createEvalCli = (runtime: RuntimeConfig = {}) =>
           const file = context.options.output === undefined
             ? Evaluation.defaultBaselinePath(root, run.suite)
             : resolve(root, context.options.output)
-          await Evaluation.writeJson(file, await Evaluation.baseline(run), context.options.force, runtime.signal)
+          try {
+            await Evaluation.writeJson(file, await Evaluation.baseline(run), context.options.force, runtime.signal)
+          } catch (cause) {
+            if (!context.options.force && (cause as NodeJS.ErrnoException | undefined)?.code === "EEXIST") {
+              throw new CliError.Refused({
+                fault: "user",
+                code: "eval_baseline_exists",
+                message: `${file} already exists; rerun with --force to replace it`
+              })
+            }
+            throw cause
+          }
           return { file, suite: run.suite, runId: run.runId, observations: run.observations.length }
         }, { code: "eval_baseline_failed", next })
     })
