@@ -56,7 +56,15 @@ test("all documented CLI commands and arguments exist in the source CLI", async 
   assert.equal(status, 0, output)
   const { commands } = JSON.parse(output)
   assert.ok(Array.isArray(commands) && commands.length > 0, "source CLI must return a command manifest")
-  validateCommands(installation, commands)
+  // Root flags are not subcommands in the manifest; execute the documented one.
+  output = ""
+  await cli.serve(["--version"], {
+    stdout: (text) => { output += text },
+    exit: (code) => { status = code }
+  })
+  assert.equal(status, 0, output)
+  assert.ok(output.includes(JSON.parse(read("packages/smithers/package.json")).version), output)
+  validateCommands(installation, [...commands, { name: "--version" }])
   for (const name of ["quickstart", "flows"]) {
     const text = read(`apps/app/src/docs/pages/${name}.md`)
     validateCommands(text, commands)
@@ -96,7 +104,7 @@ test("every retired inventory path is absent", () => {
 })
 
 test("the planned Homebrew action stays tied to its release ticket", () => {
-  const section = installation.split("## Install\n")[1]?.split("\n## ")[0]
+  const section = installation.split("## Mac host (planned)\n")[1]?.split("\n## ")[0]
   assert.match(section, /\*\*Planned\.\*\*/)
   assert.match(section, /brew install smithersai\/tap\/smithers/)
   assert.match(read(".specs/engineering/tickets/T-INS-05.md"), /smithersai\/homebrew-tap/)
@@ -134,7 +142,29 @@ test("only installation and the API remain in the published docs tree", () => {
     const [, destination] = line.split(/\s+/)
     if (destination.startsWith("/docs/")) assert.ok(destination === "/docs/installation/" || destination === "/docs/reference/http-api/" || destination.startsWith("/docs/reference/api/"), `redirect points at retired page: ${line}`)
   }
-  assert.doesNotMatch(installation, /\]\([^)]*\)/)
+  for (const [, destination] of installation.matchAll(/\]\(([^)]+)\)/g)) {
+    assert.ok(destination.startsWith("https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/"), `unexpected install guide destination: ${destination}`)
+    const sourcePath = destination.split("/blob/main/")[1].split("#")[0]
+    assert.ok(existsSync(join(root, sourcePath)), `missing canonical guide: ${destination}`)
+  }
   assert.equal(existsSync(join(site, "src/pages/pricing.astro")), false)
   assert.doesNotMatch(read("apps/site/src/layouts/Base.astro"), /href="\/pricing\/"/)
+})
+
+
+test("the public installation entry gives the current npm path before planned hosting", () => {
+  const cli = installation.split("## Install the CLI\n")[1]?.split("\n## ")[0]
+  assert.ok(cli, "the Docs entry must show the available CLI install")
+  const canonical = read("packages/smithers/docs/installation.md")
+  const requiredNode = JSON.parse(read("packages/smithers/package.json")).engines.node.replace(">=", "")
+  assert.ok(cli.includes(`Node.js ${requiredNode} or later`), "Node requirement must match the published CLI")
+  for (const command of ["brew install jj jq", "npm install -g smthrs@next", "smthrs --version"]) {
+    assert.ok(cli.includes(command), `missing prerequisite or install command: ${command}`)
+    assert.ok(canonical.includes(command), `command differs from canonical installation: ${command}`)
+  }
+  assert.match(cli, /release candidate/)
+  assert.match(cli, /https:\/\/github.com\/smithersai\/smithers\/blob\/main\/packages\/smithers\/docs\/installation\.md#install-the-cli/)
+  assert.match(cli, /https:\/\/github.com\/smithersai\/smithers\/blob\/main\/packages\/smithers\/docs\/guides\/change-code\.md/)
+  assert.ok(installation.indexOf("## Install the CLI") < installation.indexOf("## Mac host (planned)"))
+  assert.doesNotMatch(cli, /host start|smithersai\/tap/)
 })
