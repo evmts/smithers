@@ -19,8 +19,10 @@ at resolution. The default policy permits only the fixed local identities.
 A gateway bearer needs explicit delegation to approve or deny.
 
 That principal is server-owned, never client-supplied. A configured credential
-stamps `{ id: "gateway", kind: "bearer" }`; a loopback bind with no credential
-runs as `{ id: "local", kind: "operator" }`. A decision journaled under the
+stamps `{ id: "gateway", kind: "bearer" }`; on a loopback bind without that
+credential, serve's session token stamps `{ id: "local", kind: "operator" }`.
+Without the session token, callers are anonymous readers and cannot approve.
+A decision journaled under the
 composition's default operator when a bearer holder made it would name the
 wrong one, so `Approval.Submit` reads the authenticated principal and passes it
 through to Control rather than letting the runtime default apply.
@@ -32,9 +34,11 @@ For finer restrictions, supply a host policy over the authenticated principal,
 target, decision, and scope. Approval policy is not a sandbox for callers with
 arbitrary host code or direct database access.
 
-A credential-free loopback gateway treats all native callers that can reach it
-as the local operator. Host/Origin checks block browser-origin attacks; they do
-not distinguish a human from a local agent that can make its own HTTP requests.
+A loopback gateway treats holders of its session token as the local operator.
+`smthrs serve --operator-token-file <path>` writes that token atomically with
+mode `0600` instead of printing it. Keep it in the server-side relay, out of
+browser state. Host/Origin checks block browser-origin attacks; neither those
+checks nor the token distinguish a human from a local agent holding the token.
 Use authenticated, independently authorized access and restrict that local
 endpoint when human approval must be independent of the agent.
 
