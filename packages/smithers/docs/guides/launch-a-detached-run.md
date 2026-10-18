@@ -8,10 +8,13 @@ that child proves the run row is durable. Use it when the shell that starts a
 run is not the shell that waits for it: a terminal you are about to close, a
 CI step that only needs the run to exist, a supervisor that will poll.
 
+Continue in the project created by the [Quickstart](../quickstart.md), with
+its `hello` flow and model subscription configured.
+
 ## Launch it
 
 ```bash
-smthrs flow start deploy/status --data '{"branch":"main"}' -d --json
+smthrs flow start hello --data '{"args":"Summarize this project"}' -d --json
 ```
 
 ```text
@@ -22,7 +25,7 @@ Three members, and that document is the only place a caller learns which run
 started: there is no `--run-id` flag. Capture it:
 
 ```bash
-launch="$(smthrs flow start deploy/status -d --json)"
+launch="$(smthrs flow start hello -d --json)"
 run_id="$(printf '%s' "$launch" | jq -r '.runId')"
 log="$(printf '%s' "$launch" | jq -r '.logFile')"
 ```

@@ -7,6 +7,9 @@ Write a script against three things the CLI promises: one document on stdout,
 one status vocabulary, and an idempotency key per mutation. Nothing else about
 the output is stable.
 
+Continue in the project created by the [Quickstart](../quickstart.md), with
+its `hello` flow. Install `jq` as described in [Installation](../installation.md).
+
 ## Read the document, not the prose
 
 Pass `--json` and parse stdout. The human rendering is the same document with
@@ -14,7 +17,7 @@ indentation, so both carry the same members in the same order, but only the
 compact form is meant for a parser.
 
 ```bash
-plan="$(smthrs flow plan deploy/status branch=main --json)"
+plan="$(smthrs flow plan hello --json)"
 approval="$(printf '%s' "$plan" | jq -c '.approval')"
 ```
 
