@@ -481,6 +481,53 @@ describe("Review a PR source selection", () => {
     expect(calls).toEqual([cloudRepo, `${githubPulls}?state=open&per_page=100`])
   })
 
+  describe("a public GitHub-sourced repository", () => {
+    const publicSource = { ...source, is_public: true }
+    const mirrorPulls = `${cloudRepo}/github/metadata/pulls`
+    const read = async (routes: Record<string, Response>) => {
+      const calls: string[] = []
+      const services = backend({ [cloudRepo]: json(200, publicSource), ...routes })
+      const options = await readLandingOptions({ baseUrl: "", http: async (url) => {
+        calls.push(url)
+        return services.fetchImpl!(url)
+      } }, "will/flows")
+      return { options, calls }
+    }
+
+    test("reads the viewer's GitHub route first and never the mirror when it answers", async () => {
+      const { options, calls } = await read({
+        [`${githubPulls}?state=open&per_page=100`]: json(200, [{ number: 7, title: "Upstream change", state: "open" }])
+      })
+      expect(options).toEqual({ options: [{ value: "7", label: "#7 Upstream change" }] })
+      expect(calls).toEqual([cloudRepo, `${githubPulls}?state=open&per_page=100`])
+    })
+
+    test("falls back to the public mirror only when the GitHub route answers 401", async () => {
+      const { options, calls } = await read({
+        [`${githubPulls}?state=open&per_page=100`]: json(401, { message: "authentication required" }),
+        [`${mirrorPulls}?state=open&per_page=100`]: json(200, [{ number: 9, title: "Mirrored change", state: "open" }])
+      })
+      expect(options).toEqual({ options: [{ value: "9", label: "#9 Mirrored change" }] })
+      expect(calls).toEqual([cloudRepo, `${githubPulls}?state=open&per_page=100`, `${mirrorPulls}?state=open&per_page=100`])
+    })
+
+    test("a mirror 404 after a 401 keeps the original error", async () => {
+      // A 401 is the sign-in refusal; a mirror that cannot answer must not replace it.
+      const calls: string[] = []
+      const services = backend({
+        [cloudRepo]: json(200, publicSource),
+        [`${githubPulls}?state=open&per_page=100`]: json(401, { message: "authentication required" }),
+        [`${mirrorPulls}?state=open&per_page=100`]: json(404, { message: "Not Found" })
+      })
+      const reading = readLandingOptions({ baseUrl: "", http: async (url) => {
+        calls.push(url)
+        return services.fetchImpl!(url)
+      } }, "will/flows")
+      await expect(reading).rejects.toThrow("authentication required")
+      expect(calls).toEqual([cloudRepo, `${githubPulls}?state=open&per_page=100`, `${mirrorPulls}?state=open&per_page=100`])
+    })
+  })
+
   test("native repositories still read Cloud landings, including an empty list", async () => {
     const calls: string[] = []
     const services = backend({

@@ -226,6 +226,23 @@ const githubRepoRoot = (ctx: Pick<SeamContext, "baseUrl">, sourceRepo: string): 
 const githubPullsRoot = (ctx: Pick<SeamContext, "baseUrl">, sourceRepo: string): string =>
   `${githubRepoRoot(ctx, sourceRepo)}/pulls`
 
+/**
+ * A GitHub-sourced pull read: the viewer's GitHub route first; the repository's
+ * public mirror only when that route answers 401 (a signed-out visitor). A
+ * mirror that cannot answer leaves the original refusal in place, so a backend
+ * without the mirror route never turns a signed-in read into a 404.
+ */
+const readGitHubPulls = async (
+  ctx: Pick<SeamContext, "http" | "baseUrl">,
+  source: { readonly repo: string; readonly publicReadRoot?: string },
+  suffix: string
+): Promise<Response> => {
+  const response = await ctx.http(`${githubPullsRoot(ctx, source.repo)}${suffix}`)
+  if (response.status !== 401 || source.publicReadRoot === undefined) return response
+  const mirror = await ctx.http(`${source.publicReadRoot}${suffix}`).catch(() => undefined)
+  return mirror?.ok === true ? mirror : response
+}
+
 /** A pull request a review can still act on: not merged, closed or landed. */
 const reviewable = (state: string): boolean => !["merged", "closed", "landed"].includes(state.toLowerCase())
 
@@ -449,12 +466,11 @@ export const readLandingOptions = async (
 ): Promise<{ readonly options: ReadonlyArray<FieldOption>; readonly error?: string }> => {
   const source = await pullSource(ctx, repo)
   if ("error" in source) return { options: [], error: source.error }
-  const url = source.kind === "github"
-    ? `${source.publicReadRoot ?? githubPullsRoot(ctx, source.repo)}?state=open&per_page=100`
-    : `${ctx.baseUrl}${repoApiRoot(repo)}/landings?limit=100`
   let response: Response
   try {
-    response = await ctx.http(url)
+    response = source.kind === "github"
+      ? await readGitHubPulls(ctx, source, "?state=open&per_page=100")
+      : await ctx.http(`${ctx.baseUrl}${repoApiRoot(repo)}/landings?limit=100`)
   } catch {
     return { options: [], error: `Pull requests for ${repo} couldn't be listed — the platform didn't answer.` }
   }
@@ -850,7 +866,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     if ("error" in source) return source.error
     let response: Response
     try {
-      response = await ctx.http(source.kind === "github" ? `${source.publicReadRoot ?? githubPullsRoot(ctx, source.repo)}/${number}` : `${landingsUrl(repo)}/${number}`)
+      response = source.kind === "github" ? await readGitHubPulls(ctx, source, `/${number}`) : await ctx.http(`${landingsUrl(repo)}/${number}`)
     } catch {
       return `Pull request #${number} couldn't be read — the platform didn't answer.`
     }
@@ -931,7 +947,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       try {
         // One bounded page. Omitting `state` lists every lifecycle state —
         // plue has no "all" filter value and 422s an unknown one.
-        response = await ctx.http(source.kind === "github" ? `${source.publicReadRoot ?? githubPullsRoot(ctx, source.repo)}?state=all&per_page=100` : `${landingsUrl(repo)}?limit=100`)
+        response = source.kind === "github" ? await readGitHubPulls(ctx, source, "?state=all&per_page=100") : await ctx.http(`${landingsUrl(repo)}?limit=100`)
       } catch {
         return `Pull requests for ${repo} couldn't be listed — the platform didn't answer.`
       }
