@@ -35,7 +35,8 @@ export const normalizeDts = (text) =>
  * namespace) or `reexport` (keyed by its normalized text). Overloads group under
  * one name. Each entry carries its text, with the JSDoc above it.
  */
-export const parseDts = (text) => {
+/** A compiler-emitted .d.ts as its top-level statements, each with the JSDoc above it. */
+const statementsOf = (text) => {
   const statements = []
   let current = ""
   let depth = 0
@@ -69,9 +70,28 @@ export const parseDts = (text) => {
     }
   }
   statements.push(current)
+  return statements.map((s) => s.trim()).filter(Boolean)
+}
+
+/** The body of a statement, without its leading comments. */
+const bodyOf = (statement) => statement.replace(/^(?:\/\*[\s\S]*?\*\/\s*)+/, "")
+
+/**
+ * The statements a module's exports depend on without exporting them: imports,
+ * private declarations and helper consts, normalized and sorted. When two
+ * modules' sets differ, identical export text can still mean different types.
+ */
+export const localDeclarations = (text) =>
+  statementsOf(text)
+    .map(bodyOf)
+    .filter((body) => !body.startsWith("export "))
+    .map((body) => normalizeDts(body).replaceAll(/, \{ with: \{ "resolution-mode": "import" \} \}/g, ""))
+    .sort()
+
+export const parseDts = (text) => {
   const byName = new Map()
-  for (const statement of statements.map((s) => s.trim()).filter(Boolean)) {
-    const body = statement.replace(/^(?:\/\*[\s\S]*?\*\/\s*)+/, "")
+  for (const statement of statementsOf(text)) {
+    const body = bodyOf(statement)
     if (!body.startsWith("export ") || /^export \{\s*\};?$/.test(body)) continue
     const m = body.match(/^export (?:declare )?(?:abstract )?(const|let|var|function|class|interface|type|enum|namespace|default)\b\s*([A-Za-z_$][\w$]*)?/)
     const entry = m === null
@@ -199,6 +219,9 @@ const common = {
   plugins: []
 }
 
+/** A process that died, failed to spawn, or failed without printing a diagnostic. */
+const crashed = (run) => Boolean(run.signal || run.error || (run.status !== 0 && run.errors.length === 0))
+
 /** vibelang -p, returning its diagnostics split by category. */
 const compile = (project, cwd) => {
   const run = spawnSync(process.execPath, [join(root, "node_modules/vibelang/bin/vibelang"), "-p", project, "--pretty", "false"], {
@@ -206,10 +229,17 @@ const compile = (project, cwd) => {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024
   })
-  const lines = `${run.stdout}${run.stderr}`.split("\n")
+  const output = `${run.stdout}${run.stderr}`
+  const lines = output.split("\n")
   const errors = lines.filter((l) => /\berror (?:TS|EK)\d+:/.test(l))
   const warnings = lines.filter((l) => /\bwarning (?:TS|EK)\d+:/.test(l))
-  return { status: run.status, errors, warnings }
+  // A crash prints no diagnostic (guardian-review): a failed process with no error line, a
+  // signal or a spawn error is an error. A non-zero exit with diagnostics is just those diagnostics.
+  const crash = crashed({ status: run.status, signal: run.signal, error: run.error?.message, errors })
+  if (crash) {
+    errors.push(`compiler process failed (status ${run.status}, signal ${run.signal ?? "none"}): ${run.error?.message ?? output.trim().slice(-2000)}`)
+  }
+  return { status: run.status, signal: run.signal, error: run.error?.message, crash, errors, warnings, output }
 }
 
 /**
@@ -227,7 +257,7 @@ const vitest = (pkg, config, outputFile) => {
   if (config) args.push("--config", config)
   const vitestBin = bin(pkg, "vitest")
   if (!vitestBin) return { ran: false, pass: 0, fail: 0, skip: 0, failed: ["(no vitest in the package or the root)"] }
-  spawnSync(vitestBin, args, { cwd: pkg, encoding: "utf8", env: { ...process.env, CI: "1" }, maxBuffer: 64 * 1024 * 1024 })
+  const child = spawnSync(vitestBin, args, { cwd: pkg, encoding: "utf8", env: { ...process.env, CI: "1" }, maxBuffer: 64 * 1024 * 1024 })
   if (!existsSync(outputFile)) return { ran: false, pass: 0, fail: 0, skip: 0, failed: [] }
   const report = JSON.parse(readFileSync(outputFile, "utf8"))
   const tests = report.testResults.flatMap((file) =>
@@ -237,12 +267,80 @@ const vitest = (pkg, config, outputFile) => {
     .map((f) => `${relative(pkg, f.name)} > (suite) ${f.message.split("\n")[0]}`)
   return {
     ran: true,
+    status: child.status, signal: child.signal, error: child.error?.message,
     pass: tests.filter((t) => t.status === "passed").length,
     fail: tests.filter((t) => t.status === "failed").length + suiteErrors.length,
     skip: tests.filter((t) => t.status === "skipped" || t.status === "pending" || t.status === "todo").length,
     failed: [...tests.filter((t) => t.status === "failed").map((t) => t.name), ...suiteErrors],
     passed: tests.filter((t) => t.status === "passed").map((t) => t.name)
   }
+}
+
+const NOMINAL = [
+  "Two different types with this name exist, but they are unrelated",
+  "separate declarations of a private property",
+  "separate declarations of a protected property"
+]
+
+/** Labels whose types differ only by same-named nominal declarations, in both directions. */
+const nominalOnly = (pkg, work, imports, failed) => {
+  if (failed.length === 0) return new Set()
+  const header = imports.filter((l) => l.startsWith("import "))
+  const body = []
+  const at = new Map()
+  for (const [label, left, right] of failed) {
+    body.push(`export const _n${at.size}: ${left} = null as unknown as ${right}`)
+    at.set(header.length + body.length, label)
+    body.push(`export const _n${at.size}: ${right} = null as unknown as ${left}`)
+    at.set(header.length + body.length, label)
+  }
+  writeFileSync(join(work, "api-detail.ts"), [...header, ...body].join("\n") + "\n")
+  tsconfig(pkg, join(work, "tsconfig.detail.json"), {
+    ...common, noEmit: true, rootDir: "..", rootDirs: [join("..", sourceRoot(pkg)), "../src-vibe"], allowImportingTsExtensions: true,
+    declaration: false, emitDeclarationOnly: false
+  }, ["api-detail.ts"])
+  const { output } = compile(join(work, "tsconfig.detail.json"), pkg)
+  const blocks = new Map()
+  let label
+  for (const line of output.split("\n")) {
+    const m = line.match(/api-detail\.ts\((\d+),\d+\): error/)
+    if (m) {
+      label = at.get(Number(m[1]))
+      if (label !== undefined) blocks.set(label, [...(blocks.get(label) ?? []), line])
+    } else if (label !== undefined && /^\s/.test(line)) blocks.get(label).push(line)
+    else label = undefined
+  }
+  return new Set(failed.map(([l]) => l).filter((l) => {
+    const text = (blocks.get(l) ?? []).join("\n")
+    return text !== "" && (NOMINAL.some((phrase) => text.includes(phrase)) || sameNamedPair(pkg, work, text))
+  }))
+}
+
+/**
+ * Whether an error names the same declaration in corresponding src/ and src-vibe/
+ * modules (TypeScript 7 prints a unique symbol mismatch that way), and that
+ * declaration has the same text in both: the mismatch is nominal, not real.
+ */
+const sameNamedPair = (pkg, work, text) => {
+  const src = join(pkg, sourceRoot(pkg)) + sep
+  const twin = join(pkg, "src-vibe") + sep
+  const seen = new Map()
+  for (const m of text.matchAll(/import\("([^"]+)"\)\.([A-Za-z_$][\w$]*)/g)) {
+    const [, path, name] = m
+    const side = path.startsWith(twin) ? "twin" : path.startsWith(src) ? "ts" : undefined
+    if (side === undefined) continue
+    const rel = path.slice(side === "twin" ? twin.length : src.length).replace(/\.(?:ts|tsx|mts|vibe|js)$/, "")
+    const key = `${rel}#${name}`
+    seen.set(key, new Set([...(seen.get(key) ?? []), side]))
+  }
+  const pairs = [...seen].filter(([, sides]) => sides.size === 2).map(([key]) => key.split("#"))
+  if (pairs.length === 0 || !/unique symbol|private|protected/.test(text)) return false
+  return pairs.every(([rel, name]) => {
+    const read = (dir) => existsSync(join(dir, `${rel}.d.ts`)) ? parseDts(readFileSync(join(dir, `${rel}.d.ts`), "utf8")) : []
+    const a = read(join(work, "ts-dts")).find((e) => e.name === name)
+    const b = read(join(work, "out", "src-vibe")).find((e) => e.name === name)
+    return a !== undefined && b !== undefined && normalizeDts(a.text) === normalizeDts(b.text)
+  })
 }
 
 /**
@@ -256,13 +354,15 @@ const apiCheck = (pkg, work) => {
   const twinDts = new Set(walk(twinOut).filter((f) => f.endsWith(".d.ts")))
   const api = {
     modules: 0, identicalFiles: 0, checked: 0, missingModules: [], missingExports: [], extraExports: [],
-    typeDiffers: [], valueDiffers: [], errors: []
+    typeDiffers: [], valueDiffers: [], nominal: [], errors: []
   }
   const lines = ["type Eq<A, B> = (<G>() => G extends A ? 1 : 2) extends (<G>() => G extends B ? 1 : 2) ? true : false"]
   const checks = new Map()
+  const pairs = new Map()
   const check = (label, left, right) => {
     lines.push(`export const _${checks.size}: Eq<${left}, ${right}> = true`)
     checks.set(lines.length, label)
+    pairs.set(label, [left, right])
   }
   walk(join(work, "ts-dts")).filter((f) => f.endsWith(".d.ts")).forEach((file, i) => {
     if (!twinDts.has(file)) {
@@ -278,6 +378,7 @@ const apiCheck = (pkg, work) => {
     }
     const ts = new Map(parseDts(tsText).map((e) => [e.name, e]))
     const vb = new Map(parseDts(vbText).map((e) => [e.name, e]))
+    const sameLocals = JSON.stringify(localDeclarations(tsText)) === JSON.stringify(localDeclarations(vbText))
     for (const name of vb.keys()) if (!ts.has(name)) api.extraExports.push(`${file}: ${name}`)
     const mod = file.replace(/\.d\.ts$/, "")
     const srcFile = ["ts", "tsx", "mts"].map((x) => `${mod}.${x}`).find((f) => existsSync(join(pkg, sourceRoot(pkg), f)))
@@ -295,9 +396,11 @@ const apiCheck = (pkg, work) => {
         api.missingExports.push(`${file}: ${name}`)
         continue
       }
-      if (normalizeDts(e.text) === normalizeDts(v.text)) continue
+      // Equal export text may refer to different private aliases or imports (guardian-review):
+      // it is proof only when the module's private context matches too.
+      if (normalizeDts(e.text) === normalizeDts(v.text) && (sameLocals || e.kind === "reexport")) continue
       if (e.kind === "type") {
-        if (e.generic) api.typeDiffers.push(`${file}: ${name} (generic: keep its text)`)
+        if (e.generic) api.typeDiffers.push(`${file}: ${name} (generic: keep its text${sameLocals ? "" : " and its module's private declarations"})`)
         else {
           need()
           check(`${file}: type ${name}`, `T${i}.${name}`, `V${i}.${name}`)
@@ -314,12 +417,21 @@ const apiCheck = (pkg, work) => {
     writeFileSync(join(work, "api-check.ts"), lines.join("\n") + "\n")
     tsconfig(pkg, join(work, "tsconfig.api.json"), {
       ...common, noEmit: true, rootDir: "..", rootDirs: [join("..", sourceRoot(pkg)), "../src-vibe"], allowImportingTsExtensions: true,
-      declaration: false
+      declaration: false, emitDeclarationOnly: false
     }, ["api-check.ts"])
+    const failed = []
     for (const line of splitTwinErrors(compile(join(work, "tsconfig.api.json"), pkg).errors).twin) {
       const at = line.match(/api-check\.ts\((\d+),\d+\)/)
       const label = at ? checks.get(Number(at[1])) : undefined
       if (label === undefined) api.errors.push(line)
+      else failed.push(label)
+    }
+    // D-3: a twin that declares the same unique symbol or private member as the
+    // TypeScript has a nominally distinct type. When every incompatibility, both
+    // ways, is such a same-named pair, the API matches once only one module exists.
+    const nominal = nominalOnly(pkg, work, lines, failed.map((label) => [label, ...pairs.get(label)]))
+    for (const label of failed) {
+      if (nominal.has(label)) api.nominal.push(label)
       else if (label.includes(": type ")) api.typeDiffers.push(label)
       else api.valueDiffers.push(label)
     }
@@ -358,18 +470,18 @@ export const parseJunit = (xml, pkg) => {
 /** `bun test <args>`, with an optional preload, read from its JUnit report. */
 const bunTest = (pkg, args, preload, outputFile) => {
   const argv = ["test", ...(preload ? ["--preload", preload] : []), "--reporter=junit", `--reporter-outfile=${outputFile}`, ...args]
-  spawnSync("bun", argv, { cwd: pkg, encoding: "utf8", env: { ...process.env, CI: "1" }, maxBuffer: 64 * 1024 * 1024 })
+  const child = spawnSync("bun", argv, { cwd: pkg, encoding: "utf8", env: { ...process.env, CI: "1" }, maxBuffer: 64 * 1024 * 1024 })
   return existsSync(outputFile)
-    ? parseJunit(readFileSync(outputFile, "utf8"), pkg)
+    ? { ...parseJunit(readFileSync(outputFile, "utf8"), pkg), status: child.status, signal: child.signal, error: child.error?.message }
     : { ran: false, pass: 0, fail: 0, skip: 0, failed: ["(bun test wrote no report)"] }
 }
 
 /** `node <flags> --test <files>`, with an optional --import, read from its JUnit report. */
 const nodeTest = (pkg, args, register, outputFile) => {
   const argv = [...(register ? ["--import", register] : []), "--test-reporter=junit", `--test-reporter-destination=${outputFile}`, ...args]
-  spawnSync(process.execPath, argv, { cwd: pkg, encoding: "utf8", env: { ...process.env, CI: "1" }, maxBuffer: 64 * 1024 * 1024 })
+  const child = spawnSync(process.execPath, argv, { cwd: pkg, encoding: "utf8", env: { ...process.env, CI: "1" }, maxBuffer: 64 * 1024 * 1024 })
   return existsSync(outputFile)
-    ? parseJunit(readFileSync(outputFile, "utf8"), pkg)
+    ? { ...parseJunit(readFileSync(outputFile, "utf8"), pkg), status: child.status, signal: child.signal, error: child.error?.message }
     : { ran: false, pass: 0, fail: 0, skip: 0, failed: ["(node --test wrote no report)"] }
 }
 
@@ -414,7 +526,12 @@ export const run = (pkgArg) => {
   const split = splitTwinErrors(compiled.errors)
   const twin = { ...compiled, errors: split.twin, typescriptErrors: split.typescript }
   const twinned = linkPartialTwin(pkg, work)
-  const ts = compile(join(work, "tsconfig.ts.json"))
+  const ts = compile(join(work, "tsconfig.ts.json"), pkg)
+  const missingOutputs = twinned.flatMap((rel) => ["js", "d.ts"].map((ext) => join(work, "out", "src-vibe", `${rel}.${ext}`))).filter((file) => !existsSync(file))
+  const missingDeclarations = srcModules(pkg).map(({ rel }) => join(work, "ts-dts", `${rel}.d.ts`)).filter((file) => !existsSync(file))
+  // C-3: a VibeLang error in unchanged TypeScript exits non-zero but is a finding; a crash
+  // or a missing output is not.
+  const compileOk = !compiled.crash && !ts.crash && missingOutputs.length === 0 && missingDeclarations.length === 0
 
   const api = apiCheck(pkg, work)
 
@@ -484,7 +601,7 @@ export async function resolve(specifier, context, next) {
     : tests.kind === "node"
     ? nodeTest(pkg, tests.args, undefined, join(work, "ts.xml"))
     : vitest(pkg, undefined, join(work, "ts.json"))
-  const vibe = twin.errors.length > 0
+  const vibe = !compileOk || twin.errors.length > 0
     ? notRun
     : tests.kind === "bun"
     ? bunTest(pkg, tests.args, preload, join(work, "vibe.xml"))
@@ -495,15 +612,21 @@ export async function resolve(specifier, context, next) {
   // twin: it failed, or its file never loaded (Bun's JUnit report omits those).
   const vibePassed = new Set((vibe.passed ?? []).map(stableName))
   const regressions = (baseline.passed ?? []).filter((name) => !vibePassed.has(stableName(name)))
+  // A twin's unhandled rejection can fail the process while every test passes (guardian-review):
+  // the twin's test process must exit no worse than the TypeScript's.
+  if (vibe.ran && (vibe.signal || vibe.error || (vibe.status !== 0 && baseline.status === 0))) {
+    regressions.push(`(the twin's test process exited ${vibe.signal ?? vibe.error ?? vibe.status}; the TypeScript's exited ${baseline.signal ?? baseline.status})`)
+  }
   const receipt = {
     package: relative(root, pkg),
     runner: tests.kind,
     twinFiles: walk(join(pkg, "src-vibe")).length,
-    compile: { twinErrors: twin.errors, twinWarnings: twin.warnings, vibelangErrorsInTypeScript: twin.typescriptErrors, tsErrors: ts.errors.length },
+    compile: { twinStatus: compiled.status, tsStatus: ts.status, missingOutputs, missingDeclarations, twinErrors: twin.errors, twinWarnings: twin.warnings, vibelangErrorsInTypeScript: twin.typescriptErrors, tsErrors: ts.errors.length },
     api,
     tests: { ts: { ...baseline, failed: undefined, passed: undefined }, vibe: { ...vibe, failed: undefined, passed: undefined } },
     regressions,
-    ok: twin.errors.length === 0 && apiOk(api) && vibe.ran && regressions.length === 0 && vibe.pass >= baseline.pass,
+    ok: compileOk && twin.errors.length === 0 && apiOk(api) && baseline.ran && !baseline.signal && !baseline.error && vibe.ran
+      && regressions.length === 0 && vibe.pass >= baseline.pass,
     complete: false
   }
   // W46 covers the Effect code: a module that never imports effect may stay TypeScript.
@@ -513,7 +636,10 @@ export async function resolve(specifier, context, next) {
     return file !== undefined && /from\s+["'](?:effect|@effect\/)/.test(readFileSync(file, "utf8"))
   }
   receipt.api.missingEffectModules = api.missingModules.filter(importsEffect)
-  receipt.complete = receipt.ok && receipt.api.missingEffectModules.length === 0
+  // A suite whose own process fails (an unhandled rejection, a crash) verifies nothing, even
+  // when the twin matches it (guardian-review): COMPLETE needs a clean TypeScript run.
+  receipt.baselineClean = baseline.ran && baseline.status === 0 && !baseline.signal && !baseline.error
+  receipt.complete = receipt.ok && receipt.baselineClean && receipt.api.missingEffectModules.length === 0
   writeFileSync(join(work, "receipt.json"), JSON.stringify(receipt, null, 2) + "\n")
   return receipt
 }
@@ -526,7 +652,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const t = receipt.tests
     process.stdout.write(
       [
-        `${receipt.package}: ${receipt.complete ? "COMPLETE" : receipt.ok ? "OK (partial)" : "NOT OK"}`,
+        `${receipt.package}: ${receipt.complete ? "COMPLETE" : !receipt.ok ? "NOT OK" : !receipt.baselineClean ? "OK (baseline not clean: the TypeScript suite's own process failed)" : "OK (partial)"}`,
         `  compile: ${receipt.compile.twinErrors.length} errors, ${receipt.compile.twinWarnings.length} warnings, ${receipt.compile.vibelangErrorsInTypeScript.length} VibeLang errors in unchanged TypeScript (findings, not blocking)`,
         ...receipt.compile.vibelangErrorsInTypeScript.slice(0, 5).map((e) => `  finding: ${e}`),
         `  api: ${receipt.api.modules} modules twinned (${receipt.api.identicalFiles} with identical .d.ts), ${receipt.api.missingEffectModules.length} Effect modules not yet (${receipt.api.missingModules.length} in all), ${receipt.api.checked} type checks`,
