@@ -171,7 +171,7 @@ export interface Environment {
  */
 const replContract = `JavaScript REPL, one cell per turn, alive for the whole run.
 
-Every reply MUST contain a fenced \`cell\` block, JavaScript only. Several blocks in one reply run as ONE program.
+Every reply MUST contain a fenced \`cell\` block, JavaScript only. Several blocks in one reply run as ONE program. Yield after inspection when later decisions depend on tool output.
 
 Top-level bindings persist across cells, as in any REPL. \`console.log\` output opens your next turn and stays in context; unprinted values stay in their variables.
 

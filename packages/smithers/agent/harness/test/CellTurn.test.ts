@@ -524,10 +524,11 @@ console.log(kept)`
       tier: "irreversible",
       meta: {}
     })
-    const { engine, events } = await run({
+    const { engine, events, model } = await run({
       script: [
         emits(
-          `await ctx.call("fs/list", { path: "." })
+          `const inspected = await ctx.call("fs/list", { path: "." })
+           console.log("inspection", inspected)
            await ctx.call("shell/run", { command: "ls" })
            ctx.done("unreachable")`
         )
@@ -542,6 +543,7 @@ console.log(kept)`
       ]
     })
 
+    expect(model.recorder.requests).toHaveLength(1)
     expect(of(events, "permission-required")[0]?.request.requestId).toBe("perm-1")
     expect(of(events, "turn-closed").at(-1)?.outcome).toBe("suspended")
     expect(of(events, "suspended")[0]?.reason.code).toBe("permission-required")

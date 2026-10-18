@@ -5073,7 +5073,7 @@
         "Cell.d.ts": "9516d6c67aa3e1f81b73b9a0e6b28869ce0d3d64781bb593da48c2dbe3ff941a",
         "CellCalls.d.ts": "07f58160539baf6a0b6f87d716e2a54935f82bed0d3064c97ba17e19afe69468",
         "CellHistory.d.ts": "8735dbbe8ec73daa5cf3855c6d4393bec6fb901ab7f465f42ddd5e5293e197a0",
-        "CellTurn.d.ts": "25cee8f9c99b33cbbd0ddbe79a575bbf141a4e6dd950e03e2078fbaa1f1b1e11",
+        "CellTurn.d.ts": "f867bef920896f116cfa63c9604256c5e86ceed36304e86d597bedc6d0aaf20f",
         "CellValidation.d.ts": "b9f899b6a62c3dd032969c5c05e6f7c8167cca5836cc3750ba300863c22fe269",
         "Compaction.d.ts": "6497bbacc9f995b4fe5c4f165581c6e483469843484a1ede025b2a429811b96f",
         "CompletionClaim.d.ts": "a27c2249150d5ab3ad927cc485295ccc665e625debb565f8b23be3ddc264301f",

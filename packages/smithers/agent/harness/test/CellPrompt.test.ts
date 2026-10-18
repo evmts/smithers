@@ -394,7 +394,10 @@ describe("cellPrompt", () => {
     // Unchanged on 2026-10-14: uncapping reading before the first edit cost
     // +26 characters and lands the contract at 1,449. The short-answer rule of
     // the same day (#3995) fits the same ceiling.
-    expect(Tokens.estimate(contractText())).toBeLessThanOrEqual(1_450)
+    // #4284, 2026-10-18: the requested yield-after-inspection sentence adds
+    // 67 characters and 15 estimated tokens. Scripted evals cover recovery;
+    // this does not claim a live-model quality measurement.
+    expect(Tokens.estimate(contractText())).toBeLessThanOrEqual(1_465)
     expect(Tokens.estimate(sectionOf("cell-environment", {}, { locale: "C.UTF-8", absentTools: ["rg", "ruff"] })))
       .toBeLessThanOrEqual(200)
   })
@@ -461,9 +464,11 @@ describe("the contract", () => {
     // answer is short (#3995): rule 5 asks for what changed and which check
     // passed in three lines instead of each check's command and output, and
     // the example completes in one sentence instead of pasting the hunk.
-    expect(replText()).toHaveLength(5_571)
+    // #4284 adds the short inspection-yield instruction (QA & Release, 2026-10-18).
+    expect(replText()).toContain("Yield after inspection when later decisions depend on tool output.")
+    expect(replText()).toHaveLength(5_638)
     expect(Digest.digest(replText()))
-      .toBe("4c75253ebc2c7ba08d978b9ca33bfe5660d960eba27cfafc5c15ac257892318b")
+      .toBe("bfeb799dcaba31de4a99a86e6793aed70e19daa014e48097dc760d77d6960f2b")
   })
 
   it("encourages the guard shape and leaves the unguarded completion legal", () => {

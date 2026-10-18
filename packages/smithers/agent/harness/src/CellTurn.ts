@@ -848,11 +848,18 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
    *
    * A park is durable waiting, and waiting only ends when somebody answers. A
    * run with no approval channel has nobody to answer it, so a park there is
-   * not patience: it is the run abandoning a budget it still holds. False —
-   * the default — refuses the transition and answers it in the frame that
-   * returned it.
+   * refused by default. Fresh inspection output permits one model turn to
+   * consume that evidence; it never supplies an approval answer.
    */
   approvalChannel: Schema.Boolean.pipe(
+    Schema.withConstructorDefault(Effect.succeed(false)),
+    Schema.withDecodingDefaultKey(Effect.succeed(false))
+  ),
+  /**
+   * Whether this frame chain already returned an unattended inspection park
+   * to the model. Carried across continuations and decoded for older states.
+   */
+  speculativeParkRecovered: Schema.Boolean.pipe(
     Schema.withConstructorDefault(Effect.succeed(false)),
     Schema.withDecodingDefaultKey(Effect.succeed(false))
   ),
@@ -4028,6 +4035,25 @@ const frame = (
         )
       }
       if (!state.approvalChannel) {
+        // Only the model's own transition reaches here. Host-required approval
+        // escapes evaluation as PermissionRequired and remains a durable park.
+        // Return fresh inspection evidence once, without inventing an answer
+        // to the question or replaying any completed call.
+        const unobserved = ran.frame.prints !== "" || ran.calls.some((call) => call.ok && !call.failing)
+        if (
+          transition.reason === "waiting-input" && !state.speculativeParkRecovered &&
+          !mutated && !ran.calls.some((call) => call.mutates) && unobserved && Frame.hasNextFrame(state)
+        ) {
+          if (cap > 0 && readOnlyFrames >= cap * 2) {
+            return yield* readOnlyCapFailure(cap, readOnlyFrames)
+          }
+          const step = yield* observe(
+            exit,
+            "Your park was not delivered because no one can answer; continue from the output.",
+            { speculativeParkRecovered: true }
+          )
+          return yield* finish(exit, step)
+        }
         return yield* new HarnessError({
           code: "approval_unavailable",
           message: `The run requires an answer but has no approval channel: ${transition.message}`
