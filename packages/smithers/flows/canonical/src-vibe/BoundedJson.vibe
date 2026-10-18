@@ -1,0 +1,171 @@
+/**
+ * Descriptor-only JSON admission and encoded-byte accounting for durable boundaries.
+ * Never invokes getters or `toJSON`; ordinary JSON copies are detached and frozen.
+ * A strict `native` adapter is trusted to provide its own detached leaf and byte
+ * count; that returned value is not validated, copied, or frozen.
+ * A Proxy's `ownKeys`, `getOwnPropertyDescriptor`, and `getPrototypeOf` traps
+ * still run, so only JSON.parse output or other inert data is untrusted input.
+ *
+ * @since 1.0.0-rc.0
+ */
+
+/**
+ * Resource limits for one admitted JSON tree.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface Limits {
+  readonly maxBytes?: number | undefined
+  readonly maxDepth: number
+  readonly maxMembers: number
+  /** Optional cumulative member limit, in addition to the per-container limit. */
+  readonly maxTotalMembers?: number | undefined
+  readonly maxNodes: number
+  readonly maxStringBytes?: number | undefined
+  readonly maxKeyBytes?: number | undefined
+}
+
+/**
+ * Detached JSON value accepted by the persistence boundary.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type Json = null | boolean | number | string | ReadonlyArray<Json> | { readonly [key: string]: Json }
+
+/** The rule that refused a JSON value.
+ * @category models
+ * @since 1.0.0
+ */
+export type IssueCode =
+  | "depth"
+  | "nodes"
+  | "bytes"
+  | "number"
+  | "string"
+  | "value"
+  | "cycle"
+  | "arrayLength"
+  | "arrayMember"
+  | "arrayExtra"
+  | "members"
+  | "object"
+  | "symbol"
+  | "accessor"
+  | "key"
+  | "inspection"
+
+/**
+ * Result of admitting or refusing an unknown JSON candidate.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type Result =
+  | { readonly ok: true; readonly value: Json; readonly bytes: number }
+  | { readonly ok: false; readonly code: IssueCode; readonly complaint: string; readonly path: ReadonlyArray<string> }
+
+/** Backspace, tab, newline, form feed, and carriage return. */
+const shortEscaped = new Set([0x08, 0x09, 0x0a, 0x0c, 0x0d])
+
+/**
+ * Encoded JSON-string bytes without allocating an encoded copy.
+ *
+ * The count has to match what the canonical encoder emits, or the budget
+ * refuses a value whose encoded form is inside it. RFC 8785 and
+ * `JSON.stringify` write the five controls above as a two-character escape and
+ * every other C0 control as `\u00XX`, so those five cost two bytes here and the
+ * rest cost six.
+ *
+ * @param value - Raw text whose JSON quotes and escapes contribute to the count.
+ * @param maximum - Inclusive byte limit; defaults to no limit.
+ * @returns The encoded byte count, or undefined for malformed or oversized text.
+ * @category encoding
+ * @since 1.0.0
+ */
+export const encodedStringBytes = (value: string, maximum = Infinity): number | undefined => {
+  let bytes = 2
+  for (let index = 0; index < value.length; index++) {
+    const unit = value.charCodeAt(index)
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const low = value.charCodeAt(++index)
+      if (!(low >= 0xdc00 && low <= 0xdfff)) return undefined
+      bytes += 4
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) return undefined
+    else if (unit === 0x22 || unit === 0x5c || shortEscaped.has(unit)) bytes += 2
+    else if (unit <= 0x1f) bytes += 6
+    else if (unit <= 0x7f) bytes++
+    else if (unit <= 0x7ff) bytes += 2
+    else bytes += 3
+    if (bytes > maximum) return undefined
+  }
+  return bytes <= maximum ? bytes : undefined
+}
+
+/**
+ * Strict tree admission also rejects repeated references, hidden members,
+ * reserved keys, and nonordinary arrays. Depth counts containers; members are
+ * cumulative across the tree.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type StrictLimits = { readonly [K in Exclude<keyof Limits, "maxTotalMembers">]: number }
+
+/**
+ * Output and diagnostic policies for strict tree admission. The container
+ * callback receives detached children in postorder, suitable for indexing
+ * admitted trees without inspecting caller-owned objects again.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface StrictOptions {
+  /** Produce frozen Object.prototype records; reserved keys are still refused. */
+  readonly ordinaryRecords?: boolean
+  /** Preflight text lengths and identify rejected keys by position. */
+  readonly boundedText?: boolean
+  /** Called on each frozen copy in postorder, even before a later refusal. Throws become inspection refusals. */
+  readonly onContainer?: (value: ReadonlyArray<Json> | { readonly [key: string]: Json }) => void
+  /**
+   * Adapt a nonordinary, non-array object as a trusted leaf. The returned value
+   * is not validated, copied, or frozen. Supply an accurate nonnegative safe
+   * integer byte count, or return undefined to refuse the object. Throws become
+   * inspection refusals.
+   */
+  readonly native?: (value: object) => { readonly value: unknown; readonly bytes: number } | undefined
+}
+
+/**
+ * Copies a JSON tree without invoking getters or `toJSON`, under explicit
+ * byte, depth, node, and member limits. Proxy inspection traps still run.
+ * Shared references are copied per occurrence; only ancestor cycles refuse.
+ *
+ * @param input - Parsed JSON or another inert candidate.
+ * @param limits - Nonnegative resource bounds; root depth is zero.
+ * @param options - Disable early object node/byte preflight with preflightObjects: false; final bounds still apply.
+ * @returns A frozen detached copy and byte count, or a located refusal.
+ *
+ * @category validation
+ * @since 1.0.0-rc.0
+ */
+export const admit: (input: unknown, limits: Limits, options?: { readonly preflightObjects?: boolean }) => Result = admitImpl
+
+/**
+ * Copies a strict JSON tree with cumulative bounds and stable value paths.
+ * Rejects repeated object references, hidden members, reserved record keys,
+ * symbols, and nonordinary arrays. Container callbacks run in postorder;
+ * callbacks can observe earlier children before a later refusal. Native
+ * adapters supply trusted leaves outside the JSON copy/freeze guarantee.
+ *
+ * @param input - Parsed JSON or another inert candidate.
+ * @param limits - Required byte, node, text, container-depth, and cumulative member bounds.
+ * @param options - Output prototypes, key diagnostics, container callbacks, and trusted native adapters.
+ * @returns A copied tree or a JSON-style path and complaint; no byte count.
+ *
+ * @category validation
+ * @since 1.0.0
+ */
+export const admitStrict: (input: unknown, limits: StrictLimits, options?: StrictOptions) => { readonly ok: true; readonly value: Json } | { readonly ok: false; readonly path: string; readonly complaint: string } = admitStrictImpl
+import { admit as admitImpl, admitStrict as admitStrictImpl } from "./bounded-walk.ts"
