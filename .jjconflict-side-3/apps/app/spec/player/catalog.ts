@@ -1,5 +1,6 @@
 import { Glob } from "bun"
-import { resolve } from "node:path"
+import { realpath } from "node:fs/promises"
+import { resolve, sep } from "node:path"
 import { pathToFileURL } from "node:url"
 import { journey, type Journey } from "../journey"
 import { results, type RunResult } from "../results"
@@ -13,7 +14,11 @@ export const catalog = async (resultsDirectory: string) => {
   const newest = new Map<string, RunResult>()
   for await (const file of new Glob("**/*.json").scan(resultsDirectory)) {
     let runs: ReadonlyArray<RunResult>
-    try { runs = results(await Bun.file(resolve(resultsDirectory, file)).json()) } catch { continue }
+    try {
+      const path = await realpath(resolve(resultsDirectory, file))
+      if (!path.startsWith(resultsDirectory + sep)) continue
+      runs = results(await Bun.file(path).json())
+    } catch { continue }
     for (const run of runs) {
       const key = `${run.journey}:${run.mode}`
       if (!newest.has(key) || Date.parse(run.startedAt) > Date.parse(newest.get(key)!.startedAt)) newest.set(key, run)

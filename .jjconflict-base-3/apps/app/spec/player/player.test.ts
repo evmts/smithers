@@ -28,7 +28,7 @@ beforeAll(async () => {
   host = await startHost({ port: 49400 + Math.floor(Math.random() * 2000), local: true, lan: false, resultsDirectory: directory, labelsDirectory: resolve(root, "labels") })
   process.env.SPEC_LIVE_URLS = JSON.stringify({ default: host.origin })
 }, 120_000)
-afterAll(async () => { delete process.env.SPEC_LIVE_URLS; host?.close(); await browser?.close(); if (root) await rm(root, { recursive: true, force: true }) })
+afterAll(async () => { delete process.env.SPEC_LIVE_URLS; host?.close(); await browser?.close(); if (root) await rm(root, { recursive: true, force: true }) }, 30_000)
 
 test("real build restores all three checkpoints; flip preserves step and renders exact receipts", async () => {
   const context = await browser.newContext()

@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": { "types": ["bun", "node"] },
-  "include": ["./*.ts", "../host.ts", "../host.test.ts"],
+  "include": ["./*.ts", "../host.ts", "../host.test.ts", "../labels-handoff.ts", "../labels-handoff.test.ts"],
   "exclude": []
 }

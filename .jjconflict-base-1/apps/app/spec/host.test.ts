@@ -17,7 +17,7 @@ beforeAll(async () => {
   browser = await chromium.launch({ headless: true })
   host = await startHost({ port: 49400 + Math.floor(Math.random() * 2000), local: true, lan: true, hostname: "127.0.0.1", tokenFile: resolve(root, "token"), labelsDirectory: resolve(root, "labels"), resultsDirectory: resolve(root, "results"), dist: resolve(root, "dist") })
 })
-afterAll(async () => { host?.close(); await browser?.close(); if (root) await rm(root, { recursive: true, force: true }) })
+afterAll(async () => { host?.close(); await browser?.close(); if (root) await rm(root, { recursive: true, force: true }) }, 30_000)
 
 test("LAN reads work, unauthorized writes fail, first-visit cookie authenticates the owner", async () => {
   const context = await browser.newContext()
@@ -87,4 +87,17 @@ test("default identity comes from Tailscale and unsafe bind addresses fail close
     expect(JSON.parse((await readFile(resolve(root, "tail-labels/journey.jsonl"), "utf8")).trim()).by).toBe("will@example.com")
   } finally { extra.close() }
   await expect(startHost({ hostname: "0.0.0.0" })).rejects.toThrow("requires loopback")
+})
+
+
+test("labels cannot follow a symlink into another directory", async () => {
+  const directory = resolve(root, "symlink-labels"); await mkdir(directory)
+  const target = resolve(root, "untouched.jsonl"); await writeFile(target, "original\n")
+  await symlink(target, resolve(directory, "journey.jsonl"))
+  const extra = await startHost({ port: 49400 + Math.floor(Math.random() * 2000), lan: false, local: true, labelsDirectory: directory, resultsDirectory: resolve(root, "results"), dist: resolve(root, "dist") })
+  try {
+    const response = await fetch(extra.origin + "/__spec/labels", { method: "POST", headers: { Origin: extra.origin, "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+    expect(response.status).toBe(500)
+    expect(await readFile(target, "utf8")).toBe("original\n")
+  } finally { extra.close() }
 })

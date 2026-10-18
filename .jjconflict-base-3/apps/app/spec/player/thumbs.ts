@@ -25,7 +25,7 @@ export const thumbs = (container: HTMLElement, chips: HTMLElement, run: RunResul
       if (!response.ok) throw new Error(response.status === 401 ? "Sign in with the host link" : response.status === 409 ? "Receipt changed; reload" : "Label not saved; retry")
       const result = await response.json() as { counts: typeof counts }
       Object.assign(counts, result.counts); showCount()
-      if (up.isConnected) { status.textContent = "Saved"; form.hidden = true; note.value = "" }
+      if (up.isConnected) { status.textContent = "Saved"; form.hidden = true; note.value = ""; selected.clear(); chips.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach(check => { check.checked = false; check.hidden = true }) }
     } catch (error) { if (up.isConnected) status.textContent = (error as Error).message }
     finally { save.disabled = false; up.disabled = false; down.disabled = false }
   }
