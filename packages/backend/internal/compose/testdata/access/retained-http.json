@@ -456,6 +456,10 @@
       "body": {}
     },
     {
+      "command": "convert",
+      "door": "app"
+    },
+    {
       "command": "debug-api",
       "method": "GET",
       "path": "/api/commands/debug-api",
@@ -730,6 +734,10 @@
     },
     {
       "command": "github.mirror.retry-ref",
+      "door": "app"
+    },
+    {
+      "command": "guest.chat",
       "door": "app"
     },
     {
