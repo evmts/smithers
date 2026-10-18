@@ -6,6 +6,17 @@ import { homedir, tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { readJjPin } from "./jj-pin"
 
+// Exercise the late assembly check without waiting for native compilation, on
+// every release platform. A new operation must update every shipped projection.
+test("server bundle catalog check matches the declared operations", async () => {
+  const root = resolve(import.meta.dir, "../../..")
+  const child = Bun.spawn([process.execPath, "apps/app/scripts/catalog-mvp.ts", "--check", "--skill"], {
+    cwd: root, stdout: "ignore", stderr: "pipe"
+  })
+  const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()])
+  expect(code, stderr).toBe(0)
+}, 60_000)
+
 // This is a real release assembly, not a fixture that mocks compilers or tools.
 // Opt in on the reference builder with Zig installed: the assembler
 // cross-builds the Linux arm64 guest helper (scripts/README.md).
