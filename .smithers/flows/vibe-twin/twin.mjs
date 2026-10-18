@@ -318,9 +318,12 @@ const NOMINAL = [
   "separate declarations of a protected property"
 ]
 
-/** Labels whose types differ only by same-named nominal declarations, in both directions. */
+/**
+ * For labels whose identity check failed: "assignable" when the types are assignable both
+ * ways, "nominal" when they differ only by same-named nominal declarations; absent otherwise.
+ */
 const nominalOnly = (pkg, work, imports, failed) => {
-  if (failed.length === 0) return new Set()
+  if (failed.length === 0) return new Map()
   const header = imports.filter((l) => l.startsWith("import "))
   const body = []
   const at = new Map()
@@ -346,10 +349,15 @@ const nominalOnly = (pkg, work, imports, failed) => {
     } else if (label !== undefined && /^\s/.test(line)) blocks.get(label).push(line)
     else label = undefined
   }
-  return new Set(failed.map(([l]) => l).filter((l) => {
+  // No error either way: the two types are mutually assignable. Identity (Eq) is stricter
+  // than any caller can observe (optional vs undefined, overload order); that is equivalent.
+  return new Map(failed.map(([l]) => {
     const text = (blocks.get(l) ?? []).join("\n")
-    return text !== "" && (NOMINAL.some((phrase) => text.includes(phrase)) || sameNamedPair(pkg, work, text))
-  }))
+    const kind = text === "" ? "assignable"
+      : NOMINAL.some((phrase) => text.includes(phrase)) || sameNamedPair(pkg, work, text) ? "nominal"
+      : undefined
+    return [l, kind]
+  }).filter(([, kind]) => kind !== undefined))
 }
 
 /**
@@ -390,7 +398,7 @@ const apiCheck = (pkg, work) => {
   const twinDts = new Set(walk(twinOut).filter((f) => f.endsWith(".d.ts")))
   const api = {
     modules: 0, identicalFiles: 0, checked: 0, missingModules: [], missingExports: [], extraExports: [],
-    typeDiffers: [], valueDiffers: [], nominal: [], errors: []
+    typeDiffers: [], valueDiffers: [], nominal: [], assignable: [], errors: []
   }
   const lines = ["type Eq<A, B> = (<G>() => G extends A ? 1 : 2) extends (<G>() => G extends B ? 1 : 2) ? true : false"]
   const checks = new Map()
@@ -469,7 +477,8 @@ const apiCheck = (pkg, work) => {
     // ways, is such a same-named pair, the API matches once only one module exists.
     const nominal = nominalOnly(pkg, work, lines, failed.map((label) => [label, ...pairs.get(label)]))
     for (const label of failed) {
-      if (nominal.has(label)) api.nominal.push(label)
+      if (nominal.get(label) === "assignable") api.assignable.push(label)
+      else if (nominal.get(label) === "nominal") api.nominal.push(label)
       else if (label.includes(": type ")) api.typeDiffers.push(label)
       else api.valueDiffers.push(label)
     }
@@ -597,7 +606,9 @@ export const run = (pkgArg) => {
   const missingDeclarations = srcModules(pkg).map(({ rel }) => join(work, "ts-dts", `${rel}.d.ts`)).filter((file) => !existsSync(file))
   // C-3: a VibeLang error in unchanged TypeScript exits non-zero but is a finding; a crash
   // or a missing output is not.
-  const compileOk = !compiled.crash && !ts.crash && missingOutputs.length === 0 && missingDeclarations.length === 0
+  // TypeScript itself emits no .d.ts for some modules (E-6: an exported anonymous class with
+  // private fields). Their API can't be compared; the tests still run, and the receipt lists them.
+  const compileOk = !compiled.crash && !ts.crash && missingOutputs.length === 0
 
   const api = apiCheck(pkg, work)
 
@@ -693,6 +704,7 @@ export async function resolve(specifier, context, next) {
     api,
     tests: { ts: { ...baseline, failed: undefined, passed: undefined }, vibe: { ...vibe, failed: undefined, passed: undefined } },
     regressions,
+    unverifiableApi: missingDeclarations.map((file) => relative(join(work, "ts-dts"), file)),
     quality: quality(pkg),
     ok: compileOk && twin.errors.length === 0 && apiOk(api) && baseline.ran && !baseline.signal && !baseline.error && vibe.ran
       && regressions.length === 0 && vibe.pass >= baseline.pass && heldCalls === 0,
