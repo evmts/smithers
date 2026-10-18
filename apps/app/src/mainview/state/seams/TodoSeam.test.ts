@@ -1076,20 +1076,45 @@ describe("TodoSeam — the TODO list Home reads where no `home` topic is served 
   })
 
   test("a host that serves no TODOs answers absent and drops the list it held", async () => {
-    const last = deferred<Response>()
-    const h = await listHarness([() => json([fixtures.queued.model], 200), () => new Response("404 page not found", { status: 404 }), () => last.promise])
+    const h = await listHarness([() => json([fixtures.queued.model], 200), () => new Response("404 page not found", { status: 404 })])
     try {
       const seen: Array<{ readonly n?: ReadonlyArray<number>; readonly error?: string }> = []
       const leave = h.seam.list.subscribe(() => {
         const snapshot = h.seam.list.get()
         seen.push({ ...(snapshot.todos ? { n: snapshot.todos.map(todo => todo.n) } : {}), ...(snapshot.error ? { error: snapshot.error } : {}) })
       })
-      await waitFor(() => h.calls.length === 3)
+      await waitFor(() => h.seam.list.get().error === "absent")
+      await new Promise(resolve => setTimeout(resolve, 30))
       leave()
+      expect(h.calls).toHaveLength(2)
       expect(seen).toEqual([{ n: [fixtures.queued.model.n] }, { error: "absent" }])
       expect(h.seam.list.get()).toEqual({ error: "absent" })
-      last.resolve(json([], 200))
     } finally { h.close() }
+  })
+
+  test("an absent HTTP route stops automatic reads and a new reader can recover", async () => {
+    const requests: string[] = []
+    let served = false
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 49400 + Math.floor(Math.random() * 2000), fetch: request => {
+      requests.push(new URL(request.url).pathname)
+      return served ? json([], 200) : new Response("404 page not found", { status: 404 })
+    } })
+    const h = await listHarness(Array.from({ length: 20 }, () => () => fetch(new URL("/api/todos", server.url))))
+    let leave = h.seam.list.subscribe(() => {})
+    try {
+      await waitFor(() => h.seam.list.get().error === "absent")
+      await new Promise(resolve => setTimeout(resolve, 40))
+      expect(requests).toEqual(["/api/todos"])
+      leave()
+      served = true
+      leave = h.seam.list.subscribe(() => {})
+      await waitFor(() => h.seam.list.get().todos !== undefined)
+      expect(h.seam.list.get()).toEqual({ todos: [] })
+      leave()
+      const count = requests.length
+      await new Promise(resolve => setTimeout(resolve, 30))
+      expect(requests).toHaveLength(count)
+    } finally { leave(); h.close(); await server.stop(true) }
   })
 
   test("the first reader reads at once and again until it leaves; a refusal drops the list, a failure keeps the last one", async () => {

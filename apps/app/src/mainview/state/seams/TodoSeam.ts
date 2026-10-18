@@ -793,7 +793,8 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
     list.reading = true
     void readList().catch(error => ctx.report?.("todo.list", error)).finally(() => {
       list.reading = false
-      if (!list.disposed && list.listeners.size > 0) list.timer = setTimeout(() => { list.timer = undefined; pollList() }, options.listPollMs ?? 2000)
+      // An absent route needs a new reader or session, not another automatic read.
+      if (!list.disposed && list.listeners.size > 0 && list.snapshot.error !== "absent") list.timer = setTimeout(() => { list.timer = undefined; pollList() }, options.listPollMs ?? 2000)
     })
   }
   const list: TodoListSnapshots = {
