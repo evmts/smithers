@@ -2595,6 +2595,19 @@ type GetAPIReposOwnerRepoContentsPathParams struct {
 	After *string
 }
 
+// GetAPIReposOwnerRepoGithubMetadataPathParams is the query of GET /api/repos/{owner}/{repo}/github/metadata/{path}.
+type GetAPIReposOwnerRepoGithubMetadataPathParams struct {
+	State     *string
+	Sort      *string
+	Direction *string
+	PerPage   *int64
+	Page      *int64
+	Cursor    *string
+	Labels    *string
+	Head      *string
+	Base      *string
+}
+
 // GetAPIReposOwnerRepoIssuesParams is the query of GET /api/repos/{owner}/{repo}/issues.
 type GetAPIReposOwnerRepoIssuesParams struct {
 	State  *string
@@ -5515,6 +5528,41 @@ func (c *Client) GetAPIReposOwnerRepoGitRefs(ctx context.Context, owner string, 
 func (c *Client) GetAPIReposOwnerRepoGithubAppStatus(ctx context.Context, owner string, repo string) (AnyJSON, error) {
 	var out AnyJSON
 	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/github-app-status", nil, nil, &out)
+	return out, err
+}
+
+// GetAPIReposOwnerRepoGithubMetadataPath calls GET /api/repos/{owner}/{repo}/github/metadata/{path}.
+func (c *Client) GetAPIReposOwnerRepoGithubMetadataPath(ctx context.Context, owner string, repo string, pathParam string, params GetAPIReposOwnerRepoGithubMetadataPathParams) (AnyJSON, error) {
+	query := url.Values{}
+	if params.State != nil {
+		query.Set("state", *params.State)
+	}
+	if params.Sort != nil {
+		query.Set("sort", *params.Sort)
+	}
+	if params.Direction != nil {
+		query.Set("direction", *params.Direction)
+	}
+	if params.PerPage != nil {
+		query.Set("per_page", strconv.FormatInt(*params.PerPage, 10))
+	}
+	if params.Page != nil {
+		query.Set("page", strconv.FormatInt(*params.Page, 10))
+	}
+	if params.Cursor != nil {
+		query.Set("cursor", *params.Cursor)
+	}
+	if params.Labels != nil {
+		query.Set("labels", *params.Labels)
+	}
+	if params.Head != nil {
+		query.Set("head", *params.Head)
+	}
+	if params.Base != nil {
+		query.Set("base", *params.Base)
+	}
+	var out AnyJSON
+	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/github/metadata/"+url.PathEscape(pathParam), query, nil, &out)
 	return out, err
 }
 
