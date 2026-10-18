@@ -303,3 +303,16 @@ test("frame writes retain a client-navigated subject booted from another subject
   history.push(root)
   expect(host.location.pathname + host.location.search).toBe("/alpha/one/blob/main/README.md?L=4")
 })
+
+
+test("repository frame writes preserve the selected eval case through reload", () => {
+  const path = "/maya/tinyhttp/evals/convert-golden?case=01-basic"
+  const { host, entries } = browser(path)
+  const history = createBrowserFrameHistory(host)
+  history.replace(root)
+  history.push(card)
+  const restored = createBrowserFrameHistory(host)
+  restored.replace(card)
+  expect(entries()).toEqual([path, path])
+  expect(host.location.search).toBe("?case=01-basic")
+})
