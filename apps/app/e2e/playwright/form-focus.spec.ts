@@ -16,8 +16,8 @@ test.beforeEach(async ({ page }) => {
     apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
     capabilities: ["agent", "identity", "cloud", "cloud.terminal"], authFlow: "native-handoff", sandbox: null,
   } }))
-  await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute(null))
-  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithersai/smithers" }] } }))
+  await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute())
+  await page.route("**/api/repos/smithersai/smithers", route => route.fulfill({ json: { is_public: true, default_bookmark: "main" } }))
   await page.route("**/api/repos/smithersai/smithers/contents", route => route.fulfill({ json: [] }))
 })
 
@@ -25,9 +25,9 @@ const README = { path: "README.md", name: "README.md", type: "file", encoding: "
 
 /** Open the repository, then Ctrl+K, `/file`, Enter: the Path form for the selected repository. */
 const askForPath = async (page: Page) => {
-  await page.goto("/smithersai/smithers/")
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
-  await page.keyboard.press("Control+k")
+  await page.goto("/smithersai/smithers/?design=off")
+  await page.getByRole("button", { name: "Ask", exact: true }).click()
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
   const composer = page.getByTestId("composer-input")
   await expect(composer).toBeFocused()
   await composer.fill("/file")
@@ -55,6 +55,7 @@ test("T1: the slash door hands the keyboard to the missing Path field, and Tab s
   await page.keyboard.press(controlTabKey(page))
   await expect(form.getByTestId("flow-form-submit")).toBeFocused()
   await page.reload()
+  await page.getByRole("button", { name: "Ask", exact: true }).click()
   await expect(page.getByTestId("flow-form-path")).toHaveValue("README.md")
 })
 
@@ -88,8 +89,9 @@ test("T1: a restored form after reload does not take the keyboard; Cancel return
   const { path } = await askForPath(page)
   await expect(path).toBeFocused()
   await page.reload()
+  await page.getByRole("button", { name: "Ask", exact: true }).click()
   const form = page.locator(".flow-form[data-flow-name='file']")
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
   await expect(form).toBeVisible()
   expect(await activeElement(page)).not.toBe("flow-form-path")
   await form.getByTestId("flow-form-cancel").focus()
