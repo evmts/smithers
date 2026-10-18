@@ -1,0 +1,1536 @@
+import * as DatabaseMigrations from "@smthrs/database/Migrations"
+/**
+ * The durable `ControlRuntime`: the shared `ControlLive` contract, plus what
+ * only a durable adapter can be asked — surviving a restart, refusing a stale
+ * process's writes, and losing a claim race to a live peer.
+ */
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import * as TestDatabase from "@smthrs/database/test/TestDatabase"
+import { JournalEvent, Migrations, SqlJournal } from "@smthrs/journal"
+import * as Journal from "@smthrs/journal/Journal"
+import { NotificationQueue } from "@smthrs/notifications"
+import { Registry } from "@smthrs/registry"
+import { Migrations as RunStoreMigrations, Ownership, RunStore } from "@smthrs/run-store"
+import { Context, type Crypto, Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
+import * as Statement from "effect/sql/Statement"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { describe, expect, it } from "vitest"
+import { Control, type Service as ControlService } from "../src/Control.ts"
+import { ClaimLost, PersistenceError, PlanDigestMismatch, RunNotFound } from "../src/ControlError.ts"
+import * as ControlExecutor from "../src/ControlExecutor.ts"
+import * as ControlLive from "../src/ControlLive.ts"
+import { ControlRuntime, type RunQuery, type Service as ControlRuntimeService } from "../src/ControlRuntime.ts"
+import { mutationKey } from "../src/internal/planning.ts"
+import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
+import { delegateApproval } from "./ApprovalFixtures.ts"
+import { contract, type Stack } from "./ControlContract.ts"
+import { fileBundle } from "./DurableStack.ts"
+import { park } from "./Park.ts"
+
+/**
+ * The durable journal bundle, with `Database` kept in the output so the control
+ * runtime and the journal share one connection and therefore one transaction
+ * boundary.
+ */
+const durableJournal = Layer.mergeAll(
+  SqlJournal.layer({ capacity: 1024, overflow: "reject" }),
+  RunStore.layer
+).pipe(
+  Layer.provideMerge(
+    Layer.provideMerge(
+      DatabaseMigrations.layer([Migrations.set, RunStoreMigrations.set]),
+      TestDatabase.layer
+    )
+  )
+)
+
+/** A complete durable Control stack over one in-memory SQLite database. */
+const durable = (
+  options: {
+    readonly executor?: ControlExecutor.Service | undefined
+    readonly owner?: Ownership.OwnerId | undefined
+    readonly database?:
+      | Layer.Layer<DurableWriter | SqlClient.SqlClient | RunStore.RunStore, unknown>
+      | undefined
+  } = {}
+): Layer.Layer<Stack | DurableWriter | SqlClient.SqlClient | RunStore.RunStore | Crypto.Crypto> => {
+  const journal = options.database ?? durableJournal
+  const runtime = SqlControlRuntime.layer(
+    { owner: options.owner, approvalAuthority: delegateApproval({ id: "reviewer", kind: "test" }) }
+  ).pipe(Layer.orDie)
+  // The database is provided once, to the whole stack: `NodeDatabase.layer`
+  // opens a fresh `:memory:` connection per build, so provisioning it to each
+  // consumer separately would hand them unrelated databases.
+  return Layer.provideMerge(
+    ControlLive.layer,
+    Layer.mergeAll(
+      runtime,
+      NotificationQueue.layer,
+      ControlExecutor.layer(options.executor ?? ControlExecutor.makeNoop()),
+      Registry.layerNoop()
+    )
+  ).pipe(Layer.provideMerge(Layer.merge(journal, NodeCrypto.layer))) as Layer.Layer<
+    Stack | DurableWriter | SqlClient.SqlClient | RunStore.RunStore | Crypto.Crypto
+  >
+}
+
+it("pages stored plans across scan batches by flow and decision", async () => {
+  const observed = await Effect.runPromise(
+    Effect.gen(function*() {
+      const control = yield* Control
+      const runtime = yield* ControlRuntime
+      const cards = []
+      for (let index = 0; index < 201; index++) {
+        cards.push(
+          yield* control.plan({ flowId: "system/target", input: { label: "//t:push", digest: String(index) } })
+        )
+      }
+      const other = yield* control.plan({ flowId: "system/test", input: { suite: "plans" } })
+      yield* control.approve({ ...cards[0]!.approval, idempotencyKey: "approve:first" })
+      const page = (request: Parameters<ControlRuntimeService["queryPlans"]>[0]) =>
+        Effect.map(runtime.queryPlans(request), (result) => ({
+          ids: result.plans.map((plan) => plan.card.planId),
+          next: result.next
+        }))
+      return {
+        cards,
+        other,
+        targets: yield* page({ flowId: "system/target", limit: 500 }),
+        fullBatch: yield* page({ limit: 200 }),
+        midBatch: yield* page({ flowId: "system/target", limit: 5 }),
+        tail: yield* page({ after: 201, flowId: "system/test", limit: 1 }),
+        approved: yield* page({ decision: "approved", limit: 500 }),
+        pending: yield* page({ decision: "pending", flowId: "system/target", limit: 1 }),
+        refused: yield* Effect.flip(runtime.queryPlans({ limit: 0 }))
+      }
+    }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+  )
+
+  const ids = observed.cards.map((card) => card.planId)
+  expect(observed.targets).toEqual({ ids, next: undefined })
+  expect(observed.fullBatch).toEqual({ ids: ids.slice(0, 200), next: 200 })
+  expect(observed.midBatch).toEqual({ ids: ids.slice(0, 5), next: 5 })
+  expect(observed.tail).toEqual({ ids: [observed.other.planId], next: undefined })
+  expect(observed.approved).toEqual({ ids: [ids[0]], next: undefined })
+  expect(observed.pending).toEqual({ ids: [ids[1]], next: 2 })
+  expect(observed.refused._tag).toBe("/control/InvalidInput")
+})
+
+it("reads only the selected durable run page", async () => {
+  let reads = 0
+  const countedDatabase = Layer.effect(
+    RunStore.RunStore,
+    Effect.map(RunStore.RunStore, (store) => ({
+      ...store,
+      get: (runId: string) =>
+        Effect.suspend(() => {
+          reads += 1
+          return store.get(runId)
+        })
+    }))
+  ).pipe(Layer.provideMerge(durableJournal))
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const control = yield* Control
+      const sql = yield* SqlClient.SqlClient
+      for (let index = 0; index < 23; index++) {
+        const runId = `page-${String(index).padStart(2, "0")}`
+        yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json, parent_run_id, lineage_id)
+        VALUES (${runId}, 'pending', 1, ${JSON.stringify({ version: 1, flowName: "page/test", payload: {} })},
+          ${index === 0 ? null : "page-00"}, 'page-lineage')`
+      }
+      const cases: ReadonlyArray<RunQuery["filters"]> = [
+        undefined,
+        { flowId: "page/test" },
+        { status: "accepted" },
+        { lineageId: "page-lineage" },
+        { parentRunId: "page-00" },
+        { flowId: "page/test", status: "accepted", lineageId: "page-lineage", parentRunId: "page-00" }
+      ]
+      for (const filters of cases) {
+        reads = 0
+        let cursor: string | undefined
+        const seen: Array<string> = []
+        do {
+          const before = reads
+          const listed = yield* control.list({ _tag: "runs", filters, limit: 5, cursor })
+          if (listed._tag !== "runs") return yield* Effect.die("expected runs")
+          seen.push(...listed.items.map((run) => run.runId))
+          expect(reads - before).toBe(listed.items.length)
+          cursor = listed.nextCursor
+        } while (cursor !== undefined && seen.length < 30)
+        expect(new Set(seen).size).toBe(filters?.parentRunId === undefined ? 23 : 22)
+        expect(reads).toBe(seen.length)
+      }
+    }).pipe(Effect.provide(durable({ database: countedDatabase })), Effect.scoped, Effect.orDie)
+  )
+})
+
+it("selects terminal runs newest-first before decoding and paginates ties", async () => {
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const control = yield* Control
+      const sql = yield* SqlClient.SqlClient
+      for (let index = 0; index < 505; index++) {
+        const runId = `history-${String(index).padStart(3, "0")}`
+        yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+        VALUES (${runId}, ${index === 504 ? "suspended" : "completed"}, ${Math.floor(index / 2)},
+          ${JSON.stringify({ version: 1, flowName: "page/test", payload: {} })})`
+      }
+      const request = {
+        _tag: "runs" as const,
+        filters: { flowId: "page/test", terminal: true },
+        order: "newest" as const,
+        limit: 2
+      }
+      const first = yield* control.list(request)
+      expect(first.items.map((row) => "runId" in row ? row.runId : "")).toEqual(["history-503", "history-502"])
+      const second = yield* control.list({ ...request, cursor: first.nextCursor })
+      expect(second.items.map((row) => "runId" in row ? row.runId : "")).toEqual(["history-501", "history-500"])
+      const active = yield* control.list({ ...request, filters: { flowId: "page/test", terminal: false } })
+      expect(active.items.map((row) => "runId" in row ? row.runId : "")).toEqual(["history-504"])
+      expect(yield* Effect.flip(control.list({ _tag: "runs", filters: request.filters, cursor: first.nextCursor })))
+        .toHaveProperty("code", "invalid_input")
+    }).pipe(Effect.provide(durable()), Effect.scoped)
+  )
+})
+
+it("continues a run cursor after deletion without decoding later rows", async () => {
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const control = yield* Control
+      const sql = yield* SqlClient.SqlClient
+      for (const runId of ["a", "b", "c", "d"]) {
+        yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+        VALUES (${runId}, 'pending', 1, ${JSON.stringify({ flowName: "page/test" })})`
+      }
+      const first = yield* control.list({ _tag: "runs", limit: 1 })
+      expect(first.items).toMatchObject([{ runId: "a" }])
+      yield* sql`DELETE FROM flows_runs WHERE run_id = 'a'`
+      yield* sql`UPDATE flows_runs SET state_json = '[]' WHERE run_id = 'd'`
+      const second = yield* control.list({ _tag: "runs", limit: 1, cursor: first.nextCursor })
+      expect(second.items).toMatchObject([{ runId: "b" }])
+      const third = yield* control.list({ _tag: "runs", limit: 1, cursor: second.nextCursor })
+      expect(third.items).toMatchObject([{ runId: "c" }])
+      expect(yield* Effect.flip(control.list({ _tag: "runs", limit: 1, cursor: third.nextCursor })))
+        .toBeInstanceOf(PersistenceError)
+    }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+  )
+})
+
+it("keeps advancing when retention removes a selected row before projection", async () => {
+  const retainedDatabase = Layer.effect(
+    RunStore.RunStore,
+    Effect.gen(function*() {
+      const store = yield* RunStore.RunStore
+      const sql = yield* SqlClient.SqlClient
+      return {
+        ...store,
+        get: (runId: string) =>
+          Effect.gen(function*() {
+            if (runId === "a") yield* sql`DELETE FROM flows_runs WHERE run_id = ${runId}`.pipe(Effect.orDie)
+            return yield* store.get(runId)
+          })
+      }
+    })
+  ).pipe(Layer.provideMerge(durableJournal))
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const runtime = yield* ControlRuntime
+      const sql = yield* SqlClient.SqlClient
+      for (const runId of ["a", "b"]) {
+        yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+        VALUES (${runId}, 'pending', 1, ${JSON.stringify({ flowName: "page/test" })})`
+      }
+      const first = yield* runtime.queryRuns({ limit: 1 })
+      expect(first.items).toEqual([])
+      expect(first.nextCursor).toMatchObject({ runId: "a" })
+      const second = yield* runtime.queryRuns({ limit: 1, cursor: first.nextCursor })
+      expect(second.items.map((run) => run.runId)).toEqual(["b"])
+      expect(second.nextCursor).toBeUndefined()
+    }).pipe(Effect.provide(durable({ database: retainedDatabase })), Effect.scoped, Effect.orDie)
+  )
+})
+
+it("keeps SQL query filters consistent with durable summary projections", async () => {
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const runtime = yield* ControlRuntime
+      const sql = yield* SqlClient.SqlClient
+      const engine = { flowName: "engine/test" }
+      const states = [
+        { runId: "root", state: engine },
+        { runId: "other", state: engine },
+        { runId: "spawn", state: engine },
+        { runId: "round", state: engine },
+        { runId: "metadata", state: { ...engine, parentRunId: "root", lineageId: "lineage" } },
+        {
+          runId: "control",
+          state: {
+            runId: "control",
+            flowId: "control/test",
+            status: "waiting-approval",
+            createdAt: 1,
+            updatedAt: 1,
+            parentRunId: "root",
+            lineageId: "lineage"
+          }
+        }
+      ]
+      for (const row of states) {
+        yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+        VALUES (${row.runId}, 'pending', 1, ${JSON.stringify(row.state)})`
+      }
+      yield* sql`CREATE TABLE flows_run_parents (seq INTEGER PRIMARY KEY, child_id TEXT, parent_id TEXT)`
+      yield* sql`INSERT INTO flows_run_parents (seq, child_id, parent_id)
+      VALUES (1, 'spawn', 'root'), (2, 'spawn', 'other'), (3, 'round', 'other')`
+      yield* sql`UPDATE flows_runs SET parent_run_id = 'spawn', lineage_id = 'lineage' WHERE run_id = 'round'`
+      const all = yield* Effect.map(runtime.queryRuns({ limit: 500 }), (page) => page.items)
+      const cases: ReadonlyArray<RunQuery["filters"]> = [
+        { parentRunId: "root" },
+        { parentRunId: "spawn" },
+        { parentRunId: "other" },
+        { lineageId: "lineage" },
+        { status: "waiting-approval" },
+        { flowId: "engine/test", status: "accepted" }
+      ]
+      for (const filters of cases) {
+        const expected = all.filter((run) =>
+          Object.entries(filters!).every(([key, value]) => run[key as keyof typeof run] === value)
+        ).map((run) => run.runId)
+        const seen: Array<string> = []
+        let cursor: RunQuery["cursor"]
+        do {
+          const page = yield* runtime.queryRuns({ filters, limit: 1, cursor })
+          seen.push(...page.items.map((run) => run.runId))
+          cursor = page.nextCursor
+        } while (cursor !== undefined && seen.length < 10)
+        expect(seen).toEqual(expected)
+      }
+    }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+  )
+})
+
+it("selects SQL runs by creation window and run ids, and pages them oldest or newest first", async () => {
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const runtime = yield* ControlRuntime
+      const sql = yield* SqlClient.SqlClient
+      // Run ids deliberately disagree with creation time; equal times tie-break on the id.
+      for (const [runId, createdAt] of [["z", 10], ["c", 30], ["a", 20], ["d", 30], ["b", 40]] as const) {
+        yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+        VALUES (${runId}, 'pending', ${createdAt}, ${JSON.stringify({ flowName: "window/test" })})`
+      }
+      const walk = (request: Omit<RunQuery, "cursor" | "limit">) =>
+        Effect.gen(function*() {
+          const seen: Array<string> = []
+          let cursor: RunQuery["cursor"]
+          do {
+            const page = yield* runtime.queryRuns({ ...request, limit: 1, cursor })
+            seen.push(...page.items.map((run) => run.runId))
+            cursor = page.nextCursor
+          } while (cursor !== undefined && seen.length < 10)
+          return seen
+        })
+      expect(yield* walk({ order: "oldest" })).toEqual(["z", "a", "c", "d", "b"])
+      expect(yield* walk({ order: "newest" })).toEqual(["b", "d", "c", "a", "z"])
+      // `since` is inclusive and `until` exclusive at the exact millisecond.
+      expect(yield* walk({ order: "oldest", filters: { since: 20, until: 40 } })).toEqual(["a", "c", "d"])
+      expect(yield* walk({ order: "newest", filters: { since: 30 } })).toEqual(["b", "d", "c"])
+      expect(yield* walk({ order: "oldest", filters: { since: 41 } })).toEqual([])
+      expect(yield* walk({ order: "oldest", filters: { until: 10 } })).toEqual([])
+      expect(yield* walk({ order: "oldest", filters: { since: 30, until: 30 } })).toEqual([])
+      expect(yield* walk({ order: "newest", filters: { runIds: ["a", "b", "missing"] } })).toEqual(["b", "a"])
+      expect(yield* walk({ filters: { runIds: [] } })).toEqual([])
+      // Far past SQLite's bind-variable limit, with duplicates.
+      const many = [...Array.from({ length: 40_000 }, (_, index) => `absent-${index}`), "d", "d", "z"]
+      expect(yield* walk({ order: "oldest", filters: { runIds: many } })).toEqual(["z", "d"])
+    }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+  )
+})
+
+contract("durable", (executor) => durable(executor === undefined ? {} : { executor }))
+
+/**
+ * Two owner identities sharing one connection for sequential handoff cases.
+ * The concurrent-resume case below opens independent connections instead.
+ */
+const twoOwners = <A, E>(
+  use: (
+    first: ControlRuntimeService,
+    second: ControlRuntimeService,
+    control: ControlService
+  ) => Effect.Effect<A, E, Control | ControlRuntime>
+): Promise<A> => {
+  const shared = durableJournal
+  return Effect.runPromise(
+    Effect.gen(function*() {
+      const control = yield* Control
+      const first = yield* ControlRuntime
+      const second = yield* SqlControlRuntime.make().pipe(Effect.orDie)
+      return yield* use(first, second, control)
+    }).pipe(
+      Effect.provide(durable({ database: shared })),
+      Effect.scoped,
+      Effect.orDie
+    )
+  )
+}
+
+const started = Effect.gen(function*() {
+  const control = yield* Control
+  const card = yield* control.plan({ flowId: "system/test", input: { suite: "durable" } })
+  yield* control.approve({
+    target: card.approval.target,
+    scope: card.approval.scope,
+    idempotencyKey: card.approval.idempotencyKey
+  })
+  const receipt = yield* control.run({
+    _tag: "Plan",
+    planId: card.planId,
+    digest: card.digest,
+    envelope: card.envelope,
+    idempotencyKey: `run:${card.planId}`
+  })
+  if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
+    return yield* Effect.die("expected an accepted run")
+  }
+  // The default executor declines and Control.run releases the launch. These
+  // SQL-runtime cases exercise an owning process, so reclaim it first.
+  yield* control.resume({ runId: receipt.runId, idempotencyKey: `resume:${receipt.runId}` })
+  return { card, runId: receipt.runId }
+})
+
+describe("SqlControlRuntime", () => {
+  it("preserves the first attribution when recovering legacy duplicate cancel requests", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime
+        const journal = yield* Journal.Journal
+        const { runId } = yield* started
+        for (const reason of ["first request", "duplicate request"]) {
+          yield* journal.emitDurableUnfenced(
+            new JournalEvent.Input({
+              runId: JournalEvent.RunId.make(runId),
+              sourceId: JournalEvent.SourceId.make("/control"),
+              eventType: "control.run.cancel-requested",
+              payload: { runId, reason }
+            })
+          )
+        }
+        expect((yield* runtime.getRun(runId)).cancellation?.reason).toBe("first request")
+      }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+    )
+  })
+
+  it.each(["cancel-requested", "cancelled"])("recovers cancellation after a failed %s event", async (event) => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime
+        const journal = yield* Journal.Journal
+        const sql = yield* SqlClient.SqlClient
+        const { runId } = yield* started
+        let cleanedUp = false
+        const owner = yield* Effect.never.pipe(
+          Effect.ensuring(Effect.sync(() => {
+            cleanedUp = true
+          })),
+          Effect.forkChild({ startImmediately: true })
+        )
+        yield* runtime.registerFiber(runId, owner)
+        let fail = true
+        const failing = Journal.make({
+          ...journal,
+          emitDurableUnfenced: (input) =>
+            Effect.gen(function*() {
+              const receipt = yield* journal.emitDurableUnfenced(input)
+              if (fail && input.eventType === `control.run.${event}`) {
+                fail = false
+                return yield* new Journal.JournalError({
+                  code: "sink_failed",
+                  message: "injected cancellation failure"
+                })
+              }
+              return receipt
+            })
+        })
+        const control = Context.get(
+          yield* Layer.build(Layer.fresh(ControlLive.layer)).pipe(
+            Effect.provide(Registry.layerNoop()),
+            Effect.provideService(Journal.Journal, failing)
+          ),
+          Control
+        )
+        const request = { runId, idempotencyKey: "cancel:recovery" }
+        expect(yield* Effect.flip(control.cancel(request))).toBeInstanceOf(PersistenceError)
+        expect(cleanedUp).toBe(event === "cancelled")
+        expect((yield* runtime.getRun(runId)).status).toBe("accepted")
+        const events = yield* journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 100 })
+        expect(events.entries.some((entry) => entry.eventType === "control.run.cancel-requested"))
+          .toBe(event === "cancelled")
+        expect(events.entries.some((entry) => entry.eventType === "control.run.cancelled")).toBe(false)
+        const durableKey = mutationKey("cancel", "cancel:recovery", yield* runtime.stampPrincipal())
+        const receipts = yield* sql`SELECT receipt_json FROM control_mutations WHERE mutation_key = ${durableKey}`
+        expect(receipts).toHaveLength(event === "cancelled" ? 1 : 0)
+        expect(yield* control.cancel(request)).toEqual({ _tag: "Terminal", runId, status: "cancelled" })
+        expect(cleanedUp).toBe(true)
+        const committed = yield* journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 100 })
+        expect(committed.entries.filter((entry) => entry.eventType === "control.run.cancel-requested")).toHaveLength(1)
+        expect(committed.entries.filter((entry) => entry.eventType === "control.run.cancelled")).toHaveLength(1)
+      }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+    )
+  })
+
+  it("reports a settlement writer failure without losing the cancellation fence", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const writer = yield* DurableWriter
+        let fail = false
+        const runtime = yield* SqlControlRuntime.make().pipe(Effect.provideService(DurableWriter, {
+          write: (effect) =>
+            Effect.suspend(() =>
+              fail
+                ? Effect.fail(new DatabaseError({ code: "unsupported" }))
+                : writer.write(effect)
+            )
+        }))
+        const control = Context.get(
+          yield* Layer.build(Layer.fresh(ControlLive.layer)).pipe(
+            Effect.provide(Registry.layerNoop()),
+            Effect.provideService(ControlRuntime, runtime)
+          ),
+          Control
+        )
+        const { runId } = yield* started.pipe(Effect.provideService(Control, control))
+        const fence = yield* runtime.claimFence(runId)
+        fail = true
+        const error = yield* Effect.flip(runtime.interrupt(runId))
+        expect(error).toBeInstanceOf(PersistenceError)
+        expect((error as PersistenceError).operation).toBe("settle an interrupted run")
+        expect(yield* runtime.claimFence(runId)).toBe(fence)
+        fail = false
+        expect((yield* runtime.interrupt(runId)).status).toBe("cancelled")
+      }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+    )
+  })
+
+  it.each([false, true])(
+    "rolls back plan, key, token and event on journal failure (after insert: %s)",
+    async (afterInsert) => {
+      const observed = await Effect.runPromise(
+        Effect.gen(function*() {
+          const journal = yield* Journal.Journal
+          const sql = yield* SqlClient.SqlClient
+          const request = { flowId: "system/test", input: { atomic: true }, idempotencyKey: "atomic:plan" }
+          const failing = Journal.make({
+            ...journal,
+            emitDurableUnfenced: (input) =>
+              Effect.gen(function*() {
+                if (afterInsert) yield* journal.emitDurableUnfenced(input)
+                return yield* new Journal.JournalError({ code: "sink_failed", message: "injected plan event failure" })
+              })
+          })
+          const control = Context.get(
+            yield* Layer.build(Layer.fresh(ControlLive.layer)).pipe(
+              Effect.provide(Registry.layerNoop()),
+              Effect.provideService(Journal.Journal, failing)
+            ),
+            Control
+          )
+          const first = yield* Effect.flip(control.plan(request))
+          const plans = yield* sql`SELECT * FROM control_plans`
+          const keys = yield* sql`SELECT * FROM control_plan_keys`
+          const tokens = yield* sql`SELECT * FROM control_tokens`
+          const events = yield* journal.entries({ runId: JournalEvent.RunId.make("plan:plan-1"), limit: 10 })
+          const restarted = yield* SqlControlRuntime.make()
+          const retryControl = Context.get(
+            yield* Layer.build(Layer.fresh(ControlLive.layer)).pipe(
+              Effect.provide(Registry.layerNoop()),
+              Effect.provideService(ControlRuntime, restarted)
+            ),
+            Control
+          )
+          const card = yield* retryControl.plan(request)
+          const replay = yield* retryControl.plan(request)
+          const committed = yield* journal.entries({ runId: JournalEvent.RunId.make(`plan:${card.planId}`), limit: 10 })
+          return { first, plans, keys, tokens, events, card, replay, committed }
+        }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+      )
+
+      expect(observed.first).toBeInstanceOf(PersistenceError)
+      expect(observed.plans).toHaveLength(0)
+      expect(observed.keys).toHaveLength(0)
+      expect(observed.tokens).toHaveLength(0)
+      expect(observed.events.entries).toHaveLength(0)
+      expect(observed.replay).toEqual(observed.card)
+      expect(observed.committed.entries.map((entry) => entry.eventType)).toEqual(["control.plan.created"])
+    }
+  )
+
+  it("repairs a plan committed without its creation event after restart", async () => {
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime
+        const journal = yield* Journal.Journal
+        const request = { flowId: "system/test", input: { legacy: true }, idempotencyKey: "legacy:plan" }
+        // This is the state left by a crash between the old implementation's two writes.
+        const original = yield* runtime.plan(request)
+        const restarted = yield* SqlControlRuntime.make()
+        const control = Context.get(
+          yield* Layer.build(Layer.fresh(ControlLive.layer)).pipe(
+            Effect.provide(Registry.layerNoop()),
+            Effect.provideService(ControlRuntime, restarted)
+          ),
+          Control
+        )
+        const repaired = yield* control.plan(request)
+        const replay = yield* control.plan(request)
+        const events = yield* journal.entries({ runId: JournalEvent.RunId.make(`plan:${repaired.planId}`), limit: 10 })
+        return { original, repaired, replay, events }
+      }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+    )
+
+    expect(observed.repaired).toEqual(observed.original.card)
+    expect(observed.replay).toEqual(observed.repaired)
+    expect(observed.events.entries.map((entry) => entry.eventType)).toEqual(["control.plan.created"])
+  })
+
+  it("survives a restart: a second runtime over the same database sees the run", async () => {
+    const shared = durableJournal
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime
+        const { card, runId } = yield* started
+        yield* park(runtime, runId)
+
+        // Nothing of the first runtime is carried across — only the database.
+        const restarted = yield* SqlControlRuntime.make({
+          owner: { hostId: "local", pid: 2, nonce: "restarted" }
+        }).pipe(Effect.orDie)
+        const run = yield* restarted.getRun(runId)
+        const plan = yield* restarted.getPlan(card.planId)
+        const runs = yield* Effect.map(restarted.queryRuns({ limit: 500 }), (page) => page.items)
+        const grants = yield* restarted.grants
+        const replay = yield* restarted.lookupMutation(
+          mutationKey("run", `run:${card.planId}`, yield* restarted.stampPrincipal()),
+          "x"
+        )
+        const resumed = yield* restarted.resume(runId)
+        return { run, plan, runs, grants, replay, resumed }
+      }).pipe(
+        Effect.provide(durable({ database: shared })),
+        Effect.scoped,
+        Effect.orDie
+      )
+    )
+
+    expect(observed.run.status).toBe("parked")
+    expect(observed.plan.decision).toBe("approved")
+    expect(observed.plan.decodedInput).toEqual({ suite: "durable" })
+    expect(observed.runs.map((run) => run.runId)).toEqual([observed.run.runId])
+    expect(observed.grants).toHaveLength(1)
+    // A replay lookup under a different fingerprint is a conflict, not a hit.
+    expect(observed.replay?._tag).toBe("Conflict")
+    expect(observed.resumed.status).toBe("accepted")
+  })
+
+  it("scopes one request id to each run and persists who resolved it", async () => {
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime
+        const firstRun = yield* started
+        const secondRun = yield* started
+        const approvalEnvelope = { capabilities: [], flows: ["ask"], budget: {} }
+        const firstTarget = {
+          _tag: "Node" as const,
+          runId: firstRun.runId,
+          requestId: "ask-shared",
+          digest: "ask-digest",
+          envelope: approvalEnvelope
+        }
+        const secondTarget = { ...firstTarget, runId: secondRun.runId }
+        const first = yield* runtime.registerApproval(firstTarget)
+        const second = yield* runtime.registerApproval(secondTarget)
+        const decisionPrincipal = { id: "reviewer", kind: "test", stampedAt: 7 }
+
+        yield* runtime.resolveApproval(first, "approved", decisionPrincipal)
+
+        const sql = yield* SqlClient.SqlClient
+        const rows = yield* sql<{ readonly decisionPrincipalJson: string | null }>`
+          SELECT decision_principal_json AS "decisionPrincipalJson"
+          FROM control_tokens
+          WHERE target_tag = 'Node'
+            AND run_id = ${firstTarget.runId}
+            AND target_id = ${firstTarget.requestId}
+        `
+        return {
+          first,
+          second,
+          firstRunId: firstRun.runId,
+          secondRunId: secondRun.runId,
+          firstAfter: yield* runtime.registerApproval(firstTarget),
+          secondAfter: yield* runtime.registerApproval(secondTarget),
+          persistedPrincipal: rows[0]?.decisionPrincipalJson
+        }
+      }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+    )
+
+    expect(observed.first.target).toMatchObject({ _tag: "Node", runId: observed.firstRunId })
+    expect(observed.second.target).toMatchObject({ _tag: "Node", runId: observed.secondRunId })
+    expect(observed.firstRunId).not.toBe(observed.secondRunId)
+    expect(observed.firstAfter).toMatchObject({
+      _tag: "Approved",
+      decisionPrincipal: { id: "reviewer", kind: "test", stampedAt: 7 }
+    })
+    expect(observed.secondAfter).toMatchObject({ _tag: "Pending" })
+    expect(observed.persistedPrincipal).not.toBeNull()
+    expect(JSON.parse(observed.persistedPrincipal ?? "null")).toEqual({
+      id: "reviewer",
+      kind: "test",
+      stampedAt: 7
+    })
+  })
+
+  it("keeps colliding plan and node token strings as distinct approvals", async () => {
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime
+        const { card } = yield* runtime.plan({ flowId: "system/test", input: { collision: true } })
+        const { runId } = yield* started
+        const nodeTarget = {
+          _tag: "Node" as const,
+          runId,
+          requestId: card.planId,
+          digest: card.digest,
+          envelope: card.envelope
+        }
+        const node = yield* runtime.registerApproval(nodeTarget)
+        yield* runtime.resolveApproval(node, "approved", { id: "reviewer", kind: "test", stampedAt: 7 })
+
+        return {
+          plan: yield* runtime.lookupApproval(card.approval.target),
+          storedPlan: yield* runtime.getPlan(card.planId),
+          node: yield* runtime.registerApproval(nodeTarget)
+        }
+      }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+    )
+
+    expect(observed.plan).toMatchObject({ _tag: "Pending", target: { _tag: "Plan" } })
+    expect(observed.storedPlan.decision).toBe("pending")
+    expect(observed.node).toMatchObject({ _tag: "Approved", target: { _tag: "Node" } })
+  })
+
+  it("still refuses a changed digest for one node approval identity", async () => {
+    const error = await Effect.runPromise(
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime
+        const { runId } = yield* started
+        const target = {
+          _tag: "Node" as const,
+          runId,
+          requestId: "ask-digest",
+          digest: "first",
+          envelope: { capabilities: [], flows: ["ask"], budget: {} }
+        }
+        yield* runtime.registerApproval(target)
+        return yield* Effect.flip(runtime.registerApproval({ ...target, digest: "second" }))
+      }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+    )
+
+    expect(error).toBeInstanceOf(PlanDigestMismatch)
+  })
+
+  it("refuses a stale process's fenced write after a peer claims the run", async () => {
+    const observed = await twoOwners((first, second, control) =>
+      Effect.gen(function*() {
+        const { runId } = yield* started
+        const staleFence = yield* first.claimFence(runId)
+        yield* park(first, runId)
+        // The peer takes ownership. The first runtime still holds the fence it
+        // had before the park, and that fence is now spent.
+        const claimed = yield* second.resume(runId)
+        const stale = yield* first.writeStatus(runId, staleFence, "running").pipe(Effect.flip)
+        const peerFence = yield* second.claimFence(runId)
+        const owned = yield* second.writeStatus(runId, peerFence, "running")
+        const evicted = yield* first.claimFence(runId).pipe(Effect.flip)
+        return { claimed, stale, owned, evicted }
+      })
+    )
+
+    expect(observed.claimed.status).toBe("accepted")
+    expect(observed.stale).toBeInstanceOf(ClaimLost)
+    expect(observed.owned.status).toBe("running")
+    expect(observed.evicted).toBeInstanceOf(ClaimLost)
+  })
+
+  it.each(
+    [
+      { alive: true, hostId: "mac", pid: 202, scope: "launched", accepted: false },
+      { alive: false, hostId: "mac", pid: 202, scope: "launched", accepted: true },
+      { alive: false, hostId: "mac", pid: 303, scope: "launched", accepted: true },
+      { alive: false, hostId: "mac", pid: 404, scope: "launched", accepted: true },
+      { alive: undefined, hostId: "mac", pid: 202, scope: "launched", accepted: false },
+      { alive: false, hostId: "linux", pid: 202, scope: "launched", accepted: false },
+      { alive: true, hostId: "mac", pid: 101, scope: "launched", accepted: true },
+      { alive: true, hostId: "mac", pid: 202, scope: "any", accepted: true }
+    ] as const
+  )(
+    "checks the parked host before taking its run ($hostId/$pid alive=$alive scope=$scope)",
+    async ({ alive, hostId, pid, scope, accepted }) => {
+      const owner = { hostId: "mac", pid: 101, nonce: "detached" }
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const first = yield* ControlRuntime
+          const store = yield* RunStore.RunStore
+          const { runId } = yield* started
+          yield* park(first, runId)
+          const before = yield* store.get(runId)
+          const caller = yield* SqlControlRuntime.make({
+            owner: { hostId, pid, nonce: "cli" },
+            ...(alive === undefined ? {} : { isAlive: () => Effect.succeed(alive) })
+          })
+          const result = yield* Effect.exit(caller.resume(runId, { scope }))
+          if (accepted) {
+            expect(Exit.isSuccess(result)).toBe(true)
+            expect((yield* store.get(runId)).owner).toMatchObject({ hostId, pid })
+            const fence = yield* caller.claimFence(runId)
+            expect((yield* caller.writeStatus(runId, fence, "running")).status).toBe("running")
+            if (pid !== owner.pid) {
+              expect(yield* Effect.flip(first.claimFence(runId))).toBeInstanceOf(ClaimLost)
+            }
+          } else {
+            expect(Exit.isFailure(result)).toBe(true)
+            const error = yield* Effect.flip(result)
+            expect(error).toMatchObject({
+              code: "claim_lost",
+              runId,
+              reason: "The host that parked this run is still alive or its liveness is unknown",
+              // The refusal names the host, so `Control.resume` can hand it the run (#3342).
+              parkedBy: { hostId: "mac", pid: 101 }
+            })
+            expect(yield* store.get(runId)).toEqual(before)
+          }
+        }).pipe(Effect.provide(durable({ owner })), Effect.scoped, Effect.orDie)
+      )
+    }
+  )
+
+  it("keeps an operator's consent on a resume delegation until a host takes it up", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime
+        const { runId } = yield* started
+        yield* park(runtime, runId)
+        const plain = yield* runtime.requestResume(runId)
+        expect(yield* runtime.pendingResumes).toEqual([{ runId, sequence: plain, requestedAtMs: expect.any(Number) }])
+        const explicit = yield* runtime.requestResume(runId, { consent: 41 })
+        expect((yield* runtime.pendingResumes)[0]).toMatchObject({ sequence: explicit, consent: 41 })
+        // A later approval delegation is background intent: it neither grants
+        // consent nor drops the consent no host has taken up yet.
+        const approval = yield* runtime.requestResume(runId)
+        expect((yield* runtime.pendingResumes)[0]).toMatchObject({ sequence: approval, consent: 41 })
+        const newer = yield* runtime.requestResume(runId, { consent: 57 })
+        expect((yield* runtime.pendingResumes)[0]).toMatchObject({ sequence: newer, consent: 57 })
+        // Clearing an older read leaves the newer request standing.
+        yield* runtime.clearResume(runId, approval)
+        expect((yield* runtime.pendingResumes)[0]).toMatchObject({ sequence: newer, consent: 57 })
+        yield* runtime.clearResume(runId, newer)
+        expect(yield* runtime.pendingResumes).toEqual([])
+        const next = yield* runtime.requestResume(runId)
+        expect(yield* runtime.pendingResumes).toEqual([{ runId, sequence: next, requestedAtMs: expect.any(Number) }])
+      }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+    )
+  })
+
+  it("takes over a running run at once when a same-host probe proves its owner gone, and across hosts once its lease expires", async () => {
+    const owner = { hostId: "mac", pid: 101, nonce: "first" }
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const first = yield* ControlRuntime
+        const store = yield* RunStore.RunStore
+        const sql = yield* SqlClient.SqlClient
+        const { runId } = yield* started
+        const asked: Array<string> = []
+        const successor = (hostId: string, alive: boolean) =>
+          SqlControlRuntime.make({
+            owner: { hostId, pid: 202, nonce: `${hostId}-successor` },
+            isAlive: (expected, context) =>
+              Effect.sync(() => {
+                asked.push(`${expected.hostId}:${expected.pid} asked by ${context.claimant.hostId}`)
+                return alive
+              })
+          }).pipe(Effect.orDie)
+        // No liveness check: a running run is its owner's for good.
+        const unchecked = yield* SqlControlRuntime.make({ owner: { hostId: "mac", pid: 303, nonce: "x" } }).pipe(
+          Effect.orDie
+        )
+        const withoutCheck = yield* Effect.flip(unchecked.resume(runId))
+        const ownerAlive = yield* Effect.flip((yield* successor("mac", true)).resume(runId))
+        // From another host, an owner reported gone keeps its fresh lease.
+        const otherHostFresh = yield* Effect.flip((yield* successor("linux", false)).resume(runId))
+        // On the owner's host, a probe that finds its pid gone needs no stale lease.
+        const sameHost = yield* successor("mac", false)
+        const taken = yield* sameHost.resume(runId)
+        const fence = JSON.parse(yield* sameHost.claimFence(runId)) as Ownership.OwnerId
+        const evicted = yield* Effect.flip(first.claimFence(runId))
+        // Across hosts the claim rests on the expired lease alone.
+        yield* sql`UPDATE flows_runs SET heartbeat_at_ms = heartbeat_at_ms - 60000 WHERE run_id = ${runId}`
+        yield* sql`UPDATE flows_consensus_leases SET heartbeat_at_ms = heartbeat_at_ms - 60000 WHERE run_id = ${runId}`
+        const otherHost = yield* successor("linux", false)
+        const moved = yield* otherHost.resume(runId)
+        const row = yield* store.get(runId)
+        return { withoutCheck, ownerAlive, otherHostFresh, taken, fence, evicted, moved, row, asked }
+      }).pipe(Effect.provide(durable({ owner })), Effect.scoped, Effect.orDie)
+    )
+
+    expect(observed.withoutCheck).toBeInstanceOf(ClaimLost)
+    expect(observed.ownerAlive).toBeInstanceOf(ClaimLost)
+    expect(observed.otherHostFresh).toBeInstanceOf(ClaimLost)
+    expect(observed.taken.status).toBe("accepted")
+    expect(observed.fence).toMatchObject({ hostId: "mac", pid: 202 })
+    expect(observed.evicted).toBeInstanceOf(ClaimLost)
+    expect(observed.moved.status).toBe("accepted")
+    expect(observed.row.owner).toMatchObject({ hostId: "linux", pid: 202 })
+    expect(observed.asked).toEqual([
+      "mac:101 asked by mac",
+      "mac:101 asked by linux",
+      "mac:101 asked by mac",
+      "mac:202 asked by linux"
+    ])
+  })
+
+  it("lets exactly one of two concurrent resumes claim a parked run", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "control-resume-race-"))
+    try {
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const filename = join(directory, "race.sqlite")
+          const owners = [
+            { hostId: "first", pid: 1, nonce: "first" },
+            { hostId: "second", pid: 2, nonce: "second" }
+          ] as const
+          // Each build opens its own connection and writer over the same file.
+          const firstServices = yield* Layer.build(durable({ database: fileBundle(filename), owner: owners[0] }))
+          const secondServices = yield* Layer.build(durable({ database: fileBundle(filename), owner: owners[1] }))
+          expect(Context.get(firstServices, SqlClient.SqlClient)).not.toBe(
+            Context.get(secondServices, SqlClient.SqlClient)
+          )
+          const runtimes = [Context.get(firstServices, ControlRuntime), Context.get(secondServices, ControlRuntime)]
+          const first = runtimes[0]!
+          const second = runtimes[1]!
+          const { runId } = yield* started.pipe(Effect.provide(firstServices))
+          const firstFence = yield* first.claimFence(runId)
+          yield* park(first, runId)
+          yield* second.resume(runId)
+          const secondFence = yield* second.claimFence(runId)
+          yield* park(second, runId)
+          const spentFences = [firstFence, secondFence]
+          const ready = yield* Deferred.make<void>()
+          let arrivals = 0
+          const resumes = yield* Effect.all(
+            runtimes.map((runtime) =>
+              Effect.gen(function*() {
+                if (++arrivals === 2) yield* Deferred.succeed(ready, undefined)
+                yield* Deferred.await(ready)
+                return yield* Effect.exit(runtime.resume(runId))
+              })
+            ),
+            { concurrency: 2 }
+          )
+          const persisted = yield* Context.get(firstServices, RunStore.RunStore).get(runId)
+          expect(persisted.status).toBe("running")
+          expect(persisted.owner).not.toBeNull()
+          const fences = yield* Effect.all(runtimes.map((runtime) => Effect.exit(runtime.claimFence(runId))))
+          expect(resumes.filter(Exit.isSuccess)).toHaveLength(1)
+          expect(fences.filter(Exit.isSuccess)).toHaveLength(1)
+          const writes = yield* Effect.all(runtimes.map((runtime, index) => {
+            const fence = fences[index]!
+            return Effect.exit(runtime.writeStatus(
+              runId,
+              Exit.isSuccess(fence) ? fence.value : spentFences[index]!,
+              "running"
+            ))
+          }))
+          expect(writes.filter(Exit.isSuccess)).toHaveLength(1)
+          for (let index = 0; index < runtimes.length; index++) {
+            const resumed = resumes[index]!
+            const fence = fences[index]!
+            const written = writes[index]!
+            if (owners[index]!.hostId === persisted.owner!.hostId) {
+              expect(Exit.isSuccess(resumed)).toBe(true)
+              expect(Exit.isSuccess(fence)).toBe(true)
+              expect(Exit.isSuccess(written)).toBe(true)
+              if (Exit.isSuccess(fence)) expect(JSON.parse(fence.value)).toEqual(persisted.owner)
+            } else {
+              expect(yield* Effect.flip(resumed)).toBeInstanceOf(ClaimLost)
+              expect(yield* Effect.flip(fence)).toBeInstanceOf(ClaimLost)
+              expect(yield* Effect.flip(written)).toBeInstanceOf(ClaimLost)
+            }
+          }
+          expect((yield* Context.get(secondServices, RunStore.RunStore).get(runId)).owner).toEqual(persisted.owner)
+        }).pipe(Effect.scoped, Effect.orDie)
+      )
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it("reads runs while a peer plane holds the SQLite write lock", async () => {
+    // A losing claimant reads the run while the winner's claim holds the
+    // write lock. A read that opened its own transaction took `BEGIN
+    // IMMEDIATE` and failed as `PersistenceError` instead of reaching the
+    // fence that answers `ClaimLost`.
+    const directory = mkdtempSync(join(tmpdir(), "control-read-under-lock-"))
+    try {
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const filename = join(directory, "control.sqlite")
+          const services = yield* Layer.build(durable({ database: fileBundle(filename) }))
+          const runtime = Context.get(services, ControlRuntime)
+          const { runId } = yield* started.pipe(Effect.provide(services))
+          const peer = Context.get(yield* Layer.build(NodeDatabase.layer({ filename })), SqlClient.SqlClient)
+          yield* peer`BEGIN IMMEDIATE`
+          const reads = yield* Effect.all([
+            Effect.exit(Effect.asVoid(runtime.getRun(runId))),
+            Effect.exit(Effect.asVoid(runtime.pageRunIds({ limit: 10 }))),
+            Effect.exit(Effect.asVoid(
+              runtime.queryRuns({ limit: 10, order: "newest", filters: { parentRunId: runId } })
+            ))
+          ])
+          yield* peer`ROLLBACK`
+          expect(reads.map((read) => read._tag === "Success" ? "read" : String(read.cause))).toEqual([
+            "read",
+            "read",
+            "read"
+          ])
+        }).pipe(Effect.scoped, Effect.orDie)
+      )
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it.each([
+    { spelling: "resume", launched: true },
+    { spelling: "run", launched: true },
+    { spelling: "resume", launched: false },
+    { spelling: "run", launched: false }
+  ])("journals explicit $spelling without approval delegation (launched=$launched)", async ({ spelling, launched }) => {
+    const offered: string[] = []
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const control = yield* Control
+        const runtime = yield* ControlRuntime
+        const sql = yield* SqlClient.SqlClient
+        const store = yield* RunStore.RunStore
+        const { runId } = yield* started
+        yield* park(runtime, runId)
+        // An engine-created row has no entry in the control launch index.
+        if (!launched) yield* sql`DELETE FROM control_runs WHERE run_id = ${runId}`
+        const before = yield* store.get(runId)
+        const input = { runId, idempotencyKey: "resume:explicit" }
+        const receipt = yield* spelling === "resume"
+          ? control.resume(input)
+          : control.run({ _tag: "Resume", ...input })
+        expect(receipt._tag).toBe("Accepted")
+        expect(yield* runtime.pendingResumes).toEqual([])
+        expect(offered).toEqual([])
+        const after = yield* store.get(runId)
+        if (launched) {
+          expect(after.status).toBe("running")
+          expect((yield* runtime.getRun(runId)).status).toBe("accepted")
+        } else {
+          expect(after).toEqual(before)
+          expect(yield* Effect.flip(runtime.claimFence(runId))).toBeInstanceOf(ClaimLost)
+        }
+        const events = yield* control.watch({ runId, follow: false }).pipe(Stream.runCollect)
+        expect(events.filter((event) => event.kind === "control.run.resume")).toHaveLength(2)
+        expect(events.some((event) => event.kind === "control.run.resumed")).toBe(false)
+      }).pipe(
+        Effect.provide(durable({
+          executor: {
+            ...ControlExecutor.makeNoop(),
+            resumeRun: ({ runId }) =>
+              Effect.sync(() => {
+                offered.push(runId)
+                return "unknown" as const
+              })
+          }
+        })),
+        Effect.scoped,
+        Effect.orDie
+      )
+    )
+  })
+
+  it.each(["accepted", "running"] as const)(
+    "joins its own %s run and keeps the original fence usable",
+    async (status) => {
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const runtime = yield* ControlRuntime
+          const { runId } = yield* started
+          const fence = yield* runtime.claimFence(runId)
+          if (status === "running") yield* runtime.writeStatus(runId, fence, status)
+          const before = yield* runtime.getRun(runId)
+          expect(yield* runtime.resume(runId)).toEqual(before)
+          expect(yield* runtime.claimFence(runId)).toBe(fence)
+          expect((yield* runtime.writeStatus(runId, fence, "completed")).status).toBe("completed")
+        }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+      )
+    }
+  )
+
+  it("refuses to interrupt a live run this process does not own", async () => {
+    const observed = await twoOwners((first, second) =>
+      Effect.gen(function*() {
+        const { runId } = yield* started
+        yield* park(first, runId)
+        yield* second.resume(runId)
+        const fence = yield* second.claimFence(runId)
+        // Running, and owned by the peer: the terminal short-circuit B-12 adds
+        // cannot answer this one, so the ownership check still has to.
+        yield* second.writeStatus(runId, fence, "running")
+        const interrupted = yield* first.interrupt(runId).pipe(Effect.flip)
+        const evicted = yield* first.claimFence(runId).pipe(Effect.flip)
+        return { interrupted, evicted }
+      })
+    )
+
+    expect(observed.interrupted).toBeInstanceOf(ClaimLost)
+    expect(observed.evicted).toBeInstanceOf(ClaimLost)
+  })
+
+  it("reports unknown ids and unknown flows as typed failures", async () => {
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime
+        const missingFlow = yield* runtime.plan({ flowId: "system/nope", input: {} }).pipe(Effect.flip)
+        const missingRun = yield* runtime.registerFiber(
+          "run-absent",
+          yield* Effect.void.pipe(Effect.forkChild({ startImmediately: true }))
+        ).pipe(Effect.flip)
+        const missingSignal = yield* runtime.deliveredSignals("run-absent").pipe(Effect.flip)
+        const missingSignalWrite = yield* runtime.deliverSignal("run-absent", {
+          name: "missing",
+          payload: null
+        }).pipe(Effect.flip)
+        const badFence = yield* runtime.writeStatus("run-absent", "not json", "running").pipe(Effect.flip)
+        return { missingFlow, missingRun, missingSignal, missingSignalWrite, badFence }
+      }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+    )
+
+    expect(observed.missingFlow._tag).toBe("/control/FlowNotFound")
+    expect(observed.missingRun).toBeInstanceOf(RunNotFound)
+    expect(observed.missingSignal).toBeInstanceOf(RunNotFound)
+    expect(observed.missingSignalWrite).toBeInstanceOf(RunNotFound)
+    expect(observed.badFence).toBeInstanceOf(RunNotFound)
+  })
+
+  it("replays a plan for a repeated idempotency key and rejects a reused one", async () => {
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime
+        const first = yield* runtime.plan({ flowId: "system/test", input: { a: 1 }, idempotencyKey: "k" })
+        const replay = yield* runtime.plan({ flowId: "system/test", input: { a: 1 }, idempotencyKey: "k" })
+        const reused = yield* runtime.plan({ flowId: "system/test", input: { a: 2 }, idempotencyKey: "k" }).pipe(
+          Effect.flip
+        )
+        const principal = yield* runtime.stampPrincipal()
+        const flows = yield* runtime.listFlows
+        return { first, replay, reused, principal, flows }
+      }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+    )
+
+    expect(observed.first.created).toBe(true)
+    expect(observed.replay).toEqual({ card: observed.first.card, created: false })
+    expect(observed.reused._tag).toBe("/control/InvalidInput")
+    expect(observed.principal.id).toBe("local")
+    expect(observed.flows.length).toBeGreaterThan(0)
+  })
+
+  it("stamps a submitted principal over the composition's own", async () => {
+    // The durable twin of the memory runtime's precedence. `Control.ts` says
+    // the runtime supplies its own principal when the caller names none, so a
+    // named one wins; the reverse would rename a server-authenticated operator
+    // to whatever the host was composed with.
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const composed = yield* SqlControlRuntime.make({ principal: { id: "composed", kind: "host" } }).pipe(
+          Effect.orDie
+        )
+        const submitted = yield* composed.stampPrincipal({ id: "remote", kind: "bearer", stampedAt: 99 })
+        const unnamed = yield* composed.stampPrincipal()
+        return { submitted, unnamed }
+      }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+    )
+
+    expect(observed.submitted).toMatchObject({ id: "remote", kind: "bearer" })
+    expect(observed.submitted.stampedAt).not.toBe(99)
+    expect(observed.unnamed).toMatchObject({ id: "composed", kind: "host" })
+  })
+
+  it("records and replays a mutation receipt across runtimes", async () => {
+    const observed = await twoOwners((first, second) =>
+      Effect.gen(function*() {
+        yield* first.recordMutation("mut", "fp", { _tag: "Accepted", receiptId: "r", runId: "run-1" })
+        const hit = yield* second.lookupMutation("mut", "fp")
+        const miss = yield* second.lookupMutation("other", "fp")
+        return { hit, miss }
+      })
+    )
+
+    expect(observed.hit).toEqual({ _tag: "AlreadyApplied", receiptId: "r", runId: "run-1" })
+    expect(observed.miss).toBeUndefined()
+  })
+
+  it("never lets a racing mutation overwrite the first durable receipt", async () => {
+    const observed = await twoOwners((first, second) =>
+      Effect.gen(function*() {
+        yield* first.recordMutation("mut", "first", { _tag: "Accepted", receiptId: "first" })
+        const rejected = yield* Effect.flip(
+          second.recordMutation("mut", "second", { _tag: "Accepted", receiptId: "second" })
+        )
+        const retained = yield* second.lookupMutation("mut", "first")
+        return { rejected, retained }
+      })
+    )
+
+    expect(observed.rejected).toBeInstanceOf(PersistenceError)
+    expect(observed.retained).toEqual({ _tag: "AlreadyApplied", receiptId: "first" })
+  })
+
+  it("allows a concurrent write while a finite snapshot page is being consumed", async () => {
+    const pageStarted = Deferred.makeUnsafe<void>()
+    const releasePage = Deferred.makeUnsafe<void>()
+    let held = false
+    const observedJournal = Layer.effect(
+      Journal.Journal,
+      Effect.map(Journal.Journal, (journal) =>
+        Journal.make({
+          ...journal,
+          entries: (options) =>
+            Effect.suspend(() => {
+              if (held || options.limit !== 1024) return journal.entries(options)
+              held = true
+              return Deferred.succeed(pageStarted, undefined).pipe(
+                Effect.andThen(Deferred.await(releasePage)),
+                Effect.andThen(journal.entries(options))
+              )
+            })
+        }))
+    )
+    const runtime = SqlControlRuntime.layer().pipe(Layer.orDie)
+    const notifications = NotificationQueue.layer.pipe(Layer.provide(observedJournal))
+    const control = ControlLive.layer.pipe(
+      Layer.provide([
+        runtime,
+        observedJournal,
+        notifications,
+        ControlExecutor.layerNoop(),
+        Registry.layerNoop()
+      ]),
+      Layer.provideMerge(Layer.merge(durableJournal, NodeCrypto.layer))
+    ) as Layer.Layer<Control>
+
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const control = yield* Control
+        const { runId } = yield* started
+        // A few seeds are enough: the page is held before it reads, so the
+        // property under test is that holding it blocks no writer.
+        for (let index = 0; index < 3; index++) {
+          yield* control.signal({
+            runId,
+            signal: { name: `seed-${index}`, payload: null },
+            idempotencyKey: `signal:seed-${index}`
+          })
+        }
+
+        const snapshot = yield* control.watch({ runId, follow: false }).pipe(
+          Stream.runCollect,
+          Effect.forkChild({ startImmediately: true })
+        )
+        yield* Deferred.await(pageStarted)
+        // A writer blocked by the held page never settles, and the test
+        // timeout reports it; a wall-clock bound here false-reds under load.
+        const receipt = yield* control.signal({
+          runId,
+          signal: { name: "during-snapshot", payload: null },
+          idempotencyKey: "signal:during-snapshot"
+        })
+        yield* Deferred.succeed(releasePage, undefined)
+        const events = yield* Fiber.join(snapshot)
+        return { events, receipt }
+      }).pipe(
+        Effect.provide(control),
+        Effect.scoped,
+        Effect.orDie
+      )
+    )
+
+    expect(observed.receipt._tag).toBe("Accepted")
+    const signalNames = observed.events
+      .filter((event) => event.kind === "control.signal.admitted")
+      .map((event) => (event.payload as { readonly name: string }).name)
+    expect(signalNames).toEqual(["seed-0", "seed-1", "seed-2"])
+    expect(signalNames).not.toContain("during-snapshot")
+  })
+
+  it("hands both racers of a same-key plan the same card", async () => {
+    const observed = await twoOwners((first, second) =>
+      Effect.gen(function*() {
+        const request = { flowId: "system/test", input: { suite: "race" }, idempotencyKey: "plan:race" }
+        // `control_plan_keys.idempotency_key` is a primary key. Two runtimes
+        // planning under one key used to make the loser fail the insert, so a
+        // second operator asking for the same plan got a PersistenceError
+        // instead of the card the key promises.
+        return yield* Effect.all(
+          [Effect.exit(first.plan(request)), Effect.exit(second.plan(request))],
+          { concurrency: 2 }
+        )
+      })
+    )
+
+    const succeeded = observed.filter((exit) => exit._tag === "Success")
+    expect(succeeded).toHaveLength(2)
+    const answers = succeeded.map((exit) =>
+      (exit as {
+        readonly value: {
+          readonly card: { readonly planId: string; readonly digest: string }
+          readonly created: boolean
+        }
+      }).value
+    )
+    expect(new Set(answers.map((answer) => answer.card.planId)).size).toBe(1)
+    expect(new Set(answers.map((answer) => answer.card.digest)).size).toBe(1)
+    expect(answers.filter((answer) => answer.created)).toHaveLength(1)
+  })
+
+  it("still refuses a reused plan key that names a different intent", async () => {
+    const observed = await twoOwners((first, second) =>
+      Effect.gen(function*() {
+        yield* first.plan({ flowId: "system/test", input: { suite: "one" }, idempotencyKey: "plan:reused" })
+        return yield* Effect.exit(
+          second.plan({ flowId: "system/test", input: { suite: "two" }, idempotencyKey: "plan:reused" })
+        )
+      })
+    )
+
+    expect(observed._tag).toBe("Failure")
+  })
+
+  it("owns no Node imports", async () => {
+    const source = await import("node:fs").then((fs) =>
+      fs.readFileSync(new URL("../src/SqlControlRuntime.ts", import.meta.url), "utf8")
+    )
+    expect(source).not.toMatch(/(?:from|import\s*)\s*["']node:/)
+    expect(source).not.toContain(["@effect", "platform-node"].join("/"))
+  })
+})
+
+it("commits the run and its idempotency receipt before handing it to the executor", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "control-admission-"))
+  const schema = directory.split("/").at(-1)!.replaceAll("-", "_")
+  const postgres = process.env.SMITHERS_TEST_PG_URL ? new URL(process.env.SMITHERS_TEST_PG_URL) : undefined
+  postgres?.searchParams.set("schema", schema)
+  const filename = postgres?.toString() ?? join(directory, "control.db")
+  let launches = 0
+  try {
+    await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const peer = Context.get(yield* Layer.build(NodeDatabase.layer({ filename })), SqlClient.SqlClient)
+      if (postgres) yield* Effect.addFinalizer(() => peer`DROP SCHEMA ${peer(schema)} CASCADE`.pipe(Effect.orDie))
+      const executor = ControlExecutor.makeNoop({
+        launch: ({ run }) =>
+          Effect.gen(function*() {
+            launches++
+            // A separate connection cannot read the writer's uncommitted row.
+            const rows = yield* peer`SELECT run_id FROM flows_runs WHERE run_id = ${run.runId}`
+            expect(rows).toEqual([{ run_id: run.runId }])
+            const receipts = yield* peer`SELECT receipt_json FROM control_mutations`
+            expect(receipts.some((row) => JSON.parse(String(row.receipt_json)).runId === run.runId)).toBe(true)
+            return "accepted" as const
+          }).pipe(Effect.orDie)
+      })
+      const services = yield* Layer.build(durable({ database: fileBundle(filename), executor }))
+      const control = Context.get(services, Control)
+      const card = yield* control.plan({ flowId: "system/test", input: {} })
+      yield* control.approve({ ...card.approval, idempotencyKey: "approve:visible" })
+      const input = {
+        _tag: "Plan" as const,
+        planId: card.planId,
+        digest: card.digest,
+        envelope: card.envelope,
+        idempotencyKey: "run:visible"
+      }
+      const receipt = yield* control.run(input)
+      expect(receipt._tag).toBe("Accepted")
+      expect((yield* control.run(input))._tag).toBe("AlreadyApplied")
+      expect(launches).toBe(1)
+    })))
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+describe("global watch bounds SQL inventory", () => {
+  const partitionPage = 100
+  const runCount = 250
+  const planCount = 120
+
+  // The plan read is SQLite's; PostgreSQL's planner may prefer a scan on a
+  // table this small whatever the index offers.
+  const sqliteOnly = !process.env.SMITHERS_TEST_PG_URL
+
+  interface InventoryRead {
+    readonly text: string
+    readonly rows: number
+    readonly plan: ReadonlyArray<string>
+  }
+
+  /**
+   * Records every run or plan inventory SELECT the watch issues, with the
+   * number of rows it returned and SQLite's query plan for it. The
+   * transformer re-reads each matching statement once on the same
+   * connection, outside itself, so the count is the real row count SQLite
+   * hands back and the plan is the one it runs.
+   */
+  const inventoryReads = (
+    reads: Array<InventoryRead>,
+    admitBeforeRunPage?: (sql: Statement.Constructor) => Effect.Effect<void>
+  ): Statement.Transformer =>
+  (self, sql) =>
+    Effect.gen(function*() {
+      const [text, params] = self.compile()
+      if (/^\s*(SELECT|WITH)\b/i.test(text) && /\bFROM (flows_runs|control_plans)\b/i.test(text)) {
+        const bare = <A extends object>(statement: string, values: ReadonlyArray<unknown> = params) =>
+          sql.unsafe<A>(statement, values).pipe(
+            Effect.provideService(Statement.CurrentTransformer, undefined),
+            Effect.orDie
+          )
+        if (admitBeforeRunPage !== undefined && /\bFROM flows_runs\b/i.test(text)) {
+          yield* admitBeforeRunPage(sql).pipe(Effect.provideService(Statement.CurrentTransformer, undefined))
+        }
+        const rows = yield* bare(text)
+        const plan = sqliteOnly
+          ? yield* bare<{ readonly detail: string }>(`EXPLAIN QUERY PLAN ${text}`)
+          : []
+        reads.push({ text, rows: rows.length, plan: plan.map((step) => step.detail) })
+      }
+      return self
+    })
+
+  /**
+   * Seeds `runCount` engine runs and `planCount` plans, each with one journal
+   * entry, then collects the global watch while recording inventory reads.
+   */
+  const watchInventory = (
+    follow: boolean,
+    reads: Array<InventoryRead>,
+    counts: { readonly runs: number; readonly plans: number } = { runs: runCount, plans: planCount },
+    admitBeforeRunPage?: (sql: Statement.Constructor) => Effect.Effect<void>
+  ) =>
+    Effect.runPromise(
+      Effect.gen(function*() {
+        const control = yield* Control
+        const journal = yield* Journal.Journal
+        const sql = yield* SqlClient.SqlClient
+        const partitions: Array<string> = []
+        for (let index = 0; index < counts.runs; index++) {
+          const runId = `inventory-run-${String(index).padStart(5, "0")}`
+          yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+          VALUES (${runId}, 'pending', ${index}, ${JSON.stringify({ version: 1, flowName: "page/test", payload: {} })})`
+          partitions.push(runId)
+        }
+        for (let index = 0; index < counts.plans; index++) {
+          const planId = `inventory-plan-${String(index).padStart(5, "0")}`
+          yield* sql`INSERT INTO control_plans (plan_id, card_json, decoded_input_json, decision)
+          VALUES (${planId}, '{}', '{}', 'pending')`
+          partitions.push(`plan:${planId}`)
+        }
+        for (const partition of partitions) {
+          yield* journal.emitDurableUnfenced(
+            new JournalEvent.Input({
+              runId: JournalEvent.RunId.make(partition),
+              sourceId: JournalEvent.SourceId.make("/test"),
+              eventType: "test.seeded",
+              payload: { partition }
+            })
+          )
+        }
+        yield* journal.flush
+        // A finite watch is collected to its end, which proves it has one.
+        const events = yield* control.watch({ follow }).pipe(
+          follow ? Stream.take(partitions.length) : (stream) => stream,
+          Stream.runCollect,
+          Effect.provideService(Statement.CurrentTransformer, inventoryReads(reads, admitBeforeRunPage))
+        )
+        return { partitions, events }
+      }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+    )
+
+  it.each([false, true])(
+    "every inventory SELECT returns at most one page of keys and the watch delivers all N partitions (follow: %s)",
+    async (follow) => {
+      const reads: Array<InventoryRead> = []
+      const observed = await watchInventory(follow, reads)
+
+      expect(observed.events.map((event) => event.runId).sort()).toEqual([...observed.partitions].sort())
+      expect(reads.length).toBeGreaterThan(0)
+      // One keyed page plus the continuation key, never the whole table.
+      for (const read of reads) expect(read.rows, read.text).toBeLessThanOrEqual(partitionPage + 1)
+      // One read pins the newest position, then one read per page.
+      const runPages = reads.filter((read) => /\bFROM flows_runs\b/i.test(read.text))
+      const planPages = reads.filter((read) => /\bFROM control_plans\b/i.test(read.text))
+      expect(runPages).toHaveLength(1 + Math.ceil(runCount / partitionPage))
+      expect(planPages).toHaveLength(1 + Math.ceil(planCount / partitionPage))
+    }
+  )
+
+  it("a finite watch ends at the inventory it started with while runs keep arriving between pages", async () => {
+    const reads: Array<InventoryRead> = []
+    let admitted = 0
+    // More than a page of new runs lands before every run inventory read, for
+    // 30 rounds: an unbounded walk always finds a next page until they stop.
+    const admit = (sql: Statement.Constructor) =>
+      Effect.gen(function*() {
+        if (admitted >= 30 * (partitionPage + 50)) return
+        for (let index = 0; index < partitionPage + 50; index++) {
+          const runId = `late-run-${String(admitted++).padStart(5, "0")}`
+          yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+          VALUES (${runId}, 'pending', ${1_000_000 + admitted}, ${
+            JSON.stringify({ version: 1, flowName: "page/test", payload: {} })
+          })`
+        }
+      }).pipe(Effect.orDie)
+    const observed = await watchInventory(false, reads, { runs: runCount, plans: 0 }, admit)
+
+    expect(observed.events.map((event) => event.runId).sort()).toEqual([...observed.partitions].sort())
+    // The first read pins the bound; the walk then covers only the seeded
+    // runs and the runs admitted before that pin.
+    const runPages = reads.filter((read) => /\bFROM flows_runs\b/i.test(read.text))
+    expect(runPages).toHaveLength(1 + Math.ceil((runCount + partitionPage + 50) / partitionPage))
+  })
+
+  it.skipIf(!sqliteOnly)(
+    "every inventory page, continuations included, is an index seek rather than a table scan",
+    async () => {
+      const reads: Array<InventoryRead> = []
+      await watchInventory(false, reads)
+
+      const continuations = reads.filter((read) => read.rows > 1)
+      expect(continuations.length).toBeGreaterThan(2)
+      for (const read of reads) {
+        // A SCAN step or a temporary sort b-tree visits every row of the
+        // table on every page, which makes walking all pages quadratic.
+        expect(read.plan.join("\n"), read.text).not.toMatch(/\bSCAN\b|TEMP B-TREE/)
+        expect(read.plan.join("\n"), read.text).toMatch(/^SEARCH (flows_runs|control_plans)\b/m)
+      }
+    }
+  )
+})

@@ -1,0 +1,946 @@
+import { SharedConversationSchema } from "./seams/SharedConversationSeam"
+import { FORM_INSTRUCTION_FIELDS } from "@smthrs/rpc/UiInstruction"
+import { docsCard } from "@smthrs/rpc/DocsPages"
+import { GlobalRegistrator } from "@happy-dom/global-registrator"
+import { afterAll, expect, test } from "bun:test"
+import { flushSync } from "react-dom"
+import { createRoot } from "react-dom/client"
+import App from "../App"
+import { ControllerTestProvider } from "../ControllerContext"
+import { createAppStore } from "./AppStore"
+import { scopedControllers } from "./ControllerTestScope"
+import { memoryStorage, silentAgent, waitFor, writeLegacyCollection } from "./TestFixtures"
+
+GlobalRegistrator.register()
+afterAll(async () => { await new Promise(resolve => setTimeout(resolve, 20)); await GlobalRegistrator.unregister() })
+const createAppController = scopedControllers()
+test("private diagnostic scope survives the actual storage boundary", async () => {
+  const storage = memoryStorage()
+  const store = await createAppStore({ kind: "localStorage", storage })
+  const controller = createAppController(store, silentAgent)
+  await store.dispatch({ type: "message.appended", actor: "system", text: "Retained health receipt",
+    diagnostic: { login: "ben", branch: "main" } }).isPersisted.promise
+  await controller.dispose()
+  const restored = await createAppStore({ kind: "localStorage", storage })
+  const next = createAppController(restored, silentAgent)
+  try {
+    const receipt = [...restored.collections.messages.values()].find(row => row.text === "Retained health receipt")!
+    expect(receipt.diagnostic).toEqual({ login: "ben", branch: "main" })
+  } finally { await next.dispose() }
+})
+
+const ben = { id: "turn-ben", author: 1, authorLogin: "ben", runId: "run-ben", prompt: "List changed tests", state: "completed", frames: [
+  { runId: "run-ben", type: "delta", kind: "text", text: "One changed test" }, { runId: "run-ben", type: "done", reason: "stop" }
+] }
+
+const documentation = (id: string) => ({ ...docsCard([{ slug: id, title: id, summary: "", markdown: `# ${id}` }], id, 1, 100).card, id })
+const orderedIds = (host: HTMLElement) => [...host.querySelectorAll('[data-message-id]')].map(row => row.getAttribute('data-message-id'))
+
+test("a retained local card precedes a later shared reply (#3813)", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  await store.dispatch({ type: "card.upsert", actor: "user", card: documentation("retained-docs") }).isPersisted.promise
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async input => Response.json(String(input).endsWith('/view-state') ? {} : { id: "main", entries: [{ ...ben, sequence: 10 }] })
+  })
+  const host = document.createElement('div'); document.body.append(host); const root = createRoot(host)
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    await controller.sharedConversation!.read()
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    await waitFor(() => host.querySelector('[data-message-id="retained-docs"]') !== null && host.textContent?.includes('One changed test') === true)
+    const ids = orderedIds(host)
+    expect(ids.indexOf('retained-docs')).toBeLessThan(ids.indexOf('turn-ben:prompt'))
+    expect(ids.at(-1)).toBe('turn-ben:answer')
+  } finally { flushSync(() => root.unmount()); host.remove(); await controller.dispose() }
+})
+
+test("local cards keep their place between shared turns across refresh and reload (#3813)", async () => {
+  const storage = memoryStorage()
+  const turns = [{ ...ben, sequence: 10 }]
+  const services = {
+    bootstrap: { apiVersion: 1 as const, host: "cloud" as const, version: "test", buildSha: "test", capabilities: ["agent" as const], authFlow: "redirect" as const, sandbox: null },
+    fetchImpl: async (input: RequestInfo | URL) => Response.json(String(input).endsWith('/view-state') ? {} : { id: "main", entries: turns })
+  }
+  const host = document.createElement('div'); document.body.append(host); const root = createRoot(host)
+  let controller: ReturnType<typeof createAppController> | undefined
+  const mount = async () => {
+    const store = await createAppStore({ kind: "localStorage", storage })
+    controller = createAppController(store, silentAgent, services)
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    await controller.sharedConversation!.read()
+    flushSync(() => root.render(<ControllerTestProvider controller={controller!}><App /></ControllerTestProvider>))
+    await waitFor(() => host.textContent?.includes('One changed test') === true)
+    return store
+  }
+  try {
+    const store = await mount()
+    await store.dispatch({ type: "card.upsert", actor: "user", card: documentation("between-docs") }).isPersisted.promise
+    await waitFor(() => host.querySelector('[data-message-id="between-docs"]') !== null)
+    expect(orderedIds(host).indexOf('turn-ben:answer')).toBeLessThan(orderedIds(host).indexOf('between-docs'))
+    turns.push({ ...ben, id: "next", runId: "next-run", sequence: 11, prompt: "Next prompt", frames: [
+      { runId: "next-run", type: "delta", kind: "text", text: "New answer" }, { runId: "next-run", type: "done", reason: "stop" }
+    ] })
+    await controller!.sharedConversation!.read()
+    await waitFor(() => host.textContent?.includes('New answer') === true)
+    await store.dispatch({ type: "card.upsert", actor: "user", card: documentation("newest-docs") }).isPersisted.promise
+    const assertOrder = async () => {
+      await waitFor(() => host.querySelector('[data-message-id="newest-docs"]') !== null)
+      const ids = orderedIds(host)
+      expect(ids.indexOf('turn-ben:answer')).toBeLessThan(ids.indexOf('between-docs'))
+      expect(ids.indexOf('between-docs')).toBeLessThan(ids.indexOf('next:prompt'))
+      expect(ids.indexOf('next:answer')).toBeLessThan(ids.indexOf('newest-docs'))
+    }
+    await assertOrder()
+    // Refreshing an old card cannot move it beneath the new reply.
+    await store.dispatch({ type: "card.upsert", actor: "user", card: documentation("between-docs") }).isPersisted.promise
+    await assertOrder()
+    await controller!.sharedConversation!.read()
+    await assertOrder()
+    flushSync(() => root.render(null)); await controller!.dispose(); controller = undefined
+    await mount()
+    await assertOrder()
+  } finally { flushSync(() => root.unmount()); host.remove(); await controller?.dispose() }
+})
+
+for (const failure of ["transport", "http", "invalid"] as const) test(`a ${failure} view failure keeps confirmed replies and recovers the private view`, async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let failing = true
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async input => {
+      if (String(input).endsWith("/view-state")) {
+        if (!failing) return Response.json({ scroll_anchor: "turn-ben:answer" })
+        if (failure === "transport") throw new TypeError("Failed to fetch")
+        return failure === "http" ? new Response("{}", { status: 503 }) : Response.json({ queue: "invalid" })
+      }
+      return Response.json({ id: "main", entries: [ben] })
+    }
+  })
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host)
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    await waitFor(() => controller.sharedConversation!.get().error !== undefined)
+    expect(controller.sharedConversation!.get().error).toBe("View unavailable")
+    await waitFor(() => host.textContent?.includes("One changed test") === true)
+    const turn = host.querySelector('[data-shared-turn="turn-ben"]')
+    expect(turn).not.toBeNull()
+    failing = false
+    await controller.sharedConversation!.read()
+    expect(controller.sharedConversation!.get().error).toBeUndefined()
+    expect(controller.sharedConversation!.get().view?.scroll_anchor).toBe("turn-ben:answer")
+    expect(host.querySelector('[data-shared-turn="turn-ben"]')).toBe(turn)
+    failing = true
+    await controller.sharedConversation!.read()
+    expect(controller.sharedConversation!.get().view?.scroll_anchor).toBe("turn-ben:answer")
+    expect(controller.sharedConversation!.get().error).toBe("View unavailable")
+    expect(host.querySelector('[data-shared-turn="turn-ben"]')).toBe(turn)
+  } finally { flushSync(() => root.unmount()); host.remove(); await controller.dispose() }
+})
+
+test("a confirmed stopped prompt settles its toast as cancelled", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let stopped = false
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent"], authFlow: "redirect", sandbox: null },
+    toastDebounceMs: 1,
+    toastAutoDismissMs: 60_000,
+    fetchImpl: async input => {
+      const path = String(input)
+      if (path.endsWith("/prompt")) return Response.json({ turnId: ben.id, terminal: false }, { status: 202 })
+      if (path.endsWith("/stop")) { stopped = true; return Response.json({ status: "ok" }) }
+      if (path.endsWith("/view-state")) return Response.json({})
+      return Response.json({ id: "main", entries: [{ ...ben, state: stopped ? "cancelled" : "running", frames: [] }] })
+    }
+  })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+  await controller.send(ben.prompt)
+  await waitFor(() => store.session().sharedPrompts?.[0]?.state === "accepted")
+  const key = `toast-prompt-${store.session().sharedPrompts![0]!.id}`
+  await waitFor(() => store.collections.toasts.get(key)?.status === "running")
+  controller.stop()
+  await waitFor(() => store.session().sharedPrompts?.[0]?.state === "cancelled")
+  await waitFor(() => store.collections.toasts.get(key)?.status === "cancelled")
+  expect(store.collections.toasts.get(key)?.detail).toBe("Cancelled")
+  expect([...store.collections.toasts.values()].some(row => row.detail.includes("unexpected error"))).toBe(false)
+})
+
+test("install shell reads shared authors and clears stale output across branch and account changes", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const requests: string[] = []
+  let finish!: (value: Response) => void
+  let starts = 0
+  const controller = createAppController(store, { ...silentAgent, startTurn: async () => { starts++; return { status: "started" } } }, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async input => {
+      const path = String(input); requests.push(path)
+      if (path === "/api/conversations/main") return Response.json({ id: "main", entries: [ben] })
+      if (path === "/api/conversations/feature") return new Promise(resolve => { finish = resolve })
+      return new Response("{}", { status: 404 })
+    }
+  })
+  const host = document.createElement("div"); document.body.append(host)
+  const root = createRoot(host)
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    await store.dispatch({ type: "message.appended", actor: "system", text: "PRIVATE LEGACY HISTORY" }).isPersisted.promise
+    await store.dispatch({ type: "message.appended", actor: "system", text: "OWN DIAGNOSTIC", diagnostic: { login: "ben", branch: "main" } }).isPersisted.promise
+    await store.dispatch({ type: "message.appended", actor: "system", text: "OTHER PERSON DIAGNOSTIC", diagnostic: { login: "alice", branch: "main" } }).isPersisted.promise
+    await store.dispatch({ type: "message.appended", actor: "system", text: "OTHER BRANCH DIAGNOSTIC", diagnostic: { login: "ben", branch: "feature" } }).isPersisted.promise
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    await waitFor(() => host.querySelector("[data-shared-turn]") !== null)
+    const answer = host.querySelector('[data-shared-turn="turn-ben"] article[data-kind="answer"]')!
+    expect(answer.querySelector(".author .avatar")?.getAttribute("aria-label")).toBe("Smithers")
+    expect(answer.querySelector(".author")?.textContent).toBe("SSmithers")
+    expect(answer.querySelector('.avatar[data-smithers]')?.hasAttribute("data-for")).toBe(false)
+    expect(answer.querySelector('[data-reply-to="turn-ben:prompt"]')?.textContent).toBe("benList changed tests")
+    expect(host.textContent).not.toContain("Smithers for")
+    expect(host.textContent).toContain("One changed test")
+    expect(host.textContent).not.toContain("PRIVATE LEGACY HISTORY")
+    expect(host.textContent).toContain("OWN DIAGNOSTIC")
+    expect(host.textContent).not.toContain("OTHER PERSON DIAGNOSTIC")
+    expect(host.textContent).not.toContain("OTHER BRANCH DIAGNOSTIC")
+    await controller.selectConversationBranch("feature")
+    await waitFor(() => requests.includes("/api/conversations/feature"))
+    expect(host.querySelector("[data-shared-turn]")).toBeNull()
+    expect(host.textContent).not.toContain("OWN DIAGNOSTIC")
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, admin: false, scopesPlain: null }).isPersisted.promise
+    finish(Response.json({ id: "feature", entries: [ben] }))
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(host.querySelector("[data-shared-turn]")).toBeNull()
+    expect(controller.commands.find("chat.queue.resume")).toBeUndefined()
+    expect(host.querySelector('[data-flow="chat.queue.resume"]')).toBeNull()
+    expect(host.textContent).not.toContain("DIAGNOSTIC")
+    expect(starts).toBe(0)
+    expect(requests.some(path => /\/api\/(agent|chat)\/turn$/.test(path))).toBe(false)
+  } finally { flushSync(() => root.unmount()); host.remove(); await controller.dispose() }
+})
+
+test("composer persists before unresolved admission without draining unrelated writes, deduplicates, and waits for host completion", async () => {
+  const durableStore = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  // Background view writes may never leave a globally idle store. Only the
+  // prompt request itself must be durable before admission starts.
+  const store = { ...durableStore, settled: () => new Promise<void>(() => {}) }
+  let release!: (value: Response) => void
+  let completed = false, starts = 0
+  const writes: Array<{ path: string; method: string; body: unknown }> = []
+  const controller = createAppController(store, { ...silentAgent, startTurn: async () => { starts++; return { status: "started" } } }, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+    toastDebounceMs: 1,
+    fetchImpl: async (input, init) => {
+      const path = String(input)
+      if (init?.method === "POST") {
+        writes.push({ path, method: init.method, body: JSON.parse(String(init.body)) })
+        if (path === "/api/conversations/main/prompt") return new Promise(resolve => { release = resolve })
+      }
+      if (path === "/api/conversations/main") return Response.json({ id: "main", entries: store.session().sharedPrompts?.some(row => row.turnId) ? [{ ...ben, state: completed ? "completed" : "running", frames: completed ? ben.frames : [] }] : [] })
+      if (path.endsWith("/view-state")) return Response.json({})
+      return new Response("{}", { status: 404 })
+    }
+  })
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host)
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    controller.changeDraft("List changed tests")
+    expect(await controller.send("List changed tests")).toBe(true)
+    expect(await controller.send("List changed tests")).toBe(true)
+    await waitFor(() => writes.length === 1)
+    const saved = store.session().sharedPrompts![0]!
+    expect(saved.state).toBe("requested")
+    expect(store.session().draft).toBe("")
+    expect(writes).toEqual([{ path: "/api/conversations/main/prompt", method: "POST", body: { prompt: "List changed tests", idempotencyKey: saved.id } }])
+    controller.changeDraft("Chat remains usable")
+    await waitFor(() => store.collections.toasts.get(`toast-prompt-${saved.id}`)?.status === "running")
+    release(Response.json({ status: "accepted", turnId: "turn-ben", terminal: false }, { status: 202 }))
+    await waitFor(() => host.querySelector('[data-shared-turn="turn-ben"][data-state="running"]') !== null)
+    expect(store.collections.toasts.get(`toast-prompt-${saved.id}`)?.status).toBe("running")
+    expect(store.session().draft).toBe("Chat remains usable")
+    completed = true
+    await waitFor(() => store.session().sharedPrompts?.[0]?.state === "completed")
+    await waitFor(() => store.collections.toasts.get(`toast-prompt-${saved.id}`)?.status === "ok")
+    expect(host.textContent).toContain("One changed test")
+    expect(starts).toBe(0)
+  } finally { flushSync(() => root.unmount()); host.remove(); await controller.dispose() }
+})
+
+test("private queue Edit patches its server turn and Remove deletes only that turn", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let queue = [{ id: "queued-turn", prompt: "Old prompt" }]
+  const writes: Array<{ path: string; method: string; body: unknown }> = []
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async (input, init) => {
+      const path = String(input), method = init?.method ?? "GET"
+      if (method !== "GET") {
+        writes.push({ path, method, body: init?.body ? JSON.parse(String(init.body)) : null })
+        if (method === "PATCH") queue = [{ id: "queued-turn", prompt: "List changed tests" }]
+        if (method === "DELETE") queue = []
+        return Response.json({ status: "ok" })
+      }
+      if (path === "/api/conversations/main") return Response.json({ id: "main", entries: [] })
+      if (path.endsWith("/view-state")) return Response.json({ queue })
+      return new Response("{}", { status: 404 })
+    }
+  })
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host)
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    await waitFor(() => host.querySelector('[aria-label="Edit queued prompt: Old prompt"]') !== null)
+    flushSync(() => host.querySelector<HTMLButtonElement>('[aria-label="Edit queued prompt: Old prompt"]')!.click())
+    await waitFor(() => store.session().draft === "Old prompt")
+    expect(writes).toEqual([])
+    controller.changeDraft("List changed tests")
+    await controller.send("List changed tests")
+    await waitFor(() => host.querySelector('[aria-label="Remove queued prompt: List changed tests"]') !== null)
+    expect(writes).toEqual([{ path: "/api/conversations/main/turns/queued-turn", method: "PATCH", body: { prompt: "List changed tests" } }])
+    flushSync(() => host.querySelector<HTMLButtonElement>('[aria-label="Remove queued prompt: List changed tests"]')!.click())
+    await waitFor(() => host.querySelector('[aria-label="Queued prompts"]') === null)
+    expect(writes[1]).toEqual({ path: "/api/conversations/main/turns/queued-turn", method: "DELETE", body: null })
+    expect(writes).toHaveLength(2)
+  } finally { flushSync(() => root.unmount()); host.remove(); await controller.dispose() }
+})
+
+test("admission starts only after its request is durable, so a reload at the POST re-sends the same key", async () => {
+  // #3780: the POST raced its own durable write; a reload then lost a request the server had admitted.
+  const durable = new Map<string, string>()
+  const storageOf = (data: Map<string, string>) => ({ getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => void data.set(key, value), removeItem: (key: string) => void data.delete(key) })
+  const bootstrap = { apiVersion: 1 as const, host: "local" as const, version: "test", buildSha: "test", capabilities: ["install" as const], authFlow: "redirect" as const, sandbox: null }
+  let atAdmission: Map<string, string> | undefined
+  const store = await createAppStore({ kind: "localStorage", storage: storageOf(durable) })
+  const controller = createAppController(store, silentAgent, { bootstrap, fetchImpl: async input => {
+    const path = String(input)
+    // The server has admitted the prompt; the page reloads before its response arrives.
+    if (path.endsWith("/prompt")) { atAdmission ??= new Map(durable); return new Promise<Response>(() => {}) }
+    if (path === "/api/conversations/main") return Response.json({ id: "main", entries: [] })
+    if (path.endsWith("/view-state")) return Response.json({})
+    return new Response("{}", { status: 404 })
+  } })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+  expect(await controller.send("List changed tests")).toBe(true)
+  await waitFor(() => atAdmission !== undefined)
+  const key = store.session().sharedPrompts![0]!.id
+  await controller.dispose()
+  const reloaded = await createAppStore({ kind: "localStorage", storage: storageOf(atAdmission!) })
+  expect(reloaded.session().sharedPrompts).toEqual([{ id: key, owner: "ben", branch: "main", prompt: "List changed tests", state: "requested" }])
+  const bodies: unknown[] = []
+  const next = createAppController(reloaded, silentAgent, { bootstrap, fetchImpl: async (input, init) => {
+    const path = String(input)
+    if (path.endsWith("/prompt")) { bodies.push(JSON.parse(String(init?.body))); return Response.json({ turnId: "turn-ben", terminal: true }, { status: 202 }) }
+    if (path === "/api/conversations/main") return Response.json({ id: "main", entries: bodies.length ? [ben] : [] })
+    if (path.endsWith("/view-state")) return Response.json({})
+    return new Response("{}", { status: 404 })
+  } })
+  try {
+    await waitFor(() => reloaded.session().sharedPrompts?.[0]?.state === "completed")
+    expect(bodies).toEqual([{ prompt: "List changed tests", idempotencyKey: key }])
+  } finally { await next.dispose() }
+})
+
+test("failed admission stays private and retry reuses its durable idempotency key", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let allowed = false
+  const bodies: unknown[] = []
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async (input, init) => {
+      const path = String(input)
+      if (path.endsWith("/prompt")) {
+        bodies.push(JSON.parse(String(init?.body)))
+        return allowed ? Response.json({ turnId: "turn-ben", terminal: true }, { status: 202 }) : Response.json({ class: "infra", code: "unavailable", message: "Prompt unavailable" }, { status: 503 })
+      }
+      if (path === "/api/conversations/main") return Response.json({ id: "main", entries: allowed ? [ben] : [] })
+      if (path.endsWith("/view-state")) return Response.json({})
+      return new Response("{}", { status: 404 })
+    }
+  })
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host)
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    await controller.send("List changed tests")
+    await waitFor(() => store.session().sharedPrompts?.[0]?.state === "failed")
+    await waitFor(() => host.querySelector('[data-private="true"]')?.textContent?.includes("Prompt unavailable") === true)
+    expect(host.querySelectorAll("[data-shared-turn]")).toHaveLength(0)
+    allowed = true
+    await controller.submitCommand({ name: "chat.retry", payload: {}, actor: "user" })
+    await waitFor(() => store.session().sharedPrompts?.[0]?.state === "completed")
+    expect(bodies).toHaveLength(2)
+    expect(bodies[0]).toEqual(bodies[1])
+  } finally { flushSync(() => root.unmount()); host.remove(); await controller.dispose() }
+})
+
+test("Stop targets the author's running turn and queue restore preserves FIFO draft text", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let queue = [{ id: "first", prompt: "First" }, { id: "second", prompt: "Second" }]
+  const writes: Array<{ path: string; method: string }> = []
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async (input, init) => {
+      const path = String(input), method = init?.method ?? "GET"
+      if (method !== "GET") {
+        writes.push({ path, method })
+        if (method === "DELETE") queue = queue.filter(row => !path.endsWith(`/${row.id}`))
+        return Response.json({ status: "ok" })
+      }
+      if (path === "/api/conversations/main") return Response.json({ id: "main", entries: [{ ...ben, state: "running", frames: [] }] })
+      if (path.endsWith("/view-state")) return Response.json({ queue })
+      return new Response("{}", { status: 404 })
+    }
+  })
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", admin: false, scopesPlain: null }).isPersisted.promise
+    await waitFor(() => controller.sharedConversation?.get().conversation !== undefined)
+    controller.stop()
+    expect(writes).toEqual([])
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    await waitFor(() => controller.sharedConversation?.get().queue?.length === 2)
+    controller.stop()
+    await waitFor(() => writes.length === 1)
+    expect(writes[0]).toEqual({ path: "/api/conversations/main/turns/turn-ben/stop", method: "POST" })
+    controller.changeDraft("Draft")
+    await controller.submitCommand({ name: "chat.queue.restore", payload: {}, actor: "user" })
+    await waitFor(() => store.session().draft === "First\nSecond\nDraft")
+    expect(writes.slice(1)).toEqual([{ path: "/api/conversations/main/turns/second", method: "DELETE" }, { path: "/api/conversations/main/turns/first", method: "DELETE" }])
+    await waitFor(() => controller.sharedConversation?.get().queue?.length === 0)
+  } finally { await controller.dispose() }
+})
+
+test("shared card maximization persists only in its member view and restores on return", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const views: Record<string, Record<string, unknown>> = { ben: { scroll_anchor: "turn-ben:prompt", home: { filter: "working" }, toasts_hidden: true }, alice: { scroll_anchor: "turn-ben:answer" } }
+  const writes: unknown[] = []
+  const card = { id: "shared-file", kind: "file", title: "README.md", status: "active", ordinal: 1, createdAt: 1, payload: { repo: "owner/repo", path: "README.md", content: "Shared file bytes", truncated: false } }
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async (input, init) => {
+      const path = String(input), login = store.collections.identitySessions.get("identity")?.login ?? "ben"
+      if (path === "/api/conversations/main") return Response.json({ id: "main", entries: [{ ...ben, frames: [...ben.frames, { type: "card", runId: "run-ben", card }] }] })
+      if (path.endsWith("/view-state")) {
+        if (init?.method === "PUT") { views[login] = JSON.parse(String(init.body)); writes.push(views[login]) }
+        return Response.json({ ...views[login], queue: [{ id: "private", prompt: "Private queue" }] })
+      }
+      return new Response("{}", { status: 404 })
+    }
+  })
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host)
+  const identity = async (login: string) => store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login, admin: false, scopesPlain: null }).isPersisted.promise
+  try {
+    await identity("ben")
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    await waitFor(() => host.querySelector('[data-testid="card-shared-file"]') !== null)
+    const button = host.querySelector<HTMLButtonElement>('[data-testid="card-shared-file"] [data-flow="card.maximize"]')!
+    expect(button).not.toBeNull()
+    flushSync(() => button.click())
+    await waitFor(() => host.querySelector('[data-testid="card-shared-file"]')?.getAttribute("data-maximized") === "true")
+    expect(writes).toEqual([{ scroll_anchor: "turn-ben:prompt", home: { filter: "working" }, toasts_hidden: true, card_view: { "shared-file": "maximized" } }])
+    await identity("alice")
+    await waitFor(() => controller.sharedConversation?.get().view?.scroll_anchor === "turn-ben:answer")
+    expect(host.querySelector('[data-testid="card-shared-file"]')?.getAttribute("data-maximized")).toBe("false")
+    expect(views.alice).toEqual({ scroll_anchor: "turn-ben:answer" })
+    await identity("ben")
+    await waitFor(() => host.querySelector('[data-testid="card-shared-file"]')?.getAttribute("data-maximized") === "true")
+    expect(writes).toHaveLength(1)
+  } finally { flushSync(() => root.unmount()); host.remove(); await controller.dispose() }
+})
+
+test("private host theme instructions use the typed flow once and never cross members", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const writes: string[] = []
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async (input, init) => {
+      const path = String(input)
+      if (init?.method && init.method !== "GET") writes.push(path)
+      if (path === "/api/conversations/main") return Response.json({ id: "main", entries: [ben] })
+      if (path.endsWith("/view-state")) return Response.json({ instructions: store.collections.identitySessions.get("identity")?.login === "ben" ? [{ id: "turn-ben:1:4", command: "theme", payload: { mode: "dark" } }] : [] })
+      return new Response("{}", { status: 404 })
+    }
+  })
+  try {
+    await store.dispatch({ type: "theme.changed", actor: "user", theme: "light" }).isPersisted.promise
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", admin: false, scopesPlain: null }).isPersisted.promise
+    await controller.sharedConversation!.read()
+    expect(store.session().theme).toBe("light")
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    await waitFor(() => store.session().theme === "dark")
+    expect(store.session().uiInstructionsSeen).toHaveLength(1)
+    await controller.submitCommand({ name: "theme", payload: { mode: "light" }, actor: "user" })
+    await controller.sharedConversation!.read()
+    expect(store.session().theme).toBe("light")
+    expect(writes).toEqual([])
+  } finally { await controller.dispose() }
+})
+
+test("host UI instructions run only UI-only flows, at most once, and a refusal is never asked again", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const writes: string[] = []
+  let reads = 0
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async (input, init) => {
+      const path = String(input)
+      if (init?.method && init.method !== "GET") writes.push(path)
+      if (path === "/api/conversations/main") return Response.json({ id: "main", entries: [ben] })
+      if (path.endsWith("/view-state")) {
+        reads++
+        return Response.json({ instructions: [
+          { id: "turn-ben:1:1", command: "todo.drop", payload: { n: 2 } },
+          { id: "turn-ben:1:2", command: "card.dismiss", payload: { cardId: "no-such-card" } },
+          { id: "turn-ben:1:3", command: "theme", payload: { mode: "dark" } }
+        ] })
+      }
+      return new Response("{}", { status: 404 })
+    }
+  })
+  try {
+    await store.dispatch({ type: "theme.changed", actor: "user", theme: "light" }).isPersisted.promise
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    await waitFor(() => store.session().theme === "dark")
+    const seen = [...store.session().uiInstructionsSeen ?? []].map(id => JSON.parse(id)[2]).sort()
+    expect(seen).toEqual(["turn-ben:1:2", "turn-ben:1:3"])
+    await store.dispatch({ type: "theme.changed", actor: "user", theme: "light" }).isPersisted.promise
+    const before = reads
+    await controller.sharedConversation!.read()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(reads).toBeGreaterThan(before)
+    expect(store.session().theme).toBe("light")
+    expect(store.session().uiInstructionsSeen).toHaveLength(2)
+    expect(writes).toEqual([])
+  } finally { await controller.dispose() }
+})
+
+test("install conversation binds imported snapshots through the shared renderer and replaces replay", async () => {
+  const { default: imported } = await import("./testdata/external-conversations.json")
+  const { default: journal } = await import("./testdata/external-journal-conversations.json")
+  const storage = memoryStorage()
+  writeLegacyCollection(storage, "app-messages", imported)
+  const store = await createAppStore({ kind: "localStorage", storage })
+  let entries: unknown[] = journal
+  let available = true
+  let reads = 0
+  const topics = new Map<string, Set<() => void>>()
+  const live = { getSnapshot: () => undefined, subscribe: (topic: string, notify: () => void) => {
+    const listeners = topics.get(topic) ?? new Set<() => void>(); topics.set(topic, listeners); listeners.add(notify)
+    return () => { listeners.delete(notify) }
+  } }
+  let starts = 0
+  const controller = createAppController(store, { ...silentAgent, startTurn: async () => { starts++; return { status: "started" } } }, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+    live,
+    fetchImpl: async input => {
+      if (String(input) === "/api/conversations/main") { reads++; return available ? Response.json({ id: "main", entries }) : Response.json({ code: "unavailable", class: "infra", message: "Conversation unavailable" }, { status: 503 }) }
+      return Response.json({})
+    }
+  })
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host)
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maya", admin: false, scopesPlain: null }).isPersisted.promise
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    await waitFor(() => host.querySelectorAll('article[data-origin="external"]').length === 4)
+    expect(host.textContent).toContain("Claude Code for Ben")
+    expect(host.textContent).toContain("Codex for Ben")
+    expect(host.textContent).toContain("Tests failed")
+    expect([...host.querySelectorAll('article[data-origin="external"]')].map(row => row.getAttribute("data-participant-id"))).toEqual(["participant-claude", "participant-claude", "participant-claude", "participant-codex"])
+    for (const row of host.querySelectorAll('article[data-origin="external"]')) expect([...row.querySelectorAll("button")].map(button => button.dataset.flow)).toEqual(["chat.copy-message"])
+    const beforeReplay = reads
+    expect(topics.get("conversation:main")?.size).toBe(1)
+    for (const notify of topics.get("conversation:main")!) notify()
+    await waitFor(() => reads > beforeReplay)
+    expect(host.querySelectorAll('article[data-origin="external"]')).toHaveLength(4)
+    expect(starts).toBe(0)
+    // Each incomplete identity refuses the entire delivery, never a Smithers fallback.
+    for (const field of ["origin", "agent", "source_format_version", "source_id", "session_id", "participant_id", "owner_id", "author_id", "author", "authorLogin", "read_only"]) {
+      const invalid = { ...journal[0] } as Record<string, unknown>; delete invalid[field]
+      entries = [invalid]
+      await controller.sharedConversation!.read()
+      await waitFor(() => host.querySelectorAll('article[data-origin="external"]').length === 0)
+      expect(host.textContent).toContain("Conversation unavailable")
+    }
+    for (const kind of ["tool_request", "tool_result", "edit"]) {
+      const invalid = { ...journal[1], kind } as Record<string, unknown>
+      delete invalid.call_id
+      entries = [invalid]
+      await controller.sharedConversation!.read()
+      await waitFor(() => host.querySelectorAll('article[data-origin="external"]').length === 0)
+      expect(host.textContent).toContain("Conversation unavailable")
+      expect(starts).toBe(0)
+    }
+    entries = [{ ...ben, read_only: true, session_id: "external-session" }]
+    await controller.sharedConversation!.read()
+    await waitFor(() => host.querySelectorAll('[data-shared-turn]').length === 0)
+    expect(host.textContent).toContain("Conversation unavailable")
+    entries = [ben, ...imported]
+    await controller.sharedConversation!.read()
+    await waitFor(() => host.querySelectorAll('article[data-origin="external"]').length === 4)
+    available = false
+    await controller.sharedConversation!.read()
+    await waitFor(() => host.querySelectorAll('article[data-origin="external"]').length === 0)
+    expect(host.textContent).toContain("Conversation unavailable")
+    expect(store.session().queuedPrompts ?? []).toHaveLength(0)
+    await controller.sharedConversation!.saveView({ scroll_anchor: "turn-ben:prompt" })
+    expect(controller.sharedConversation!.get().error).toBe("Conversation unavailable")
+    expect(host.textContent).toContain("Conversation unavailable")
+    expect(host.querySelectorAll('article[data-origin="external"]')).toHaveLength(0)
+    available = true
+    await controller.sharedConversation!.read()
+    await waitFor(() => host.querySelectorAll('article[data-origin="external"]').length === 4)
+    expect(host.textContent).toContain("One changed test")
+    expect(starts).toBe(0)
+  } finally { flushSync(() => root.unmount()); host.remove(); await controller.dispose() }
+})
+
+
+test("a recorded shared turn failure keeps raw text behind collapsed Details", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async input => String(input) === "/api/conversations/main"
+      ? Response.json({ id: "main", entries: [{ ...ben, state: "failed", frames: [{ runId: "run-ben", type: "done", reason: "stop", error: "RAW TURN TRACE" }] }] })
+      : new Response("{}", { status: 404 })
+  })
+  const host = document.createElement("div"), root = createRoot(host)
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    await waitFor(() => host.querySelector('[data-shared-turn] details') !== null)
+    const failure = host.querySelector('[data-shared-turn] [data-failure="SharedTurnFailed"]')!
+    expect(failure.querySelector("p")?.textContent).toBe("Smithers could not finish that. Not your fault.")
+    expect(failure.querySelector("details")?.textContent).toBe("DetailsRAW TURN TRACE")
+    expect(failure.querySelector("details")?.open).toBe(false)
+  } finally { flushSync(() => root.unmount()); await controller.dispose() }
+})
+
+test("initial member view arrival never remounts an interactive Context disclosure", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let holdViews = true
+  const releases: Array<(value: Response) => void> = []
+  let reads = 0
+  const releaseViews = () => { holdViews = false; for (const release of releases.splice(0)) release(Response.json({ scroll_anchor: "turn-ben:answer" })) }
+  const item = { kind: "file", label: "retry.ts", ref: "src/webhooks/retry.ts", revision: "0123456789abcdef0123456789abcdef01234567", reason: "Retry implementation" }
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async (input, init) => {
+      const path = String(input)
+      if (path === "/api/conversations/main") { reads++; return Response.json({ id: "main", entries: [{ ...ben, context: [item] }] }) }
+      if (path.endsWith("/view-state")) return holdViews && (init?.method ?? "GET") === "GET" ? new Promise(resolve => { releases.push(resolve) }) : Response.json({ scroll_anchor: "turn-ben:answer" })
+      return new Response("{}", { status: 404 })
+    }
+  })
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host)
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    await waitFor(() => releases.length > 0)
+    expect(host.querySelector(".context-toggle")).toBeNull()
+    await waitFor(() => host.querySelector(".home") !== null)
+    const mountedHome = host.querySelector(".home")!
+    releaseViews()
+    await waitFor(() => host.querySelector(".context-toggle") !== null)
+    expect(host.querySelector(".home") === mountedHome).toBe(true)
+    const toggle = host.querySelector<HTMLButtonElement>(".context-toggle")!
+    flushSync(() => toggle.click())
+    expect(toggle.getAttribute("aria-expanded")).toBe("true")
+    expect(host.querySelector(".context-chip")?.textContent).toContain("retry.ts")
+    holdViews = true
+    const refreshed = controller.sharedConversation!.read()
+    await waitFor(() => releases.length > 0)
+    // The refresh's view request is held, but its answer is already usable.
+    expect(reads).toBe(2)
+    expect(host.querySelector(".context-toggle")).toBe(toggle)
+    expect(toggle.getAttribute("aria-expanded")).toBe("true")
+    releaseViews()
+    await refreshed
+    expect(host.querySelector(".context-toggle")).toBe(toggle)
+    expect(toggle.getAttribute("aria-expanded")).toBe("true")
+  } finally { flushSync(() => root.unmount()); host.remove(); await controller.dispose() }
+})
+
+test("Home and conversation preferences serialize through the install controller without losing either write", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let saved: Record<string, unknown> = { home: { filter: "queued" }, last_seen_seq: 12 }
+  const writes: Record<string, unknown>[] = []
+  let release!: () => void
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async (input, init) => {
+      const path = String(input)
+      if (path === "/api/conversations/main") return Response.json({ id: "main", entries: [] })
+      if (path === "/api/conversations/main/view-state") {
+        if (init?.method === "PUT") {
+          const next = JSON.parse(String(init.body)) as Record<string, unknown>
+          writes.push(next)
+          if (writes.length === 1) await new Promise<void>(resolve => { release = resolve })
+          saved = next
+        }
+        return Response.json(saved)
+      }
+      return new Response("{}", { status: 404 })
+    }
+  })
+  let stop = () => {}
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    stop = controller.homeView!.subscribe(() => {})
+    await waitFor(() => controller.homeView!.get().filter === "queued")
+    const preference = controller.sharedConversation!.saveView({ toasts_hidden: true })
+    await waitFor(() => writes.length === 1)
+    controller.homeView!.onView({ filter: "working", last_seen_seq: 19 })
+    await Bun.sleep(30)
+    expect(writes).toHaveLength(1)
+    release()
+    await preference
+    await waitFor(() => writes.length === 2)
+    expect(saved).toEqual({ home: { filter: "working" }, last_seen_seq: 19, toasts_hidden: true })
+    expect(controller.homeView!.get().last_seen_seq).toBe(19)
+  } finally { release?.(); stop(); await controller.dispose() }
+})
+
+test("repeated conversation preferences write once and preserve the newest seen sequence", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let saved: Record<string, unknown> = { last_seen_seq: 12 }
+  let reads = 0, writes = 0
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async (input, init) => {
+      if (String(input) === "/api/conversations/main/view-state") {
+        if (init?.method === "PUT") { writes++; saved = JSON.parse(String(init.body)) }
+        else reads++
+        return Response.json(saved)
+      }
+      return new Response("{}", { status: 404 })
+    }
+  })
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    await Promise.all(Array.from({ length: 20 }, () => controller.sharedConversation!.saveView({ toasts_hidden: true, last_seen_seq: 19 })))
+    expect(writes).toBe(1)
+    const before = reads
+    await controller.sharedConversation!.saveView({ toasts_hidden: true, last_seen_seq: 18 })
+    expect(reads).toBe(before)
+    expect(writes).toBe(1)
+    expect(saved).toEqual({ last_seen_seq: 19, toasts_hidden: true })
+    await controller.sharedConversation!.saveView({ toasts_hidden: false })
+    expect(writes).toBe(2)
+    expect(saved).toEqual({ last_seen_seq: 19, toasts_hidden: false })
+  } finally { await controller.dispose() }
+})
+
+test("published imports remain read-only with their durable sequence", () => {
+  const result = SharedConversationSchema.parse({ id: "main", entries: [{
+    id: "import-1", sequence: 9, origin: "external", read_only: true, agent: "codex", source_format_version: "codex/0.160.0",
+    source_id: "source", source_offset: 0, session_id: "session", participant_id: "participant", owner_id: "2", author_id: "2",
+    author: 2, authorLogin: "alice", kind: "prompt", body: "Read this import", title: "Read this import", tone: "quiet",
+    runId: "import-run", prompt: "Read this import", state: "completed", frames: []
+  }] })
+  expect(result.entries[0]).toMatchObject({ origin: "external", read_only: true, text: "Read this import", role: "user", sequence: 9 })
+})
+
+
+/*
+ * A sealed turn cannot cost the conversation around it. The frame vocabulary
+ * is closed, so a `done` code this build does not know rejects the turn, the
+ * entries array and the whole conversation: a credential-issuer outage
+ * (packages/backend/internal/chat/store.go `stopProducerWith`) sealed one
+ * turn with `credential_issuer_unavailable` and the transcript became
+ * "Conversation unavailable" over every earlier answer.
+ */
+test("a turn sealed with any code the chat producer emits keeps the answers around it readable", () => {
+  const answered = {
+    id: "turn-answered", author: 1, authorLogin: "ben", runId: "run-answered", prompt: "First", state: "completed",
+    frames: [{ runId: "run-answered", type: "delta", kind: "text", text: "Here it is" }, { runId: "run-answered", type: "done", reason: "stop" }]
+  }
+  for (const code of ["credential_missing", "credential_issuer_unavailable", "author_revoked", "host_no_capacity"]) {
+    const sealed = {
+      id: "turn-sealed", author: 1, authorLogin: "ben", runId: "run-sealed", prompt: "Second", state: "failed",
+      frames: [{ runId: "run-sealed", type: "done", code, error: "the receipt's own sentence" }]
+    }
+    const parsed = SharedConversationSchema.safeParse({ id: "main", entries: [answered, sealed] })
+    expect([code, parsed.success ? parsed.data.entries.length : "conversation rejected"]).toEqual([code, 2])
+  }
+  // A code no producer emits is still refused, so no unknown outcome can
+  // carry an error message into copy a person reads as Smithers' own.
+  expect(SharedConversationSchema.safeParse({ id: "main", entries: [{ ...answered, state: "failed",
+    frames: [{ runId: "run-answered", type: "done", code: "made_up", error: "raw" }] }] }).success).toBe(false)
+})
+
+test("served read-only messages retain their durable cursor through the shared seam", () => {
+  const entry = { id: "import-message", origin: "external", sequence: 9, agent_kind: "codex", format_version: "codex/0.160.0", source_id: "source", session_id: "session", participant_id: "participant", read_only: true, actor: { kind: "person", login: "ben", name: "Ben", avatar_url: "https://example.test/ben.png", color_index: 0 }, role: "user", text: "Read this import", status: "complete", createdAt: 0, ordinal: 0 }
+  expect(SharedConversationSchema.parse({ id: "main", entries: [entry] }).entries[0]).toMatchObject({ origin: "external", sequence: 9, read_only: true })
+  expect(SharedConversationSchema.safeParse({ id: "main", entries: [{ ...entry, sequence: 0 }] }).success).toBe(false)
+})
+
+test("a shared turn ticks while working, freezes on completion, and keeps its trace order across a reload", async () => {
+  const startedAt = Date.now() - 41_000
+  const frames = [
+    { runId: "run-ben", type: "delta", kind: "reasoning", text: "Look at the tests" },
+    { runId: "run-ben", type: "delta", kind: "text", text: "Checking." },
+    { runId: "run-ben", type: "link.authored", link: 0, scriptDigest: "d0", script: "await commands({ argv: ['ls'] })" },
+    { runId: "run-ben", type: "call.started", link: 0, ordinal: 0, name: "commands" },
+    { runId: "run-ben", type: "call.settled", link: 0, ordinal: 0, name: "commands", verdict: "run" },
+    { runId: "run-ben", type: "link.authored", link: 1, scriptDigest: "d1", script: "return done({ message: 'One changed test' })" },
+    { runId: "run-ben", type: "delta", kind: "text", text: "One changed test" }
+  ]
+  let turn: Record<string, unknown> = { ...ben, state: "running", startedAt, frames }
+  const mount = async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, silentAgent, {
+      bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+      fetchImpl: async input => String(input) === "/api/conversations/main" ? Response.json({ id: "main", entries: [turn] }) : String(input).endsWith("/view-state") ? Response.json({}) : new Response("{}", { status: 404 })
+    })
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    const host = document.createElement("div"); document.body.append(host); const root = createRoot(host)
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    await waitFor(() => host.querySelector("[data-turn-elapsed]") !== null)
+    return { controller, host, unmount: async () => { flushSync(() => root.unmount()); host.remove(); await controller.dispose() } }
+  }
+  const elapsedText = (host: HTMLElement) => host.querySelector("[data-turn-elapsed]")?.textContent
+  const first = await mount()
+  try {
+    expect(elapsedText(first.host)).toMatch(/^Working for 4[12]s$/)
+    const before = elapsedText(first.host)
+    await waitFor(() => elapsedText(first.host) !== before, 2_500)
+    expect(elapsedText(first.host)).toMatch(/^Working for 4[2-4]s$/)
+    const answer = first.host.querySelector('[data-shared-turn="turn-ben"] article[data-kind="answer"]')!
+    const text = answer.textContent ?? ""
+    const order = ["Look at the tests", "Checking.", "Ran commands", "One changed test"].map(part => text.indexOf(part))
+    expect(order.every((at, index) => at >= 0 && (index === 0 || at > order[index - 1]!))).toBe(true)
+    expect(answer.querySelector("[data-turn-reasoning]")?.textContent).toBe("Look at the tests")
+    // The message-only step has no row; the command step expands to its authored code.
+    expect(answer.querySelectorAll("[data-turn-activity]")).toHaveLength(1)
+    const row = answer.querySelector('details[data-turn-activity="0"]') as HTMLDetailsElement
+    expect(row.querySelector("summary")?.textContent).toBe("Ran commands")
+    expect(row.textContent).toContain("await commands({ argv: ['ls'] })")
+    turn = { ...ben, state: "completed", startedAt, finishedAt: startedAt + 47_000, frames: [...frames, { runId: "run-ben", type: "done", reason: "stop" }] }
+    await first.controller.sharedConversation!.read()
+    await waitFor(() => elapsedText(first.host) === "Worked for 47s")
+    await new Promise(resolve => setTimeout(resolve, 1_100))
+    expect(elapsedText(first.host)).toBe("Worked for 47s")
+  } finally { await first.unmount() }
+  const reloaded = await mount()
+  try { expect(elapsedText(reloaded.host)).toBe("Worked for 47s") } finally { await reloaded.unmount() }
+  turn = { ...ben, state: "failed", startedAt, finishedAt: startedAt + 9_000, frames: [{ runId: "run-ben", type: "done", error: "provider down" }] }
+  const failed = await mount()
+  try {
+    expect(elapsedText(failed.host)).toBe("Failed after 9s")
+    expect(failed.host.textContent).toContain("Smithers could not finish that.")
+    expect(failed.host.querySelector("[data-turn-activity], [data-turn-reasoning]")).toBeNull()
+  } finally { await failed.unmount() }
+  turn = { ...ben, state: "cancelled", startedAt, finishedAt: startedAt + 12_000, frames: [{ runId: "run-ben", type: "done", reason: "cancelled" }] }
+  const stopped = await mount()
+  try {
+    expect(elapsedText(stopped.host)).toBe("Stopped after 12s")
+    await new Promise(resolve => setTimeout(resolve, 1_100))
+    expect(elapsedText(stopped.host)).toBe("Stopped after 12s")
+    expect(stopped.host.textContent).not.toContain("Worked for")
+  } finally { await stopped.unmount() }
+}, 15_000)
+
+/*
+ * Production turn 83bca322 (account 8, main): admitted 15:21:58.645Z, failed
+ * 15:25:25.447Z, five host_no_capacity generations, no provider start, no
+ * text. The app said "Working for 3m26" throughout, then showed its prompt
+ * twice — once as a failed private request, once as the shared turn — with
+ * the fleet's own sentence only under Details. One admission, one receipt.
+ */
+const CAPACITY_SENTENCE = "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
+test("a capacity-deferred prompt waits honestly, names the busy fleet, and leaves one receipt (#3822)", async () => {
+  const storage = memoryStorage()
+  const startedAt = Date.now() - 206_802
+  let entries: Array<Record<string, unknown>> = []
+  const turn = (fields: Record<string, unknown>) => [{ id: "turn-83b", author: 1, authorLogin: "ben", runId: "run-83b", prompt: "Short reply please", startedAt, ...fields }]
+  const mount = async () => {
+    const store = await createAppStore({ kind: "localStorage", storage })
+    const controller = createAppController(store, silentAgent, {
+      bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+      toastDebounceMs: 1,
+      fetchImpl: async (input, init) => {
+        const path = String(input)
+        if (init?.method === "POST" && path === "/api/conversations/main/prompt") return Response.json({ status: "accepted", turnId: "turn-83b", terminal: false }, { status: 202 })
+        if (path === "/api/conversations/main") return Response.json({ id: "main", entries })
+        if (path.endsWith("/view-state")) return Response.json({})
+        return new Response("{}", { status: 404 })
+      }
+    })
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    const host = document.createElement("div"); document.body.append(host); const root = createRoot(host)
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    return { store, controller, host, unmount: async () => { flushSync(() => root.unmount()); host.remove(); await controller.dispose() } }
+  }
+  const prompts = (host: HTMLElement) => host.querySelectorAll("[data-prompt-request]").length
+  const session = await mount()
+  try {
+    session.controller.changeDraft("Short reply please")
+    expect(await session.controller.send("Short reply please")).toBe(true)
+    // The local request is its own receipt until the conversation acknowledges it.
+    await waitFor(() => prompts(session.host) === 1)
+    await waitFor(() => session.store.session().sharedPrompts?.[0]?.turnId === "turn-83b")
+    entries = turn({ state: "running", frames: [] })
+    await session.controller.sharedConversation!.read()
+    // Five deferred generations commit nothing: the line cannot claim work.
+    await waitFor(() => session.host.querySelector('[data-turn-elapsed="waiting"]') !== null)
+    expect(session.host.querySelector("[data-turn-elapsed]")?.textContent).toContain("Waiting for a model host")
+    expect(session.host.textContent).not.toContain("Working for")
+    // A later generation that does answer flips the same line to working.
+    entries = turn({ state: "running", frames: [{ runId: "run-83b", type: "delta", kind: "text", text: "Here it is" }] })
+    await session.controller.sharedConversation!.read()
+    await waitFor(() => session.host.querySelector('[data-turn-elapsed="working"]') !== null)
+    // This turn never got there: attempts spent, sealed by the typed code.
+    entries = turn({ state: "failed", finishedAt: startedAt + 206_802, frames: [{ runId: "run-83b", type: "done", code: "host_no_capacity", error: CAPACITY_SENTENCE }] })
+    await session.controller.sharedConversation!.read()
+    await waitFor(() => session.host.textContent?.includes("Every model host is busy. Nothing here was lost") === true)
+    await waitFor(() => session.store.session().sharedPrompts?.[0]?.state === "failed")
+    expect(session.host.querySelector('[data-failure="HostNoCapacity"]')?.getAttribute("data-fault")).toBe("infra")
+    expect(session.host.textContent).toContain(CAPACITY_SENTENCE)
+    // One admission, one receipt: the turn's own. The saved row keeps the
+    // person's words for Retry even though it no longer draws a second row.
+    expect(prompts(session.host)).toBe(0)
+    expect(session.store.session().sharedPrompts?.[0]?.prompt).toBe("Short reply please")
+    expect(session.host.textContent?.match(/Short reply please/g)).toHaveLength(2) // the prompt and its reply quote
+  } finally { await session.unmount() }
+  // Reload: the acknowledged request stays deduplicated against the same turn.
+  const reloaded = await mount()
+  try {
+    await waitFor(() => reloaded.host.textContent?.includes("Every model host is busy. Nothing here was lost") === true)
+    expect(prompts(reloaded.host)).toBe(0)
+    expect(reloaded.store.session().sharedPrompts?.[0]?.state).toBe("failed")
+  } finally { await reloaded.unmount() }
+  // A conversation that no longer projects the turn cannot swallow the prompt.
+  entries = []
+  const alone = await mount()
+  try {
+    await waitFor(() => prompts(alone.host) === 1)
+    expect(alone.host.textContent).toContain("Short reply please")
+  } finally { await alone.unmount() }
+}, 20_000)
+
+// #3872: the private-view door renders each request with the agent actor; it never submits.
+for (const name of Object.keys(FORM_INSTRUCTION_FIELDS)) {
+  test(`private instruction opens /${name} as an agent form without a write`, async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const writes: string[] = []
+    const controller = createAppController(store, silentAgent, {
+      bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "cloud", "browser.read"], authFlow: "redirect", sandbox: null },
+      fetchImpl: async (input, init) => {
+        const path = String(input)
+        if (init?.method && init.method !== "GET") writes.push(path)
+        if (path === "/api/conversations/main") return Response.json({ id: "main", entries: [ben] })
+        if (path.endsWith("/view-state")) return Response.json({ instructions: [{ id: "form-request", command: name, payload: {} }] })
+        return new Response("{}", { status: 404 })
+      }
+    })
+    try {
+      await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+      await controller.sharedConversation!.read()
+      await waitFor(() => [...store.collections.cards.values()].some(card => card.kind === "flow-form" && card.payload.flow === name))
+      const card = [...store.collections.cards.values()].find(card => card.kind === "flow-form" && card.payload.flow === name)!
+      expect(card.kind).toBe("flow-form")
+      if (card.kind === "flow-form") expect(card.payload.via).toBe("agent")
+      await controller.sharedConversation!.read()
+      expect([...store.collections.cards.values()].filter(card => card.kind === "flow-form" && card.payload.flow === name)).toHaveLength(1)
+      expect(writes).toEqual([])
+    } finally { await controller.dispose() }
+  })
+}

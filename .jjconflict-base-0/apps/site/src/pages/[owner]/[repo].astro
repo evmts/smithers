@@ -1,0 +1,33 @@
+---
+/*
+ * One prerendered page per routed repository: the app, at the repository's own
+ * canonical lowercase URL.
+ *
+ * A curated coming-soon row used to prerender a marketing page here instead,
+ * and the Worker served it for the repository root AND excluded every subject
+ * below it from the app (apps/server/src/edge.ts). So a maintainer whose
+ * Smithers GitHub App installation had just landed on one of those
+ * repositories could never reach the app's import path (mvp.md M-46): a
+ * compiled page won before anything read the repository's binding, access,
+ * installation or import state. Availability is still curated — the catalog
+ * response and the Cloud mirror lookup read AVAILABLE_REPOS alone — and
+ * serving the app grants nothing: the app asks, and the backend answers.
+ */
+import AppIsland from "../../AppIsland"
+import AppShell from "../../layouts/AppShell.astro"
+import { AVAILABLE_REPOS, COMING_SOON_REPOS } from "../../../../server/src/publicRepoCatalog"
+
+interface Props {
+  readonly title: string
+}
+
+export function getStaticPaths() {
+  return [...AVAILABLE_REPOS, ...COMING_SOON_REPOS].map((repo) => {
+    const [owner, name] = repo.name.toLowerCase().split("/")
+    return { params: { owner, repo: name }, props: { title: repo.title } satisfies Props }
+  })
+}
+const { title } = Astro.props
+---
+
+<AppShell title={title}><div id="root"><AppIsland client:only="react" /></div></AppShell>

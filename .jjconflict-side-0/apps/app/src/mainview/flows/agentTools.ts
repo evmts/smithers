@@ -1,0 +1,238 @@
+/** Browser delivery executes UI-only flows; host-bound commands refuse here. */
+import type { AgentToolSpec } from "@smthrs/rpc/NativeAgent"
+import { commandsToolSpec, decodeCommandsCall, unknownCommandResult, unknownToolResult } from "@smthrs/rpc/AgentCommands"
+import { agentFaultNote } from "@smthrs/rpc/RefusalCopy"
+import { MAX_TOOL_RESULT_BYTES, utf8Bytes } from "@smthrs/rpc/AgentToolResult"
+import { selectFailureToolResult } from "../state/CommandSelection"
+import type { CommandRegistry } from "./Commands"
+import type { CatalogItem, CommandState, FlowEntry } from "./registry"
+import { disclosedToAgent, itemOf, nameOf } from "./registry"
+
+export type { AgentToolSpec }
+
+/**
+ * The list action's query door (state/CommandSelection.ts): the decision
+ * model's pick among the commands this conversation has not disclosed yet,
+ * recorded on the turn's user message before it answers. Rejects with the
+ * selection's typed failure.
+ */
+export type AgentCommandDiscovery = (query: string, turnId: string | undefined) => Promise<ReadonlyArray<string>>
+
+export interface AgentToolCall {
+  readonly name: string
+  readonly arguments: string
+  readonly httpCall?: { readonly turnId: string; readonly callId: string; readonly attemptId?: string; readonly legId?: string }
+}
+
+/**
+ * The flows the agent may see and call.
+ *
+ * This is the registry itself narrowed to model-invocable entries and then to
+ * the declared model disclosure — not a second catalog. The trigger axis is the
+ * descriptor's own `modelInvocable` flag, so user-only browser mechanics are
+ * absent structurally rather than by a filter that could be forgotten.
+ */
+const agentVisible = (entries: ReadonlyArray<FlowEntry>): Array<CatalogItem> => entries.map(itemOf).filter(disclosedToAgent)
+
+/**
+ * The agent's live catalog as instruction material (Wave 13 §F): the same set
+ * the "list" action returns, so the generated capability section of the system
+ * prompt and the tool can never disagree about what the agent can do.
+ */
+export const agentVisibleCatalog = (
+  callable: ReadonlyArray<FlowEntry>
+): ReadonlyArray<{ readonly name: string; readonly summary: string; readonly args?: string }> =>
+  agentVisible(callable).map((command) => ({
+    name: command.name,
+    summary: command.summary,
+    ...(command.args === undefined ? {} : { args: command.args })
+  }))
+
+/*
+ * The agent's own door beside a user-only act (§2a): the registry's
+ * `agentReason` says WHY the act is the human's; this table says what the
+ * model does INSTEAD, where an instead exists — a prompt flow that renders the
+ * human's button in the chat, or the text answer that replaces the gesture.
+ * A flow that stops being user-only leaves this table (.specs/engineering/spec.md §6.1).
+ */
+const USER_ONLY_ALTERNATIVES: Readonly<Record<string, string>> = {
+  "sign-in": "invoke auth.prompt, which renders that button in the chat",
+  "cloud.sign-in": "invoke cloud.prompt, which renders that button in the chat",
+  "chat.send": "answer with text instead",
+  "card.maximize": "your invocation of a surface flow renders the embedded card",
+  "palette.open": "invoke a search.* flow (search, search.files, search.flows, …), which answers the same rows as data"
+}
+
+/**
+ * The honest tool-result error when the model reaches for a user-only flow:
+ * the registry's reason, then the agent's own door when one exists, so the
+ * model tells the user where the act lives instead of promising it.
+ */
+export const userOnlyError = (name: string, reason?: string): string => {
+  const alternative = USER_ONLY_ALTERNATIVES[name]
+  return `failed: /${name} is user-only — ${reason ?? "it is a control the human clicks, already visible on their screen"}${
+    alternative === undefined ? "" : ` — ${alternative}`
+  }`
+}
+
+/*
+ * The seams' instruction shape: "Sign in to Smithers Cloud first — /cloud.sign-in."
+ * and "sign in with /cloud.sign-in, or …". Only the slash INSIDE a sign-in
+ * instruction is rewritten; a refusal whose subject is the flow itself
+ * ("/cloud.sign-in is not in the web app — …", the W0 door sentence) keeps
+ * its name, because that sentence is about the flow, not an act to take.
+ */
+const CLOUD_SIGN_IN_INSTRUCTION = /(\bsign in\b[^.]*?)\/cloud\.sign-in\b/giu
+
+/**
+ * A handler's refusal, worded for the agent. The seams answer a missing
+ * Smithers Cloud session with the human's slash (`/cloud.sign-in`), which the
+ * model cannot invoke; its next act is the prompt flow that renders that
+ * button, so the failure text names it (.specs/engineering/spec.md §6.1: the model ran
+ * `/auth.prompt`, the wrong prompt, because nothing named the right one).
+ */
+export const agentFailureText = (error: string): string => {
+  const worded = error.replace(
+    CLOUD_SIGN_IN_INSTRUCTION,
+    "$1cloud.prompt (it renders the Smithers Cloud sign-in button in the chat)"
+  )
+  /*
+   * …and the fault class, when the app itself coded this refusal. Without it
+   * the model reads "service unavailable" and picks a story: it has apologised
+   * for a full fleet as though the user had asked for too much, and told a
+   * user at their own quota that Smithers was broken. `agentFaultNote` only
+   * fires on a code the app wrote at the front of the string, looked up in
+   * plue's closed registry — never on the English.
+   */
+  const note = agentFaultNote(worded)
+  return note === null ? worded : `${worded} ${note}`
+}
+
+export const agentToolSpecs: ReadonlyArray<AgentToolSpec> = [commandsToolSpec]
+
+const ARGS_OMITTED_NOTE = "args omitted to fit the tool-result limit; list one namespace ({\"action\":\"list\",\"namespace\":\"repo\"}) to see them"
+const SUMMARIES_OMITTED_NOTE = "summaries and args omitted to fit the tool-result limit; list one namespace to see them"
+
+/*
+ * The list must reach the model whole. Both tool loops cut every result at
+ * MAX_TOOL_RESULT_BYTES; the full registry rendered with args measured 20 to
+ * 23 KiB, so the model got a 16 KiB prefix that did not parse and lost the
+ * tail namespaces (search.*, repo.*, target.*). Render the fullest shape that fits, and when
+ * fields go, the note says how to get them back.
+ */
+const listResult = (state: CommandState, catalog: ReturnType<typeof agentVisibleCatalog>): string => {
+  const full = JSON.stringify({ state, commands: catalog })
+  if (utf8Bytes(full) <= MAX_TOOL_RESULT_BYTES) return full
+  const withoutArgs = JSON.stringify({
+    state,
+    note: ARGS_OMITTED_NOTE,
+    commands: catalog.map(({ name, summary }) => ({ name, summary }))
+  })
+  if (utf8Bytes(withoutArgs) <= MAX_TOOL_RESULT_BYTES) return withoutArgs
+  return JSON.stringify({ state, note: SUMMARIES_OMITTED_NOTE, commands: catalog.map(({ name }) => ({ name })) })
+}
+
+/**
+ * Execute one model tool call through the app's command dispatch. Results are
+ * honest strings — "executed /name", "unknown-command: name", "failed: <error>"
+ * — so they round-trip into the transcript unchanged. An unknown TOOL name is
+ * an honest error string too, never a crash.
+ */
+export const executeAgentToolCall = async (
+  registry: CommandRegistry,
+  call: AgentToolCall,
+  discover?: AgentCommandDiscovery
+): Promise<string> => {
+  if (call.name !== commandsToolSpec.name) return unknownToolResult(call.name)
+  const input = decodeCommandsCall(call.arguments)
+  if ("failure" in input) return input.failure
+  if (input.action === "list" && input.query !== "") {
+    if (discover === undefined) return "failed: the list action's query is not available in this conversation; list a namespace instead"
+    let names: ReadonlyArray<string>
+    try {
+      names = await discover(input.query, call.httpCall?.turnId)
+    } catch (error) {
+      return selectFailureToolResult(error)
+    }
+    const catalog = agentVisibleCatalog(registry.callable())
+    return listResult(registry.state(), names.flatMap(name => catalog.filter(command => command.name === name)))
+  }
+  if (input.action === "list") {
+    const namespace = input.namespace
+    const catalog = agentVisibleCatalog(registry.callable()).filter(
+      (command) => namespace === "" || command.name === namespace || command.name.startsWith(`${namespace}.`)
+    )
+    return listResult(registry.state(), catalog)
+  }
+  /*
+   * The model reads command names in their user-facing spelling — the
+   * generated catalog and every result string here write "/browser" — so a
+   * leading slash in the tool call is the model speaking the app's own
+   * dialect, not a typo. The decoder strips it exactly as the composer's
+   * parseSubmit strips the human's; the registry's names stay bare. (Live on
+   * canary, execute {"name":"/browser"} died as unknown-command and the turn
+   * degraded into asking permission.)
+   */
+  const name = input.name
+  /*
+   * The trigger axis, enforced structurally: a user-only command is neither
+   * listed nor executable by the agent — the model gets the honest error
+   * naming the visible alternative, never a silent refusal.
+   */
+  const target = registry.find(name)
+  if (target === undefined) return unknownCommandResult(name)
+  if (target !== undefined && !registry.callable().includes(target)) {
+    // Preserve the registry's authorization-before-never ordering for
+    // served person-only commands. Their binding remains unreachable.
+    if (target.metadata.agent === "never" && target.metadata.http != null) {
+      const outcome = await registry.runAsAgent(name, input.args, call.httpCall)
+      if (outcome.status === "failed") return outcome.error
+    }
+    return userOnlyError(name, target.metadata.agentReason)
+  }
+  /*
+   * The agent-mode run (requirement axis): an unmet requirement comes back
+   * as an honest failure naming the missing step — the model can tell the
+   * user, but can never park work that fires after its turn ends.
+   */
+  // Only per-member UI instructions are executed in this browser. Every
+  // catalog operation with an HTTP door runs in the host's author-bound loop.
+  // Issue drafting is a private browser Draft, confirmed by its author. Its
+  // CLI spelling does not turn that UI action into a repository mutation.
+  const privateIssueDraft = nameOf(target) === "todo.from-issue" && target.metadata.http === null
+  if (!privateIssueDraft && (target.metadata.http !== null || target.metadata.cli != null || target.metadata.actors?.includes("external_agent"))) {
+    return "failed: this command runs on the conversation host"
+  }
+  const outcome = await registry.runAsAgent(name, input.args, call.httpCall)
+  switch (outcome.status) {
+    case "executed":
+      return outcome.value ?? `executed /${name}`
+    case "unknown-command":
+      /*
+       * The recovery is in the error: a dead-end "unknown-command" left
+       * the live model telling the USER to run the command. Point it back
+       * at the list action so the retry happens in the same turn.
+       */
+      return unknownCommandResult(name)
+    case "unavailable":
+      /*
+       * A flow this host lacks the door for: nothing ran ("failed:" is the
+       * prefix the instructions bind to that). When the native app is the
+       * answer the registry has already rendered the refusal card — the same
+       * one a human's slash or button gets — so the model points at it
+       * instead of retrying; for the other doors the sentence is the answer.
+       */
+      return outcome.action === null
+        ? `failed: ${outcome.reason}`
+        : `failed: ${outcome.reason} The refusal is already rendered in the chat as a card; point the user at it`
+    case "failed":
+      return `failed: ${outcome.error}`
+    case "form":
+      /*
+       * THE FORM LAW: the call lacked required input, so the app rendered the
+       * flow's form in the chat. The model tells the human to fill it in —
+       * never to type arguments.
+       */
+      return `rendered a form for ${outcome.fields.join(", ")}: ask the user to fill it in`
+  }
+}

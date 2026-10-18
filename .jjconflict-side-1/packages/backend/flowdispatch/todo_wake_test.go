@@ -1,0 +1,347 @@
+package flowdispatch
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/smithersai/smithers/packages/backend/flowruntime"
+	"github.com/smithersai/smithers/packages/backend/jobs"
+	"github.com/stretchr/testify/require"
+)
+
+func TestTodoWakeDeadlineAndBackoff(t *testing.T) {
+	start := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+	checkpoint := RuntimeCheckpoint{WakeStartedAt: start.UnixMilli()}
+	require.False(t, todoWakeExpired(checkpoint, start.Add(15*time.Minute-time.Millisecond)))
+	require.True(t, todoWakeExpired(checkpoint, start.Add(15*time.Minute)))
+	require.True(t, todoWakeExpired(checkpoint, start.Add(24*time.Hour)))
+	require.False(t, todoWakeExpired(RuntimeCheckpoint{}, start))
+	for attempt, want := range map[int]time.Duration{-1: time.Second, 0: time.Second, 1: time.Second, 2: 2 * time.Second, 6: 32 * time.Second, 100: 32 * time.Second} {
+		require.Equal(t, want, todoWakeBackoff(attempt))
+	}
+}
+
+type todoWakeRuntime struct{ *recordingRuntime }
+
+func (r todoWakeRuntime) Observe(ctx context.Context, run, cursor string, limit int) (flowruntime.Observation, error) {
+	observation, err := r.recordingRuntime.Observe(ctx, run, cursor, limit)
+	observation.Run.FlowID = "todo"
+	return observation, err
+}
+
+type todoAttachmentRuntime struct {
+	todoWakeRuntime
+	unavailable atomic.Bool
+	deadline    time.Time
+}
+
+func (r *todoAttachmentRuntime) Observe(ctx context.Context, run, cursor string, limit int) (flowruntime.Observation, error) {
+	if r.unavailable.Load() {
+		deadline, ok := ctx.Deadline()
+		if !ok || deadline.After(r.deadline) {
+			return flowruntime.Observation{}, &testRuntimeFailure{code: "attachment_deadline_missing"}
+		}
+		return flowruntime.Observation{}, &testRuntimeFailure{code: "run_attaching", retryable: true}
+	}
+	return r.todoWakeRuntime.Observe(ctx, run, cursor, limit)
+}
+
+func TestTodoWakeAttachmentKeepsOriginalDeadline(t *testing.T) {
+	for _, mode := range []string{"signal", "steer"} {
+		for _, outcome := range []string{"reattached", "expired"} {
+			t.Run(mode+"/"+outcome, func(t *testing.T) {
+				store, pool := newFlowDispatchStore(t)
+				runtime := &todoAttachmentRuntime{todoWakeRuntime: todoWakeRuntime{newRecordingRuntime()}}
+				runtime.status = "waiting"
+				runtime.unavailable.Store(true)
+				resolver := flowruntime.ResolverFunc(func(context.Context, flowruntime.Target) (flowruntime.Runtime, error) { return runtime, nil })
+				service, err := New(Config{Store: store, Resolver: resolver, SteerAuthorizer: allowTestSteer})
+				require.NoError(t, err)
+				request := SignalRequest{Scope: jobs.Scope{TenantID: "repository:5", PrincipalID: "user:9"}, RequestID: "attaching-steer", Target: flowruntime.Target{BindingKind: "workspace", BindingID: "waiting", WorkspaceID: "waiting"}, FlowID: "todo", RunID: "same-run", Name: "steer", Payload: json.RawMessage(`{"text":"Keep notes.txt"}`)}
+				admit := func(service *Service) (jobs.RequestReceipt, error) {
+					if mode == "signal" {
+						return service.Signal(context.Background(), request)
+					}
+					return service.Steer(context.Background(), SteerRequest{
+						Scope: request.Scope, RequestID: request.RequestID, Target: request.Target,
+						FlowID: request.FlowID, RunID: request.RunID, MessageID: "message-1",
+						CreatedAt: 1791228000000, Body: "Keep notes.txt",
+					})
+				}
+				receipt, err := admit(service)
+				require.NoError(t, err)
+				operation, err := store.Get(context.Background(), request.Scope, receipt.OperationID)
+				require.NoError(t, err)
+				var payload signalPayload
+				require.NoError(t, json.Unmarshal(operation.Payload, &payload))
+				started := time.Now().Add(-14 * time.Minute).UnixMilli()
+				runtime.deadline = time.UnixMilli(started).Add(15 * time.Minute)
+				checkpoint := RuntimeCheckpoint{Version: 1, Target: payload.Target, FlowID: "todo", RunID: request.RunID, WakeStartedAt: started}
+				_, err = pool.Exec(context.Background(), `UPDATE product_job_dispatches SET external_receipt=$2 WHERE operation_id=$1`, receipt.OperationID, mustJSON(checkpoint))
+				require.NoError(t, err)
+				stop := startTestWorker(t, service, "attachment-before-restart")
+				waiting := waitOperation(t, store, request.Scope, receipt.OperationID, func(op jobs.Operation) bool {
+					checkpoint, err := decodeCheckpoint(op.ExternalReceipt)
+					return op.State == jobs.StateFailed || (err == nil && op.State == jobs.StateWaiting && checkpoint.FailureCode != "")
+				})
+				stop()
+				require.Equal(t, jobs.StateWaiting, waiting.State)
+				persisted, err := decodeCheckpoint(waiting.ExternalReceipt)
+				require.NoError(t, err)
+				require.Equal(t, started, persisted.WakeStartedAt)
+				require.Equal(t, "wake", persisted.FailureStep)
+				require.Equal(t, "run_attaching", persisted.FailureCode)
+				require.Equal(t, runtime.identity, persisted.Identity)
+				runtime.mu.Lock()
+				require.Empty(t, runtime.signals)
+				require.Empty(t, runtime.steers)
+				runtime.mu.Unlock()
+				if outcome == "expired" {
+					persisted.WakeStartedAt = time.Now().Add(-16 * time.Minute).UnixMilli()
+					_, err = pool.Exec(context.Background(), `UPDATE product_job_dispatches SET external_receipt=$2 WHERE operation_id=$1`, receipt.OperationID, mustJSON(persisted))
+					require.NoError(t, err)
+				}
+				runtime.unavailable.Store(false)
+				restarted, err := New(Config{Store: store, Resolver: resolver, SteerAuthorizer: allowTestSteer})
+				require.NoError(t, err)
+				duplicate, err := admit(restarted)
+				require.NoError(t, err)
+				require.Equal(t, receipt.OperationID, duplicate.OperationID)
+				startTestWorker(t, restarted, "attachment-after-restart")
+				final := waitOperation(t, store, request.Scope, receipt.OperationID, func(op jobs.Operation) bool { return op.State == jobs.StateCompleted || op.State == jobs.StateFailed })
+				runtime.mu.Lock()
+				defer runtime.mu.Unlock()
+				require.Empty(t, runtime.launches)
+				if outcome == "expired" {
+					require.Equal(t, jobs.StateFailed, final.State)
+					var terminal terminalReceipt
+					require.NoError(t, json.Unmarshal(final.TerminalReceipt, &terminal))
+					require.Equal(t, "wake", terminal.ErrorStep)
+					require.Equal(t, "wake_timeout", terminal.ErrorCode)
+					require.Empty(t, runtime.signals)
+					require.Empty(t, runtime.steers)
+				} else {
+					require.Equal(t, jobs.StateCompleted, final.State)
+					if mode == "signal" {
+						require.Empty(t, runtime.steers)
+						require.Len(t, runtime.signals, 1)
+						require.Equal(t, "same-run", runtime.signals[0].RunID)
+						require.Equal(t, receipt.OperationID, runtime.signals[0].ApplicationRequestID)
+					} else {
+						require.Empty(t, runtime.signals)
+						require.Len(t, runtime.steers, 1)
+						require.Equal(t, "same-run", runtime.steers[0].RunID)
+						require.Equal(t, receipt.OperationID, runtime.steers[0].ApplicationRequestID)
+						require.Equal(t, "Keep notes.txt", runtime.steers[0].Body)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestTodoWakeReplayKeepsSignalIdentity(t *testing.T) {
+	store, _ := newFlowDispatchStore(t)
+	runtime := newRecordingRuntime()
+	runtime.status = "waiting"
+	var unavailable atomic.Bool
+	unavailable.Store(true)
+	resolver := flowruntime.ResolverFunc(func(context.Context, flowruntime.Target) (flowruntime.Runtime, error) {
+		if unavailable.Load() {
+			return nil, &testRuntimeFailure{code: "runtime_host_not_running"}
+		}
+		return todoWakeRuntime{runtime}, nil
+	})
+	service, err := New(Config{Store: store, Resolver: resolver})
+	require.NoError(t, err)
+	request := SignalRequest{Scope: jobs.Scope{TenantID: "repository:5", PrincipalID: "user:9"}, RequestID: "member-steer", Target: flowruntime.Target{BindingKind: "workspace", BindingID: "waiting", WorkspaceID: "waiting"}, FlowID: "todo", RunID: "run-1", Name: "steer", Payload: json.RawMessage(`{"text":"Keep notes.txt"}`)}
+	receipt, err := service.Signal(context.Background(), request)
+	require.NoError(t, err)
+	stop := startTestWorker(t, service, "before-restart")
+	waiting := waitOperation(t, store, request.Scope, receipt.OperationID, func(op jobs.Operation) bool {
+		checkpoint, err := decodeCheckpoint(op.ExternalReceipt)
+		return err == nil && op.State == jobs.StateWaiting && checkpoint.FailureStep == "wake"
+	})
+	checkpoint, err := decodeCheckpoint(waiting.ExternalReceipt)
+	require.NoError(t, err)
+	require.Positive(t, checkpoint.WakeStartedAt)
+	require.Equal(t, "wake", checkpoint.FailureStep)
+	runtime.mu.Lock()
+	require.Empty(t, runtime.signals)
+	runtime.mu.Unlock()
+	stop()
+	unavailable.Store(false)
+	restarted, err := New(Config{Store: store, Resolver: resolver})
+	require.NoError(t, err)
+	duplicate, err := restarted.Signal(context.Background(), request)
+	require.NoError(t, err)
+	require.Equal(t, receipt.OperationID, duplicate.OperationID)
+	startTestWorker(t, restarted, "after-restart")
+	waitOperation(t, store, request.Scope, receipt.OperationID, func(op jobs.Operation) bool { return op.State == jobs.StateCompleted })
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	require.Len(t, runtime.signals, 1)
+	require.Equal(t, receipt.OperationID, runtime.signals[0].ApplicationRequestID)
+	require.Equal(t, "run-1", runtime.signals[0].RunID)
+	require.Empty(t, runtime.launches, "wake must not launch another run")
+}
+
+func TestTodoWakeExpiredReplayNeverStartsOrConsumes(t *testing.T) {
+	store, pool := newFlowDispatchStore(t)
+	var starts atomic.Int32
+	service, err := New(Config{Store: store, Resolver: flowruntime.ResolverFunc(func(context.Context, flowruntime.Target) (flowruntime.Runtime, error) {
+		starts.Add(1)
+		t.Error("expired wake reached resolver")
+		return nil, nil
+	})})
+	require.NoError(t, err)
+	request := SignalRequest{Scope: jobs.Scope{TenantID: "repository:5", PrincipalID: "user:9"}, RequestID: "expired-steer", Target: flowruntime.Target{BindingKind: "workspace", BindingID: "waiting", WorkspaceID: "waiting"}, FlowID: "todo", RunID: "same-run", Name: "steer", Payload: json.RawMessage(`{"text":"Keep notes.txt"}`)}
+	receipt, err := service.Signal(context.Background(), request)
+	require.NoError(t, err)
+	operation, err := store.Get(context.Background(), request.Scope, receipt.OperationID)
+	require.NoError(t, err)
+	var payload signalPayload
+	require.NoError(t, json.Unmarshal(operation.Payload, &payload))
+	checkpoint := RuntimeCheckpoint{Version: 1, Target: payload.Target, FlowID: "todo", RunID: "same-run", WakeStartedAt: time.Now().Add(-16 * time.Minute).UnixMilli()}
+	_, err = pool.Exec(context.Background(), `UPDATE product_job_dispatches SET external_receipt=$2 WHERE operation_id=$1`, receipt.OperationID, mustJSON(checkpoint))
+	require.NoError(t, err)
+	startTestWorker(t, service, "expired-restart")
+	failed := waitOperation(t, store, request.Scope, receipt.OperationID, func(op jobs.Operation) bool { return op.State == jobs.StateFailed })
+	final, err := decodeCheckpoint(failed.ExternalReceipt)
+	require.NoError(t, err)
+	var terminal terminalReceipt
+	require.NoError(t, json.Unmarshal(failed.TerminalReceipt, &terminal))
+	require.Equal(t, "wake", terminal.ErrorStep)
+	require.Equal(t, "wake_timeout", terminal.ErrorCode)
+	require.Equal(t, checkpoint.WakeStartedAt, final.WakeStartedAt)
+	require.Zero(t, starts.Load())
+}
+
+// This PostgreSQL restart campaign qualifies durable delivery fan-in. The
+// runtime is the protocol fixture because the built-in TODO host composition
+// is owned by T-FLW-11; it is not the full C-STK-06 guest/run-loop receipt.
+func TestTodoWakeFiftyPendingInputsRestart(t *testing.T) {
+	store, pool := newFlowDispatchStore(t)
+	runtime := newRecordingRuntime()
+	runtime.status = "waiting"
+	var grants [50]atomic.Bool
+	resolver := flowruntime.ResolverFunc(func(_ context.Context, target flowruntime.Target) (flowruntime.Runtime, error) {
+		var index int
+		if _, err := fmt.Sscanf(target.WorkspaceID, "held-%02d", &index); err != nil || index < 0 || index >= 50 {
+			return nil, fmt.Errorf("unexpected workspace %s", target.WorkspaceID)
+		}
+		if !grants[index].Load() {
+			return nil, &testRuntimeFailure{code: "runtime_host_not_running"}
+		}
+		return todoWakeRuntime{runtime}, nil
+	})
+	service, err := New(Config{Store: store, Resolver: resolver})
+	require.NoError(t, err)
+	requests := make([]SignalRequest, 50)
+	receipts := make([]jobs.RequestReceipt, 50)
+	for i := range requests {
+		id := fmt.Sprintf("held-%02d", i)
+		requests[i] = SignalRequest{Scope: jobs.Scope{TenantID: "repository:5", PrincipalID: "user:9"}, RequestID: id, Target: flowruntime.Target{BindingKind: "workspace", BindingID: id, WorkspaceID: id}, FlowID: "todo", RunID: fmt.Sprintf("original-run-%02d", i), Name: "steer", Payload: json.RawMessage(`{"text":"Keep notes.txt"}`)}
+		receipts[i], err = service.Signal(context.Background(), requests[i])
+		require.NoError(t, err)
+	}
+	// Join the old worker before recreating the dispatcher, like process exit.
+	worker := func(s *Service, id string) func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- s.RunWorker(ctx, jobs.WorkerConfig{WorkerID: id, Capacity: 4, Lease: 2 * time.Second, PollInterval: 2 * time.Millisecond, RetryDelay: 2 * time.Millisecond})
+		}()
+		return func() {
+			cancel()
+			select {
+			case err := <-done:
+				require.NoError(t, err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("worker did not exit")
+			}
+		}
+	}
+	stop := worker(service, "fifty-before-restart")
+	for i, receipt := range receipts {
+		op := waitOperation(t, store, requests[i].Scope, receipt.OperationID, func(op jobs.Operation) bool {
+			c, e := decodeCheckpoint(op.ExternalReceipt)
+			return e == nil && op.State == jobs.StateWaiting && c.FailureStep == "wake"
+		})
+		c, err := decodeCheckpoint(op.ExternalReceipt)
+		require.NoError(t, err)
+		require.Positive(t, c.WakeStartedAt)
+		require.Equal(t, requests[i].RunID, c.RunID)
+	}
+	stop()
+	runtime.mu.Lock()
+	require.Empty(t, runtime.signals)
+	require.Empty(t, runtime.launches)
+	runtime.mu.Unlock()
+	restored, err := jobs.NewStore(pool)
+	require.NoError(t, err)
+	restarted, err := New(Config{Store: restored, Resolver: resolver})
+	require.NoError(t, err)
+	ready := time.Now()
+	stop = worker(restarted, "fifty-after-restart")
+	defer stop()
+	for i := range requests {
+		duplicate, err := restarted.Signal(context.Background(), requests[i])
+		require.NoError(t, err)
+		require.Equal(t, receipts[i].OperationID, duplicate.OperationID)
+		grants[i].Store(true)
+		time.Sleep(10 * time.Millisecond)
+	}
+	for i, receipt := range receipts {
+		waitOperation(t, restored, requests[i].Scope, receipt.OperationID, func(op jobs.Operation) bool { return op.State == jobs.StateCompleted })
+	}
+	elapsed := time.Since(ready)
+	require.Less(t, elapsed, 60*time.Second)
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	require.Len(t, runtime.signals, 50)
+	require.Empty(t, runtime.launches)
+	seen := map[string]string{}
+	for _, signal := range runtime.signals {
+		require.NotContains(t, seen, signal.ApplicationRequestID)
+		seen[signal.ApplicationRequestID] = signal.RunID
+	}
+	for i, receipt := range receipts {
+		require.Equal(t, requests[i].RunID, seen[receipt.OperationID])
+	}
+	t.Logf("restored_pending_inputs=50 delivered_once=50 restart_to_delivery_ms=%d; protocol fixture excludes machine queue, wake, run_attached and model reservations", elapsed.Milliseconds())
+}
+
+// Completion must reach the native checkpoint even if a prior conversation
+// input is still waiting for the same TODO. Other signals retain input order.
+func TestTodoBringCheckpointCompletionDoesNotWaitForHeldSteer(t *testing.T) {
+	store, pool := newFlowDispatchStore(t)
+	ctx := t.Context()
+	runtime := newRecordingRuntime()
+	runtime.status = "waiting"
+	service, err := New(Config{Store: store, Resolver: flowruntime.ResolverFunc(func(context.Context, flowruntime.Target) (flowruntime.Runtime, error) {
+		return todoWakeRuntime{runtime}, nil
+	}), SteerAuthorizer: allowTestSteer})
+	require.NoError(t, err)
+	scope := jobs.Scope{TenantID: "repository:5", PrincipalID: "user:9"}
+	target := flowruntime.Target{BindingKind: StackBindingKind, BindingID: "00000000-0000-0000-0000-000000000001", WorkspaceID: "coding"}
+	held, err := service.Steer(ctx, SteerRequest{Scope: scope, Target: target, RequestID: "held-steer", FlowID: TodoFlow, RunID: "offering", MessageID: "held-message", CreatedAt: 1791228000000, Body: "Keep this input"})
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `UPDATE product_job_dispatches SET next_attempt_at=NOW()+interval '1 hour' WHERE operation_id=$1`, held.OperationID)
+	require.NoError(t, err)
+	completion, err := service.Signal(ctx, SignalRequest{Scope: scope, Target: target, RequestID: "bring-complete", FlowID: TodoFlow, RunID: "offering", Name: "bring_in_complete#wait", Payload: json.RawMessage(`{"sha":"head","wait":"wait"}`), Projection: json.RawMessage(`{"kind":"mythical-bring"}`)})
+	require.NoError(t, err)
+	startTestWorker(t, service, "bring-completion")
+	waitOperation(t, store, scope, completion.OperationID, func(op jobs.Operation) bool { return op.State == jobs.StateCompleted })
+	runtime.mu.Lock()
+	require.Len(t, runtime.signals, 1)
+	require.Empty(t, runtime.steers)
+	runtime.mu.Unlock()
+	pending, err := store.Get(ctx, scope, held.OperationID)
+	require.NoError(t, err)
+	require.Equal(t, jobs.StateAccepted, pending.State)
+}
