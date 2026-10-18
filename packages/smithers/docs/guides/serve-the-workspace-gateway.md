@@ -26,10 +26,10 @@ smthrs serve listening on http://127.0.0.1:3000
   /sync             http://127.0.0.1:3000/sync             journal sync
   /sync/ws          ws://127.0.0.1:3000/sync/ws            journal sync stream
   /health           http://127.0.0.1:3000/health           workspace identity
-  auth  no bearer (loopback Host; loopback browser Origin)
+  auth  anonymous reads (loopback Host; loopback browser Origin); approval token required
 ```
 
-The default bind is `127.0.0.1:3000`. It needs no bearer, but requests must
+The default bind is `127.0.0.1:3000`. Reads need no bearer; approval decisions require the session token. Requests must
 carry a loopback `Host`; when a browser supplies `Origin`, that origin must use
 `http` or `https` on `localhost`, `127.0.0.1`, or `[::1]`. Origin-less CLI
 requests remain accepted. `--host` and `--port` change the bind. The
@@ -45,7 +45,21 @@ smthrs --remote http://127.0.0.1:3000 ps
 
 ## The bind rule
 
-Loopback needs no credential. `Serve.loopbackHosts` is `127.0.0.1`, `::1`, and
+Loopback reads need no credential. Approval decisions require the session token,
+which authenticates a local operator, not a named person. By default serve prints
+the session token to stderr. To keep it out of logs, use:
+
+```bash
+smthrs serve --operator-token-file /private/path/operator.token
+```
+
+The parent directory must exist. Serve creates or atomically replaces the file
+with mode `0600` and never prints its value with this flag. A server-side relay
+reads it; never expose it to the browser. With `SMITHERS_TOKEN` configured, the
+file contains that configured gateway credential instead, retaining its existing
+approval policy.
+
+`Serve.loopbackHosts` is `127.0.0.1`, `::1`, and
 `localhost`; the local ingress guard rejects foreign Host values and browser
 origins so a web page or rebound hostname cannot inherit the local operator.
 
@@ -76,7 +90,7 @@ A valid bearer is not automatically an approver in `smthrs serve` or its
 `smthrs gateway` alias. The CLI host defaults to `ApprovalAuthority.local`; a credentialed gateway stamps
 `gateway/bearer` and needs explicit host delegation to approve or deny. A local
 operator can use `smthrs approvals approve` or `smthrs approvals deny` against
-the same workspace.
+the same workspace; remote clients send the session token as a Bearer credential.
 
 Programmatic CLI hosts opt in through `Cli.makeCli({ approvalAuthority })` or
 `ControlBridge.host`'s third argument. For example, this policy permits the

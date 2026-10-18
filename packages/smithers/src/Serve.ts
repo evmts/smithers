@@ -103,6 +103,7 @@ export interface Bind {
   readonly listen: boolean
   readonly credential: string | undefined
   /** Ephemeral approval credential for this serve session. */
+  readonly operatorTokenFile?: string | undefined
   readonly operatorToken?: string | undefined
 }
 
