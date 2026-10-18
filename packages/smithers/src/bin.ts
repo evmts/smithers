@@ -10,8 +10,17 @@ import * as Redaction from "@smthrs/journal/Redaction"
 import * as Argv from "./cli/Argv.ts"
 import { agentArguments, formattedLogArguments, legacyArguments } from "./cli/Compatibility.ts"
 import * as Failure from "./internal/Failure.ts"
+import * as NodeVersion from "./internal/NodeVersion.ts"
 
 const start = async (): Promise<void> => {
+  // Before any command loads: on an older Node a dependency fails at link time
+  // and the failure report could only say that something went wrong.
+  const unsupported = NodeVersion.refusal(process.versions.node, process.execPath)
+  if (unsupported !== undefined) {
+    process.stderr.write(`${unsupported}\n`)
+    process.exitCode = 1
+    return
+  }
   installEffectResolution({
     "@smthrs/agent": import.meta.url,
     "@smthrs/registry/Prompt/jsx-runtime": import.meta.url
