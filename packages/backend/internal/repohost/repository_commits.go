@@ -2,6 +2,8 @@ package repohost
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -21,6 +23,7 @@ type RepositoryCommit struct {
 
 // RepositoryCommitFile summarizes the first-parent change (the empty tree for a root commit).
 type RepositoryCommitFile struct {
+	From      string `json:"from,omitempty"`
 	Path      string `json:"path"`
 	Status    string `json:"status"`
 	Additions int    `json:"additions"`
@@ -47,7 +50,7 @@ func (c *Client) ListRepositoryCommits(ctx context.Context, owner, repo, ref, pa
 	}
 	query := url.Values{"ref": {ref}, "path": {path}, "cursor": {cursor}, "limit": {strconv.Itoa(limit)}}
 	var out RepositoryCommitPage
-	err = c.doJSON(ctx, http.MethodGet, repoByIDEndpoint(base, owner, repo)+"/history?"+query.Encode(), nil, http.StatusOK, &out)
+	err = c.commitReadJSON(ctx, repoByIDEndpoint(base, owner, repo)+"/history?"+query.Encode(), ref, &out)
 	return out, err
 }
 
@@ -58,6 +61,49 @@ func (c *Client) GetRepositoryCommit(ctx context.Context, owner, repo, sha strin
 		return RepositoryCommitDetail{}, err
 	}
 	var out RepositoryCommitDetail
-	err = c.doJSON(ctx, http.MethodGet, repoByIDEndpoint(base, owner, repo)+"/history/"+url.PathEscape(sha), nil, http.StatusOK, &out)
+	err = c.commitReadJSON(ctx, repoByIDEndpoint(base, owner, repo)+"/history/"+url.PathEscape(sha), sha, &out)
 	return out, err
+}
+
+// commitReadJSON retains only successful immutable reads, scoped to this client's
+// storage endpoint and credentials. Encoded values prevent callers mutating cache
+// entries; failures and mutable refs always reach storage. The bound is 8 MiB.
+func (c *Client) commitReadJSON(ctx context.Context, endpoint, sha string, out any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	_, shaErr := hex.DecodeString(sha)
+	immutable := (len(sha) == 40 || len(sha) == 64) && shaErr == nil
+	if immutable {
+		c.immutableFilesMu.Lock()
+		data := c.immutableCommits[endpoint]
+		c.immutableFilesMu.Unlock()
+		if data != nil {
+			return json.Unmarshal(data, out)
+		}
+	}
+	if err := c.doJSON(ctx, http.MethodGet, endpoint, nil, http.StatusOK, out); err != nil {
+		return err
+	}
+	if immutable {
+		data, err := json.Marshal(out)
+		if err != nil {
+			return err
+		}
+		if len(data) <= 65536 {
+			c.immutableFilesMu.Lock()
+			if c.immutableCommits == nil {
+				c.immutableCommits = make(map[string][]byte)
+			}
+			if len(c.immutableCommits) >= 128 {
+				for key := range c.immutableCommits {
+					delete(c.immutableCommits, key)
+					break
+				}
+			}
+			c.immutableCommits[endpoint] = data
+			c.immutableFilesMu.Unlock()
+		}
+	}
+	return nil
 }

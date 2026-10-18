@@ -37,3 +37,26 @@ func TestRepositoryCommitReads(t *testing.T) {
 	_, err = client.ListRepositoryCommits(t.Context(), "alice", "demo", tip, "missing.txt", "", 2)
 	require.Error(t, err)
 }
+
+// A reproducible local fixture records latency without claiming hosted or cold-disk performance.
+func TestRepositoryCommitReadsTenThousand(t *testing.T) {
+	srv := newTestServer(t)
+	dir := srv.config.GitBackendPath("alice", "demo")
+	require.NoError(t, os.MkdirAll(dir, 0755))
+	gitWithEnv(t, nil, "init", "--bare", "--quiet", dir)
+	tip := commitChain(t, dir, 10000, 0, time.Now(), time.Now())
+	client := repohost.NewLocalClient(srv.Handler(), testAuthToken)
+	started := time.Now()
+	page, err := client.ListRepositoryCommits(t.Context(), "alice", "demo", tip, "", "", 100)
+	historyTime := time.Since(started)
+	require.NoError(t, err)
+	require.Len(t, page.Items, 100)
+	require.Equal(t, tip, page.Items[0].SHA)
+	started = time.Now()
+	detail, err := client.GetRepositoryCommit(t.Context(), "alice", "demo", tip)
+	commitTime := time.Since(started)
+	require.NoError(t, err)
+	require.Equal(t, tip, detail.SHA)
+	require.Empty(t, detail.Files)
+	t.Logf("10k commits, local in-process HTTP, warm object store: history(100)=%s detail=%s", historyTime, commitTime)
+}
