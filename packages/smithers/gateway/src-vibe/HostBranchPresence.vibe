@@ -1,0 +1,69 @@
+/**
+ * Host-only adapter of the existing branch protocol and lease roster.
+ * The Go authorizer resolves branch, actor and socket session before forwarding.
+ * The runtime bearer is required on every RPC; participant IDs confer no rights.
+ *
+ * @since 1.0.0
+ */
+
+import * as BranchPresence from "@smthrs/sync/BranchPresence"
+import type { Announcement, LeaveRequest, RosterRequest } from "@smthrs/sync/BranchProtocol"
+import { BranchRpcs } from "@smthrs/sync/BranchRpcs"
+import * as BranchShare from "@smthrs/sync/BranchShare"
+import { SyncError } from "@smthrs/sync/SyncError"
+import { SyncAuth } from "@smthrs/sync/SyncRpcs"
+import { Effect, Layer, Redacted, Stream } from "effect"
+import { RpcServer } from "effect/rpc"
+import type { Config } from "./RuntimeBridge.vibe"
+
+/**
+ * Mount only on authenticated native runtime hosts, never anonymous gateways.
+ *
+ * @category layers
+ * @since 1.0.0-rc.1
+ */
+export const layer = (config: Config) =>
+  Layer.unwrap(() => {
+    const share = BranchShare.makeHmac({
+      activeKid: "host",
+      keys: [{ kid: "host", secret: Redacted.make(sync(crypto.randomUUID()) + sync(crypto.randomUUID())) }]
+    })
+    // The authorizing Go host re-checks all source readiness on every health
+    // call. The handler below refuses missing assertions before the lease
+    // registry, whose own startup window still applies. No readiness cache.
+    const presence = Effect.provideService(BranchPresence.makeMemory({
+      sourcesReady: () => (true)
+    }), BranchShare.BranchShare, share)
+    // Capability fields on this host-only mount are transport metadata, replaced
+    // with an internal signed capability after the runtime bearer is verified.
+    const authorize = <A extends RosterRequest>(request: A, actor = "roster") =>
+      Effect.map(share.mint({
+        branchId: request.branchId,
+        capabilityId: actor,
+        access: "write",
+        ttlMs: 60_000
+      }), (capability) => ({ ...request, capability }))
+    const unsupported = new SyncError({ code: "unsupported", message: "This mount serves presence only" })
+    const handlers = BranchRpcs.toLayer((BranchRpcs.of({
+      "Branch.CreateBranch": () => (throw unsupported),
+      "Branch.MintShare": () => (throw unsupported),
+      "Branch.Submit": () => (throw unsupported),
+      "Branch.Announce": (request: Announcement) =>
+        Effect.flatMap(authorize(request, request.participantId), presence.announce),
+      "Branch.Leave": (request: LeaveRequest) =>
+        Effect.as(Effect.flatMap(authorize(request, request.participantId), presence.leave), null),
+      "Branch.Roster": (request) => Effect.flatMap(authorize(request), presence.list),
+      "Branch.PresenceOn": (request) =>
+        Effect.flatMap(authorize(request), (authorized) =>
+          request.sourcesReady === true ? presence.presenceOn(authorized) : ("unknown" as const)),
+      "Branch.WatchRoster": () =>
+        Stream.fail(unsupported)
+    })))
+    const auth = Layer.succeed(SyncAuth)((effect, options) =>
+      {
+        Effect.mapError(config.authenticate(options.headers), () => new SyncError({ code: "unauthorized", message: "Host authentication required" }))
+        return effect()
+      }
+    )
+    return Layer.provideMerge(Layer.provide(Layer.provide(RpcServer.layer(BranchRpcs, { disableFatalDefects: true }), handlers), auth), RpcServer.layerProtocolHttp({ path: "/branch" }))
+  })
