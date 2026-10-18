@@ -81,7 +81,8 @@ test("ledger persists daily reservations across runs and rolls UTC dates", async
   const reservation = { path: options.ledger, run: "one", at: new Date("2026-10-17T23:59:59Z"), perRun: { modelCalls: 3 }, perDay: { modelCalls: 3 }, charge: { modelCalls: 3, promptTokens: 1, wallMs: 1 } }
   expect(await reserve(reservation)).toBe(true)
   expect(await reserve({ ...reservation, run: "two" })).toBe(false)
-  expect(await reserve({ ...reservation, at: new Date("2026-10-18T00:00:00Z") })).toBe(true)
+  expect(await reserve({ ...reservation, at: new Date("2026-10-18T00:00:00Z") })).toBe(false)
+  expect(await reserve({ ...reservation, run: "two", at: new Date("2026-10-18T00:00:00Z") })).toBe(true)
   await writeFile(options.ledger, "{}")
   expect(reserve(reservation)).rejects.toThrow("Invalid budget ledger")
 })
@@ -104,4 +105,26 @@ test("standalone CLI replays, reports missing and stale with failing exit codes"
   expect(await run()).toEqual({ code: 1, verdict: "stale" })
   await unlink(options.path)
   expect(await run()).toEqual({ code: 1, verdict: "missing" })
+})
+
+test("CI recording is disabled even when a live evaluator is supplied", async () => {
+  const options = await setup()
+  const previous = process.env.CI
+  try {
+    process.env.CI = "1"
+    expect((await record(options)).verdict).toBe("inconclusive")
+    expect(options.calls()).toBe(0)
+  } finally {
+    if (previous === undefined) delete process.env.CI
+    else process.env.CI = previous
+  }
+})
+
+test("unanswered evaluator exhausts its timeout without writing a passing receipt", async () => {
+  const options = await setup()
+  const result = await record({ ...options, policy: { ...policy, budget: { ...policy.budget, perRun: { modelCalls: 3, wallMs: 3 } } }, evaluator: { evaluate: () => Effect.never } })
+  expect(result.verdict).toBe("inconclusive")
+  expect(exitCode(result)).toBe(5)
+  expect((await replay(options.path, request, policy)).verdict).toBe("missing")
+  expect(JSON.parse(await readFile(options.ledger, "utf8")).runs['"test"'].modelCalls).toBe(3)
 })

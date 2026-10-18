@@ -76,7 +76,7 @@ export const agreement = (rubric: RubricData, policy: typeof JudgePolicy.Type, l
     rubric: rubric.id, labels: ordinary.length, agreement: summary,
     pass3: consistency.length === 0 ? 0 : consistency.reduce((sum, value) => sum + value, 0) / consistency.length,
     seededDefects: seeded.length, seededDefectsFail,
-    promoted: ordinary.length >= Math.max(20, policy.promote.minLabels) && summary.accuracy >= Math.max(0.9, policy.promote.minAgreement) && seededDefectsFail && consistency.every((value) => value === 1)
+    promoted: ordinary.length >= Math.max(20, policy.promote.minLabels) && summary.accuracy >= Math.max(0.9, policy.promote.minAgreement) && seededDefectsFail && ordinary.every(({ assertion }) => assertion.passes === 0 || assertion.passes === 3)
   }
 }
 
