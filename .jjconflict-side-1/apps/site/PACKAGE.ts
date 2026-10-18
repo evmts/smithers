@@ -568,7 +568,7 @@ const securityReview = Smithers.SecurityReview({
       threat: "An attacker frames the app, reads its cross-origin resources, or uses a smithers.sh URL as an open redirect to a phishing origin.",
       lookFor: [
         "A _redirects rule whose destination is an absolute off-site URL or a splat that forwards a user-controlled host.",
-        "A _headers rule that removes or weakens Cross-Origin-Embedder-Policy or Cross-Origin-Resource-Policy on /_astro/*.",
+        "A _headers rule that removes or weakens Cross-Origin-Embedder-Policy or Cross-Origin-Resource-Policy on /__smithers/*.",
         "The app shell's inline script reading localStorage into an attribute or DOM sink without the existing allowlist regex."
       ],
       paths: ["public/_headers", "public/_redirects", "src/layouts/AppShell.astro", "scripts/check-built-site.mjs"]

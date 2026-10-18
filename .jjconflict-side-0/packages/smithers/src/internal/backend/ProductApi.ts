@@ -4,6 +4,7 @@
 // Not generated (the request body is not JSON):
 //   post_api_auth_github_cli_consent (application/x-www-form-urlencoded)
 //   post_api_fast_model_sign_in (application/x-www-form-urlencoded)
+//   confirm_repository_site_sign_in (application/x-www-form-urlencoded)
 
 /** What one request adds to the transport's own: the operation's required headers. */
 export interface RequestOptions {
@@ -6799,6 +6800,94 @@ export interface PatchApiSecretsNameInput {
 /** PATCH /api/secrets/{name} */
 export const patchApiSecretsName = (transport: Transport, input: PatchApiSecretsNameInput): Promise<PatchApiSecretsNameResponse> =>
   transport.request("PATCH", `/api/secrets/${segment(input.path.name)}`, input.body) as Promise<PatchApiSecretsNameResponse>
+
+export type GetRepositorySiteResponse = AnyJSON
+
+export interface GetRepositorySiteInput {
+  readonly path: { readonly owner: string; readonly repo: string }
+}
+
+/** GET /api/repos/{owner}/{repo}/site: Read the owner site status and DNS records */
+export const getRepositorySite = (transport: Transport, input: GetRepositorySiteInput): Promise<GetRepositorySiteResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/site`) as Promise<GetRepositorySiteResponse>
+
+export type RepositorySiteActionBody = {
+  action: "status" | "enable" | "publish" | "activate" | "domain.add" | "domain.verify" | "domain.remove"
+  name?: string
+  appPrefix?: string
+  domain?: string
+  version?: string
+  expected?: string
+  files?: Array<{
+    path: string
+    data: string
+  }>
+}
+
+export type RepositorySiteActionResponse = AnyJSON
+
+export interface RepositorySiteActionInput {
+  readonly path: { readonly owner: string; readonly repo: string }
+  readonly body: RepositorySiteActionBody
+}
+
+/** POST /api/repos/{owner}/{repo}/site: Run an owner site action */
+export const repositorySiteAction = (transport: Transport, input: RepositorySiteActionInput): Promise<RepositorySiteActionResponse> =>
+  transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/site`, input.body) as Promise<RepositorySiteActionResponse>
+
+export type ResolveRepositorySiteHostResponse = {
+  repository: string
+  appPrefix: string
+  version: string
+}
+
+export interface ResolveRepositorySiteHostInput {
+  readonly query: { readonly host: string }
+}
+
+/** GET /api/sites/resolve: Resolve a currently active public site Host */
+export const resolveRepositorySiteHost = (transport: Transport, input: ResolveRepositorySiteHostInput): Promise<ResolveRepositorySiteHostResponse> =>
+  transport.request("GET", `/api/sites/resolve${search({ host: input.query.host })}`) as Promise<ResolveRepositorySiteHostResponse>
+
+export interface GetRepositorySiteContentInput {
+  readonly query: { readonly host: string; readonly path: string }
+}
+
+/** GET /api/sites/content: Read one exact published static path */
+export const getRepositorySiteContent = (transport: Transport, input: GetRepositorySiteContentInput): Promise<Response> =>
+  transport.response("GET", `/api/sites/content${search({ host: input.query.host, path: input.query.path })}`)
+
+export interface HeadRepositorySiteContentInput {
+  readonly query: { readonly host: string; readonly path: string }
+}
+
+/** HEAD /api/sites/content: Probe one exact published static path */
+export const headRepositorySiteContent = (transport: Transport, input: HeadRepositorySiteContentInput): Promise<void> =>
+  transport.request("HEAD", `/api/sites/content${search({ host: input.query.host, path: input.query.path })}`).then(() => undefined)
+
+export interface StartRepositorySiteSignInInput {
+  readonly query?: { readonly return_to?: string }
+}
+
+/** GET /api/auth/site/start: Start an explicit central sign-in from a verified site */
+export const startRepositorySiteSignIn = (transport: Transport, input?: StartRepositorySiteSignInInput): Promise<void> =>
+  transport.request("GET", `/api/auth/site/start${search({ return_to: input?.query?.return_to })}`).then(() => undefined)
+
+export interface AuthorizeRepositorySiteSignInInput {
+  readonly query: { readonly request: string }
+}
+
+/** GET /api/auth/site/authorize: Authorize a single-use proof with the central browser session */
+export const authorizeRepositorySiteSignIn = (transport: Transport, input: AuthorizeRepositorySiteSignInInput): Promise<void> =>
+  transport.request("GET", `/api/auth/site/authorize${search({ request: input.query.request })}`).then(() => undefined)
+
+export interface CompleteRepositorySiteSignInInput {
+  readonly query: { readonly proof: string }
+}
+
+/** GET /api/auth/site/complete: Consume a host-bound proof and issue a host-only session */
+export const completeRepositorySiteSignIn = (transport: Transport, input: CompleteRepositorySiteSignInInput): Promise<void> =>
+  transport.request("GET", `/api/auth/site/complete${search({ proof: input.query.proof })}`).then(() => undefined)
 
 export type PostApiTelemetryErrorsResponse = AnyJSON
 

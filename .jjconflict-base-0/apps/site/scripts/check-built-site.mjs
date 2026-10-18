@@ -48,7 +48,7 @@ function readRedirects(root) {
 
 /*
  * The static-asset headers file, as Cloudflare reads it: a path rule line
- * followed by indented `Name: value` lines. Only the /_astro/* block is
+ * followed by indented `Name: value` lines. Only the /__smithers/* block is
  * checked; the site adds no other rule.
  * https://developers.cloudflare.com/workers/static-assets/headers/
  */
@@ -75,30 +75,36 @@ function readHeaders(root) {
 }
 
 /**
- * The headers every /_astro chunk must carry. The app page is served with COEP
+ * The headers every /__smithers chunk must carry. The app page is served with COEP
  * require-corp (apps/server/src/index.ts, ISOLATION_HEADERS), and the OPFS
  * SQLite persistence starts a dedicated module worker from a chunk under
- * /_astro: a worker script whose response lacks an embedder policy at least as
+ * /__smithers: a worker script whose response lacks an embedder policy at least as
  * strict as its owner document's is refused (net::ERR_BLOCKED_BY_RESPONSE),
  * and the app silently falls back to localStorage. COOP belongs on the
  * document only, so a chunk must not carry it.
  */
 export const ASSET_HEADERS = Object.freeze({
   "cross-origin-embedder-policy": "require-corp",
-  "cross-origin-resource-policy": "same-origin"
+  "cross-origin-resource-policy": "same-origin",
+  "cache-control": "public, max-age=31536000, immutable"
 })
 
 export function checkAssetHeaders(root) {
+  // Read the build's asset directory rather than independently pinning a path.
+  const config = readFileSync(join(siteRoot, "astro.config.mjs"), "utf8")
+  const assets = /build: \{ assets: "([^"]+)" \}/.exec(config)?.[1]
+  if (!assets) return ["astro.config.mjs: missing build.assets"]
+  const rule = `/${assets}/*`
   const rules = readHeaders(root)
-  const astro = rules.get("/_astro/*")
-  if (astro === undefined) return ["_headers: missing the /_astro/* rule"]
+  const astro = rules.get(rule)
+  if (astro === undefined) return [`_headers: missing the ${rule} rule`]
   const failures = []
   for (const [name, value] of Object.entries(ASSET_HEADERS)) {
     const got = astro.get(name)
-    if (got !== value) failures.push(`_headers: /_astro/* must set ${name}: ${value} (got ${got ?? "nothing"})`)
+    if (got !== value) failures.push(`_headers: ${rule} must set ${name}: ${value} (got ${got ?? "nothing"})`)
   }
   if (astro.has("cross-origin-opener-policy")) {
-    failures.push("_headers: /_astro/* must not set cross-origin-opener-policy; the app Worker sets it on the document")
+    failures.push(`_headers: ${rule} must not set cross-origin-opener-policy; the app Worker sets it on the document`)
   }
   return failures
 }

@@ -11,6 +11,7 @@
  * argv.
  */
 import { Smithers } from "@smthrs/targets"
+import { Package as rpc } from "../../packages/rpc/PACKAGE.ts"
 
 const cwd = "apps/server"
 
@@ -27,6 +28,9 @@ const sources = [
   Smithers.file("//pnpm-workspace.yaml"),
   Smithers.file("wrangler.docs-redirect.jsonc")
 ]
+const edgeSources = Smithers.Filegroup({ cwd, srcs: [
+  ...sources, Smithers.glob("scripts/cutover/*.mjs"), Smithers.file("package.json"), rpc.contractSources
+] })
 
 /**
  * Checks the Worker against its own tsconfig.
@@ -151,7 +155,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
-    check, unitTests, ...securityReview,
+    check, unitTests, edgeSources, ...securityReview,
     oauthDocs: Smithers.Docs.Check({
       output: Smithers.file("docs/oauth-cookie-isolation.md"),
       stamp: Smithers.file("docs/oauth-cookie-isolation.stamp.json"),
@@ -161,6 +165,24 @@ export const Package = Smithers.Package({
         Smithers.file("//packages/backend/internal/routes/auth_cookie_names.go"),
         Smithers.file("//packages/backend/internal/routes/auth_cookie_workerd_test.go"),
         Smithers.file("scripts/cutover/host-cookie-workerd.mjs")
+      ]
+    }),
+    siteDocs: Smithers.Docs.Check({
+      output: Smithers.file("docs/repo-sites-cutover.md"),
+      stamp: Smithers.file("docs/repo-sites-cutover.stamp.json"),
+      inputs: [
+        Smithers.file("docs/repo-sites-prebuilt-design.html"),
+        Smithers.file("docs/repo-sites-build-design.html"),
+        Smithers.file("src/edge.ts"),
+        Smithers.file("src/RepositorySites.ts"),
+        Smithers.file("scripts/cutover/repository-sites-workerd.mjs"),
+        ...["cloudflare", "reserved", "sites", "store", "transfer", "sites_http_test", "transfer_http_test"].map(name => Smithers.file(`//packages/backend/reposites/${name}.go`)),
+        Smithers.file("//packages/backend/internal/compose/repository_sites.go"),
+        Smithers.file("//packages/backend/internal/routes/repository_sites.go"),
+        Smithers.file("//packages/backend/internal/routes/site_sign_in.go"),
+        Smithers.file("//packages/backend/internal/services/auth.go"),
+        Smithers.file("//packages/backend/internal/middleware/repository_site.go"),
+        Smithers.file("//packages/backend/internal/config/config.go")
       ]
     }),
     docs: Smithers.Docs.Check({

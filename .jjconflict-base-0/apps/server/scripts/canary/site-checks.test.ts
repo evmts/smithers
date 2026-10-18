@@ -29,7 +29,7 @@ const html = (status: number, headers: Record<string, string> = {}, body?: strin
 })
 const ISOLATION = { "cross-origin-opener-policy": "same-origin", "cross-origin-embedder-policy": "require-corp" }
 /** The prerendered app page: the island's module script is the chunk the probe grades. */
-const APP_CHUNK = "/_astro/AppIsland.B1c2d3e4.js"
+const APP_CHUNK = "/__smithers/AppIsland.B1c2d3e4.js"
 /* The two real build shas of #4129: the candidate that was activated, and the prior public one. */
 const CANDIDATE_SHA = "6aff046800491ebdaf444d4519b14038304a23d4"
 const PRIOR_SHA = "2fca5dd1f943edda07722b9d4e23845101878365"
@@ -39,7 +39,7 @@ const PRIOR_SHA = "2fca5dd1f943edda07722b9d4e23845101878365"
  * island at #root, so a served document names its version and its kind.
  */
 const appDocumentBody = (sha: string = CANDIDATE_SHA): string =>
-  `<html><head><meta name="smithers-build-sha" content="${sha}"><link rel="stylesheet" href="/_astro/app.C0ffee.css"></head>` +
+  `<html><head><meta name="smithers-build-sha" content="${sha}"><link rel="stylesheet" href="/__smithers/app.C0ffee.css"></head>` +
   `<body><div id="root"></div><script type="module" src="${APP_CHUNK}"></script></body></html>`
 const APP_DOCUMENT_BODY = appDocumentBody()
 /** The marketing document a curated root answered before lane 95: no island, no stamp. */
@@ -121,7 +121,7 @@ describe("the site probe grades a deployment of the Worker over the site build",
 
   /*
    * The live regression after the site and the app became one build: the app
-   * page was isolated, but its /_astro chunks carried only Cache-Control, so
+   * page was isolated, but its /__smithers chunks carried only Cache-Control, so
    * the browser refused the OPFS module worker script
    * (net::ERR_BLOCKED_BY_RESPONSE) and the app fell back to localStorage.
    */
@@ -145,19 +145,19 @@ describe("the site probe grades a deployment of the Worker over the site build",
     expect(failures(checks)).toEqual([`${APP_CHUNK}: 200 + COEP require-corp + CORP cross-origin`])
   })
 
-  test("an app document that loads no /_astro script fails the chunk check, and a fetcher that read no body says so", async () => {
+  test("an app document that loads no /__smithers script fails the chunk check, and a fetcher that read no body says so", async () => {
     const { fetch } = fakeFetch({ ...healthy, [APP_DOCUMENT_CHECK_PATH]: html(200, ISOLATION, "<html><body>no island</body></html>") })
     const checks = await runSiteChecks(fetch, { origin: ORIGIN, legacyPaths: [] })
-    expect(failures(checks)).toEqual([`${APP_DOCUMENT_CHECK_PATH} -> /_astro chunk: no /_astro script in the app document`])
+    expect(failures(checks)).toEqual([`${APP_DOCUMENT_CHECK_PATH} -> /__smithers chunk: no /__smithers script in the app document`])
     const bodiless = fakeFetch({ ...healthy, [APP_DOCUMENT_CHECK_PATH]: html(200, ISOLATION) })
     const withoutBody = await runSiteChecks(bodiless.fetch, { origin: ORIGIN, legacyPaths: [] })
-    expect(failures(withoutBody)).toEqual([`${APP_DOCUMENT_CHECK_PATH} -> /_astro chunk: the fetcher read no document body`])
+    expect(failures(withoutBody)).toEqual([`${APP_DOCUMENT_CHECK_PATH} -> /__smithers chunk: the fetcher read no document body`])
   })
 
-  test("the chunk is the document's first /_astro module script, never a stylesheet or an external script", () => {
+  test("the chunk is the document's first /__smithers module script, never a stylesheet or an external script", () => {
     expect(appChunkPath(APP_DOCUMENT_BODY)).toBe(APP_CHUNK)
-    expect(appChunkPath("<script src=\"https://cdn.test/x.js\"></script><script type=\"module\" src=\"/_astro/a.js\"></script>")).toBe("/_astro/a.js")
-    expect(appChunkPath("<link rel=\"stylesheet\" href=\"/_astro/a.css\">")).toBeUndefined()
+    expect(appChunkPath("<script src=\"https://cdn.test/x.js\"></script><script type=\"module\" src=\"/__smithers/a.js\"></script>")).toBe("/__smithers/a.js")
+    expect(appChunkPath("<link rel=\"stylesheet\" href=\"/__smithers/a.css\">")).toBeUndefined()
   })
 
   test("an assets-layer redirect on the app document fails: the Worker did not answer first", async () => {
@@ -165,7 +165,7 @@ describe("the site probe grades a deployment of the Worker over the site build",
     const checks = await runSiteChecks(fetch, { origin: ORIGIN, legacyPaths: [] })
     expect(failures(checks)).toEqual([
       `${APP_DOCUMENT_CHECK_PATH}: 307 -> ${APP_DOCUMENT_CHECK_PATH}/ + COOP absent + COEP absent + served unread + document unread + cache absent age absent colo absent`,
-      `${APP_DOCUMENT_CHECK_PATH} -> /_astro chunk: the fetcher read no document body`
+      `${APP_DOCUMENT_CHECK_PATH} -> /__smithers chunk: the fetcher read no document body`
     ])
   })
 

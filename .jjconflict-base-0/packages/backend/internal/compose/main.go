@@ -65,6 +65,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/ports"
 	"github.com/smithersai/smithers/packages/backend/previewgateway"
 	"github.com/smithersai/smithers/packages/backend/process"
+	"github.com/smithersai/smithers/packages/backend/reposites"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 	"github.com/smithersai/smithers/packages/backend/webapp"
 	"github.com/smithersai/smithers/packages/backend/workspace"
@@ -1530,6 +1531,43 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithGitMirrorInstallAuthorization(pool)(gitMirrorSyncService)
 	}
 
+	siteService := &reposites.Service{Config: reposites.Config{Enabled: cfg.Sites.Enabled, Suffix: cfg.Sites.Suffix, FirstPartyOrgIDs: cfg.Sites.FirstPartyOrgIDs, CNAME: cfg.Sites.CNAME}, Store: reposites.PostgresStore{Pool: pool}, Blobs: blobStore, DNS: net.DefaultResolver}
+	if cfg.Sites.CloudflareZone != "" && cfg.Sites.CloudflareToken != "" {
+		siteService.Certificates = &reposites.Cloudflare{ZoneID: cfg.Sites.CloudflareZone, Token: cfg.Sites.CloudflareToken}
+	}
+	for _, raw := range append(apiAllowedOrigins(cfg), cfg.Server.PublicURL, cfg.Auth.GitHubRedirectURL) {
+		if u, e := url.Parse(raw); e == nil {
+			siteService.Config.ReservedHosts = append(siteService.Config.ReservedHosts, u.Hostname())
+		}
+	}
+	siteService.Repository = func(ctx context.Context, id int64) (reposites.Repository, error) {
+		repo, err := queries.GetRepoByID(ctx, id)
+		if err != nil {
+			return reposites.Repository{}, err
+		}
+		owner := ""
+		organization := repo.OrgID.Valid
+		if organization {
+			org, e := queries.GetOrgByID(ctx, repo.OrgID.Int64)
+			if e != nil {
+				return reposites.Repository{}, e
+			}
+			owner = org.Name
+		} else {
+			user, e := queries.GetUserByID(ctx, repo.UserID.Int64)
+			if e != nil {
+				return reposites.Repository{}, e
+			}
+			owner = user.Username
+		}
+		return reposites.Repository{ID: repo.ID, Owner: owner, Name: repo.Name, OrganizationID: repo.OrgID.Int64}, nil
+	}
+	siteHandler := &routes.RepositorySitesHandler{Service: siteService}
+	centralSignInOrigin := ""
+	if callback, err := url.Parse(cfg.Auth.GitHubRedirectURL); err == nil && callback.Scheme == "https" {
+		centralSignInOrigin = callback.Scheme + "://" + callback.Host
+	}
+	siteSignInHandler := &routes.SiteSignInHandler{Sites: siteService, CentralOrigin: centralSignInOrigin, Minter: authService, AuthConfig: cfg.Auth, TrustedProxyHops: cfg.Server.TrustedProxyHops}
 	repoHandler := &routes.RepoHandler{
 		Service:               repoService,
 		RepoConnectionService: repoConnectionService,
@@ -1845,6 +1883,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		// Context and file tools share the install's source/member boundary.
 		// Command calls use the author's generation-bound public API bearer.
 		members := identity.NewMemberBoundary(queries)
+		authService.HostSessionAdmission = members
 		source := services.InstallSource{Pool: pool, Repos: repoService, Members: members}
 		chatSizing.Sources = source
 		chatSizing.ContextRepository = services.InstallContext{Source: source, Wiki: wikiService, Branches: workspaceService}.Read
@@ -2480,7 +2519,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		oauth2Handler,
 		gitHubWebhookHandler,
 		smithersMetrics,
-		routerExtras{AckDelay: &routes.InstallAckDelayHandler{Pool: pool, Queries: queries, Registry: options.Machined}, Background: homeBackground, FlowRuns: installFlowRuns(queries, flow), InstallQuiesce: installQuiesce, InstallScorecard: composeInstallScorecard(cfg, queries, pool), Members: &routes.MembersHandler{Service: authService.Members}, GitHubAppSetup: gitHubAppSetup, CanaryRuns: options.CanaryRuns, Admission: billingPolicy, BillingCapabilities: billingCapabilities, Catalog: publicCatalog, Recommender: recommendationHandler, ModelStream: modelStreamHandler, WikiSelection: wikiSelectionHandler,
+		routerExtras{Sites: siteHandler, SiteSignIn: siteSignInHandler, AckDelay: &routes.InstallAckDelayHandler{Pool: pool, Queries: queries, Registry: options.Machined}, Background: homeBackground, FlowRuns: installFlowRuns(queries, flow), InstallQuiesce: installQuiesce, InstallScorecard: composeInstallScorecard(cfg, queries, pool), Members: &routes.MembersHandler{Service: authService.Members}, GitHubAppSetup: gitHubAppSetup, CanaryRuns: options.CanaryRuns, Admission: billingPolicy, BillingCapabilities: billingCapabilities, Catalog: publicCatalog, Recommender: recommendationHandler, ModelStream: modelStreamHandler, WikiSelection: wikiSelectionHandler,
 			Mythical: mythicalHandler, UserRefs: userRefHandler, ModelProxy: modelProxyHandler, FastGateway: fastGateway, AdminSystemStatus: adminSystemStatusHandler,
 			AdminSystemHealth: adminSystemHealthHandler, AdminGrant: adminGrantHandler, AdminAnalytics: adminAnalyticsHandler,
 			AdminAgentSessions: &routes.AdminAgentSessionHandler{Service: adminManageService},
@@ -2538,7 +2577,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		router.NotFound(assets.ServeHTTP)
 	}
 	bootstrap := newAppBootstrap(bootstrapFeatures{
-		role: options.topology, identity: authHandler != nil, install: gitHubAppSetup != nil,
+		sites: cfg.Sites.Enabled,
+		role:  options.topology, identity: authHandler != nil, install: gitHubAppSetup != nil,
 		debugAPI:     config.IsSingleOwner(cfg.Auth) && queries != nil && options.topology.servesHTTP(),
 		agent:        options.ChatHost != nil && chatService != nil && options.topology.servesHTTP(),
 		redirectAuth: githubClient != nil || strings.TrimSpace(cfg.Auth.Auth0ClientID) != "",
@@ -2563,6 +2603,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		// An install's bootstrap answers its known origins only (§16.3.3).
 		r = withInstallBootstrap(router, bootstrap, installAddress.Origins)
 	}
+	r = repositorySiteHTTP(r, cfg, siteService)
 	// An in-process repository has no network health endpoint; a remote
 	// client, whatever the identity mode, is probed at repo_host.url by the router.
 	if options.Repository != nil && options.Repository.InProcess() {

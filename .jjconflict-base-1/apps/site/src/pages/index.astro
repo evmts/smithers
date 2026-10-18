@@ -1,0 +1,176 @@
+---
+import Base from "../layouts/Base.astro"
+import { DEFAULT_APP_DOCUMENT_PATH } from "../../../server/src/appDocument"
+import { WORDMARK } from "../../../app/src/mainview/Wordmark"
+import { ROOT_APP_PATH } from "../../../app/src/mainview/runtime/FrameHistory"
+import { RepositoryOpenForm } from "../../../app/src/mainview/cards/RepositoryOpenForm"
+import { landingCopy } from "../data/landingCopy"
+
+const runners = Object.entries(landingCopy.commands)
+const firstCommand = landingCopy.commands.npx
+---
+<Base title={landingCopy.title} description={landingCopy.tagline} header={false} footer={false}>
+  <div id="landing" data-app-document={DEFAULT_APP_DOCUMENT_PATH}>
+    <header class="landing-header">
+      <span></span>
+      <nav aria-label="Site">
+        <a href="/api/auth/github?return_to=%2F%3Fsigned-in%3Dgithub">Sign in</a>
+      </nav>
+    </header>
+    <main class="landing-main">
+      <pre class="landing-wordmark" aria-label="Smithers">{WORDMARK.join("\n")}</pre>
+      <h1>{landingCopy.landingAction === "install" ? landingCopy.headline : landingCopy.openHeadline}</h1>
+      <p class="landing-sub">{landingCopy.tagline}</p>
+      {landingCopy.landingAction === "install" ? <section class="landing-run" aria-labelledby="landing-run-label">
+        <div class="landing-run-head">
+          <h2 id="landing-run-label">{landingCopy.runLabel}</h2>
+          <div class="landing-runner" role="radiogroup" aria-label={landingCopy.runnerLabel} hidden>
+            {runners.map(([runner, command], index) => <label><input type="radio" name="runner" value={runner} data-command={command} checked={index === 0} autocomplete="off" />{runner}</label>)}
+          </div>
+        </div>
+        <div class="landing-command"><code><span aria-hidden="true">$ </span><span id="run-command">{firstCommand}</span></code><button type="button" id="copy-install" data-command={firstCommand}><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2A1.5 1.5 0 0 0 9 2H4A1.5 1.5 0 0 0 2.5 3.5v5A1.5 1.5 0 0 0 4 10h1.5"/></svg><span>Copy</span></button></div>
+        <p class="landing-note">{landingCopy.runNote.split(/(`[^`]+`)/).map(part => part.startsWith("`") ? <code>{part.slice(1, -1)}</code> : part)}</p>
+      </section> : <RepositoryOpenForm client:load />}
+      <nav class="landing-actions" aria-label="Start">
+        <a class="landing-button landing-primary" href={ROOT_APP_PATH}>{landingCopy.startApp}</a>
+        <a class="landing-button" href={landingCopy.docs.href}>{landingCopy.docs.label}</a>
+        <a class="landing-button" href={landingCopy.source.href}>{landingCopy.source.label}</a>
+      </nav>
+    </main>
+  </div>
+</Base>
+<script>
+  import { sameOriginUrl } from "../lib/sameOriginUrl"
+  import { shouldResumeApp } from "../lib/appHistory"
+  const copy = document.getElementById("copy-install")
+  const command = document.getElementById("run-command")
+  const runner = document.querySelector<HTMLElement>(".landing-runner")
+  // Progressive enhancement: without this script the page shows the npx command.
+  if (copy && command && runner) {
+    const choose = (input: HTMLInputElement) => {
+      command.textContent = input.dataset.command!
+      copy.dataset.command = input.dataset.command!
+    }
+    runner.addEventListener("change", event => choose(event.target as HTMLInputElement))
+    const checked = runner.querySelector<HTMLInputElement>("input:checked")
+    if (checked) choose(checked)
+    runner.hidden = false
+  }
+  copy?.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(copy.dataset.command!)
+      copy.querySelector("span")!.textContent = "Copied"
+      setTimeout(() => { copy.querySelector("span")!.textContent = "Copy" }, 2000)
+    } catch { copy.querySelector("span")!.textContent = "Try again" }
+  })
+  // Only a known identity or an explicit app entry loads the launcher. The
+  // signed-out page never reads the public catalog or the release feed.
+  async function resume() {
+    if (!shouldResumeApp(location.search)) {
+      const identity = await fetch("/api/user", { credentials: "same-origin" })
+      if (!identity.ok) return
+      const user = await identity.json() as { username?: unknown }
+      if (typeof user.username !== "string" || user.username === "") return
+    }
+    const landing = document.getElementById("landing")!
+    const homeSheets = [...document.querySelectorAll<HTMLLinkElement | HTMLStyleElement>('link[rel="stylesheet"], style')]
+    const appDocument = sameOriginUrl(landing.dataset.appDocument!, location.href, location.origin)
+    const response = await fetch(appDocument, { credentials: "same-origin" })
+    if (!response.ok) return
+    const pageUrl = sameOriginUrl(response.url || appDocument, appDocument, location.origin)
+    const page = new DOMParser().parseFromString(await response.text(), "text/html")
+    // Retain the frontend build's stamp when the app mounts in this document.
+    for (const name of ["smithers-build-sha", "smithers-build-at"]) {
+      const source = page.querySelector<HTMLMetaElement>(`meta[name="${name}"]`)
+      if (source !== null) {
+        document.querySelector(`meta[name="${name}"]`)?.remove()
+        document.head.append(source.cloneNode(true))
+      }
+    }
+    const chunk = page.querySelector("astro-island[component-url]")?.getAttribute("component-url")
+    if (!chunk) return
+    const appSheets: Array<HTMLLinkElement | HTMLStyleElement> = []
+    const hold = new MutationObserver(records => {
+      for (const record of records) for (const node of record.addedNodes) {
+        if ((node instanceof HTMLLinkElement && node.rel === "stylesheet") || node instanceof HTMLStyleElement) {
+          node.media = "not all"
+          appSheets.push(node)
+        }
+      }
+    })
+    hold.observe(document.head, { childList: true })
+    try {
+      await Promise.all([...page.querySelectorAll('link[rel="stylesheet"][href], style')].map(source => {
+        if (source instanceof HTMLStyleElement) {
+          const sheet = document.createElement("style")
+          sheet.textContent = source.textContent
+          document.head.append(sheet)
+          return Promise.resolve()
+        }
+        return new Promise<void>(resolve => {
+          const sheet = document.createElement("link")
+          sheet.rel = "stylesheet"
+          sheet.href = sameOriginUrl(source.getAttribute("href")!, pageUrl, location.origin)
+          sheet.onload = () => resolve()
+          sheet.onerror = () => resolve()
+          document.head.append(sheet)
+        })
+      }))
+      const before = page.querySelector("astro-island[before-hydration-url]")?.getAttribute("before-hydration-url")
+      if (before) await import(/* @vite-ignore */ sameOriginUrl(before, pageUrl, location.origin))
+      const island = await import(/* @vite-ignore */ sameOriginUrl(chunk, pageUrl, location.origin)) as typeof import("../../../app/src/mainview/AppIsland")
+      if (typeof island.default?.mountApp !== "function") return
+      await Promise.resolve() // flush stylesheet observer before switching styles
+      hold.disconnect()
+      for (const sheet of homeSheets) sheet.media = "not all"
+      for (const sheet of appSheets) sheet.removeAttribute("media")
+      landing.remove()
+      const root = document.createElement("div")
+      root.id = "root"
+      document.body.append(root)
+      island.default.mountApp(root, { keepUrl: true })
+    } finally { hold.disconnect() }
+  }
+  void resume().catch(() => { /* The static action remains available. */ })
+</script>
+<style is:global>
+  #landing { --bg:#f7f4ee; --text:#211d18; --text-muted:#665f54; --surface:#fffefa; --border:rgb(33 29 24 / 8%); --border-strong:rgb(33 29 24 / 14%); --brand:#0f766e; --on-brand:#fffefa; min-height:100svh; color:var(--text); background:var(--bg); }
+  @media(prefers-color-scheme:dark) { #landing { --bg:#0d1514; --text:#ece7db; --text-muted:#a9a598; --surface:#15201e; --border:rgb(236 231 219 / 10%); --border-strong:rgb(236 231 219 / 18%); --brand:#45c4b2; --on-brand:#0d1514; } }
+  .landing-header { display:flex; align-items:center; justify-content:space-between; padding:0 24px; height:56px; border-bottom:1px solid var(--border); }
+  .landing-header nav { display:flex; gap:16px; align-items:center; font-size:14px; }
+  .landing-header a { color:inherit; text-decoration:none; }
+  .landing-header nav a:last-child { display:flex; align-items:center; height:36px; padding:0 14px; border:1px solid var(--border-strong); border-radius:8px; background:var(--surface); }
+  .landing-header a:hover { text-decoration:underline; }
+  .landing-main { width:100%; max-width:720px; box-sizing:border-box; margin:0 auto; padding:96px 16px 64px; }
+  .landing-wordmark { font:min(13.5px, 2.1vw)/1.15 var(--font-mono); color:var(--brand); margin:0 0 24px; overflow:visible; }
+  .landing-main h1 { font-size:44px; font-weight:600; letter-spacing:-.02em; line-height:1.1; margin:0 0 12px; }
+  .landing-sub { font-size:19px; line-height:1.5; color:var(--text-muted); max-width:620px; margin:0 0 40px; }
+  .landing-run { max-width:620px; }
+  .landing-run-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 8px; }
+  .landing-run-head h2 { font-size:14px; font-weight:500; margin:0; }
+  .landing-runner { display:flex; gap:2px; padding:2px; border:1px solid var(--border-strong); border-radius:8px; background:var(--surface); }
+  .landing-runner[hidden] { display:none; }
+  .landing-runner label { position:relative; padding:3px 10px; border-radius:6px; font:13px var(--font-mono); color:var(--text-muted); cursor:pointer; }
+  .landing-runner input { position:absolute; inset:0; margin:0; opacity:0; cursor:pointer; }
+  /* One fill per screen: Start app. The runner switch and Copy stay quiet. */
+  .landing-runner label:has(input:checked) { background:var(--bg); color:var(--text); box-shadow:inset 0 0 0 1px var(--border-strong); }
+  .landing-runner label:has(input:focus-visible) { outline:2px solid var(--text); outline-offset:2px; }
+  .landing-command { display:flex; align-items:center; gap:10px; width:100%; box-sizing:border-box; min-height:44px; padding:6px 6px 6px 14px; border:1px solid var(--border-strong); border-radius:8px; background:var(--surface); }
+  .landing-command code { flex:1; min-width:0; font:14px/1.5 var(--font-mono); white-space:nowrap; overflow-x:auto; }
+  .landing-command code span[aria-hidden] { color:var(--text-muted); }
+  .landing-command button, .repository-launcher-open button { height:32px; padding:0 12px; border:0; border-radius:6px; background:var(--brand); color:var(--on-brand); font:500 14px var(--font-ui); cursor:pointer; }
+  .landing-command button { display:flex; align-items:center; gap:6px; flex:none; border:1px solid var(--border-strong); background:var(--bg); color:var(--text); }
+  .landing-command button:hover { border-color:var(--text-muted); }
+  .landing-note { margin:8px 0 0; font-size:13px; line-height:1.5; color:var(--text-muted); }
+  .landing-note code { font-size:.95em; }
+  .landing-actions { display:flex; flex-wrap:wrap; gap:8px; margin:32px 0 0; }
+  .landing-button { display:flex; align-items:center; height:40px; padding:0 16px; border:1px solid var(--border-strong); border-radius:8px; background:var(--surface); color:inherit; font:500 14px var(--font-ui); text-decoration:none; }
+  .landing-button:hover { border-color:var(--text-muted); }
+  .landing-primary { border-color:var(--brand); background:var(--brand); color:var(--on-brand); }
+  .landing-primary:hover { border-color:var(--brand); filter:brightness(1.08); }
+  .repository-launcher-open { display:flex; gap:8px; }
+  .repository-launcher-open input { flex:1; min-width:0; height:44px; padding:0 14px; border:1px solid var(--border-strong); border-radius:8px; background:var(--surface); color:inherit; font:inherit; }
+  .repository-launcher-open button { height:44px; }
+  #landing :focus-visible { outline:2px solid currentColor; outline-offset:4px; }
+  @media(max-width:600px) { .landing-header { padding:0 16px; } .landing-header nav { gap:18px; } .landing-main { padding-top:40px; } .landing-main h1 { font-size:30px; } .landing-sub { font-size:17px; margin-bottom:32px; } .landing-command code { white-space:normal; font-size:13px; } }
+</style>

@@ -35,6 +35,7 @@ export const RuntimeCapabilitySchema = z.enum([
   "commands.select", // the decision model selects each chat message's commands (POST /api/commands/select)
   "browser.read", // guarded, pinned HTTPS page reads on this host
   "identity",
+  "sites", // backend-owned repository publications and verified domains
   "debug.api", // same-origin API is composed with the install member authorizer
   "install", // this origin serves the single-owner install setup routes
   "github", // GitHub OAuth and import are configured on this host

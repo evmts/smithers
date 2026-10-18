@@ -1,0 +1,31 @@
+{
+  "format": 1,
+  "producer": null,
+  "output": {
+    "path": "apps/server/docs/oauth-cookie-isolation.md",
+    "digest": "d0eedebabd56d41908c0383c77da3bc69426ebbb0d6c6e218a02c387c6d92ff1"
+  },
+  "closure": "90329682a5b4843ab3c357c9406f7fa9cf4f5722a8537a4339ae654ed7f8cc5f",
+  "inputs": [
+    {
+      "path": "apps/server/scripts/cutover/host-cookie-workerd.mjs",
+      "digest": "22f72a47bf43c146b24585ddc15edab75c36f76b0faac9fe87d017ed4476aa4d"
+    },
+    {
+      "path": "packages/backend/internal/routes/auth.go",
+      "digest": "73dcae5e693a1e8b72de166cd07779d7a33253db2dde9ec4dc31149c0da1e080"
+    },
+    {
+      "path": "packages/backend/internal/routes/auth_cookie_names.go",
+      "digest": "cc2042ce16239cdc454dd77760cbb0fef06d1357e66550fb72ad2892e063b39d"
+    },
+    {
+      "path": "packages/backend/internal/routes/auth_cookie_workerd_test.go",
+      "digest": "6ee9934ead38ca38acff8e449707acdb9bcb4b478fbff53316f344127bc6c90a"
+    },
+    {
+      "path": "packages/backend/internal/routes/auth_return.go",
+      "digest": "9e099b4c8d0e526be05a385430739a5dc7cd2bcf5147896a1267dbf23d6e41f2"
+    }
+  ]
+}

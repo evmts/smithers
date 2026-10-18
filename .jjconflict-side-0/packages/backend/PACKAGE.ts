@@ -1,8 +1,12 @@
 import { Smithers } from "@smthrs/targets"
+import { Package as edge } from "../../apps/server/PACKAGE.ts"
 
 /** Backend-owned inputs for the root Go build and test gate. */
 const buildInputs = Smithers.Filegroup({
-  srcs: [Smithers.glob("**/*")],
+  srcs: [Smithers.glob("**/*"),
+    // The cookie/site HTTP proofs bundle the deployed edge in workerd.
+    edge.edgeSources
+  ],
   cwd: "packages/backend"
 })
 

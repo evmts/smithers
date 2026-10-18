@@ -30,7 +30,7 @@ describe("the Worker identity stays frozen", () => {
     expect(WORKER_IDENTITY.domain).toEqual({ name: "canary.smithers.sh", zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14" })
   })
 
-  test("one zone route claims every apex path, so the app page and its /_astro chunks come from one build", () => {
+  test("one zone route claims every apex path, so the app page and its /__smithers chunks come from one build", () => {
     expect(WORKER_IDENTITY.routes).toEqual([
       { pattern: "smithers.sh/*", zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14" },
       { pattern: "www.smithers.sh/*", zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14" }
