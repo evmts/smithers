@@ -256,7 +256,7 @@ def reap() -> list[str]:
 #
 # `lib/grade.py` installs these over `swebench.harness.docker_build` /
 # `docker_utils` under SWB_TRANSPORT=plue. Signatures and return values are the
-# evaluator's own (swebench 4.0.5), so its `run_instance` runs unchanged.
+# evaluator's own (swebench 4.0.4), so its `run_instance` runs unchanged.
 
 
 class EvaluatorContainer:

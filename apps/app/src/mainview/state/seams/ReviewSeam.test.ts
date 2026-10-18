@@ -27,9 +27,9 @@ const harness = async (http: SeamContext["http"], storage = memoryStorage()) => 
 }
 
 test("review returns before launch and completion, deduplicates, then renders retained findings", async () => {
-  const launch = deferred<Response>(), observation = deferred<Response>()
+  const launch = deferred<Response>(), dispatching = deferred<Response>(), observation = deferred<Response>()
   const calls: { url: string; init?: RequestInit }[] = []
-  const h = await harness(async (url, init) => { calls.push({ url, init }); return init?.method === "POST" ? launch.promise : calls.length === 2 ? Response.json({ state: "dispatching" }) : observation.promise })
+  const h = await harness(async (url, init) => { calls.push({ url, init }); return init?.method === "POST" ? launch.promise : calls.length === 2 ? dispatching.promise : observation.promise })
   const seam = createReviewSeam(h.ctx, 1)
   expect(await seam.request(50, "owner/repo")).toEqual({ value: "Requested" })
   expect(await seam.request(50, "owner/repo")).toEqual({ value: "Requested" })
@@ -41,6 +41,7 @@ test("review returns before launch and completion, deduplicates, then renders re
   await waitFor(() => calls.length === 2)
   expect(h.store.session().reviewRequests?.[0]?.state).toBe("running")
   expect(h.settled).toEqual([])
+  dispatching.resolve(Response.json({ state: "dispatching" }))
   await waitFor(() => calls.length === 3)
   expect(h.settled).toEqual([])
   expect(h.store.session().reviewRequests?.[0]?.state).toBe("running")

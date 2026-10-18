@@ -25,7 +25,7 @@
 #
 # SWB_EVAL_WORKERS sets the evaluator's concurrency. It defaults to 1, and
 # raising it is not merely a speed/disk tradeoff: with this evaluator (swebench
-# 4.0.5) and `--cache_level env`, concurrent workers race in the post-run image
+# 4.0.4) and `--cache_level env`, concurrent workers race in the post-run image
 # cleanup and the run dies with `docker.errors.ImageNotFound` on an image
 # another worker already removed. Every instance still grades — the 2026-08-19
 # attempt logged "2 ran successfully, 0 failed" — but the crash happens before

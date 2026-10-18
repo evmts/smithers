@@ -18,7 +18,7 @@ VENV="$S/.venv-swb"
 DATASET="$S/swb-verified.json"
 SAMPLE="$S/sample.json"
 PY="${PYTHON:-python3}"
-SWEBENCH_VERSION="4.0.5"
+SWEBENCH_VERSION="4.0.4"
 
 echo "== 1/4 evaluator venv"
 if [ -x "$VENV/bin/python" ] && "$VENV/bin/python" -c \
@@ -30,7 +30,7 @@ else
   "$PY" -m venv "$VENV" || exit 1
   "$VENV/bin/python" -m pip install --quiet --upgrade pip || exit 1
   # 5.x rejects our `--cache_level env` invocation and the Verified dataset's
-  # committed schema; 4.0.5 is the evaluator that graded the recorded wave.
+  # committed schema; 4.0.4 is the evaluator that graded the recorded wave.
   # `swebench` also brings `datasets`, which step 2 uses to fetch the dataset.
   "$VENV/bin/python" -m pip install --quiet "swebench==$SWEBENCH_VERSION" || exit 1
   echo "   installed swebench $SWEBENCH_VERSION into $VENV"

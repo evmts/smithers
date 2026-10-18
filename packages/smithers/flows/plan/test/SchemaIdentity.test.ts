@@ -128,7 +128,7 @@ describe("schema identity under an effect upgrade", () => {
 })
 
 describe("schema identity for what rc.115 did not have", () => {
-  it("prints the code-point checks with the fragment 4.0.5 introduced them with", () => {
+  it("prints the code-point checks with the fragment 4.0.4 introduced them with", () => {
     expect(Node.schemaIdentity(Schema.String.check(Schema.isMinCodePoints(2))).schema)
       .toEqual({ type: "string", minLength: 2 })
     expect(Node.schemaIdentity(Schema.String.check(Schema.isMaxCodePoints(5))).schema)
