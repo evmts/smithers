@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -46,6 +47,11 @@ func (h *SearchHandler) SearchRepositories(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *SearchHandler) SearchIssues(w http.ResponseWriter, r *http.Request) {
+	repositoryID, scopeErr := searchRepositoryID(r)
+	if scopeErr != nil {
+		writeRouteError(w, r, scopeErr)
+		return
+	}
 	cursor, limit, err := parseSearchPagination(r)
 	if err != nil {
 		writeRouteError(w, r, err)
@@ -55,13 +61,14 @@ func (h *SearchHandler) SearchIssues(w http.ResponseWriter, r *http.Request) {
 	perPage := limit
 
 	result, svcErr := h.Service.SearchIssues(r.Context(), middleware.UserFromContext(r.Context()), services.SearchIssuesInput{
-		Query:     r.URL.Query().Get("q"),
-		State:     strings.TrimSpace(r.URL.Query().Get("state")),
-		Label:     strings.TrimSpace(r.URL.Query().Get("label")),
-		Assignee:  strings.TrimSpace(r.URL.Query().Get("assignee")),
-		Milestone: strings.TrimSpace(r.URL.Query().Get("milestone")),
-		Page:      page,
-		PerPage:   perPage,
+		RepositoryID: repositoryID,
+		Query:        r.URL.Query().Get("q"),
+		State:        strings.TrimSpace(r.URL.Query().Get("state")),
+		Label:        strings.TrimSpace(r.URL.Query().Get("label")),
+		Assignee:     strings.TrimSpace(r.URL.Query().Get("assignee")),
+		Milestone:    strings.TrimSpace(r.URL.Query().Get("milestone")),
+		Page:         page,
+		PerPage:      perPage,
 	})
 	if svcErr != nil {
 		writeRouteError(w, r, svcErr)
@@ -96,6 +103,11 @@ func (h *SearchHandler) SearchUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SearchHandler) SearchCode(w http.ResponseWriter, r *http.Request) {
+	repositoryID, scopeErr := searchRepositoryID(r)
+	if scopeErr != nil {
+		writeRouteError(w, r, scopeErr)
+		return
+	}
 	cursor, limit, err := parseSearchPagination(r)
 	if err != nil {
 		writeRouteError(w, r, err)
@@ -105,9 +117,10 @@ func (h *SearchHandler) SearchCode(w http.ResponseWriter, r *http.Request) {
 	perPage := limit
 
 	result, svcErr := h.Service.SearchCode(r.Context(), middleware.UserFromContext(r.Context()), services.SearchCodeInput{
-		Query:   r.URL.Query().Get("q"),
-		Page:    page,
-		PerPage: perPage,
+		RepositoryID: repositoryID,
+		Query:        r.URL.Query().Get("q"),
+		Page:         page,
+		PerPage:      perPage,
 	})
 	if svcErr != nil {
 		writeRouteError(w, r, svcErr)
@@ -120,4 +133,21 @@ func (h *SearchHandler) SearchCode(w http.ResponseWriter, r *http.Request) {
 
 func parseSearchPagination(r *http.Request) (cursor string, limit int, err error) {
 	return parseOffsetPaginationWithLimits(r, 30, 100, "invalid limit value", false)
+}
+
+// A repository route must carry the same loaded read authority as contents.
+// Global search never accepts a caller-supplied repository ID.
+func searchRepositoryID(r *http.Request) (int64, error) {
+	if chi.URLParam(r, "repo") == "" {
+		return 0, nil
+	}
+	repository := middleware.RepoFromContext(r.Context())
+	if repository == nil || repository.ID <= 0 {
+		return 0, errors.NotFound("repository not found")
+	}
+	permission := middleware.RepoPermissionFromContext(r.Context())
+	if !repository.IsPublic && (middleware.UserFromContext(r.Context()) == nil || permission == middleware.PermissionNone || permission == "") {
+		return 0, errors.Forbidden("permission denied")
+	}
+	return repository.ID, nil
 }

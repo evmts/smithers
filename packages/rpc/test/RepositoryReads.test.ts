@@ -35,3 +35,41 @@ describe("repository commit reads", () => {
     ).toBe(false)
   })
 })
+
+describe("repository search", () => {
+  it("decodes each subject and rejects missing repository coordinates", async () => {
+    const { RepositoryCodeSearchSchema, RepositoryIssueSearchSchema } = await import("../src/RepositoryReads.ts")
+    expect(
+      RepositoryCodeSearchSchema.parse({
+        items: [{ repository_id: 1, repository_owner: "a", repository_name: "b", path: "x.ts", snippet: "hello" }],
+        total_count: 1,
+        page: 1,
+        per_page: 30
+      }).items
+    ).toHaveLength(1)
+    expect(
+      RepositoryIssueSearchSchema.parse({
+        items: [{
+          id: 1,
+          repository_id: 1,
+          repository_owner: "a",
+          repository_name: "b",
+          number: 2,
+          title: "Bug",
+          state: "open"
+        }],
+        total_count: 1,
+        page: 1,
+        per_page: 30
+      }).items[0]?.number
+    ).toBe(2)
+    expect(
+      RepositoryCodeSearchSchema.safeParse({
+        items: [{ path: "x.ts", snippet: "hello" }],
+        total_count: 1,
+        page: 1,
+        per_page: 30
+      }).success
+    ).toBe(false)
+  })
+})

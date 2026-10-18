@@ -161,7 +161,8 @@ JOIN repositories r ON r.id = i.repository_id
 JOIN visible_repositories vr ON vr.id = r.id
 LEFT JOIN users u ON u.id = r.user_id
 LEFT JOIN organizations o ON o.id = r.org_id
-WHERE i.kind <> 'chat' AND i.search_vector @@ websearch_to_tsquery('simple', sqlc.arg(query)::text)
+WHERE (sqlc.arg(repository_id)::bigint = 0 OR r.id = sqlc.arg(repository_id)::bigint)
+  AND i.kind <> 'chat' AND i.search_vector @@ websearch_to_tsquery('simple', sqlc.arg(query)::text)
   AND (
     sqlc.arg(state_filter)::text = ''
     OR i.state = sqlc.arg(state_filter)::text
@@ -242,7 +243,8 @@ SELECT COUNT(*)
 FROM issues i
 JOIN repositories r ON r.id = i.repository_id
 JOIN visible_repositories vr ON vr.id = r.id
-WHERE i.kind <> 'chat' AND i.search_vector @@ websearch_to_tsquery('simple', sqlc.arg(query)::text)
+WHERE (sqlc.arg(repository_id)::bigint = 0 OR r.id = sqlc.arg(repository_id)::bigint)
+  AND i.kind <> 'chat' AND i.search_vector @@ websearch_to_tsquery('simple', sqlc.arg(query)::text)
   AND (
     sqlc.arg(state_filter)::text = ''
     OR i.state = sqlc.arg(state_filter)::text
@@ -333,7 +335,8 @@ JOIN repositories r ON r.id = c.repository_id
 JOIN visible_repositories vr ON vr.id = r.id
 LEFT JOIN users u ON u.id = r.user_id
 LEFT JOIN organizations o ON o.id = r.org_id
-WHERE c.search_vector @@ websearch_to_tsquery('simple', sqlc.arg(query)::text)
+WHERE (sqlc.arg(repository_id)::bigint = 0 OR r.id = sqlc.arg(repository_id)::bigint)
+  AND c.search_vector @@ websearch_to_tsquery('simple', sqlc.arg(query)::text)
 ORDER BY rank DESC, c.repository_id DESC, c.file_path ASC
 LIMIT sqlc.arg(page_size)::int
 OFFSET sqlc.arg(page_offset)::int;
@@ -379,7 +382,8 @@ SELECT COUNT(*)
 FROM code_search_documents c
 JOIN repositories r ON r.id = c.repository_id
 JOIN visible_repositories vr ON vr.id = r.id
-WHERE c.search_vector @@ websearch_to_tsquery('simple', sqlc.arg(query)::text)
+WHERE (sqlc.arg(repository_id)::bigint = 0 OR r.id = sqlc.arg(repository_id)::bigint)
+  AND c.search_vector @@ websearch_to_tsquery('simple', sqlc.arg(query)::text)
 ;
 
 -- name: UpsertCodeSearchDocument :one

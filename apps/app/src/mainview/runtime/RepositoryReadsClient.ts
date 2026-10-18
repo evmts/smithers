@@ -2,7 +2,7 @@
  * Repository reads use the application's existing authentication, transport and typed errors.
  * @since 0.1.0
  */
-import { RepositoryCommitDetailSchema, RepositoryCommitPageSchema } from "@smthrs/rpc/RepositoryReads"
+import { RepositoryCodeSearchSchema, RepositoryIssueSearchSchema, RepositoryCommitDetailSchema, RepositoryCommitPageSchema } from "@smthrs/rpc/RepositoryReads"
 import type { ApplicationClient } from "./ApplicationClient.ts"
 
 const repositoryPath = (owner: string, repo: string): string =>
@@ -33,3 +33,24 @@ export const listRepositoryCommits = async (
 export const getRepositoryCommit = async (
   client: ApplicationClient, owner: string, repo: string, sha: string, signal?: AbortSignal
 ) => RepositoryCommitDetailSchema.parse(await client.request(`${repositoryPath(owner, repo)}/commits/${encodeURIComponent(sha)}`, { signal }))
+
+
+type SearchOptions = { readonly cursor?: string; readonly limit?: number; readonly signal?: AbortSignal }
+const repositorySearch = async (client: ApplicationClient, owner: string, repo: string, kind: "code" | "issues", q: string, options: SearchOptions) => {
+  const query = new URLSearchParams({ q })
+  if (options.cursor !== undefined) query.set("cursor", options.cursor)
+  if (options.limit !== undefined) query.set("limit", String(options.limit))
+  return client.request(`${repositoryPath(owner, repo)}/search/${kind}?${query}`, { signal: options.signal })
+}
+/** Search code in one repository through the existing indexed search service.
+ * @category services
+ * @since 0.1.0
+ */
+export const searchRepositoryCode = async (client: ApplicationClient, owner: string, repo: string, q: string, options: SearchOptions = {}) =>
+  RepositoryCodeSearchSchema.parse(await repositorySearch(client, owner, repo, "code", q, options))
+/** Search issues in one repository through the existing indexed search service.
+ * @category services
+ * @since 0.1.0
+ */
+export const searchRepositoryIssues = async (client: ApplicationClient, owner: string, repo: string, q: string, options: SearchOptions = {}) =>
+  RepositoryIssueSearchSchema.parse(await repositorySearch(client, owner, repo, "issues", q, options))
