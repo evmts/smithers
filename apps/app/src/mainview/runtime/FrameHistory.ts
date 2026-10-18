@@ -1,4 +1,4 @@
-import { pathRepo } from "../RepoLink"
+import { pathRepo, pathTarget } from "../RepoLink"
 
 export interface FrameLocation {
   readonly workspaceId: string
@@ -96,8 +96,16 @@ export const createBrowserFrameHistory = (
    * app by itself, so a frame no longer rewrites it to `/?tutorial`, and
    * reading it at write time never restores an entry marker boot has spent.
    */
+  const subject = pathTarget(path)?.subject
+  const codeUrl = () => {
+    const source = new URLSearchParams(host.location.search ?? "")
+    const query = new URLSearchParams()
+    for (const key of ["L", "raw", "view"]) if (source.has(key)) query.set(key, source.get(key)!)
+    return `${path}${query.size ? `?${query}` : ""}`
+  }
   const pinned: (() => string) | undefined = options.keepUrl === true && path === "/"
     ? () => `${host.location.pathname}${host.location.search}`
+    : subject?.kind === "tree" || subject?.kind === "blob" ? codeUrl
     : pathRepo(path) !== null || options.keepUrl === true ? () => path : undefined
   const current = (): FrameLocation | undefined =>
     pinned === undefined ? parseFramePath(host.location.pathname) : stateLocation(host.history.state)
