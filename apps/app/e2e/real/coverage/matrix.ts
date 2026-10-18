@@ -99,7 +99,7 @@ export type FeatureSupport = "core" | "optional" | "absent"
 export type FeatureRow = { readonly support: "core" } | { readonly support: "optional" | "absent"; readonly reason: string }
 
 /** Bump with any row change; every matrix report publishes this version and the table's digest. */
-export const FEATURE_MATRIX_VERSION = 10
+export const FEATURE_MATRIX_VERSION = 11
 
 const core = { support: "core" } as const
 const optional = (reason: string): FeatureRow => ({ support: "optional", reason })
@@ -123,6 +123,7 @@ export const FEATURE_MATRIX: Readonly<Record<RuntimeCapability, Readonly<Record<
   "commands.select": { selfhost: optional("needs a recommendation provider"), plue: optional("needs a recommendation provider") },
   "browser.read": { selfhost: optional("needs a pinned HTTPS transport"), plue: optional("needs a pinned HTTPS transport") },
   "identity": { selfhost: core, plue: core },
+  "sites": { selfhost: optional("needs repository site configuration"), plue: optional("needs repository site configuration") },
   "debug.api": { selfhost: optional("single-owner API with member authorization"), plue: absent("install API playground") },
   "install": { selfhost: optional("single-owner install composition"), plue: absent("hosted composition serves no install setup") },
   "github": { selfhost: optional("needs the operator's GitHub OAuth app"), plue: core },
