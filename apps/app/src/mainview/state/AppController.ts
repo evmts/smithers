@@ -1591,7 +1591,13 @@ export const createAppController = (
   durableIssueCreate = (title, body) => issueCreateSeam.request(title, body)
   /* The services that sync with conversations, issues and the wiki (smithers-ui-DESIGN.md §3.6). */
   const landingsSeam = actors.pair(seamCtx, (context, select) => createLandingsSeam(context, request => select(renderFlowForm)(request)))
-  const repositoriesSeam = actors.pair(seamCtx, (context) => createRepositoriesSeam(context))
+  let doorInventory: import("@smthrs/rpc/FrontDoor").Known<number> = { state: "unknown" }
+  let doorOwnerEpoch = ctx.accountEpoch
+  const repositoriesSeam = actors.pair(seamCtx, (context) => createRepositoriesSeam(context, count => {
+    doorInventory = count
+    doorOwnerEpoch = ctx.accountEpoch
+    launcherSeam.accountChanged()
+  }))
   /* The launcher's Create: the backend's durable create on the person's own GitHub account. */
   const gitHubRepoCreateSeam = actors.pair(seamCtx, (context) => createGitHubRepoCreateSeam(context))
   /*
@@ -1601,13 +1607,34 @@ export const createAppController = (
    * subscribes, so a page that never shows it asks for neither.
    */
   const launcherSeam = createLauncherSeam({
+    ...(services.applicationTarget?.frontDoor && typeof window !== "undefined" && window.location.pathname === "/" ? {
+      frontDoor: {
+        reference: services.applicationTarget.frontDoor,
+        baseUrl, href: window.location.href, referrer: document.referrer,
+        replaceUrl: (url: string) => window.history.replaceState(window.history.state, "", url),
+        // Access is lazy: denied storage and privacy signals never prevent the visit.
+        storage: { getItem: (key: string) => window.localStorage.getItem(key), setItem: (key: string, value: string) => window.localStorage.setItem(key, value) },
+        doNotTrack: navigator.doNotTrack,
+        globalPrivacyControl: (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl,
+        account: () => {
+          const identity = store.collections.identitySessions.get("identity")
+          return { owner: String(ctx.accountEpoch), settled: identity !== undefined && identity.state !== "unknown",
+            facts: { signedIn: identity?.state === "signed-in",
+              ownRepos: doorOwnerEpoch === ctx.accountEpoch ? doorInventory : { state: "unknown" as const },
+              // These reads are not mounted at / in this revision; unavailable means unknown.
+              coveredNotImported: { state: "unknown" as const }, activeRuns: { state: "unknown" as const },
+              modelConnections: { state: "unknown" as const } } }
+        }
+      }
+    } : {}),
     loadCatalog: () => {
       // The shelf belongs to the account that asked for it: a read landing after a sign-in or sign-out writes nothing.
       const current = captureCloudOwner(seamCtx, false)
       return loadPublicCatalog({ store }, ctx.http, current)
     }
   })
-  ctx.onDispose(launcherSeam.dispose)
+  const doorIdentity = store.collections.identitySessions.subscribeChanges(launcherSeam.accountChanged)
+  ctx.onDispose(() => { doorIdentity.unsubscribe(); launcherSeam.dispose() })
   const billingSeam = actors.pair(seamCtx, context => createBillingSeam(context, {
     overview: services.bootstrap?.capabilities.includes("billing.overview") ?? false,
     plans: services.bootstrap?.capabilities.includes("billing.plans") ?? false,

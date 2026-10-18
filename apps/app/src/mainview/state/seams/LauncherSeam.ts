@@ -1,3 +1,9 @@
+import { FrontDoor, chooseJourney, DEFAULT_CHOICE } from "@smthrs/rpc/FrontDoor"
+import type { Facts, JourneyChoice, Known } from "@smthrs/rpc/FrontDoor"
+import type { ApplicationTargetDocument } from "@smthrs/rpc/ApplicationTarget"
+import bundledRules from "../../../../../../.smithers/front-door.json"
+import { shouldResumeApp } from "../../../../../site/src/lib/appHistory.ts"
+
 /*
  * The launcher's two reads (mvp.md M-45, §6.16): the repositories a visitor
  * can explore, and Smithers' own update news.
@@ -105,7 +111,7 @@ export type LauncherCatalogAnswer = { readonly kind: "read" } | { readonly kind:
 
 export interface LauncherSnapshots {
   /** Undefined until the first read answers. */
-  readonly get: () => { readonly updates: SmithersUpdatesAnswer | undefined; readonly catalog: LauncherCatalogAnswer | undefined }
+  readonly get: () => { readonly updates: SmithersUpdatesAnswer | undefined; readonly catalog: LauncherCatalogAnswer | undefined; readonly frontDoor?: FrontDoorAnswer }
   readonly subscribe: (listener: () => void) => () => void
 }
 
@@ -118,6 +124,7 @@ export interface LauncherSeamOptions {
   readonly endpoint?: string
   /** Join the public catalog's rows to the repositories collection, as `/owner/repo` does. Absent on a host with no catalog. */
   readonly loadCatalog?: () => Promise<boolean>
+  readonly frontDoor?: FrontDoorOptions
 }
 
 /**
@@ -127,6 +134,7 @@ export interface LauncherSeamOptions {
  */
 export function createLauncherSeam(options: LauncherSeamOptions = {}) {
   const endpoint = options.endpoint ?? SMITHERS_RELEASES_ENDPOINT
+  const door = createVisitDoor(options.frontDoor, options.fetch)
   const listeners = new Set<() => void>()
   let answer: SmithersUpdatesAnswer | undefined
   let catalog: LauncherCatalogAnswer | undefined
@@ -190,20 +198,220 @@ export function createLauncherSeam(options: LauncherSeamOptions = {}) {
    * One stable object per answer: `useSyncExternalStore` compares snapshots
    * by identity, so a mutated one is a published read nobody repaints.
    */
-  let snapshot: { readonly updates: SmithersUpdatesAnswer | undefined; readonly catalog: LauncherCatalogAnswer | undefined } =
+  let snapshot: { readonly updates: SmithersUpdatesAnswer | undefined; readonly catalog: LauncherCatalogAnswer | undefined; readonly frontDoor?: FrontDoorAnswer } =
     { updates: undefined, catalog: undefined }
+  door.listen(() => notify())
   const snapshots: LauncherSnapshots = {
     get: () => {
-      if (snapshot.updates !== answer || snapshot.catalog !== catalog) snapshot = { updates: answer, catalog }
+      const frontDoor = door.get()
+      if (snapshot.updates !== answer || snapshot.catalog !== catalog || snapshot.frontDoor !== frontDoor) snapshot = { updates: answer, catalog, frontDoor }
       return snapshot
     },
     subscribe: (listener) => {
       listeners.add(listener)
+      door.start()
       once()
       onceCatalog()
       return () => { listeners.delete(listener) }
     }
   }
-  return { snapshots, retry, retryCatalog, dispose: () => { disposed = true; listeners.clear() } }
+  return { snapshots, retry, retryCatalog, accountChanged: door.accountChanged, shown: door.shown, acted: door.acted,
+    dispose: () => { disposed = true; door.dispose(); listeners.clear() } }
 }
 export type LauncherSeam = ReturnType<typeof createLauncherSeam>
+
+/** The sole browser cache holds public rules, never arrival or account facts. */
+export const FRONT_DOOR_CACHE_KEY = "smithers.front-door.rules.v1"
+export const FRONT_DOOR_TTL = 10 * 60 * 1000
+export const FRONT_DOOR_WAIT = 400
+
+const SOURCE_HOSTS = {
+  "effeck.dev": "effeck", "effeck.smithers.sh": "effeck",
+  "smithers.smithers.sh": "smithers-site", "github.com": "github",
+  "www.google.com": "search", "google.com": "search", "www.bing.com": "search",
+  "bing.com": "search", "duckduckgo.com": "search", "x.com": "social", "t.co": "social"
+} as const
+const SOURCE_TAGS = { ...SOURCE_HOSTS, effeck: "effeck", github: "github", install: "install", "smithers-site": "smithers-site" } as const
+
+interface ArrivalInput {
+  readonly href: string
+  readonly referrer: string
+  readonly replaceUrl?: (url: string) => void
+}
+/** Read this visit once. Keep only allowlisted hosts; strip every UTM without touching other URL state. */
+export function captureArrival(input: ArrivalInput): Pick<Facts, "source" | "sourceHost" | "medium" | "campaign"> {
+  const url = new URL(input.href)
+  const returned = shouldResumeApp(url.search) || url.searchParams.has("installation_id") || url.searchParams.has("setup_action")
+  const source = url.searchParams.get("utm_source")
+  const medium = url.searchParams.get("utm_medium")?.slice(0, 32)
+  const campaign = url.searchParams.get("utm_campaign")?.slice(0, 64)
+  let host = ""
+  try { host = new URL(input.referrer).hostname.toLowerCase() } catch { /* Direct visit. */ }
+  const knownHost = Object.hasOwn(SOURCE_HOSTS, host)
+  const referrerSource = knownHost ? SOURCE_HOSTS[host as keyof typeof SOURCE_HOSTS] : host === "" ? "direct" : "other"
+  const tagged = source === null ? undefined : Object.hasOwn(SOURCE_TAGS, source.toLowerCase())
+    ? SOURCE_TAGS[source.toLowerCase() as keyof typeof SOURCE_TAGS] : "other"
+  const utms = [...url.searchParams.keys()].filter(key => key.toLowerCase().startsWith("utm_"))
+  for (const key of utms) url.searchParams.delete(key)
+  if (utms.length > 0) input.replaceUrl?.(url.pathname + url.search + url.hash)
+  if (returned) return { source: "direct" }
+  return {
+    source: tagged ?? referrerSource,
+    ...(source === null && knownHost ? { sourceHost: host } : {}),
+    ...(medium ? { medium } : {}), ...(campaign ? { campaign } : {})
+  }
+}
+export interface FrontDoorAccount {
+  /** Account generation, not sent or stored. Changes invalidate every previously derived fact. */
+  readonly settled?: boolean
+  readonly owner: string
+  readonly facts: Pick<Facts, "signedIn" | "ownRepos" | "coveredNotImported" | "activeRuns" | "modelConnections">
+}
+export interface FrontDoorAnswer {
+  readonly choice: JourneyChoice
+  readonly pending: boolean
+  readonly reserve: boolean
+}
+export interface FrontDoorCount {
+  readonly journey: string
+  readonly source: Facts["source"]
+  readonly arm: Facts["arm"]
+  readonly step: "shown" | "acted"
+}
+export interface FrontDoorOptions extends ArrivalInput {
+  readonly reference: NonNullable<ApplicationTargetDocument["frontDoor"]>
+  readonly baseUrl?: string
+  readonly account: () => FrontDoorAccount
+  readonly storage?: Pick<Storage, "getItem" | "setItem">
+  readonly doNotTrack?: string | null
+  readonly globalPrivacyControl?: boolean
+  readonly random?: () => number
+  readonly now?: () => number
+  readonly snapshot?: unknown
+  readonly readRules?: (url: string, init: RequestInit) => Promise<Response>
+  /** pl-fd2 owns delivery. The production default is a no-op. */
+  readonly sendCount?: (event: FrontDoorCount) => void
+}
+export const unknownDoorCount: Known<number> = { state: "unknown" }
+
+const parseRules = (value: unknown): FrontDoor | undefined => {
+  const parsed = FrontDoor.safeParse(value)
+  return parsed.success ? parsed.data : undefined
+}
+/** Contents responses use the repository's existing UTF-8/base64 envelope. Raw JSON is useful for immutable snapshots. */
+const rulesResponse = async (response: Response): Promise<FrontDoor | undefined> => {
+  if (!response.ok) return undefined
+  const body: unknown = await response.json()
+  const raw = parseRules(body)
+  if (raw) return raw
+  if (!isRecord(body) || typeof body.content !== "string" || body.content.length > 256 * 1024) return undefined
+  let content = body.content
+  if (body.encoding === "base64") {
+    content = new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(atob(content.replace(/\s/g, "")), c => c.charCodeAt(0)))
+  } else if (body.encoding !== "utf-8" && body.encoding !== "utf8") return undefined
+  return parseRules(JSON.parse(content))
+}
+
+function createVisitDoor(options: FrontDoorOptions | undefined, publicFetch: PublicFetch | undefined) {
+  let listener = () => {}
+  const notify = () => listener()
+  const enabled = options !== undefined && new URL(options.href).pathname === "/"
+  // Capture before auth return handlers strip their query parameters.
+  const arrival = enabled ? captureArrival(options) : { source: "direct" as const }
+  const privateVisit = options?.doNotTrack === "1" || options?.doNotTrack === "yes" || options?.globalPrivacyControl === true
+  const draw = (options?.random ?? Math.random)()
+  const now = options?.now ?? Date.now
+  let owner = options?.account().owner
+  let answer: FrontDoorAnswer | undefined = enabled ? { choice: DEFAULT_CHOICE, pending: true, reserve: false } : undefined
+  let rules: FrontDoor | undefined
+  let started = false, finished = false, disposed = false, shown = false, received = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const abort = new AbortController()
+  const fallback = (): FrontDoor | undefined => {
+    if (!privateVisit) {
+      try {
+        const raw = options?.storage?.getItem(FRONT_DOOR_CACHE_KEY)
+        const cached: unknown = raw ? JSON.parse(raw) : undefined
+        if (isRecord(cached) && typeof cached.at === "number" && now() >= cached.at && now() - cached.at < FRONT_DOOR_TTL) {
+          const valid = parseRules(cached.rules)
+          if (valid) return valid
+        }
+      } catch { /* Denied, malformed or unavailable browser cache. */ }
+    }
+    return parseRules(options?.snapshot === undefined ? bundledRules : options.snapshot)
+  }
+  const choose = (pending: boolean): void => {
+    if (!options || !answer) return
+    const account = options.account()
+    const facts: Facts = { ...account.facts, ...arrival,
+      arm: !account.facts.signedIn && draw < (rules?.holdoutShare ?? 0.1) ? "hold" : "treat" }
+    const choice = rules ? chooseJourney(rules, facts) : DEFAULT_CHOICE
+    answer = { choice, pending, reserve: (choice.lead.length > 0 || pending && (rules?.journeys.length ?? 0) > 0) }
+  }
+  const accountChanged = (): void => {
+    if (!options || !answer || disposed) return
+    const next = options.account().owner
+    if (next !== owner) {
+      owner = next
+      // Clear synchronously. A new account never inherits a lead from this page's earlier identity.
+      answer = { choice: DEFAULT_CHOICE, pending: !finished, reserve: false }
+      shown = false
+      if (!finished) choose(true)
+    } else if (!finished) choose(true)
+    notify()
+  }
+  const start = (): void => {
+    if (!enabled || !options || started || disposed) return
+    started = true
+    // A validated snapshot reserves space while the account reads are still unknown.
+    rules = parseRules(options.snapshot === undefined ? bundledRules : options.snapshot)
+    choose(true)
+    const finish = () => {
+      if (disposed || finished) return
+      finished = true
+      clearTimeout(timer)
+      choose(false)
+      notify()
+    }
+    timer = setTimeout(() => {
+      abort.abort()
+      rules = received ? rules : fallback()
+      finish()
+    }, FRONT_DOOR_WAIT)
+    const ref = options.reference
+    const path = ref.path.split("/").map(encodeURIComponent).join("/")
+    const url = (options.baseUrl ?? "") + "/api/repos/" + ref.repo.split("/").map(encodeURIComponent).join("/") + "/contents/" + path
+    const fetch = options.readRules ?? publicFetch ?? globalThis.fetch?.bind(globalThis)
+    if (!fetch) { rules = fallback(); finish(); return }
+    void fetch(url, { credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store", signal: abort.signal })
+      .then(rulesResponse).catch(() => undefined).then(valid => {
+        if (disposed || finished) return
+        received = true
+        rules = valid ?? fallback()
+        if (valid && !privateVisit) {
+          try { options.storage?.setItem(FRONT_DOOR_CACHE_KEY, JSON.stringify({ at: now(), rules: valid })) } catch { /* Optional public cache. */ }
+        }
+        // Give the existing account reads the rest of the same 400ms window.
+        choose(true)
+        if (options.account().settled !== false && (!options.account().facts.signedIn || options.account().facts.ownRepos.state === "known") || rules?.journeys.length === 0) finish()
+        else notify()
+      })
+  }
+  const send = (step: FrontDoorCount["step"]) => {
+    if (!options || privateVisit || !answer || answer.pending || answer.choice.lead.length === 0) return
+    const account = options.account()
+    options.sendCount?.({ journey: answer.choice.journey, source: arrival.source,
+      arm: account.facts.signedIn || draw >= (rules?.holdoutShare ?? 0.1) ? "treat" : "hold", step })
+  }
+  return {
+    listen: (next: () => void) => { listener = next },
+    get: () => {
+      if (options && owner !== options.account().owner) accountChanged()
+      return answer
+    },
+    start, accountChanged,
+    shown: () => { if (!shown && answer && !answer.pending && answer.choice.lead.length > 0) { shown = true; send("shown") } },
+    acted: () => send("acted"),
+    dispose: () => { disposed = true; clearTimeout(timer); abort.abort() }
+  }
+}

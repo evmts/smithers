@@ -32,6 +32,8 @@ const render = (over: Partial<RepositoryLauncherProps> = {}) => {
     updates={over.updates}
     catalogRead={over.catalogRead}
     signedIn={over.signedIn ?? true}
+    lead={over.lead}
+    order={over.order}
     onRunCommand={over.onRunCommand ?? ((name, args) => { calls.push([name, args]) })}
     onOpenRepository={over.onOpenRepository ?? (href => { opened.push(href) })}
   />))
@@ -249,4 +251,51 @@ test("an empty or unsafe entry navigates nowhere and says what to enter, without
 test("the empty shelf no longer tells people to type a path somewhere else", () => {
   const { host } = render({ repositories: [], signedIn: true })
   expect(section(host, "open").textContent).toContain("Open one you have on GitHub, above, to import it.")
+})
+
+test("fixture leads and DOM order come from the real launcher seam; empty rules keep identical markup", async () => {
+  const { createLauncherSeam } = await import("../state/seams/LauncherSeam")
+  const { placeholderRules, visitFacts } = await import("@smthrs/rpc/fixtures/FrontDoor")
+  const { useSyncExternalStore } = await import("react")
+  const baseline = render({ signedIn: false, catalogRead: { kind: "read" }, updates: { kind: "read", updates: [] } })
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  const calls: string[] = []
+  const seam = createLauncherSeam({ fetch: async () => Response.json([]),
+    frontDoor: {
+      reference: { repo: "smithers/smithers", path: ".smithers/front-door.json" },
+      href: "https://smithers.sh/?utm_source=effeck", referrer: "", random: () => 0.9,
+      account: () => ({ owner: "visitor", facts: visitFacts }),
+      readRules: async () => Response.json(placeholderRules)
+    } })
+  function Connected() {
+    const answer = useSyncExternalStore(seam.snapshots.subscribe, seam.snapshots.get, seam.snapshots.get)
+    return <RepositoryLauncher repositories={[]} signedIn={false} updates={{ kind: "read", updates: [] }}
+      catalogRead={{ kind: "read" }} lead={answer.frontDoor?.choice.lead} order={answer.frontDoor?.choice.order}
+      reserveLead={answer.frontDoor?.reserve} onRunCommand={name => { calls.push(name) }} />
+  }
+  await act(async () => { root.render(<Connected />); for (let i = 0; i < 15; i++) await Promise.resolve() })
+  expect(host.querySelector('[data-testid="front-door-lead"]')?.textContent).toContain("PLACEHOLDER: Effeck runs on Smithers")
+  expect([...host.querySelectorAll("[data-section]")].map(n => n.getAttribute("data-section")))
+    .toEqual(["open-existing", "explore", "open", "create", "updates"])
+  expect(calls).toEqual([])
+  // The committed kill switch has no lead wrapper, attributes, reordered sections or extra words.
+  await act(async () => { root.render(<RepositoryLauncher repositories={[]} signedIn={false}
+    updates={{ kind: "read", updates: [] }} catalogRead={{ kind: "read" }} lead={[]} onRunCommand={() => {}} />) })
+  expect(host.innerHTML).toBe(baseline.host.innerHTML)
+  act(() => root.unmount())
+  host.remove()
+  seam.dispose()
+})
+
+test("a lead's action only opens its typed picker door after a person's press", async () => {
+  const { FrontDoor } = await import("@smthrs/rpc/FrontDoor")
+  const { placeholderRules } = await import("@smthrs/rpc/fixtures/FrontDoor")
+  const { host, calls } = render({ lead: FrontDoor.parse(placeholderRules).journeys[0]!.lead })
+  expect(calls).toEqual([])
+  const button = host.querySelector<HTMLButtonElement>('[data-flow="repo.select"]')!
+  expect(button.textContent).toBe("PLACEHOLDER: Choose a repository")
+  await act(async () => { button.click() })
+  expect(calls).toEqual([["repo.select", undefined]])
 })

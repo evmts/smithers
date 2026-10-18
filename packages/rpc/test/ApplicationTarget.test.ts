@@ -237,3 +237,18 @@ describe("application target matrix", () => {
     expect(() => resolveApplicationTarget(document, PAGE)).toThrow()
   })
 })
+
+test("hosted front-door references are public repository paths; self-hosted defaults omit them", () => {
+  const base = { apiVersion: 1, mode: "web-plue", auth: { kind: "session" } }
+  const frontDoor = { repo: "smithers-canary/smithers", path: ".smithers/front-door.json" }
+  expect(resolveApplicationTarget({ ...base, frontDoor }).frontDoor).toEqual(frontDoor)
+  expect(resolveApplicationTarget({ ...base, mode: "web-selfhost" }).frontDoor).toBeUndefined()
+  for (
+    const bad of [
+      { ...frontDoor, repo: "https://attacker.example/repo" },
+      { ...frontDoor, path: "../private" },
+      { ...frontDoor, path: "/absolute" },
+      { ...frontDoor, path: ".smithers/%2e%2e/token" }
+    ]
+  ) expect(() => resolveApplicationTarget({ ...base, frontDoor: bad })).toThrow()
+})

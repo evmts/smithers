@@ -117,6 +117,18 @@ const check = Smithers.Typecheck({
 // Coverage policy: assertion-only for Bun UI units, with required offline
 // Playwright in browserE2e. No source coverage percentage is claimed; see
 // packages/repo-targets/contracts/README.md for the denominator exception.
+/** Evergreen rules validation; copy cannot ship without a reachable catalog fixture. */
+const frontDoorRules = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.testSuite(["scripts/front-door-rules.test.ts"], { isolate: true }),
+  srcs: [Smithers.file("scripts/front-door-rules.test.ts"),
+    Smithers.file("src/mainview/flows/FlowName.ts"), Smithers.file("//.smithers/front-door.json"),
+    Smithers.file("//packages/rpc/src/FrontDoor.ts"), Smithers.file("//packages/rpc/src/RepositoryHome.ts"),
+    Smithers.file("//packages/rpc/src/WebUrl.ts"), Smithers.file("//packages/rpc/test/fixtures/FrontDoor.ts")],
+  deps: [rpcPackage.check],
+  cwd
+})
+
 const unitTests = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
   // Isolate files that mutate process globals until #3696 removes that pollution.
@@ -141,6 +153,7 @@ const unitTests = Smithers.NodeTest({
     Smithers.file("tsconfig.json"),
     Smithers.file("package.json"),
     Smithers.file("bunfig.toml"),
+    Smithers.file("//.smithers/front-door.json"),
     Smithers.file("//package.json"),
     Smithers.file("//pnpm-lock.yaml"),
     Smithers.file("//packages/repo-targets/contracts/require-toolchain.mjs"),
@@ -183,6 +196,7 @@ const conformance = Smithers.NodeTest({
     Smithers.file("tsconfig.json"),
     Smithers.file("package.json"),
     Smithers.file("bunfig.toml"),
+    Smithers.file("//.smithers/front-door.json"),
     Smithers.file("//package.json"),
     Smithers.file("//pnpm-lock.yaml"),
     Smithers.file("//packages/repo-targets/contracts/require-toolchain.mjs")
@@ -214,7 +228,8 @@ const browserTier = (shard?: string) => Smithers.NodeTest({
     Smithers.file("playwright.config.ts"), Smithers.file("playwright.site.config.ts"), Smithers.file("playwright.graph.config.ts"),
     Smithers.file("playwright.showcase.config.ts"), Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml"),
     // `bun test` steps preload the toolchain floor.
-    Smithers.file("bunfig.toml"), Smithers.file("//package.json"), Smithers.file("//packages/repo-targets/contracts/require-toolchain.mjs")],
+    Smithers.file("bunfig.toml"),
+    Smithers.file("//.smithers/front-door.json"), Smithers.file("//package.json"), Smithers.file("//packages/repo-targets/contracts/require-toolchain.mjs")],
   deps: [],
   env: { SMITHERS_CHAT_STUB: "1" },
   exclusive: true,
@@ -485,6 +500,8 @@ const proofPage = Smithers.Shell.Build({
 const webSources = Smithers.Filegroup({
   srcs: [
     Smithers.glob("src/mainview/**/*"),
+    Smithers.file("//.smithers/front-door.json"),
+    Smithers.file("//apps/site/src/lib/appHistory.ts"),
     Smithers.glob("src/debugApi/**/*"),
     Smithers.file("scripts/openapi-chunk.ts"),
     Smithers.file("//docs/api/openapi.yaml"),
@@ -631,5 +648,5 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { crateInputs, proofProductInputs, proofMockInputs, docsInputs, serverBundle, solidCodegenInputs, check, unitTests, conformance, browserE2e, browserE2eShard1, browserE2eShard2, browserE2eShard3, installE2e, viewStories, journeyJ1Activation, journeyJ1Release, journeyKeyboard, journeyFreshRepository, journeyWikiGeneratedRefresh, journeyWikiCoedit, journeySetup, journeyWikiObsidian, journeyTodoFromIssue, journeyTodoNeedsYou, journeyTodoEvidence, journeyTodoMerge, journeyAskRepository, journeyTodoStackActions, journeyGitHubMerge, journeyGitHubMergeContinuation, journeyGitHubPRShape, journeyFlowSourceRun, journeyWikiDecisionFollow, journeyBranchPresence, journeyDuplicateLaunch, journeyFileCoedit, journeyHome, journeyTodoMergeOrder, journeyTodoPlacement, journeyTodoSteer, journeyFlowActivation, journeyLearning, journeyAgentTerminal, journeyTerminalSignin, journeyFileGone, journeyGitHubSyncHealth, journeyForkAddToStack, journeySshBranch, journeyInstallOrigins, journeyFileIntelligence, journeyForkDropInstall, journeyGitHubForeignPush, journeyGitHubMainMovedRebase, proofRecord, proofPage, webSources, ...securityReview }
+  targets: { crateInputs, proofProductInputs, proofMockInputs, docsInputs, serverBundle, solidCodegenInputs, check, unitTests, frontDoorRules, conformance, browserE2e, browserE2eShard1, browserE2eShard2, browserE2eShard3, installE2e, viewStories, journeyJ1Activation, journeyJ1Release, journeyKeyboard, journeyFreshRepository, journeyWikiGeneratedRefresh, journeyWikiCoedit, journeySetup, journeyWikiObsidian, journeyTodoFromIssue, journeyTodoNeedsYou, journeyTodoEvidence, journeyTodoMerge, journeyAskRepository, journeyTodoStackActions, journeyGitHubMerge, journeyGitHubMergeContinuation, journeyGitHubPRShape, journeyFlowSourceRun, journeyWikiDecisionFollow, journeyBranchPresence, journeyDuplicateLaunch, journeyFileCoedit, journeyHome, journeyTodoMergeOrder, journeyTodoPlacement, journeyTodoSteer, journeyFlowActivation, journeyLearning, journeyAgentTerminal, journeyTerminalSignin, journeyFileGone, journeyGitHubSyncHealth, journeyForkAddToStack, journeySshBranch, journeyInstallOrigins, journeyFileIntelligence, journeyForkDropInstall, journeyGitHubForeignPush, journeyGitHubMainMovedRebase, proofRecord, proofPage, webSources, ...securityReview }
 })

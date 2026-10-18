@@ -1,3 +1,5 @@
+import { placeholderRules } from "@smthrs/rpc/fixtures/FrontDoor"
+import emptyRules from "../../../../.smithers/front-door.json"
 import { expect, test } from "@playwright/test"
 import type { Page } from "@playwright/test"
 import { identityRoute, SCOPED_TEST_USER, signedOutVisitor, signupProfileRoute } from "../playwright/identity"
@@ -306,7 +308,7 @@ test.describe("narrow dark keyboard entry", () => {
  */
 
 /** The signed-in account this spec runs as, with its own repository and the public reads. */
-async function returningVisitor(page: Page): Promise<Reads> {
+async function returningVisitor(page: Page, zeroRepos = false): Promise<Reads> {
   const reads: Reads = { auth: [], publicHeaders: [] }
   const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) })
   await page.route("**/api/**", route => route.fulfill(json({ message: "Unavailable test route" }, 404)))
@@ -318,7 +320,7 @@ async function returningVisitor(page: Page): Promise<Reads> {
   await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute(SCOPED_TEST_USER.login))
   // The inventory read is `/api/user/repos?limit=100` (state/seams/RepositoriesSeam.ts).
   await page.route(url => url.pathname === "/api/user/repos", route => route.fulfill(json({
-    repos: [{ owner: SCOPED_TEST_USER.login, name: "widgets", full_name: `${SCOPED_TEST_USER.login}/widgets`, default_bookmark: "main", owner_type: "User" }]
+    repos: zeroRepos ? [] : [{ owner: SCOPED_TEST_USER.login, name: "widgets", full_name: `${SCOPED_TEST_USER.login}/widgets`, default_bookmark: "main", owner_type: "User" }]
   })))
   await page.route(url => url.pathname === `/api/repos/${SCOPED_TEST_USER.login}/widgets/bookmarks`,
     route => route.fulfill(json({ items: [{ name: "main", target_change_id: "chg-w", target_commit_id: "c0ffee" }], next_cursor: "" })))
@@ -438,4 +440,74 @@ test.describe("narrow dark signed-in entry", () => {
     expect(reached).toContain("open-existing")
     await page.screenshot({ path: testInfo.outputPath("narrow-dark-signed-in-launcher.png"), fullPage: true })
   })
+})
+
+/** Public contents route, the only changed server answer: the real seam and chooser still run. */
+async function rulesFixture(page: Page, rules: unknown = placeholderRules) {
+  await page.route("**/api/repos/smithers-canary/smithers/contents/.smithers/front-door.json", route =>
+    route.fulfill({ json: { content: JSON.stringify(rules), encoding: "utf-8" } }))
+  // Per-load holdout is random in production. Keep these journey fixtures in the treatment arm.
+  await page.addInitScript(() => { Math.random = () => 0.9 })
+}
+
+test("an effeck.dev arrival sees the fixture lead above the launcher", async ({ page }) => {
+  await freshVisitor(page)
+  await rulesFixture(page)
+  await page.goto("/", { referer: "https://effeck.dev/" })
+  const launcher = launcherOf(page)
+  const lead = launcher.getByTestId("front-door-lead")
+  await expect(lead).toContainText("PLACEHOLDER: Effeck runs on Smithers")
+  await expect(lead.getByRole("link", { name: "PLACEHOLDER: Open Smithers" }))
+    .toHaveAttribute("href", "https://smithers.sh/smithers/smithers/")
+  expect(await launcher.locator("[data-section]").evaluateAll(nodes => nodes.map(n => n.getAttribute("data-section"))))
+    .toEqual(["open-existing", "explore", "open", "create", "updates"])
+})
+
+test("GPC still adapts while setting no visitor cookie and sending no counts", async ({ page, context }) => {
+  await freshVisitor(page)
+  await rulesFixture(page)
+  await page.addInitScript(() => { Object.defineProperty(navigator, "globalPrivacyControl", { get: () => true }) })
+  await context.setExtraHTTPHeaders({ "Sec-GPC": "1" })
+  const sends: string[] = []
+  page.on("request", request => {
+    if (request.url().includes("/front-door/counts")) sends.push(request.url())
+  })
+  await page.goto("/?utm_source=effeck&utm_medium=powered-by")
+  await expect(launcherOf(page).getByTestId("front-door-lead")).toContainText("PLACEHOLDER: Effeck runs on Smithers")
+  await expect(page).toHaveURL(/\/$/)
+  expect(await context.cookies()).toEqual([])
+  expect(sends).toEqual([])
+  expect(await page.evaluate(() => localStorage.getItem("smithers.front-door.rules.v1"))).toBeNull()
+})
+
+test("a signed-in zero-repo account gets the fixture import lead with open-existing first", async ({ page }) => {
+  await returningVisitor(page, true)
+  await rulesFixture(page)
+  await page.goto("/")
+  const launcher = launcherOf(page)
+  await expect(launcher.getByTestId("front-door-lead")).toContainText("PLACEHOLDER: Bring your repository")
+  expect(await launcher.locator("[data-section]").first().getAttribute("data-section")).toBe("open-existing")
+  await expect(launcher.getByRole("textbox", { name: "Open an existing repository" })).toBeVisible()
+})
+
+test("the committed empty rules preserve today's launcher DOM byte for byte", async ({ page, browser }) => {
+  await freshVisitor(page)
+  await rulesFixture(page, emptyRules)
+  await page.goto("/")
+  const launcher = launcherOf(page)
+  await expect(launcher.getByRole("list", { name: "Smithers updates" })).toBeVisible()
+  await expect(launcher.getByTestId("front-door-lead")).toHaveCount(0)
+  const direct = await launcher.innerHTML()
+  // Compare identical fresh visits; a retained collection may enumerate its rows differently on reload.
+  const other = await browser.newContext()
+  try {
+    const referred = await other.newPage()
+    await freshVisitor(referred)
+    await rulesFixture(referred, emptyRules)
+    await referred.goto(new URL("/?utm_source=effeck", page.url()).href)
+    const referredLauncher = launcherOf(referred)
+    await expect(referredLauncher.getByRole("list", { name: "Smithers updates" })).toBeVisible()
+    await expect(referred).toHaveURL(/\/$/)
+    expect(await referredLauncher.innerHTML()).toBe(direct)
+  } finally { await other.close() }
 })

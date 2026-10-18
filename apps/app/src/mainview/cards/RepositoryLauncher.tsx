@@ -1,4 +1,6 @@
-import { useState, useSyncExternalStore } from "react"
+import { DEFAULT_CHOICE } from "@smthrs/rpc/FrontDoor"
+import type { LeadBlock, JourneyChoice } from "@smthrs/rpc/FrontDoor"
+import { Fragment, useState, useSyncExternalStore } from "react"
 import { Button, Input } from "@smthrs/ui"
 import { flowAction } from "../flows/FlowAction"
 import { repositoryInputTarget } from "../RepoLink"
@@ -34,6 +36,11 @@ export interface LauncherRepository {
 }
 
 export interface RepositoryLauncherProps {
+  readonly lead?: ReadonlyArray<LeadBlock>
+  readonly order?: JourneyChoice["order"]
+  readonly reserveLead?: boolean
+  readonly onLeadShown?: () => void
+  readonly onLeadAction?: () => void
   /** The repositories collection: the account's own rows and the public catalog's. */
   readonly repositories: ReadonlyArray<LauncherRepository>
   readonly updates: SmithersUpdatesAnswer | undefined
@@ -96,7 +103,8 @@ const Updates = ({ updates }: { readonly updates: ReadonlyArray<SmithersUpdate> 
  * Enter and Space already work and no shortcut is reinvented.
  */
 export function RepositoryLauncher({
-  repositories, updates, catalogRead, signedIn, onRunCommand, onOpenRepository = goToRepository
+  repositories, updates, catalogRead, signedIn, onRunCommand, onOpenRepository = goToRepository,
+  lead = [], order = DEFAULT_CHOICE.order, reserveLead = false, onLeadShown, onLeadAction
 }: RepositoryLauncherProps) {
   /* The typed repository name is transient chrome no reader would miss after a reload. */
   const [name, setName] = useState("")
@@ -110,7 +118,8 @@ export function RepositoryLauncher({
   const own = repositories.filter(repository => repository.catalog !== true)
   const explore = repositories.filter(repository => repository.catalog === true)
   const trimmed = name.trim()
-  return <section className="repository-launcher" data-testid="repository-launcher" aria-label="Open a repository">
+  const sections = {
+    "open-existing": (
     <section className="repository-launcher-section" data-section="open-existing">
       <h2>Open a repository</h2>
       {/*
@@ -142,7 +151,8 @@ export function RepositoryLauncher({
         : <p className="repository-launcher-note" id={LAUNCHER_OPEN_ERROR_ID}
             data-testid="repository-launcher-open-error" role="alert">{openNotice}</p>}
     </section>
-
+    ),
+    "open": (
     <section className="repository-launcher-section" data-section="open">
       <h2>Your repositories</h2>
       {!signedIn
@@ -160,7 +170,8 @@ export function RepositoryLauncher({
           </p>
         : <Rows repositories={own} label="Your repositories" />}
     </section>
-
+    ),
+    "create": (
     <section className="repository-launcher-section" data-section="create">
       {/*
         * The backend's REAL GitHub create (`POST /api/user/github-repos` ->
@@ -187,7 +198,8 @@ export function RepositoryLauncher({
         A new repository is private, and on GitHub only until you open it here to import it.
       </p>}
     </section>
-
+    ),
+    "explore": (
     <section className="repository-launcher-section" data-section="explore">
       <h2>Explore</h2>
       {explore.length > 0
@@ -201,7 +213,8 @@ export function RepositoryLauncher({
           </p>
         : <p className="repository-launcher-note">No repositories are public yet.</p>}
     </section>
-
+    ),
+    "updates": (
     <section className="repository-launcher-section" data-section="updates">
       <h2>Smithers updates</h2>
       {updates === undefined
@@ -218,10 +231,30 @@ export function RepositoryLauncher({
         ? <p className="repository-launcher-note">The Smithers releases carry no published update yet.</p>
         : <Updates updates={updates.updates} />}
     </section>
+    )
+  }
+  return <section className="repository-launcher" data-testid="repository-launcher" aria-label="Open a repository">
+    {lead.length === 0 && !reserveLead ? null :
+      <div className="repository-launcher-lead" data-testid="front-door-lead" tabIndex={lead.length > 0 ? 0 : undefined} ref={() => { if (lead.length > 0) onLeadShown?.() }}>
+        {lead.map((block, index) => {
+          if (block.type === "text") return <section key={index}>
+            {block.title && <h2>{block.title}</h2>}<p>{block.text}</p>
+          </section>
+          if (block.type === "links") return <section key={index}>
+            {block.title && <h2>{block.title}</h2>}
+            {block.links.map((link, i) => <a key={i} href={link.url} onClick={onLeadAction}>{link.label}</a>)}
+          </section>
+          if (block.type === "action") return <Button key={index} variant="outline"
+            {...flowAction((name, args) => { onLeadAction?.(); onRunCommand(name, args) }, block.flow)}>{block.label}</Button>
+          // S has no remembered repository. Continue offers only the signed-in collection's current rows.
+          return signedIn && own.length > 0 ? <Rows key={index} repositories={own} label="Your repositories" /> : null
+        })}
+      </div>}
+    {order.map(name => <Fragment key={name}>{sections[name]}</Fragment>)}
   </section>
 }
 
-const NO_LAUNCHER = { updates: undefined, catalog: undefined }
+const NO_LAUNCHER: ReturnType<import("../state/seams/LauncherSeam").LauncherSnapshots["get"]> = { updates: undefined, catalog: undefined }
 const NO_SNAPSHOTS = { get: () => NO_LAUNCHER, subscribe: (_listener: () => void) => () => {} }
 
 /**
@@ -241,6 +274,11 @@ export function RepositoryLauncherCard({ repositories, signedIn }: {
     updates={answer.updates}
     catalogRead={answer.catalog}
     signedIn={signedIn}
+    lead={answer.frontDoor?.choice.lead}
+    order={answer.frontDoor?.choice.order}
+    reserveLead={answer.frontDoor?.reserve}
+    onLeadShown={seam?.shown}
+    onLeadAction={seam?.acted}
     onRunCommand={(flow, args) => controller.runCommand(flow, args)}
   />
 }
