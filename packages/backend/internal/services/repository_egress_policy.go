@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
@@ -75,7 +76,14 @@ func withRepositoryEgressConnection(ctx context.Context, pool *pgxpool.Pool, rep
 		return err
 	}
 	defer conn.Release()
-	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock("+repositoryEgressWriteLockKey+")", repositoryID); err != nil {
+	// Another write holds the lock across its sandbox reloads; wait for it at
+	// most database.AdvisoryLockWait (plue#839).
+	if err := database.WaitSessionAdvisoryLock(ctx, conn, database.AdvisoryLockWait, "SELECT pg_advisory_lock("+repositoryEgressWriteLockKey+")", repositoryID); err != nil {
+		if stdErrors.Is(err, database.ErrSessionLockBusy) {
+			return pkgerrors.Conflict("another egress policy write is in progress for this repository").WithCause(err)
+		}
+		// The lock state is unknown, so the session never returns to the pool.
+		_ = conn.Conn().Close(context.WithoutCancel(ctx))
 		return err
 	}
 	defer func() {

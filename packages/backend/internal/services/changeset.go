@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
@@ -103,7 +104,13 @@ func (l *pgxChangesetLocker) LockOrganization(ctx context.Context, organizationI
 	if err != nil {
 		return nil, fmt.Errorf("acquire changeset lock connection: %w", err)
 	}
-	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1, $2)", changesetLandAdvisoryLockKey, int32(organizationID)); err != nil {
+	// Another landing in the organization holds the lock across its repo-host
+	// work; wait for it at most database.AdvisoryLockWait (plue#839).
+	if err := database.WaitSessionAdvisoryLock(ctx, conn, database.AdvisoryLockWait, "SELECT pg_advisory_lock($1, $2)", changesetLandAdvisoryLockKey, int32(organizationID)); err != nil {
+		if stdErrors.Is(err, database.ErrSessionLockBusy) {
+			conn.Release()
+			return nil, pkgerrors.Conflict("another changeset is landing in this organization").WithCause(err)
+		}
 		closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		_ = conn.Hijack().Close(closeCtx)

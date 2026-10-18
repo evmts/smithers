@@ -222,6 +222,12 @@ func validateCommonStartupWithRepository(cfg *Config, errs *[]string, requireRep
 	if cfg.Database.MaxConnIdleTime <= 0 {
 		*errs = append(*errs, "database.max_conn_idle_time_secs must be > 0")
 	}
+	if cfg.Database.StatementTimeout <= 0 {
+		*errs = append(*errs, "database.statement_timeout_secs must be > 0")
+	}
+	if cfg.Database.IdleInTransactionSessionTimeout <= 0 {
+		*errs = append(*errs, "database.idle_in_transaction_session_timeout_secs must be > 0")
+	}
 	if cfg.Server.ReadTimeoutSecs <= 0 {
 		*errs = append(*errs, "server.read_timeout_secs must be > 0")
 	}

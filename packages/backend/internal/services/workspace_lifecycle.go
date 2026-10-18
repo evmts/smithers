@@ -90,6 +90,39 @@ func (s *WorkspaceService) StopWorkspace(ctx context.Context, workspaceID string
 	return s.toWorkspaceResponse(workspace), nil
 }
 
+// StopRetainedGuest stops the guest a failed workspace still binds through
+// the provisioning reconciler's retained-guest stop: the same claim, fence,
+// confirmed stop and receipt, run now instead of on the next tick (plue#839).
+// The row stays failed with its placement bound. A row in no retained-guest
+// door is refused before any runtime call.
+func (s *WorkspaceService) StopRetainedGuest(ctx context.Context, workspaceID string) (WorkspaceResponse, error) {
+	if s.q == nil {
+		return WorkspaceResponse{}, pkgerrors.Internal("workspace store unavailable")
+	}
+	row, err := s.q.GetWorkspace(ctx, workspaceID)
+	if err != nil {
+		return WorkspaceResponse{}, err
+	}
+	door, ok := retainedGuestStopPending(row)
+	if !ok {
+		return WorkspaceResponse{}, pkgerrors.Conflict("workspace has no retained guest to stop")
+	}
+	if outcome, err := s.reconcileRetainedGuestStop(ctx, row, door); err != nil {
+		s.observeRetainedGuestStopFailure(outcome)
+		return WorkspaceResponse{}, err
+	}
+	stopped, err := s.q.GetWorkspace(ctx, workspaceID)
+	if err != nil {
+		return WorkspaceResponse{}, err
+	}
+	// A writer that moved the row first owns it, and its guest was not
+	// stopped here.
+	if workspaceStoredFailureText(stopped.FailureMessage.String) != door.confirmed {
+		return WorkspaceResponse{}, pkgerrors.Conflict("workspace changed before its guest stop was confirmed")
+	}
+	return s.toWorkspaceResponse(stopped), nil
+}
+
 type workspaceStopStore interface {
 	StopWorkspaceRetainingRow(context.Context, string) (db.StopWorkspaceRetainingRowRow, error)
 }

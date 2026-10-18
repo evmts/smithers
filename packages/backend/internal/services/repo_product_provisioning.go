@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
@@ -148,11 +149,20 @@ func (p *productRepositoryProvisioner) withNamespaceLock(ctx context.Context, sp
 		err = conn.QueryRow(ctx, `SELECT pg_try_advisory_lock(public.smithers_product_repository_namespace_key($1,$2,$3))`,
 			nullableInt8(spec.UserID), nullableInt8(spec.OrgID), spec.LowerName).Scan(&locked)
 	} else {
-		_, err = conn.Exec(ctx, `SELECT pg_advisory_lock(public.smithers_product_repository_namespace_key($1,$2,$3))`,
+		// A concurrent creation of the same name holds the lock across its
+		// repo-host work; wait for it at most database.AdvisoryLockWait
+		// (plue#839).
+		err = database.WaitSessionAdvisoryLock(ctx, conn, database.AdvisoryLockWait,
+			`SELECT pg_advisory_lock(public.smithers_product_repository_namespace_key($1,$2,$3))`,
 			nullableInt8(spec.UserID), nullableInt8(spec.OrgID), spec.LowerName)
+		if stdErrors.Is(err, database.ErrSessionLockBusy) {
+			return errProductCreationBusy
+		}
 		locked = err == nil
 	}
 	if err != nil {
+		// The lock state is unknown, so the session never returns to the pool.
+		_ = conn.Conn().Close(context.WithoutCancel(ctx))
 		return err
 	}
 	if !locked {

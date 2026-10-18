@@ -41,6 +41,8 @@ var allEnvKeys = []string{
 	"SMITHERS_DATABASE_MIN_CONNS",
 	"SMITHERS_DATABASE_MAX_CONN_LIFETIME_SECS",
 	"SMITHERS_DATABASE_MAX_CONN_IDLE_TIME_SECS",
+	"SMITHERS_DATABASE_STATEMENT_TIMEOUT_SECS",
+	"SMITHERS_DATABASE_IDLE_IN_TRANSACTION_SESSION_TIMEOUT_SECS",
 	// RepoHost
 	"SMITHERS_REPO_HOST_URL",
 	"SMITHERS_REPO_HOST_AUTH_TOKEN",
@@ -737,11 +739,13 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			SSHHost:          "localhost",
 		},
 		Database: DatabaseConfig{
-			URL:             "",
-			MaxConns:        25,
-			MinConns:        5,
-			MaxConnLifetime: 3600,
-			MaxConnIdleTime: 1800,
+			URL:                             "",
+			MaxConns:                        25,
+			MinConns:                        5,
+			MaxConnLifetime:                 3600,
+			MaxConnIdleTime:                 1800,
+			StatementTimeout:                900,
+			IdleInTransactionSessionTimeout: 86400,
 		},
 		RepoHost: RepoHostConfig{
 			URL:       "http://localhost:8080",

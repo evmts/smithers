@@ -64,6 +64,13 @@ func (f *manageFake) StopWorkspace(_ context.Context, _ string, repo, owner int6
 	}
 	return WorkspaceResponse{Status: "stopped"}, f.err
 }
+func (f *manageFake) StopRetainedGuest(context.Context, string) (WorkspaceResponse, error) {
+	f.action = "stop-retained-guest"
+	if f.beforeAction != nil {
+		f.beforeAction()
+	}
+	return WorkspaceResponse{Status: "failed"}, f.err
+}
 func (f *manageFake) SuspendWorkspace(_ context.Context, _ string, repo, owner int64) (WorkspaceResponse, error) {
 	f.owner = owner
 	f.repo = repo
@@ -91,7 +98,7 @@ func manageTestContext() context.Context {
 func TestAdminManageMutations(t *testing.T) {
 	for _, action := range []string{"cancel", "stop", "suspend"} {
 		t.Run(action, func(t *testing.T) {
-			f := &manageFake{session: db.AgentSession{Status: "active", UserID: 7}, workspace: db.Workspace{Status: "running", UserID: 8, RepositoryID: 4}}
+			f := &manageFake{session: db.AgentSession{Status: "active", UserID: 7}, workspace: db.Workspace{Status: "running", VmID: "vm", UserID: 8, RepositoryID: 4}}
 			s := NewAdminManageService(f, f, f)
 			ctx := manageTestContext()
 			var err error
@@ -157,7 +164,7 @@ func TestAdminManageRejectsInvalidTransitionsAndFailures(t *testing.T) {
 	_, err = s.CancelAgentSession(ctx, "id", "")
 	check(err, 500)
 	f.err = nil
-	f.workspace.Status = "running"
+	f.workspace.Status, f.workspace.VmID = "running", "vm"
 	f.auditErr = errors.New("audit unavailable")
 	_, err = s.StopWorkspace(ctx, "id")
 	check(err, 500)
@@ -209,7 +216,7 @@ func TestAdminManageLists(t *testing.T) {
 func TestAdminManageAuditPrecedesEverySideEffect(t *testing.T) {
 	for _, action := range []string{"cancel", "stop", "suspend"} {
 		t.Run(action, func(t *testing.T) {
-			f := &manageFake{session: db.AgentSession{Status: "active", UserID: 7}, workspace: db.Workspace{Status: "running", UserID: 8, RepositoryID: 4}}
+			f := &manageFake{session: db.AgentSession{Status: "active", UserID: 7}, workspace: db.Workspace{Status: "running", VmID: "vm", UserID: 8, RepositoryID: 4}}
 			s := NewAdminManageService(f, f, f)
 			run := func() error {
 				switch action {
@@ -256,11 +263,35 @@ func TestAdminManageAuditPrecedesEverySideEffect(t *testing.T) {
 }
 
 func TestAdminManageFailedActionKeepsAttemptAndOutcome(t *testing.T) {
-	f := &manageFake{workspace: db.Workspace{Status: "running"}}
+	f := &manageFake{workspace: db.Workspace{Status: "running", VmID: "vm"}}
 	f.beforeAction = func() { f.err = errors.New("runtime unavailable") }
 	_, err := NewAdminManageService(f, f, f).StopWorkspace(manageTestContext(), "workspace")
 	require.Error(t, err)
 	require.Len(t, f.audits, 2)
 	require.Contains(t, string(f.audits[0].Metadata), `"outcome":"attempted"`)
 	require.Contains(t, string(f.audits[1].Metadata), `"outcome":"failed"`)
+}
+
+// plue#839: a stop's verdict comes from the row before any lifecycle call.
+func TestAdminManageStopVerdict(t *testing.T) {
+	door := db.Workspace{Status: "failed", VmID: "vm",
+		FailureCode:    pgtype.Text{String: string(pkgerrors.CodeConflict), Valid: true},
+		FailureMessage: pgtype.Text{String: workspaceRepositoryAdvertisementUnverifiedMessage, Valid: true}}
+	f := &manageFake{workspace: door}
+	r, err := NewAdminManageService(f, f, f).StopWorkspace(manageTestContext(), "id")
+	require.NoError(t, err)
+	require.Equal(t, "failed", r.Status)
+	require.Equal(t, "stop-retained-guest", f.action)
+
+	outside := door
+	outside.FailureMessage.String = "another failure"
+	for _, row := range []db.Workspace{outside, {Status: "running"}, {Status: "suspended", VmID: "vm"}, {Status: "pending", VmID: "vm"}} {
+		f := &manageFake{workspace: row}
+		_, err := NewAdminManageService(f, f, f).StopWorkspace(manageTestContext(), "id")
+		var api *pkgerrors.APIError
+		require.ErrorAs(t, err, &api)
+		require.Equal(t, 409, api.Status, row.Status)
+		require.Empty(t, f.action, "a refused stop reached the lifecycle")
+		require.Empty(t, f.audits, "a refused stop was audited")
+	}
 }

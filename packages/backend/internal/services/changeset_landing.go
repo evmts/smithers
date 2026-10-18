@@ -83,6 +83,10 @@ func (s *ChangesetService) LandChangeset(ctx context.Context, actor *db.User, or
 	}
 	unlock, err := s.locker.LockOrganization(ctx, org.ID)
 	if err != nil {
+		// Another landing outlasting the lock's wait is a conflict, not a fault.
+		if busy := (*pkgerrors.APIError)(nil); errors.As(err, &busy) {
+			return ChangesetResponse{}, err
+		}
 		return ChangesetResponse{}, pkgerrors.Internal("failed to serialize changeset landing").WithCause(err)
 	}
 	defer unlock()

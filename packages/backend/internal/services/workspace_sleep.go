@@ -19,6 +19,19 @@ import (
 	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 )
 
+// branchSleepRefusal names the sleep step that did not hold: a written stage
+// and the branch, never a payload, key, URL or driver text.
+func branchSleepRefusal(code pkgerrors.Code, sentence, stage, branchID string, err error) error {
+	failure := pkgerrors.New(code, sentence+stage)
+	failure.Details = map[string]string{"stage": stage, "branch_id": branchID}
+	return failure.WithCause(err)
+}
+
+const (
+	branchSleepUncomposedSentence  = "branch sleep requires verified capture, runtime binding and state publication: "
+	branchSleepUnavailableSentence = "branch sleep is composed here and did not get past this step: "
+)
+
 // BranchCapture is the authenticated daemon capture contract. Success means
 // native snapshot, verified object delivery and the entire outbox's durable
 // acknowledgement have completed, not just that capture was requested.
@@ -115,6 +128,23 @@ func (s *WorkspaceService) captureAndSleep(ctx context.Context, row db.Workspace
 }
 
 func (s *WorkspaceService) captureAndSleepLocked(ctx context.Context, row db.Workspace, sessionless bool) error {
+	// An uncomposed deployment is refused first, as before. Then the status
+	// is read before any side effect (plue#839): a branch that is not awake
+	// keeps its flow host and head reporter, and an asleep one is already
+	// captured.
+	if _, stage, cause := s.branchCaptureDependencies(); stage != "" {
+		return branchSleepRefusal(pkgerrors.CodeBranchSleepUnavailable, branchSleepUncomposedSentence, stage, row.ID, cause)
+	}
+	current, err := s.q.GetWorkspace(ctx, row.ID)
+	if err != nil {
+		return branchSleepRefusal(pkgerrors.CodeServiceUnavailable, branchSleepUnavailableSentence, "reload branch row", row.ID, err)
+	}
+	if current.Status == "suspended" || current.Status == "stopped" {
+		return nil
+	}
+	if current.Status != "running" || current.VmID == "" {
+		return pkgerrors.Conflict("branch is not awake")
+	}
 	if s.prepareFlowHostCapture != nil {
 		if err := s.prepareFlowHostCapture(ctx, row.ID); err != nil {
 			return err
@@ -188,21 +218,11 @@ func (s *WorkspaceService) captureAndSleepExcluded(ctx context.Context, row db.W
 	// deployment verdict would tell an owner whose deployment can sleep boxes
 	// that it can never sleep one and that retrying is pointless — the
 	// receipt-28 lie with its polarity reversed.
-	refusal := func(code pkgerrors.Code, sentence, stage string, err error) error {
-		failure := pkgerrors.New(code, sentence+stage)
-		failure.Details = map[string]string{
-			"stage":     stage,
-			"branch_id": row.ID,
-		}
-		return failure.WithCause(err)
-	}
 	uncomposed := func(stage string, err error) error {
-		return refusal(pkgerrors.CodeBranchSleepUnavailable,
-			"branch sleep requires verified capture, runtime binding and state publication: ", stage, err)
+		return branchSleepRefusal(pkgerrors.CodeBranchSleepUnavailable, branchSleepUncomposedSentence, stage, row.ID, err)
 	}
 	unavailable := func(stage string, err error) error {
-		return refusal(pkgerrors.CodeServiceUnavailable,
-			"branch sleep is composed here and did not get past this step: ", stage, err)
+		return branchSleepRefusal(pkgerrors.CodeServiceUnavailable, branchSleepUnavailableSentence, stage, row.ID, err)
 	}
 	store, stage, cause := s.branchCaptureDependencies()
 	if stage != "" {
