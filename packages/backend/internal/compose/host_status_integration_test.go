@@ -89,12 +89,12 @@ func TestInstallStatusOwnerHTTPModelPostgres(t *testing.T) {
 		} else if strings.HasPrefix(credential, "smithers_") {
 			r.Header.Set("Authorization", "Bearer "+credential)
 		} else if credential != "" {
-			r.AddCookie(&http.Cookie{Name: "smithers_session", Value: credential})
+			r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: credential})
 		}
 		if method != "GET" {
 			r.Header.Set("Origin", "http://localhost:4000")
 			r.Header.Set("X-CSRF-Token", "csrf")
-			r.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+			r.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 		}
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
@@ -236,7 +236,7 @@ func TestInstallStatusOwnerHTTPModelPostgres(t *testing.T) {
 		t.Cleanup(server.Close)
 		readCtx, cancelRead := context.WithTimeout(ctx, 15*time.Second)
 		conn, _, err := websocket.Dial(readCtx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{
-			Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_session=" + good}},
+			Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_local_session=" + good}},
 		})
 		require.NoError(t, err)
 		require.NoError(t, conn.Write(readCtx, websocket.MessageText, []byte(`{"t":"sub","id":1,"topic":"home"}`)))

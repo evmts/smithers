@@ -62,8 +62,8 @@ func TestSettingsHealthInstallHTTPPostgres(t *testing.T) {
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Origin", origin)
 		request.Header.Set("X-CSRF-Token", "settings-csrf")
-		request.AddCookie(&http.Cookie{Name: "smithers_session", Value: "settings-owner-session"})
-		request.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "settings-csrf"})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "settings-owner-session"})
+		request.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "settings-csrf"})
 		response, err := http.DefaultClient.Do(request)
 		require.NoError(t, err)
 		var body map[string]any
@@ -96,7 +96,7 @@ func TestSettingsHealthInstallHTTPPostgres(t *testing.T) {
 			}
 			request, err := http.NewRequest("GET", origin+"/api/install", nil)
 			require.NoError(t, err)
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: "settings-owner-session"})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "settings-owner-session"})
 			response, err := http.DefaultClient.Do(request)
 			require.NoError(t, err)
 			defer response.Body.Close()

@@ -97,7 +97,7 @@ func TestInstallCandidateAuthorizationPostgres(t *testing.T) {
 	service := services.NewMythicalService(f.pool, host, services.WithMythicalInstallAuthorization(true))
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{"http://example.com"}
 	router := githubAppSetupComposeRouter(cfg, f.pool, nil, routerExtras{Mythical: &routes.MythicalHandler{Service: service}, Members: &routes.MembersHandler{Service: &services.Members{Pool: f.pool, Credentials: rosterAppCredentials{}, Minter: services.NewRepoConnectionService(nil, rosterAppCredentials{})}}})
@@ -376,8 +376,8 @@ func TestInstallCandidateAuthorizationPostgres(t *testing.T) {
 				req.Header.Set("Origin", "http://example.com")
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("X-CSRF-Token", "csrf-fixture")
-				req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-fixture"})
-				req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf-fixture"})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 				out := httptest.NewRecorder()
 				router.ServeHTTP(out, req)
 				return out

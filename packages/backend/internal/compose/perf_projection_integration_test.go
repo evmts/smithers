@@ -132,7 +132,7 @@ try {
 } finally { for (const stream of streams) stream.socket.terminate() }
 `)
 	command.Dir = root
-	command.Env = append(os.Environ(), "PERF_ORIGIN="+origin, "PERF_COOKIE=smithers_session="+token+"; __csrf=csrf")
+	command.Env = append(os.Environ(), "PERF_ORIGIN="+origin, "PERF_COOKIE=smithers_local_session="+token+"; smithers_local_csrf=csrf")
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, string(output))
 	require.Equal(t, "4 committed moves delivered to Home and TODO\n", string(output))

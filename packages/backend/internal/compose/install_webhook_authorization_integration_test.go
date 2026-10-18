@@ -59,7 +59,7 @@ func TestInstallWebhookAuthorizationPostgres(t *testing.T) {
 	q := db.New(pool)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Auth.SessionRefreshWindow = "0s"
 	cfg.FeatureFlags.WebhooksUser = true
 	cfg.Server.PublicURL = "http://example.com"
@@ -160,9 +160,9 @@ func TestInstallWebhookAuthorizationPostgres(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("X-CSRF-Token", "hook-csrf")
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "hook-csrf"})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "hook-csrf"})
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		}
 		if bearer != "" {
 			req.Header.Set("Authorization", "Bearer "+bearer)

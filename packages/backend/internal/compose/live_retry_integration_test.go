@@ -89,7 +89,7 @@ func TestLiveRetryDuplicateAcceptanceThroughInstall(t *testing.T) {
 	})
 	server.Start()
 	defer server.Close()
-	socket, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_session=" + token}, "Origin": {origin}}})
+	socket, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_local_session=" + token}, "Origin": {origin}}})
 	require.NoError(t, err)
 	defer socket.CloseNow()
 	require.NoError(t, socket.Write(ctx, websocket.MessageText, []byte(`{"t":"sub","id":1,"topic":"todo:1"}`)))
@@ -125,8 +125,8 @@ func TestLiveRetryDuplicateAcceptanceThroughInstall(t *testing.T) {
 			request.Header.Set("Origin", origin)
 			request.Header.Set("Idempotency-Key", "duplicate-retry")
 			request.Header.Set("X-CSRF-Token", "csrf")
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: token})
-			request.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: token})
+			request.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 			response, err := server.Client().Do(request)
 			if err != nil {
 				results <- retryResult{err: err}

@@ -48,7 +48,7 @@ export class InstallBrowser {
     if (this.cookies.size > 0) headers.set("Cookie", [...this.cookies].map(([name, value]) => `${name}=${value}`).join("; "))
     if (!SAFE_METHODS.has(method)) {
       headers.set("Origin", this.origin)
-      const csrf = this.cookies.get("__csrf")
+      const csrf = this.cookies.get("__Host-smithers_csrf")
       if (csrf !== undefined) headers.set("X-CSRF-Token", csrf)
     }
     if (body !== undefined) headers.set("Content-Type", "application/json")
@@ -170,7 +170,7 @@ export const walkSetup = async (walk: SetupWalk): Promise<InstallBrowser> => {
   const consentHtml = await consent.text()
   if (consent.status !== 200) throw new Error(`the GitHub fake refused the sign-in: ${consent.status} ${consentHtml}`)
   await browser.expect("GET", anchorTarget(consentHtml, "Authorize"), 302)
-  if (browser.cookie("smithers_session") === undefined) throw new Error("GitHub sign-in set no session cookie")
+  if (browser.cookie("__Host-smithers_session") === undefined) throw new Error("GitHub sign-in set no session cookie")
   await waitStep(browser, "sign_in", 30_000)
 
   await startStep(browser, "repository", { repository: `${walk.owner}/demo` })

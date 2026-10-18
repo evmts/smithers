@@ -59,7 +59,7 @@ func newTodoLiteralInstall(t *testing.T, configure ...func(*services.MythicalSer
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "smithers_session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://127.0.0.1:4000"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	service := services.NewMythicalService(pool, nil, services.WithMythicalNow(func() time.Time { return time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC) }))
@@ -86,7 +86,7 @@ func newTodoLiteralInstall(t *testing.T, configure ...func(*services.MythicalSer
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.RemoteAddr = "127.0.0.1:51900"
 		req.AddCookie(&http.Cookie{Name: cfg.Auth.SessionCookieName, Value: "placement-session"})
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "literal-csrf"})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "literal-csrf"})
 		req.Header.Set("X-CSRF-Token", "literal-csrf")
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("Content-Type", "application/json")

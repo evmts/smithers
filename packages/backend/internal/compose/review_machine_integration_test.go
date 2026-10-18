@@ -129,8 +129,8 @@ esac
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Idempotency-Key", key)
 		req.Header.Set("X-CSRF-Token", "review-csrf")
-		req.AddCookie(&http.Cookie{Name: "session", Value: "review-cookie"})
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "review-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "review-cookie"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "review-csrf"})
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, req)
 		return response
@@ -183,7 +183,7 @@ esac
 		services.WithWorkspaceBillingPolicy(services.NewMachineAdmissionPolicy(services.NewUnlimitedBillingPolicy())))
 	workspaces.BindBranchTerminalHost(func(context.Context, db.Workspace, int64) error { return nil })
 	workspaces.EnableMachineAdmission(func(context.Context) (int64, error) { return 140 << 30, nil })
-	terminal := &routes.WorkspaceTerminalHandler{OwnerOnly: true, Service: workspaces, SessionCookieName: "session", AllowedOrigins: cfg.Server.AllowedOrigins}
+	terminal := &routes.WorkspaceTerminalHandler{OwnerOnly: true, Service: workspaces, SessionCookieName: "smithers_local_session", AllowedOrigins: cfg.Server.AllowedOrigins}
 	manager := terminal.SharedTerminalSessions()
 	t.Cleanup(manager.Close)
 	auth.TerminalSubject = manager.OwnsSubject
@@ -237,8 +237,8 @@ esac
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Idempotency-Key", uuid.NewString())
 	request.Header.Set("X-CSRF-Token", "review-csrf")
-	request.AddCookie(&http.Cookie{Name: "session", Value: "review-cookie"})
-	request.AddCookie(&http.Cookie{Name: "__csrf", Value: "review-csrf"})
+	request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "review-cookie"})
+	request.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "review-csrf"})
 	terminalResponse, err := terminalServer.Client().Do(request)
 	require.NoError(t, err)
 	body, err := io.ReadAll(terminalResponse.Body)
@@ -263,7 +263,7 @@ esac
 	}
 	var homeSocket *websocket.Conn
 	if successfulTerminal {
-		home, _, e := websocket.Dial(ctx, "ws"+strings.TrimPrefix(terminalServer.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {cfg.Server.PublicURL}, "Cookie": {"session=review-cookie"}}})
+		home, _, e := websocket.Dial(ctx, "ws"+strings.TrimPrefix(terminalServer.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {cfg.Server.PublicURL}, "Cookie": {"smithers_local_session=review-cookie"}}})
 		require.NoError(t, e)
 		sendPresenceFrame(t, home, `{"t":"sub","id":2,"topic":"home"}`)
 		frame := readPresenceFrame(t, home)
@@ -280,7 +280,7 @@ esac
 		homeSocket = home
 		defer home.CloseNow()
 	}
-	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(terminalServer.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {cfg.Server.PublicURL}, "Cookie": {"session=review-cookie"}}})
+	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(terminalServer.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {cfg.Server.PublicURL}, "Cookie": {"smithers_local_session=review-cookie"}}})
 	require.NoError(t, err)
 	defer conn.CloseNow()
 	sendPresenceFrame(t, conn, fmt.Sprintf(`{"t":"sub","id":1,"topic":"branch:%s"}`, personBranch.ID))
@@ -446,7 +446,7 @@ esac
 	}
 	req := httptest.NewRequest("GET", "http://localhost:4000/api/conversations/main", nil)
 	req.RemoteAddr = "127.0.0.1:61000"
-	req.AddCookie(&http.Cookie{Name: "session", Value: "review-cookie"})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "review-cookie"})
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, req)
 	require.Equal(t, 200, response.Code, response.Body.String())

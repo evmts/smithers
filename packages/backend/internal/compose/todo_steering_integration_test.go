@@ -189,8 +189,8 @@ func testTodoOrderedRecovery(t *testing.T, scheduled bool) {
 	call := func(method, body, key string) map[string]any {
 		req, err := http.NewRequest(method, origin+"/api/todos/1", strings.NewReader(body))
 		require.NoError(t, err)
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: controlCookie})
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: controlCookie})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 		req.Header.Set("X-CSRF-Token", "csrf")
 		req.Header.Set("Origin", origin)
 		req.Header.Set("Content-Type", "application/json")
@@ -262,9 +262,9 @@ func testTodoOrderedRecovery(t *testing.T, scheduled bool) {
 		if delegated {
 			req.Header.Set("Authorization", "Bearer "+token)
 		} else {
-			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "pin-cookie"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "pin-cookie"})
 		}
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 		req.Header.Set("X-CSRF-Token", "csrf")
 		req.Header.Set("Origin", origin)
 		req.Header.Set("Content-Type", "application/json")
@@ -540,8 +540,8 @@ func testTodoOrderedRecovery(t *testing.T, scheduled bool) {
 				results <- e
 				return
 			}
-			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "pin-cookie"})
-			req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "pin-cookie"})
+			req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 			req.Header.Set("X-CSRF-Token", "csrf")
 			req.Header.Set("Origin", origin)
 			req.Header.Set("Content-Type", "application/json")

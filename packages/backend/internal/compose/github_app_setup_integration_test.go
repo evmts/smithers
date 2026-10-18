@@ -135,7 +135,7 @@ func TestGitHubAppSetupAuthorityOnEveryListenerPostgres(t *testing.T) {
 		req.Header.Set("X-Smithers-Setup-Token", "setup-token") // raw token is not step authority
 		for _, cookie := range cookies {
 			req.AddCookie(cookie)
-			if cookie.Name == middleware.CSRFCookieName {
+			if cookie.Name == middleware.LocalCSRFCookieName {
 				req.Header.Set("X-CSRF-Token", cookie.Value)
 			}
 		}
@@ -160,16 +160,16 @@ func TestGitHubAppSetupAuthorityOnEveryListenerPostgres(t *testing.T) {
 			status, _, _ := request(server, method, path, nil, true)
 			require.Equal(t, 401, status)
 		}
-		status, _, cookies := request(server, "GET", "/setup?token=setup-token", []*http.Cookie{{Name: "smithers_session", Value: "previous-install"}}, false)
+		status, _, cookies := request(server, "GET", "/setup?token=setup-token", []*http.Cookie{{Name: "smithers_local_session", Value: "previous-install"}}, false)
 		require.Equal(t, 303, status)
 		require.Len(t, cookies, 3)
 		require.Equal(t, "/", cookies[0].Path)
 		require.Equal(t, http.SameSiteLaxMode, cookies[0].SameSite)
 		require.Equal(t, i == 1, cookies[0].Secure)
-		require.Equal(t, "smithers_session", cookies[2].Name)
+		require.Equal(t, "smithers_local_session", cookies[2].Name)
 		require.Equal(t, -1, cookies[2].MaxAge)
 		// Keep the old member cookie throughout the setup writes as well.
-		cookies[2] = &http.Cookie{Name: "smithers_session", Value: "previous-install"}
+		cookies[2] = &http.Cookie{Name: "smithers_local_session", Value: "previous-install"}
 		status, _, _ = request(server, "GET", "/api/install", cookies, false)
 		require.Equal(t, 200, status)
 
@@ -381,7 +381,7 @@ func TestGitHubAppLegacyEnvironmentIgnoredByCompositionPostgres(t *testing.T) {
 	statusRequest := func() []byte {
 		req, err := http.NewRequest(http.MethodGet, server.URL+"/api/install", nil)
 		require.NoError(t, err)
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: session})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: session})
 		resp, err := server.Client().Do(req)
 		require.NoError(t, err)
 		defer resp.Body.Close()
@@ -593,7 +593,7 @@ func TestGitHubAppManualFallbackThroughInstallRouterPostgres(t *testing.T) {
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("X-CSRF-Token", "csrf")
 				req.AddCookie(&http.Cookie{Name: routes.GitHubAppSetupSessionCookie, Value: session})
-				req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+				req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 				w := httptest.NewRecorder()
 				router.ServeHTTP(w, req)
 				require.NotContains(t, w.Body.String(), privateKey)
@@ -770,8 +770,8 @@ func TestGitHubAppPostClaimManifestCallbackPostgres(t *testing.T) {
 				t.Helper()
 				req, err := http.NewRequest(method, server.URL+path, strings.NewReader(`{"owner":"acme"}`))
 				require.NoError(t, err)
-				req.AddCookie(&http.Cookie{Name: "smithers_session", Value: rawSession})
-				req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: rawSession})
+				req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 				if staleCookie {
 					req.AddCookie(&http.Cookie{Name: routes.GitHubAppSetupSessionCookie, Value: strings.Repeat("x", 64)})
 				}

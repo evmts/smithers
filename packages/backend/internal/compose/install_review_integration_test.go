@@ -57,7 +57,7 @@ func testInstallReviewHTTPAdmission(t *testing.T, successfulTerminal bool) {
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
 	cfg.Auth.EnableKeyAuth = true
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.AllowedOrigins = []string{"http://localhost:4000"}
 	service := services.NewMythicalService(pool, nil)
 	router := buildRouterCompat(
@@ -99,7 +99,7 @@ func testInstallReviewHTTPAdmission(t *testing.T, successfulTerminal bool) {
 		for range 2 {
 			req := httptest.NewRequest("GET", "http://localhost:4000/api/conversations/main", nil)
 			req.RemoteAddr = "127.0.0.1:61000"
-			req.AddCookie(&http.Cookie{Name: "session", Value: "review-cookie"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "review-cookie"})
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, req)
 			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
@@ -136,8 +136,8 @@ func testInstallReviewHTTPAdmission(t *testing.T, successfulTerminal bool) {
 			req.Header.Set("Origin", "http://localhost:4000")
 			req.Header.Set("Idempotency-Key", tc.key)
 			if tc.cookie {
-				req.AddCookie(&http.Cookie{Name: "session", Value: "review-cookie"})
-				req.AddCookie(&http.Cookie{Name: "__csrf", Value: "review-csrf"})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "review-cookie"})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "review-csrf"})
 				req.Header.Set("X-CSRF-Token", "review-csrf")
 			}
 			response := httptest.NewRecorder()
@@ -164,7 +164,7 @@ func testInstallReviewHTTPAdmission(t *testing.T, successfulTerminal bool) {
 		for _, path := range []string{"/api/todos", "/api/flows"} {
 			req := httptest.NewRequest("GET", "http://localhost:4000"+path, nil)
 			req.RemoteAddr = "127.0.0.1:61001"
-			req.AddCookie(&http.Cookie{Name: "session", Value: "binding-member-cookie"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "binding-member-cookie"})
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, req)
 			require.Equal(t, 200, response.Code, path+": "+response.Body.String())
@@ -173,7 +173,7 @@ func testInstallReviewHTTPAdmission(t *testing.T, successfulTerminal bool) {
 		require.NoError(t, err)
 		req := httptest.NewRequest("GET", "http://localhost:4000/api/todos", nil)
 		req.RemoteAddr = "127.0.0.1:61001"
-		req.AddCookie(&http.Cookie{Name: "session", Value: "binding-member-cookie"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "binding-member-cookie"})
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, req)
 		require.Equal(t, 403, response.Code, response.Body.String())
@@ -245,8 +245,8 @@ func testInstallReviewHTTPAdmission(t *testing.T, successfulTerminal bool) {
 		req.Header.Set("Origin", "http://localhost:4000")
 		req.Header.Set("Idempotency-Key", "review-member-pr")
 		req.Header.Set("X-CSRF-Token", "review-csrf")
-		req.AddCookie(&http.Cookie{Name: "session", Value: "review-cookie"})
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "review-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "review-cookie"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "review-csrf"})
 		answer := httptest.NewRecorder()
 		router.ServeHTTP(answer, req)
 		require.Equal(t, status, answer.Code, answer.Body.String())
@@ -393,8 +393,8 @@ func testInstallReviewHTTPAdmission(t *testing.T, successfulTerminal bool) {
 			req.Header.Set("Origin", "http://localhost:4000")
 			req.Header.Set("Idempotency-Key", key)
 			req.Header.Set("X-CSRF-Token", "review-csrf")
-			req.AddCookie(&http.Cookie{Name: "session", Value: "review-cookie"})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "review-csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "review-cookie"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "review-csrf"})
 			answer := httptest.NewRecorder()
 			router.ServeHTTP(answer, req)
 			return answer
@@ -471,7 +471,7 @@ func testInstallReviewHTTPAdmission(t *testing.T, successfulTerminal bool) {
 		// publish one retained result, with no claimable model turn.
 		req := httptest.NewRequest("GET", "http://localhost:4000/api/conversations/main", nil)
 		req.RemoteAddr = "127.0.0.1:61000"
-		req.AddCookie(&http.Cookie{Name: "session", Value: "review-cookie"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "review-cookie"})
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, req)
 		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
@@ -494,7 +494,7 @@ func testInstallReviewHTTPAdmission(t *testing.T, successfulTerminal bool) {
 			req := httptest.NewRequest("GET", "http://localhost:4000/api/reviews/"+id, nil)
 			req.RemoteAddr = "127.0.0.1:61000"
 			if cookie != "" {
-				req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 			}
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, req)
@@ -558,11 +558,11 @@ func testInstallReviewHTTPAdmission(t *testing.T, successfulTerminal bool) {
 			req.Header.Set("Origin", "http://localhost:4000")
 			req.Header.Set("Idempotency-Key", key)
 			req.Header.Set("X-CSRF-Token", "review-csrf")
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "review-csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "review-csrf"})
 			if delegated {
 				req.Header.Set("Authorization", "Bearer "+token)
 			} else {
-				req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 			}
 			answer := httptest.NewRecorder()
 			router.ServeHTTP(answer, req)

@@ -226,7 +226,7 @@ func TestExternalTranscriptBrowserPostgres(t *testing.T) {
 	}
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
-	t.Setenv("SMITHERS_AUTH_SESSION_COOKIE_NAME", "session")
+	t.Setenv("SMITHERS_AUTH_SESSION_COOKIE_NAME", "smithers_local_session")
 	t.Setenv("SMITHERS_PUBLIC_URL", origin)
 	t.Setenv("SMITHERS_SERVER_ALLOWED_ORIGINS", origin)
 	registry := new(machined.Registry)

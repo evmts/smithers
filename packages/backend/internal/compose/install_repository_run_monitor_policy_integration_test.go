@@ -95,7 +95,7 @@ func TestInstallRepositoryRunMonitorAuthorizationPostgres(t *testing.T) {
 			t.Run(actor.name+path, func(t *testing.T) {
 				req := httptest.NewRequest(http.MethodGet, cfg.Server.PublicURL+path, nil)
 				if actor.cookie != "" {
-					req.AddCookie(&http.Cookie{Name: "session", Value: actor.cookie})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: actor.cookie})
 				}
 				if actor.token != "" {
 					req.Header.Set("Authorization", "Bearer "+actor.token)

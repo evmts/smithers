@@ -222,7 +222,7 @@ func TestMembersComposedInstallPostgres(t *testing.T) {
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
 	cfg.Auth.SessionSecret = "fixture-secret"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	svc := services.NewAuthService(q, cfg.Auth, nil, auth.NewGitHubClient(ownerOAuthCredentials{"client", "secret"}, "", provider.URL, provider.URL))
 	svc.InstallSetup = &services.InstallSetupSessions{Pool: pool}
 	svc.Members = members
@@ -270,9 +270,9 @@ func TestMembersComposedInstallPostgres(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", origin)
 		req.Header.Set("X-CSRF-Token", "csrf-fixture")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-fixture"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf-fixture"})
 		if key != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: key})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: key})
 		}
 		res, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
@@ -528,7 +528,7 @@ func TestMembersComposedInstallPostgres(t *testing.T) {
 	liveCtx, cancelLive := context.WithTimeout(ctx, 10*time.Second)
 	defer cancelLive()
 	socket, _, err := websocket.Dial(liveCtx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{
-		Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"session=writer-cookie"}},
+		Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_local_session=writer-cookie"}},
 	})
 	require.NoError(t, err)
 	defer socket.CloseNow()

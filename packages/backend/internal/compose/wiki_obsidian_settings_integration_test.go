@@ -90,9 +90,9 @@ func TestInstallObsidianSettingsRouteWorkerPostgres(t *testing.T) {
 		if strings.HasPrefix(login, "smithers_") {
 			r.Header.Set("Authorization", "Bearer "+login)
 		} else {
-			r.AddCookie(&http.Cookie{Name: "smithers_session", Value: login})
+			r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: login})
 		}
-		r.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+		r.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
 		return w

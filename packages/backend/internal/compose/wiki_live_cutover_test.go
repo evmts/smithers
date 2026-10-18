@@ -86,7 +86,7 @@ func TestWikiLiveCutoverDocumentAdmission(t *testing.T) {
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = config.AuthModeSelfHosted
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	var origin string
 	topics := &liveTopics{queries: q}
 	handler := &routes.LiveHandler{Hub: live.NewHub(ctx, nil), Queries: q, Origins: func() []string { return []string{origin} }, Topics: topics.resolver}
@@ -98,7 +98,7 @@ func TestWikiLiveCutoverDocumentAdmission(t *testing.T) {
 	origin = server.URL
 	cfg.Server.PublicURL = origin
 	cfg.Server.AllowedOrigins = []string{origin}
-	conn, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"session=wiki-live-browser"}}})
+	conn, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_local_session=wiki-live-browser"}}})
 	if err != nil && response != nil {
 		raw, _ := io.ReadAll(response.Body)
 		t.Fatalf("live upgrade: %v: %s", err, raw)

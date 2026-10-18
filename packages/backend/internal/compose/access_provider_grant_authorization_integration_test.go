@@ -122,7 +122,7 @@ func TestAccessProviderGrantMatrixComposedPostgres(t *testing.T) {
 						req.Header.Set("Smithers-Actor", "person")
 						req.Header.Set("Smithers-Via", "terminal")
 						if a.token == "" {
-							req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+							req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 						} else {
 							req.Header.Set("Authorization", "Bearer "+a.token)
 						}

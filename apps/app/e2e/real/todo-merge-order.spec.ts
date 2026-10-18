@@ -33,7 +33,7 @@ test("C-J4-03 only the next item merges; later items say Merges after Tn", scena
     const press = async (actor: Actor, n: number, sha: string, key: string) => {
       const page = f.members[actor].page
       const target = new URL(`/api/todos/${n}/merge`, page.url())
-      const csrf = (await page.context().cookies(target.origin)).find(cookie => cookie.name === "__csrf")?.value
+      const csrf = (await page.context().cookies(target.origin)).find(cookie => ["__Host-smithers_csrf", "smithers_local_csrf"].includes(cookie.name))?.value
       if (!csrf) throw new JourneyUnavailable(`${actor}'s session has no CSRF cookie`)
       return page.context().request.post(target.toString(), { headers: { Origin: target.origin, "X-CSRF-Token": csrf, "Idempotency-Key": key }, data: { reviewed_head_sha: sha } })
     }

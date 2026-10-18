@@ -121,7 +121,7 @@ test("C-J3-09 reference: both members see the move and only one choice wins", sc
     expect(wait?.id).toBeTruthy()
     const post = async (target: typeof page, op: string) => {
       const origin = new URL(process.env.SMITHERS_REAL_API_ORIGIN ?? baseURL).origin
-      const csrf = (await target.context().cookies(origin)).find(cookie => cookie.name === "__csrf")?.value
+      const csrf = (await target.context().cookies(origin)).find(cookie => ["__Host-smithers_csrf", "smithers_local_csrf"].includes(cookie.name))?.value
       if (!csrf) throw new Error("Member CSRF cookie required")
       return target.context().request.post(new URL("/api/todos/2", origin).toString(), {
         headers: { Origin: origin, "X-CSRF-Token": csrf, "Idempotency-Key": `moved-race-${wait.id}-${target === page ? "owner" : "member"}` },

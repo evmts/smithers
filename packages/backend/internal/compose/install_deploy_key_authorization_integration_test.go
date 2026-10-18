@@ -113,9 +113,9 @@ func TestInstallDeployKeyAuthorizationPostgres(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("X-CSRF-Token", "deploy-csrf")
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "deploy-csrf"})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "deploy-csrf"})
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		}
 		if bearer != "" {
 			req.Header.Set("Authorization", "Bearer "+bearer)
@@ -202,8 +202,8 @@ func TestInstallDeployKeyAuthorizationPostgres(t *testing.T) {
 		req := httptest.NewRequest("DELETE", fmt.Sprintf("%s/api/repos/gate-owner/app/keys/%d", cfg.Server.PublicURL, retained.ID), nil)
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("X-CSRF-Token", "deploy-csrf")
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "deploy-csrf"})
-		req.AddCookie(&http.Cookie{Name: "session", Value: ownerCookie})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "deploy-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: ownerCookie})
 		var commands []string
 		req = req.WithContext(services.WithAuthorizationObserver(ctx, func(command string) { commands = append(commands, command) }))
 		done := make(chan *httptest.ResponseRecorder, 1)

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -14,7 +15,24 @@ import (
 
 // CSRFCookieName is the double-submit cookie name shared by the CSRF
 // middleware and every route/middleware that mints or clears it.
-const CSRFCookieName = "__csrf"
+const CSRFCookieName = "__Host-smithers_csrf"
+const LocalCSRFCookieName = "smithers_local_csrf"
+
+// CSRFCookieNameForSecure keeps self-hosted HTTP cookies outside the hosted
+// credential namespace. Callers may pass false only for a known install origin.
+func CSRFCookieNameForSecure(secure bool) string {
+	if !secure {
+		return LocalCSRFCookieName
+	}
+	return CSRFCookieName
+}
+
+func csrfCookieNameForRequest(r *http.Request) string {
+	if origin, ok := EffectiveOriginFromContext(r.Context()); ok && strings.HasPrefix(origin, "http://") {
+		return LocalCSRFCookieName
+	}
+	return CSRFCookieName
+}
 
 // NewCSRFToken generates a cryptographically secure random CSRF token,
 // hex-encoded from 32 random bytes (same entropy as the session key).
@@ -36,7 +54,7 @@ func SetCSRFCookie(w http.ResponseWriter, token string, secure bool, expiresAt t
 		sameSite = mode[0]
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     CSRFCookieName,
+		Name:     CSRFCookieNameForSecure(secure),
 		Value:    token,
 		Path:     "/",
 		HttpOnly: false,
@@ -91,7 +109,7 @@ func enforceCSRF(w http.ResponseWriter, r *http.Request, next http.Handler) {
 			writeOriginPermission(w, "origin")
 			return
 		}
-		cookie, err := r.Cookie(CSRFCookieName)
+		cookie, err := r.Cookie(csrfCookieNameForRequest(r))
 		token := r.Header.Get("X-CSRF-Token")
 		if err != nil || token == "" || cookie.Value == "" || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(token)) != 1 {
 			writeOriginPermission(w, "csrf")
@@ -107,7 +125,7 @@ func enforceCSRF(w http.ResponseWriter, r *http.Request, next http.Handler) {
 		return
 	}
 
-	csrfCookie, err := r.Cookie(CSRFCookieName)
+	csrfCookie, err := r.Cookie(csrfCookieNameForRequest(r))
 	if err != nil || csrfCookie.Value == "" {
 		errors.WriteError(w, errors.Forbidden("csrf token mismatch"))
 		return

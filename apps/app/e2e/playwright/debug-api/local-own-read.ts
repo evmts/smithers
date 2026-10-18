@@ -30,7 +30,7 @@ delete process.env.GIT_PAGER
 const session = await startLocalOwn(rootDir, revision, outputDir)
 try {
   const owner = JSON.parse(session.runtimeEnvironment.SMITHERS_LOCAL_OWNER_SESSION!)
-  const verifiedOwner = await fetch(new URL("/api/user", session.modeConfig.origin), { headers: { cookie: `smithers_session=${owner.sessionCookie}` } })
+  const verifiedOwner = await fetch(new URL("/api/user", session.modeConfig.origin), { headers: { cookie: `__Host-smithers_session=${owner.sessionCookie}` } })
   assert.equal(verifiedOwner.status, 200)
   assert.equal((await verifiedOwner.json()).username, owner.username)
   // TMPDIR is private to this child. Never inspect or stop another lane's PG.
@@ -68,7 +68,7 @@ try {
   const sentCookies: string[] = []
   const seam = createDebugApiSeam({ origin, document: async () => releaseDocument(),
     gates: () => ({ view: true, catalog: true, authorizer: true }),
-    fetch: (url, init) => { requests++; const headers = new Headers(init.headers); headers.set("cookie", `${activeCookie ? `smithers_session=${activeCookie}; ` : ""}__csrf=${csrf}`); headers.set("X-CSRF-Token", csrf); headers.set("Origin", origin); sentCookies.push(headers.get("cookie")!); return fetch(url, { ...init, headers }) } })
+    fetch: (url, init) => { requests++; const headers = new Headers(init.headers); headers.set("cookie", `${activeCookie ? `__Host-smithers_session=${activeCookie}; ` : ""}__Host-smithers_csrf=${csrf}`); headers.set("X-CSRF-Token", csrf); headers.set("Origin", origin); sentCookies.push(headers.get("cookie")!); return fetch(url, { ...init, headers }) } })
   try {
     if (selectedCase === "read" || selectedCase === "browser") {
       await seam.open(fixtures.read.operationId)
@@ -79,14 +79,14 @@ try {
       assert.equal(exchange.failure, undefined)
       assert.deepEqual(JSON.parse(exchange.response!.body), fixtures.read.body)
       assert.equal(requests, 1)
-      const curl = command(["curl", "--silent", "--show-error", "--fail", "--cookie", `smithers_session=${cookie}`, `${origin}/api/todos`])
+      const curl = command(["curl", "--silent", "--show-error", "--fail", "--cookie", `__Host-smithers_session=${cookie}`, `${origin}/api/todos`])
       assert.deepEqual(JSON.parse(curl), fixtures.read.body)
       console.log("C-UI-10 REAL READ PASS: Member GET /api/todos; literal []; independent curl session comparison")
       if (selectedCase === "browser") {
         const browser = await chromium.launch({ headless: true })
         try {
           const context = await browser.newContext()
-          await context.addCookies([{ name: "smithers_session", value: cookie, url: origin }])
+          await context.addCookies([{ name: "__Host-smithers_session", value: cookie, url: origin }])
           const page = await context.newPage()
           // Observe the playground's redirect-blocking transport while leaving
           // the native fetch and real response untouched. The live TODO provider
@@ -145,7 +145,7 @@ try {
         fetchImpl: (url, init) => {
           if (init?.redirect === "error") playgroundRequests++
           const headers = new Headers(init?.headers)
-          headers.set("cookie", `smithers_session=${activeCookie}; __csrf=${csrf}`)
+          headers.set("cookie", `__Host-smithers_session=${activeCookie}; __Host-smithers_csrf=${csrf}`)
           headers.set("X-CSRF-Token", csrf); headers.set("Origin", origin)
           return fetch(new URL(String(url), origin), { ...init, headers })
         }
@@ -191,10 +191,10 @@ try {
       await seam.open(fixtures.signout.operationId)
       assert.equal(requests, 0, "Opening and selecting sends nothing")
       const logout = await fetch(`${origin}/api/auth/logout`, { method: "POST", headers: {
-        cookie: `smithers_session=${cookie}; __csrf=${csrf}`, "X-CSRF-Token": csrf, Origin: origin
+        cookie: `__Host-smithers_session=${cookie}; __Host-smithers_csrf=${csrf}`, "X-CSRF-Token": csrf, Origin: origin
       } })
       assert.equal(logout.status, 204)
-      assert.ok(logout.headers.get("set-cookie")?.includes("smithers_session="))
+      assert.ok(logout.headers.get("set-cookie")?.includes("__Host-smithers_session="))
       assert.equal(sql(`SELECT count(*) FROM auth_sessions WHERE session_key='${hash}'`), "0")
       await seam.send({ intent: "send", operationId: fixtures.signout.operationId })
       const exchange = structuredClone(seam.get().model.exchange!)
@@ -211,7 +211,7 @@ try {
       await seam.open(fixtures.signout.operationId)
       await seam.send({ intent: "send", operationId: fixtures.signout.operationId })
       assert.equal(requests, 2)
-      assert.equal(sentCookies[1], `__csrf=${csrf}`)
+      assert.equal(sentCookies[1], `__Host-smithers_csrf=${csrf}`)
       assert.ok(!sentCookies[1]!.includes(cookie))
       assert.equal(seam.get().model.exchange?.response?.status, 401)
       writeFileSync(join(outputDir, "signout.role-receipt.json"), `${JSON.stringify({ revision,

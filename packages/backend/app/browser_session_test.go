@@ -33,8 +33,8 @@ func ownerBrowserSession(t *testing.T, pool *pgxpool.Pool) string {
 }
 
 func attachBrowserSession(r *http.Request, session string) {
-	r.AddCookie(&http.Cookie{Name: "smithers_session", Value: session})
-	r.AddCookie(&http.Cookie{Name: "__csrf", Value: "app-fixture-csrf"})
+	r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: session})
+	r.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "app-fixture-csrf"})
 	r.Header.Set("X-CSRF-Token", "app-fixture-csrf")
 	r.Header.Set("Origin", "http://127.0.0.1:4000")
 }

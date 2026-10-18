@@ -132,7 +132,7 @@ func TestInstallIssueTransitionDoorAuthorizesLikeItsSiblingsPostgres(t *testing.
 
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	router := chi.NewRouter()
 	router.Use(authLoader(q, cfg.Auth))
 	router.Use(memberCommands(q))
@@ -157,7 +157,7 @@ func TestInstallIssueTransitionDoorAuthorizesLikeItsSiblingsPostgres(t *testing.
 		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(""))
 		request.Header.Set("Idempotency-Key", "transition-door-1")
 		if cookie != "" {
-			request.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		}
 		if bearer != "" {
 			request.Header.Set("Authorization", "Bearer "+bearer)

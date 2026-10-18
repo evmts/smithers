@@ -40,7 +40,7 @@ func TestInstallLabelMutationsPostgres(t *testing.T) {
 	f := newLandingGateFixtureWithFactory(t, nil, "", true)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	service := services.NewLabelService(f.q, services.WithLabelInstallAuthorization(f.q, f.pool))
@@ -73,8 +73,8 @@ func TestInstallLabelMutationsPostgres(t *testing.T) {
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Origin", cfg.Server.PublicURL)
 		if cookie != "" {
-			request.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-			request.AddCookie(&http.Cookie{Name: "__csrf", Value: "labels-csrf"})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "labels-csrf"})
 			request.Header.Set("X-CSRF-Token", "labels-csrf")
 		}
 		if bearer != "" {

@@ -82,7 +82,7 @@ func TestChatArchiveRoutesAuthorizeByActorPostgres(t *testing.T) {
 
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	router := chi.NewRouter()
 	router.Use(authLoader(q, cfg.Auth))
 	router.Use(memberCommands(q))
@@ -107,7 +107,7 @@ func TestChatArchiveRoutesAuthorizeByActorPostgres(t *testing.T) {
 		request := httptest.NewRequest(method, path, strings.NewReader("{}"))
 		request.Header.Set("Content-Type", "application/json")
 		if cookie != "" {
-			request.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		}
 		if bearer != "" {
 			request.Header.Set("Authorization", "Bearer "+bearer)

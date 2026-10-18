@@ -60,7 +60,7 @@ func TestLearningFiveMergeProposalComposedInstall(t *testing.T) {
 	service := services.NewMythicalService(pool, nil)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "smithers_session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	server := httptest.NewUnstartedServer(nil)
 	cfg.Server.PublicURL = "http://" + server.Listener.Addr().String()
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
@@ -75,8 +75,8 @@ func TestLearningFiveMergeProposalComposedInstall(t *testing.T) {
 		t.Helper()
 		req := httptest.NewRequest(method, server.URL+path, strings.NewReader("{}"))
 		req.RemoteAddr = "127.0.0.1:51900"
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "five-session"})
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "five-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "five-session"})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "five-csrf"})
 		req.Header.Set("Origin", server.URL)
 		req.Header.Set("X-CSRF-Token", "five-csrf")
 		req.Header.Set("Content-Type", "application/json")

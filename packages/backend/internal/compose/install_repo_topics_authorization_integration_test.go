@@ -86,8 +86,8 @@ func TestInstallRepoTopicsAuthorizationPostgres(t *testing.T) {
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("Content-Type", "application/json")
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "topics-csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "topics-csrf"})
 			req.Header.Set("X-CSRF-Token", "topics-csrf")
 		}
 		if bearer != "" {
@@ -177,8 +177,8 @@ func TestInstallRepoTopicsAuthorizationPostgres(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("X-CSRF-Token", "topics-csrf")
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "topics-csrf"})
-		req.AddCookie(&http.Cookie{Name: "session", Value: ownerCookie})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "topics-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: ownerCookie})
 		var commands []string
 		req = req.WithContext(services.WithAuthorizationObserver(ctx, func(command string) { commands = append(commands, command) }))
 		done := make(chan *httptest.ResponseRecorder, 1)

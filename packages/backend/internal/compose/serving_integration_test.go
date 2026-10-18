@@ -128,7 +128,7 @@ func TestInstallServingOwnerAddressUpdatePostgres(t *testing.T) {
 	handler := &routes.GitHubAppSetupHandler{Owners: q, Origins: address.Origins, Setup: setup}
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "smithers_session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	router := githubAppSetupComposeRouter(cfg, pool, handler)
 	server.Config.Handler = router
 	server.Start()
@@ -141,8 +141,8 @@ func TestInstallServingOwnerAddressUpdatePostgres(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", origin)
 		req.Header.Set("X-CSRF-Token", csrf)
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "serving-owner-session"})
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "serving-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "serving-owner-session"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "serving-csrf"})
 		recorder := httptest.NewRecorder()
 		router.ServeHTTP(recorder, req)
 		return recorder
@@ -214,7 +214,7 @@ func TestInstallServingOwnerAddressUpdatePostgres(t *testing.T) {
 		req.RemoteAddr = tc.peer
 		req.Header.Set("X-Forwarded-Host", tc.forwarded)
 		req.Header.Set("X-Forwarded-Proto", tc.proto)
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "serving-owner-session"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "serving-owner-session"})
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 		require.Equal(t, 200, rec.Code, rec.Body.String())
@@ -228,7 +228,7 @@ func TestInstallServingOwnerAddressUpdatePostgres(t *testing.T) {
 	}
 	publicRequest := httptest.NewRequest("GET", "http://lan-a:4000/api/public/repos", nil)
 	publicRequest.RemoteAddr = "192.0.2.2:1234"
-	publicRequest.AddCookie(&http.Cookie{Name: "smithers_session", Value: "serving-owner-session"})
+	publicRequest.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "serving-owner-session"})
 	publicResponse := httptest.NewRecorder()
 	router.ServeHTTP(publicResponse, publicRequest)
 	require.Empty(t, publicResponse.Header().Get("Access-Control-Allow-Origin"))
@@ -315,14 +315,14 @@ func TestInstallServingLiveOriginReconnectPostgres(t *testing.T) {
 	channel := &routes.LiveHandler{Queries: q, Hub: live.NewHub(t.Context(), nil), Origins: address.Origins, Topics: topics.resolver}
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "smithers_session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	server := httptest.NewServer(githubAppSetupComposeRouter(cfg, pool, handler, routerExtras{Live: channel, GitHubAppSetup: handler}))
 	defer server.Close()
 	dial := func(host, origin string, want int) {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
-		conn, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"X-Forwarded-Host": {host}, "X-Forwarded-Proto": {"http"}, "Origin": {origin}, "Cookie": {"smithers_session=live-origin-session"}}})
+		conn, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"X-Forwarded-Host": {host}, "X-Forwarded-Proto": {"http"}, "Origin": {origin}, "Cookie": {"smithers_local_session=live-origin-session"}}})
 		require.NotNil(t, response)
 		if response.StatusCode != want {
 			body, _ := io.ReadAll(response.Body)
@@ -367,8 +367,8 @@ func TestInstallServingLiveOriginReconnectPostgres(t *testing.T) {
 	req.Header.Set("Origin", "http://localhost:4000")
 	req.Header.Set("X-CSRF-Token", "live-csrf")
 	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "live-origin-session"})
-	req.AddCookie(&http.Cookie{Name: "__csrf", Value: "live-csrf"})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "live-origin-session"})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "live-csrf"})
 	rec := httptest.NewRecorder()
 	server.Config.Handler.ServeHTTP(rec, req)
 	require.Equal(t, 200, rec.Code, rec.Body.String())
@@ -383,7 +383,7 @@ func TestInstallServingLiveOriginReconnectPostgres(t *testing.T) {
 	channel.Topics = topics.resolver
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"X-Forwarded-Host": {"localhost:4000"}, "Origin": {"http://localhost:4000"}, "Cookie": {"smithers_session=live-origin-session"}}})
+	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"X-Forwarded-Host": {"localhost:4000"}, "Origin": {"http://localhost:4000"}, "Cookie": {"smithers_local_session=live-origin-session"}}})
 	require.NoError(t, err)
 	defer conn.CloseNow()
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(`{"t":"sub","id":2,"topic":"install","cursor":0}`)))

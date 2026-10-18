@@ -317,7 +317,7 @@ func TestOutsideWatcherComposedInstallLive(t *testing.T) {
 	workspace := services.NewWorkspaceService(q, services.WithWorkspaceTransactions(f.pool), services.WithWorkspaceInstallAuthorization(q), services.WithBranchMachineProviders(services.InstallBranchMachineProviders(identity.NewMemberBoundary(q), nil)), services.WithWorkspaceBurstVersions(f.pool, client))
 	install := testConfigAllFlagsOn()
 	install.Auth.Mode = "selfhost"
-	install.Auth.SessionCookieName = "session"
+	install.Auth.SessionCookieName = "smithers_local_session"
 	install.Server.PublicURL = f.origin
 	install.Server.AllowedOrigins = []string{f.origin}
 	router := githubAppSetupComposeRouter(install, f.pool, nil, &routes.WorkspaceHandler{Service: workspace})
@@ -325,7 +325,7 @@ func TestOutsideWatcherComposedInstallLive(t *testing.T) {
 		t.Helper()
 		req := httptest.NewRequest("GET", f.origin+"/api/branches/"+branch+"/diff"+selector, nil)
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		}
 		req.RemoteAddr = "127.0.0.1:61000"
 		rec := httptest.NewRecorder()

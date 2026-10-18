@@ -916,7 +916,7 @@ func TestServerRouter_DefaultAPICSRFProtectsSessionWrites(t *testing.T) {
 
 	reqValid := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
 	reqValid.Header.Set("X-CSRF-Token", "csrf-token")
-	reqValid.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-token"})
+	reqValid.AddCookie(&http.Cookie{Name: "__Host-smithers_csrf", Value: "csrf-token"})
 	reqValid = withRouterSessionAuth(reqValid)
 	recValid := httptest.NewRecorder()
 	router.ServeHTTP(recValid, reqValid)
@@ -2282,7 +2282,7 @@ func TestServerRouter_CSRFRejectsWhenHeaderPresentButCSRFCookieMissing(t *testin
 	router.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusForbidden, rec.Code,
-		"PATCH /api/orgs/test-org with header but without __csrf cookie must be rejected")
+		"PATCH /api/orgs/test-org with header but without __Host-smithers_csrf cookie must be rejected")
 }
 
 func TestServerRouter_CSRFRejectsWhenHeaderAndCookieMismatch(t *testing.T) {
@@ -2293,7 +2293,7 @@ func TestServerRouter_CSRFRejectsWhenHeaderAndCookieMismatch(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPatch, "/api/orgs/test-org", bytes.NewBufferString(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-CSRF-Token", "header-token")
-	req.AddCookie(&http.Cookie{Name: "__csrf", Value: "cookie-token"})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_csrf", Value: "cookie-token"})
 	req = sessionContext(req)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -2303,7 +2303,7 @@ func TestServerRouter_CSRFRejectsWhenHeaderAndCookieMismatch(t *testing.T) {
 }
 
 // TestServerRouter_CSRFPassesWithMatchingCookieAndToken verifies that session-authenticated
-// requests pass CSRF validation only when the X-CSRF-Token header matches __csrf cookie.
+// requests pass CSRF validation only when the X-CSRF-Token header matches __Host-smithers_csrf cookie.
 func TestServerRouter_CSRFPassesWithMatchingCookieAndToken(t *testing.T) {
 	t.Parallel()
 
@@ -2312,7 +2312,7 @@ func TestServerRouter_CSRFPassesWithMatchingCookieAndToken(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPatch, "/api/orgs/test-org", bytes.NewBufferString(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-CSRF-Token", "valid-csrf-token")
-	req.AddCookie(&http.Cookie{Name: "__csrf", Value: "valid-csrf-token"})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_csrf", Value: "valid-csrf-token"})
 	req = sessionContext(req)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -2361,7 +2361,7 @@ func TestServerRouter_RepoWriteRoutesRejectOversizedBodies(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-CSRF-Token", "valid-csrf-token")
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "valid-csrf-token"})
+			req.AddCookie(&http.Cookie{Name: "__Host-smithers_csrf", Value: "valid-csrf-token"})
 			req = sessionContext(req)
 
 			rec := httptest.NewRecorder()
@@ -3084,7 +3084,7 @@ func TestServerRouter_NotificationMark_RequiresWriteUserScope(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		req = withRouterTokenAuth(req, middleware.ScopeReadUser) // Only read:user
 		req.Header.Set("X-CSRF-Token", "valid-csrf-token")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "valid-csrf-token"})
+		req.AddCookie(&http.Cookie{Name: "__Host-smithers_csrf", Value: "valid-csrf-token"})
 		rec := httptest.NewRecorder()
 		routerWithNotif.ServeHTTP(rec, req)
 
@@ -3096,7 +3096,7 @@ func TestServerRouter_NotificationMark_RequiresWriteUserScope(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		req = withRouterTokenAuth(req, middleware.ScopeReadUser) // Only read:user
 		req.Header.Set("X-CSRF-Token", "valid-csrf-token")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "valid-csrf-token"})
+		req.AddCookie(&http.Cookie{Name: "__Host-smithers_csrf", Value: "valid-csrf-token"})
 		rec := httptest.NewRecorder()
 		routerWithNotif.ServeHTTP(rec, req)
 

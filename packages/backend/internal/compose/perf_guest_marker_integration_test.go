@@ -104,7 +104,7 @@ func TestPerfGuestHeldMarkerComposedInstall(t *testing.T) {
 	// consumed by C-PERF-06. Guest opaque references cannot assert member IDs.
 	req, err := http.NewRequest("GET", f.origin+"/api/install/ack-delay?branch="+f.branch+"&actor_reference="+hex.EncodeToString(actor), nil)
 	require.NoError(t, err)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "ben-cookie"})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "ben-cookie"})
 	response, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer response.Body.Close()
@@ -129,7 +129,7 @@ func TestPerfGuestHeldMarkerComposedInstall(t *testing.T) {
 		req, err := http.NewRequest("GET", f.origin+"/api/install/ack-delay?branch="+f.branch+"&actor_reference="+tc.reference, nil)
 		require.NoError(t, err)
 		if tc.cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: tc.cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: tc.cookie})
 		}
 		response, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)

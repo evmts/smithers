@@ -83,8 +83,8 @@ func TestTodoCardCommitAndAmendTransactions(t *testing.T) {
 		t.Helper()
 		request, err := http.NewRequest(method, origin+path, strings.NewReader(body))
 		require.NoError(t, err)
-		request.AddCookie(&http.Cookie{Name: "smithers_session", Value: token})
-		request.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: token})
+		request.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 		request.Header.Set("X-CSRF-Token", "csrf")
 		request.Header.Set("Origin", origin)
 		request.Header.Set("Content-Type", "application/json")
@@ -117,7 +117,7 @@ func TestTodoCardCommitAndAmendTransactions(t *testing.T) {
 	}
 	var sockets []*websocket.Conn
 	for _, cookie := range []string{token, aliceToken} {
-		socket, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_session=" + cookie}, "Origin": {origin}}})
+		socket, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_local_session=" + cookie}, "Origin": {origin}}})
 		require.NoError(t, err)
 		t.Cleanup(func() { socket.CloseNow() })
 		sockets = append(sockets, socket)
@@ -181,7 +181,7 @@ func TestTodoCardCommitAndAmendTransactions(t *testing.T) {
 		require.Equal(t, inserted, call("POST", "/api/todos", body, "queued-before", 202))
 		request, err := http.NewRequest(http.MethodGet, origin+"/api/todos", nil)
 		require.NoError(t, err)
-		request.AddCookie(&http.Cookie{Name: "smithers_session", Value: aliceToken})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: aliceToken})
 		response, err := http.DefaultClient.Do(request)
 		require.NoError(t, err)
 		defer response.Body.Close()

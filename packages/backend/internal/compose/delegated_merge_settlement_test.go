@@ -33,7 +33,7 @@ func TestDelegatedMergeSettlementNativeInstall(t *testing.T) {
 	require.NoError(t, err)
 	session := ""
 	for _, cookie := range r.jar.Cookies(mustRehearsalURL(r.origin)) {
-		if cookie.Name == "smithers_session" {
+		if cookie.Name == "smithers_local_session" {
 			session = cookie.Value
 		}
 	}

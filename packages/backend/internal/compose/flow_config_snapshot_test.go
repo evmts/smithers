@@ -153,7 +153,7 @@ func TestInstallCodingSnapshotFixedWhileOwnerRoleModelChangesPostgres(t *testing
 
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{"http://example.com"}
 	router := githubAppSetupComposeRouter(cfg, pool, &routes.GitHubAppSetupHandler{Setup: &services.InstallSetupService{Pool: pool}, Owners: q, Roster: q, Origins: middleware.FixedOrigins("http://example.com")})
@@ -178,8 +178,8 @@ func TestInstallCodingSnapshotFixedWhileOwnerRoleModelChangesPostgres(t *testing
 	req := httptest.NewRequest("PUT", "http://example.com/api/agents/reviewer/model", strings.NewReader(`{"model":{"protocol":"anthropic-messages","modelId":"model-b","credential":"ANTHROPIC_API_KEY"}}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://example.com")
-	req.AddCookie(&http.Cookie{Name: "session", Value: session})
-	req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "snapshot-csrf"})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: session})
+	req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "snapshot-csrf"})
 	req.Header.Set("X-CSRF-Token", "snapshot-csrf")
 	assigned := httptest.NewRecorder()
 	router.ServeHTTP(assigned, req)

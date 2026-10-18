@@ -85,7 +85,7 @@ test("a fresh install creates and installs its GitHub App", scenario("github.loc
     expect(login).toBe(LOGIN)
     const exchange = await context.request.get(`${ORIGIN}/setup?token=${encodeURIComponent(setupToken)}`, { maxRedirects: 0 })
     expect(exchange.status()).toBe(303)
-    const csrf = (await context.cookies(ORIGIN)).find(cookie => cookie.name === "__csrf")?.value
+    const csrf = (await context.cookies(ORIGIN)).find(cookie => ["__Host-smithers_csrf", "smithers_local_csrf"].includes(cookie.name))?.value
     expect(csrf).toBeTruthy()
     const headers = { "X-CSRF-Token": csrf!, Origin: ORIGIN }
     const before = await context.request.get(`${ORIGIN}/api/install`, { headers })

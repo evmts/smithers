@@ -116,8 +116,8 @@ func TestWikiPlanningSelectionComposedRoutePostgres(t *testing.T) {
 		t.Helper()
 		req := httptest.NewRequest(method, "http://example.com/api/repos/gate-owner/app/wiki"+path, strings.NewReader(body))
 		if credential == "editor" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: editorSession})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: editorSession})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 			req.Header.Set("X-CSRF-Token", "csrf")
 			req.Header.Set("Origin", "http://example.com")
 		} else {

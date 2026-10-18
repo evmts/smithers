@@ -5,6 +5,7 @@ import {
   AUTHENTICATED_USER_PATH,
   ApplicationUserSchema,
   CSRF_COOKIE_NAME,
+  LOCAL_CSRF_COOKIE_NAME,
   CSRF_HEADER_NAME,
   SOCKET_TICKET_PATH,
   SocketTicketResponseSchema
@@ -172,7 +173,8 @@ const assertTargetOrigin = (
 
 const browserCSRFToken = (): string | undefined => {
   if (typeof document === "undefined") return undefined
-  const prefix = `${CSRF_COOKIE_NAME}=`
+  const cookieName = typeof location !== "undefined" && location.protocol === "http:" ? LOCAL_CSRF_COOKIE_NAME : CSRF_COOKIE_NAME
+  const prefix = `${cookieName}=`
   for (const part of document.cookie.split(";")) {
     const cookie = part.trim()
     if (!cookie.startsWith(prefix)) continue

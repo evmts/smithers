@@ -44,7 +44,7 @@ func TestInstallSettingsBodyBindsItsCommandPostgres(t *testing.T) {
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	for _, row := range []struct{ body, command string }{
 		{`{"wiki_sync.obsidian":{"path":"/Users/maya/Vault"}}`, "settings"},
 		{`{"parallel":3}`, "settings"},
@@ -66,7 +66,7 @@ func TestInstallSettingsBodyBindsItsCommandPostgres(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			})
 			request := httptest.NewRequest("PUT", "/api/install", strings.NewReader(row.body))
-			request.AddCookie(&http.Cookie{Name: "session", Value: "maya-cookie"})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "maya-cookie"})
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, request)
 			require.Equal(t, http.StatusOK, response.Code, response.Body.String())

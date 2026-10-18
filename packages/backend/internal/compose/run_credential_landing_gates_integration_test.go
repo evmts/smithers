@@ -134,7 +134,7 @@ func newLandingGateFixtureWithFactory(t *testing.T, commits map[string]string, f
 	var vcsClient *repohost.Client
 	if install {
 		cfg.Auth.Mode = "selfhost"
-		cfg.Auth.SessionCookieName = "session"
+		cfg.Auth.SessionCookieName = "smithers_local_session"
 		cfg.Server.PublicURL = "http://example.com"
 		cfg.Server.AllowedOrigins = []string{"http://example.com"}
 		_, err = pool.Exec(ctx, `INSERT INTO self_host_owners(user_id) VALUES($1)`, owner.ID)
@@ -375,8 +375,8 @@ func TestInstallProtectedBookmarkMutationMatrixPostgres(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Origin", "http://example.com")
 			if kind == "session" {
-				req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-				req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 				req.Header.Set("X-CSRF-Token", "csrf")
 			} else {
 				req.Header.Set("Authorization", "Bearer "+token)

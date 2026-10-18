@@ -47,7 +47,7 @@ func TestInstallRetainedVCSReadsPostgres(t *testing.T) {
 	require.NoError(t, client.ImportRefs(f.ctx, "gate-owner", "app"))
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	changeService := services.NewChangeService(f.q, client, f.pool)
@@ -107,7 +107,7 @@ func TestInstallRetainedVCSReadsPostgres(t *testing.T) {
 			t.Run(actor.name+path, func(t *testing.T) {
 				req := httptest.NewRequest("GET", cfg.Server.PublicURL+"/api/repos/gate-owner/app"+path, nil)
 				if actor.token == "" {
-					req.AddCookie(&http.Cookie{Name: "session", Value: actor.cookie})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: actor.cookie})
 				} else {
 					req.Header.Set("Authorization", "Bearer "+actor.token)
 				}

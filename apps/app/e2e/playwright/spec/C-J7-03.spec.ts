@@ -23,7 +23,7 @@ test("C-J7-03: unresolved Done refuses and a clean human edit resumes the retain
     const path = `${conflict.origin}/api/repos/rehearsal-owner/app/workspaces/${conflict.branchId}/files/content?path=JOURNEY.md`
     const file = await page.request.get(path)
     expect(file.status()).toBe(200)
-    const csrf = (await page.context().cookies()).find(cookie => cookie.name === "__csrf")!.value
+    const csrf = (await page.context().cookies()).find(cookie => cookie.name === "__Host-smithers_csrf")!.value
     const written = await page.request.put(path, { headers: { "X-CSRF-Token": csrf, Origin: conflict.origin }, data: {
       base_digest: (await file.json()).digest, content: "Greeting from new main\nHello from Smithers!\n"
     } })

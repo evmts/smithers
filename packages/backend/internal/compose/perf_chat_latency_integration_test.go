@@ -69,7 +69,7 @@ func TestPerfChatLatencyComposedInstall(t *testing.T) {
 	metrics.MustRegister(runtime.Collectors()...)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
 	cfg.Server.PublicURL = origin
@@ -97,7 +97,7 @@ func TestPerfChatLatencyComposedInstall(t *testing.T) {
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", origin)
-		req.Header.Set("Cookie", "session="+f.cookie+"; __csrf=perf-latency-csrf")
+		req.Header.Set("Cookie", "smithers_local_session="+f.cookie+"; smithers_local_csrf=perf-latency-csrf")
 		req.Header.Set("X-CSRF-Token", "perf-latency-csrf")
 		response, err := client.Do(req)
 		require.NoError(t, err)

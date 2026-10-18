@@ -142,7 +142,7 @@ func testConfirmTodoConsumerInstall(t *testing.T, wantTitle, wantPrompt, via str
 		request.Header.Set("Idempotency-Key", key)
 		request.Header.Set("Origin", "http://127.0.0.1:4000")
 		request.Header.Set("X-CSRF-Token", "confirm-csrf")
-		request.AddCookie(&http.Cookie{Name: "__csrf", Value: "confirm-csrf"})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "confirm-csrf"})
 		if delegated {
 			request.Header.Set("Authorization", "Bearer "+token)
 		} else {
@@ -150,7 +150,7 @@ func testConfirmTodoConsumerInstall(t *testing.T, wantTitle, wantPrompt, via str
 			if len(cookies) > 0 {
 				session = cookies[0]
 			}
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: session})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: session})
 		}
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)

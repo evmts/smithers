@@ -23,7 +23,7 @@ await barrier(`MERGE_BROWSER_READY http://127.0.0.1:${address.port}`)
 const browser = await chromium.launch({ headless: true })
 try {
   const context = await browser.newContext()
-  await context.addCookies([{ name: "smithers_session", value: process.env.SMITHERS_CONFIRMATION_SESSION ?? "owner-browser-session", url: origin, httpOnly: true }, { name: "__csrf", value: "csrf", url: origin }])
+  await context.addCookies([{ name: "smithers_local_session", value: process.env.SMITHERS_CONFIRMATION_SESSION ?? "owner-browser-session", url: origin, httpOnly: true }, { name: "smithers_local_csrf", value: "csrf", url: origin }])
   const page = await context.newPage()
   const errors: string[] = []
   page.on("pageerror", error => errors.push(error.message))
@@ -44,7 +44,7 @@ try {
   await barrier("MERGE_BROWSER_STALE")
   // Live delivery may expire the card before a keyboard press. Exercise the
   // old person-session request directly, then press the fresh card below.
-  const csrf = (await context.cookies(origin)).find(cookie => cookie.name === "__csrf")!.value
+  const csrf = (await context.cookies(origin)).find(cookie => ["__Host-smithers_csrf", "smithers_local_csrf"].includes(cookie.name))!.value
   const stale = await page.request.post(`${origin}/api/confirmations/${id}/approve`, {
     headers: { "X-CSRF-Token": csrf, Origin: origin, "Idempotency-Key": "stale-browser-generation" }, data: {},
   })

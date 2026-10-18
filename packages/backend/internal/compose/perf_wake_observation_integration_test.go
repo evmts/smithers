@@ -343,9 +343,9 @@ func testPerfWarmWakeObservationComposedInstall(t *testing.T, scheduled bool, mo
 				req.Header.Set("Origin", cfg.Server.PublicURL)
 				req.Header.Set("X-CSRF-Token", "csrf")
 				req.Header.Set("Idempotency-Key", requestID)
-				req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 				if authenticated {
-					req.AddCookie(&http.Cookie{Name: "smithers_session", Value: f.cookie})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 				}
 				response := httptest.NewRecorder()
 				router.ServeHTTP(response, req)
@@ -470,7 +470,7 @@ func testPerfWarmWakeObservationComposedInstall(t *testing.T, scheduled bool, mo
 				// Exercise the workload's teardown through the same authenticated
 				// owner socket as the app. A legacy destroy sees no owner row.
 				endpoint := "ws" + strings.TrimPrefix(terminalServer.URL, "http") + "/api/repos/presence-owner/app/workspace/sessions/" + accepted.ID + "/terminal"
-				closeInput, err := json.Marshal(map[string]any{"endpoint": endpoint, "headers": map[string]string{"Cookie": "smithers_session=" + f.cookie, "Origin": cfg.Server.PublicURL}})
+				closeInput, err := json.Marshal(map[string]any{"endpoint": endpoint, "headers": map[string]string{"Cookie": "smithers_local_session=" + f.cookie, "Origin": cfg.Server.PublicURL}})
 				require.NoError(t, err)
 				closeCommand := exec.CommandContext(t.Context(), "node", "--input-type=module", "-e", `import { closeOwnerTerminal } from './.smithers/flows/perf/warm-wake.mjs'; import {createRequire} from 'node:module'; import {resolve} from 'node:path'; const require=createRequire(resolve('packages/smithers/package.json')); let raw=''; for await (const part of process.stdin) raw+=part; const {endpoint,headers}=JSON.parse(raw); await closeOwnerTerminal(require('ws'),endpoint,headers);`)
 				closeCommand.Dir = "../../../.."
@@ -752,8 +752,8 @@ func testSuccessfulTerminalFIFOInstallBoundary(t *testing.T, branchCount, perBra
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("Idempotency-Key", requestID)
 		req.Header.Set("X-CSRF-Token", "csrf")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: f.cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 		res, err := server.Client().Do(req)
 		if err != nil {
 			return nil, err
@@ -852,7 +852,7 @@ func testSuccessfulTerminalFIFOInstallBoundary(t *testing.T, branchCount, perBra
 			err := f.pool.QueryRow(ctx, `SELECT data->'branch'->'machine'->>'state',COALESCE((data->'branch'->'machine'->>'position')::int,0) FROM product_job_events WHERE principal_id=$1 ORDER BY sequence DESC LIMIT 1`, "branch:"+branch.ID+":machine").Scan(&state, &position)
 			return err == nil && state == "waiting" && position == i+1
 		}, 5*time.Second, 10*time.Millisecond)
-		conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {cfg.Server.PublicURL}, "Cookie": {"smithers_session=" + f.cookie}}})
+		conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {cfg.Server.PublicURL}, "Cookie": {"smithers_local_session=" + f.cookie}}})
 		require.NoError(t, err)
 		defer conn.CloseNow()
 		sendPresenceFrame(t, conn, fmt.Sprintf(`{"t":"sub","id":1,"topic":"branch:%s"}`, branch.ID))
@@ -1116,12 +1116,12 @@ func testSuccessfulTerminalFIFOInstallBoundary(t *testing.T, branchCount, perBra
 		require.NoError(t, err)
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("X-CSRF-Token", "csrf")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: f.cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 		intruder := req.Clone(ctx)
 		intruder.Header.Del("Cookie")
-		intruder.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
-		intruder.AddCookie(&http.Cookie{Name: "smithers_session", Value: "other-terminal-cookie"})
+		intruder.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
+		intruder.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "other-terminal-cookie"})
 		denied, err := server.Client().Do(intruder)
 		require.NoError(t, err)
 		deniedBody, err := io.ReadAll(denied.Body)
@@ -1233,8 +1233,8 @@ func testSuccessfulTerminalFIFOInstallBoundary(t *testing.T, branchCount, perBra
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("X-CSRF-Token", "csrf")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: f.cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 		res, err := server.Client().Do(req)
 		require.NoError(t, err)
 		body, err := io.ReadAll(res.Body)
@@ -1316,7 +1316,7 @@ func testSuccessfulTerminalFIFOInstallBoundary(t *testing.T, branchCount, perBra
 				// The successful awake observation, including its exact durable
 				// envelope, must replay after the disconnected waiting cursor.
 				sockets[i].CloseNow()
-				replay, _, e := websocket.Dial(ctx, "ws"+strings.TrimPrefix(replayServer.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, Host: strings.TrimPrefix(cfg.Server.PublicURL, "http://"), HTTPHeader: http.Header{"Origin": {cfg.Server.PublicURL}, "Cookie": {"smithers_session=" + f.cookie}}})
+				replay, _, e := websocket.Dial(ctx, "ws"+strings.TrimPrefix(replayServer.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, Host: strings.TrimPrefix(cfg.Server.PublicURL, "http://"), HTTPHeader: http.Header{"Origin": {cfg.Server.PublicURL}, "Cookie": {"smithers_local_session=" + f.cookie}}})
 				require.NoError(t, e)
 				sendPresenceFrame(t, replay, fmt.Sprintf(`{"t":"sub","id":1,"topic":"branch:%s","cursor":%d}`, branch.ID, cursors[i]))
 				previous := cursors[i]

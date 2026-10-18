@@ -45,10 +45,10 @@ test('refuses missing, duplicate, failed and cross-restart samples', () => {
   }
 })
 
-const env = { SMITHERS_PERF_ORIGIN: 'https://mac.example', SMITHERS_PERF_BRANCH: 'branch-1', SMITHERS_PERF_REPOSITORY: 'owner/repo', SMITHERS_PERF_OWNER_COOKIE: 'smithers_session=secret; __csrf=csrf', SMITHERS_PERF_INSTALL_VERSION: 'fixture', SMITHERS_PERF_HOST_WAKE_LOG: '/tmp/host.jsonl' }
+const env = { SMITHERS_PERF_ORIGIN: 'https://mac.example', SMITHERS_PERF_BRANCH: 'branch-1', SMITHERS_PERF_REPOSITORY: 'owner/repo', SMITHERS_PERF_OWNER_COOKIE: '__Host-smithers_session=secret; __Host-smithers_csrf=csrf', SMITHERS_PERF_INSTALL_VERSION: 'fixture', SMITHERS_PERF_HOST_WAKE_LOG: '/tmp/host.jsonl' }
 test('configuration requires public origin, credentials, host evidence and recorded sleep delay', () => {
   assert.equal(configuration(env).sleepSeconds, 120)
-  for (const patch of [{ SMITHERS_PERF_HOST_WAKE_LOG: '' }, { SMITHERS_PERF_ORIGIN: 'http://localhost' }, { SMITHERS_PERF_OWNER_COOKIE: 'smithers_session=secret' }, { SMITHERS_PERF_SLEEP_SECONDS: '0' }, { SMITHERS_PERF_REPOSITORY: '../repo' }]) assert.throws(() => configuration({ ...env, ...patch }))
+  for (const patch of [{ SMITHERS_PERF_HOST_WAKE_LOG: '' }, { SMITHERS_PERF_ORIGIN: 'http://localhost' }, { SMITHERS_PERF_OWNER_COOKIE: '__Host-smithers_session=secret' }, { SMITHERS_PERF_SLEEP_SECONDS: '0' }, { SMITHERS_PERF_REPOSITORY: '../repo' }]) assert.throws(() => configuration({ ...env, ...patch }))
 })
 
 test('CLI workload retains refusal artifacts without credentials or a passing budget', async () => {

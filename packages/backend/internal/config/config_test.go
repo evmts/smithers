@@ -554,7 +554,7 @@ func TestLoad_AuthConfigDefaultsAndEnvOverrides(t *testing.T) {
 				Mode:                 "",
 				SessionDuration:      "720h",
 				SessionRefreshWindow: "168h",
-				SessionCookieName:    "smithers_session",
+				SessionCookieName:    "__Host-smithers_session",
 				SessionSecret:        "",
 				LFSSigningSecret:     "",
 				CookieSecure:         false,
@@ -721,7 +721,7 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			Mode:                 "",
 			SessionDuration:      "720h",
 			SessionRefreshWindow: "168h",
-			SessionCookieName:    "smithers_session",
+			SessionCookieName:    "__Host-smithers_session",
 			SessionSecret:        "",
 			CookieSecure:         false,
 			EnableKeyAuth:        true,
@@ -984,7 +984,7 @@ func TestLoad_EmptyStringEnvVarFallsBackToDefault(t *testing.T) {
 
 	// Viper does NOT treat empty string as "set" — it falls back to default.
 	// This means you cannot use env vars to clear a default to "".
-	assert.Equal(t, "smithers_session", cfg.Auth.SessionCookieName,
+	assert.Equal(t, "__Host-smithers_session", cfg.Auth.SessionCookieName,
 		"Viper treats empty env var as unset, falls back to default")
 }
 
@@ -1402,7 +1402,7 @@ func TestLoad_SpecCompliance_SessionCookieName(t *testing.T) {
 	cfg, err := Load("")
 	require.NoError(t, err)
 
-	assert.Equal(t, "smithers_session", cfg.Auth.SessionCookieName,
+	assert.Equal(t, "__Host-smithers_session", cfg.Auth.SessionCookieName,
 		"session cookie should use smithers_ prefix")
 }
 
@@ -1742,7 +1742,7 @@ func TestLoad_SpecDivergence_AuthExtraFields(t *testing.T) {
 
 	assert.Equal(t, "168h", cfg.Auth.SessionRefreshWindow,
 		"SPEC NOTE: session_refresh_window (7 days) not in config YAML but referenced in middleware section")
-	assert.Equal(t, "smithers_session", cfg.Auth.SessionCookieName,
+	assert.Equal(t, "__Host-smithers_session", cfg.Auth.SessionCookieName,
 		"SPEC NOTE: session_cookie_name not in config YAML but used by auth middleware")
 	assert.Equal(t, "http://localhost:4000/api/auth/github/callback", cfg.Auth.GitHubRedirectURL,
 		"SPEC NOTE: github_redirect_url not in config YAML but required for OAuth flow")

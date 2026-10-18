@@ -51,7 +51,7 @@ func TestInstallRetainedAgentReadsPostgres(t *testing.T) {
 			t.Run(actor.name+"/"+row.command, func(t *testing.T) {
 				req := httptest.NewRequest("GET", cfg.Server.PublicURL+"/api/repos/gate-owner/app/agent/sessions"+row.suffix, nil)
 				if actor.token == "" {
-					req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 				} else {
 					req.Header.Set("Authorization", "Bearer "+actor.token)
 				}
@@ -84,7 +84,7 @@ func TestInstallRetainedAgentReadsPostgres(t *testing.T) {
 			t.Run(actor.name+"/approval"+suffix, func(t *testing.T) {
 				req := httptest.NewRequest("GET", cfg.Server.PublicURL+"/api/repos/gate-owner/app/approvals"+suffix, nil)
 				if actor.token == "" {
-					req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 				} else {
 					req.Header.Set("Authorization", "Bearer "+actor.token)
 				}

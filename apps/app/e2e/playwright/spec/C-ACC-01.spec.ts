@@ -21,7 +21,7 @@ test("C-ACC-01: a Member can read people and secret names but cannot merge or ad
   const exited = new Promise<number | null>((done, reject) => { backend.on("exit", done); backend.on("error", reject) })
   try {
     await expect.poll(() => { if (backend.exitCode !== null) throw new Error(logs); return origin }, { timeout: 120_000 }).not.toBe("")
-    await page.context().addCookies([{ name: "session", value: "alice-browser-session", url: origin }, { name: "__csrf", value: "csrf", url: origin }])
+    await page.context().addCookies([{ name: "session", value: "alice-browser-session", url: origin }, { name: "__Host-smithers_csrf", value: "csrf", url: origin }])
     await page.goto(`${origin}/maya/demo`)
     await say(page, "/members")
     await expect(page.getByText("@alice", { exact: true }).last()).toBeVisible()
@@ -41,7 +41,7 @@ test("C-ACC-01: a Member can read people and secret names but cannot merge or ad
     await say(page, "/todo.new")
     await expect(page.getByLabel("Title", { exact: true }).last()).toBeVisible()
     await expect(page.getByRole("button", { name: "Commit", exact: true }).last()).toBeVisible()
-    const csrf = (await page.context().cookies(origin)).find(cookie => cookie.name === "__csrf")!.value
+    const csrf = (await page.context().cookies(origin)).find(cookie => cookie.name === "__Host-smithers_csrf")!.value
     // UI refusals cannot substitute for server enforcement.
     for (const [path, data] of [["/api/todos/1/merge", {}], ["/api/secrets", { name: "TEST_TOKEN", value: "replaced" }]] as const) {
       const response = await page.request.fetch(`${origin}${path}`, { method: path === "/api/secrets" ? "PUT" : "POST", data,

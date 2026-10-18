@@ -54,7 +54,7 @@ func newMovedOffHost(t *testing.T) *movedOffHost {
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	server := httptest.NewUnstartedServer(nil)
 	cfg.Server.PublicURL = "http://" + server.Listener.Addr().String()
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
@@ -168,8 +168,8 @@ func (h *movedOffHost) session(cookie string) func(*http.Request) {
 	return func(request *http.Request) {
 		request.Header.Set("Origin", h.server.URL)
 		request.Header.Set("X-CSRF-Token", "moved-csrf")
-		request.AddCookie(&http.Cookie{Name: "__csrf", Value: "moved-csrf"})
-		request.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "moved-csrf"})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 	}
 }
 

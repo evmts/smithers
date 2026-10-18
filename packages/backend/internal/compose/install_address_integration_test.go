@@ -90,7 +90,7 @@ func TestInstallAddressNetworkReachesTeammateOriginThroughRouterPostgres(t *test
 	r.Header.Set("Origin", origin)
 	r.Header.Set("Idempotency-Key", "address-network")
 	for _, cookie := range cookies {
-		if cookie.Name == "__csrf" {
+		if cookie.Name == "smithers_local_csrf" {
 			r.Header.Set("X-CSRF-Token", cookie.Value)
 		}
 	}
@@ -145,7 +145,7 @@ func TestInstallAddressNetworkReachesTeammateOriginThroughRouterPostgres(t *test
 	change.Header.Set("Idempotency-Key", "address-change")
 	for _, cookie := range cookies {
 		change.AddCookie(cookie)
-		if cookie.Name == "__csrf" {
+		if cookie.Name == "smithers_local_csrf" {
 			change.Header.Set("X-CSRF-Token", cookie.Value)
 		}
 	}

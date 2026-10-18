@@ -165,7 +165,7 @@ const establishOwnerSession = async (context: BrowserContext, page: Page, baseUR
   const origin = new URL(process.env.SMITHERS_REAL_API_ORIGIN ?? baseURL).origin
   const credentials = ownerCredentialsFromEnvironment()
   const scope = ownerSessionScope(baseURL)
-  await context.addCookies([{ name: "smithers_session", value: credentials.sessionCookie, url: origin, httpOnly: true, sameSite: "Lax" }])
+  await context.addCookies([{ name: "__Host-smithers_session", value: credentials.sessionCookie, url: origin, httpOnly: true, sameSite: "Lax" }])
   const existing = await readSessionAtOrigin(context, baseURL)
   if (existing === undefined || existing.login !== credentials.username) {
     ownerSessions.forget(scope)

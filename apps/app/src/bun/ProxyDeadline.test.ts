@@ -257,7 +257,7 @@ describe("an upstream that refuses", () => {
           status: 410,
           headers: {
             "content-type": "application/json",
-            "set-cookie": "smithers_session=; Domain=identity.test; Path=/; Secure; HttpOnly; Max-Age=0"
+            "set-cookie": "__Host-smithers_session=; Domain=identity.test; Path=/; Secure; HttpOnly; Max-Age=0"
           }
         })
     })
@@ -269,7 +269,7 @@ describe("an upstream that refuses", () => {
       })
       expect(response.status).toBe(410)
       const cookie = response.headers.getSetCookie()[0] ?? ""
-      expect(cookie.startsWith("smithers_session=")).toBe(true)
+      expect(cookie.startsWith("__Host-smithers_session=")).toBe(true)
       expect(cookie.toLowerCase()).not.toContain("domain=")
       expect(cookie.toLowerCase()).not.toContain("secure")
       expect(((await response.json()) as { message?: string }).message).toBe("That sign-in expired.")

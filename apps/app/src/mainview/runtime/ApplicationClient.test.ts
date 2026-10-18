@@ -712,20 +712,20 @@ describe("application client owned browser cookie units", () => {
   // HappyDOM retains an empty cookie for Max-Age=0. A real past expiry removes
   // it, so an absent-cookie case cannot accidentally inherit the empty case.
   const clearOwnedCookies = () => {
-    for (const name of ["__csrf", "unrelated"]) document.cookie = `${name}=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/`
+    for (const name of ["__Host-smithers_csrf", "unrelated"]) document.cookie = `${name}=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; Path=/`
   }
   beforeEach(clearOwnedCookies)
   afterEach(clearOwnedCookies)
   afterAll(async () => { await GlobalRegistrator.unregister() })
 
   test.each([
-    { name: "encoded", cookie: "__csrf=csrf%2Bsecret", expected: "csrf+secret" },
-    { name: "malformed percent", cookie: "__csrf=%ZZ", expected: null },
-    { name: "empty", cookie: "__csrf=", expected: null },
+    { name: "encoded", cookie: "__Host-smithers_csrf=csrf%2Bsecret", expected: "csrf+secret" },
+    { name: "malformed percent", cookie: "__Host-smithers_csrf=%ZZ", expected: null },
+    { name: "empty", cookie: "__Host-smithers_csrf=", expected: null },
     { name: "absent", cookie: "unrelated=csrf", expected: null }
   ])("browser $name CSRF cookie is handled without exposing other cookies", async ({ cookie, expected }) => {
     document.cookie = "unrelated=ignored; Path=/"
-    document.cookie = `${cookie}; Path=/`
+    document.cookie = `${cookie}; Secure; Path=/`
     if (cookie === "unrelated=csrf") expect(document.cookie).toBe("unrelated=csrf")
     let headers = new Headers()
     const client = createApplicationClient(target("web-selfhost"), { fetchImpl: async (_input, init) => { headers = new Headers(init?.headers); return Response.json({}) } })
@@ -741,6 +741,38 @@ describe("application client owned browser cookie units", () => {
     await expect(client.request("/api/write", { method: "POST" })).resolves.toEqual({ ok: true })
     expect(headers.get("x-csrf-token")).toBeNull()
     expect(document.cookie).toBe("")
+  })
+
+  test("HTTP self-hosted browser uses only the local CSRF namespace", async () => {
+    window.location.href = "http://localhost:4000/"
+    try {
+      document.cookie = "smithers_local_csrf=local-token; Path=/"
+      document.cookie = "__csrf=legacy-token; Path=/"
+      let headers = new Headers()
+      const client = createApplicationClient(target("web-selfhost"), {
+        fetchImpl: async (_input, init) => { headers = new Headers(init?.headers); return Response.json({}) }
+      })
+      await client.request("/api/write", { method: "POST" })
+      expect(headers.get("x-csrf-token")).toBe("local-token")
+    } finally {
+      for (const name of ["smithers_local_csrf", "__csrf"]) document.cookie = `${name}=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/`
+      window.location.href = pageOrigin
+    }
+  })
+
+  test("HTTPS browser rejects legacy and local CSRF cookies", async () => {
+    document.cookie = "smithers_local_csrf=local-token; Path=/"
+    document.cookie = "__csrf=legacy-token; Path=/"
+    try {
+      let headers = new Headers()
+      const client = createApplicationClient(target("web-selfhost"), {
+        fetchImpl: async (_input, init) => { headers = new Headers(init?.headers); return Response.json({}) }
+      })
+      await client.request("/api/write", { method: "POST" })
+      expect(headers.get("x-csrf-token")).toBeNull()
+    } finally {
+      for (const name of ["smithers_local_csrf", "__csrf"]) document.cookie = `${name}=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/`
+    }
   })
 
   test("omitting fetchImpl delegates to the owned global fetch with its receiver, URL, and session options", async () => {

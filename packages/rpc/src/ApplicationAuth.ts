@@ -25,7 +25,12 @@ export { AUTH_SIGN_IN_PATH as APPLICATION_SIGN_IN_PATH } from "./AgentApiRoutes.
  * @since 1.0.0
  * @category constants
  */
-export const CSRF_COOKIE_NAME = "__csrf"
+export const CSRF_COOKIE_NAME = "__Host-smithers_csrf"
+/** Separate namespace for an explicitly configured self-hosted HTTP origin.
+ * @since 1.0.0
+ * @category constants
+ */
+export const LOCAL_CSRF_COOKIE_NAME = "smithers_local_csrf"
 /** Double-submit CSRF request header.
  * @since 1.0.0
  * @category constants

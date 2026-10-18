@@ -423,8 +423,8 @@ esac
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("Idempotency-Key", key)
 		req.Header.Set("X-CSRF-Token", "parallel-csrf")
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "parallel-csrf"})
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "parallel-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		res := httptest.NewRecorder()
 		router.ServeHTTP(res, req)
 		return res.Code, res.Body.Bytes()
@@ -499,7 +499,7 @@ esac
 		t.Helper()
 		conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{
 			Subprotocols: []string{live.Protocol}, Host: "127.0.0.1:4000",
-			HTTPHeader: http.Header{"Cookie": {"smithers_session=" + mayaCookie}, "Origin": {cfg.Server.PublicURL}}})
+			HTTPHeader: http.Header{"Cookie": {"smithers_local_session=" + mayaCookie}, "Origin": {cfg.Server.PublicURL}}})
 		require.NoError(t, err)
 		t.Cleanup(func() { conn.CloseNow() })
 		require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"t":"sub","id":1,"topic":%q}`, topic))))
@@ -1131,7 +1131,7 @@ esac
 	restartedLive := &routes.LiveHandler{Hub: live.NewHub(liveContext, nil), Queries: q, Origins: liveHandler.Origins, Topics: restartedTopics.resolver}
 	restartedServer := httptest.NewServer(parallelInstallRouter(cfg, q, pool, terminals, routerExtras{Live: restartedLive}))
 	defer restartedServer.Close()
-	replayBranch, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(restartedServer.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, Host: "127.0.0.1:4000", HTTPHeader: http.Header{"Origin": {cfg.Server.PublicURL}, "Cookie": {"smithers_session=" + benCookie}}})
+	replayBranch, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(restartedServer.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, Host: "127.0.0.1:4000", HTTPHeader: http.Header{"Origin": {cfg.Server.PublicURL}, "Cookie": {"smithers_local_session=" + benCookie}}})
 	require.NoError(t, err)
 	defer replayBranch.CloseNow()
 	require.NoError(t, replayBranch.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"t":"sub","id":1,"topic":"branch:%s","cursor":%d}`, scratchBranch.ID, *branchWaiting.Cursor))))
@@ -1320,7 +1320,7 @@ func exerciseTenBranchTerminals(t *testing.T, branches []db.Workspace, runtime *
 		require.Equal(t, i, card.Machine.WaitPosition)
 		conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(serverURL, "http")+"/api/live", &websocket.DialOptions{
 			Subprotocols: []string{live.Protocol}, Host: strings.TrimPrefix(publicURL, "http://"),
-			HTTPHeader: http.Header{"Cookie": {"smithers_session=" + benCookie}, "Origin": {publicURL}},
+			HTTPHeader: http.Header{"Cookie": {"smithers_local_session=" + benCookie}, "Origin": {publicURL}},
 		})
 		require.NoError(t, err)
 		require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"t":"sub","id":1,"topic":"branch:%s"}`, branch.ID))))
@@ -1721,7 +1721,7 @@ func exerciseMixedClassAdmission(t *testing.T, pool *pgxpool.Pool, stack *servic
 
 	// Positions come from authenticated live snapshots, not allocator constants.
 	snapshot := func(topic string) json.RawMessage {
-		conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, Host: "127.0.0.1:4000", HTTPHeader: http.Header{"Origin": {cfg.Server.PublicURL}, "Cookie": {"smithers_session=" + cookie}}})
+		conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, Host: "127.0.0.1:4000", HTTPHeader: http.Header{"Origin": {cfg.Server.PublicURL}, "Cookie": {"smithers_local_session=" + cookie}}})
 		require.NoError(t, err)
 		defer conn.CloseNow()
 		sendPresenceFrame(t, conn, fmt.Sprintf(`{"t":"sub","id":1,"topic":%q}`, topic))

@@ -266,7 +266,7 @@ func isolationClaimOwner(t *testing.T, base *http.Client, address, token, origin
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Idempotency-Key", "csec02-"+path)
 		for _, cookie := range jar.Cookies(req.URL) {
-			if cookie.Name == "__csrf" {
+			if cookie.Name == "smithers_local_csrf" {
 				req.Header.Set("X-CSRF-Token", cookie.Value)
 			}
 		}
@@ -338,7 +338,7 @@ func TestCSEC02ClaimDriverThroughComposedInstall(t *testing.T) {
 	req.Header.Set("Origin", r.origin)
 	req.Header.Set("Content-Type", "application/json")
 	for _, cookie := range ownerClient.Jar.Cookies(req.URL) {
-		if cookie.Name == "__csrf" {
+		if cookie.Name == "smithers_local_csrf" {
 			req.Header.Set("X-CSRF-Token", cookie.Value)
 		}
 	}

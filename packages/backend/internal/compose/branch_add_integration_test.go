@@ -267,7 +267,7 @@ func runBranchAddComposed(t *testing.T, remove string) {
 		script, err := filepath.Abs("../../../../apps/app/e2e/real/branch-card-install.fixture.tsx")
 		require.NoError(t, err)
 		command := exec.CommandContext(ctx, "bun", "run", script)
-		command.Env = append(os.Environ(), "SMITHERS_BRANCH_CARD_ORIGIN="+origin, "SMITHERS_BRANCH_CARD_ID="+workspace.ID, "SMITHERS_BRANCH_CARD_COOKIE=smithers_session="+cookie, "SMITHERS_BRANCH_CARD_LOGIN="+owner.Username, "SMITHERS_BRANCH_CARD_SUBJECT="+workspace.TargetBookmark, "SMITHERS_BRANCH_CARD_TERMINAL="+map[bool]string{true: "1", false: "0"}[remove == "app-card-terminal"], "SMITHERS_BRANCH_CARD_FORK="+map[bool]string{true: "1", false: "0"}[remove == "app-card-fork"], "SMITHERS_BRANCH_CARD_AGENT="+map[bool]string{true: "1", false: "0"}[remove == "app-card-agent"], "SMITHERS_BRANCH_CARD_ADD=1", "SMITHERS_BRANCH_CARD_ADD_N="+strconv.FormatInt(addedNumber, 10), "SMITHERS_BRANCH_CARD_FORK_ORIGIN="+string(forkJSON))
+		command.Env = append(os.Environ(), "SMITHERS_BRANCH_CARD_ORIGIN="+origin, "SMITHERS_BRANCH_CARD_ID="+workspace.ID, "SMITHERS_BRANCH_CARD_COOKIE=smithers_local_session="+cookie, "SMITHERS_BRANCH_CARD_LOGIN="+owner.Username, "SMITHERS_BRANCH_CARD_SUBJECT="+workspace.TargetBookmark, "SMITHERS_BRANCH_CARD_TERMINAL="+map[bool]string{true: "1", false: "0"}[remove == "app-card-terminal"], "SMITHERS_BRANCH_CARD_FORK="+map[bool]string{true: "1", false: "0"}[remove == "app-card-fork"], "SMITHERS_BRANCH_CARD_AGENT="+map[bool]string{true: "1", false: "0"}[remove == "app-card-agent"], "SMITHERS_BRANCH_CARD_ADD=1", "SMITHERS_BRANCH_CARD_ADD_N="+strconv.FormatInt(addedNumber, 10), "SMITHERS_BRANCH_CARD_FORK_ORIGIN="+string(forkJSON))
 		output, err := command.CombinedOutput()
 		require.NoError(t, err, string(output))
 		t.Log(string(output))
@@ -324,9 +324,9 @@ func runBranchAddComposed(t *testing.T, remove string) {
 		request.Header.Set("Idempotency-Key", key)
 		request.Header.Set("Origin", "http://127.0.0.1:4000")
 		request.Header.Set("X-CSRF-Token", "add-csrf")
-		request.AddCookie(&http.Cookie{Name: "__csrf", Value: "add-csrf"})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "add-csrf"})
 		if session != "" {
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: session})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: session})
 		}
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
@@ -380,8 +380,8 @@ func runBranchAddComposed(t *testing.T, remove string) {
 			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("Origin", "http://127.0.0.1:4000")
 			request.Header.Set("X-CSRF-Token", "add-csrf")
-			request.AddCookie(&http.Cookie{Name: "__csrf", Value: "add-csrf"})
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "add-csrf"})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 			request.Header.Set("Idempotency-Key", "awake-fork")
 			var first string
 			for range 2 {
@@ -422,7 +422,7 @@ func runBranchAddComposed(t *testing.T, remove string) {
 			require.NoError(t, err)
 			list := httptest.NewRequest("GET", "http://127.0.0.1:4000/api/branches", nil)
 			list.RemoteAddr = "127.0.0.1:12345"
-			list.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+			list.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, list)
 			require.Equal(t, 200, response.Code, response.Body.String())
@@ -452,8 +452,8 @@ func runBranchAddComposed(t *testing.T, remove string) {
 			press.Header.Set("X-CSRF-Token", "add-csrf")
 			press.RemoteAddr = "127.0.0.1:12345"
 			press.Header.Set("Idempotency-Key", "awake-press")
-			press.AddCookie(&http.Cookie{Name: "__csrf", Value: "add-csrf"})
-			press.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+			press.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "add-csrf"})
+			press.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, press)
 			require.Equal(t, 200, response.Code, response.Body.String())
@@ -500,8 +500,8 @@ func runBranchAddComposed(t *testing.T, remove string) {
 		request.Header.Set("Origin", "http://127.0.0.1:4000")
 		request.Header.Set("X-CSRF-Token", "fresh-csrf")
 		request.Header.Set("Idempotency-Key", "fresh-fork")
-		request.AddCookie(&http.Cookie{Name: "__csrf", Value: "fresh-csrf"})
-		request.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "fresh-csrf"})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		for range 2 {
 			copy := request.Clone(ctx)
 			copy.Body = io.NopCloser(strings.NewReader(`{"from":"main","name":"fresh"}`))
@@ -713,8 +713,8 @@ func runBranchAddComposed(t *testing.T, remove string) {
 	press.Header.Set("X-CSRF-Token", "add-csrf")
 	press.Header.Set("Content-Type", "application/json")
 	press.Header.Set("Idempotency-Key", "person-confirm")
-	press.AddCookie(&http.Cookie{Name: "__csrf", Value: "add-csrf"})
-	press.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+	press.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "add-csrf"})
+	press.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 	// A capture arriving after the card was prepared invalidates its revision.
 	_, err = pool.Exec(ctx, `UPDATE workspaces SET head_commit_id=$1 WHERE id=$2`, base, confirmed.ID)
 	require.NoError(t, err)

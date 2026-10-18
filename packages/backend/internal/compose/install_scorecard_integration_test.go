@@ -48,14 +48,14 @@ func TestInstallScorecardOwnerReadsRealCreationReceipts(t *testing.T) {
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.AllowedOrigins = []string{"http://localhost:4000"}
 	router := githubAppSetupComposeRouter(cfg, pool, nil, routerExtras{InstallScorecard: composeInstallScorecard(cfg, q, pool)})
 	for _, signedIn := range []bool{false, true} {
 		req := httptest.NewRequest("GET", "http://localhost:4000/api/install/scorecard?from=2020-01-01T23:30:00-07:00&to=2030-01-01T23:30:00-07:00", nil)
 		req.RemoteAddr = "127.0.0.1:61000"
 		if signedIn {
-			req.AddCookie(&http.Cookie{Name: "session", Value: "scorecard-cookie"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "scorecard-cookie"})
 		}
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -91,7 +91,7 @@ func TestInstallScorecardOwnerReadsRealCreationReceipts(t *testing.T) {
 	require.NoError(t, err)
 	request := httptest.NewRequest("GET", "http://localhost:4000/api/install/scorecard?from=2026-10-03T23:30:00-07:00&to=2026-10-17T23:30:00-07:00", nil)
 	request.RemoteAddr = "127.0.0.1:61000"
-	request.AddCookie(&http.Cookie{Name: "session", Value: "scorecard-cookie"})
+	request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "scorecard-cookie"})
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	require.Equal(t, 200, response.Code, response.Body.String())
@@ -161,7 +161,7 @@ func TestInstallScorecardOwnerReadsRealCreationReceipts(t *testing.T) {
 			require.NoError(t, pool.QueryRow(ctx, `SELECT row_to_json(s)::text FROM auth_sessions s WHERE session_key=$1`, hex.EncodeToString(hash[:])).Scan(&sessionBefore))
 			req := httptest.NewRequest("GET", "http://localhost:4000/api/install/scorecard?from=2026-10-01T00:00:00Z&to=2026-10-15T00:00:00Z", nil)
 			req.RemoteAddr = "127.0.0.1:61000"
-			req.AddCookie(&http.Cookie{Name: "session", Value: raw})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: raw})
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 			require.Equal(t, 403, w.Code, w.Body.String())
@@ -196,7 +196,7 @@ func TestInstallScorecardOwnerReadsRealCreationReceipts(t *testing.T) {
 	readState := func() services.Scorecard {
 		request := httptest.NewRequest("GET", "http://localhost:4000/api/install/scorecard?from=2026-10-03T23:30:00-07:00&to=2026-10-17T23:30:00-07:00", nil)
 		request.RemoteAddr = "127.0.0.1:61000"
-		request.AddCookie(&http.Cookie{Name: "session", Value: "scorecard-cookie"})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "scorecard-cookie"})
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, request)
 		require.Equal(t, 200, response.Code, response.Body.String())
@@ -269,7 +269,7 @@ func TestInstallScorecardOwnerReadsRealCreationReceipts(t *testing.T) {
 	// zero, while still distinguishing an empty, uninstrumented audit table.
 	emptyRequest := httptest.NewRequest("GET", "http://localhost:4000/api/install/scorecard?from=2026-11-01T00:00:00Z&to=2026-11-15T00:00:00Z", nil)
 	emptyRequest.RemoteAddr = "127.0.0.1:61000"
-	emptyRequest.AddCookie(&http.Cookie{Name: "session", Value: "scorecard-cookie"})
+	emptyRequest.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "scorecard-cookie"})
 	emptyResponse := httptest.NewRecorder()
 	router.ServeHTTP(emptyResponse, emptyRequest)
 	require.Equal(t, 200, emptyResponse.Code, emptyResponse.Body.String())

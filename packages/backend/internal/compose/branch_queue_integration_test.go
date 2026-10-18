@@ -69,8 +69,8 @@ func TestBranchConversationQueueMutationInstall(t *testing.T) {
 		req.Header.Set("Origin", "http://127.0.0.1:4000")
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-CSRF-Token", "csrf-fixture")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-fixture"})
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf-fixture"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		res, err := server.Client().Do(req)
 		require.NoError(t, err)
 		return res
@@ -234,8 +234,8 @@ func TestBranchConversationQueueMutationInstall(t *testing.T) {
 		req.Header.Set("Origin", "http://127.0.0.1:4000")
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-CSRF-Token", "csrf-fixture")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-fixture"})
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: benCookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf-fixture"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: benCookie})
 		go func() {
 			res, err := server.Client().Do(req)
 			if err != nil {

@@ -48,7 +48,7 @@ func TestMovedOffMachineConsumerThroughInstallHTTP(t *testing.T) {
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	server := httptest.NewUnstartedServer(nil)
 	cfg.Server.PublicURL = "http://" + server.Listener.Addr().String()
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
@@ -83,7 +83,7 @@ func TestMovedOffMachineConsumerThroughInstallHTTP(t *testing.T) {
 		t.Helper()
 		request, err := http.NewRequestWithContext(ctx, "GET", server.URL+"/api/todos/1", nil)
 		require.NoError(t, err)
-		request.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 		response, err := http.DefaultClient.Do(request)
 		require.NoError(t, err)
 		defer response.Body.Close()
@@ -107,9 +107,9 @@ func TestMovedOffMachineConsumerThroughInstallHTTP(t *testing.T) {
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Origin", server.URL)
 		request.Header.Set("X-CSRF-Token", "machine-csrf")
-		request.AddCookie(&http.Cookie{Name: "__csrf", Value: "machine-csrf"})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "machine-csrf"})
 		request.Header.Set("Idempotency-Key", key)
-		request.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 		response, err := http.DefaultClient.Do(request)
 		require.NoError(t, err)
 		defer response.Body.Close()

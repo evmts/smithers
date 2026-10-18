@@ -16,7 +16,7 @@ test("Branch Rebase now runs through the composed install", scenario("journey-re
   expect(host.origin).toBe(process.env.SMITHERS_REAL_BASE_URL)
   const context = await browser.newContext({ baseURL: host.origin })
   try {
-    await context.addCookies(host.cookies.map(cookie => ({ ...cookie, url: host.origin, httpOnly: cookie.name !== "__csrf" })))
+    await context.addCookies(host.cookies.map(cookie => ({ ...cookie, url: host.origin, httpOnly: !["__Host-smithers_csrf", "smithers_local_csrf"].includes(cookie.name) })))
     const page = await context.newPage()
     await page.goto(`${host.origin}/${host.repository}`)
     await awaitBoot(page)

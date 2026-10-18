@@ -129,7 +129,7 @@ func TestOwnerChatHTTPIntegration(t *testing.T) {
 	authorize := func(request *http.Request) {
 		request.Header.Set("Origin", origin)
 		for _, cookie := range jar.Cookies(request.URL) {
-			if cookie.Name == "__csrf" {
+			if cookie.Name == "smithers_local_csrf" {
 				request.Header.Set("X-CSRF-Token", cookie.Value)
 			}
 		}
@@ -191,7 +191,7 @@ func TestOwnerChatHTTPIntegration(t *testing.T) {
 	require.NoError(t, err)
 	parsed, err := url.Parse(origin)
 	require.NoError(t, err)
-	jar.SetCookies(parsed, []*http.Cookie{{Name: "smithers_session", Value: session}, {Name: "__csrf", Value: "chat-fixture-csrf"}})
+	jar.SetCookies(parsed, []*http.Cookie{{Name: "smithers_local_session", Value: session}, {Name: "smithers_local_csrf", Value: "chat-fixture-csrf"}})
 
 	{
 		created := post("/api/user/repos", map[string]any{

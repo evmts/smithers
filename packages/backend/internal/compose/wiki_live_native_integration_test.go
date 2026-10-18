@@ -131,7 +131,7 @@ func TestWikiHostCommittedReceiptsAndRestart(t *testing.T) {
 	defer func() { host.Close() }()
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = config.AuthModeSelfHosted
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	topics := &liveTopics{queries: q, wikiDocuments: host}
 	var origin string
 	handler := &routes.LiveHandler{Hub: live.NewHub(ctx, nil), Queries: q, Origins: func() []string { return []string{origin} }, Topics: topics.resolver}
@@ -168,7 +168,7 @@ func TestWikiHostCommittedReceiptsAndRestart(t *testing.T) {
 		}
 	}
 	connect := func(client uint32, cookie string) *wikiBrowser {
-		conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"session=" + cookie}}})
+		conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_local_session=" + cookie}}})
 		require.NoError(t, err)
 		b := &wikiBrowser{conn: conn, frames: make(chan []byte, 128)}
 		t.Cleanup(func() { conn.CloseNow() })
@@ -530,7 +530,7 @@ func TestWikiHostCommittedReceiptsAndRestart(t *testing.T) {
 
 	// A fresh subscription cannot reuse the admitted member's identity after
 	// revocation, even though the public wiki snapshot remains readable.
-	denied, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"session=wiki-member"}}})
+	denied, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_local_session=wiki-member"}}})
 	if denied != nil {
 		denied.CloseNow()
 	}
@@ -540,7 +540,7 @@ func TestWikiHostCommittedReceiptsAndRestart(t *testing.T) {
 	// Revoke after resolution but before the shared transport admits the source.
 	_, err = pool.Exec(ctx, `INSERT INTO collaborators(repository_id,user_id,permission,github_id,github_login) VALUES($1,$2,'write',102,'alice')`, repository.ID, member.ID)
 	require.NoError(t, err)
-	startup, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"session=wiki-member"}}})
+	startup, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_local_session=wiki-member"}}})
 	require.NoError(t, err)
 	defer startup.CloseNow()
 	open := host.Open

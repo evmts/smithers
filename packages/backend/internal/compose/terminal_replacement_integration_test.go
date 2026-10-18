@@ -243,7 +243,7 @@ func terminalReplacementInstall(t *testing.T, wake bool, scopeChecks ...bool) {
 		server.Start()
 		t.Cleanup(server.Close)
 		url := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/repos/ben/demo/workspace/sessions/" + session + "/terminal"
-		conn, response, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_session=replacement-cookie"}}, Subprotocols: []string{"terminal"}})
+		conn, response, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_local_session=replacement-cookie"}}, Subprotocols: []string{"terminal"}})
 		if refused {
 			require.Error(t, err)
 			require.NotNil(t, response)
@@ -349,8 +349,8 @@ func terminalReplacementInstall(t *testing.T, wake bool, scopeChecks ...bool) {
 		} else {
 			request, err := http.NewRequestWithContext(ctx, "DELETE", origin+"/api/members/ben", nil)
 			require.NoError(t, err)
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: "terminal-admin-cookie"})
-			request.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "terminal-admin-cookie"})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 			request.Header.Set("X-CSRF-Token", "csrf")
 			request.Header.Set("Origin", origin)
 			response, err := http.DefaultClient.Do(request)

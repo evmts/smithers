@@ -75,11 +75,11 @@ func TestComposedAppInstructionsReadOnlyActivatedRevision(t *testing.T) {
 	})
 	defer local.stop(t)
 	router := chi.NewRouter()
-	router.Use(middleware.AuthLoader(db.New(local.pool), config.AuthConfig{SessionCookieName: "session"}))
+	router.Use(middleware.AuthLoader(db.New(local.pool), config.AuthConfig{SessionCookieName: "__Host-smithers_session"}))
 	local.composition.runtime.MountPublic(router)
 	router.Get("/api/branches/{b}/files/*", (&routes.BranchFileHandler{Source: instructionSource}).Read)
 	public := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.AddCookie(&http.Cookie{Name: "session", Value: session})
+		r.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: session})
 		router.ServeHTTP(w, r)
 	}))
 	defer public.Close()

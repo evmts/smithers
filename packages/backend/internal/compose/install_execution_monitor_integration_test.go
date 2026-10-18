@@ -175,7 +175,7 @@ func TestInstallExecutionMonitorPostgres(t *testing.T) {
 		_, err := f.q.CreateAuthSession(f.ctx, db.CreateAuthSessionParams{UserID: f.owner.ID, Username: f.owner.Username, SessionKey: hex.EncodeToString(sum[:]), ExpiresAt: time.Now().Add(time.Hour)})
 		require.NoError(t, err)
 		req := httptest.NewRequest("GET", cfg.Server.PublicURL+"/api/runs/trace-run", nil)
-		req.AddCookie(&http.Cookie{Name: "session", Value: raw})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: raw})
 		var commands []string
 		req = req.WithContext(services.WithAuthorizationObserver(req.Context(), func(command string) { commands = append(commands, command) }))
 		out := httptest.NewRecorder()

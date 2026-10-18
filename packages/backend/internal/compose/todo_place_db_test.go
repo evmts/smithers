@@ -49,7 +49,7 @@ func TestTodoPlacementComposedInstall(t *testing.T) {
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "smithers_session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://127.0.0.1:4000"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	service := services.NewMythicalService(pool, nil)
@@ -64,7 +64,7 @@ func TestTodoPlacementComposedInstall(t *testing.T) {
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("Idempotency-Key", key)
 		req.Header.Set("X-CSRF-Token", "placement-csrf")
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "placement-csrf"})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "placement-csrf"})
 		if bearerToken == "" {
 			req.AddCookie(&http.Cookie{Name: cfg.Auth.SessionCookieName, Value: browserCookie})
 		} else {
@@ -97,7 +97,7 @@ func TestTodoPlacementComposedInstall(t *testing.T) {
 	request := httptest.NewRequest("GET", cfg.Server.PublicURL+"/api/todos", nil)
 	request.Header.Set("Origin", cfg.Server.PublicURL)
 	request.RemoteAddr = "127.0.0.1:51900"
-	request.AddCookie(&http.Cookie{Name: "smithers_session", Value: browserCookie})
+	request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: browserCookie})
 	listed := httptest.NewRecorder()
 	router.ServeHTTP(listed, request)
 	require.Equal(t, 200, listed.Code, listed.Body.String())

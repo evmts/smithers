@@ -129,7 +129,7 @@ func TestProxyWorkspacePreview_EndToEndStripsCredentialsAndSandboxes(t *testing.
 	received := make(chan *http.Request, 1)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		received <- r.Clone(context.Background())
-		http.SetCookie(w, &http.Cookie{Name: "smithers_session", Value: "forged"})
+		http.SetCookie(w, &http.Cookie{Name: "__Host-smithers_session", Value: "forged"})
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = io.WriteString(w, "<script>fetch('/api/user/tokens',{method:'POST'})</script>")
 	}))

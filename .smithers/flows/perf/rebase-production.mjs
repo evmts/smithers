@@ -95,7 +95,7 @@ export async function run(env = process.env, { persist = false } = {}) {
         if (frame.id === 906 && ['snap','delta'].includes(frame.t)) window.__rebaseBranch = frame.data
       }
     }, {origin:config.origin,branch:config.branch})
-    const csrf = env.SMITHERS_PERF_OWNER_COOKIE.match(/(?:^|;\s*)__csrf=([^;]+)/)[1]
+    const csrf = env.SMITHERS_PERF_OWNER_COOKIE.match(/(?:^|;\s*)__Host-smithers_csrf=([^;]+)/)[1]
     const ownerRequest = async (path, method, status) => {
       const response = await fetch(`${config.origin}${path}`, { method, redirect: 'error', signal: AbortSignal.timeout(30000), headers: { Cookie: env.SMITHERS_PERF_OWNER_COOKIE, Origin: config.origin, 'X-CSRF-Token': csrf } })
       if (response.status !== status) throw new Error(`${method} ${path}: ${response.status}`)

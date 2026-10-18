@@ -22,7 +22,7 @@ const controller = createAppController(store, silentAgent, {
   fetchImpl: (url, init) => {
     requests++
     const headers = new Headers(init?.headers)
-    headers.set("cookie", `smithers_session=${cookie}; __csrf=isolation-csrf`)
+    headers.set("cookie", `__Host-smithers_session=${cookie}; __Host-smithers_csrf=isolation-csrf`)
     headers.set("X-CSRF-Token", "isolation-csrf")
     headers.set("Origin", origin)
     return fetch(url, { ...init, headers })

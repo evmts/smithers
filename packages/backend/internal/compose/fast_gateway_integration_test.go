@@ -74,7 +74,7 @@ func TestFastGatewayComposedAuthQuotaCountsAndKeyConfinementPostgres(t *testing.
 	now := time.Date(2026, 10, 7, 23, 59, 59, 0, time.UTC)
 	gateway := &modelproxy.FastGateway{Quota: credits.FastQuota{DB: pool, DailyTokens: 100_000, Now: func() time.Time { return now }}, Keys: modelproxy.StaticKeys{modelproxy.ProviderCerebras: platformKey}, Upstream: upstream.URL}
 	cfg := testConfigAllFlagsOn()
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "__Host-smithers_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{"http://example.com"}
 	router := githubAppSetupComposeRouter(cfg, pool, nil, routerExtras{FastGateway: gateway})
@@ -92,7 +92,7 @@ func TestFastGatewayComposedAuthQuotaCountsAndKeyConfinementPostgres(t *testing.
 		if user > 0 && method == "POST" && path == "/api/fast-model/installs" {
 			r.Header.Set("Authorization", "Bearer "+hostTokens[user])
 		} else if user > 0 {
-			r.AddCookie(&http.Cookie{Name: "session", Value: sessions[user]})
+			r.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: sessions[user]})
 			r.Header.Set("Origin", "http://example.com")
 			r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "fixture-csrf"})
 			r.Header.Set("X-CSRF-Token", "fixture-csrf")
@@ -127,7 +127,7 @@ func TestFastGatewayComposedAuthQuotaCountsAndKeyConfinementPostgres(t *testing.
 	require.Equal(t, 401, status, raw)
 	// A signed-in browser never receives the install credential.
 	browser := httptest.NewRequest("POST", "http://example.com/api/fast-model/installs", strings.NewReader(`{"install_id":"`+install+`"}`))
-	browser.AddCookie(&http.Cookie{Name: "session", Value: sessions[owner.ID]})
+	browser.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: sessions[owner.ID]})
 	browser.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "fixture-csrf"})
 	browser.Header.Set("Origin", "http://example.com")
 	browser.Header.Set("X-CSRF-Token", "fixture-csrf")

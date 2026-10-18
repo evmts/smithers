@@ -21,7 +21,7 @@ func TestInstallWorkspaceChildrenCommandsPostgres(t *testing.T) {
 	f := newLandingGateFixtureWithFactory(t, nil, "", true)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{"http://example.com"}
 	service := services.NewWorkspaceService(f.q, services.WithWorkspaceInstallAuthorization(f.q), services.WithWorkspaceTransactions(f.pool))
@@ -62,7 +62,7 @@ func TestInstallWorkspaceChildrenCommandsPostgres(t *testing.T) {
 			if cell.token != "" {
 				req.Header.Set("Authorization", "Bearer "+cell.token)
 			} else {
-				req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 			}
 			decisions := []string{}
 			req = req.WithContext(services.WithAuthorizationObserver(req.Context(), func(command string) { decisions = append(decisions, command) }))

@@ -1448,7 +1448,7 @@ func buildRouter(
 		})
 
 		// Dual-auth write group: accepts both token auth (Authorization: token) and session
-		// auth (smithers_session cookie). The default /api CSRF middleware protects
+		// auth (__Host-smithers_session cookie). The default /api CSRF middleware protects
 		// session-authenticated state-changing requests. RequireAuth + RequireScope
 		// enforce authentication and permission gating.
 		r.Group(func(r chi.Router) {

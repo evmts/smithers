@@ -223,8 +223,8 @@ func TestApprovedAccessDecisionLedgerPostgres(t *testing.T) {
 				req.Header.Set("Origin", cfg.Server.PublicURL)
 				req.Header.Set("Idempotency-Key", fmt.Sprint("approved-", index))
 				if raw := sessions[cell.Credential]; raw != "" {
-					req.AddCookie(&http.Cookie{Name: "session", Value: raw})
-					req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: raw})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 					req.Header.Set("X-CSRF-Token", "csrf")
 				} else {
 					req.Header.Set("Authorization", "Bearer "+tokens[cell.Credential])
@@ -293,8 +293,8 @@ func TestApprovedAccessDecisionLedgerPostgres(t *testing.T) {
 				req.Header.Set("Origin", cfg.Server.PublicURL)
 				req.Header.Set("Idempotency-Key", fmt.Sprint("approved-", index))
 				if raw := sessions[cell.Credential]; raw != "" {
-					req.AddCookie(&http.Cookie{Name: "session", Value: raw})
-					req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: raw})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 					req.Header.Set("X-CSRF-Token", "csrf")
 				} else {
 					req.Header.Set("Authorization", "Bearer "+tokens[cell.Credential])

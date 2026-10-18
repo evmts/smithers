@@ -272,7 +272,7 @@ func routesIntegrationCreateSessionCookie(t *testing.T, queries *db.Queries, use
 	require.NoError(t, err)
 
 	return &http.Cookie{
-		Name:  "smithers_session",
+		Name:  "__Host-smithers_session",
 		Value: session.SessionKey,
 		Path:  "/",
 	}

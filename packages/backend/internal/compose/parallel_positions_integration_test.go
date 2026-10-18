@@ -53,7 +53,7 @@ func TestParallelSchedulerPositionsInstallBoundary(t *testing.T) {
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "smithers_session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://127.0.0.1:4000"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	runtime := new(microsandbox.Runtime)
@@ -94,7 +94,7 @@ func TestParallelSchedulerPositionsInstallBoundary(t *testing.T) {
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("Idempotency-Key", key)
 		req.Header.Set("X-CSRF-Token", "placement-csrf")
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "placement-csrf"})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "placement-csrf"})
 		if bearerToken == "" {
 			req.AddCookie(&http.Cookie{Name: cfg.Auth.SessionCookieName, Value: browserCookie})
 		} else {
@@ -162,7 +162,7 @@ func TestParallelSchedulerPositionsInstallBoundary(t *testing.T) {
 	}
 	// The mounted live endpoint must publish all changed positions together.
 	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{
-		Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_session=placement-session"}, "Origin": {cfg.Server.PublicURL}}, Host: "127.0.0.1:4000"})
+		Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_local_session=placement-session"}, "Origin": {cfg.Server.PublicURL}}, Host: "127.0.0.1:4000"})
 	require.NoError(t, err)
 	defer conn.CloseNow()
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(`{"t":"sub","id":1,"topic":"home"}`)))
@@ -216,7 +216,7 @@ func TestParallelSchedulerPositionsInstallBoundary(t *testing.T) {
 	// The install uses the durable TODO source. Runtime-only changes must also
 	// reach an already subscribed card when no TODO journal event is appended.
 	todoConn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{
-		Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_session=placement-session"}, "Origin": {cfg.Server.PublicURL}}, Host: "127.0.0.1:4000"})
+		Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_local_session=placement-session"}, "Origin": {cfg.Server.PublicURL}}, Host: "127.0.0.1:4000"})
 	require.NoError(t, err)
 	defer todoConn.CloseNow()
 	require.NoError(t, todoConn.Write(ctx, websocket.MessageText, []byte(`{"t":"sub","id":1,"topic":"todo:5"}`)))

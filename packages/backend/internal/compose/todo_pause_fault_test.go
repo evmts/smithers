@@ -112,8 +112,8 @@ func startFaultCreate(t *testing.T, origin string) {
 	r.Header.Set("Origin", origin)
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Idempotency-Key", "fault-start")
-	r.AddCookie(&http.Cookie{Name: "smithers_session", Value: "owner-browser-session"})
-	r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+	r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "owner-browser-session"})
+	r.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 	r.Header.Set("X-CSRF-Token", "csrf")
 	response, err := http.DefaultClient.Do(r)
 	require.NoError(t, err)
@@ -159,7 +159,7 @@ func TestTodoStartCrashThroughRoute(t *testing.T) {
 	server := mergeFaultServer(t, f.pool, startFaultService(t, f.pool, f.host, false))
 	r, err := http.NewRequest("GET", server.URL+"/api/todos/"+strconv.FormatInt(number, 10), nil)
 	require.NoError(t, err)
-	r.AddCookie(&http.Cookie{Name: "smithers_session", Value: "owner-browser-session"})
+	r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "owner-browser-session"})
 	response, err := http.DefaultClient.Do(r)
 	require.NoError(t, err)
 	var card map[string]any
@@ -170,7 +170,7 @@ func TestTodoStartCrashThroughRoute(t *testing.T) {
 	require.Equal(t, map[string]any{"flow_name": "todo", "source_commit": "4f098b2e90ef23159043fd5dfecbc305e0017549", "digest": startFaultDigest}, card["flow_version"])
 	r, err = http.NewRequest("GET", server.URL+"/api/todos/"+strconv.FormatInt(number, 10)+"/events", nil)
 	require.NoError(t, err)
-	r.AddCookie(&http.Cookie{Name: "smithers_session", Value: "owner-browser-session"})
+	r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "owner-browser-session"})
 	response, err = http.DefaultClient.Do(r)
 	require.NoError(t, err)
 	var replay jobs.ReplayPage

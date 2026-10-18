@@ -130,7 +130,7 @@ func TestRouterOrganizationReadsRespectTokenScopePostgres(t *testing.T) {
 					req.Header.Set("Authorization", "Bearer "+token)
 				}
 				if session != "" {
-					req.AddCookie(&http.Cookie{Name: "smithers_session", Value: session})
+					req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: session})
 				}
 				rec := httptest.NewRecorder()
 				router.ServeHTTP(rec, req)

@@ -9,8 +9,8 @@ const browser = await chromium.launch({ headless: true })
 try {
   const context = await browser.newContext()
   await context.addCookies([
-    { name: "smithers_session", value: "owner-browser-session", url: origin },
-    { name: "__csrf", value: "csrf", url: origin }
+    { name: "smithers_local_session", value: "owner-browser-session", url: origin },
+    { name: "smithers_local_csrf", value: "csrf", url: origin }
   ])
   const page = await context.newPage()
   await page.addInitScript(() => {

@@ -163,7 +163,7 @@ func TestCSRF_SessionAuth_MissingToken_Returns403(t *testing.T) {
 			// Include the CSRF cookie to isolate missing-header behavior.
 			req := httptest.NewRequest(tc.method, "/test", nil)
 			req = withAuthInfo(req, false, &db.User{ID: 1, Username: "alice"})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "valid-csrf-token"})
+			req.AddCookie(&http.Cookie{Name: "__Host-smithers_csrf", Value: "valid-csrf-token"})
 
 			rec := httptest.NewRecorder()
 			r.ServeHTTP(rec, req)
@@ -241,7 +241,7 @@ func TestCSRF_SessionAuth_MismatchedToken_Returns403(t *testing.T) {
 
 			req := httptest.NewRequest(tc.method, "/test", nil)
 			req = withAuthInfo(req, false, &db.User{ID: 1, Username: "alice"})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "cookie-token"})
+			req.AddCookie(&http.Cookie{Name: "__Host-smithers_csrf", Value: "cookie-token"})
 			req.Header.Set("X-CSRF-Token", "header-token")
 
 			rec := httptest.NewRecorder()
@@ -266,7 +266,7 @@ func TestCSRF_SessionAuth_EmptyCookieAndHeader_Returns403(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/test", nil)
 	req = withAuthInfo(req, false, &db.User{ID: 1, Username: "alice"})
-	req.AddCookie(&http.Cookie{Name: "__csrf", Value: ""})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_csrf", Value: ""})
 	req.Header.Set("X-CSRF-Token", "")
 
 	rec := httptest.NewRecorder()
@@ -306,7 +306,7 @@ func TestCSRF_SessionAuth_WithMatchingCookieAndToken_Passes(t *testing.T) {
 			req := httptest.NewRequest(tc.method, "/test", nil)
 			req = withAuthInfo(req, false, &db.User{ID: 1, Username: "alice"})
 			req.Header.Set("X-CSRF-Token", "valid-csrf-token")
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "valid-csrf-token"})
+			req.AddCookie(&http.Cookie{Name: "__Host-smithers_csrf", Value: "valid-csrf-token"})
 
 			rec := httptest.NewRecorder()
 			r.ServeHTTP(rec, req)
@@ -370,7 +370,7 @@ func TestCSRF_MiddlewarePosition_AfterAuthLoader(t *testing.T) {
 	// Request with CSRF token
 	req := httptest.NewRequest(http.MethodPost, "/test", nil)
 	req.Header.Set("X-CSRF-Token", "some-token")
-	req.AddCookie(&http.Cookie{Name: "__csrf", Value: "some-token"})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_csrf", Value: "some-token"})
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -443,7 +443,7 @@ func TestCSRF_IntegrationWithRealRouter(t *testing.T) {
 				req.Header.Set("X-Simulate-Auth", tc.authType)
 			}
 			if tc.csrfCookie != "" {
-				req.AddCookie(&http.Cookie{Name: "__csrf", Value: tc.csrfCookie})
+				req.AddCookie(&http.Cookie{Name: "__Host-smithers_csrf", Value: tc.csrfCookie})
 			}
 			if tc.csrfToken != "" {
 				req.Header.Set("X-CSRF-Token", tc.csrfToken)

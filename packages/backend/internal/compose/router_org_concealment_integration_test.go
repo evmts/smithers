@@ -121,7 +121,7 @@ func TestRouterPrivateOrganizationRoutesMatchMissingPostgres(t *testing.T) {
 			req.Header.Set("Authorization", "Bearer "+c.token)
 		}
 		if c.session != "" {
-			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: c.session})
+			req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: c.session})
 		}
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)

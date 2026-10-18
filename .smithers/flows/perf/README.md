@@ -145,7 +145,7 @@ writer/head/row/client evidence matrix.
 
 `projection-delta.mjs` is the C-PERF-02 workload for the second Mac. Set
 `SMITHERS_PERF_ORIGIN`, `SMITHERS_PERF_TODO` (a queued TODO that can move up
-and down), `SMITHERS_PERF_OWNER_COOKIE` (session and `__csrf` cookies),
+and down), `SMITHERS_PERF_OWNER_COOKIE` (session and `__Host-smithers_csrf` cookies),
 `SMITHERS_PERF_MEMBER_A` (Playwright storage-state file), and
 `SMITHERS_PERF_INSTALL_VERSION`. The reference install needs ten TODOs.
 Run `node .smithers/flows/perf/projection-delta.mjs` from the repository root.
@@ -162,7 +162,7 @@ It opens 100 terminals through `POST /api/terminals`, observes an `awake`
 Branch delta, closes each session through the retained session-destroy route,
 and waits for `asleep` before the next sample. Set `SMITHERS_PERF_ORIGIN`,
 `SMITHERS_PERF_BRANCH` (the Branch topic ID), `SMITHERS_PERF_REPOSITORY`
-(`owner/repo`), `SMITHERS_PERF_OWNER_COOKIE` (including `__csrf`), and
+(`owner/repo`), `SMITHERS_PERF_OWNER_COOKIE` (including `__Host-smithers_csrf`), and
 `SMITHERS_PERF_INSTALL_VERSION`. The selected TODO must be in review, with a
 previously booted and finally captured machine, no other work, and spare
 capacity. `SMITHERS_PERF_SLEEP_SECONDS` records the configured idle policy
@@ -303,7 +303,7 @@ verification and automatic activation still require an authenticated install
 contract and approved reference-host provenance; neither is supplied by a flag.
 `projection-delta.mjs` is the C-PERF-02 workload for the second Mac. Set
 `SMITHERS_PERF_ORIGIN`, `SMITHERS_PERF_TODO` (a queued TODO that can move up
-and down), `SMITHERS_PERF_OWNER_COOKIE` (session and `__csrf` cookies),
+and down), `SMITHERS_PERF_OWNER_COOKIE` (session and `__Host-smithers_csrf` cookies),
 `SMITHERS_PERF_MEMBER_A` (Playwright storage-state file), and
 `SMITHERS_PERF_INSTALL_VERSION`. The reference install needs ten TODOs.
 Run `node .smithers/flows/perf/projection-delta.mjs` from the repository root.
@@ -320,7 +320,7 @@ It opens 100 terminals through `POST /api/terminals`, observes an `awake`
 Branch delta, closes each session through the retained session-destroy route,
 and waits for `asleep` before the next sample. Set `SMITHERS_PERF_ORIGIN`,
 `SMITHERS_PERF_BRANCH` (the Branch topic ID), `SMITHERS_PERF_REPOSITORY`
-(`owner/repo`), `SMITHERS_PERF_OWNER_COOKIE` (including `__csrf`), and
+(`owner/repo`), `SMITHERS_PERF_OWNER_COOKIE` (including `__Host-smithers_csrf`), and
 `SMITHERS_PERF_INSTALL_VERSION`. The selected TODO must be in review, with a
 previously booted and finally captured machine, no other work, and spare
 capacity. `SMITHERS_PERF_SLEEP_SECONDS` records the configured idle policy

@@ -112,7 +112,7 @@ func TestLiveChannelComposedUpgradePostgres(t *testing.T) {
 	server := httptest.NewServer(hostStatusProductionRouter(cfg, q, &services.InstallCapacityService{}, conformanceServices{pool: pool, billing: &routes.BillingHandler{}, jobs: &routes.RepositoryJobHandler{}, live: handler}))
 	defer server.Close()
 	require.NoError(t, address.Initialize(ctx, pool, services.InstallSetupInput{Bind: server.Listener.Addr().String(), Origins: []string{server.URL}}))
-	headers := http.Header{"Cookie": {"smithers_session=" + token}, "Origin": {server.URL}}
+	headers := http.Header{"Cookie": {"smithers_local_session=" + token}, "Origin": {server.URL}}
 
 	bearer := http.Header{"Authorization": {"Bearer existing-pat"}}
 	_, bearerRefused, bearerErr := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: bearer})
@@ -285,7 +285,7 @@ func TestLiveChannelComposedUpgradePostgres(t *testing.T) {
 	_, err = q.CreateAuthSession(ctx, db.CreateAuthSessionParams{SessionKey: hex.EncodeToString(otherHash[:]), UserID: user.ID, Username: user.Username, ExpiresAt: time.Now().Add(24 * time.Hour)})
 	require.NoError(t, err)
 	otherHeaders := headers.Clone()
-	otherHeaders.Set("Cookie", "smithers_session="+otherToken)
+	otherHeaders.Set("Cookie", "smithers_local_session="+otherToken)
 	otherConn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: otherHeaders})
 	require.NoError(t, err)
 	defer otherConn.CloseNow()

@@ -30,7 +30,7 @@ components:
     sessionCookie:
       type: apiKey
       in: cookie
-      name: smithers_session
+      name: __Host-smithers_session
     workerExchangeBearer:
       type: http
       scheme: bearer

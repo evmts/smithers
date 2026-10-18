@@ -184,7 +184,8 @@ const signIn = async (browser: Browser, install: Install, origin: string): Promi
 /** A same-origin request the page itself makes: the browser's own cookies, `Origin` and resolver. */
 const inPage = (page: Page, method: string, path: string, body?: unknown): Promise<{ status: number; body: any }> =>
   page.evaluate(async ({ method, path, body }) => {
-    const csrf = document.cookie.split("; ").find(cookie => cookie.startsWith("__csrf="))?.slice("__csrf=".length)
+    const csrfName = location.protocol === "https:" ? "__Host-smithers_csrf" : "smithers_local_csrf"
+    const csrf = document.cookie.split("; ").find(cookie => cookie.startsWith(`${csrfName}=`))?.slice(csrfName.length + 1)
     const response = await fetch(path, { method, headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(method === "GET" || !csrf ? {} : { "X-CSRF-Token": csrf }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
     const text = await response.text()
@@ -360,13 +361,13 @@ test("C-INS-01 the install works at loopback and at each origin the owner sets, 
       expect(visitor.start.redirectURI).toBe(`${origin}/api/auth/github/callback`)
       const expected = (httpOnly: boolean) => [...(httpOnly ? ["httponly"] : []), "samesite=lax", ...(https(origin) ? ["secure"] : [])].sort()
       const sent = (lines: readonly string[], name: string) => cookieAttributes(lines, name)?.filter(attribute => ["httponly", "secure", "domain"].includes(attribute) || attribute.startsWith("samesite")).sort()
-      expect(sent(visitor.callback.cookies, install.sessionCookie), "session Set-Cookie").toEqual(expected(true))
-      expect(sent(visitor.callback.cookies, "__csrf"), "CSRF Set-Cookie").toEqual(expected(false))
+      expect(sent(visitor.callback.cookies, https(origin) ? install.sessionCookie : "smithers_local_session"), "session Set-Cookie").toEqual(expected(true))
+      expect(sent(visitor.callback.cookies, https(origin) ? "__Host-smithers_csrf" : "smithers_local_csrf"), "CSRF Set-Cookie").toEqual(expected(false))
       expect(sent(visitor.start.cookies, "smithers_oauth_state"), "OAuth state Set-Cookie").toEqual(expected(true))
       const stored = Object.fromEntries((await visitor.context.cookies(origin)).map(cookie => [cookie.name, { domain: cookie.domain, httpOnly: cookie.httpOnly, secure: cookie.secure, sameSite: cookie.sameSite }]))
       const host = new URL(origin).hostname
-      expect(stored[install.sessionCookie]).toEqual({ domain: host, httpOnly: true, secure: https(origin), sameSite: "Lax" })
-      expect(stored.__csrf).toEqual({ domain: host, httpOnly: false, secure: https(origin), sameSite: "Lax" })
+      expect(stored[https(origin) ? install.sessionCookie : "smithers_local_session"]).toEqual({ domain: host, httpOnly: true, secure: https(origin), sameSite: "Lax" })
+      expect(stored[https(origin) ? "__Host-smithers_csrf" : "smithers_local_csrf"]).toEqual({ domain: host, httpOnly: false, secure: https(origin), sameSite: "Lax" })
 
       // Step 3: the browser's own verdict. A plain-HTTP origin has none of the secure-context APIs.
       const context = await page.evaluate(() => ({ secure: window.isSecureContext, origin: location.origin, randomUUID: typeof crypto.randomUUID,
@@ -494,7 +495,7 @@ test("C-INS-01 the install works at loopback and at each origin the owner sets, 
       // The teammate's own session: a mutation needs the equal Origin and the CSRF token; a refusal changes nothing.
       const jar = await teammate.context.cookies(teammate.origin)
       const cookie = jar.map(each => `${each.name}=${each.value}`).join("; ")
-      const csrf = jar.find(each => each.name === "__csrf")!.value
+      const csrf = jar.find(each => each.name === (https(teammate.origin) ? "__Host-smithers_csrf" : "smithers_local_csrf"))!.value
       const change = { method: "PUT", path: "/api/install", body: JSON.stringify({ origins: ["http://evil.example"] }) }
       const json = { "Content-Type": "application/json", Cookie: cookie }
       await refused("cookie mutation with a foreign Origin", { host: known, ...change, headers: { ...json, Origin: "http://evil.example", "X-CSRF-Token": csrf } }, 403, ORIGIN_REFUSED)

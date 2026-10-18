@@ -24,7 +24,7 @@ func TestInstallArtifactReadsPostgres(t *testing.T) {
 	f := newLandingGateFixtureWithFactory(t, nil, "", true)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	var handler http.Handler
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.ServeHTTP(w, r) }))
 	t.Cleanup(server.Close)
@@ -74,7 +74,7 @@ func TestInstallArtifactReadsPostgres(t *testing.T) {
 				t.Run(prefix+suffix+"/"+actor.name, func(t *testing.T) {
 					req := httptest.NewRequest("GET", cfg.Server.PublicURL+path, nil)
 					if actor.token == "" {
-						req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+						req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 					} else {
 						req.Header.Set("Authorization", "Bearer "+actor.token)
 					}
@@ -137,7 +137,7 @@ func TestInstallCacheMetadataReadsPostgres(t *testing.T) {
 	f := newLandingGateFixtureWithFactory(t, nil, "", true)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	store, err := blob.NewFilesystemStore(blob.FilesystemConfig{Root: t.TempDir(), PublicBaseURL: cfg.Server.PublicURL})
@@ -166,7 +166,7 @@ func TestInstallCacheMetadataReadsPostgres(t *testing.T) {
 			t.Run(actor.name+suffix, func(t *testing.T) {
 				req := httptest.NewRequest("GET", cfg.Server.PublicURL+"/api/repos/gate-owner/app/caches"+suffix, nil)
 				if actor.token == "" {
-					req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 				} else {
 					req.Header.Set("Authorization", "Bearer "+actor.token)
 				}

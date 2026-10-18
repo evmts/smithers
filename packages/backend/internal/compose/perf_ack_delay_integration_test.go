@@ -35,7 +35,7 @@ func TestPerfAckDelayComposedInstall(t *testing.T) {
 	require.NoError(t, link.Connection.Reconciled())
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	httpServer := httptest.NewUnstartedServer(nil)
 	f.origin = "http://" + httpServer.Listener.Addr().String()
 	cfg.Server.AllowedOrigins = []string{f.origin}
@@ -54,8 +54,8 @@ func TestPerfAckDelayComposedInstall(t *testing.T) {
 		req.Header.Set("Origin", f.origin)
 		req.Header.Set("Content-Type", "application/json")
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "perf-csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "perf-csrf"})
 			req.Header.Set("X-CSRF-Token", "perf-csrf")
 		}
 		w := httptest.NewRecorder()
@@ -160,7 +160,7 @@ func TestPerfAckDelayComposedInstall(t *testing.T) {
  let rejected=false;try{await client.waitForCapture({...capture,...change})}catch{rejected=true}
  if(!rejected)throw new Error("foreign capture accepted");
  }`
-	naturalCommand := exec.CommandContext(t.Context(), "node", "--input-type=module", "-e", naturalSource, f.origin, f.row.ID, "session="+f.cookie+"; __csrf=perf-csrf", hex.EncodeToString(eventID[:]))
+	naturalCommand := exec.CommandContext(t.Context(), "node", "--input-type=module", "-e", naturalSource, f.origin, f.row.ID, "smithers_local_session="+f.cookie+"; smithers_local_csrf=perf-csrf", hex.EncodeToString(eventID[:]))
 	stdout, err := naturalCommand.StdoutPipe()
 	require.NoError(t, err)
 	var stderr bytes.Buffer
@@ -240,7 +240,7 @@ func TestPerfAckDelayComposedInstall(t *testing.T) {
  const current=await next.read();
  if(current.id!==replacement.id||current.state!=="armed")throw new Error("replacement changed by stale cleanup");
  await next.arm(0);`
-	cmd := exec.CommandContext(t.Context(), "node", "--input-type=module", "-e", source, f.origin, f.row.ID, "session="+f.cookie+"; __csrf=perf-csrf")
+	cmd := exec.CommandContext(t.Context(), "node", "--input-type=module", "-e", source, f.origin, f.row.ID, "smithers_local_session="+f.cookie+"; smithers_local_csrf=perf-csrf")
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "%s", output)
 

@@ -14,8 +14,8 @@ export function configuration(env) {
   for (const key of ['SMITHERS_PERF_OWNER_COOKIE', 'SMITHERS_PERF_MEMBER_A', 'SMITHERS_PERF_INSTALL_VERSION']) {
     if (!env[key]) throw new Error(`${key} required`)
   }
-  const csrf = env.SMITHERS_PERF_OWNER_COOKIE.match(/(?:^|;\s*)__csrf=([^;]+)/)?.[1]
-  if (!csrf) throw new Error('owner cookie must include __csrf')
+  const csrf = env.SMITHERS_PERF_OWNER_COOKIE.match(/(?:^|;\s*)__Host-smithers_csrf=([^;]+)/)?.[1]
+  if (!csrf) throw new Error('owner cookie must include __Host-smithers_csrf')
   return { origin, n, csrf }
 }
 

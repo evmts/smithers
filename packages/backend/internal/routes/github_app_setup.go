@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -184,8 +185,8 @@ func (h *GitHubAppSetupHandler) OpenSetup(w http.ResponseWriter, r *http.Request
 		WriteInstallSetupError(w, r, err)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: middleware.CSRFCookieName, Value: token, Path: "/", SameSite: http.SameSiteLaxMode, Secure: strings.HasPrefix(origin, "https://"), MaxAge: 86400})
-	http.SetCookie(w, &http.Cookie{Name: "smithers_session", Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: strings.HasPrefix(origin, "https://"), MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: middleware.CSRFCookieNameForSecure(strings.HasPrefix(origin, "https://")), Value: token, Path: "/", SameSite: http.SameSiteLaxMode, Secure: strings.HasPrefix(origin, "https://"), MaxAge: 86400})
+	http.SetCookie(w, &http.Cookie{Name: config.BrowserSessionCookieName("", strings.HasPrefix(origin, "http://")), Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: strings.HasPrefix(origin, "https://"), MaxAge: -1})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 

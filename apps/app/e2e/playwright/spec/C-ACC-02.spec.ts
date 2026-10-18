@@ -44,7 +44,7 @@ test("C-ACC-02: a changed generation expires the merge approval and requires a f
   })
   try {
     const [, origin, id] = await wait(/ACCESS_MERGE_READY (http:\/\/\S+) (\S+)/)
-    await page.context().addCookies([{ name: "smithers_session", value: "owner-browser-session", url: origin }, { name: "__csrf", value: "csrf", url: origin }])
+    await page.context().addCookies([{ name: "__Host-smithers_session", value: "owner-browser-session", url: origin }, { name: "__Host-smithers_csrf", value: "csrf", url: origin }])
     await page.goto(origin)
     const review = page.getByRole("button", { name: "Review & merge", exact: true })
     await expect(review).toBeEnabled({ timeout: 60_000 })
@@ -149,7 +149,7 @@ test("C-ACC-02: issue comment confirmation waits for delivery across reload", { 
   }
   try {
     const [, origin, id, cookie] = await wait(/ISSUE_COMMENT_READY (http:\/\/\S+) (\S+) (\S+)/)
-    await page.context().addCookies([{ name: "smithers_session", value: cookie!, url: origin! }])
+    await page.context().addCookies([{ name: "__Host-smithers_session", value: cookie!, url: origin! }])
     await page.goto(origin!)
     const card = page.locator('[data-kind="confirm"]').filter({ hasText: "Ben asks" })
     await expect(card).toBeVisible({ timeout: 60_000 })
@@ -196,7 +196,7 @@ test("C-ACC-02: wiki delete uses the private installed card across reload", { ta
     await expect.poll(() => { if (backend.exitCode !== null) throw new Error(logs); return /WIKI_DELETE_READY (http:\/\/\S+) (\S+) (\S+) (\S+)/.test(logs) }, { timeout: 120_000 }).toBe(true)
     const [, origin, id, cookie, path] = logs.match(/WIKI_DELETE_READY (http:\/\/\S+) (\S+) (\S+) (\S+)/)!
     const slug = path!.split("/").at(-1)!.split("?")[0]!
-    await page.context().addCookies([{ name: "smithers_session", value: cookie!, url: origin! }])
+    await page.context().addCookies([{ name: "__Host-smithers_session", value: cookie!, url: origin! }])
     await page.goto(origin!)
     const card = page.locator('[data-kind="confirm"]').filter({ hasText: "Wiki delete " + slug })
     await expect(card).toContainText("Keep these exact bytes", { timeout: 60_000 })
@@ -234,7 +234,7 @@ test("C-ACC-02: wiki create uses the private installed card across reload", { ta
     await expect.poll(() => { if (backend.exitCode !== null) throw new Error(logs); return /WIKI_CREATE_READY (http:\/\/\S+) (\S+) (\S+) (\S+)/.test(logs) }, { timeout: 120_000 }).toBe(true)
     const [, origin, id, cookie, path] = logs.match(/WIKI_CREATE_READY (http:\/\/\S+) (\S+) (\S+) (\S+)/)!
     const slug = path!.split("/").at(-1)!.split("?")[0]!
-    await page.context().addCookies([{ name: "smithers_session", value: cookie!, url: origin! }])
+    await page.context().addCookies([{ name: "__Host-smithers_session", value: cookie!, url: origin! }])
     await page.goto(origin!)
     const card = page.locator('[data-kind="confirm"]').filter({ hasText: "Wiki create " + slug })
     await expect(card).toContainText("Keep these exact bytes", { timeout: 60_000 })
@@ -273,7 +273,7 @@ test("C-ACC-02: issue create uses the private installed card across reload", { t
   try {
     await expect.poll(() => { if (backend.exitCode !== null) throw new Error(logs); return /ISSUE_CREATE_READY (http:\/\/\S+) (\S+) (\S+)/.test(logs) }, { timeout: 120_000 }).toBe(true)
     const [, origin, id, cookie] = logs.match(/ISSUE_CREATE_READY (http:\/\/\S+) (\S+) (\S+)/)!
-    await page.context().addCookies([{ name: "smithers_session", value: cookie!, url: origin! }])
+    await page.context().addCookies([{ name: "__Host-smithers_session", value: cookie!, url: origin! }])
     await page.goto(origin!)
     const card = page.locator('[data-kind="confirm"]').filter({ hasText: "Profile issue rehearsal-owner/app_agent/implicit" })
     await expect(card).toContainText("Profile issue rehearsal-owner/app_agent/implicit", { timeout: 60_000 })
@@ -319,7 +319,7 @@ test("C-ACC-02: Learning approval makes one attributed TODO after card reload", 
   try {
     await expect.poll(() => { if (backend.exitCode !== null) throw new Error(logs); return /LEARNING_ACCESS_READY (http:\/\/\S+) (\S+) (\S+) (\S+)/.test(logs) }, { timeout: 120_000 }).toBe(true)
     const [, origin, id, cookie, proposal] = logs.match(/LEARNING_ACCESS_READY (http:\/\/\S+) (\S+) (\S+) (\S+)/)!
-    await page.context().addCookies([{ name: "smithers_session", value: cookie!, url: origin! }])
+    await page.context().addCookies([{ name: "__Host-smithers_session", value: cookie!, url: origin! }])
     await page.goto(origin!)
     const card = page.locator('[data-kind="confirm"]').filter({ hasText: "Learning " + proposal })
     await expect(card).toContainText("Learning " + proposal, { timeout: 60_000 })
@@ -355,7 +355,7 @@ for (const verb of ["Amend", "Drop"] as const) test(`C-ACC-02: ${verb} approves 
   try {
     await expect.poll(() => { if (backend.exitCode !== null) throw new Error(logs); return /CONTROL_CONFIRM_READY (http:\/\/\S+) (\S+) (\S+) (\d+)/.test(logs) }, { timeout: 120_000 }).toBe(true)
     const [, origin, id, cookie, number] = logs.match(/CONTROL_CONFIRM_READY (http:\/\/\S+) (\S+) (\S+) (\d+)/)!
-    await page.context().addCookies([{ name: "smithers_session", value: cookie!, url: origin! }])
+    await page.context().addCookies([{ name: "__Host-smithers_session", value: cookie!, url: origin! }])
     await page.goto(origin!)
     const card = page.locator('[data-kind="confirm"]').filter({ has: page.getByRole("button", { name: verb, exact: true }) })
     await expect(card).toBeVisible({ timeout: 60_000 })

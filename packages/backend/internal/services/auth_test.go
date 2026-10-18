@@ -282,7 +282,7 @@ func defaultAuthConfig() config.AuthConfig {
 	return config.AuthConfig{
 		SessionDuration:      "720h",
 		SessionRefreshWindow: "168h",
-		SessionCookieName:    "smithers_session",
+		SessionCookieName:    "__Host-smithers_session",
 		SessionSecret:        "test-session-secret-for-unit-tests",
 		CookieSecure:         true,
 		KeyAuthDomain:        "smithers.sh",

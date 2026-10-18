@@ -23,7 +23,7 @@ func TestInstallMemberScratchArchivePostgres(t *testing.T) {
 	f := newLandingGateFixtureWithFactory(t, nil, "", true)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	// Archive writes the retention decision, never starts or destroys a VM.
@@ -69,8 +69,8 @@ func TestInstallMemberScratchArchivePostgres(t *testing.T) {
 				req.Header.Set("Origin", cfg.Server.PublicURL)
 				req.Header.Set("Idempotency-Key", "archive-"+actor.name)
 				if actor.token == "" {
-					req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-					req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+					req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 					req.Header.Set("X-CSRF-Token", "csrf")
 				} else {
 					req.Header.Set("Authorization", "Bearer "+actor.token)

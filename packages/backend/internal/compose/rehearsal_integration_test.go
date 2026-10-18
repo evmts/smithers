@@ -613,7 +613,7 @@ func (r *rehearsal) keyedAs(jar http.CookieJar, method, path, body, key string) 
 	req.Header.Set("Origin", r.origin)
 	req.Header.Set("Idempotency-Key", key)
 	for _, cookie := range jar.Cookies(req.URL) {
-		if cookie.Name == "__csrf" {
+		if cookie.Name == "smithers_local_csrf" {
 			req.Header.Set("X-CSRF-Token", cookie.Value)
 		}
 	}
@@ -1249,7 +1249,7 @@ func (r *rehearsal) mergeAs(jar http.CookieJar, number int64, head string) error
 	}
 	session := ""
 	for _, cookie := range jar.Cookies(mustRehearsalURL(r.origin)) {
-		if cookie.Name == "smithers_session" {
+		if cookie.Name == "smithers_local_session" {
 			digest := sha256.Sum256([]byte(cookie.Value))
 			session = hex.EncodeToString(digest[:])
 		}
@@ -1415,7 +1415,7 @@ func (r *rehearsal) ask(bearer, question string) (string, []rehearsalTurnFrame, 
 			client.Jar = r.jar
 			req.Header.Set("Origin", r.origin)
 			for _, cookie := range r.jar.Cookies(req.URL) {
-				if cookie.Name == "__csrf" {
+				if cookie.Name == "smithers_local_csrf" {
 					req.Header.Set("X-CSRF-Token", cookie.Value)
 				}
 			}

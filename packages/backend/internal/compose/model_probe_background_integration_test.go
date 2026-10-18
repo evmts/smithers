@@ -71,7 +71,7 @@ func TestComposedModelProbeReconnectsWithoutAnotherProviderCall(t *testing.T) {
 	local.enroll(t, "PROBE_KEY", provider.URL, "private-probe-secret")
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{"http://example.com"}
 	q := db.New(local.pool)
@@ -82,8 +82,8 @@ func TestComposedModelProbeReconnectsWithoutAnotherProviderCall(t *testing.T) {
 		req := httptest.NewRequest(method, "http://example.com"+path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", "http://example.com")
-		req.AddCookie(&http.Cookie{Name: "session", Value: session})
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "probe-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: session})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "probe-csrf"})
 		req.Header.Set("X-CSRF-Token", "probe-csrf")
 		var decisions []string
 		req = req.WithContext(services.WithAuthorizationObserver(req.Context(), func(command string) { decisions = append(decisions, command) }))

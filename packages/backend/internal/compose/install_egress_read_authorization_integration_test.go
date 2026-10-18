@@ -41,7 +41,7 @@ func TestInstallEgressReadAuthorizationPostgres(t *testing.T) {
 	q := db.New(pool)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Auth.SessionRefreshWindow = "0s"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
@@ -65,7 +65,7 @@ func TestInstallEgressReadAuthorizationPostgres(t *testing.T) {
 	call := func(cookie, bearer string) (*httptest.ResponseRecorder, []string) {
 		req := httptest.NewRequest("GET", cfg.Server.PublicURL+"/api/repos/gate-owner/app/egress-policy", nil)
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		}
 		if bearer != "" {
 			req.Header.Set("Authorization", "Bearer "+bearer)

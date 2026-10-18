@@ -246,8 +246,8 @@ func TestInstallCompiledHostKillRecoveryHTTPPostgres(t *testing.T) {
 					req, err := http.NewRequestWithContext(ctx, method, origin+"/api/install"+map[string]string{"POST": "/setup/" + step}[method], strings.NewReader(`{}`))
 					require.NoError(t, err)
 					req.Host = "localhost:4000"
-					req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "restart-owner-session"})
-					req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "restart-owner-session"})
+					req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 					req.Header.Set("Origin", "http://localhost:4000")
 					req.Header.Set("Content-Type", "application/json")
 					req.Header.Set("X-CSRF-Token", "csrf")

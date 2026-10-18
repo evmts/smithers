@@ -120,7 +120,7 @@ func TestTodoProposeSourceTransitionLiteralCases(t *testing.T) {
 			}
 			req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/todos/%d", f.server.URL, f.number), nil)
 			require.NoError(t, err)
-			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "owner-browser-session"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "owner-browser-session"})
 			response, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
 			defer response.Body.Close()

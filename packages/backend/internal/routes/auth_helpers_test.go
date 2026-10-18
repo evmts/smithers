@@ -21,10 +21,10 @@ func TestSessionCookieName_Matrix(t *testing.T) {
 		input string
 		want  string
 	}{
-		{input: "", want: "smithers_session"},
-		{input: " ", want: "smithers_session"},
-		{input: "custom_session", want: "custom_session"},
-		{input: " custom_session ", want: " custom_session "},
+		{input: "", want: "__Host-smithers_session"},
+		{input: " ", want: "__Host-smithers_session"},
+		{input: "custom_session", want: "__Host-smithers_session"},
+		{input: " __Host-custom_session ", want: "__Host-custom_session"},
 	}
 
 	for _, tc := range tests {
@@ -57,11 +57,11 @@ func TestAuthCookieHelpers(t *testing.T) {
 
 	t.Run("set_session_cookie", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		setSessionCookie(rec, "custom_session", "session-key", expiresAt, true)
+		setSessionCookie(rec, "__Host-custom_session", "session-key", expiresAt, true)
 		cookies := rec.Result().Cookies()
 		require.Len(t, cookies, 1)
 		cookie := cookies[0]
-		assert.Equal(t, "custom_session", cookie.Name)
+		assert.Equal(t, "__Host-custom_session", cookie.Name)
 		assert.Equal(t, "session-key", cookie.Value)
 		assert.Equal(t, "/", cookie.Path)
 		assert.True(t, cookie.HttpOnly)
@@ -105,7 +105,7 @@ func TestAuthCookieHelpers(t *testing.T) {
 		cookies := rec.Result().Cookies()
 		require.Len(t, cookies, 1)
 		cookie := cookies[0]
-		assert.Equal(t, middleware.CSRFCookieName, cookie.Name)
+		assert.Equal(t, middleware.LocalCSRFCookieName, cookie.Name)
 		assert.Equal(t, "", cookie.Value)
 		assert.Equal(t, -1, cookie.MaxAge)
 		assert.False(t, cookie.Expires.After(time.Unix(0, 0).UTC()))
@@ -175,5 +175,38 @@ func TestAuthCookieSecureUsesEffectiveOrigin(t *testing.T) {
 		req.RemoteAddr = "127.0.0.1:1234"
 		req.Header.Set("X-Forwarded-Proto", "https")
 		assert.Equal(t, tc.secure, h.cookieSecure(req))
+	}
+}
+
+func TestAuthCookieHostedCannotDisableHostIsolation(t *testing.T) {
+	h := &AuthHandler{AuthConfig: config.AuthConfig{CookieSecure: false, SessionCookieName: "smithers_session"}}
+	r := httptest.NewRequest("GET", "https://smithers.sh/api/auth/github/callback", nil)
+	require.True(t, h.cookieSecure(r))
+	w := httptest.NewRecorder()
+	setSessionCookie(w, h.AuthConfig.SessionCookieName, "session", time.Now().Add(time.Hour), h.cookieSecure(r))
+	middleware.SetCSRFCookie(w, "csrf", h.cookieSecure(r), time.Now().Add(time.Hour))
+	for _, c := range w.Result().Cookies() {
+		require.True(t, c.Secure)
+		require.Equal(t, "/", c.Path)
+		require.Empty(t, c.Domain)
+		require.Contains(t, c.Name, "__Host-")
+	}
+}
+
+func TestAuthCookieSelfhostHTTPUsesSeparateNamespace(t *testing.T) {
+	h := &AuthHandler{AuthConfig: config.AuthConfig{Mode: "selfhost"}, Origins: func() []string { return []string{"http://lan.example:4000"} }}
+	r := httptest.NewRequest("GET", "http://lan.example:4000/", nil)
+	r.RemoteAddr = "127.0.0.1:1234"
+	require.False(t, h.cookieSecure(r))
+	w := httptest.NewRecorder()
+	setSessionCookie(w, "", "session", time.Now().Add(time.Hour), h.cookieSecure(r))
+	middleware.SetCSRFCookie(w, "csrf", h.cookieSecure(r), time.Now().Add(time.Hour))
+	cs := w.Result().Cookies()
+	require.Equal(t, config.LocalSessionCookieName, cs[0].Name)
+	require.Equal(t, middleware.LocalCSRFCookieName, cs[1].Name)
+	for _, c := range cs {
+		require.False(t, c.Secure)
+		require.Empty(t, c.Domain)
+		require.Equal(t, "/", c.Path)
 	}
 }

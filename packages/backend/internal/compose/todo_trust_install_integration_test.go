@@ -200,7 +200,7 @@ func TestTodoTrustInstallLabelMatrix(t *testing.T) {
 		require.NoError(t, err)
 		jar, err := cookiejar.New(nil)
 		require.NoError(t, err)
-		jar.SetCookies(origin, []*http.Cookie{{Name: "smithers_session", Value: session}, {Name: "__csrf", Value: "trust-csrf"}})
+		jar.SetCookies(origin, []*http.Cookie{{Name: "smithers_local_session", Value: session}, {Name: "smithers_local_csrf", Value: "trust-csrf"}})
 		delegated := "smithers_" + fmt.Sprintf("%040x", userID+1000)
 		delegatedHash := sha256.Sum256([]byte(delegated))
 		encoded := hex.EncodeToString(delegatedHash[:])
@@ -229,7 +229,7 @@ func TestTodoTrustInstallLabelMatrix(t *testing.T) {
 					} else {
 						req.Header.Set("Origin", r.origin)
 						for _, cookie := range jar.Cookies(origin) {
-							if cookie.Name == "__csrf" {
+							if cookie.Name == "smithers_local_csrf" {
 								req.Header.Set("X-CSRF-Token", cookie.Value)
 							}
 						}

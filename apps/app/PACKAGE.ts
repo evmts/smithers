@@ -520,7 +520,7 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "A Bun.serve handler that relays /api/* without comparing the Host header to its own 127.0.0.1:<port>.",
         "A state-changing /api/* route that runs without the local session header or an Origin match.",
-        "A renderer relay that exposes a readable __csrf cookie to any origin that reaches the port.",
+        "A renderer relay that exposes a readable __Host-smithers_csrf cookie to any origin that reaches the port.",
         "A WebSocket upgrade accepted when Origin is absent or differs from the served origin."
       ],
       paths: ["src/bun/server.ts", "src/bun/CloudAuth.ts"]

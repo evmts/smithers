@@ -77,7 +77,7 @@ const sessionApi = (origin: string, members: Record<J10Actor, { page: Page }>) =
   async (actor: J10Actor, method: string, path: string, data?: unknown, key?: string) => {
     const page = members[actor].page
     const mutation = !["GET", "HEAD"].includes(method.toUpperCase())
-    const csrf = mutation ? (await page.context().cookies(origin)).find(cookie => cookie.name === "__csrf")?.value : undefined
+    const csrf = mutation ? (await page.context().cookies(origin)).find(cookie => ["__Host-smithers_csrf", "smithers_local_csrf"].includes(cookie.name))?.value : undefined
     const local = await page.evaluate(() => document.querySelector('meta[name="smithers-local-session"]')?.getAttribute("content") ?? null)
     const response = await page.context().request.fetch(new URL(path, origin).toString(), {
       method, headers: {
@@ -110,7 +110,7 @@ export const withJ10Install = async (browser: Browser, info: TestInfo, body: (in
     for (const actor of ["Owner", "Ben"] as const) {
       const context = await browser.newContext({ baseURL: host.origin, recordVideo: { dir: info.outputPath(`video-${actor}`) } })
       contexts.push(context)
-      await context.addCookies(host.members[actor].cookies.map(cookie => ({ ...cookie, url: host.origin, httpOnly: cookie.name !== "__csrf" })))
+      await context.addCookies(host.members[actor].cookies.map(cookie => ({ ...cookie, url: host.origin, httpOnly: !["__Host-smithers_csrf", "smithers_local_csrf"].includes(cookie.name) })))
       const page = await context.newPage()
       await page.goto(`${host.origin}/${host.repository}`)
       await awaitBoot(page)

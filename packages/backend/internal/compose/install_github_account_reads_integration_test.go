@@ -129,7 +129,7 @@ func TestInstallGitHubAccountReadsPostgres(t *testing.T) {
 			t.Run(actor.name+path.path, func(t *testing.T) {
 				req := httptest.NewRequest("GET", cfg.Server.PublicURL+path.path, nil)
 				if actor.cookie != "" {
-					req.AddCookie(&http.Cookie{Name: "session", Value: actor.cookie})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: actor.cookie})
 				}
 				if actor.bearer != "" {
 					req.Header.Set("Authorization", "Bearer "+actor.bearer)
@@ -157,7 +157,7 @@ func TestInstallGitHubAccountReadsPostgres(t *testing.T) {
 	require.NoError(t, err)
 	for _, path := range paths {
 		req := httptest.NewRequest("GET", cfg.Server.PublicURL+path.path, nil)
-		req.AddCookie(&http.Cookie{Name: "session", Value: "github-owner"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "github-owner"})
 		out := httptest.NewRecorder()
 		router.ServeHTTP(out, req)
 		require.Equal(t, 401, out.Code, out.Body.String())

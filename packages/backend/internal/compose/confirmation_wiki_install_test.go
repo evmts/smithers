@@ -48,11 +48,11 @@ func TestConfirmWikiDeleteComposedInstall(t *testing.T) {
 		request.Header.Set("Idempotency-Key", key)
 		request.Header.Set("Origin", "http://127.0.0.1:4000")
 		request.Header.Set("X-CSRF-Token", "wiki-csrf")
-		request.AddCookie(&http.Cookie{Name: "__csrf", Value: "wiki-csrf"})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "wiki-csrf"})
 		if delegated {
 			request.Header.Set("Authorization", "Bearer "+token)
 		} else {
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		}
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)

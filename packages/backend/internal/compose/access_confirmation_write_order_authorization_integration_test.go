@@ -121,7 +121,7 @@ func testAccessConfirmationWriteOrder(t *testing.T, command string, identityOnly
 		require.NoError(t, err)
 		a := identity{user: user.ID}
 		for _, c := range jar.Cookies(origin) {
-			if c.Name == "session" || c.Name == "smithers_session" {
+			if c.Name == "session" || c.Name == "smithers_local_session" {
 				a.cookie, a.cookieName = c.Value, c.Name
 			}
 		}
@@ -174,7 +174,7 @@ func testAccessConfirmationWriteOrder(t *testing.T, command string, identityOnly
 		// A live requester cookie cannot promote or rescue a delegated bearer.
 		// Expiry cells leave this cookie live while the selected token dies.
 		req.AddCookie(&http.Cookie{Name: a.cookieName, Value: a.cookie})
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "order"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "order"})
 		req.Header.Set("X-CSRF-Token", "order")
 		if delegated {
 			req.Header.Set("Authorization", "Bearer "+a.token)

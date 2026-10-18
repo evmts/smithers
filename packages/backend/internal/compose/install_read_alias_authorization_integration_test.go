@@ -22,7 +22,7 @@ func TestInstallReadAliasesPostgres(t *testing.T) {
 	f := newLandingGateFixtureWithFactory(t, nil, "", true)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{"http://example.com"}
 	router := buildRouterCompat(cfg, f.q, f.pool,
@@ -64,7 +64,7 @@ func TestInstallReadAliasesPostgres(t *testing.T) {
 			t.Run(path+"/"+actor.name, func(t *testing.T) {
 				req := httptest.NewRequest("GET", "http://example.com/api/repos/gate-owner/app"+path, nil)
 				if actor.token == "" && actor.name != "anonymous" {
-					req.AddCookie(&http.Cookie{Name: "session", Value: session})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: session})
 				} else if actor.token != "" {
 					req.Header.Set("Authorization", "Bearer "+actor.token)
 				}
@@ -107,7 +107,7 @@ func TestInstallReadAliasesPostgres(t *testing.T) {
 	for _, credential := range []string{"", "expired-cookie"} {
 		req := httptest.NewRequest("GET", "http://example.com/api/health", nil)
 		if credential != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: credential})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: credential})
 		}
 		out := httptest.NewRecorder()
 		router.ServeHTTP(out, req)

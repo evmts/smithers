@@ -35,14 +35,14 @@ test("forwards session, bearer, CSRF, query and body; strips forged proxy author
     return new Response("denied", { status: 403, headers: { "x-request-id": "shared-request" } })
   })
   const response = await edge.fetch(new Request("https://canary.smithers.sh/api/model/credential?one=a%2Fb&one=c", {
-    method: "POST", headers: { cookie: "smithers_session=session; smithers_csrf=csrf", authorization: "token account-token",
+    method: "POST", headers: { cookie: "__Host-smithers_session=session; smithers_csrf=csrf", authorization: "token account-token",
       "x-csrf-token": "csrf", origin: "https://canary.smithers.sh", "content-type": "application/json",
       "x-user-id": "999", "x-user-login": "admin", "x-smithers-service-token": "forged", "x-forwarded-for": "1.2.3.4" }, body: '{"id":"request"}'
   }), { ASSETS: assets, SMITHERS_BACKEND_ORIGIN: origin })
   expect(received?.url).toBe(`${origin}/api/model/credential?one=a%2Fb&one=c`)
   expect(received?.method).toBe("POST")
   expect(received?.body).toBe('{"id":"request"}')
-  expect(received?.headers.get("cookie")).toContain("smithers_session=session")
+  expect(received?.headers.get("cookie")).toContain("__Host-smithers_session=session")
   expect(received?.headers.get("authorization")).toBe("token account-token")
   expect(received?.headers.get("x-csrf-token")).toBe("csrf")
   expect(received?.headers.get("origin")).toBe("https://canary.smithers.sh")
@@ -57,7 +57,7 @@ test("OAuth cookies and redirects pass through without following them", async ()
   const origin = backend(() => {
     requests++
     const headers = new Headers({ location: "https://github.com/login/oauth/authorize?state=opaque" })
-    headers.append("set-cookie", "smithers_session=example; Path=/; HttpOnly; Secure; SameSite=Lax")
+    headers.append("set-cookie", "__Host-smithers_session=example; Path=/; HttpOnly; Secure; SameSite=Lax")
     headers.append("set-cookie", "smithers_csrf=example; Path=/; Secure; SameSite=Strict")
     return new Response(null, { status: 302, headers })
   })

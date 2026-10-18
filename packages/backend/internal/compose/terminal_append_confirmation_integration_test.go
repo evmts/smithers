@@ -55,7 +55,7 @@ func exerciseTerminalAppendConfirmation(t *testing.T, ctx context.Context, pool 
 	server := httptest.NewUnstartedServer(nil)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "smithers_session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://" + server.Listener.Addr().String()
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	server.Config.Handler = githubAppSetupComposeRouter(cfg, pool, nil,
@@ -67,7 +67,7 @@ func exerciseTerminalAppendConfirmation(t *testing.T, ctx context.Context, pool 
 	if phase != "" {
 		t.Setenv("SMITHERS_PUBLIC_URL", cfg.Server.PublicURL)
 		t.Setenv("SMITHERS_SERVER_ALLOWED_ORIGINS", cfg.Server.PublicURL)
-		t.Setenv("SMITHERS_AUTH_SESSION_COOKIE_NAME", "smithers_session")
+		t.Setenv("SMITHERS_AUTH_SESSION_COOKIE_NAME", "smithers_local_session")
 		api := startSplitProcess(t, Options{ChatHost: unusedChatHost{}, Duties: DutiesHTTP})
 		spa, err := filepath.Abs("../../../../apps/app/dist")
 		require.NoError(t, err)
@@ -168,9 +168,9 @@ func exerciseTerminalAppendConfirmation(t *testing.T, ctx context.Context, pool 
 		req.Header.Set("Origin", origin)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-CSRF-Token", "csrf")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		}
 		if bearer != "" {
 			req.Header.Set("Authorization", "Bearer "+bearer)

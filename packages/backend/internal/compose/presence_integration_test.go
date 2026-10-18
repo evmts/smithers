@@ -161,7 +161,7 @@ func presenceInstallWithTodos(t *testing.T, realTodos bool, withBroker ...bool) 
 	t.Cleanup(func() { routes.SetRevocationSource(nil) })
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
 	cfg.Server.PublicURL = origin
@@ -189,7 +189,7 @@ func (f presenceInstallFixture) dial(t *testing.T) *websocket.Conn {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	conn, response, err := websocket.Dial(ctx, f.url, &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {f.origin}, "Cookie": {"session=" + f.cookie}}})
+	conn, response, err := websocket.Dial(ctx, f.url, &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {f.origin}, "Cookie": {"smithers_local_session=" + f.cookie}}})
 	if err != nil {
 		t.Fatalf("live upgrade: %v response=%v", err, response)
 	}
@@ -573,7 +573,7 @@ func TestPresenceTodoBranchNameAndSSHLogin(t *testing.T) {
 		require.NotContains(t, string(frame.Data), `mythical`)
 		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, f.origin+"/api/todos/1", nil)
 		require.NoError(t, err)
-		request.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 		response, err := http.DefaultClient.Do(request)
 		require.NoError(t, err)
 		defer response.Body.Close()

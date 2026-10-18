@@ -73,7 +73,7 @@ func TestAuthLoader_LoadsSessionStoredAsHash(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionKey})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: sessionKey})
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
@@ -114,7 +114,7 @@ func TestAuthLoader_LegacyRawStoredSessionStillLoads(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionKey})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: sessionKey})
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
@@ -134,7 +134,7 @@ func TestAuthLoader_RefreshKeepsRawSessionCookieValue(t *testing.T) {
 	cfg := config.AuthConfig{
 		SessionDuration:      "720h",
 		SessionRefreshWindow: "168h",
-		SessionCookieName:    "smithers_session",
+		SessionCookieName:    "__Host-smithers_session",
 		CookieSecure:         true,
 	}
 
@@ -170,12 +170,12 @@ func TestAuthLoader_RefreshKeepsRawSessionCookieValue(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionKey})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: sessionKey})
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
 	assert.Equal(t, 1, q.refreshAuthSessionHit)
-	sessionCookie := cookieByNameInList(rec.Result().Cookies(), "smithers_session")
+	sessionCookie := cookieByNameInList(rec.Result().Cookies(), "__Host-smithers_session")
 	require.NotNil(t, sessionCookie, "refresh must re-set the session cookie")
 	assert.Equal(t, sessionKey, sessionCookie.Value,
 		"the refreshed cookie must carry the raw session key, not the stored digest")

@@ -39,7 +39,7 @@ func proveTodoBringSourceCases(t *testing.T, pool *pgxpool.Pool, q *db.Queries, 
 			require.NoError(t, err)
 			request, err := http.NewRequest("GET", origin+"/api/todos/1", nil)
 			require.NoError(t, err)
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: "pin-cookie"})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "pin-cookie"})
 			response, err := http.DefaultClient.Do(request)
 			require.NoError(t, err)
 			defer response.Body.Close()
@@ -91,7 +91,7 @@ func proveTodoBringSourceCases(t *testing.T, pool *pgxpool.Pool, q *db.Queries, 
 				read := func() map[string]any {
 					req, err := http.NewRequest("GET", origin+"/api/todos/1", nil)
 					require.NoError(t, err)
-					req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "pin-cookie"})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "pin-cookie"})
 					res, err := http.DefaultClient.Do(req)
 					require.NoError(t, err)
 					defer res.Body.Close()

@@ -269,9 +269,9 @@ test("a session-authenticated attachment keeps its browser session through the s
     const path = new URL(request.url).pathname + new URL(request.url).search
     seen.push({ path, cookie: request.headers.get("cookie") })
     if (path === "/api/login") return new NetworkResponse("signed in", {
-      headers: { "set-cookie": "smithers_session=owner; HttpOnly; Path=/" }
+      headers: { "set-cookie": "__Host-smithers_session=owner; HttpOnly; Path=/" }
     })
-    return request.headers.get("cookie") === "smithers_session=owner" && path === imagePath
+    return request.headers.get("cookie") === "__Host-smithers_session=owner" && path === imagePath
       ? new NetworkResponse(imageBytes, { headers: { "content-type": "image/png" } })
       : new NetworkResponse("Unauthorized", { status: 401 })
   } })
@@ -289,7 +289,7 @@ test("a session-authenticated attachment keeps its browser session through the s
         expect(init?.credentials).toBe("include")
         const headers = new NetworkHeaders(init?.headers)
         // Native fetch has no browser cookie jar; this is the renderer's stored cookie.
-        headers.set("cookie", "smithers_session=owner")
+        headers.set("cookie", "__Host-smithers_session=owner")
         return networkFetch(new URL(String(input), native.origin).toString(), { ...init, headers })
       } })
     const attachments = createWikiAttachmentStore({ http: client.fetch, baseUrl: client.baseUrl })
@@ -299,11 +299,11 @@ test("a session-authenticated attachment keeps its browser session through the s
       catch (error) { throw new Error(`session attachment failed: ${JSON.stringify({ seen, snapshot: attachments.get(imagePath), baseUrl: client.baseUrl })}`, { cause: error }) }
       expect(attachments.get(imagePath)?.url).toBe("blob:session-attachment")
       unsubscribe()
-      expect((await networkFetch(`${native.origin}${imagePath}`, { headers: { cookie: "smithers_session=owner" } })).status).toBe(200)
+      expect((await networkFetch(`${native.origin}${imagePath}`, { headers: { cookie: "__Host-smithers_session=owner" } })).status).toBe(200)
       expect(seen).toEqual([
         { path: "/api/login", cookie: null },
-        { path: imagePath, cookie: "smithers_session=owner" },
-        { path: imagePath, cookie: "smithers_session=owner" }
+        { path: imagePath, cookie: "__Host-smithers_session=owner" },
+        { path: imagePath, cookie: "__Host-smithers_session=owner" }
       ])
     } finally { attachments.dispose() }
   } finally {

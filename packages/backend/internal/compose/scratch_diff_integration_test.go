@@ -93,7 +93,7 @@ func TestScratchDiffUsesForkRevisionInstall(t *testing.T) {
 		request := httptest.NewRequest("GET", "http://127.0.0.1:4000/api/branches/"+url.PathEscape(name)+"/diff", nil)
 		request.RemoteAddr = "127.0.0.1:12345"
 		if session != "" {
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: session})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: session})
 		}
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, request)

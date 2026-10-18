@@ -58,7 +58,7 @@ export const realApi = async (
   // A cookie session's mutation carries the double-submit CSRF pair the app sends; the API refuses it otherwise.
   const mutation = !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase())
   const csrf = mutation
-    ? (await page.context().cookies(target.origin)).find((cookie) => cookie.name === "__csrf")?.value
+    ? (await page.context().cookies(target.origin)).find((cookie) => ["__Host-smithers_csrf", "smithers_local_csrf"].includes(cookie.name))?.value
     : undefined
   if (mutation && process.env.SMITHERS_REAL_AUTH_KIND === "owner-session" && !csrf) throw new Error("Owner session has no CSRF cookie for the requested mutation.")
   return page.context().request.fetch(target.toString(), {

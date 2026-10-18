@@ -21,7 +21,7 @@ func TestInstallBranchAnswerAuthorizationPostgres(t *testing.T) {
 	f := newLandingGateFixtureWithFactory(t, nil, "", true)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	service := services.NewMythicalService(f.pool, nil)
@@ -46,8 +46,8 @@ func TestInstallBranchAnswerAuthorizationPostgres(t *testing.T) {
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("Idempotency-Key", key)
 		req.Header.Set("X-CSRF-Token", "csrf")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
-		req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		commands := []string{}
 		req = req.WithContext(services.WithAuthorizationObserver(req.Context(), func(command string) { commands = append(commands, command) }))
 		out := httptest.NewRecorder()

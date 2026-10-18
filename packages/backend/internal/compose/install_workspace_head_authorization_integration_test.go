@@ -22,7 +22,7 @@ func TestInstallWorkspaceHeadCommandPostgres(t *testing.T) {
 	f := newLandingGateFixtureWithFactory(t, nil, "", true)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{"http://example.com"}
 	service := services.NewWorkspaceService(f.q, services.WithWorkspaceInstallAuthorization(f.q), services.WithWorkspaceTransactions(f.pool))
@@ -75,8 +75,8 @@ func TestInstallWorkspaceHeadCommandPostgres(t *testing.T) {
 			if cell.token != "" {
 				req.Header.Set("Authorization", "Bearer "+cell.token)
 			} else {
-				req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-				req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 				req.Header.Set("X-CSRF-Token", "csrf")
 			}
 			ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)

@@ -110,7 +110,7 @@ func TestFileRestoreCommandBoundary(t *testing.T) {
 	s := services.NewWorkspaceService(q, services.WithWorkspaceInstallAuthorization(q), services.WithWorkspaceRuntime(provider), services.WithWorkspaceTransactions(f.pool), services.WithWorkspaceGitBaseURL("http://fixture"), services.WithBranchMachineProviders(services.InstallBranchMachineProviders(identity.NewMemberBoundary(q), nil)), services.WithWorkspaceBurstVersions(f.pool, versions))
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.AllowedOrigins = []string{f.origin}
 	cfg.Server.PublicURL = f.origin
 	router := githubAppSetupComposeRouter(cfg, f.pool, nil, &routes.WorkspaceHandler{Service: s})
@@ -134,7 +134,7 @@ func TestFileRestoreCommandBoundary(t *testing.T) {
 	read := func(selector string, status int) {
 		t.Helper()
 		req := httptest.NewRequest("GET", f.origin+"/api/branches/"+f.row.ID+"/files/src/a.ts"+selector, nil)
-		req.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 		req.RemoteAddr = "127.0.0.1:61000"
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
@@ -150,7 +150,7 @@ func TestFileRestoreCommandBoundary(t *testing.T) {
 	read("?digest="+post, 200)
 	read("?digest="+strings.Repeat("b", 64), 409)
 	compareReq := httptest.NewRequest("GET", f.origin+"/api/branches/"+f.row.ID+"/files/src/a.ts?compare="+strings.Repeat("a", 40), nil)
-	compareReq.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+	compareReq.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 	compareReq.RemoteAddr = "127.0.0.1:61000"
 	compareRec := httptest.NewRecorder()
 	router.ServeHTTP(compareRec, compareReq)
@@ -166,9 +166,9 @@ func TestFileRestoreCommandBoundary(t *testing.T) {
 		req.Header.Set("Origin", f.origin)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-CSRF-Token", "restore-csrf")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "restore-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "restore-csrf"})
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		}
 		if len(bearer) > 0 {
 			req.Header.Set("Authorization", "Bearer "+bearer[0])
@@ -200,7 +200,7 @@ func TestFileRestoreCommandBoundary(t *testing.T) {
 	seed("deleted", "")
 	delete(provider.files, "src/a.ts")
 	goneReq := httptest.NewRequest("GET", f.origin+"/api/branches/"+f.row.ID+"/files/src/a.ts?digest=absent", nil)
-	goneReq.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+	goneReq.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 	goneReq.RemoteAddr = "127.0.0.1:61000"
 	goneRec := httptest.NewRecorder()
 	router.ServeHTTP(goneRec, goneReq)

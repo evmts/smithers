@@ -69,7 +69,7 @@ func TestOAuth2IntegrationRetiredGrantCannotAuthenticateButCanBeRevoked(t *testi
 	require.NoError(t, err)
 	req, err := http.NewRequest(http.MethodGet, e.srv.URL+"/api/probe", nil)
 	require.NoError(t, err)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: session.SessionKey})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: session.SessionKey})
 	sessionResp, err := e.client.Do(req)
 	require.NoError(t, err)
 	sessionResp.Body.Close()

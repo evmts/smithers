@@ -45,7 +45,7 @@ func TestFastGatewayPKCEInstallToHostedCompletionPostgres(t *testing.T) {
 	defer upstream.Close()
 	gateway := &modelproxy.FastGateway{Quota: credits.FastQuota{DB: gatewayPool, DailyTokens: 5000}, Keys: modelproxy.StaticKeys{modelproxy.ProviderCerebras: platform}, Upstream: upstream.URL}
 	cfg := testConfigAllFlagsOn()
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	hosted := httptest.NewServer(githubAppSetupComposeRouter(cfg, gatewayPool, nil, routerExtras{FastGateway: gateway}))
 	defer hosted.Close()
 	t.Setenv("SMITHERS_FAST_MODEL_GATEWAY", hosted.URL)
@@ -67,8 +67,8 @@ func TestFastGatewayPKCEInstallToHostedCompletionPostgres(t *testing.T) {
 	installCall := func(method, path string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, installCfg.Server.PublicURL+path, nil)
 		r.Header.Set("Origin", installCfg.Server.PublicURL)
-		r.AddCookie(&http.Cookie{Name: "session", Value: installSession})
-		r.AddCookie(&http.Cookie{Name: "__csrf", Value: "install-csrf"})
+		r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: installSession})
+		r.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "install-csrf"})
 		r.Header.Set("X-CSRF-Token", "install-csrf")
 		w := httptest.NewRecorder()
 		installRouter.ServeHTTP(w, r)
@@ -95,7 +95,7 @@ func TestFastGatewayPKCEInstallToHostedCompletionPostgres(t *testing.T) {
 		response.Body.Close()
 		req, err = http.NewRequest("GET", target.String(), nil)
 		require.NoError(t, err)
-		req.AddCookie(&http.Cookie{Name: "session", Value: session})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: session})
 		response, err = client.Do(req)
 		require.NoError(t, err)
 		require.Equal(t, 200, response.StatusCode)
@@ -113,7 +113,7 @@ func TestFastGatewayPKCEInstallToHostedCompletionPostgres(t *testing.T) {
 			r, err := http.NewRequest("POST", hosted.URL+"/api/fast-model/sign-in", strings.NewReader(form.Encode()))
 			require.NoError(t, err)
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			r.AddCookie(&http.Cookie{Name: "session", Value: session})
+			r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: session})
 			if withCookie {
 				r.AddCookie(consent)
 			}

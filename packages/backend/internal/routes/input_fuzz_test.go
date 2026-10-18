@@ -14,7 +14,7 @@ import (
 
 // FuzzSessionCookieName fuzzes the session cookie name resolver.
 func FuzzSessionCookieName(f *testing.F) {
-	f.Add("smithers_session")
+	f.Add("__Host-smithers_session")
 	f.Add("")
 	f.Add("   ")
 	f.Add("custom-session-name")

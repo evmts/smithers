@@ -24,7 +24,7 @@ func debugAPIQualifiedInvocation(t *testing.T, r *rehearsal, state string, runMS
 	require.NoError(t, err)
 	var cookie string
 	for _, candidate := range r.jar.Cookies(origin) {
-		if candidate.Name == "smithers_session" {
+		if candidate.Name == "smithers_local_session" {
 			cookie = candidate.Value
 		}
 	}

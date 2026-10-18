@@ -111,7 +111,7 @@ test("C-J1-05 Members on the install and LAN", scenario("journey.members", {
     const refusal = denied.waitForResponse(r => new URL(r.url()).pathname === "/api/auth/github/callback")
     await denied.goto(`${input.publicOrigin}/api/auth/github`)
     expect((await refusal).status()).toBe(403)
-    expect((await refusedContext.cookies(input.publicOrigin)).filter(cookie => cookie.name !== "__csrf")).toEqual([])
+    expect((await refusedContext.cookies(input.publicOrigin)).filter(cookie => !["__Host-smithers_csrf", "smithers_local_csrf"].includes(cookie.name))).toEqual([])
 
     const row = roster.locator(`li[data-login="${input.member}"]`)
     for (const role of ["maintainer", "member"]) {

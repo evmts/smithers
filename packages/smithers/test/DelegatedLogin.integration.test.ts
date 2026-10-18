@@ -343,7 +343,7 @@ it.skipIf(!enabled)("C-J6-02 laptop login is delegated, attributed, and cannot m
       method: "POST",
       headers: {
         cookie,
-        "x-csrf-token": host.cookies.__csrf ?? "",
+        "x-csrf-token": host.cookies.smithers_local_csrf ?? "",
         origin: host.origin,
         "content-type": "application/json",
         "idempotency-key": "c-j6-02-person-press"

@@ -25,7 +25,7 @@ func TestRehearsalUsesLiveChannelSnapshotRecovery(t *testing.T) {
 	outcome := make(chan error, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		connections.Add(1)
-		if request.Header.Get("Origin") != "http://"+request.Host || request.Header.Get("Cookie") != "smithers_session=rehearsal-client" {
+		if request.Header.Get("Origin") != "http://"+request.Host || request.Header.Get("Cookie") != "smithers_local_session=rehearsal-client" {
 			http.Error(w, "missing browser authentication", http.StatusUnauthorized)
 			outcome <- fmt.Errorf("browser Origin or cookie missing")
 			return
@@ -66,7 +66,7 @@ func TestRehearsalUsesLiveChannelSnapshotRecovery(t *testing.T) {
 	require.NoError(t, err)
 	origin, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	jar.SetCookies(origin, []*http.Cookie{{Name: "smithers_session", Value: "rehearsal-client"}})
+	jar.SetCookies(origin, []*http.Cookie{{Name: "smithers_local_session", Value: "rehearsal-client"}})
 	r := &rehearsal{t: t, ctx: ctx, origin: server.URL}
 	browser, err := r.openLive(jar)
 	require.NoError(t, err)

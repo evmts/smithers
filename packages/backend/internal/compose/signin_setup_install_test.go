@@ -51,7 +51,7 @@ func TestSignInSetupInstallPostgres(t *testing.T) {
 		handler.ServeHTTP(response, request)
 		return response
 	}
-	stale := &http.Cookie{Name: "smithers_session", Value: "previous-install-session"}
+	stale := &http.Cookie{Name: "smithers_local_session", Value: "previous-install-session"}
 	exchange := ask("/setup?token=reinstall-token", []*http.Cookie{stale})
 	require.Equal(t, 303, exchange.Code, exchange.Body.String())
 	var setupCookies []*http.Cookie

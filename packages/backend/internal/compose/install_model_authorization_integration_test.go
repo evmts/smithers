@@ -53,8 +53,8 @@ func TestInstallModelAuthorizationPostgres(t *testing.T) {
 				if actor.token != "" {
 					req.Header.Set("Authorization", "Bearer "+actor.token)
 				} else {
-					req.AddCookie(&http.Cookie{Name: "session", Value: actor.cookie})
-					req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: actor.cookie})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 					req.Header.Set("X-CSRF-Token", "csrf")
 				}
 				var decisions []string
@@ -77,8 +77,8 @@ func TestInstallModelAuthorizationPostgres(t *testing.T) {
 	req := httptest.NewRequest("PUT", cfg.Server.PublicURL+"/api/model/default", strings.NewReader(`{"model":null}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", cfg.Server.PublicURL)
-	req.AddCookie(&http.Cookie{Name: "session", Value: "model-authority-" + f.owner.Username})
-	req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "model-authority-" + f.owner.Username})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 	req.Header.Set("X-CSRF-Token", "csrf")
 	var decisions []string
 	req = req.WithContext(services.WithAuthorizationObserver(req.Context(), func(command string) { decisions = append(decisions, command) }))
@@ -91,7 +91,7 @@ func TestInstallModelAuthorizationPostgres(t *testing.T) {
 	for _, authenticated := range []bool{false, true} {
 		req := httptest.NewRequest("GET", cfg.Server.PublicURL+"/api/install/metrics", nil)
 		if authenticated {
-			req.AddCookie(&http.Cookie{Name: "session", Value: "model-authority-" + f.owner.Username})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "model-authority-" + f.owner.Username})
 		}
 		var decisions []string
 		req = req.WithContext(services.WithAuthorizationObserver(req.Context(), func(command string) { decisions = append(decisions, command) }))

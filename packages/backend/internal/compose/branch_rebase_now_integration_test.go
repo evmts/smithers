@@ -118,8 +118,8 @@ func testBranchRebaseNowComposedAdmission(t *testing.T, sources, bringSources bo
 	callBody := func(key, body string) (int, map[string]any) {
 		req, err := http.NewRequest("POST", origin+"/api/branches/smithers%2Ftest", strings.NewReader(body))
 		require.NoError(t, err)
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "pin-cookie"})
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "pin-cookie"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 		req.Header.Set("X-CSRF-Token", "csrf")
 		req.Header.Set("Origin", origin)
 		req.Header.Set("Content-Type", "application/json")
@@ -171,7 +171,7 @@ func testBranchRebaseNowComposedAdmission(t *testing.T, sources, bringSources bo
 				read := func() map[string]any {
 					req, err := http.NewRequest("GET", origin+"/api/todos/1", nil)
 					require.NoError(t, err)
-					req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "pin-cookie"})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "pin-cookie"})
 					res, err := http.DefaultClient.Do(req)
 					require.NoError(t, err)
 					defer res.Body.Close()
@@ -236,7 +236,7 @@ func testBranchRebaseNowComposedAdmission(t *testing.T, sources, bringSources bo
 		req, err := http.NewRequest("GET", origin+"/api/todos/1?rebase_request="+key, nil)
 		require.NoError(t, err)
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		}
 		res, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)

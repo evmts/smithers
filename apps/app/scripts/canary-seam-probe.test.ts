@@ -33,14 +33,14 @@ test("canonical probe requires real routes, auth refusal and valid same-run outp
   try {
     const origin = server.url.origin
     expect(await probeCanonicalSeams(origin)).toEqual([])
-    expect(await probeCanonicalSeams(origin, "session=visitor; __csrf=proof")).toEqual([])
+    expect(await probeCanonicalSeams(origin, "session=visitor; __Host-smithers_csrf=proof")).toEqual([])
     mode = "legacy"; expect(await probeCanonicalSeams(origin)).toContain("bootstrap")
     mode = "missing"; expect(await probeCanonicalSeams(origin)).toContain("anonymous /api/user")
-    mode = "foreign"; expect(await probeCanonicalSeams(origin, "session=visitor; __csrf=proof")).toContain("completed host turn")
-    mode = "error"; expect(await probeCanonicalSeams(origin, "session=visitor; __csrf=proof")).toContain("completed host turn")
-    mode = "cancelled"; expect(await probeCanonicalSeams(origin, "session=visitor; __csrf=proof")).toContain("completed host turn")
+    mode = "foreign"; expect(await probeCanonicalSeams(origin, "session=visitor; __Host-smithers_csrf=proof")).toContain("completed host turn")
+    mode = "error"; expect(await probeCanonicalSeams(origin, "session=visitor; __Host-smithers_csrf=proof")).toContain("completed host turn")
+    mode = "cancelled"; expect(await probeCanonicalSeams(origin, "session=visitor; __Host-smithers_csrf=proof")).toContain("completed host turn")
     const before = turns
-    mode = "admin"; expect(await probeCanonicalSeams(origin, "session=admin; __csrf=proof")).toContain("scoped identity")
+    mode = "admin"; expect(await probeCanonicalSeams(origin, "session=admin; __Host-smithers_csrf=proof")).toContain("scoped identity")
     expect(turns).toBe(before)
   } finally { server.stop(true) }
 })

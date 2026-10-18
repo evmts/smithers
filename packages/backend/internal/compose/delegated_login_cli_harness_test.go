@@ -111,7 +111,7 @@ func TestDelegatedLoginCLIHarness(t *testing.T) {
 	for _, cookie := range ben.Cookies(mustRehearsalURL(r.origin)) {
 		cookies[cookie.Name] = cookie.Value
 	}
-	require.NotEmpty(t, cookies["smithers_session"], "B has no browser session")
+	require.NotEmpty(t, cookies["smithers_local_session"], "B has no browser session")
 	// Each `smthrs login` consents once on GitHub as B.
 	codes := []string{"ben-cli-agent-code", "ben-cli-plain-code"}
 	for _, code := range codes {

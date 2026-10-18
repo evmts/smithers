@@ -115,7 +115,7 @@ func TestInstallFlowCatalogShowsReservedDeclarationRefusal(t *testing.T) {
 	read := func() []services.FlowCard {
 		request := httptest.NewRequest(http.MethodGet, cfg.Server.PublicURL+"/api/flows", nil)
 		request.RemoteAddr = "127.0.0.1:51999"
-		request.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, request)
 		require.Equal(t, 200, response.Code, response.Body.String())
@@ -127,7 +127,7 @@ func TestInstallFlowCatalogShowsReservedDeclarationRefusal(t *testing.T) {
 	for _, name := range []string{"todo", "merge", "checks/canary", "missing"} {
 		request := httptest.NewRequest(http.MethodGet, cfg.Server.PublicURL+"/api/flows/"+url.PathEscape(name), nil)
 		request.RemoteAddr = "127.0.0.1:51999"
-		request.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, request)
 		if name == "missing" {
@@ -199,8 +199,8 @@ func TestInstallFlowCatalogShowsReservedDeclarationRefusal(t *testing.T) {
 			request.Header.Set("Origin", cfg.Server.PublicURL)
 			request.Header.Set("Idempotency-Key", key)
 			if signed {
-				request.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-				request.AddCookie(&http.Cookie{Name: "__csrf", Value: "flow-csrf"})
+				request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+				request.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "flow-csrf"})
 				request.Header.Set("X-CSRF-Token", "flow-csrf")
 			}
 			response := httptest.NewRecorder()

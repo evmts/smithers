@@ -134,7 +134,7 @@ func newTodoSourceCycle(t *testing.T) *todoSourceCycle {
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Idempotency-Key", fmt.Sprintf("source-%d-%s-%s", n, suffix, body))
 		request.Header.Set("X-CSRF-Token", "csrf")
-		request.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		request.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 		request = request.WithContext(middleware.ContextWithAuthInfo(request.Context(), activeAuth))
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, request)

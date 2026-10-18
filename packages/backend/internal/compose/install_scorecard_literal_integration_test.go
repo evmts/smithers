@@ -78,13 +78,13 @@ func TestInstallScorecardLiteralAlphaFixture(t *testing.T) {
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.AllowedOrigins = []string{"http://localhost:4000"}
 	router := githubAppSetupComposeRouter(cfg, pool, nil, routerExtras{InstallScorecard: composeInstallScorecard(cfg, q, pool)})
 	read := func(from, to string) string {
 		req := httptest.NewRequest("GET", "http://localhost:4000/api/install/scorecard?from="+from+"&to="+to, nil)
 		req.RemoteAddr = "127.0.0.1:61000"
-		req.AddCookie(&http.Cookie{Name: "session", Value: "alpha-owner-cookie"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "alpha-owner-cookie"})
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 		require.Equal(t, 200, w.Code, w.Body.String())

@@ -205,7 +205,7 @@ func runMainResetProductionInstall(t *testing.T, enable string) {
 	resetRequest.Header.Set("Origin", r.origin)
 	resetRequest.Header.Set("Idempotency-Key", r.keyPrefix+"interrupted-reset")
 	for _, cookie := range r.jar.Cookies(resetRequest.URL) {
-		if cookie.Name == "__csrf" {
+		if cookie.Name == "smithers_local_csrf" {
 			resetRequest.Header.Set("X-CSRF-Token", cookie.Value)
 		}
 	}

@@ -57,7 +57,7 @@ func TestTodoMovedOffSourceTransitionLiteralCases(t *testing.T) {
 				t.Helper()
 				request, err := http.NewRequestWithContext(ctx, "GET", h.server.URL+"/api/todos/1", nil)
 				require.NoError(t, err)
-				request.AddCookie(&http.Cookie{Name: "session", Value: h.f.cookie})
+				request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: h.f.cookie})
 				response, err := http.DefaultClient.Do(request)
 				require.NoError(t, err)
 				defer response.Body.Close()

@@ -127,7 +127,7 @@ func TestLiveTodoNativeThrash(t *testing.T) {
 	server.Config.Handler = router
 	server.Start()
 	defer server.Close()
-	socket, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_session=" + token}, "Origin": {origin}}})
+	socket, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_local_session=" + token}, "Origin": {origin}}})
 	require.NoError(t, err)
 	defer socket.CloseNow()
 	require.NoError(t, socket.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"t":"sub","id":1,"topic":"todo:%d"}`, item.Number.Int64))))
@@ -172,7 +172,7 @@ func TestLiveTodoNativeThrash(t *testing.T) {
 		request, e := http.NewRequestWithContext(ctx, "GET", origin+path, nil)
 		require.NoError(t, e)
 		if authenticated {
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: token})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: token})
 		}
 		response, e := http.DefaultClient.Do(request)
 		require.NoError(t, e)

@@ -363,7 +363,7 @@ describe("D-4 (at $0, chat keeps working and non-complimentary work pauses)", ()
     return jsonResponse({ id: "main", entries: [{ id: "zero-balance-turn", runId: "host-run", state: "completed", frames: [{ runId: "host-run", type: "done", reason: "stop" }] }] })
   }
   const evaluate = (expression: string): unknown => (expression.includes("textarea") ? true : null)
-  const env = { CHECKLIST_ZERO_BALANCE_BEARER: "smithers_session=zero" }
+  const env = { CHECKLIST_ZERO_BALANCE_BEARER: "__Host-smithers_session=zero" }
 
   test("passes only when the flow launch is refused with the pause statement", async () => {
     const track = recorder()
@@ -405,7 +405,7 @@ describe("D-4 (at $0, chat keeps working and non-complimentary work pauses)", ()
 
 describe("F-1 (an impossible ask refuses honestly)", () => {
   const evaluate = (expression: string): unknown => (expression.includes("textarea") ? true : null)
-  const env = { CHECKLIST_SESSION_COOKIE: "smithers_session=abc" }
+  const env = { CHECKLIST_SESSION_COOKIE: "__Host-smithers_session=abc" }
 
   test("passes on a can't-yet answer", async () => {
     const page = fakePage(

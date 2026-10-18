@@ -37,7 +37,7 @@ func TestMovedOffAuthenticatedIngestProjectsIndependentWaitThroughInstallHTTP(t 
 			service := services.NewMythicalService(f.pool, nil)
 			cfg := testConfigAllFlagsOn()
 			cfg.Auth.Mode = "selfhost"
-			cfg.Auth.SessionCookieName = "session"
+			cfg.Auth.SessionCookieName = "smithers_local_session"
 			server := httptest.NewUnstartedServer(nil)
 			cfg.Server.PublicURL = "http://" + server.Listener.Addr().String()
 			cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
@@ -71,7 +71,7 @@ func TestMovedOffAuthenticatedIngestProjectsIndependentWaitThroughInstallHTTP(t 
 			read := func() map[string]any {
 				request, err := http.NewRequest(http.MethodGet, server.URL+"/api/todos/1", nil)
 				require.NoError(t, err)
-				request.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+				request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 				response, err := http.DefaultClient.Do(request)
 				require.NoError(t, err)
 				defer response.Body.Close()
@@ -105,8 +105,8 @@ func TestMovedOffAuthenticatedIngestProjectsIndependentWaitThroughInstallHTTP(t 
 				request.Header.Set("Idempotency-Key", key)
 				request.Header.Set("Origin", server.URL)
 				request.Header.Set("X-CSRF-Token", "moved-csrf")
-				request.AddCookie(&http.Cookie{Name: "__csrf", Value: "moved-csrf"})
-				request.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+				request.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "moved-csrf"})
+				request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 				response, err := http.DefaultClient.Do(request)
 				require.NoError(t, err)
 				defer response.Body.Close()

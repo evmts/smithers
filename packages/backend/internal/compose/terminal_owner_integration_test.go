@@ -43,9 +43,9 @@ func TestTerminalInstallOpenUnavailableHTTP(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", "http://localhost:4000")
 		req.Header.Set("X-CSRF-Token", "csrf")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 		if authenticated {
-			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "terminal-owner-fixture"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "terminal-owner-fixture"})
 		}
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, req)

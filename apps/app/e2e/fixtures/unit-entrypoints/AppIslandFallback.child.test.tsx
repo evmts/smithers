@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client'
 const originalFetch = globalThis.fetch
 GlobalRegistrator.register({ url: 'https://shell.test' })
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true })
-document.cookie = '__csrf=fallback-csrf; Path=/'
+document.cookie = '__Host-smithers_csrf=fallback-csrf; Path=/'
 const target = document.createElement('meta')
 target.name = 'smithers-application-target'
 target.content = '{invalid-json'

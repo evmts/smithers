@@ -90,8 +90,8 @@ func TestInstallRepoArchiveAuthorizationPostgres(t *testing.T) {
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("Content-Type", "application/json")
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-			req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "archive-csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "archive-csrf"})
 			req.Header.Set("X-CSRF-Token", "archive-csrf")
 		}
 		if token != "" {

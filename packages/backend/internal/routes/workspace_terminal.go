@@ -151,10 +151,7 @@ func firstForwardedValue(value string) string {
 }
 
 func (h *WorkspaceTerminalHandler) hasSessionCookie(r *http.Request) bool {
-	cookieName := strings.TrimSpace(h.SessionCookieName)
-	if cookieName == "" {
-		cookieName = "smithers_session"
-	}
+	cookieName := sessionCookieNameForRequest(r, h.SessionCookieName)
 	cookie, err := r.Cookie(cookieName)
 	return err == nil && cookie.Value != ""
 }

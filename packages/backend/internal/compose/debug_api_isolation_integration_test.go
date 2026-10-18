@@ -40,7 +40,7 @@ func TestDebugAPIInvokeWithoutIsolationPostgres(t *testing.T) {
 	_, err = q.CreateAuthSession(ctx, db.CreateAuthSessionParams{UserID: owner.ID, Username: owner.Username, SessionKey: hex.EncodeToString(digest[:]), ExpiresAt: time.Now().Add(time.Hour)})
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
-	cfg.Auth.Mode, cfg.Auth.SessionCookieName = "selfhost", "smithers_session"
+	cfg.Auth.Mode, cfg.Auth.SessionCookieName = "selfhost", "smithers_local_session"
 	// This is the production absence configuration, not a fake launcher.
 	composition, err := newFlowComposition(runOptions{}, cfg, pool, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
@@ -65,8 +65,8 @@ func TestDebugAPIInvokeWithoutIsolationPostgres(t *testing.T) {
 		req.Header.Set("Origin", server.URL)
 		req.Header.Set("Idempotency-Key", key)
 		req.Header.Set("X-CSRF-Token", "isolation-csrf")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "isolation-csrf"})
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "isolation-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		res, err := server.Client().Do(req)
 		require.NoError(t, err)
 		body, err := io.ReadAll(res.Body)

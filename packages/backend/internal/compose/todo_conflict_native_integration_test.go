@@ -144,7 +144,7 @@ func conflictDoneAwakeNativeComposedInstall(t *testing.T, terminal bool, pairAcc
 	var invoke func(...string) (int, map[string]any)
 	if terminal {
 		url := "ws" + strings.TrimPrefix(origin, "http") + "/api/repos/presence-owner/app/workspace/sessions/" + session + "/terminal"
-		conn, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"session=" + f.cookie}}, Subprotocols: []string{"terminal"}})
+		conn, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_local_session=" + f.cookie}}, Subprotocols: []string{"terminal"}})
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = conn.CloseNow() })
 		token := terminalRuntime.current(session)
@@ -165,8 +165,8 @@ func conflictDoneAwakeNativeComposedInstall(t *testing.T, terminal bool, pairAcc
 		}
 		req, err := http.NewRequest("POST", origin+"/api/todos/1/answer", strings.NewReader(`{"wait":"conflict-1","answer":"done"}`))
 		require.NoError(t, err)
-		req.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 		req.Header.Set("X-CSRF-Token", "csrf")
 		req.Header.Set("Origin", origin)
 		req.Header.Set("Content-Type", "application/json")
@@ -196,7 +196,7 @@ func conflictDoneAwakeNativeComposedInstall(t *testing.T, terminal bool, pairAcc
 				require.NoError(t, err)
 				req, err := http.NewRequest("GET", origin+"/api/todos/1", nil)
 				require.NoError(t, err)
-				req.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 				res, err := http.DefaultClient.Do(req)
 				require.NoError(t, err)
 				if c.source == "draft" {

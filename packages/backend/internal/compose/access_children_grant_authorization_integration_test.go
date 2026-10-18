@@ -100,8 +100,8 @@ func TestAccessChildrenGrantMatrixComposedPostgres(t *testing.T) {
 				req.Header.Set("Smithers-Actor", "person")
 				req.Header.Set("Smithers-Profile", "app_agent")
 				if a.token == "" {
-					req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-					req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "children-csrf"})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+					req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "children-csrf"})
 					req.Header.Set("X-CSRF-Token", "children-csrf")
 				} else {
 					req.Header.Set("Authorization", "Bearer "+a.token)

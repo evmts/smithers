@@ -48,7 +48,7 @@ export const withComposedInstall = async (body: (install: ComposedInstall) => Pr
     for (const actor of ["Will", "Ben"] as const) {
       const context = await browser.newContext({ baseURL: host.origin, recordVideo: { dir: join(host.evidence, `video-${actor}`) } })
       contexts.push(context)
-      await context.addCookies(host.members[actor].map(cookie => ({ ...cookie, url: host.origin, httpOnly: cookie.name !== "__csrf" })))
+      await context.addCookies(host.members[actor].map(cookie => ({ ...cookie, url: host.origin, httpOnly: !["__Host-smithers_csrf", "smithers_local_csrf"].includes(cookie.name) })))
       const page = await context.newPage()
       // Supplemental composed-install proof; never reference-host qualification.
       if (process.env.SMITHERS_JOURNEY_KEYBOARD === "1") {

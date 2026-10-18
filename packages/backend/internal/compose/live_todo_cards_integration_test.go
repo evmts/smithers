@@ -102,7 +102,7 @@ func TestLiveTodoCommittedCardsRollbackAndReplay(t *testing.T) {
 	server.Config.Handler = hostStatusProductionRouter(cfg, q, &services.InstallCapacityService{}, conformanceServices{pool: pool, live: handler, mythical: &routes.MythicalHandler{Service: service}})
 	server.Start()
 	defer server.Close()
-	headers := http.Header{"Cookie": {"smithers_session=" + token}, "Origin": {origin}}
+	headers := http.Header{"Cookie": {"smithers_local_session=" + token}, "Origin": {origin}}
 	dial := func() *websocket.Conn {
 		socket, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: headers})
 		require.NoError(t, err)
@@ -151,7 +151,7 @@ func TestLiveTodoCommittedCardsRollbackAndReplay(t *testing.T) {
 	memberHash := sha256.Sum256([]byte(memberToken))
 	_, err = q.CreateAuthSession(ctx, db.CreateAuthSessionParams{SessionKey: hex.EncodeToString(memberHash[:]), UserID: member.ID, Username: member.Username, ExpiresAt: time.Now().Add(time.Hour)})
 	require.NoError(t, err)
-	memberSocket, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_session=" + memberToken}, "Origin": {origin}}})
+	memberSocket, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_local_session=" + memberToken}, "Origin": {origin}}})
 	require.NoError(t, err)
 	defer memberSocket.CloseNow()
 	require.NoError(t, memberSocket.Write(ctx, websocket.MessageText, []byte(`{"t":"sub","id":1,"topic":"home"}`)))
@@ -170,7 +170,7 @@ func TestLiveTodoCommittedCardsRollbackAndReplay(t *testing.T) {
 	require.Equal(t, "err", forbidden.T)
 	require.Equal(t, "forbidden", forbidden.Code)
 	require.NoError(t, memberSocket.Write(ctx, websocket.MessageText, []byte(`{"t":"unsub","id":2}`)))
-	memberReload, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_session=" + memberToken}, "Origin": {origin}}})
+	memberReload, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_local_session=" + memberToken}, "Origin": {origin}}})
 	require.NoError(t, err)
 	defer memberReload.CloseNow()
 	require.NoError(t, memberReload.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"t":"sub","id":1,"topic":%q}`, memberViewTopic))))
@@ -184,8 +184,8 @@ func TestLiveTodoCommittedCardsRollbackAndReplay(t *testing.T) {
 		request.Header.Set("Origin", origin)
 		request.Header.Set("Idempotency-Key", key)
 		request.Header.Set("X-CSRF-Token", "csrf")
-		request.AddCookie(&http.Cookie{Name: "smithers_session", Value: token})
-		request.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: token})
+		request.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 		response, err := http.DefaultClient.Do(request)
 		require.NoError(t, err)
 		defer response.Body.Close()

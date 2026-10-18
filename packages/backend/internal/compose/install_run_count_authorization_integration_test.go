@@ -16,7 +16,7 @@ func TestInstallVisibleRunCountsAndPublicCatalogPostgres(t *testing.T) {
 	f := newLandingGateFixtureWithFactory(t, nil, "", true)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	router := githubAppSetupComposeRouter(cfg, f.pool, nil)
@@ -43,7 +43,7 @@ func TestInstallVisibleRunCountsAndPublicCatalogPostgres(t *testing.T) {
 		t.Run(actor.name, func(t *testing.T) {
 			req := httptest.NewRequest("GET", cfg.Server.PublicURL+"/api/user/workflow-runs/active-count?user_id=1", nil)
 			if actor.token == "" {
-				req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 			} else {
 				req.Header.Set("Authorization", "Bearer "+actor.token)
 			}

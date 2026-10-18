@@ -51,7 +51,7 @@ test("C-STK-02: admission follows stack order and capacity", { tag: "@install" }
     const address = vite.httpServer!.address()
     if (!address || typeof address === "string") throw new Error("Vite did not bind")
     const base = `http://127.0.0.1:${address.port}`
-    await page.context().addCookies([{ name: "smithers_session", value: "maya-parallel-session", url: base, httpOnly: true }, { name: "__csrf", value: "parallel-card", url: base }])
+    await page.context().addCookies([{ name: "__Host-smithers_session", value: "maya-parallel-session", url: base, httpOnly: true }, { name: "__Host-smithers_csrf", value: "parallel-card", url: base }])
     const errors: string[] = []
     page.on("pageerror", error => errors.push(error.message))
     await page.goto(`${base}/__parallel`)

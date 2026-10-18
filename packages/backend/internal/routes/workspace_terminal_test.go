@@ -333,7 +333,7 @@ func TestTerminalWebSocket_OriginValidation_CookieSessionRejectsBadOrigin(t *tes
 	srv := newTerminalOriginTestServer(t, &middleware.AuthInfo{User: &db.User{ID: 1}})
 	defer srv.Close()
 
-	headers := http.Header{"Cookie": []string{"smithers_session=session-key"}}
+	headers := http.Header{"Cookie": []string{"__Host-smithers_session=session-key"}}
 	_, resp, err := dialTerminalOriginTest(
 		context.Background(),
 		srv.URL+"/repos/testowner/testrepo/workspace/sessions/abc-123/terminal",

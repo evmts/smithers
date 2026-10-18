@@ -62,7 +62,7 @@ func TestDelegatedCredentialComposedInstallPostgres(t *testing.T) {
 	cfg.Auth.Mode = "selfhost"
 	cfg.Auth.SessionSecret = "fixture-secret"
 	cfg.Auth.WorkerExchangeToken = "fixture-worker-secret"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	bus := revocation.NewBus(pool, q)
 	busContext, stopBus := context.WithCancel(ctx)
 	defer stopBus()
@@ -198,7 +198,7 @@ func TestDelegatedCredentialComposedInstallPostgres(t *testing.T) {
 		revokeRequest.Header.Set("Origin", origin)
 		revokeRequest.Header.Set("X-CSRF-Token", "csrf")
 		revokeRequest.AddCookie(&http.Cookie{Name: cfg.Auth.SessionCookieName, Value: browserKey})
-		revokeRequest.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		revokeRequest.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 		revokeResponse, err := client.Do(revokeRequest)
 		require.NoError(t, err)
 		require.Equal(t, 204, revokeResponse.StatusCode)

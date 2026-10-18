@@ -144,7 +144,7 @@ func TestDebugAPIDelegatedDispatchBoundariesPostgres(t *testing.T) {
 	// returns no token, execution receipt, or data from the selected operation.
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/api/commands/debug-api", nil)
 	require.NoError(t, err)
-	request.AddCookie(&http.Cookie{Name: "smithers_session", Value: "debug-api-turn-author"})
+	request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "debug-api-turn-author"})
 	response, err := server.Client().Do(request)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusNoContent, response.StatusCode)

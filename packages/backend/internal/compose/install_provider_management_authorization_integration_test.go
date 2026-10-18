@@ -19,7 +19,7 @@ func TestInstallProviderManagementCommandsPostgres(t *testing.T) {
 	f := newLandingGateFixtureWithFactory(t, nil, "", true)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{"http://example.com"}
 	require.NoError(t, f.q.UpsertInstallSetting(f.ctx, db.UpsertInstallSettingParams{Key: "models.chatgpt", Value: []byte("true")}))
@@ -59,8 +59,8 @@ func TestInstallProviderManagementCommandsPostgres(t *testing.T) {
 				if actor.token != "" {
 					req.Header.Set("Authorization", "Bearer "+actor.token)
 				} else {
-					req.AddCookie(&http.Cookie{Name: "session", Value: actor.cookie})
-					req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: actor.cookie})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 					req.Header.Set("X-CSRF-Token", "csrf")
 				}
 				var decisions []string
@@ -75,7 +75,7 @@ func TestInstallProviderManagementCommandsPostgres(t *testing.T) {
 	}
 	t.Run("owner reads actual connections", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/api/user/provider-connections", nil)
-		req.AddCookie(&http.Cookie{Name: "session", Value: "provider-management-" + f.owner.Username})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "provider-management-" + f.owner.Username})
 		out := httptest.NewRecorder()
 		router.ServeHTTP(out, req)
 		require.Equal(t, 200, out.Code, out.Body.String())

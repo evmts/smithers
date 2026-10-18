@@ -17,7 +17,7 @@ test.skipIf(!address)("TestParallelSettingsCardBoundary", async () => {
   const writes: unknown[] = []
   const http = (input: RequestInfo | URL, init?: RequestInit) => {
     const headers = new nativeHttp.Headers(init?.headers)
-    headers.set("Cookie", `smithers_session=${process.env.SMITHERS_PARALLEL_BOUNDARY_COOKIE}; __csrf=parallel-card`)
+    headers.set("Cookie", `__Host-smithers_session=${process.env.SMITHERS_PARALLEL_BOUNDARY_COOKIE}; __Host-smithers_csrf=parallel-card`)
     headers.set("Origin", "http://localhost:4000")
     headers.set("X-CSRF-Token", "parallel-card")
     headers.set("Host", "localhost:4000")

@@ -30,7 +30,7 @@ func proveTerminalCatalogDelegation(t *testing.T, f presenceInstallFixture, orig
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Idempotency-Key", key)
 		if cookie != "" {
-			request.Header.Set("Cookie", "session="+cookie+"; __csrf=csrf")
+			request.Header.Set("Cookie", "session="+cookie+"; smithers_local_csrf=csrf")
 			request.Header.Set("X-CSRF-Token", "csrf")
 		}
 		if bearer != "" {

@@ -60,7 +60,7 @@ func TestConfirmLearningConsumerInstall(t *testing.T) {
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "smithers_session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://127.0.0.1:4000"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	todos := services.NewMythicalService(pool, nil)
@@ -72,7 +72,7 @@ func TestConfirmLearningConsumerInstall(t *testing.T) {
 		request.Header.Set("Idempotency-Key", key)
 		request.Header.Set("Origin", "http://127.0.0.1:4000")
 		request.Header.Set("X-CSRF-Token", "confirm-csrf")
-		request.AddCookie(&http.Cookie{Name: "__csrf", Value: "confirm-csrf"})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "confirm-csrf"})
 		if delegated {
 			request.Header.Set("Authorization", "Bearer "+token)
 		} else {
@@ -80,7 +80,7 @@ func TestConfirmLearningConsumerInstall(t *testing.T) {
 			if len(sessionCookies) > 0 {
 				sessionCookie = sessionCookies[0]
 			}
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionCookie})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: sessionCookie})
 		}
 		var commands []string
 		request = request.WithContext(services.WithAuthorizationObserver(request.Context(), func(command string) { commands = append(commands, command) }))
@@ -116,7 +116,7 @@ func TestConfirmLearningConsumerInstall(t *testing.T) {
 		defer server.Close()
 		readCtx, done := context.WithTimeout(ctx, 10*time.Second)
 		defer done()
-		conn, _, err := websocket.Dial(readCtx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {socketCfg.Server.PublicURL}, "Cookie": {"smithers_session=" + cookie}}})
+		conn, _, err := websocket.Dial(readCtx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {socketCfg.Server.PublicURL}, "Cookie": {"smithers_local_session=" + cookie}}})
 		require.NoError(t, err)
 		defer conn.CloseNow()
 		input := map[string]any{"t": "sub", "id": 1, "topic": "proposals"}

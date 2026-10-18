@@ -90,7 +90,7 @@ func newMemberStart(t *testing.T) memberStart {
 
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Auth.SessionRefreshWindow = "0s"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
@@ -100,8 +100,8 @@ func newMemberStart(t *testing.T) memberStart {
 	router := githubAppSetupComposeRouter(cfg, f.pool, nil, &routes.WorkspaceHandler{Service: svc})
 	start := func() *httptest.ResponseRecorder {
 		req := httptest.NewRequest("POST", fmt.Sprintf("%s/api/repos/%s/app/workspaces/%s/resume", cfg.Server.PublicURL, f.owner.Username, row.ID), nil)
-		req.AddCookie(&http.Cookie{Name: "session", Value: "member-writes-cookie"})
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "member-writes-cookie"})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 		req.Header.Set("X-CSRF-Token", "csrf")
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		out := httptest.NewRecorder()

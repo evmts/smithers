@@ -23,8 +23,8 @@ try {
   const open = async (member: string): Promise<{ context: BrowserContext; page: Page }> => {
     const context = await browser.newContext()
     await context.addCookies([
-      { name: "session", value: `${member}-browser-session`, url: origin, httpOnly: true },
-      { name: "__csrf", value: "csrf", url: origin }
+      { name: "smithers_local_session", value: `${member}-browser-session`, url: origin, httpOnly: true },
+      { name: "smithers_local_csrf", value: "csrf", url: origin }
     ])
     const page = await context.newPage()
     page.on("pageerror", error => errors.push(`${member}: ${error.message}`))
@@ -101,7 +101,7 @@ try {
   const identities = new Map(history.entries.filter(entry => entry.origin === "external").map(entry => [entry.participant_id, entry.id]))
   expect(identities.size).toBe(4)
   const mutationHeaders = async (context: BrowserContext) => {
-    const csrf = (await context.cookies(origin)).find(cookie => cookie.name === "__csrf")
+    const csrf = (await context.cookies(origin)).find(cookie => ["__Host-smithers_csrf", "smithers_local_csrf"].includes(cookie.name))
     expect(csrf).toBeDefined()
     return { Origin: origin, "Content-Type": "application/json", "X-CSRF-Token": csrf!.value }
   }

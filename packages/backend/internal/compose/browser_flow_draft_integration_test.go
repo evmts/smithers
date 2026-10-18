@@ -47,7 +47,7 @@ func TestBrowserFlowDraftComposedAdmission(t *testing.T) {
 	api.dispatcher = dispatcher
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = config.AuthModeSelfHosted
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	router := chi.NewRouter()
 	mountBrowserFlow(router, cfg, b.Queries, api)
 	require.True(t, api.install)
@@ -57,8 +57,8 @@ func TestBrowserFlowDraftComposedAdmission(t *testing.T) {
 			payload = fmt.Sprintf(`{"flowId":%q,"input":{}}`, flow)
 		}
 		req := httptest.NewRequest(http.MethodPost, cfg.Server.PublicURL+"/api/workflow/rpc", strings.NewReader(b.body(b.repo, box, procedure, payload)))
-		req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-CSRF-Token", "csrf")

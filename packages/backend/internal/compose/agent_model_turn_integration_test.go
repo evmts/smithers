@@ -90,8 +90,8 @@ func TestComposedAppModelSwitchPreservesInflightCall(t *testing.T) {
 		req.Host = "example.com"
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", "http://example.com")
-		req.AddCookie(&http.Cookie{Name: "session", Value: session})
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "turn-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: session})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "turn-csrf"})
 		req.Header.Set("X-CSRF-Token", "turn-csrf")
 		res, err := local.client.Do(req)
 		require.NoError(t, err)

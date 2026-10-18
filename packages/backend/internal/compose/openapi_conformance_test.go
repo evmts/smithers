@@ -661,8 +661,8 @@ func TestCutBackendHTTPPostgres(t *testing.T) {
 				require.NoError(t, err)
 				req.Host = "example.com"
 				if mode == config.AuthModeSelfHosted {
-					req.AddCookie(&http.Cookie{Name: "smithers_session", Value: token})
-					req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "cuts-csrf"})
+					req.AddCookie(&http.Cookie{Name: config.BrowserSessionCookieName(cfg.Auth.SessionCookieName, config.IsSingleOwner(cfg.Auth)), Value: token})
+					req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieNameForSecure(!config.IsSingleOwner(cfg.Auth)), Value: "cuts-csrf"})
 					req.Header.Set("Origin", config.PublicOrigin(cfg))
 					req.Header.Set("X-CSRF-Token", "cuts-csrf")
 				} else {

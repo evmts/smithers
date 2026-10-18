@@ -81,7 +81,7 @@ func TestInstallWorkspaceServicesAuthorizationPostgres(t *testing.T) {
 	probe := &serviceListAdmissionProbe{WorkspaceService: service}
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Auth.SessionRefreshWindow = "0s"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
@@ -112,7 +112,7 @@ func TestInstallWorkspaceServicesAuthorizationPostgres(t *testing.T) {
 		ctx = services.WithAuthorizationObserver(ctx, func(command string) { commands = append(commands, command) })
 		req := httptest.NewRequest("GET", fmt.Sprintf("%s/api/repos/%s/%s/workspaces/%s/services", cfg.Server.PublicURL, f.owner.Username, "app", id), nil).WithContext(ctx)
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		}
 		if token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)

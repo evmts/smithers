@@ -30,7 +30,7 @@ func TestFastGatewayBrowserSignInPostgres(t *testing.T) {
 	_, err = q.CreateAuthSession(t.Context(), db.CreateAuthSessionParams{UserID: owner.ID, Username: owner.Username, SessionKey: hex.EncodeToString(hash[:]), ExpiresAt: time.Now().Add(time.Hour)})
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "__Host-smithers_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	gateway := &modelproxy.FastGateway{Quota: credits.FastQuota{DB: pool, DailyTokens: 100000}, Keys: modelproxy.StaticKeys{modelproxy.ProviderCerebras: "platform-key"}}
@@ -57,7 +57,7 @@ func TestFastGatewayBrowserSignInPostgres(t *testing.T) {
 		router.ServeHTTP(w, r)
 		return w
 	}
-	session := &http.Cookie{Name: "session", Value: "gateway-owner-session"}
+	session := &http.Cookie{Name: "__Host-smithers_session", Value: "gateway-owner-session"}
 	path := target.RequestURI()
 	res := call("GET", path, "")
 	require.Equal(t, 303, res.Code, res.Body.String())

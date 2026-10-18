@@ -84,7 +84,7 @@ describe("canary-browser.ts", () => {
 
   test("a configured cookie with no declared login fails instead of guessing whose it is", () => {
     const { exitCode, stderr, result } = run({
-      CANARY_SESSION_COOKIE: "smithers_session=probe",
+      CANARY_SESSION_COOKIE: "__Host-smithers_session=probe",
       CANARY_BROWSER_FLOW: "canary",
       CANARY_BROWSER_WORKSPACE: WORKSPACE
     })
@@ -92,7 +92,7 @@ describe("canary-browser.ts", () => {
     expect(result.status).toBe("fail")
     expect(String(result.error)).toContain("CANARY_SESSION_LOGIN")
     expect(stderr).toContain("Browser canary failed")
-    expect(JSON.stringify(result)).not.toContain("smithers_session=probe")
+    expect(JSON.stringify(result)).not.toContain("__Host-smithers_session=probe")
   }, SPAWN_TIMEOUT_MS)
 
   /*
@@ -104,7 +104,7 @@ describe("canary-browser.ts", () => {
    */
   test("a bun wrapper first on the child's PATH takes neither the launch nor the parent's cookie", () => {
     const wrapper = mkdtempSync(join(tmpdir(), "canary-browser-path-"))
-    const planted = "smithers_session=this-process-only"
+    const planted = "__Host-smithers_session=this-process-only"
     const inherited = process.env.CANARY_SESSION_COOKIE
     try {
       const impostor = join(wrapper, "bun")
@@ -132,7 +132,7 @@ describe("canary-browser.ts", () => {
    */
   test("a child that writes no result is reported by its exit and stage, with configured values named not quoted", () => {
     const standIn = mkdtempSync(join(tmpdir(), "canary-browser-child-"))
-    const fake = "smithers_session=synthetic-never-issued"
+    const fake = "__Host-smithers_session=synthetic-never-issued"
     try {
       const child = join(standIn, "writes-no-result.ts")
       const echo = join(standIn, "evidence-path.txt")

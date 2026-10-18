@@ -92,7 +92,7 @@ func TestRetainedCommandHTTPStateEffectsPostgres(t *testing.T) {
 		}
 		cookie := ""
 		for _, c := range jar.Cookies(origin) {
-			if c.Name == "smithers_session" || c.Name == "session" {
+			if c.Name == "smithers_local_session" || c.Name == "session" {
 				cookie = c.Value
 			}
 		}
@@ -115,7 +115,7 @@ func TestRetainedCommandHTTPStateEffectsPostgres(t *testing.T) {
 	workspace, err := q.CreateWorkspace(ctx, db.CreateWorkspaceParams{RepositoryID: repo.ID, UserID: ben.ID, Name: "retained-system", TargetBookmark: "main", Kind: "container", Status: "running"})
 	require.NoError(t, err)
 	router := r.server.Config.Handler
-	cookieName := "smithers_session"
+	cookieName := "smithers_local_session"
 	for _, c := range r.jar.Cookies(origin) {
 		if c.Value == credentials[0].cookie {
 			cookieName = c.Name
@@ -193,7 +193,7 @@ func TestRetainedCommandHTTPStateEffectsPostgres(t *testing.T) {
 		}
 		if cred.cookie != "" {
 			req.AddCookie(&http.Cookie{Name: cookieName, Value: cred.cookie})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "campaign"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "campaign"})
 			req.Header.Set("X-CSRF-Token", "campaign")
 		}
 		before := snapshot()
@@ -381,7 +381,7 @@ func TestRetainedCommandHTTPStateEffectsPostgres(t *testing.T) {
 		}
 		if cred.cookie != "" {
 			req.AddCookie(&http.Cookie{Name: cookieName, Value: cred.cookie})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "campaign"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "campaign"})
 			req.Header.Set("X-CSRF-Token", "campaign")
 		}
 		var decisions []string
@@ -619,7 +619,7 @@ func TestRetainedCommandHTTPStateEffectsPostgres(t *testing.T) {
 		req.Header.Set("Origin", r.origin)
 		req.RemoteAddr = "127.0.0.1:50999"
 		req.AddCookie(&http.Cookie{Name: cookieName, Value: cred.cookie})
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "campaign"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "campaign"})
 		req.Header.Set("X-CSRF-Token", "campaign")
 		var decisions []string
 		req = req.WithContext(services.WithAuthorizationObserver(req.Context(), func(command string) { decisions = append(decisions, command) }))
@@ -937,7 +937,7 @@ func TestRetainedCommandHTTPStateEffectsPostgres(t *testing.T) {
 			req.Header.Set("Origin", r.origin)
 			req.RemoteAddr = "127.0.0.1:50999"
 			req.AddCookie(&http.Cookie{Name: cookieName, Value: credentials[0].cookie})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "campaign"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "campaign"})
 			req.Header.Set("X-CSRF-Token", "campaign")
 			out := httptest.NewRecorder()
 			router.ServeHTTP(out, req)

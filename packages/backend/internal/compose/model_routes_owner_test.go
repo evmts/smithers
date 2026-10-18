@@ -55,7 +55,7 @@ func TestInstallAgentModelsOwnerBoundaryPostgres(t *testing.T) {
 	}
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{"http://example.com"}
 	router := githubAppSetupComposeRouter(cfg, pool, &routes.GitHubAppSetupHandler{Setup: &services.InstallSetupService{Pool: pool}, Owners: q, Roster: q, Origins: middleware.FixedOrigins("http://example.com")})
@@ -66,8 +66,8 @@ func TestInstallAgentModelsOwnerBoundaryPostgres(t *testing.T) {
 		req := httptest.NewRequest(method, "http://example.com"+path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", "http://example.com")
-		req.AddCookie(&http.Cookie{Name: "session", Value: sessions[person]})
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "model-boundary-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: sessions[person]})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "model-boundary-csrf"})
 		req.Header.Set("X-CSRF-Token", "model-boundary-csrf")
 		res := httptest.NewRecorder()
 		router.ServeHTTP(res, req)

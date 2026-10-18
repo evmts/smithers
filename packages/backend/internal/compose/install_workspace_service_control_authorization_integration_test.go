@@ -144,7 +144,7 @@ func TestInstallWorkspaceServiceControlAuthorizationPostgres(t *testing.T) {
 	probe := &serviceControlAdmissionProbe{WorkspaceService: service}
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Auth.SessionRefreshWindow = "0s"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
@@ -180,8 +180,8 @@ func TestInstallWorkspaceServiceControlAuthorizationPostgres(t *testing.T) {
 		}
 		req := httptest.NewRequest("POST", fmt.Sprintf("%s/api/repos/%s/%s/workspaces/%s/services/%s/%s", cfg.Server.PublicURL, f.owner.Username, "app", id, name, action), nil).WithContext(ctx)
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-			req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "control-csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "control-csrf"})
 			req.Header.Set("X-CSRF-Token", "control-csrf")
 		}
 		if token != "" {

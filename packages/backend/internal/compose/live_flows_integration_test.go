@@ -158,7 +158,7 @@ func TestInstallFlowsServesPersistedGuestSteps(t *testing.T) {
 			server.Start()
 			req, err := http.NewRequest("GET", server.URL+"/api/flows", nil)
 			require.NoError(t, err)
-			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 			response, err := server.Client().Do(req)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, response.StatusCode)
@@ -169,7 +169,7 @@ func TestInstallFlowsServesPersistedGuestSteps(t *testing.T) {
 			bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 			conn, _, err := websocket.Dial(bounded, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{
-				Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_session=" + cookie}, "Origin": {origin}},
+				Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_local_session=" + cookie}, "Origin": {origin}},
 			})
 			require.NoError(t, err)
 			defer conn.CloseNow()

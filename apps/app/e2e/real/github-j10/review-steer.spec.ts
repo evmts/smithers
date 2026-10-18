@@ -137,7 +137,7 @@ const withReviewInstall = async (browser: Browser, info: TestInfo, body: (instal
     for (const actor of ["Will", "Ben", "Alice"] as const) {
       const context = await browser.newContext({ baseURL: host.origin, recordVideo: { dir: info.outputPath(`video-${actor}`) } })
       contexts.push(context)
-      await context.addCookies(host.members[actor].map(cookie => ({ ...cookie, url: host.origin, httpOnly: cookie.name !== "__csrf" })))
+      await context.addCookies(host.members[actor].map(cookie => ({ ...cookie, url: host.origin, httpOnly: !["__Host-smithers_csrf", "smithers_local_csrf"].includes(cookie.name) })))
       const page = await context.newPage()
       await page.goto(`${host.origin}/${host.repository}`)
       await awaitBoot(page)

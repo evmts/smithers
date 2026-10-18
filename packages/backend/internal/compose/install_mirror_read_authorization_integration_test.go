@@ -45,7 +45,7 @@ func TestInstallMirrorReadAuthorizationPostgres(t *testing.T) {
 	q := db.New(pool)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Auth.SessionRefreshWindow = "0s"
 	cfg.Server.PublicURL = "http://example.com"
 	service := services.NewGitMirrorSyncService(q, services.WithGitMirrorInstallAuthorization(pool))
@@ -80,7 +80,7 @@ func TestInstallMirrorReadAuthorizationPostgres(t *testing.T) {
 		defer cancel()
 		req = req.WithContext(ctx)
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		}
 		if token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)

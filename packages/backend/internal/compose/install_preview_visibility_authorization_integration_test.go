@@ -57,7 +57,7 @@ func TestInstallPreviewVisibilityWriteAuthorizationPostgres(t *testing.T) {
 	q := db.New(pool)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Auth.SessionRefreshWindow = "0s"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
@@ -90,8 +90,8 @@ func TestInstallPreviewVisibilityWriteAuthorizationPostgres(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-			req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "preview-csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "preview-csrf"})
 			req.Header.Set("X-CSRF-Token", "preview-csrf")
 		}
 		if bearer != "" {

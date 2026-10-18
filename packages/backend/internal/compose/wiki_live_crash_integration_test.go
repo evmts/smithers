@@ -66,7 +66,7 @@ func TestWikiHostCrashChild(t *testing.T) {
 	defer host.Close()
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = config.AuthModeSelfHosted
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	topics := &liveTopics{queries: q, wikiDocuments: host}
 	var origin string
 	handler := &routes.LiveHandler{Hub: live.NewHub(ctx, nil), Queries: q, Origins: func() []string { return []string{origin} }, Topics: topics.resolver}

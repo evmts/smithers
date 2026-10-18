@@ -185,7 +185,7 @@ describe("uptime-probe.ts against a live HTTP origin", () => {
     mode = "healthy"
     const jsonPath = join(workDir, "metered.json")
     const { exitCode, stdout } = await runProbe(["--samples", "1", "--json", jsonPath], {
-      CANARY_SESSION_COOKIE: "smithers_session=probe"
+      CANARY_SESSION_COOKIE: "__Host-smithers_session=probe"
     })
 
     expect(stdout).toContain("ok: the metered turn runs as a scoped-down user")
@@ -201,7 +201,7 @@ describe("uptime-probe.ts against a live HTTP origin", () => {
   test("--no-turn suppresses the metered turn even when the cookie is set", async () => {
     mode = "healthy"
     const { stdout } = await runProbe(["--samples", "1", "--no-turn"], {
-      CANARY_SESSION_COOKIE: "smithers_session=probe"
+      CANARY_SESSION_COOKIE: "__Host-smithers_session=probe"
     })
     expect(stdout).toContain("0 metered turn(s) spent")
     expect(stdout).toContain("skip: turn-seam first-frame latency")
@@ -210,7 +210,7 @@ describe("uptime-probe.ts against a live HTTP origin", () => {
   test("an admin cookie fails the run and spends nothing (RULINGS 35)", async () => {
     mode = "admin-session"
     const { exitCode, stdout } = await runProbe(["--samples", "1"], {
-      CANARY_SESSION_COOKIE: "smithers_session=probe"
+      CANARY_SESSION_COOKIE: "__Host-smithers_session=probe"
     })
     mode = "healthy"
 

@@ -106,11 +106,11 @@ func testParallelInstallBoundary(t *testing.T, card bool) {
 		} else if strings.HasPrefix(token, "smithers_") {
 			r.Header.Set("Authorization", "Bearer "+token)
 		} else {
-			r.AddCookie(&http.Cookie{Name: "smithers_session", Value: token})
+			r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: token})
 		}
 		r.Header.Set("Origin", "http://localhost:4000")
 		r.Header.Set("X-CSRF-Token", "csrf")
-		r.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+		r.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 		authorizedCommands = nil
 		r = r.WithContext(services.WithAuthorizationObserver(r.Context(), func(command string) { authorizedCommands = append(authorizedCommands, command) }))
 		w := httptest.NewRecorder()

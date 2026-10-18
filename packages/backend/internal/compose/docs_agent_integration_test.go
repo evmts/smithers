@@ -127,7 +127,7 @@ func TestInstallAgentAnswersHowDoIFromBundledDocs(t *testing.T) {
 		require.NoError(t, err)
 		cfg := testConfigAllFlagsOn()
 		cfg.Auth.Mode = "selfhost"
-		cfg.Auth.SessionCookieName = "session"
+		cfg.Auth.SessionCookieName = "smithers_local_session"
 		cfg.Server.PublicURL = "http://127.0.0.1:4000"
 		cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 		auth := services.NewAuthService(q, cfg.Auth, nil, nil)
@@ -160,8 +160,8 @@ func TestInstallAgentAnswersHowDoIFromBundledDocs(t *testing.T) {
 		req.Host = "localhost:4000"
 		req.Header.Set("Origin", "http://localhost:4000")
 		req.Header.Set("X-CSRF-Token", "csrf")
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
-		req.AddCookie(&http.Cookie{Name: "session", Value: session})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: session})
 		if body != "" {
 			req.Header.Set("Content-Type", "application/json")
 		}

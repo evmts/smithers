@@ -55,7 +55,7 @@ func TestInstallSSHCommandPostgres(t *testing.T) {
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://localhost:4000"
 	branches := services.NewWorkspaceService(q, services.WithWorkspaceTransactions(pool), services.WithBranchMachineProviders(services.InstallBranchMachineProviders(identity.NewMemberBoundary(q), nil)))
 	server := httptest.NewUnstartedServer(nil)
@@ -68,7 +68,7 @@ func TestInstallSSHCommandPostgres(t *testing.T) {
 		request, err := http.NewRequest("GET", server.URL+"/api/ssh?branch="+url.QueryEscape(login), nil)
 		require.NoError(t, err)
 		if authenticated {
-			request.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		}
 		response, err := server.Client().Do(request)
 		require.NoError(t, err)

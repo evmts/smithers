@@ -179,10 +179,6 @@ var repositoryRoutePath = regexp.MustCompile(`^/api/repos/[^/]+/[^/]+(/|$)|^/[^/
 // Worker, OAuth client, and build-cache credentials pass to their own gates.
 // Suspended owners return 403; a credential store outage returns 503.
 func AuthLoader(queries AuthLoaderQuerier, cfg config.AuthConfig, boundaries ...identity.MemberAuthorizer) func(http.Handler) http.Handler {
-	sessionCookieName := strings.TrimSpace(cfg.SessionCookieName)
-	if sessionCookieName == "" {
-		sessionCookieName = "smithers_session"
-	}
 
 	sessionDuration, err := time.ParseDuration(cfg.SessionDuration)
 	if err != nil || sessionDuration <= 0 {
@@ -211,10 +207,11 @@ func AuthLoader(queries AuthLoaderQuerier, cfg config.AuthConfig, boundaries ...
 				next.ServeHTTP(w, r)
 				return
 			}
-			cookieSecure := cfg.CookieSecure
-			if origin, ok := EffectiveOriginFromContext(r.Context()); ok {
+			cookieSecure := true
+			if origin, ok := EffectiveOriginFromContext(r.Context()); ok && config.IsSingleOwner(cfg) {
 				cookieSecure = strings.HasPrefix(origin, "https://")
 			}
+			sessionCookieName := config.BrowserSessionCookieName(cfg.SessionCookieName, !cookieSecure)
 			ctx := r.Context()
 			now := time.Now().UTC()
 
@@ -329,7 +326,7 @@ func AuthLoader(queries AuthLoaderQuerier, cfg config.AuthConfig, boundaries ...
 						} else {
 							slog.Error("failed to mint refreshed csrf token", "error", err)
 						}
-					} else if csrfCookie, err := r.Cookie(CSRFCookieName); err != nil || csrfCookie.Value == "" {
+					} else if csrfCookie, err := r.Cookie(CSRFCookieNameForSecure(cookieSecure)); err != nil || csrfCookie.Value == "" {
 						// Self-heal: a valid session with no (or empty) CSRF cookie —
 						// e.g. a persistent session cookie that outlived a
 						// session-scoped CSRF cookie set before this fix — mints one

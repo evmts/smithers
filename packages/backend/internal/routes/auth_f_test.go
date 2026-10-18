@@ -126,7 +126,7 @@ func TestAuth_F_PostKeyAuthVerify(t *testing.T) {
 		h.PostKeyAuthVerify(rec, req)
 		require.Equal(t, http.StatusOK, rec.Code)
 		assert.Equal(t, 1, q.calls)
-		assert.NotNil(t, cookieByName(rec.Result().Cookies(), "smithers_session"))
+		assert.NotNil(t, cookieByName(rec.Result().Cookies(), "__Host-smithers_session"))
 	})
 }
 
@@ -412,7 +412,7 @@ func TestAuth_F_PostLogout(t *testing.T) {
 			logoutFn: func(context.Context, string) error { return pkgerrors.Internal("logout down") },
 		}, AuthConfig: defaultRouteAuthConfig()}
 		req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "session-key"})
+		req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: "session-key"})
 		rec := httptest.NewRecorder()
 		h.PostLogout(rec, req)
 		require.Equal(t, http.StatusInternalServerError, rec.Code)
@@ -424,7 +424,7 @@ func TestAuth_F_PostLogout(t *testing.T) {
 				cleared[c.Name] = true
 			}
 		}
-		assert.True(t, cleared["smithers_session"], "session cookie cleared")
+		assert.True(t, cleared["__Host-smithers_session"], "session cookie cleared")
 		assert.Len(t, cleared, 2, "session and CSRF cookies cleared")
 	})
 
@@ -434,7 +434,7 @@ func TestAuth_F_PostLogout(t *testing.T) {
 			logoutFn: func(context.Context, string) error { return nil },
 		}, AuthConfig: defaultRouteAuthConfig(), AuditService: audit}
 		req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "session-key"})
+		req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: "session-key"})
 		req = req.WithContext(middleware.ContextWithAuthInfo(req.Context(), &middleware.AuthInfo{User: authFUser()}))
 		rec := httptest.NewRecorder()
 		h.PostLogout(rec, req)

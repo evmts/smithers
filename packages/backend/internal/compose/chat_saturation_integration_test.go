@@ -118,8 +118,8 @@ func TestAPIStaysResponsiveWhileChatWorkersAreSaturated(t *testing.T) {
 		defer cancel()
 		req, reqErr := http.NewRequestWithContext(requestCtx, method, server.URL+path, reader)
 		require.NoError(t, reqErr)
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: session})
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "saturation-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: session})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "saturation-csrf"})
 		req.Header.Set("Origin", "http://127.0.0.1:4000")
 		req.Header.Set("X-CSRF-Token", "saturation-csrf")
 		req.Host = "127.0.0.1:4000"

@@ -117,7 +117,7 @@ func newRepositoryMonitorFixture(t *testing.T) *repositoryMonitorFixture {
 
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = config.AuthModeMultitenant
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = f.origin
 	cfg.Server.AllowedOrigins = []string{f.origin}
 	require.False(t, config.IsSingleOwner(cfg.Auth), "this fixture must be the multi-user composition")
@@ -187,7 +187,7 @@ func (f *repositoryMonitorFixture) get(as, path string) *httptest.ResponseRecord
 	f.t.Helper()
 	req := httptest.NewRequest(http.MethodGet, f.origin+path, nil)
 	if as != "" {
-		req.AddCookie(&http.Cookie{Name: "session", Value: f.cookies[as]})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookies[as]})
 	}
 	out := httptest.NewRecorder()
 	f.router.ServeHTTP(out, req)

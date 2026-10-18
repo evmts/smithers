@@ -197,7 +197,7 @@ func testLocalSharedPreflight(t *testing.T, browser, fullInstall bool) {
 	require.NoError(t, err)
 	origin, err := url.Parse(public.URL)
 	require.NoError(t, err)
-	jar.SetCookies(origin, []*http.Cookie{{Name: "context_session", Value: "composed-context-session"}, {Name: "__csrf", Value: "preflight-csrf"}})
+	jar.SetCookies(origin, []*http.Cookie{{Name: "context_session", Value: "composed-context-session"}, {Name: "smithers_local_csrf", Value: "preflight-csrf"}})
 	client := &http.Client{Jar: jar, Timeout: 30 * time.Second}
 	postContext := func(target, contentType string, body io.Reader) (*http.Response, error) {
 		req, err := http.NewRequestWithContext(local.ctx, http.MethodPost, target, body)
@@ -207,7 +207,7 @@ func testLocalSharedPreflight(t *testing.T, browser, fullInstall bool) {
 		req.Header.Set("Content-Type", contentType)
 		req.Header.Set("Origin", public.URL)
 		for _, cookie := range jar.Cookies(origin) {
-			if cookie.Name == middleware.CSRFCookieName {
+			if cookie.Name == middleware.LocalCSRFCookieName {
 				req.Header.Set("X-CSRF-Token", cookie.Value)
 			}
 		}

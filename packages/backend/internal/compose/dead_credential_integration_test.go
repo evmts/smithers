@@ -70,7 +70,7 @@ func TestDeadCredentialRepoRoutesComposedInstallPostgres(t *testing.T) {
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
 	cfg.Auth.SessionSecret = "fixture-secret"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	svc := services.NewAuthService(q, cfg.Auth, nil, auth.NewGitHubClient(ownerOAuthCredentials{"client", "secret"}, "", provider.URL, provider.URL))
 	svc.InstallSetup = &services.InstallSetupSessions{Pool: pool}
 	svc.Members = members
@@ -115,8 +115,8 @@ func TestDeadCredentialRepoRoutesComposedInstallPostgres(t *testing.T) {
 		req.Header.Set("Origin", origin)
 		if c.cookie != "" {
 			req.Header.Set("X-CSRF-Token", "csrf-fixture")
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-fixture"})
-			req.AddCookie(&http.Cookie{Name: "session", Value: c.cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf-fixture"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: c.cookie})
 		}
 		if c.bearer != "" {
 			req.Header.Set("Authorization", "Bearer "+c.bearer)
@@ -280,7 +280,7 @@ func TestDeadCredentialRepoRoutesComposedInstallPostgres(t *testing.T) {
 	state := strings.Split(strings.Split(start.Header.Get("Location"), "state=")[1], "&")[0]
 	callback, err := http.NewRequest("GET", origin+"/api/auth/github/callback?code=fixture-code&state="+state, nil)
 	require.NoError(t, err)
-	callback.AddCookie(&http.Cookie{Name: "session", Value: stale.cookie})
+	callback.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: stale.cookie})
 	for _, cookie := range start.Cookies() {
 		callback.AddCookie(cookie)
 	}
@@ -303,5 +303,5 @@ func TestDeadCredentialRepoRoutesComposedInstallPostgres(t *testing.T) {
 	res = request(stale, "POST", "/api/auth/logout", "")
 	got := raw(res)
 	require.Less(t, res.StatusCode, 400, got)
-	require.Contains(t, got, "session=;")
+	require.Contains(t, got, "smithers_local_session=;")
 }

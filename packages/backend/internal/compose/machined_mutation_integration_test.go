@@ -162,8 +162,8 @@ func testMachinedNativeMutation(t *testing.T, mode string) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", server.URL)
 		req.Header.Set("X-CSRF-Token", "mutation-csrf")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "mutation-csrf"})
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "mutation-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		res, err := server.Client().Do(req)
 		if err != nil {
 			return reply{err: err}

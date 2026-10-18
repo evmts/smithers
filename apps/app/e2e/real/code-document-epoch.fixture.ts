@@ -26,7 +26,7 @@ const member = async (cookie: string, login: string) => {
   const trace: { t: unknown; code?: unknown; id?: unknown; epoch?: unknown }[] = []
   const channel = new LiveChannel({ documentFrames: true, socket: () => {
     const socket = new NativeWebSocket(`${origin.replace(/^http/, "ws")}/api/live`, {
-      headers: { Cookie: `smithers_session=${cookie}`, Origin: origin }, protocols: ["smithers.live.v1"]
+      headers: { Cookie: `smithers_local_session=${cookie}`, Origin: origin }, protocols: ["smithers.live.v1"]
     } as never)
     socket.addEventListener("message", event => {
       if (typeof event.data !== "string") {
@@ -53,7 +53,7 @@ const member = async (cookie: string, login: string) => {
   const requests: { path: string; method: string; status: number }[] = []
   const request: FetchLike = async (input, init) => {
     const headers = new Headers(init?.headers)
-    headers.set("Cookie", `smithers_session=${cookie}; __csrf=document-qualification`)
+    headers.set("Cookie", `smithers_local_session=${cookie}; smithers_local_csrf=document-qualification`)
     if (init?.method && !["GET", "HEAD", "OPTIONS"].includes(init.method.toUpperCase())) headers.set("X-CSRF-Token", "document-qualification")
     headers.set("Origin", origin)
     const url = new URL(typeof input === "string" || input instanceof URL ? String(input) : input.url, origin)

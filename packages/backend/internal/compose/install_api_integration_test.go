@@ -112,7 +112,7 @@ func TestInstallAPIHostUsesPublicRouterAndRevokesBearer(t *testing.T) {
 		cfg := testConfigAllFlagsOn()
 		cfg.Server.PublicURL = "http://localhost:4000"
 		cfg.Auth.Mode = "selfhost"
-		cfg.Auth.SessionCookieName = "session"
+		cfg.Auth.SessionCookieName = "smithers_local_session"
 		cfg.Server.PublicURL = "http://127.0.0.1:4000"
 		cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 		auth := services.NewAuthService(q, cfg.Auth, nil, nil)
@@ -184,8 +184,8 @@ func TestInstallAPIHostUsesPublicRouterAndRevokesBearer(t *testing.T) {
 	req.Host = "localhost:4000"
 	req.Header.Set("Origin", "http://localhost:4000")
 	req.Header.Set("X-CSRF-Token", "csrf")
-	req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
-	req.AddCookie(&http.Cookie{Name: "session", Value: "host-api-session"})
+	req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "host-api-session"})
 	response, err := local.client.Do(req)
 	require.NoError(t, err)
 	raw, err := io.ReadAll(response.Body)

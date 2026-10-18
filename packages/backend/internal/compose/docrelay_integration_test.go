@@ -101,7 +101,7 @@ func newDocFixture(t *testing.T, script ...[]byte) *docFixture {
 	origin := "http://" + server.Listener.Addr().String()
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = origin
 	cfg.Server.AllowedOrigins = []string{origin}
 	topics := &liveTopics{queries: q, documents: relay}
@@ -109,7 +109,7 @@ func newDocFixture(t *testing.T, script ...[]byte) *docFixture {
 	server.Config.Handler = githubAppSetupComposeRouter(cfg, pool, &routes.GitHubAppSetupHandler{Origins: handler.Origins}, routerExtras{Live: handler})
 	server.Start()
 	t.Cleanup(server.Close)
-	conn, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"session=" + key}}})
+	conn, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_local_session=" + key}}})
 	if err != nil && response != nil {
 		b, _ := io.ReadAll(response.Body)
 		t.Log(string(b))

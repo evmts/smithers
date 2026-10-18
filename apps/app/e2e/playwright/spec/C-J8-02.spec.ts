@@ -37,7 +37,7 @@ test("C-J8-02: wiki edits converge across members and survive offline reload", {
       // Exercise the supported durable fallback on this non-isolated HTTP host.
       await browser.addInitScript(() => localStorage.setItem("smithers-mvp.persistenceBackend", "localStorage"))
       await installCloudFixture(browser, { capabilities: ["agent", "identity", "install"], repos: [{ owner: host.owner, name: "app", full_name: host.repo, owner_type: "User", default_bookmark: "main" }] })
-      await browser.context().addCookies([{ name: "session", value: cookie, url: host.origin }, { name: "__csrf", value: "c".repeat(64), url: host.origin }])
+      await browser.context().addCookies([{ name: "session", value: cookie, url: host.origin }, { name: "__Host-smithers_csrf", value: "c".repeat(64), url: host.origin }])
       await browser.route("**/api/user", route => route.fulfill({ json: { id: login === host.owner ? 2 : 3, username: login, is_admin: false } }))
       await browser.route("**/api/install", route => route.fulfill({ json: { ...installFixture(), repository: { owner: host.owner, name: "app" }, repositories: [host.repo] } }))
       await browser.route("**/api/members", route => route.fulfill({ json: { access_url: "https://github.com/" + host.repo + "/settings/access", members: [
@@ -103,7 +103,7 @@ test("C-J8-02: wiki edits converge across members and survive offline reload", {
     const historical = await page.request.get(`${host.origin}/api/repos/${host.repo}/wiki/history/${host.pageId}/1/content?visibility=public`)
     expect(historical.status()).toBe(200)
     expect(await historical.text()).toBe("old")
-    const csrf = (await page.context().cookies(host.origin)).find(cookie => cookie.name === "__csrf")!.value
+    const csrf = (await page.context().cookies(host.origin)).find(cookie => cookie.name === "__Host-smithers_csrf")!.value
     for (const [method, suffix] of [["GET", "updates"], ["POST", "updates"], ["GET", "stream"]] as const) {
       const response = await page.request.fetch(`${host.origin}/api/repos/${host.repo}/wiki/home/${suffix}`, { method, headers: { Origin: host.origin, "Sec-Fetch-Site": "same-origin", "X-CSRF-Token": csrf } })
       expect(response.status()).toBe(404)

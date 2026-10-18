@@ -78,7 +78,7 @@ func TestTodoAdmissionInstallRollbackAndRace(t *testing.T) {
 			request.Header.Set("Origin", r.origin)
 			request.Header.Set("Idempotency-Key", fmt.Sprintf("race-%d", i))
 			for _, cookie := range r.jar.Cookies(request.URL) {
-				if cookie.Name == "__csrf" {
+				if cookie.Name == "smithers_local_csrf" {
 					request.Header.Set("X-CSRF-Token", cookie.Value)
 				}
 			}

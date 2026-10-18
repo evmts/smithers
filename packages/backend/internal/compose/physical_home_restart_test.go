@@ -36,7 +36,7 @@ func TestInstalledPhysicalHomeRestart(t *testing.T) {
 	require.NoError(t, err)
 	session := os.Getenv("SMITHERS_RESTART_BEN_SESSION")
 	require.NotEmpty(t, session)
-	jar.SetCookies(parsed, []*http.Cookie{{Name: "smithers_session", Value: session, Path: "/"}, {Name: "__csrf", Value: uuid.NewString(), Path: "/"}})
+	jar.SetCookies(parsed, []*http.Cookie{{Name: "smithers_local_session", Value: session, Path: "/"}, {Name: "smithers_local_csrf", Value: uuid.NewString(), Path: "/"}})
 	r := &rehearsal{ctx: t.Context(), origin: strings.TrimRight(origin, "/"), jar: jar, client: &http.Client{Jar: jar, Timeout: 30 * time.Second}}
 	branches := []string{os.Getenv("SMITHERS_RESTART_BRANCH_A"), os.Getenv("SMITHERS_RESTART_BRANCH_B")}
 	require.NotEmpty(t, branches[0])

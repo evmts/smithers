@@ -58,7 +58,7 @@ func TestConfirmationsInstallBoundaryPostgres(t *testing.T) {
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://127.0.0.1:4000"
 	cfg.Server.AllowedOrigins = []string{"http://127.0.0.1:4000"}
 	router := githubAppSetupComposeRouter(cfg, pool, nil)
@@ -73,9 +73,9 @@ func TestConfirmationsInstallBoundaryPostgres(t *testing.T) {
 		r.Header.Set("Content-Type", "application/json")
 		r.Header.Set("Idempotency-Key", key)
 		r.Header.Set("X-CSRF-Token", "csrf")
-		r.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+		r.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 		if cookie != "" {
-			r.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		}
 		if bearer != "" {
 			r.Header.Set("Authorization", "Bearer "+bearer)
@@ -402,14 +402,14 @@ func TestConfirmationMergeSettlementInstallBoundaryPostgres(t *testing.T) {
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://127.0.0.1:4000"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	router := githubAppSetupComposeRouter(cfg, pool, nil)
 	get := func() string {
 		r := httptest.NewRequest("GET", cfg.Server.PublicURL+"/api/confirmations", nil)
 		r.RemoteAddr = "127.0.0.1:51000"
-		r.AddCookie(&http.Cookie{Name: "session", Value: raw})
+		r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: raw})
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
 		require.Equal(t, 200, w.Code, w.Body.String())

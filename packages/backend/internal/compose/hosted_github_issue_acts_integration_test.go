@@ -121,7 +121,7 @@ func newHostedIssueComposition(t *testing.T) (*hostedIssueComposition, func(stri
 
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = config.AuthModeMultitenant
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "__Host-smithers_session"
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
 	cfg.Server.PublicURL, cfg.Server.AllowedOrigins = origin, []string{origin}
@@ -166,8 +166,8 @@ func (c *hostedIssueComposition) request(cookie, method, path, body string) (int
 	req.Header.Set("Origin", c.origin)
 	req.Header.Set("Idempotency-Key", method+" "+path+" "+body)
 	req.Header.Set("X-CSRF-Token", "csrf-fixture")
-	req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-fixture"})
-	req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_csrf", Value: "csrf-fixture"})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: cookie})
 	response, err := c.client.Do(req)
 	require.NoError(c.t, err)
 	defer func() { _ = response.Body.Close() }()

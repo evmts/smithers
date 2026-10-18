@@ -85,7 +85,7 @@ func TestInstallSetupCookieBoundaryPostgres(t *testing.T) {
 		r.Header.Set("Origin", origin)
 		r.Header.Set("Idempotency-Key", "setup-boundary")
 		for _, cookie := range jar.Cookies(r.URL) {
-			if cookie.Name == "__csrf" {
+			if cookie.Name == "smithers_local_csrf" {
 				r.Header.Set("X-CSRF-Token", cookie.Value)
 			}
 		}
@@ -134,7 +134,7 @@ func TestInstallSetupCookieBoundaryPostgres(t *testing.T) {
 	recoverRequest.Header.Set("Origin", origin)
 	recoverRequest.Header.Set("Idempotency-Key", "setup-boundary-recovery")
 	for _, cookie := range jar.Cookies(recoverRequest.URL) {
-		if cookie.Name == "__csrf" {
+		if cookie.Name == "smithers_local_csrf" {
 			recoverRequest.Header.Set("X-CSRF-Token", cookie.Value)
 		}
 	}
@@ -201,7 +201,7 @@ func TestInstallSetupCookieBoundaryPostgres(t *testing.T) {
 		r, err := http.NewRequestWithContext(ctx, "GET", origin+"/setup", nil)
 		require.NoError(t, err)
 		r.Header.Set("Accept", accept)
-		r.AddCookie(&http.Cookie{Name: "smithers_session", Value: "sign-in-boundary-owner-session"})
+		r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "sign-in-boundary-owner-session"})
 		response, err := client.Do(r)
 		require.NoError(t, err)
 		body, err := io.ReadAll(response.Body)
@@ -217,7 +217,7 @@ func TestInstallSetupCookieBoundaryPostgres(t *testing.T) {
 	}
 	// Claiming the owner is not the leased setup job's completion receipt.
 	// The card must keep waiting until Repository admission can proceed.
-	signedInAPI := &apiclient.Client{BaseURL: origin, Header: http.Header{"Cookie": {"smithers_session=sign-in-boundary-owner-session"}}}
+	signedInAPI := &apiclient.Client{BaseURL: origin, Header: http.Header{"Cookie": {"smithers_local_session=sign-in-boundary-owner-session"}}}
 	status, err = signedInAPI.GetAPIInstall(ctx)
 	require.NoError(t, err)
 	require.NotEqual(t, "done", status.Steps[2].State)
@@ -297,7 +297,7 @@ func TestInstallMachineLeaseRecoveryHTTPPostgres(t *testing.T) {
 	require.NoError(t, q.UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "setup.step.sign_in", Value: []byte(`{"status":"running","operation_id":"held-sign-in"}`)}))
 	statusRequest := httptest.NewRequest("GET", origin+"/api/install", nil)
 	statusRequest.RemoteAddr = "127.0.0.1:1234"
-	statusRequest.AddCookie(&http.Cookie{Name: "smithers_session", Value: "recovery-owner-session"})
+	statusRequest.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "recovery-owner-session"})
 	statusResponse := httptest.NewRecorder()
 	router.ServeHTTP(statusResponse, statusRequest)
 	require.Equal(t, http.StatusOK, statusResponse.Code)
@@ -316,12 +316,12 @@ func TestInstallMachineLeaseRecoveryHTTPPostgres(t *testing.T) {
 		r := httptest.NewRequest(method, origin+path, strings.NewReader(`{}`))
 		r.RemoteAddr = "127.0.0.1:1234"
 		r.Header.Set("Content-Type", "application/json")
-		r.AddCookie(&http.Cookie{Name: "smithers_session", Value: "recovery-owner-session"})
+		r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "recovery-owner-session"})
 		if method == "POST" {
 			r.Header.Set("Origin", origin)
 			r.Header.Set("Idempotency-Key", key)
 			r.Header.Set("X-CSRF-Token", "csrf")
-			r.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+			r.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 		}
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)

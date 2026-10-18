@@ -31,7 +31,7 @@ const { TranscriptMessage } = await import("../../src/mainview/TranscriptMessage
 const { CARD_RENDERERS } = await import("../../src/mainview/cards/CardRenderers")
 const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
 const requests: Array<{ path: string; method: string; body?: unknown; status: number; key?: string; refusal?: unknown }> = []
-const headers = { Cookie: `${process.env.SMITHERS_BRANCH_CARD_COOKIE ?? "smithers_session=sleep-cookie"}; __csrf=branch-card-fixture`, Origin: origin }
+const headers = { Cookie: `${process.env.SMITHERS_BRANCH_CARD_COOKIE ?? "__Host-smithers_session=sleep-cookie"}; __Host-smithers_csrf=branch-card-fixture`, Origin: origin }
 let wireState = "not-created"
 const live = new LiveChannel({ socket: () => {
   let socket: WebSocket

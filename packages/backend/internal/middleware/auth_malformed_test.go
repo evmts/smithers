@@ -34,7 +34,7 @@ func TestAuthLoader_MalformedHeaderBoundary(t *testing.T) {
 				}))
 				req := httptest.NewRequest(http.MethodGet, path, nil)
 				req.Header.Set("Authorization", authorization)
-				req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "old-session"})
+				req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: "old-session"})
 				rec := httptest.NewRecorder()
 				handler.ServeHTTP(rec, req)
 

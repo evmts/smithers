@@ -560,10 +560,10 @@ func TestInstallQuiesceRouteGate(t *testing.T) {
 		r := httptest.NewRequest(method, "http://localhost:4000"+path, strings.NewReader(body))
 		r.RemoteAddr = "127.0.0.1:1234"
 		r.Header.Set("Content-Type", "application/json")
-		r.AddCookie(&http.Cookie{Name: "smithers_session", Value: token})
+		r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: token})
 		r.Header.Set("Origin", "http://localhost:4000")
 		r.Header.Set("X-CSRF-Token", "csrf")
-		r.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+		r.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
 		return w

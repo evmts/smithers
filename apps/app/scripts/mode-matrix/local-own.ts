@@ -253,7 +253,7 @@ export const startLocalOwn = async (rootDir: string, revision: string, outputDir
       backend: backendOrigin, origin, setupURL, fakeURL: github.url, owner, modelKey,
       codingModel: PROVIDER_MODEL.answers
     })
-    const sessionCookie = owned.cookie("smithers_session")!
+    const sessionCookie = owned.cookie("__Host-smithers_session")!
     const repositoryPath = `/api/repos/${repository}`
     const created = JSON.parse((await owned.expect("GET", repositoryPath, 200)).text) as { readonly full_name?: string }
     if (created.full_name !== repository) throw new Error(`setup mirrored ${created.full_name}, not ${repository}`)

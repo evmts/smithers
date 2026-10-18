@@ -365,7 +365,7 @@ func testTodoMergeProfileComposedRouteBoundaryPostgres(t *testing.T, confirmatio
 				return
 			}
 			observation := accessObservedRequest{path: request.URL.Path, bearer: request.Header.Get("Authorization") != ""}
-			if cookie, err := request.Cookie("smithers_session"); err == nil {
+			if cookie, err := request.Cookie("smithers_local_session"); err == nil {
 				observation.cookie = cookie.Value
 			}
 			request = request.WithContext(services.WithAuthorizationObserver(request.Context(), func(command string) { observation.commands = append(observation.commands, command) }))
@@ -446,7 +446,7 @@ func testTodoMergeProfileComposedRouteBoundaryPostgres(t *testing.T, confirmatio
 		require.Eventually(t, func() bool {
 			request, err := http.NewRequest(http.MethodGet, origin+fmt.Sprintf("/api/todos/%d", filed.Number), nil)
 			require.NoError(t, err)
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: "owner-browser-session"})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "owner-browser-session"})
 			response, err := fake.Client().Do(request)
 			require.NoError(t, err)
 			defer response.Body.Close()
@@ -483,7 +483,7 @@ func testTodoMergeProfileComposedRouteBoundaryPostgres(t *testing.T, confirmatio
 		require.NoError(t, err)
 		get, err := http.NewRequest(http.MethodGet, origin+fmt.Sprintf("/api/todos/%d", later.Number), nil)
 		require.NoError(t, err)
-		get.AddCookie(&http.Cookie{Name: "smithers_session", Value: "owner-browser-session"})
+		get.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "owner-browser-session"})
 		response, err := fake.Client().Do(get)
 		require.NoError(t, err)
 		var card map[string]any
@@ -498,8 +498,8 @@ func testTodoMergeProfileComposedRouteBoundaryPostgres(t *testing.T, confirmatio
 		require.Equal(t, predecessor, card["merge"].(map[string]any)["detail"])
 		press, err := http.NewRequest(http.MethodPost, origin+fmt.Sprintf("/api/todos/%d/merge", later.Number), strings.NewReader(`{"reviewed_head_sha":"`+pull.Head.SHA+`"}`))
 		require.NoError(t, err)
-		press.AddCookie(&http.Cookie{Name: "smithers_session", Value: "owner-browser-session"})
-		press.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		press.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "owner-browser-session"})
+		press.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 		press.Header.Set("X-CSRF-Token", "csrf")
 		press.Header.Set("Origin", origin)
 		press.Header.Set("Content-Type", "application/json")
@@ -594,8 +594,8 @@ func testTodoMergeProfileComposedRouteBoundaryPostgres(t *testing.T, confirmatio
 			r.Header.Set("Content-Type", "application/json")
 			r.Header.Set("Idempotency-Key", key)
 			if cookie != "" {
-				r.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
-				r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+				r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+				r.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 				r.Header.Set("X-CSRF-Token", "csrf")
 			}
 			if bearer != "" {
@@ -678,7 +678,7 @@ func testTodoMergeProfileComposedRouteBoundaryPostgres(t *testing.T, confirmatio
 				host, err := url.Parse(origin)
 				require.NoError(t, err)
 				for _, cookie := range jar.Cookies(host) {
-					if cookie.Name == "smithers_session" {
+					if cookie.Name == "smithers_local_session" {
 						return cookie.Value
 					}
 				}
@@ -911,7 +911,7 @@ func testTodoMergeProfileComposedRouteBoundaryPostgres(t *testing.T, confirmatio
 		confirmationState := func() string {
 			request, err := http.NewRequest("GET", origin+"/api/confirmations", nil)
 			require.NoError(t, err)
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: personCookie})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: personCookie})
 			response, err := fake.Client().Do(request)
 			require.NoError(t, err)
 			defer response.Body.Close()
@@ -1018,7 +1018,7 @@ func testTodoMergeProfileComposedRouteBoundaryPostgres(t *testing.T, confirmatio
 		read := func(cookie, suffix string) (*http.Response, []byte) {
 			request, err := http.NewRequest(http.MethodGet, origin+"/api/todos/"+strconv.FormatInt(filed.Number, 10)+"/events"+suffix, nil)
 			require.NoError(t, err)
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 			response, err := http.DefaultClient.Do(request)
 			require.NoError(t, err)
 			raw, err := io.ReadAll(response.Body)
@@ -1103,7 +1103,7 @@ func testTodoMergeProfileComposedRouteBoundaryPostgres(t *testing.T, confirmatio
 			}{{"1", digest, 200}, {"2", digest, 404}, {"1", strings.Repeat("a", 64), 404}} {
 				request, err := http.NewRequest(http.MethodGet, origin+"/api/todos/"+strconv.FormatInt(filed.Number, 10)+"/attempts/"+tc.attempt+"/logs/"+tc.digest, nil)
 				require.NoError(t, err)
-				request.AddCookie(&http.Cookie{Name: "smithers_session", Value: "owner-browser-session"})
+				request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "owner-browser-session"})
 				response, err := http.DefaultClient.Do(request)
 				require.NoError(t, err)
 				raw, err := io.ReadAll(response.Body)
@@ -1124,7 +1124,7 @@ func testTodoMergeProfileComposedRouteBoundaryPostgres(t *testing.T, confirmatio
 			{
 				request, err := http.NewRequest(http.MethodGet, origin+"/api/todos/"+strconv.FormatInt(filed.Number, 10)+"/attempts/1/logs/"+digest, nil)
 				require.NoError(t, err)
-				request.AddCookie(&http.Cookie{Name: "smithers_session", Value: "owner-browser-session"})
+				request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "owner-browser-session"})
 				response, err := http.DefaultClient.Do(request)
 				require.NoError(t, err)
 				raw, err := io.ReadAll(response.Body)
@@ -1149,7 +1149,7 @@ func testTodoMergeProfileComposedRouteBoundaryPostgres(t *testing.T, confirmatio
 			}()
 			request, err := http.NewRequest(http.MethodGet, origin+"/api/todos/"+strconv.FormatInt(filed.Number, 10)+"/attempts/1/logs/"+digest, nil)
 			require.NoError(t, err)
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: "member-browser-session"})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "member-browser-session"})
 			response, err = http.DefaultClient.Do(request)
 			require.NoError(t, err)
 			raw, err := io.ReadAll(response.Body)
@@ -1195,9 +1195,9 @@ func testTodoMergeProfileComposedRouteBoundaryPostgres(t *testing.T, confirmatio
 	}
 	browser := func(raw string, csrf bool, key string) func(*http.Request) {
 		return func(r *http.Request) {
-			r.AddCookie(&http.Cookie{Name: "smithers_session", Value: raw})
+			r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: raw})
 			if csrf {
-				r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf-token"})
+				r.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf-token"})
 				r.Header.Set("X-CSRF-Token", "csrf-token")
 			}
 			if key != "" {
@@ -1744,7 +1744,7 @@ func testTodoMergeProfileComposedRouteBoundaryPostgres(t *testing.T, confirmatio
 			require.NoError(t, err)
 			req, err := http.NewRequest(http.MethodGet, origin+fmt.Sprintf("/api/todos/%d", n), nil)
 			require.NoError(t, err)
-			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "owner-browser-session"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "owner-browser-session"})
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
 			defer resp.Body.Close()
@@ -2004,7 +2004,7 @@ func testTodoMergeProfileComposedRouteBoundaryPostgres(t *testing.T, confirmatio
 		router := todoMergeComposeRouter(cfg, q, pool, &routes.MythicalHandler{Service: service})
 		request := httptest.NewRequest("GET", origin+"/api/branches/smithers%2Fnative-diff/diff", nil)
 		request.RemoteAddr = "127.0.0.1:12345"
-		request.AddCookie(&http.Cookie{Name: "smithers_session", Value: "owner-browser-session"})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "owner-browser-session"})
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, request)
 		require.Equal(t, 200, response.Code, response.Body.String())

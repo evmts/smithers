@@ -126,7 +126,7 @@ func TestOwnerSignInHTTPPostgres(t *testing.T) {
 			u, err := url.Parse(mint.URLs[0])
 			require.NoError(t, err)
 			var credential string
-			cfg := config.AuthConfig{Mode: "selfhost", SessionSecret: "test-secret", SessionCookieName: "session", SessionDuration: "24h"}
+			cfg := config.AuthConfig{Mode: "selfhost", SessionSecret: "test-secret", SessionCookieName: "smithers_local_session", SessionDuration: "24h"}
 			svc := services.NewAuthService(q, cfg, nil, auth.NewGitHubClient(ownerOAuthCredentials{seed.ClientID, seed.ClientSecret}, "", provider.URL, provider.URL))
 			// Configuration names localhost, as the bundle's does: the sign-in
 			// still returns to the address the browser started it from.
@@ -405,7 +405,7 @@ func TestOwnerSignInRefusalLandsOnSetupCardPostgres(t *testing.T) {
 	require.NoError(t, err)
 	credential, err := setup.Exchange(ctx, u.Query().Get("token"))
 	require.NoError(t, err)
-	cfg := config.AuthConfig{Mode: "selfhost", SessionSecret: "test-secret", SessionCookieName: "session", SessionDuration: "24h"}
+	cfg := config.AuthConfig{Mode: "selfhost", SessionSecret: "test-secret", SessionCookieName: "smithers_local_session", SessionDuration: "24h"}
 	svc := services.NewAuthService(q, cfg, nil, auth.NewGitHubClient(ownerOAuthCredentials{seed.ClientID, seed.ClientSecret}, "", provider.URL, provider.URL))
 	svc.InstallSetup = setup
 	svc.Members = &services.Members{Pool: pool}

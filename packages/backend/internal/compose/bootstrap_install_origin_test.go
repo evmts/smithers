@@ -161,7 +161,7 @@ func TestInstallBootstrapOriginThroughCompositionPostgres(t *testing.T) {
 func TestInstallSignedOutSessionThroughCompositionPostgres(t *testing.T) {
 	splitProcessDatabase(t)
 	handler := startSplitProcess(t, Options{})
-	for _, cookie := range []string{"", "smithers_session=expired-session"} {
+	for _, cookie := range []string{"", "smithers_local_session=expired-session"} {
 		request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:4000/api/auth/session", nil)
 		request.RemoteAddr = "127.0.0.1:51000"
 		if cookie != "" {

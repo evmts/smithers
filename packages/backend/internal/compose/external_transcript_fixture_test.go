@@ -95,7 +95,7 @@ func newTranscriptImportFixture(t *testing.T) *transcriptImportFixture {
 	runtime.Handler.ResolveBranch = conversationBranchResolver(branches)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "smithers_session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://127.0.0.1:4000"
 	cfg.Server.AllowedOrigins = []string{"http://127.0.0.1:4000"}
 	var machineOwner int64
@@ -142,8 +142,8 @@ func newTranscriptImportFixture(t *testing.T) *transcriptImportFixture {
 		req.Header.Set("Origin", "http://127.0.0.1:4000")
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-CSRF-Token", "csrf-fixture")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-fixture"})
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf-fixture"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		res, err := server.Client().Do(req)
 		require.NoError(t, err)
 		defer res.Body.Close()

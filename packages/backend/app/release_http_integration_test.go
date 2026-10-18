@@ -30,7 +30,7 @@ func TestReleaseHTTPWriteAndPaginationContracts(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, local.Shutdown(context.Background())) })
 	for key, value := range map[string]string{
 		"SMITHERS_DATABASE_URL": databaseURL, "SMITHERS_BLOB_DATA_DIR": t.TempDir(),
-		"SMITHERS_AUTH_SESSION_COOKIE_NAME": "smithers_session",
+		"SMITHERS_AUTH_SESSION_COOKIE_NAME": "__Host-smithers_session",
 		"SMITHERS_AUTH_MODE":                "selfhost", "SMITHERS_AUTH_BOOTSTRAP_TOKEN": "release-audit-bootstrap",
 		"SMITHERS_AUTH_SESSION_SECRET": "release-audit-session", "SMITHERS_LFS_SIGNING_SECRET": "release-audit-lfs",
 		"SMITHERS_WEBHOOK_SECRET_ENCRYPTION_KEY": "release-audit-webhook", "SMITHERS_REPO_HOST_AUTH_TOKEN": "release-audit-repo",

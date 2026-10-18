@@ -35,7 +35,7 @@ func TestInstallRetainedReadCommandsPostgres(t *testing.T) {
 		t.Helper()
 		req := httptest.NewRequest("GET", "http://example.com/api/repos/gate-owner/app"+path, nil)
 		if token == "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		} else {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}

@@ -108,7 +108,7 @@ func TestModelProxyChargesTheRightPayerPostgres(t *testing.T) {
 		if len(step) > 0 {
 			request.Header.Set(modelproxy.StepHeader, step[0])
 		}
-		request.AddCookie(&http.Cookie{Name: "smithers_session", Value: "cookie-never-spends"})
+		request.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: "cookie-never-spends"})
 		recorder := httptest.NewRecorder()
 		router.ServeHTTP(recorder, request)
 		return recorder.Code

@@ -60,8 +60,8 @@ func TestCleanupScratchRetentionThroughInstallHTTP(t *testing.T) {
 	req.Host = "127.0.0.1:4000"
 	req.Header.Set("X-CSRF-Token", "cleanup-csrf")
 	req.Header.Set("Origin", "http://127.0.0.1:4000")
-	req.AddCookie(&http.Cookie{Name: "__csrf", Value: "cleanup-csrf"})
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "cleanup-csrf"})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 	res, err := server.Client().Do(req)
 	require.NoError(t, err)
 	defer res.Body.Close()

@@ -108,7 +108,7 @@ func TestHomeBackgroundRetryIdempotent(t *testing.T) {
 		t.Helper()
 		request, err := http.NewRequest(http.MethodPost, origin+fmt.Sprintf("/api/runs/%d", failed.ID), strings.NewReader(`{"op":"`+op+`"}`))
 		require.NoError(t, err)
-		request.Header.Set("Cookie", "smithers_session="+token+"; __csrf=home-csrf")
+		request.Header.Set("Cookie", "smithers_local_session="+token+"; smithers_local_csrf=home-csrf")
 		request.Header.Set("X-CSRF-Token", "home-csrf")
 		request.Header.Set("Origin", origin)
 		request.Header.Set("Content-Type", "application/json")
@@ -221,7 +221,7 @@ func TestHomeBackgroundRetryIdempotent(t *testing.T) {
 		var sharedHome json.RawMessage
 		for _, token := range []string{"home-member", "home-owner"} {
 			readCtx, done := context.WithTimeout(ctx, 10*time.Second)
-			conn, _, err := websocket.Dial(readCtx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_session=" + token}}})
+			conn, _, err := websocket.Dial(readCtx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_local_session=" + token}}})
 			require.NoError(t, err)
 			conn.SetReadLimit(2 << 20)
 			require.NoError(t, conn.Write(readCtx, websocket.MessageText, []byte(`{"t":"sub","id":1,"topic":"home"}`)))
@@ -276,7 +276,7 @@ func TestHomeBackgroundRetryIdempotent(t *testing.T) {
 	})
 	statusRequest, err := http.NewRequest(http.MethodGet, origin+fmt.Sprintf("/api/runs/%d/background-status", receipt.RunID), nil)
 	require.NoError(t, err)
-	statusRequest.Header.Set("Cookie", "smithers_session=home-member")
+	statusRequest.Header.Set("Cookie", "smithers_local_session=home-member")
 	statusResponse, err := server.Client().Do(statusRequest)
 	require.NoError(t, err)
 	require.Equal(t, 200, statusResponse.StatusCode)

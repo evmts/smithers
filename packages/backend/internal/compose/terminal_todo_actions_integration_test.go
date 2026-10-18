@@ -135,7 +135,7 @@ func TestTerminalCredentialTodoActionsPostgres(t *testing.T) {
 	}
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	calls := &todoCalls{}
 	todos := &routes.TodoHandler{Queries: q, Service: calls}
 	router := chi.NewRouter()
@@ -239,11 +239,11 @@ func TestTerminalCredentialTodoActionsPostgres(t *testing.T) {
 	// delegated credential confirms in the app.
 	benSession := session(ben)
 	status, envelope := call("POST", "/api/todos", `{"title":"Follow-up","prompt":"Add a farewell","place":{"mode":"append"}}`,
-		http.Header{"Cookie": {"session=" + benSession}, "Idempotency-Key": {"ben-browser"}})
+		http.Header{"Cookie": {"smithers_local_session=" + benSession}, "Idempotency-Key": {"ben-browser"}})
 	require.Equal(t, http.StatusAccepted, status, "%v", envelope)
 	require.Equal(t, []string{fmt.Sprintf("file %d Follow-up", ben.ID)}, calls.take())
 	status, envelope = call("PATCH", "/api/todos/2", `{"prompt":"Revised","acceptance":["A check"]}`,
-		http.Header{"Cookie": {"session=" + benSession}, "Idempotency-Key": {"ben-amend"}})
+		http.Header{"Cookie": {"smithers_local_session=" + benSession}, "Idempotency-Key": {"ben-amend"}})
 	require.Equal(t, http.StatusAccepted, status, "%v", envelope)
 	require.Equal(t, map[string]any{"state": "accepted", "n": float64(2), "rev": float64(2)}, envelope)
 	require.Equal(t, []string{fmt.Sprintf(`amend %d T2 Revised ["A check"]`, ben.ID)}, calls.take())

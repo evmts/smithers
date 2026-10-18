@@ -205,10 +205,7 @@ func (h *BranchLSPHandler) grant(id string) *lspGrant {
 // a browser credential must come from an allowed origin.
 func (h *BranchLSPHandler) originAllowed(r *http.Request) bool {
 	info := middleware.AuthInfoFromContext(r.Context())
-	name := strings.TrimSpace(h.SessionCookieName)
-	if name == "" {
-		name = "smithers_session"
-	}
+	name := sessionCookieNameForRequest(r, h.SessionCookieName)
 	cookie, err := r.Cookie(name)
 	hasCookie := err == nil && cookie.Value != ""
 	if info != nil && info.IsTokenAuth && !hasCookie && r.URL.Query().Get("ticket") == "" {

@@ -128,7 +128,7 @@ func TestRouterBrowserAuthOriginAcrossTLSProxy(t *testing.T) {
 	require.Equal(t, "/owner/repo/?tab=issues", callback.Header.Get("Location"))
 	var session *http.Cookie
 	for _, cookie := range callback.Cookies() {
-		if cookie.Name == "smithers_session" {
+		if cookie.Name == "__Host-smithers_session" {
 			session = cookie
 		}
 	}

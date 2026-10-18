@@ -94,7 +94,7 @@ describe("authentication route and capability names (unit)", () => {
       SOCKET_TICKET_PATH: "/api/auth/sse-ticket",
       AUTHENTICATED_USER_PATH: "/api/user",
       APPLICATION_SIGN_IN_PATH: "/api/auth/github",
-      CSRF_COOKIE_NAME: "__csrf",
+      CSRF_COOKIE_NAME: "__Host-smithers_csrf",
       CSRF_HEADER_NAME: "X-CSRF-Token"
     })
     expect(APPLICATION_TOKEN_SCOPES).toEqual([

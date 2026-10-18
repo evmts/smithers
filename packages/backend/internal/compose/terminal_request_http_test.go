@@ -93,9 +93,9 @@ func testTerminalRequestHTTP(t *testing.T, rootInputs bool) {
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("X-CSRF-Token", "csrf")
 		req.Header.Set("Idempotency-Key", request)
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 		if authenticated {
-			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: f.cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 		}
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, req)

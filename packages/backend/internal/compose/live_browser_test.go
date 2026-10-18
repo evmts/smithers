@@ -104,7 +104,7 @@ func testLiveInstallBrowser(t *testing.T, secrets bool) {
 	require.NoError(t, q.UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "owner.access", Value: []byte(fmt.Sprintf(`{"owner_login":"maya","repository_name":"demo","repository_id":%d,"last_access_check_at":"%s"}`, repo.ID, time.Now().UTC().Format(time.RFC3339Nano)))}))
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
-	t.Setenv("SMITHERS_AUTH_SESSION_COOKIE_NAME", "session")
+	t.Setenv("SMITHERS_AUTH_SESSION_COOKIE_NAME", "smithers_local_session")
 	t.Setenv("SMITHERS_PUBLIC_URL", origin)
 	t.Setenv("SMITHERS_SERVER_ALLOWED_ORIGINS", origin)
 	runtime := new(liveBrowserAdmissionRuntime)

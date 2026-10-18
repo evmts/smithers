@@ -67,7 +67,7 @@ func TestMainResetInstallOwnerOnlyAndMissingSerialization(t *testing.T) {
 	require.NoError(t, q.UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "owner.access", Value: []byte(binding[:len(binding)-1] + `,"last_access_check_at":"` + time.Now().UTC().Format(time.RFC3339) + `"}`)}))
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{"http://example.com"}
 	main := services.NewGitHubMainPullService(q, nil, nil, nil)
@@ -80,9 +80,9 @@ func TestMainResetInstallOwnerOnlyAndMissingSerialization(t *testing.T) {
 				request.Header.Set("Content-Type", "application/json")
 				request.Header.Set("Origin", "http://example.com")
 				if person {
-					request.AddCookie(&http.Cookie{Name: "session", Value: sessions[i]})
+					request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: sessions[i]})
 					request.Header.Set("X-CSRF-Token", "reset-csrf")
-					request.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "reset-csrf"})
+					request.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "reset-csrf"})
 				} else {
 					request.Header.Set("Authorization", "Bearer "+tokens[i])
 				}
@@ -109,9 +109,9 @@ func TestMainResetInstallOwnerOnlyAndMissingSerialization(t *testing.T) {
 			request := httptest.NewRequest("POST", "http://example.com/api/stack/attention/order-one", strings.NewReader(`{"revision":1}`))
 			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("Origin", "http://example.com")
-			request.AddCookie(&http.Cookie{Name: "session", Value: sessions[i]})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: sessions[i]})
 			request.Header.Set("X-CSRF-Token", "reset-csrf")
-			request.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "reset-csrf"})
+			request.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "reset-csrf"})
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, request)
 			require.Equal(t, http.StatusNoContent, response.Code, response.Body.String())
@@ -126,9 +126,9 @@ func TestMainResetInstallOwnerOnlyAndMissingSerialization(t *testing.T) {
 			request := httptest.NewRequest("POST", "http://example.com/api/stack/attention/force-19", strings.NewReader(input))
 			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("Origin", "http://example.com")
-			request.AddCookie(&http.Cookie{Name: "session", Value: sessions[0]})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: sessions[0]})
 			request.Header.Set("X-CSRF-Token", "reset-csrf")
-			request.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "reset-csrf"})
+			request.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "reset-csrf"})
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, request)
 			require.Equal(t, http.StatusConflict, response.Code, response.Body.String())
@@ -239,7 +239,7 @@ func TestMainResetJournalRecoveryThroughComposedInstall(t *testing.T) {
 			request.Header.Set("Origin", "http://example.com")
 			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("X-CSRF-Token", "reset-csrf")
-			request.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "reset-csrf"})
+			request.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "reset-csrf"})
 			request = request.WithContext(middleware.ContextWithAuthInfo(ctx, &middleware.AuthInfo{User: &f.user, SessionHash: "reset-owner-session"}))
 			if crash != "after_write" {
 				// The persisted bound target becomes stale before the locked write.

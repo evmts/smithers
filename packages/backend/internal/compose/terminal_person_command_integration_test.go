@@ -24,7 +24,7 @@ func proveTerminalPersonCommand(t *testing.T, f presenceInstallFixture, origin, 
 		request.Header.Set("X-CSRF-Token", "csrf")
 		request.Header.Set("Idempotency-Key", key)
 		if cookie != "" {
-			request.Header.Set("Cookie", "session="+cookie+"; __csrf=csrf")
+			request.Header.Set("Cookie", "session="+cookie+"; smithers_local_csrf=csrf")
 		}
 		if bearer != "" {
 			request.Header.Set("Authorization", "Bearer "+bearer)

@@ -189,7 +189,7 @@ describe("the local origin", () => {
           ? new Response(JSON.stringify({ status: "ready" }), {
             headers: {
               "content-type": "application/json",
-              "set-cookie": "smithers_session=sealed; Domain=identity.test; Path=/; HttpOnly; Secure; SameSite=Lax"
+              "set-cookie": "__Host-smithers_session=sealed; Domain=identity.test; Path=/; HttpOnly; Secure; SameSite=Lax"
             }
           })
           : new Response("{}", { status: 404, headers: { "content-type": "application/json" } })
@@ -216,7 +216,7 @@ describe("the local origin", () => {
       expect(response.status).toBe(200)
       expect(await response.json()).toEqual({ status: "ready" })
       const cookie = response.headers.getSetCookie()[0] ?? ""
-      expect(cookie.startsWith("smithers_session=sealed")).toBe(true)
+      expect(cookie.startsWith("__Host-smithers_session=sealed")).toBe(true)
       expect(cookie.toLowerCase()).not.toContain("domain=")
       // WebKit refuses a Secure cookie set over http://127.0.0.1; every other attribute survives.
       expect(cookie.toLowerCase()).not.toContain("secure")
@@ -225,7 +225,7 @@ describe("the local origin", () => {
       expect(cookie).toContain("SameSite=Lax")
       // The trail names the attributes the WebView was handed, never the value.
       expect(proxyLogs).toContain(
-        "/api/auth/native/claim -> 200, set-cookie present: smithers_session=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+        "/api/auth/native/claim -> 200, set-cookie present: __Host-smithers_session=<redacted>; Path=/; HttpOnly; SameSite=Lax"
       )
       expect(proxyLogs.join("\n")).not.toContain("sealed")
       // The local session capability authorizes this origin only; the seam never receives it.
@@ -287,8 +287,8 @@ describe("the local origin", () => {
     expect(rescopeCookie("s=v; Secure; Path=/")).toBe("s=v; Path=/")
     // Only the attribute goes: a name or value that merely contains the word stays.
     expect(rescopeCookie("secure_id=insecure; Path=/; SecureFlag=1")).toBe("secure_id=insecure; Path=/; SecureFlag=1")
-    expect(describeCookie("smithers_session=sealed-secret; Path=/; HttpOnly")).toBe(
-      "smithers_session=<redacted>; Path=/; HttpOnly"
+    expect(describeCookie("__Host-smithers_session=sealed-secret; Path=/; HttpOnly")).toBe(
+      "__Host-smithers_session=<redacted>; Path=/; HttpOnly"
     )
   })
 
@@ -653,11 +653,11 @@ test("an install model answer uses the authenticated shared backend without star
   try {
     const body = { runId: "title-install", instructions: TITLE_INSTRUCTIONS, messages: [{ role: "user", content: "Name these entries" }] }
     const response = await fetch(`${host.origin}/api/model/stream`, { method: "POST", headers: {
-      [LOCAL_SESSION_HEADER]: host.sessionToken, "content-type": "application/json", cookie: "smithers_session=fixture-owner"
+      [LOCAL_SESSION_HEADER]: host.sessionToken, "content-type": "application/json", cookie: "__Host-smithers_session=fixture-owner"
     }, body: JSON.stringify(body) })
     expect(response.status).toBe(200)
     expect(await readFrames(response)).toEqual(frames)
-    expect(seen).toEqual([{ path: "/api/model/stream", cookie: "smithers_session=fixture-owner", body }])
+    expect(seen).toEqual([{ path: "/api/model/stream", cookie: "__Host-smithers_session=fixture-owner", body }])
     expect(starts).toBe(0)
   } finally { await host.stop(); backend.stop(true) }
 })

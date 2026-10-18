@@ -74,7 +74,7 @@ func testSecretsComposed(t *testing.T, install bool) {
 
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
 	cfg.Server.PublicURL = origin
@@ -199,8 +199,8 @@ func testSecretsComposed(t *testing.T, install bool) {
 		req.Header.Set("Origin", origin)
 		if c.cookie != "" {
 			req.Header.Set("X-CSRF-Token", "csrf-fixture")
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-fixture"})
-			req.AddCookie(&http.Cookie{Name: "session", Value: c.cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf-fixture"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: c.cookie})
 		}
 		if c.bearer != "" {
 			req.Header.Set("Authorization", "Bearer "+c.bearer)
@@ -310,7 +310,7 @@ func testSecretsComposed(t *testing.T, install bool) {
 		for _, who := range []credential{ownerSession, maintainerSession, writerSession} {
 			req, err := http.NewRequest("GET", origin+"/api/secrets", nil)
 			require.NoError(t, err)
-			req.AddCookie(&http.Cookie{Name: "session", Value: who.cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: who.cookie})
 			res, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
 			raw, err := io.ReadAll(res.Body)
@@ -327,7 +327,7 @@ func testSecretsComposed(t *testing.T, install bool) {
 		}
 		header := http.Header{}
 		header.Set("Origin", origin)
-		header.Set("Cookie", "session="+writerSession.cookie)
+		header.Set("Cookie", "smithers_local_session="+writerSession.cookie)
 		socket, _, err := websocket.Dial(ctx, strings.Replace(origin, "http:", "ws:", 1)+"/api/live", &websocket.DialOptions{HTTPHeader: header, Subprotocols: []string{"smithers.live.v1"}})
 		require.NoError(t, err)
 		defer socket.CloseNow()
@@ -545,8 +545,8 @@ func testSecretsComposed(t *testing.T, install bool) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", origin)
 	req.Header.Set("X-CSRF-Token", "csrf-fixture")
-	req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-fixture"})
-	req.AddCookie(&http.Cookie{Name: "session", Value: maintainerSession.cookie})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf-fixture"})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: maintainerSession.cookie})
 	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	raw, _ := io.ReadAll(res.Body)

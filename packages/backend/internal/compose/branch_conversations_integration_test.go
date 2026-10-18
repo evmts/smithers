@@ -88,8 +88,8 @@ func TestBranchConversationMemberViewStateInstall(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", origin)
 		req.Header.Set("X-CSRF-Token", "csrf-fixture")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-fixture"})
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf-fixture"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		res, err := server.Client().Do(req)
 		require.NoError(t, err)
 		defer res.Body.Close()
@@ -232,8 +232,8 @@ func TestBranchConversationAuthorRevocationInstall(t *testing.T) {
 				req.Header.Set("Origin", "http://127.0.0.1:4000")
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("X-CSRF-Token", "csrf-fixture")
-				req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-fixture"})
-				req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf-fixture"})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 				res, err := server.Client().Do(req)
 				require.NoError(t, err)
 				return res
@@ -377,8 +377,8 @@ func TestBranchConversationPrivateViewLiveInstall(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", origin)
 		req.Header.Set("X-CSRF-Token", "csrf-fixture")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-fixture"})
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf-fixture"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		res, err := server.Client().Do(req)
 		require.NoError(t, err)
 		raw, err := io.ReadAll(res.Body)
@@ -390,7 +390,7 @@ func TestBranchConversationPrivateViewLiveInstall(t *testing.T) {
 	open := func(cookie string) *websocket.Conn {
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		conn, res, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_session=" + cookie}}})
+		conn, res, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_local_session=" + cookie}}})
 		if err != nil && res != nil {
 			t.Logf("live status=%d", res.StatusCode)
 		}

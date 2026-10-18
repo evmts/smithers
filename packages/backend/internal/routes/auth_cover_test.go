@@ -205,7 +205,7 @@ func TestAuth_Cov_Auth0CallbackBranches(t *testing.T) {
 	success.GetAuth0Callback(browserRec, browserReq)
 	require.Equal(t, http.StatusFound, browserRec.Code)
 	assert.Equal(t, "/", browserRec.Header().Get("Location"))
-	sessionCookie := cookieByName(browserRec.Result().Cookies(), "smithers_session")
+	sessionCookie := cookieByName(browserRec.Result().Cookies(), "__Host-smithers_session")
 	assert.Equal(t, "session-auth0", sessionCookie.Value)
 	csrfCookie := cookieByName(browserRec.Result().Cookies(), middleware.CSRFCookieName)
 	assert.Len(t, csrfCookie.Value, 64)
@@ -251,7 +251,7 @@ func TestAuth_Cov_PendingCookieAndLogout(t *testing.T) {
 	logoutRec := httptest.NewRecorder()
 	(&AuthHandler{AuthConfig: defaultRouteAuthConfig()}).PostLogout(logoutRec, logoutReq)
 	require.Equal(t, http.StatusNoContent, logoutRec.Code)
-	assert.Equal(t, -1, cookieByName(logoutRec.Result().Cookies(), "smithers_session").MaxAge)
+	assert.Equal(t, -1, cookieByName(logoutRec.Result().Cookies(), "__Host-smithers_session").MaxAge)
 	assert.Equal(t, -1, cookieByName(logoutRec.Result().Cookies(), middleware.CSRFCookieName).MaxAge)
 
 }

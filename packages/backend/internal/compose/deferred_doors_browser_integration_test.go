@@ -30,7 +30,7 @@ func TestDeferredDoorsBrowser(t *testing.T) {
 	require.NotEmpty(t, origin)
 	var cookie string
 	for _, c := range r.jar.Cookies(mustRehearsalURL(r.origin)) {
-		if c.Name == "smithers_session" {
+		if c.Name == "smithers_local_session" {
 			cookie = c.Value
 		}
 	}

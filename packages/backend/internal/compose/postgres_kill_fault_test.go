@@ -103,12 +103,12 @@ func TestTodoPostgresCrashThroughRoute(t *testing.T) {
 		if err != nil {
 			return 0, nil, err
 		}
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "fault-browser"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "fault-browser"})
 		if method == "POST" {
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Origin", origin)
 			req.Header.Set("Idempotency-Key", "postgres-kill-drop")
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "fault-csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "fault-csrf"})
 			req.Header.Set("X-CSRF-Token", "fault-csrf")
 		}
 		client := &http.Client{Timeout: 20 * time.Second}

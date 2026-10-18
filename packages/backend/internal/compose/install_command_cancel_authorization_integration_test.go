@@ -58,7 +58,7 @@ func TestInstallCommandCancellationAuthorizationPostgres(t *testing.T) {
 	handler := &routes.WorkspaceHandler{Service: service}
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Auth.SessionRefreshWindow = "0s"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
@@ -93,8 +93,8 @@ func TestInstallCommandCancellationAuthorizationPostgres(t *testing.T) {
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("Content-Type", "application/json")
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-			req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "cancel-csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "cancel-csrf"})
 			req.Header.Set("X-CSRF-Token", "cancel-csrf")
 		}
 		if token != "" {

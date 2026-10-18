@@ -56,8 +56,8 @@ func TestInstallApprovalCatalogDecisionsPostgres(t *testing.T) {
 				req.Header.Set("Smithers-Actor", "person")
 				req.Header.Set("Smithers-Via", "smithers")
 				if cell.scopes == "" {
-					req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-					req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 					req.Header.Set("X-CSRF-Token", "csrf")
 				} else {
 					req.Header.Set("Authorization", "Bearer "+token)
@@ -122,8 +122,8 @@ func TestInstallApprovalCatalogDecisionsPostgres(t *testing.T) {
 			req := httptest.NewRequest(cell.method, "http://example.com"+cell.path, strings.NewReader(cell.body))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Origin", "http://example.com")
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 			req.Header.Set("X-CSRF-Token", "csrf")
 			out := httptest.NewRecorder()
 			f.router.ServeHTTP(out, req)

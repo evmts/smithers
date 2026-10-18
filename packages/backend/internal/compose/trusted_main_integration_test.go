@@ -88,7 +88,7 @@ func TestTrustedMainManualFlowThroughInstallRouter(t *testing.T) {
 	api := services.NewWorkflowAPIService(q, services.NewWorkflowRunService(q), services.WithWorkflowAPIFlowInvoker(invoked))
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{"http://example.com"}
 	router := buildWorkflowTriggerRouter(q, pool, &routes.WorkflowHandler{Service: api}, cfg)
@@ -100,8 +100,8 @@ func TestTrustedMainManualFlowThroughInstallRouter(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://example.com")
 	req.Header.Set("X-CSRF-Token", "csrf")
-	req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-	req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 	out := httptest.NewRecorder()
 	router.ServeHTTP(out, req)
 	require.Equal(t, 201, out.Code, out.Body.String())
@@ -203,8 +203,8 @@ func TestTrustedMainManualFlowThroughInstallRouter(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Origin", "http://example.com")
 			req.Header.Set("X-CSRF-Token", "csrf")
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 			before := machine.creates
 			out := httptest.NewRecorder()
 			router.ServeHTTP(out, req)

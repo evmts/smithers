@@ -372,7 +372,7 @@ func outsideWatcherDaemonFault(t *testing.T, binary, point string, interruptWrit
 	workspace := services.NewWorkspaceService(q, services.WithWorkspaceTransactions(f.pool), services.WithWorkspaceInstallAuthorization(q), services.WithBranchMachineProviders(services.InstallBranchMachineProviders(identity.NewMemberBoundary(q), nil)), services.WithWorkspaceBurstVersions(f.pool, client))
 	install := testConfigAllFlagsOn()
 	install.Auth.Mode = "selfhost"
-	install.Auth.SessionCookieName = "session"
+	install.Auth.SessionCookieName = "smithers_local_session"
 	install.Server.PublicURL = f.origin
 	install.Server.AllowedOrigins = []string{f.origin}
 	router := githubAppSetupComposeRouter(install, f.pool, nil, &routes.WorkspaceHandler{Service: workspace})
@@ -389,7 +389,7 @@ func outsideWatcherDaemonFault(t *testing.T, binary, point string, interruptWrit
 	seen := map[string]bool{}
 	for _, entry := range entries {
 		req := httptest.NewRequest("GET", f.origin+"/api/branches/"+f.row.ID+"/diff?entry="+entry, nil)
-		req.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 		req.RemoteAddr = "127.0.0.1:61000"
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)

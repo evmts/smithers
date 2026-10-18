@@ -97,7 +97,7 @@ func (m mockAuthService) CompleteGitHubOAuth(ctx context.Context, code, state, s
 
 func defaultRouteAuthConfig() config.AuthConfig {
 	return config.AuthConfig{
-		SessionCookieName: "smithers_session",
+		SessionCookieName: "__Host-smithers_session",
 		SessionDuration:   "720h",
 		CookieSecure:      true,
 	}
@@ -162,14 +162,14 @@ func TestAuthHandler_PostKeyAuthVerify_SetsSessionAndCSRFCookies(t *testing.T) {
 	cookies := rec.Result().Cookies()
 	require.Len(t, cookies, 2)
 
-	sessionCookie := cookieByName(cookies, "smithers_session")
+	sessionCookie := cookieByName(cookies, "__Host-smithers_session")
 	require.NotNil(t, sessionCookie)
 	assert.Equal(t, "session-key-1", sessionCookie.Value)
 	assert.True(t, sessionCookie.HttpOnly)
 	assert.Equal(t, http.SameSiteLaxMode, sessionCookie.SameSite)
 	assert.True(t, sessionCookie.Secure)
 
-	csrfCookie := cookieByName(cookies, "__csrf")
+	csrfCookie := cookieByName(cookies, "__Host-smithers_csrf")
 	require.NotNil(t, csrfCookie)
 	assert.Len(t, csrfCookie.Value, 64)
 	assert.False(t, csrfCookie.HttpOnly)
@@ -249,14 +249,14 @@ func TestAuthHandler_GetGitHubCallback_SetsSessionCookieAndRedirects(t *testing.
 	assert.Equal(t, "", cliClearCookie.Value)
 	assert.Equal(t, -1, cliClearCookie.MaxAge)
 
-	sessionCookie := cookieByName(setCookies, "smithers_session")
+	sessionCookie := cookieByName(setCookies, "__Host-smithers_session")
 	require.NotNil(t, sessionCookie)
 	assert.Equal(t, "session-key-gh", sessionCookie.Value)
 	assert.True(t, sessionCookie.HttpOnly)
 	assert.Equal(t, http.SameSiteLaxMode, sessionCookie.SameSite)
 	assert.True(t, sessionCookie.Secure, "session cookie must have Secure attribute")
 
-	csrfCookie := cookieByName(setCookies, "__csrf")
+	csrfCookie := cookieByName(setCookies, "__Host-smithers_csrf")
 	require.NotNil(t, csrfCookie)
 	assert.Len(t, csrfCookie.Value, 64)
 	assert.False(t, csrfCookie.HttpOnly)
@@ -421,7 +421,7 @@ func TestAuthHandler_GetGitHubCallback_StaleCLICookieDoesNotHijackBrowserLogin(t
 	// No service-provided RedirectURL: the handler falls back to the composed
 	// public origin so direct API callbacks don't land on the API's 404 page.
 	assert.Equal(t, "https://code.smithers.sh/", rec.Header().Get("Location"))
-	sessionCookie := cookieByName(rec.Result().Cookies(), "smithers_session")
+	sessionCookie := cookieByName(rec.Result().Cookies(), "__Host-smithers_session")
 	require.NotNil(t, sessionCookie)
 	assert.Equal(t, "session-key-browser", sessionCookie.Value)
 	// The unusable stale cookie is discarded.
@@ -484,18 +484,18 @@ func TestAuthHandler_PostLogout_RevokesSessionAndClearsCookie(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "session-xyz"})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: "session-xyz"})
 	rec := httptest.NewRecorder()
 	handler.PostLogout(rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
 	assert.True(t, logoutCalled)
-	assert.Contains(t, rec.Header().Get("Set-Cookie"), "smithers_session=")
+	assert.Contains(t, rec.Header().Get("Set-Cookie"), "__Host-smithers_session=")
 
 	logoutCookies := rec.Result().Cookies()
 	require.Len(t, logoutCookies, 2)
 
-	sessionCookie := cookieByName(logoutCookies, "smithers_session")
+	sessionCookie := cookieByName(logoutCookies, "__Host-smithers_session")
 	require.NotNil(t, sessionCookie)
 	assert.Equal(t, "", sessionCookie.Value)
 	assert.Equal(t, -1, sessionCookie.MaxAge)
@@ -503,7 +503,7 @@ func TestAuthHandler_PostLogout_RevokesSessionAndClearsCookie(t *testing.T) {
 	assert.Equal(t, http.SameSiteLaxMode, sessionCookie.SameSite)
 	assert.True(t, sessionCookie.Secure, "logout session clear cookie must have Secure attribute")
 
-	csrfCookie := cookieByName(logoutCookies, "__csrf")
+	csrfCookie := cookieByName(logoutCookies, "__Host-smithers_csrf")
 	require.NotNil(t, csrfCookie)
 	assert.Equal(t, "", csrfCookie.Value)
 	assert.Equal(t, -1, csrfCookie.MaxAge)

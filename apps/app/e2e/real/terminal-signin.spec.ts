@@ -266,7 +266,7 @@ for (const stage of ["S1", "S1_NO_CONFIRM", "S2"] as const) test(`C-J6-01 ${stag
       const privateRead = await alice.request.get(`${origin}/api/confirmations`)
       expect(privateRead.status()).toBe(200)
       expect(JSON.stringify(await privateRead.json())).not.toContain(pending.id)
-      const aliceCSRF = (await alice.cookies(origin)).find(cookie => cookie.name === "__csrf")?.value
+      const aliceCSRF = (await alice.cookies(origin)).find(cookie => ["__Host-smithers_csrf", "smithers_local_csrf"].includes(cookie.name))?.value
       expect(aliceCSRF).toBeTruthy()
       const privateApproval = await alice.request.post(`${origin}/api/confirmations/${pending.id}/approve`, {
         data: {}, headers: { Origin: origin, "X-CSRF-Token": aliceCSRF!, "Idempotency-Key": `j6-alice-${pending.id}` }

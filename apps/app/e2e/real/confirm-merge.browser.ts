@@ -44,7 +44,7 @@ const browser = await chromium.launch({ headless: true })
 try {
   const api = async (path: string, method = "GET", body?: unknown, agent: boolean | string = false, key = "fixture") => {
     const response = await fetch(`${origin}${path}`, { method, headers: { Origin: origin, "Content-Type": "application/json", "Idempotency-Key": key,
-      ...(agent ? { Authorization: `Bearer ${typeof agent === "string" ? agent : token}`, "Smithers-Via": "codex", "Smithers-Actor": "person", "Smithers-Profile": "app_agent" } : { Cookie: "session=maya-browser-session; __csrf=csrf", "X-CSRF-Token": "csrf" }) },
+      ...(agent ? { Authorization: `Bearer ${typeof agent === "string" ? agent : token}`, "Smithers-Via": "codex", "Smithers-Actor": "person", "Smithers-Profile": "app_agent" } : { Cookie: "smithers_local_session=maya-browser-session; smithers_local_csrf=csrf", "X-CSRF-Token": "csrf" }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
     const value = await response.json()
     return { status: response.status, value }
@@ -64,7 +64,7 @@ try {
   expect((await api("/api/todos")).value).toEqual([])
 
   const owner = await browser.newContext()
-  await owner.addCookies([{ name: "session", value: "maya-browser-session", url: origin, httpOnly: true }, { name: "__csrf", value: "csrf", url: origin }])
+  await owner.addCookies([{ name: "smithers_local_session", value: "maya-browser-session", url: origin, httpOnly: true }, { name: "smithers_local_csrf", value: "csrf", url: origin }])
   const page = await owner.newPage()
   const errors: string[] = []
   page.on("pageerror", error => errors.push(error.message))
@@ -83,7 +83,7 @@ try {
 
 
   const stranger = await browser.newContext()
-  await stranger.addCookies([{ name: "session", value: "ben-browser-session", url: origin, httpOnly: true }, { name: "__csrf", value: "csrf", url: origin }])
+  await stranger.addCookies([{ name: "smithers_local_session", value: "ben-browser-session", url: origin, httpOnly: true }, { name: "smithers_local_csrf", value: "csrf", url: origin }])
   const other = await stranger.newPage()
   await other.goto(`${origin}/maya/demo`)
   await expect(other.getByTestId("transcript")).toBeVisible({ timeout: 90_000 })

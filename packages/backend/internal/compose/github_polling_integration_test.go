@@ -176,7 +176,7 @@ func (f *installPollingComposition) retry(t *testing.T) {
 	request := httptest.NewRequest("POST", "/api/github/sync", nil)
 	request.Header.Set("Origin", "http://example.com")
 	request.Header.Set("X-CSRF-Token", "poll-csrf")
-	request.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "poll-csrf"})
+	request.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "poll-csrf"})
 	request = request.WithContext(middleware.ContextWithAuthInfo(request.Context(), &middleware.AuthInfo{User: &f.user, SessionHash: "poll-session"}))
 	response := httptest.NewRecorder()
 	f.router.ServeHTTP(response, request)

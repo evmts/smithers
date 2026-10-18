@@ -127,7 +127,7 @@ func TestInstallIssueCommentComposed(t *testing.T) {
 		if phases != "" {
 			cookie := ""
 			for _, value := range member.Cookies(mustRehearsalURL(r.origin)) {
-				if value.Name == "smithers_session" {
+				if value.Name == "smithers_local_session" {
 					cookie = value.Value
 				}
 			}

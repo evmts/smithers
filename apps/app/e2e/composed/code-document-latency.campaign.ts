@@ -47,7 +47,7 @@ try {
   const pending = new Map<string, { resolve(): void }>()
   const contexts = await Promise.all(["ben", "alice"].map(async member => {
    const context = await browser.newContext({ permissions: ["local-network-access"], viewport: { width: 1440, height: 900 } })
-   await context.addCookies([{ name: "smithers_session", value: memberCookies[member]!, url: origin }])
+   await context.addCookies([{ name: "__Host-smithers_session", value: memberCookies[member]!, url: origin }])
    // Only the campaign mount is served here. /api/live goes to the real install.
    await context.route(`${origin}/campaign**`, route => route.fulfill({ contentType: "text/html", body: '<link rel="stylesheet" href="/campaign.css"><div id="root"></div><script type="module" src="/campaign.js"></script>' }))
    await context.route(`${origin}/campaign.js`, route => route.fulfill({ contentType: "text/javascript", body: javascript }))

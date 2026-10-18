@@ -28,7 +28,7 @@ func TestBrowserFlowStoredBindingComposedInstall(t *testing.T) {
 	f := newLandingGateFixtureWithFactory(t, nil, "", true)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	workspace, err := f.q.CreateWorkspace(f.ctx, db.CreateWorkspaceParams{RepositoryID: f.repoID, UserID: f.other.ID, Name: "bound-relay", TargetBookmark: "scratch/member/bound", Kind: "container", Status: "running"})
@@ -105,8 +105,8 @@ func TestBrowserFlowStoredBindingComposedInstall(t *testing.T) {
 				body = strings.TrimSuffix(body, "}") + `,"command":"install.settings"}`
 			}
 			req := httptest.NewRequest(http.MethodPost, cfg.Server.PublicURL+"/api/workflow/rpc", strings.NewReader(body))
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-			req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 			req.Header.Set("Origin", cfg.Server.PublicURL)
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-CSRF-Token", "csrf")
@@ -244,8 +244,8 @@ func TestRunSnapshotRetirementComposedInstall(t *testing.T) {
 			body, err := json.Marshal(browserFlowRequest{Repo: f.owner.Username + "/" + repo.Name, WorkspaceID: workspace.ID, Procedure: "Projection.Snapshot", Payload: json.RawMessage(`{"selector":{"_tag":"run-summary","runId":"finished-run"}}`)})
 			require.NoError(t, err)
 			req := httptest.NewRequest(http.MethodPost, cfg.Server.PublicURL+"/api/workflow/rpc", strings.NewReader(string(body)))
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-			req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 			req.Header.Set("Origin", cfg.Server.PublicURL)
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-CSRF-Token", "csrf")

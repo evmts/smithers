@@ -62,7 +62,7 @@ func TestPlanWikiCitationsComposedTodoRoute(t *testing.T) {
 	cfg.Server.AllowedOrigins = []string{"http://smithers.test"}
 	router := todoMergeComposeRouter(cfg, q, pool, &routes.MythicalHandler{Service: service})
 	request := httptest.NewRequest("GET", "http://smithers.test/api/todos/"+strconv.FormatInt(filed.Number, 10), nil)
-	request.AddCookie(&http.Cookie{Name: "smithers_session", Value: "wiki-browser"})
+	request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "wiki-browser"})
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	require.Equal(t, 200, response.Code, response.Body.String())
@@ -100,7 +100,7 @@ func TestPlanWikiCitationsComposedTodoRoute(t *testing.T) {
 			_, err := pool.Exec(ctx, `UPDATE mythical_items SET flow_digest=$2,candidate_head='',request_run_id='current-run',checks=jsonb_set(checks,'{planReceipt}',$3::jsonb) WHERE repository_id=$1`, repo.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", tc.receipt)
 			require.NoError(t, err)
 			request := httptest.NewRequest("GET", "http://smithers.test/api/todos/"+strconv.FormatInt(filed.Number, 10), nil)
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: "wiki-browser"})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "wiki-browser"})
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, request)
 			require.Equal(t, 200, response.Code, response.Body.String())

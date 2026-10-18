@@ -99,7 +99,7 @@ func TestNativeHostCleanupThroughComposedInstall(t *testing.T) {
 			read := func() string {
 				req := httptest.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:4000/api/repos/terminal-owner/app/workspaces/%s/services", branch.ID), nil)
 				req.RemoteAddr = "127.0.0.1:49100"
-				req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "terminal-browser"})
+				req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: "terminal-browser"})
 				out := httptest.NewRecorder()
 				router.ServeHTTP(out, req)
 				require.Equal(t, 200, out.Code, out.Body.String())

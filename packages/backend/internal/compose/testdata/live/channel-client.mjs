@@ -16,7 +16,7 @@ const channel = new LiveChannel({
   socket: () => {
     connections++
     socket = new WebSocket(origin.replace("http:", "ws:") + "/api/live", {
-      headers: { Cookie: "smithers_session=" + token, Origin: origin, "Sec-WebSocket-Protocol": "smithers.live.v1" }
+      headers: { Cookie: "__Host-smithers_session=" + token, Origin: origin, "Sec-WebSocket-Protocol": "smithers.live.v1" }
     })
     return socket
   }

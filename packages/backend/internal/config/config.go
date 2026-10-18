@@ -533,7 +533,7 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("auth.mode", "")
 	v.SetDefault("auth.session_duration", "720h")
 	v.SetDefault("auth.session_refresh_window", "168h")
-	v.SetDefault("auth.session_cookie_name", "smithers_session")
+	v.SetDefault("auth.session_cookie_name", "__Host-smithers_session")
 	v.SetDefault("auth.session_secret", "")
 	v.SetDefault("auth.lfs_signing_secret", "")
 	v.SetDefault("auth.cookie_secure", true)

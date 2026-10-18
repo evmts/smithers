@@ -10,7 +10,7 @@ test("a host turn survives closing its author tab and replays for both members",
   const origin = new URL(baseURL)
   const member = async (login: string) => {
     const context = await browser.newContext()
-    await context.addCookies([{ name: "session", value: `w17-${login}`, domain: origin.hostname, path: "/" }, { name: "__csrf", value: "csrf", domain: origin.hostname, path: "/" }])
+    await context.addCookies([{ name: "smithers_local_session", value: `w17-${login}`, domain: origin.hostname, path: "/" }, { name: "smithers_local_csrf", value: "csrf", domain: origin.hostname, path: "/" }])
     return context
   }
   const ben = await member("ben"), alice = await member("alice")

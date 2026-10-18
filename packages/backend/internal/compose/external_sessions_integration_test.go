@@ -73,7 +73,7 @@ func TestExternalRawSessionsUnavailableComposedInstallPostgres(t *testing.T) {
 	members := &services.Members{Pool: pool, Credentials: rosterAppCredentials{}, Minter: services.NewRepoConnectionService(nil, rosterAppCredentials{})}
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
 	cfg.Server.PublicURL = origin
@@ -84,11 +84,11 @@ func TestExternalRawSessionsUnavailableComposedInstallPostgres(t *testing.T) {
 	server.Start()
 	defer server.Close()
 	for _, cookie := range cookies {
-		for _, path := range []string{"/api/external/sessions?agent=codex&session=unrelated", "/api/external/sessions?agent=claude-code&session=unrelated", "/api/external/codex?session=unrelated"} {
+		for _, path := range []string{"/api/external/sessions?agent=codex&smithers_local_session=unrelated", "/api/external/sessions?agent=claude-code&smithers_local_session=unrelated", "/api/external/codex?smithers_local_session=unrelated"} {
 			request, err := http.NewRequest(http.MethodGet, origin+path, nil)
 			require.NoError(t, err)
 			request.Header.Set("Origin", origin)
-			request.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 			response, err := server.Client().Do(request)
 			require.NoError(t, err)
 			body, err := io.ReadAll(response.Body)
@@ -98,7 +98,7 @@ func TestExternalRawSessionsUnavailableComposedInstallPostgres(t *testing.T) {
 			require.NotContains(t, string(body), string(sentinel))
 		}
 		deadline, cancel := context.WithTimeout(ctx, 5*time.Second)
-		socket, _, err := websocket.Dial(deadline, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"session=" + cookie}}})
+		socket, _, err := websocket.Dial(deadline, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_local_session=" + cookie}}})
 		require.NoError(t, err)
 		require.NoError(t, socket.Write(deadline, websocket.MessageText, []byte(`{"t":"sub","id":1,"topic":"external:codex:0199e2e0"}`)))
 		_, body, err := socket.Read(deadline)

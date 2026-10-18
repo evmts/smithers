@@ -319,7 +319,7 @@ func TestDeferredTriggerManagementHTTPPostgres(t *testing.T) {
 				req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{}`))
 				req.Header.Set("Content-Type", "application/json")
 				if credential.cookie != "" {
-					req.AddCookie(&http.Cookie{Name: "smithers_session", Value: credential.cookie})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: credential.cookie})
 				}
 				if credential.bearer != "" {
 					req.Header.Set("Authorization", "Bearer "+credential.bearer)
@@ -341,7 +341,7 @@ func TestDeferredTriggerManagementHTTPPostgres(t *testing.T) {
 			req := httptest.NewRequest("PUT", "/api/gateways/host/repository-jobs/ci/comments/step", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			if credential.cookie != "" {
-				req.AddCookie(&http.Cookie{Name: "smithers_session", Value: credential.cookie})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: credential.cookie})
 			}
 			if credential.bearer != "" {
 				req.Header.Set("Authorization", "Bearer "+credential.bearer)

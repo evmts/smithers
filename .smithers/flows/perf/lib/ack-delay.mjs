@@ -2,8 +2,8 @@
  * in for the guest's retained snapshot, thaw or drained outbox observation. */
 export function acknowledgementDelay({ origin, branch, cookie }) {
   if (!cookie) throw new Error('owner session required')
-  const csrf = cookie.match(/(?:^|;\s*)__csrf=([^;]+)/)?.[1]
-  if (!csrf) throw new Error('owner cookie must include __csrf')
+  const csrf = cookie.match(/(?:^|;\s*)__Host-smithers_csrf=([^;]+)/)?.[1]
+  if (!csrf) throw new Error('owner cookie must include __Host-smithers_csrf')
   let armed
   const request = async (method, delay) => {
     const response = await fetch(`${origin}/api/install/ack-delay${method === 'GET' ? `?branch=${encodeURIComponent(branch)}` : ''}`, {

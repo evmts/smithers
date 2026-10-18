@@ -255,8 +255,8 @@ func branchMachineMemberInstall(t *testing.T, erase, concurrent, realMachine boo
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", origin)
 		req.Header.Set("X-CSRF-Token", "csrf-fixture")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-fixture"})
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf-fixture"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		res, err := server.Client().Do(req)
 		require.NoError(t, err)
 		defer res.Body.Close()
@@ -320,8 +320,8 @@ func branchMachineMemberInstall(t *testing.T, erase, concurrent, realMachine boo
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("Origin", origin)
 				req.Header.Set("X-CSRF-Token", "csrf-fixture")
-				req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-fixture"})
-				req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf-fixture"})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 				client := &http.Client{Timeout: 15 * time.Second}
 				res, err := client.Do(req)
 				if err != nil {

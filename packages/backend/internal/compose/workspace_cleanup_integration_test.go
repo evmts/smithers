@@ -96,7 +96,7 @@ func TestCleanupComposedInstallRetainsWithoutCaptureBroker(t *testing.T) {
 	require.False(t, stored.DeletedAt.Valid)
 	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:4000/api/branches/"+row.ID, nil)
 	request.RemoteAddr = "127.0.0.1:12345"
-	request.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+	request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	require.Equal(t, 200, response.Code, response.Body.String())
@@ -112,8 +112,8 @@ func TestCleanupComposedInstallRetainsWithoutCaptureBroker(t *testing.T) {
 		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set("Origin", "http://127.0.0.1:4000")
 		req.Header.Set("X-CSRF-Token", "archive-csrf")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "archive-csrf"})
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "archive-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		res := httptest.NewRecorder()
 		handler.ServeHTTP(res, req)
 		require.Equal(t, status, res.Code, res.Body.String())

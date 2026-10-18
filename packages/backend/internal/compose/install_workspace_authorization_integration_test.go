@@ -26,7 +26,7 @@ func TestInstallWorkspaceSystemActionsPostgres(t *testing.T) {
 	service := services.NewWorkspaceService(q, services.WithWorkspaceInstallAuthorization(q), services.WithWorkspaceTransactions(f.pool))
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = f.origin
 	cfg.Server.AllowedOrigins = []string{f.origin}
 	router := hostStatusProductionRouter(cfg, q, &services.InstallCapacityService{}, conformanceServices{pool: f.pool, live: &routes.LiveHandler{Origins: func() []string { return []string{f.origin} }}, workspace: &routes.WorkspaceHandler{Service: service}})
@@ -51,8 +51,8 @@ func TestInstallWorkspaceSystemActionsPostgres(t *testing.T) {
 		if credential != "" {
 			req.Header.Set("Authorization", "Bearer "+credential)
 		} else {
-			req.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 			req.Header.Set("X-CSRF-Token", "csrf")
 		}
 		req.Header.Set("Smithers-Actor", "person")

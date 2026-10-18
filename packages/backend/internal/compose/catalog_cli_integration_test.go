@@ -72,7 +72,7 @@ func catalogCLIConfirmationsPostgres(t *testing.T, via string) {
 	ownerCookie := session(owner)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Auth.SessionSecret = "catalog-fixture-secret"
 	server := httptest.NewUnstartedServer(nil)
 	cfg.Server.PublicURL = "http://" + server.Listener.Addr().String()
@@ -178,8 +178,8 @@ func catalogCLIConfirmationsPostgres(t *testing.T, via string) {
 		r.Header.Set("Content-Type", "application/json")
 		r.Header.Set("Idempotency-Key", key)
 		r.Header.Set("X-CSRF-Token", "csrf")
-		r.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
-		r.AddCookie(&http.Cookie{Name: "session", Value: ownerCookie})
+		r.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
+		r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: ownerCookie})
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
 		require.Equal(t, 200, w.Code, w.Body.String())

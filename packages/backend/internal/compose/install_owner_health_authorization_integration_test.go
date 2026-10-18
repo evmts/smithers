@@ -47,7 +47,7 @@ func TestInstallOwnerHealthUsesRosterAuthorityPostgres(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest("GET", cfg.Server.PublicURL+"/api/admin/system/health", nil)
 			if tc.cookie != "" {
-				req.AddCookie(&http.Cookie{Name: "session", Value: tc.cookie})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: tc.cookie})
 			}
 			if tc.token != "" {
 				req.Header.Set("Authorization", "Bearer "+tc.token)

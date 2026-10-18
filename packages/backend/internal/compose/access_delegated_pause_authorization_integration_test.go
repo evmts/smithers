@@ -31,7 +31,7 @@ func TestAccessDelegatedStopResumeEffectsComposedPostgres(t *testing.T) {
 	ctx := t.Context()
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "smithers_session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://127.0.0.1:4000"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	router := todoMergeComposeRouter(cfg, h.q, h.pool, &routes.MythicalHandler{Service: todos})

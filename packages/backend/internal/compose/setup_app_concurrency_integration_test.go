@@ -93,7 +93,7 @@ func TestSetupBrowsersCreateOneGitHubAppPostgres(t *testing.T) {
 			request.Header.Set("Origin", origin)
 			for _, cookie := range browsers[i] {
 				request.AddCookie(cookie)
-				if cookie.Name == middleware.CSRFCookieName {
+				if cookie.Name == middleware.LocalCSRFCookieName {
 					request.Header.Set("X-CSRF-Token", cookie.Value)
 				}
 			}

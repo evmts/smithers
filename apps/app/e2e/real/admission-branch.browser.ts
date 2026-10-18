@@ -34,7 +34,7 @@ const base = `http://127.0.0.1:${address.port}`
 const browser = await chromium.launch({ headless: true })
 try {
   const context = await browser.newContext()
-  await context.addCookies([{ name: "smithers_session", value: cookie, url: base, httpOnly: true }])
+  await context.addCookies([{ name: "smithers_local_session", value: cookie, url: base, httpOnly: true }])
   const page = await context.newPage()
   const errors: string[] = []
   page.on("pageerror", error => errors.push(error.message))

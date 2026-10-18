@@ -19,7 +19,7 @@ const member = (cookie: string) => {
     documentFrames: true,
     socket: () => {
       const socket = current = new NativeWebSocket(`${origin.replace(/^http/, "ws")}/api/live`, {
-        headers: { Cookie: `smithers_session=${cookie}`, Origin: origin }, protocols: ["smithers.live.v1"]
+        headers: { Cookie: `smithers_local_session=${cookie}`, Origin: origin }, protocols: ["smithers.live.v1"]
       } as never)
       // Keep refusals and closes for a failing run's report.
       socket.addEventListener("message", event => { if (typeof event.data === "string" && !event.data.includes('"saved"')) frames.push(`${new Date().toISOString().slice(11, 23)} ${event.data}`) })
@@ -198,7 +198,7 @@ assert.equal(alice.provider.unsaved, undefined, "a host restart offers no Reappl
 assert.equal(ben.text().toString(), alice.text().toString())
 
 if (process.env.SMITHERS_CODE_DOCUMENT_OUTSIDE === "1") {
-  const identity = await NativeFetch(`${origin}/api/user`, { headers: { Cookie: "smithers_session=alice-cookie" } })
+  const identity = await NativeFetch(`${origin}/api/user`, { headers: { Cookie: "smithers_local_session=alice-cookie" } })
   assert.equal(identity.status, 200, "the member was authenticated before revocation")
   console.log("REVOKE")
   assert.equal((await stdin.next()).value, "REVOKED")
@@ -210,7 +210,7 @@ if (process.env.SMITHERS_CODE_DOCUMENT_OUTSIDE === "1") {
   aliceCard.typeReadOnly("REVOKED_MUST_NOT_WRITE")
   assert.equal(alice.text().toString(), before)
   assert.equal(benCard.text(), before)
-  const denied = await NativeFetch(`${origin}/api/branches/${topic.split(":")[2]}/files/retry.ts`, { headers: { Cookie: "smithers_session=alice-cookie" } })
+  const denied = await NativeFetch(`${origin}/api/branches/${topic.split(":")[2]}/files/retry.ts`, { headers: { Cookie: "smithers_local_session=alice-cookie" } })
   assert.ok([401, 403].includes(denied.status), `revoked file read: ${denied.status}`)
 }
 

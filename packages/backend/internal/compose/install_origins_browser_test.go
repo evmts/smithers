@@ -150,7 +150,7 @@ func TestInstallOriginsBrowser(t *testing.T) {
 		OwnerSet: []string{lan, named, secure}, Unset: fmt.Sprintf("http://%s:%d", unset, network), Bind: address, Address: address,
 		// mDNS answers this Mac's name on every interface; the browser uses the one the bind listens on.
 		Resolve: map[string]string{name: address, unset: address, proxied: "127.0.0.1"}, UntrustedTLS: true,
-		SessionCookie: "smithers_session", Answer: strings.Join(stackJourneyAnswer, "")}
+		SessionCookie: "__Host-smithers_session", Answer: strings.Join(stackJourneyAnswer, "")}
 	host.Ports.HTTP, host.Ports.Network, host.Ports.SSH = httpPort, network, sshPort
 
 	_, _, pool := splitProcessDatabase(t)

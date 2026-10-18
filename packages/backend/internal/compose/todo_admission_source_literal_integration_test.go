@@ -120,7 +120,7 @@ func TestTodoAdmissionSourceTransitionLiteralCases(t *testing.T) {
 			}
 			request, err := http.NewRequest("GET", fmt.Sprintf("%s/api/todos/%d", server.URL, row.item.Number.Int64), nil)
 			require.NoError(t, err)
-			request.AddCookie(&http.Cookie{Name: "smithers_session", Value: "owner-browser-session"})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "owner-browser-session"})
 			response, err := http.DefaultClient.Do(request)
 			require.NoError(t, err)
 			defer response.Body.Close()

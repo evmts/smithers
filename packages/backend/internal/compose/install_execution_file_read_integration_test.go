@@ -85,7 +85,7 @@ func TestInstallExecutionFileReadsPostgres(t *testing.T) {
 	service := services.NewWorkspaceService(f.q, services.WithWorkspaceInstallAuthorization(f.q), services.WithWorkspaceTransactions(f.pool), services.WithBranchMachineProviders(services.InstallBranchMachineProviders(identity.NewMemberBoundary(f.q), nil)), services.WithBranchHeads(store))
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	codec, err := webhook.NewSecretCodec("file-read-roster-test")
@@ -119,7 +119,7 @@ func TestInstallExecutionFileReadsPostgres(t *testing.T) {
 		for _, path := range []string{"/api/todos", "/api/todos/" + fmt.Sprint(number), "/api/repos/gate-owner/app/workspaces/" + ws.ID + "/files", "/api/branches/" + ws.ID + "/files/history.txt", "/api/branches/" + ws.ID + "/diff", "/api/branches/" + ws.ID + "/activity"} {
 			t.Run(path, func(t *testing.T) {
 				req := httptest.NewRequest("GET", cfg.Server.PublicURL+path, nil)
-				req.AddCookie(&http.Cookie{Name: "session", Value: memberCookie})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: memberCookie})
 				out := httptest.NewRecorder()
 				router.ServeHTTP(out, req)
 				require.Equal(t, 200, out.Code, out.Body.String())
@@ -135,7 +135,7 @@ func TestInstallExecutionFileReadsPostgres(t *testing.T) {
 			t.Run(reader.name+" retained workspace"+suffix, func(t *testing.T) {
 				req := httptest.NewRequest("GET", cfg.Server.PublicURL+"/api/repos/gate-owner/app/workspaces/"+ws.ID+suffix, nil)
 				if reader.token == "" {
-					req.AddCookie(&http.Cookie{Name: "session", Value: memberCookie})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: memberCookie})
 				} else {
 					req.Header.Set("Authorization", "Bearer "+reader.token)
 				}
@@ -332,7 +332,7 @@ func TestInstallExecutionFileReadsPostgres(t *testing.T) {
 				t.Helper()
 				req := httptest.NewRequest("GET", cfg.Server.PublicURL+"/api/members", nil)
 				if bearer == "" {
-					req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 				} else {
 					req.Header.Set("Authorization", "Bearer "+bearer)
 				}

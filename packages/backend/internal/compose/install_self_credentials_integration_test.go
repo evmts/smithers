@@ -54,8 +54,8 @@ func TestInstallMemberSelfCredentialsPostgres(t *testing.T) {
 		req := httptest.NewRequest(method, cfg.Server.PublicURL+path, nil)
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 			req.Header.Set("X-CSRF-Token", "csrf")
 		}
 		if bearer != "" {

@@ -70,8 +70,8 @@ func TestInstallBookmarkProtectionPostgres(t *testing.T) {
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("Content-Type", "application/json")
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 			req.Header.Set("X-CSRF-Token", "csrf")
 		}
 		if bearer != "" {
@@ -185,8 +185,8 @@ func TestInstallBookmarkProtectionPostgres(t *testing.T) {
 				req := httptest.NewRequest(target.method, cfg.Server.PublicURL+"/api/repos/gate-owner/app"+target.path, strings.NewReader(target.body))
 				req.Header.Set("Origin", cfg.Server.PublicURL)
 				req.Header.Set("Content-Type", "application/json")
-				req.AddCookie(&http.Cookie{Name: "session", Value: ownerCookie})
-				req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: ownerCookie})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 				req.Header.Set("X-CSRF-Token", "csrf")
 				decisions := 0
 				req = req.WithContext(services.WithAuthorizationObserver(requestCtx, func(string) { decisions++ }))

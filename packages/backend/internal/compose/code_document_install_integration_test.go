@@ -371,7 +371,7 @@ func (install *codeDocumentInstall) browser(t *testing.T, cookie string) *codeDo
 	t.Helper()
 	conn, response, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(install.origin, "http")+"/api/live", &websocket.DialOptions{
 		Subprotocols: []string{live.Protocol},
-		HTTPHeader:   http.Header{"Origin": {install.origin}, "Cookie": {"smithers_session=" + cookie}},
+		HTTPHeader:   http.Header{"Origin": {install.origin}, "Cookie": {"smithers_local_session=" + cookie}},
 	})
 	if response != nil && response.Body != nil {
 		defer response.Body.Close()

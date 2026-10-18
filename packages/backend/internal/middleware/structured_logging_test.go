@@ -1348,7 +1348,7 @@ func TestStructuredLogger_ProductionOrder_SessionCookieSetsUserID(t *testing.T) 
 	r.Use(chiMiddleware.RequestID)
 	r.Use(middleware.StructuredLogger(middleware.NewServerLogger(&buf, "info")))
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.AuthLoader(querier, config.AuthConfig{SessionCookieName: "smithers_session"}))
+		r.Use(middleware.AuthLoader(querier, config.AuthConfig{SessionCookieName: "__Host-smithers_session"}))
 		r.Get("/api/user", func(w http.ResponseWriter, r *http.Request) {
 			require.NotNil(t, middleware.UserFromContext(r.Context()), "fixture: AuthLoader must resolve the session")
 			w.WriteHeader(http.StatusOK)
@@ -1356,7 +1356,7 @@ func TestStructuredLogger_ProductionOrder_SessionCookieSetsUserID(t *testing.T) 
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/user", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "session-key-fixture"})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: "session-key-fixture"})
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)

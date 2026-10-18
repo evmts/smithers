@@ -153,7 +153,7 @@ func workingConversationWithContext(t *testing.T, reader chat.ContextRepository,
 		}
 		cfg := testConfigAllFlagsOn()
 		cfg.Auth.Mode = "selfhost"
-		cfg.Auth.SessionCookieName = "session"
+		cfg.Auth.SessionCookieName = "smithers_local_session"
 		auth := services.NewAuthService(q, cfg.Auth, nil, nil)
 		auth.Members = &services.Members{Pool: local.pool, Credentials: rosterAppCredentials{}, Minter: services.NewRepoConnectionService(nil, rosterAppCredentials{})}
 		options.API = services.InstallAPI{Auth: auth}
@@ -232,8 +232,8 @@ func (f *conversationRehearsal) call(t *testing.T, login, method, path, body str
 	req.Header.Set("Origin", f.origin)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-CSRF-Token", "csrf")
-	req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
-	req.AddCookie(&http.Cookie{Name: "session", Value: "w17-" + login})
+	req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "w17-" + login})
 	res, err := f.local.client.Do(req)
 	require.NoError(t, err)
 	raw, err := io.ReadAll(res.Body)

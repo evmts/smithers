@@ -18,7 +18,7 @@ try {
   const context = await browser.newContext()
   await context.addCookies([
     { name: "session", value: "maya-browser-session", url: origin, httpOnly: true },
-    { name: "__csrf", value: "csrf", url: origin }
+    { name: "__Host-smithers_csrf", value: "csrf", url: origin }
   ])
   const page = await context.newPage()
   const errors: string[] = []
@@ -121,7 +121,7 @@ try {
   for (const cut of connections) cut()
   for (const n of [1, 2]) {
     const response = await fetch(`${origin}/api/todos/${n}`, { method: "POST", headers: {
-      Cookie: "session=maya-browser-session; __csrf=csrf", Origin: origin,
+      Cookie: "session=maya-browser-session; __Host-smithers_csrf=csrf", Origin: origin,
       "Content-Type": "application/json", "X-CSRF-Token": "csrf", "Idempotency-Key": `live-drop-${n}`
     }, body: JSON.stringify({ op: "drop" }) })
     expect(response.status, await response.text()).toBe(202)

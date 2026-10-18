@@ -275,8 +275,8 @@ func testTodoStopResumeComposedInstall(t *testing.T, engineState, productState s
 		req.Header.Set("Origin", origin)
 		req.Header.Set("X-CSRF-Token", "csrf")
 		req.Header.Set("Idempotency-Key", key)
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: raw})
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: raw})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 		res, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		defer res.Body.Close()
@@ -287,7 +287,7 @@ func testTodoStopResumeComposedInstall(t *testing.T, engineState, productState s
 
 	// Hold one real subscription across all control transitions. Durable TODO
 	// facts must advance the source cursor, rather than polling a seeded card.
-	socket, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_session=" + raw}, "Origin": {origin}}})
+	socket, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_local_session=" + raw}, "Origin": {origin}}})
 	require.NoError(t, err)
 	t.Cleanup(func() { socket.CloseNow() })
 	require.NoError(t, socket.Write(ctx, websocket.MessageText, []byte(`{"t":"sub","id":1,"topic":"todo:1"}`)))

@@ -22,7 +22,7 @@ func TestInstallMemberWorkspaceListsPostgres(t *testing.T) {
 	f := newLandingGateFixtureWithFactory(t, nil, "", true)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	pool, err := postgresfixture.Open(f.ctx, f.pool.Config().ConnConfig.ConnString(), 1)
@@ -94,7 +94,7 @@ func TestInstallMemberWorkspaceListsPostgres(t *testing.T) {
 		handler.Service = &workspaceMetadataAdmissionProbe{WorkspaceService: service, before: func() {}, visibilityPort: 3001}
 		defer func() { handler.Service = service }()
 		req := httptest.NewRequest("GET", cfg.Server.PublicURL+"/api/repos/gate-owner/app/workspaces/"+own.ID+"/services/3000/visibility", nil)
-		req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		commands := []string{}
 		req = req.WithContext(services.WithAuthorizationObserver(req.Context(), func(command string) { commands = append(commands, command) }))
 		out := httptest.NewRecorder()
@@ -114,7 +114,7 @@ func TestInstallMemberWorkspaceListsPostgres(t *testing.T) {
 					req.Header.Set("Authorization", "Bearer "+actor.bearer)
 				}
 				if actor.cookie != "" {
-					req.AddCookie(&http.Cookie{Name: "session", Value: actor.cookie})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: actor.cookie})
 				}
 				var commands []string
 				req = req.WithContext(services.WithAuthorizationObserver(req.Context(), func(command string) { commands = append(commands, command) }))
@@ -185,7 +185,7 @@ func TestInstallMemberWorkspaceListsPostgres(t *testing.T) {
 			handler.Service = probe
 			defer func() { handler.Service = service }()
 			req := httptest.NewRequest("GET", cfg.Server.PublicURL+path, nil)
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 			commands := []string{}
 			req = req.WithContext(services.WithAuthorizationObserver(req.Context(), func(command string) { commands = append(commands, command) }))
 			out := httptest.NewRecorder()

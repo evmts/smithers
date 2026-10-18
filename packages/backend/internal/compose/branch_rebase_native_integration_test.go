@@ -441,7 +441,7 @@ func testBranchRebaseNative(t *testing.T, people bool, point string, options ...
 		t.Helper()
 		req, err := http.NewRequest("GET", origin+"/api/todos/1", nil)
 		require.NoError(t, err)
-		req.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 		response, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		var card map[string]any
@@ -459,8 +459,8 @@ func testBranchRebaseNative(t *testing.T, people bool, point string, options ...
 		require.NoError(t, err)
 		req, err := http.NewRequest("POST", origin+"/api/branches/"+f.row.ID, bytes.NewReader(payload))
 		require.NoError(t, err)
-		req.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 		req.Header.Set("X-CSRF-Token", "csrf")
 		req.Header.Set("Origin", origin)
 		req.Header.Set("Content-Type", "application/json")
@@ -475,7 +475,7 @@ func testBranchRebaseNative(t *testing.T, people bool, point string, options ...
 	readReceipt := func(state string) {
 		req, err := http.NewRequest("GET", origin+"/api/todos/1?rebase_request=native-press", nil)
 		require.NoError(t, err)
-		req.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 		res, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		defer res.Body.Close()
@@ -496,8 +496,8 @@ func testBranchRebaseNative(t *testing.T, people bool, point string, options ...
 	ackRequest := func(method, body string) machined.AckDelayReceipt {
 		req, err := http.NewRequest(method, origin+"/api/install/ack-delay?branch="+f.row.ID, strings.NewReader(body))
 		require.NoError(t, err)
-		req.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 		req.Header.Set("X-CSRF-Token", "csrf")
 		req.Header.Set("Origin", origin)
 		req.Header.Set("Content-Type", "application/json")
@@ -526,8 +526,8 @@ func testBranchRebaseNative(t *testing.T, people bool, point string, options ...
 		for range 2 {
 			req, err := http.NewRequest("POST", origin+"/api/branches/"+branchPath, strings.NewReader(body))
 			require.NoError(t, err)
-			req.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 			req.Header.Set("X-CSRF-Token", "csrf")
 			req.Header.Set("Origin", origin)
 			req.Header.Set("Content-Type", "application/json")
@@ -643,7 +643,7 @@ func testBranchRebaseNative(t *testing.T, people bool, point string, options ...
 			require.Empty(t, checks["outages"])
 			req, err := http.NewRequest("GET", origin+"/api/todos/1?rebase_request=native-press", nil)
 			require.NoError(t, err)
-			req.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 			response, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
 			var view map[string]any
@@ -654,7 +654,7 @@ func testBranchRebaseNative(t *testing.T, people bool, point string, options ...
 			require.Equal(t, map[string]any{"onto": "main", "onto_revision": onto}, view["rebase_pending"], "every busy retry must retain the person's pending projection")
 			activityReq, err := http.NewRequest("GET", origin+"/api/branches/"+f.row.ID+"/activity", nil)
 			require.NoError(t, err)
-			activityReq.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+			activityReq.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 			activityResponse, err := http.DefaultClient.Do(activityReq)
 			require.NoError(t, err)
 			var activity []map[string]any
@@ -933,7 +933,7 @@ func testBranchRebaseNative(t *testing.T, people bool, point string, options ...
 		// attributed to Smithers and bound to the actual target revision.
 		req, err := http.NewRequest("GET", origin+"/api/branches/"+f.row.ID+"/activity", nil)
 		require.NoError(t, err)
-		req.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 		response, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		var activity []map[string]any
@@ -970,7 +970,7 @@ func testBranchRebaseNative(t *testing.T, people bool, point string, options ...
 		require.Equal(t, onto, revision)
 		req, err := http.NewRequest("GET", origin+"/api/branches/"+f.row.ID+"/activity", nil)
 		require.NoError(t, err)
-		req.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 		response, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		defer response.Body.Close()

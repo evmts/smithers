@@ -328,7 +328,7 @@ func branchSleepInstall(t *testing.T, scenario string) {
 		req, err := http.NewRequest("GET", server.URL+endpoint, nil)
 		require.NoError(t, err)
 		if credential == "" {
-			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		} else {
 			req.Header.Set("Authorization", "Bearer "+credential)
 		}
@@ -344,10 +344,10 @@ func branchSleepInstall(t *testing.T, scenario string) {
 		cleanupInstallProof(t, pool, runtime, id, item, head, base, hostGit, readPath, &capture, scenario == "cleanup_service", func() {
 			req, err := http.NewRequest("POST", server.URL+"/api/branches/"+id, strings.NewReader(`{"op":"sleep"}`))
 			require.NoError(t, err)
-			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Idempotency-Key", "cleanup-final-sleep")
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "cleanup-csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "cleanup-csrf"})
 			req.Header.Set("X-CSRF-Token", "cleanup-csrf")
 			req.Header.Set("Origin", origin)
 			res, err := server.Client().Do(req)
@@ -373,10 +373,10 @@ func branchSleepInstall(t *testing.T, scenario string) {
 	sleep := func(want int) {
 		req, err := http.NewRequest("POST", server.URL+"/api/repos/sleepowner/demo/workspaces/"+id+"/suspend", nil)
 		require.NoError(t, err)
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		req.Header.Set("Origin", origin)
 		req.Header.Set("X-CSRF-Token", "sleep-csrf")
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "sleep-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "sleep-csrf"})
 		res, err := server.Client().Do(req)
 		require.NoError(t, err)
 		defer res.Body.Close()
@@ -442,10 +442,10 @@ func branchSleepInstall(t *testing.T, scenario string) {
 		resume := func(want int) {
 			req, err := http.NewRequest("POST", server.URL+"/api/repos/sleepowner/demo/workspaces/"+id+"/resume", nil)
 			require.NoError(t, err)
-			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 			req.Header.Set("Origin", origin)
 			req.Header.Set("X-CSRF-Token", "sleep-csrf")
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "sleep-csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "sleep-csrf"})
 			res, err := server.Client().Do(req)
 			require.NoError(t, err)
 			defer res.Body.Close()
@@ -885,8 +885,8 @@ func branchSleepInstall(t *testing.T, scenario string) {
 		defer cancel()
 		req, err := http.NewRequestWithContext(requestCtx, "POST", server.URL+"/api/branches/"+id, strings.NewReader(fmt.Sprintf(`{"op":%q}`, requestOp)))
 		require.NoError(t, err)
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
-		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "sleep-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "sleep-csrf"})
 		req.Header.Set("X-CSRF-Token", "sleep-csrf")
 		req.Header.Set("Origin", origin)
 		req.Header.Set("Idempotency-Key", key)
@@ -1075,7 +1075,7 @@ func branchSleepInstall(t *testing.T, scenario string) {
 	coldStarts, coldReads := counted.starts.Load(), counted.reads.Load()
 	t.Run("cold machine transitions stay visible without a host", func(t *testing.T) {
 		conn, response, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{
-			Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {server.URL}, "Cookie": {"smithers_session=" + cookie}},
+			Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {server.URL}, "Cookie": {"smithers_local_session=" + cookie}},
 		})
 		require.NoError(t, err, "live upgrade response: %v", response)
 		defer conn.CloseNow()

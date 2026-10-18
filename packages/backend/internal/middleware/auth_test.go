@@ -330,10 +330,10 @@ func TestAuthLoader_SelfhostOwnerBoundaryRejectsForeignSessionOnLFS(t *testing.T
 	nextCalled := false
 	handler := AuthLoader(q, config.AuthConfig{
 		Mode:              config.AuthModeSelfHosted,
-		SessionCookieName: "smithers_session",
+		SessionCookieName: "__Host-smithers_session",
 	})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { nextCalled = true }))
 	req := httptest.NewRequest(http.MethodPost, "/owner/repo.git/info/lfs/objects/batch", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionKey})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: sessionKey})
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -403,7 +403,7 @@ func TestAuthLoader_LoadsSessionCookie(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionKey})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: sessionKey})
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
@@ -510,7 +510,7 @@ func TestAuthLoader_RefreshesSessionNearExpiry(t *testing.T) {
 	cfg := config.AuthConfig{
 		SessionDuration:      "720h",
 		SessionRefreshWindow: "168h",
-		SessionCookieName:    "smithers_session",
+		SessionCookieName:    "__Host-smithers_session",
 		CookieSecure:         true,
 	}
 
@@ -549,18 +549,18 @@ func TestAuthLoader_RefreshesSessionNearExpiry(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionKey})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: sessionKey})
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
 	assert.Equal(t, 1, q.refreshAuthSessionHit)
-	assert.Contains(t, rec.Header().Get("Set-Cookie"), "smithers_session="+sessionKey)
+	assert.Contains(t, rec.Header().Get("Set-Cookie"), "__Host-smithers_session="+sessionKey)
 	// SECURITY: refreshed session cookie must have Secure attribute
 	refreshedCookies := rec.Result().Cookies()
 	// A refreshed session also re-mints the CSRF cookie in lockstep (#207) so
 	// it never silently expires ahead of a still-valid, refreshed session.
 	require.Len(t, refreshedCookies, 2)
-	sessionCookie := cookieByNameInList(refreshedCookies, "smithers_session")
+	sessionCookie := cookieByNameInList(refreshedCookies, "__Host-smithers_session")
 	require.NotNil(t, sessionCookie)
 	assert.True(t, sessionCookie.Secure, "refreshed session cookie must have Secure attribute")
 	csrfCookie := cookieByNameInList(refreshedCookies, CSRFCookieName)
@@ -634,7 +634,7 @@ func TestAuthLoader_SkipsExpiredSession(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionKey})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: sessionKey})
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
@@ -668,7 +668,7 @@ func TestAuthLoader_SessionUserLookupFailure(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionKey})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: sessionKey})
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
@@ -695,7 +695,7 @@ func TestAuthLoader_CustomSessionCookieName(t *testing.T) {
 		},
 	}
 
-	cfg := config.AuthConfig{SessionCookieName: "my_session"}
+	cfg := config.AuthConfig{SessionCookieName: "__Host-my_session"}
 
 	var capturedUser *db.User
 	handler := AuthLoader(q, cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -705,7 +705,7 @@ func TestAuthLoader_CustomSessionCookieName(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.AddCookie(&http.Cookie{Name: "my_session", Value: sessionKey})
+	req.AddCookie(&http.Cookie{Name: "__Host-my_session", Value: sessionKey})
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
@@ -747,7 +747,7 @@ func TestAuthLoader_TokenPrioritizedOverSession(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionKey})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: sessionKey})
 	req.Header.Set("Authorization", "Bearer "+token)
 	handler.ServeHTTP(rec, req)
 
@@ -787,7 +787,7 @@ func TestAuthLoader_InvalidTokenDoesNotFallBackToSession(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionKey})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: sessionKey})
 	req.Header.Set("Authorization", "Bearer "+token)
 	handler.ServeHTTP(rec, req)
 
@@ -831,7 +831,7 @@ func TestAuthLoader_SessionDBLookupFailureIsServiceUnavailable(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "some-session-key"})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: "some-session-key"})
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
@@ -857,7 +857,7 @@ func TestAuthLoader_SessionUserStoreFailureIsServiceUnavailable(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "some-session-key"})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: "some-session-key"})
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
@@ -936,7 +936,7 @@ func TestAuthLoader_SessionRefreshFailureSilentlyIgnored(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionKey})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: sessionKey})
 	handler.ServeHTTP(rec, req)
 
 	// Request should succeed even though refresh failed
@@ -946,7 +946,7 @@ func TestAuthLoader_SessionRefreshFailureSilentlyIgnored(t *testing.T) {
 	// Refresh was attempted but failed
 	assert.Equal(t, 1, q.refreshAuthSessionHit, "should have attempted refresh")
 	// The session cookie itself is not re-set because refresh failed, but the
-	// request still had no __csrf cookie, so the CSRF self-heal (#207) mints
+	// request still had no __Host-smithers_csrf cookie, so the CSRF self-heal (#207) mints
 	// one regardless of the refresh outcome.
 	cookies := rec.Result().Cookies()
 	require.Len(t, cookies, 1, "only the self-healed csrf cookie should be set")
@@ -1030,7 +1030,7 @@ func TestAuthLoader_SessionAuth_RejectsProhibitedLoginUser(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionKey})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: sessionKey})
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
@@ -1064,7 +1064,7 @@ func TestAuthLoader_SessionAuth_RejectsDisabledUser(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 			}))
 			req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "a6051465-b966-4b6b-94f1-7bc6fef9d17f"})
+			req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: "a6051465-b966-4b6b-94f1-7bc6fef9d17f"})
 			handler.ServeHTTP(httptest.NewRecorder(), req)
 			assert.Nil(t, capturedUser, "a disabled user must not authenticate through a session cookie")
 		})
@@ -1108,7 +1108,7 @@ func TestAuthLoader_TokenAuth_RejectsProhibitedLoginUser(t *testing.T) {
 //
 // A persistent session cookie must never outlive the CSRF double-submit
 // cookie: if the session is valid but the request carries no (or an empty)
-// __csrf cookie, AuthLoader mints and sets a fresh one scoped to the same
+// __Host-smithers_csrf cookie, AuthLoader mints and sets a fresh one scoped to the same
 // expiry as the session, so a returning user's mutating requests are never
 // silently blocked by a missing CSRF cookie.
 
@@ -1135,7 +1135,7 @@ func TestAuthLoader_SelfHealsMissingCSRFCookie(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionKey})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: sessionKey})
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
@@ -1172,12 +1172,12 @@ func TestAuthLoader_DoesNotReissueExistingCSRFCookie(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionKey})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: sessionKey})
 	req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "already-issued-token"})
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
-	assert.Empty(t, rec.Header().Get("Set-Cookie"), "an existing __csrf cookie must not be reissued")
+	assert.Empty(t, rec.Header().Get("Set-Cookie"), "an existing __Host-smithers_csrf cookie must not be reissued")
 }
 
 func TestAuthLoader_BearerTokenRequestNeverGetsCSRFCookie(t *testing.T) {
@@ -1207,7 +1207,7 @@ func TestAuthLoader_BearerTokenRequestNeverGetsCSRFCookie(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
-	assert.Empty(t, rec.Header().Get("Set-Cookie"), "token-authenticated requests never get a __csrf cookie")
+	assert.Empty(t, rec.Header().Get("Set-Cookie"), "token-authenticated requests never get a __Host-smithers_csrf cookie")
 }
 
 // Same contract through AuthLoader's token path: an expired PAT must not

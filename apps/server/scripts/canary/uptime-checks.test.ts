@@ -725,7 +725,7 @@ describe("runUptimeProbe", () => {
       }
       return healthy(url)
     })
-    const report = await runUptimeProbe(deps, options({ sessionCookie: "smithers_session=abc" }))
+    const report = await runUptimeProbe(deps, options({ sessionCookie: "__Host-smithers_session=abc" }))
 
     expect(report.meteredTurns).toBe(1)
     expect(meteredCalls(calls)).toBe(1)

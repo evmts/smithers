@@ -134,7 +134,7 @@ func TestInstallSyncMissingReadersStillFastForwardsNativeMirror(t *testing.T) {
 		r.RemoteAddr = "127.0.0.1:1234"
 		r.Header.Set("Origin", cfg.Server.PublicURL)
 		r.Header.Set("X-CSRF-Token", "native-csrf")
-		r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "native-csrf"})
+		r.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "native-csrf"})
 		r = r.WithContext(middleware.ContextWithAuthInfo(r.Context(), &middleware.AuthInfo{User: &user, SessionHash: "native-session"}))
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)

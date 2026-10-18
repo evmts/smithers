@@ -12,8 +12,8 @@ test("C-CUT-02: authenticated Earlier keeps mixed historical cards inert through
   const origin = new URL(baseURL)
   const member = async (login: string) => {
     const context = await browser.newContext()
-    await context.addCookies([{ name: "session", value: `w17-${login}`, domain: origin.hostname, path: "/" },
-      { name: "__csrf", value: "csrf", domain: origin.hostname, path: "/" }])
+    await context.addCookies([{ name: "smithers_local_session", value: `w17-${login}`, domain: origin.hostname, path: "/" },
+      { name: "smithers_local_csrf", value: "csrf", domain: origin.hostname, path: "/" }])
     return context
   }
   const ben = await member("ben"), alice = await member("alice")
@@ -48,7 +48,7 @@ test("C-CUT-02: authenticated Earlier keeps mixed historical cards inert through
     const aliceEarlier = reader.getByRole("region", { name: "Earlier", exact: true })
     await expect(aliceEarlier.locator("[data-archive]")).toHaveCount(0)
     await expect(aliceEarlier).not.toContainText("Saved admin-health")
-    const csrf = (await alice.cookies()).find(cookie => cookie.name === "__csrf")!.value
+    const csrf = (await alice.cookies()).find(cookie => ["__Host-smithers_csrf", "smithers_local_csrf"].includes(cookie.name))!.value
     const forbidden = await alice.request.post(`${baseURL}/api/agent/conversations/replay`, {
       headers: { "X-CSRF-Token": csrf, Origin: baseURL }, data: { runId: "legacy-turn", legId: "legacy-leg" }
     })

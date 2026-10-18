@@ -62,7 +62,7 @@ func TestInstallSearchAuthorizationPostgres(t *testing.T) {
 			t.Run(door.path+"/"+actor.name, func(t *testing.T) {
 				req := httptest.NewRequest("GET", cfg.Server.PublicURL+"/api/search/"+door.path+"?q=needle", nil)
 				if actor.cookie != "" {
-					req.AddCookie(&http.Cookie{Name: "session", Value: actor.cookie})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: actor.cookie})
 				}
 				if actor.token != "" {
 					req.Header.Set("Authorization", "Bearer "+actor.token)

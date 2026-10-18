@@ -74,7 +74,7 @@ func TestInstallAppUncertainConversionCannotRestartPostgres(t *testing.T) {
 				r.Header.Set("Content-Type", "application/json")
 				r.Header.Set("X-CSRF-Token", "csrf")
 				r.AddCookie(&http.Cookie{Name: routes.GitHubAppSetupSessionCookie, Value: session})
-				r.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+				r.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 				for _, c := range cookies {
 					r.AddCookie(c)
 				}

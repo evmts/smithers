@@ -154,8 +154,8 @@ func TestDeferredBillingHTTPPostgres(t *testing.T) {
 					req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
 					req.Header.Set("Content-Type", "application/json")
 					if tc.path != "/api/billing/webhook" {
-						req.AddCookie(&http.Cookie{Name: "smithers_session", Value: session})
-						req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "billing-csrf"})
+						req.AddCookie(&http.Cookie{Name: config.BrowserSessionCookieName(cfg.Auth.SessionCookieName, config.IsSingleOwner(cfg.Auth)), Value: session})
+						req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieNameForSecure(!config.IsSingleOwner(cfg.Auth)), Value: "billing-csrf"})
 						req.Header.Set("X-CSRF-Token", "billing-csrf")
 					}
 					rec := httptest.NewRecorder()

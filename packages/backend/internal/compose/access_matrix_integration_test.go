@@ -76,7 +76,7 @@ func TestAccessMatrixConfirmationDispatchComposedInstall(t *testing.T) {
 	confirmations := services.NewApprovalsService(q, services.WithConfirmationTodos(pool, todos))
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{"http://example.com"}
 	router := githubAppSetupComposeRouter(cfg, pool, nil, routerExtras{Mythical: &routes.MythicalHandler{Service: todos}, Confirmations: confirmations})
@@ -86,7 +86,7 @@ func TestAccessMatrixConfirmationDispatchComposedInstall(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", "http://example.com")
 		req.Header.Set("Idempotency-Key", key)
-		req.AddCookie(&http.Cookie{Name: "session", Value: sessions[i]})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: sessions[i]})
 		req.Header.Set("Smithers-Via", "smithers")
 		req.Header.Set("Smithers-Actor", "person")
 		req.Header.Set("Smithers-Profile", "app_agent")
@@ -97,7 +97,7 @@ func TestAccessMatrixConfirmationDispatchComposedInstall(t *testing.T) {
 			req.Header.Set("Smithers-Profile", "full")
 		}
 		if person {
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "matrix-csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "matrix-csrf"})
 			req.Header.Set("X-CSRF-Token", "matrix-csrf")
 		} else {
 			req.Header.Set("Authorization", "Bearer "+tokens[i])
@@ -190,7 +190,7 @@ func TestAccessMatrixConfirmationDispatchComposedInstall(t *testing.T) {
 						req.Header.Set("Authorization", "Bearer "+token)
 					} else {
 						index := map[string]int{"SO": 0, "SM": 1, "SE": 2}[cell.credential]
-						req.AddCookie(&http.Cookie{Name: "session", Value: sessions[index]})
+						req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: sessions[index]})
 					}
 					if forged {
 						req.Header.Set("Smithers-Via", "smithers")
@@ -243,8 +243,8 @@ func TestAccessMatrixConfirmationDispatchComposedInstall(t *testing.T) {
 					req.Header.Set("Authorization", "Bearer "+token)
 				} else {
 					index := map[string]int{"SO": 0, "SM": 1, "SE": 2}[cell.credential]
-					req.AddCookie(&http.Cookie{Name: "session", Value: sessions[index]})
-					req.AddCookie(&http.Cookie{Name: "__csrf", Value: "matrix-csrf"})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: sessions[index]})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "matrix-csrf"})
 					req.Header.Set("X-CSRF-Token", "matrix-csrf")
 				}
 				out := httptest.NewRecorder()
@@ -406,7 +406,7 @@ func TestAccessMatrixConfirmationDispatchComposedInstall(t *testing.T) {
 			var pendingDoors []executionCell
 			t.Setenv("SMITHERS_PUBLIC_URL", cfg.Server.PublicURL)
 			t.Setenv("SMITHERS_SERVER_ALLOWED_ORIGINS", cfg.Server.PublicURL)
-			t.Setenv("SMITHERS_AUTH_SESSION_COOKIE_NAME", "session")
+			t.Setenv("SMITHERS_AUTH_SESSION_COOKIE_NAME", "smithers_local_session")
 			// Use the complete install, including the model and chat mounts that
 			// live outside buildRouter. Stop it with this subtest before TODO effects.
 			root, err := filepath.Abs("../../../..")
@@ -439,7 +439,7 @@ func TestAccessMatrixConfirmationDispatchComposedInstall(t *testing.T) {
 						req.Header.Set("Smithers-Via", "smithers")
 						req.Header.Set("Smithers-Actor", "person")
 						req.Header.Set("Smithers-Profile", "app_agent")
-						req.AddCookie(&http.Cookie{Name: "session", Value: sessions[i]})
+						req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: sessions[i]})
 						w := httptest.NewRecorder()
 						executionBoundary.ServeHTTP(w, req)
 						var body map[string]any

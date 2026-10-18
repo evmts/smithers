@@ -74,7 +74,7 @@ func TestMemberRoutesAuthorizeByRolePostgres(t *testing.T) {
 	ownerToken := mintToken(owner)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	router := chi.NewRouter()
 	router.Use(authLoader(q, cfg.Auth))
 	router.Use(memberCommands(q))
@@ -141,7 +141,7 @@ func TestMemberRoutesAuthorizeByRolePostgres(t *testing.T) {
 		}
 		req := httptest.NewRequest(method, path, body)
 		if cookie != "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		}
 		if bearer != "" {
 			req.Header.Set("Authorization", "Bearer "+bearer)

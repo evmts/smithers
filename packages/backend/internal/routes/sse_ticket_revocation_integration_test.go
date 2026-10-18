@@ -226,7 +226,7 @@ func (f *sseTicketRevocationFixture) mintSessionTicket(t *testing.T, cookie stri
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, f.server.URL+"/api/auth/sse-ticket", nil)
 	require.NoError(t, err)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookie})
+	req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: cookie})
 	resp, err := f.client.Do(req)
 	require.NoError(t, err)
 	body := routesIntegrationReadBody(t, resp)

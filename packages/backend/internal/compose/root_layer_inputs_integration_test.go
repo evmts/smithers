@@ -935,7 +935,7 @@ func (h *rootLayerHarness) requestHeaders(method, path, body, key string) (int, 
 	}
 	req.Header.Set("Idempotency-Key", key)
 	for _, cookie := range h.jar.Cookies(req.URL) {
-		if cookie.Name == "__csrf" {
+		if cookie.Name == "smithers_local_csrf" {
 			req.Header.Set("X-CSRF-Token", cookie.Value)
 		}
 	}

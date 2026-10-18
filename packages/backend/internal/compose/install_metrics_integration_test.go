@@ -78,7 +78,7 @@ func TestInstallMetricsOwnerBoundary(t *testing.T) {
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.AllowedOrigins = []string{"http://mini.lan:8080"}
 	metrics := routes.NewSmithersMetrics()
 	metrics.RequestDurationSeconds().WithLabelValues("POST", "/api/todos/{n}").Observe(.125)
@@ -115,13 +115,13 @@ func TestInstallMetricsOwnerBoundary(t *testing.T) {
 		require.NoError(t, err)
 		source := `import {requireMachineQualification} from ` + strconv.Quote("file://"+module) + `;
         Object.defineProperty(process,"platform",{value:"darwin"});
-        const env={SMITHERS_PERF_ORIGIN:"http://mini.lan:8080",SMITHERS_PERF_OWNER_COOKIE:"session="+process.argv[2],SMITHERS_PERF_COMMIT:"a".repeat(40),SMITHERS_PERF_INSTALL_VERSION:"1.0.0",SMITHERS_PERF_MACHINE_QUALIFIED:"true"};
+        const env={SMITHERS_PERF_ORIGIN:"http://mini.lan:8080",SMITHERS_PERF_OWNER_COOKIE:"smithers_local_session="+process.argv[2],SMITHERS_PERF_COMMIT:"a".repeat(40),SMITHERS_PERF_INSTALL_VERSION:"1.0.0",SMITHERS_PERF_MACHINE_QUALIFIED:"true"};
         let reads=0;
         const request=async(url,options)=>{
           if(url!=="http://mini.lan:8080/api/install/metrics"||options.redirect!=="error")throw new Error("foreign read");
           reads++;return new Promise(async(resolve,reject)=>{const {get}=await import("node:http");get(process.argv[1]+"/api/install/metrics",{headers:{...options.headers,Host:"mini.lan:8080"}},response=>{let data="";response.on("data",chunk=>data+=chunk);response.on("end",()=>resolve({status:response.statusCode,json:async()=>JSON.parse(data)}));response.on("error",reject)}).on("error",reject)});
         };
-        for(const cookie of [env.SMITHERS_PERF_OWNER_COOKIE,"", "session="+process.argv[3]]){
+        for(const cookie of [env.SMITHERS_PERF_OWNER_COOKIE,"", "smithers_local_session="+process.argv[3]]){
           let refused=false;
           try{await requireMachineQualification({...env,SMITHERS_PERF_OWNER_COOKIE:cookie},request)}catch(error){
             if(!/authenticated lifecycle qualification unavailable/.test(error.message))throw error;
@@ -147,7 +147,7 @@ func TestInstallMetricsOwnerBoundary(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r := httptest.NewRequest("GET", "http://mini.lan:8080/api/install/metrics", nil)
 			if tc.cookie != "" {
-				r.AddCookie(&http.Cookie{Name: "session", Value: tc.cookie})
+				r.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: tc.cookie})
 			}
 			if tc.token != "" {
 				r.Header.Set("Authorization", "Bearer "+tc.token)
@@ -249,7 +249,7 @@ func TestInstallMetricsOwnerBoundary(t *testing.T) {
 		handler := fn.CallSlice(args)[0].Interface().(http.Handler)
 		read := func(cookie string) *httptest.ResponseRecorder {
 			request := httptest.NewRequest("GET", "http://mini.lan:8080/api/install/metrics", nil)
-			request.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, request)
 			return w
@@ -272,7 +272,7 @@ func TestInstallMetricsOwnerBoundary(t *testing.T) {
 		require.NoError(t, e)
 		source := `import {requireMachineQualification} from ` + strconv.Quote("file://"+module) + `;
 Object.defineProperty(process,"platform",{value:"darwin"});
-const env={SMITHERS_PERF_ORIGIN:"http://mini.lan:8080",SMITHERS_PERF_OWNER_COOKIE:"session="+process.argv[2],SMITHERS_PERF_COMMIT:"a".repeat(40),SMITHERS_PERF_INSTALL_VERSION:"1.0.0"};
+const env={SMITHERS_PERF_ORIGIN:"http://mini.lan:8080",SMITHERS_PERF_OWNER_COOKIE:"smithers_local_session="+process.argv[2],SMITHERS_PERF_COMMIT:"a".repeat(40),SMITHERS_PERF_INSTALL_VERSION:"1.0.0"};
 const result=await requireMachineQualification(env,(_url,options)=>new Promise(async(resolve,reject)=>{const {get}=await import("node:http");get(process.argv[1]+"/api/install/metrics",{headers:{...options.headers,Host:"mini.lan:8080"}},response=>{let data="";response.on("data",chunk=>data+=chunk);response.on("end",()=>resolve({status:response.statusCode,json:async()=>JSON.parse(data)}));response.on("error",reject)}).on("error",reject)}));
 if(result.receipts.length!==9||result.status!=="qualified")throw new Error("publication refused");`
 		output, e := exec.CommandContext(t.Context(), "node", "--input-type=module", "-e", source, server.URL, cookies[0]).CombinedOutput()
@@ -377,7 +377,7 @@ if(result.receipts.length!==9||result.status!=="qualified")throw new Error("publ
 		require.NoError(t, err)
 		root, err := filepath.Abs("../../../..")
 		require.NoError(t, err)
-		for i, credential := range []string{"session=" + cookies[0], "session=" + cookies[1], ""} {
+		for i, credential := range []string{"smithers_local_session=" + cookies[0], "smithers_local_session=" + cookies[1], ""} {
 			command := exec.CommandContext(t.Context(), "node", "--input-type=module", "-e", `
 import { authenticatedSSHKey } from './.smithers/flows/perf/lib/ssh-member.mjs'
 const context = { request: { get: async (url, options) => {
@@ -432,7 +432,7 @@ catch (error) { console.log(error.message); process.exitCode = 1 }
 		root, err := filepath.Abs("../../../..")
 		require.NoError(t, err)
 		for _, program := range []string{"run", "keystroke", "disk-write", "warm-wake", "rebase-hold"} {
-			for _, credential := range []string{"session=" + cookies[0], "session=" + cookies[1]} {
+			for _, credential := range []string{"smithers_local_session=" + cookies[0], "smithers_local_session=" + cookies[1]} {
 				output := t.TempDir()
 				command := exec.CommandContext(t.Context(), "node", ".smithers/flows/perf/"+program+".mjs")
 				command.Dir = root
@@ -464,7 +464,7 @@ catch (error) { console.log(error.message); process.exitCode = 1 }
 					require.Equal(t, "skipped", budget.Status)
 					require.Empty(t, budget.Samples)
 					require.NotEmpty(t, budget.Reason)
-					if credential == "session="+cookies[1] {
+					if credential == "smithers_local_session="+cookies[1] {
 						require.Contains(t, budget.Reason, "returned 403")
 					} else if program != "run" {
 						for _, ticket := range []string{"T-INS-02", "T-MCH-11", "T-SEC-01", "T-MCH-10"} {
@@ -472,7 +472,7 @@ catch (error) { console.log(error.message); process.exitCode = 1 }
 						}
 					}
 				}
-				if credential == "session="+cookies[0] {
+				if credential == "smithers_local_session="+cookies[0] {
 					require.Contains(t, string(summary.Host), `"perf_cores":10`, string(bytes))
 				}
 				require.NotContains(t, string(bytes), credential)

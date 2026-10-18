@@ -114,9 +114,9 @@ func TestTodoTakeoverComposedInstall(t *testing.T) {
 		} else if login == "agent" {
 			req.Header.Set("Authorization", "Bearer "+agentToken)
 		} else {
-			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: cookies[login]})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookies[login]})
 		}
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "takeover-csrf"})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "takeover-csrf"})
 		res, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		defer res.Body.Close()

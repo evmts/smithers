@@ -57,7 +57,7 @@ func TestLearningProposalsComposedInstall(t *testing.T) {
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "smithers_session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://127.0.0.1:4000"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	note := `{"signature":"check:lint@review","title":"Run lint","prompt":"Run lint before review","diff":"+pnpm lint","evidence":["3 of the last 5 failed lint at review"],"todos":[1,3,5],"repository":"maya/app","run":"learning-5"}`
@@ -73,7 +73,7 @@ func TestLearningProposalsComposedInstall(t *testing.T) {
 		req.Header.Set("Origin", cfg.Server.PublicURL)
 		req.Header.Set("Idempotency-Key", key)
 		req.Header.Set("X-CSRF-Token", "placement-csrf")
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "placement-csrf"})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "placement-csrf"})
 		req.AddCookie(&http.Cookie{Name: cfg.Auth.SessionCookieName, Value: "placement-session"})
 		res := httptest.NewRecorder()
 		router.ServeHTTP(res, req)
@@ -197,7 +197,7 @@ func TestLearningProposalsComposedInstall(t *testing.T) {
 			server.Start()
 			readContext, done := context.WithTimeout(ctx, 10*time.Second)
 			defer done()
-			conn, _, err := websocket.Dial(readContext, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {socketCfg.Server.PublicURL}, "Cookie": {"smithers_session=placement-session"}}})
+			conn, _, err := websocket.Dial(readContext, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Origin": {socketCfg.Server.PublicURL}, "Cookie": {"smithers_local_session=placement-session"}}})
 			require.NoError(t, err)
 			defer conn.CloseNow()
 			input := map[string]any{"t": "sub", "id": 1, "topic": topic}

@@ -486,7 +486,7 @@ func testInstallSetupCompiledHostRestart(t *testing.T, boundary string) {
 			request.Header.Set("Origin", "http://localhost:4000")
 			request.Header.Set("Content-Type", "application/json")
 			for _, cookie := range jar.Cookies(request.URL) {
-				if cookie.Name == "__csrf" {
+				if cookie.Name == "smithers_local_csrf" {
 					request.Header.Set("X-CSRF-Token", cookie.Value)
 				}
 			}
@@ -502,7 +502,7 @@ func testInstallSetupCompiledHostRestart(t *testing.T, boundary string) {
 		post.Header.Set("Origin", "http://localhost:4000")
 		post.Header.Set("Content-Type", "application/json")
 		for _, cookie := range jar.Cookies(post.URL) {
-			if cookie.Name == "__csrf" {
+			if cookie.Name == "smithers_local_csrf" {
 				post.Header.Set("X-CSRF-Token", cookie.Value)
 			}
 		}
@@ -528,7 +528,7 @@ func testInstallSetupCompiledHostRestart(t *testing.T, boundary string) {
 				request.Header.Set("Origin", "http://localhost:4000")
 				request.Header.Set("Content-Type", "application/json")
 				for _, cookie := range jar.Cookies(request.URL) {
-					if cookie.Name == "__csrf" {
+					if cookie.Name == "smithers_local_csrf" {
 						request.Header.Set("X-CSRF-Token", cookie.Value)
 					}
 				}
@@ -616,7 +616,7 @@ func testInstallSetupCompiledHostRestart(t *testing.T, boundary string) {
 			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("Origin", origin)
 			for _, cookie := range jar.Cookies(request.URL) {
-				if cookie.Name == "__csrf" {
+				if cookie.Name == "smithers_local_csrf" {
 					request.Header.Set("X-CSRF-Token", cookie.Value)
 				}
 			}
@@ -678,7 +678,7 @@ func testInstallSetupCompiledHostRestart(t *testing.T, boundary string) {
 		request.Header.Set("Origin", origin)
 		request.Header.Set("Idempotency-Key", key)
 		for _, cookie := range jar.Cookies(request.URL) {
-			if cookie.Name == "__csrf" {
+			if cookie.Name == "smithers_local_csrf" {
 				request.Header.Set("X-CSRF-Token", cookie.Value)
 			}
 		}
@@ -800,7 +800,7 @@ func testInstallSetupCompiledHostRestart(t *testing.T, boundary string) {
 	require.NoError(t, err)
 	jar.SetCookies(ownerURL, []*http.Cookie{
 		{Name: "smithers_setup_session", Value: "", Path: "/", MaxAge: -1},
-		{Name: "smithers_session", Value: ownerToken, Path: "/"},
+		{Name: "smithers_local_session", Value: ownerToken, Path: "/"},
 	})
 	setChatGPT := func(enabled bool) {
 		t.Helper()
@@ -811,7 +811,7 @@ func testInstallSetupCompiledHostRestart(t *testing.T, boundary string) {
 		request.Header.Set("Origin", origin)
 		request.Header.Set("Content-Type", "application/json")
 		for _, cookie := range jar.Cookies(ownerURL) {
-			if cookie.Name == "__csrf" {
+			if cookie.Name == "smithers_local_csrf" {
 				request.Header.Set("X-CSRF-Token", cookie.Value)
 			}
 		}

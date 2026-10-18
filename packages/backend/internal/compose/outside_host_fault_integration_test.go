@@ -322,7 +322,7 @@ func outsideWatcherHostFault(t *testing.T, binary, point string) {
 	var files []services.BranchDiffModel
 	for _, burst := range ids {
 		request := httptest.NewRequest("GET", f.origin+"/api/branches/"+f.row.ID+"/diff?entry="+burst, nil)
-		request.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 		request.RemoteAddr = "127.0.0.1:61000"
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, request)

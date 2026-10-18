@@ -67,7 +67,7 @@ const merge = async (page: Page, n: number) => {
 }
 /** A state-changing request as the signed-in person: session requests need Origin, X-CSRF-Token (middleware/csrf.go) and an Idempotency-Key. */
 const post = async (page: Page, url: string, options: { data?: unknown } = {}) => {
-  const csrf = (await page.context().cookies(app)).find(cookie => cookie.name === "__csrf")?.value
+  const csrf = (await page.context().cookies(app)).find(cookie => cookie.name === "__Host-smithers_csrf")?.value
   // State-changing routes also require an Idempotency-Key (refused 400 idempotency_key_required without one).
   return page.request.post(url, { ...options, headers: { Origin: app, "Idempotency-Key": crypto.randomUUID(), ...(csrf ? { "X-CSRF-Token": csrf } : {}) } })
 }

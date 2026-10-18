@@ -15,8 +15,8 @@ const browser = await chromium.launch({ headless: true })
 try {
   const context = await browser.newContext()
   await context.addCookies([
-    { name: "session", value: "maya-browser-session", url: origin, httpOnly: true },
-    { name: "__csrf", value: "csrf", url: origin }
+    { name: "smithers_local_session", value: "maya-browser-session", url: origin, httpOnly: true },
+    { name: "smithers_local_csrf", value: "csrf", url: origin }
   ])
   const page = await context.newPage()
   page.setDefaultTimeout(20_000)

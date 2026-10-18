@@ -99,7 +99,7 @@ func TestLearningBackgroundHomeComposedInstall(t *testing.T) {
 	admit("wrong-todo", target, 2)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "smithers_session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	server := httptest.NewUnstartedServer(nil)
 	t.Cleanup(server.Close)
 	origin := "http://" + server.Listener.Addr().String()
@@ -134,7 +134,7 @@ func TestLearningBackgroundHomeComposedInstall(t *testing.T) {
 			require.NoError(t, err)
 			readCtx, done := context.WithTimeout(ctx, 10*time.Second)
 			defer done()
-			conn, _, err := websocket.Dial(readCtx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_session=fixture-person"}}})
+			conn, _, err := websocket.Dial(readCtx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_local_session=fixture-person"}}})
 			require.NoError(t, err)
 			defer conn.CloseNow()
 			require.NoError(t, conn.Write(readCtx, websocket.MessageText, []byte(`{"t":"sub","id":1,"topic":"home"}`)))
@@ -189,7 +189,7 @@ func TestLearningBackgroundHomeComposedInstall(t *testing.T) {
 		request, err := http.NewRequest("POST", origin+"/api/runs/"+id, strings.NewReader(`{"op":"`+op+`"}`))
 		require.NoError(t, err)
 		request.Header.Set("Origin", origin)
-		request.Header.Set("Cookie", "smithers_session=fixture-person; __csrf=learn-csrf")
+		request.Header.Set("Cookie", "smithers_local_session=fixture-person; smithers_local_csrf=learn-csrf")
 		request.Header.Set("X-CSRF-Token", "learn-csrf")
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Idempotency-Key", key)
@@ -215,7 +215,7 @@ func TestLearningBackgroundHomeComposedInstall(t *testing.T) {
 	require.Equal(t, 404, post(operation, "dismiss", "").StatusCode)
 	statusRequest, err := http.NewRequest("GET", origin+"/api/runs/"+operation+"/background-status", nil)
 	require.NoError(t, err)
-	statusRequest.Header.Set("Cookie", "smithers_session=fixture-person")
+	statusRequest.Header.Set("Cookie", "smithers_local_session=fixture-person")
 	statusResponse, err := server.Client().Do(statusRequest)
 	require.NoError(t, err)
 	require.Equal(t, 404, statusResponse.StatusCode)
@@ -296,7 +296,7 @@ func TestLearningBackgroundHomeComposedInstall(t *testing.T) {
 				return
 			}
 			request.Header.Set("Origin", origin)
-			request.Header.Set("Cookie", "smithers_session=fixture-person; __csrf=learn-csrf")
+			request.Header.Set("Cookie", "smithers_local_session=fixture-person; smithers_local_csrf=learn-csrf")
 			request.Header.Set("X-CSRF-Token", "learn-csrf")
 			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("Idempotency-Key", "retry-one")
@@ -340,7 +340,7 @@ func TestLearningBackgroundHomeComposedInstall(t *testing.T) {
 	require.Equal(t, 2, attempt)
 	request, err := http.NewRequest("GET", origin+"/api/runs/"+operation+"/background-status", nil)
 	require.NoError(t, err)
-	request.Header.Set("Cookie", "smithers_session=fixture-person")
+	request.Header.Set("Cookie", "smithers_local_session=fixture-person")
 	response, err := server.Client().Do(request)
 	require.NoError(t, err)
 	require.Equal(t, 200, response.StatusCode)

@@ -57,12 +57,12 @@ func TestRunMigrateMachineEventsPostgres(t *testing.T) {
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.AllowedOrigins = []string{"http://localhost:4000"}
 	router := githubAppSetupComposeRouter(cfg, pool, nil, routerExtras{InstallScorecard: composeInstallScorecard(cfg, q, pool)})
 	req := httptest.NewRequest("GET", "http://localhost:4000/api/install/scorecard?from=2026-10-01T00:00:00Z&to=2026-10-15T00:00:00Z", nil)
 	req.RemoteAddr = "127.0.0.1:61000"
-	req.AddCookie(&http.Cookie{Name: "session", Value: "i6-cookie"})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "i6-cookie"})
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, req)
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())

@@ -63,7 +63,7 @@ func testInstallSourceCoeditAdmissionPostgres(t *testing.T) map[string]any {
 	service := services.NewWorkspaceService(f.q, services.WithWorkspaceInstallAuthorization(f.q), services.WithWorkspaceRuntime(provider), services.WithWorkspaceTransactions(f.pool), services.WithWorkspaceGitBaseURL("http://fixture"))
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 	router := githubAppSetupComposeRouter(cfg, f.pool, nil, &routes.WorkspaceHandler{Service: service})
@@ -85,8 +85,8 @@ func testInstallSourceCoeditAdmissionPostgres(t *testing.T) map[string]any {
 		req.Header.Set("Smithers-Actor", "person")
 		req.Header.Set("Smithers-Via", "smithers")
 		if bearer == "" {
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "coedit-csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "coedit-csrf"})
 			req.Header.Set("X-CSRF-Token", "coedit-csrf")
 		} else {
 			req.Header.Set("Authorization", "Bearer "+bearer)

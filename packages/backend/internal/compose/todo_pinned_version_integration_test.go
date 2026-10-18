@@ -63,7 +63,7 @@ func TestTodoPinnedVersionComposedInstall(t *testing.T) {
 	read := func() map[string]any {
 		req, err := http.NewRequest("GET", origin+"/api/todos/1", nil)
 		require.NoError(t, err)
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "pin-cookie"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "pin-cookie"})
 		res, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		defer res.Body.Close()
@@ -92,8 +92,8 @@ func TestTodoPinnedVersionComposedInstall(t *testing.T) {
 	control := func(op, key string, want int) map[string]any {
 		req, err := http.NewRequest("POST", origin+"/api/todos/1", strings.NewReader(fmt.Sprintf(`{"op":%q}`, op)))
 		require.NoError(t, err)
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "pin-cookie"})
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "pin-cookie"})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "csrf"})
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", origin)
 		req.Header.Set("X-CSRF-Token", "csrf")

@@ -160,7 +160,7 @@ func testCandidateHeadReportComposedInstall(t *testing.T, installAuthority bool)
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Origin", cfg.Server.PublicURL)
 		request.Header.Set("X-CSRF-Token", "candidate-csrf")
-		request.AddCookie(&http.Cookie{Name: "__csrf", Value: "candidate-csrf"})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "candidate-csrf"})
 		if authenticated {
 			request.Header.Set("Authorization", "Bearer "+machineToken)
 		}

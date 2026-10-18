@@ -30,7 +30,7 @@ export type MemberResponse = { readonly status: number; readonly body: any; read
 /** One request as the member whose browser holds `page`: their session, the double-submit CSRF pair and an Idempotency-Key. */
 export const memberRequest = async (page: Page, method: string, path: string, data?: unknown, key?: string): Promise<MemberResponse> => {
   const target = new URL(path, page.url())
-  const csrf = (await page.context().cookies(target.origin)).find(cookie => cookie.name === "__csrf")?.value
+  const csrf = (await page.context().cookies(target.origin)).find(cookie => ["__Host-smithers_csrf", "smithers_local_csrf"].includes(cookie.name))?.value
   const mutation = method !== "GET"
   if (mutation && (!csrf || !key)) throw new Error(`${method} ${path} needs the member's CSRF cookie and an Idempotency-Key`)
   const startedAt = performance.now()

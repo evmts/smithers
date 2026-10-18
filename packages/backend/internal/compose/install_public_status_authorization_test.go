@@ -21,7 +21,7 @@ func TestInstallPublicStatusRemainsCredentialIndependent(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://example.com/api/status", nil)
 			if kind == "dead cookie" {
-				req.AddCookie(&http.Cookie{Name: "session", Value: "expired-status-cookie"})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "expired-status-cookie"})
 			}
 			if kind == "unknown bearer" {
 				req.Header.Set("Authorization", "Bearer smithers_dead")

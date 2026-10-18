@@ -108,7 +108,7 @@ func testMachineEventsProductionLiveBinding(t *testing.T, configure func(presenc
 	metrics := routes.NewSmithersMetrics()
 	cfgHTTP := testConfigAllFlagsOn()
 	cfgHTTP.Auth.Mode = "selfhost"
-	cfgHTTP.Auth.SessionCookieName = "session"
+	cfgHTTP.Auth.SessionCookieName = "smithers_local_session"
 	metricServer := httptest.NewUnstartedServer(nil)
 	metricOrigin := "http://" + metricServer.Listener.Addr().String()
 	cfgHTTP.Server.PublicURL = metricOrigin
@@ -120,7 +120,7 @@ func testMachineEventsProductionLiveBinding(t *testing.T, configure func(presenc
 		t.Helper()
 		request, err := http.NewRequestWithContext(ctx, "GET", metricServer.URL+"/api/install/metrics", nil)
 		require.NoError(t, err)
-		request.AddCookie(&http.Cookie{Name: "session", Value: f.cookie})
+		request.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: f.cookie})
 		response, err := http.DefaultClient.Do(request)
 		require.NoError(t, err)
 		defer response.Body.Close()

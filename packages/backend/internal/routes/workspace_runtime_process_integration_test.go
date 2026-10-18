@@ -451,7 +451,7 @@ func processWorkspaceCreateSessionCookie(t *testing.T, queries *db.Queries, user
 		SessionKey: uuid.NewString(), UserID: user.ID, Username: user.Username, ExpiresAt: time.Now().Add(24 * time.Hour),
 	})
 	require.NoError(t, err)
-	return &http.Cookie{Name: "smithers_session", Value: session.SessionKey, Path: "/"}
+	return &http.Cookie{Name: "__Host-smithers_session", Value: session.SessionKey, Path: "/"}
 }
 
 func processWorkspaceAuthenticatedClient(t *testing.T, server *httptest.Server, cookie *http.Cookie) *http.Client {

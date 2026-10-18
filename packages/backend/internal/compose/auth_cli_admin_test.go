@@ -87,7 +87,7 @@ func TestServerRouter_AdminCLIConsentForm(t *testing.T) {
 		req.AddCookie(&http.Cookie{Name: "smithers_oauth_state", Value: tc.verifier})
 		// A pre-existing browser session must not interfere with verifier-based
 		// consent or force the HTML form through JSON-only API middleware.
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "old-browser-session"})
+		req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: "old-browser-session"})
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 		require.Equal(t, tc.status, rec.Code, rec.Body.String())

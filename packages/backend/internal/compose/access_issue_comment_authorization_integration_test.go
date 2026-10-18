@@ -43,14 +43,14 @@ func TestAccessIssueCommentProfilesComposedPostgres(t *testing.T) {
 	people := map[int64]actor{}
 	origin, err := url.Parse(r.origin)
 	require.NoError(t, err)
-	cookieName := "smithers_session"
+	cookieName := "smithers_local_session"
 	for role, jar := range []http.CookieJar{r.jar, benJar, aliceJar} {
 		login := []string{"rehearsal-owner", "ben", "alice"}[role]
 		user, err := q.GetUserByLowerUsername(ctx, login)
 		require.NoError(t, err)
 		person := actor{name: login + "/session", member: user.ID, role: role}
 		for _, cookie := range jar.Cookies(origin) {
-			if cookie.Name == "smithers_session" || cookie.Name == "session" {
+			if cookie.Name == "smithers_local_session" || cookie.Name == "session" {
 				person.cookie = cookie.Value
 				cookieName = cookie.Name
 			}
@@ -103,7 +103,7 @@ func TestAccessIssueCommentProfilesComposedPostgres(t *testing.T) {
 			req.Header.Set("Authorization", "Bearer "+a.token)
 		} else {
 			req.AddCookie(&http.Cookie{Name: cookieName, Value: a.cookie})
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "matrix"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "matrix"})
 			req.Header.Set("X-CSRF-Token", "matrix")
 		}
 		var decisions []string

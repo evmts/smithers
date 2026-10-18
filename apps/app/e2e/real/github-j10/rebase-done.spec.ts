@@ -15,7 +15,7 @@ test("TODO Done validates the retained conflict through the composed install", s
   }
   const context = await browser.newContext({ baseURL: host.origin })
   try {
-    await context.addCookies(host.cookies.map(cookie => ({ ...cookie, url: host.origin, httpOnly: cookie.name !== "__csrf" })))
+    await context.addCookies(host.cookies.map(cookie => ({ ...cookie, url: host.origin, httpOnly: !["__Host-smithers_csrf", "smithers_local_csrf"].includes(cookie.name) })))
     const page = await context.newPage()
     await page.goto(`${host.origin}/${host.repository}`)
     await awaitBoot(page)

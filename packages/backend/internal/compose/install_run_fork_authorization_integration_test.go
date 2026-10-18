@@ -84,7 +84,7 @@ func testInstallRunForkAuthorizationPostgres(t *testing.T) map[string]any {
 	forks.SetOrchestration(nil, nil, services.NewWorkspaceMythicalLanes(workspaces))
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Auth.SessionRefreshWindow = "0s"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
@@ -217,8 +217,8 @@ func testInstallRunForkAuthorizationPostgres(t *testing.T) map[string]any {
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Origin", cfg.Server.PublicURL)
 			req.Header.Set("Idempotency-Key", input.Request)
-			req.AddCookie(&http.Cookie{Name: "session", Value: rawCookie})
-			req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "fork-csrf"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: rawCookie})
+			req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "fork-csrf"})
 			req.Header.Set("X-CSRF-Token", "fork-csrf")
 			return req
 		}

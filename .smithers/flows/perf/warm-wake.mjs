@@ -47,8 +47,8 @@ export function configuration(env) {
   }
   const repository = env.SMITHERS_PERF_REPOSITORY.split('/')
   if (repository.length !== 2 || repository.some(part => !/^[A-Za-z0-9_.-]+$/.test(part) || part === '..')) throw new Error('owner/repository required')
-  const csrf = env.SMITHERS_PERF_OWNER_COOKIE.match(/(?:^|;\s*)__csrf=([^;]+)/)?.[1]
-  if (!csrf) throw new Error('owner cookie must include __csrf')
+  const csrf = env.SMITHERS_PERF_OWNER_COOKIE.match(/(?:^|;\s*)__Host-smithers_csrf=([^;]+)/)?.[1]
+  if (!csrf) throw new Error('owner cookie must include __Host-smithers_csrf')
   const sleepSeconds = Number(env.SMITHERS_PERF_SLEEP_SECONDS ?? 120)
   if (!Number.isFinite(sleepSeconds) || sleepSeconds <= 0) throw new Error('positive recorded sleep policy required')
   return { origin, repository: repository.map(encodeURIComponent).join('/'), branch: env.SMITHERS_PERF_BRANCH, csrf, sleepSeconds }

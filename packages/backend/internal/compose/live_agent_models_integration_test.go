@@ -103,8 +103,8 @@ func TestLiveAgentModelsRetainActivatedSeatsAfterOwnerSwitchPostgres(t *testing.
 		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", origin)
-		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessions[owner.Username]})
-		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "seat-csrf"})
+		req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: sessions[owner.Username]})
+		req.AddCookie(&http.Cookie{Name: middleware.LocalCSRFCookieName, Value: "seat-csrf"})
 		req.Header.Set("X-CSRF-Token", "seat-csrf")
 		res := httptest.NewRecorder()
 		router.ServeHTTP(res, req)
@@ -132,7 +132,7 @@ func TestLiveAgentModelsRetainActivatedSeatsAfterOwnerSwitchPostgres(t *testing.
 	sockets := []*websocket.Conn{}
 	first := call(http.MethodGet, "")
 	for _, person := range []db.User{member, owner} {
-		socket, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_session=" + sessions[person.Username]}, "Origin": {origin}}})
+		socket, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{Subprotocols: []string{live.Protocol}, HTTPHeader: http.Header{"Cookie": {"smithers_local_session=" + sessions[person.Username]}, "Origin": {origin}}})
 		require.NoError(t, err)
 		defer socket.CloseNow()
 		sockets = append(sockets, socket)

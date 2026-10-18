@@ -55,7 +55,7 @@ func TestLogoutRevokesEveryAcceptedSessionShapeComposedInstallPostgres(t *testin
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
 	cfg.Auth.SessionSecret = "fixture-secret"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	svc := services.NewAuthService(q, cfg.Auth, nil, auth.NewGitHubClient(ownerOAuthCredentials{"client", "secret"}, "", provider.URL, provider.URL))
 	svc.InstallSetup = &services.InstallSetupSessions{Pool: pool}
 	svc.Members = members
@@ -87,8 +87,8 @@ func TestLogoutRevokesEveryAcceptedSessionShapeComposedInstallPostgres(t *testin
 		req.Header.Set("Origin", origin)
 		if cookie != "" {
 			req.Header.Set("X-CSRF-Token", "csrf-fixture")
-			req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf-fixture"})
-			req.AddCookie(&http.Cookie{Name: "session", Value: cookie})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf-fixture"})
+			req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
 		}
 		res, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
@@ -115,7 +115,7 @@ func TestLogoutRevokesEveryAcceptedSessionShapeComposedInstallPostgres(t *testin
 
 			status, body = request(tc.cookie, "POST", "/api/auth/logout")
 			require.Less(t, status, 400, body)
-			require.Contains(t, body, "session=;", "logout clears the cookie")
+			require.Contains(t, body, "smithers_local_session=;", "logout clears the cookie")
 			after := rows(tc.stored)
 			require.Equal(t, 0, after, "logout leaves no auth_sessions row")
 

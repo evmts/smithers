@@ -45,7 +45,7 @@ func TestTODOGitHubRefusalFieldsComposedInstall(t *testing.T) {
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/todos/%d", server.URL, number), nil)
 	require.NoError(t, err)
 	req.Host = "127.0.0.1:4000"
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "refusal-cookie"})
+	req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: "refusal-cookie"})
 	resp, err := server.Client().Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()

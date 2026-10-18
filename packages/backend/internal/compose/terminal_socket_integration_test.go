@@ -162,7 +162,7 @@ func testOwnerTerminalComposed(t *testing.T, unavailableOnly bool, pending ...st
 	require.NoError(t, err)
 	reader, writer := io.Pipe()
 	terminal := &echoOwnerTerminal{reader: reader, writer: writer}
-	handler := &routes.WorkspaceTerminalHandler{OwnerOnly: true, AllowedOrigins: []string{f.origin}, SessionCookieName: "session"}
+	handler := &routes.WorkspaceTerminalHandler{OwnerOnly: true, AllowedOrigins: []string{f.origin}, SessionCookieName: "smithers_local_session"}
 	handler.TerminalTokenLookup = func(ctx context.Context, hash string) (*middleware.AuthInfo, error) {
 		if service, ok := handler.Service.(*services.WorkspaceService); ok {
 			return service.AuthenticateOwnerTerminalToken(ctx, hash)
@@ -178,7 +178,7 @@ func testOwnerTerminalComposed(t *testing.T, unavailableOnly bool, pending ...st
 	handler.AllowedOrigins = []string{f.origin}
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = f.origin
 	cfg.Server.AllowedOrigins = []string{f.origin}
 	tokenAuth := services.NewAuthService(q, cfg.Auth, nil, nil, services.WithAuthRevocationPublisher(f.publish))
@@ -193,7 +193,7 @@ func testOwnerTerminalComposed(t *testing.T, unavailableOnly bool, pending ...st
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Idempotency-Key", uuid.NewString())
 		req.Header.Set("X-CSRF-Token", "csrf")
-		req.Header.Set("Cookie", "session="+cookie+"; __csrf=csrf")
+		req.Header.Set("Cookie", "smithers_local_session="+cookie+"; smithers_local_csrf=csrf")
 		response, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		defer response.Body.Close()
@@ -326,7 +326,7 @@ func testOwnerTerminalComposed(t *testing.T, unavailableOnly bool, pending ...st
 			req.Header.Set("Origin", f.origin)
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-CSRF-Token", "csrf")
-			req.Header.Set("Cookie", "session="+f.cookie+"; __csrf=csrf")
+			req.Header.Set("Cookie", "smithers_local_session="+f.cookie+"; smithers_local_csrf=csrf")
 			res, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 			require.NoError(t, err)
 			defer res.Body.Close()
@@ -397,7 +397,7 @@ func testOwnerTerminalComposed(t *testing.T, unavailableOnly bool, pending ...st
 	dial := func(cookie string) *websocket.Conn {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
-		socket, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/repos/presence-owner/app/workspace/sessions/"+opened.ID+"/terminal", &websocket.DialOptions{Subprotocols: []string{"terminal"}, HTTPHeader: http.Header{"Origin": {f.origin}, "Cookie": {"session=" + cookie}}})
+		socket, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/repos/presence-owner/app/workspace/sessions/"+opened.ID+"/terminal", &websocket.DialOptions{Subprotocols: []string{"terminal"}, HTTPHeader: http.Header{"Origin": {f.origin}, "Cookie": {"smithers_local_session=" + cookie}}})
 		if err != nil {
 			if response != nil {
 				raw, _ := io.ReadAll(response.Body)
@@ -425,7 +425,7 @@ func testOwnerTerminalComposed(t *testing.T, unavailableOnly bool, pending ...st
 		return socket
 	}
 	provider.registry = nil
-	refused, response, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/api/repos/presence-owner/app/workspace/sessions/"+opened.ID+"/terminal", &websocket.DialOptions{Subprotocols: []string{"terminal"}, HTTPHeader: http.Header{"Origin": {f.origin}, "Cookie": {"session=" + f.cookie}}})
+	refused, response, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/api/repos/presence-owner/app/workspace/sessions/"+opened.ID+"/terminal", &websocket.DialOptions{Subprotocols: []string{"terminal"}, HTTPHeader: http.Header{"Origin": {f.origin}, "Cookie": {"smithers_local_session=" + f.cookie}}})
 	require.Error(t, err)
 	require.Nil(t, refused)
 	require.Equal(t, 503, response.StatusCode)
@@ -498,7 +498,7 @@ func testOwnerTerminalComposed(t *testing.T, unavailableOnly bool, pending ...st
 	require.NoError(t, err)
 	remove.Header.Set("Origin", f.origin)
 	remove.Header.Set("X-CSRF-Token", "csrf")
-	remove.Header.Set("Cookie", "session="+f.cookie+"; __csrf=csrf")
+	remove.Header.Set("Cookie", "smithers_local_session="+f.cookie+"; smithers_local_csrf=csrf")
 	removed, err := http.DefaultClient.Do(remove)
 	require.NoError(t, err)
 	defer removed.Body.Close()
@@ -551,7 +551,7 @@ func testOwnerTerminalComposed(t *testing.T, unavailableOnly bool, pending ...st
 	require.NoError(t, err)
 	remove.Header.Set("Origin", f.origin)
 	remove.Header.Set("X-CSRF-Token", "csrf")
-	remove.Header.Set("Cookie", "session="+f.cookie+"; __csrf=csrf")
+	remove.Header.Set("Cookie", "smithers_local_session="+f.cookie+"; smithers_local_csrf=csrf")
 	removed, err = http.DefaultClient.Do(remove)
 	require.NoError(t, err)
 	defer removed.Body.Close()

@@ -758,7 +758,7 @@ func (h *AuthHandler) PostLogout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	cookieName := sessionCookieName(h.AuthConfig.SessionCookieName)
+	cookieName := config.BrowserSessionCookieName(h.AuthConfig.SessionCookieName, !h.cookieSecure(r))
 	sessionCookie, cookieErr := r.Cookie(cookieName)
 
 	// Clear the client credential first: a failed server-side revoke must not
@@ -802,7 +802,7 @@ func (h *AuthHandler) PostLogout(w http.ResponseWriter, r *http.Request) {
 
 func setSessionCookie(w http.ResponseWriter, configuredName, sessionKey string, expiresAt time.Time, secure bool) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName(configuredName),
+		Name:     config.BrowserSessionCookieName(configuredName, !secure),
 		Value:    sessionKey,
 		Path:     "/",
 		HttpOnly: true,
@@ -832,7 +832,7 @@ func clearCSRFCookie(w http.ResponseWriter, secure bool, mode ...http.SameSite) 
 		sameSite = mode[0]
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     middleware.CSRFCookieName,
+		Name:     middleware.CSRFCookieNameForSecure(secure),
 		Value:    "",
 		Path:     "/",
 		HttpOnly: false,
@@ -953,10 +953,12 @@ func cliCallbackFromRequest(r *http.Request) (string, string, bool) {
 }
 
 func sessionCookieName(configuredName string) string {
-	if strings.TrimSpace(configuredName) == "" {
-		return "smithers_session"
-	}
-	return configuredName
+	return config.BrowserSessionCookieName(configuredName, false)
+}
+
+func sessionCookieNameForRequest(r *http.Request, configuredName string) string {
+	origin, ok := middleware.EffectiveOriginFromContext(r.Context())
+	return config.BrowserSessionCookieName(configuredName, ok && strings.HasPrefix(origin, "http://"))
 }
 
 // randomHex generates a cryptographically secure random hex string of bytesLen bytes.
@@ -1067,7 +1069,7 @@ func (h *AuthHandler) cookieSecure(r *http.Request) bool {
 			return strings.HasPrefix(origin, "https://")
 		}
 	}
-	return h.AuthConfig.CookieSecure
+	return true
 }
 
 func (h *AuthHandler) csrfSameSite() http.SameSite {

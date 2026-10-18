@@ -37,7 +37,7 @@ test("the install browser keeps the install's cookies and echoes its CSRF cookie
     seen.push({ method: request.method, cookie: request.headers.cookie, csrf: request.headers["x-csrf-token"] as string,
       origin: request.headers.origin, type: request.headers["content-type"], body })
     if (request.url === "/setup?token=t") {
-      response.setHeader("Set-Cookie", ["smithers_setup_session=setup; Path=/; HttpOnly", "__csrf=token; Path=/"])
+      response.setHeader("Set-Cookie", ["smithers_setup_session=setup; Path=/; HttpOnly", "__Host-smithers_csrf=token; Path=/"])
       return void response.writeHead(303, { Location: "/" }).end()
     }
     if (request.url === "/signed-out") {
@@ -49,18 +49,18 @@ test("the install browser keeps the install's cookies and echoes its CSRF cookie
   const browser = new InstallBrowser(origin, "http://127.0.0.1:49001")
   const redirect = await browser.request("GET", "/setup?token=t")
   expect(redirect).toEqual({ status: 303, text: "", location: "/" })
-  expect(browser.cookie("__csrf")).toBe("token")
+  expect(browser.cookie("__Host-smithers_csrf")).toBe("token")
   await browser.request("GET", "/api/install")
   await browser.request("POST", "/api/install/setup/address", { bind: "127.0.0.1:4000" })
   await browser.request("GET", "/signed-out")
   await browser.request("GET", "/api/install")
   expect(seen).toEqual([
     { method: "GET", body: "" },
-    { method: "GET", cookie: "smithers_setup_session=setup; __csrf=token", body: "" },
-    { method: "POST", cookie: "smithers_setup_session=setup; __csrf=token", csrf: "token", origin: "http://127.0.0.1:49001",
+    { method: "GET", cookie: "smithers_setup_session=setup; __Host-smithers_csrf=token", body: "" },
+    { method: "POST", cookie: "smithers_setup_session=setup; __Host-smithers_csrf=token", csrf: "token", origin: "http://127.0.0.1:49001",
       type: "application/json", body: '{"bind":"127.0.0.1:4000"}' },
-    { method: "GET", cookie: "smithers_setup_session=setup; __csrf=token", body: "" },
-    { method: "GET", cookie: "__csrf=token", body: "" }
+    { method: "GET", cookie: "smithers_setup_session=setup; __Host-smithers_csrf=token", body: "" },
+    { method: "GET", cookie: "__Host-smithers_csrf=token", body: "" }
   ])
 })
 
@@ -72,8 +72,8 @@ test("the install browser refuses a link that leaves the install origin and name
 })
 
 test("a Set-Cookie header yields its name and value, and nothing for a malformed pair", () => {
-  expect(setCookiePair("smithers_session=0790-ab; Path=/; HttpOnly; SameSite=Lax")).toEqual(["smithers_session", "0790-ab"])
-  expect(setCookiePair("__csrf=a=b; Path=/")).toEqual(["__csrf", "a=b"])
+  expect(setCookiePair("__Host-smithers_session=0790-ab; Path=/; HttpOnly; SameSite=Lax")).toEqual(["__Host-smithers_session", "0790-ab"])
+  expect(setCookiePair("__Host-smithers_csrf=a=b; Path=/")).toEqual(["__Host-smithers_csrf", "a=b"])
   expect(setCookiePair("gone=; Max-Age=0")).toEqual(["gone", ""])
   expect(setCookiePair("=value")).toBeUndefined()
   expect(setCookiePair("novalue")).toBeUndefined()

@@ -226,7 +226,7 @@ func runStackJourney(t *testing.T, check, script string) stackJourneyRun {
 		sum := sha256.Sum256([]byte(session))
 		_, err = q.CreateAuthSession(ctx, db.CreateAuthSessionParams{UserID: person.ID, Username: person.Username, SessionKey: hex.EncodeToString(sum[:]), ExpiresAt: time.Now().Add(time.Hour)})
 		require.NoError(t, err)
-		cookies[name] = []map[string]string{{"name": "session", "value": session}, {"name": "__csrf", "value": "journey-csrf"}}
+		cookies[name] = []map[string]string{{"name": "smithers_local_session", "value": session}, {"name": "smithers_local_csrf", "value": "journey-csrf"}}
 	}
 	_, err = pool.Exec(ctx, `INSERT INTO self_host_owners(user_id) VALUES($1)`, members["Will"].ID)
 	require.NoError(t, err)
@@ -246,7 +246,7 @@ func runStackJourney(t *testing.T, check, script string) stackJourneyRun {
 	}
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
-	t.Setenv("SMITHERS_AUTH_SESSION_COOKIE_NAME", "session")
+	t.Setenv("SMITHERS_AUTH_SESSION_COOKIE_NAME", "smithers_local_session")
 	t.Setenv("SMITHERS_PUBLIC_URL", origin)
 	t.Setenv("SMITHERS_SERVER_ALLOWED_ORIGINS", origin)
 	evidence := filepath.Join(root, ".artifacts/checks", check, "composed", time.Now().UTC().Format("20060102T150405Z"))

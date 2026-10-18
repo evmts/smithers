@@ -24,8 +24,8 @@ test("C-SEC-05: terminal append waits for its member's private Confirm", { tag: 
     await expect.poll(() => { if (backend.exitCode !== null) throw new Error(logs); return ready.test(logs) }, { timeout: 120_000 }).toBe(true)
     const [, origin, id] = logs.match(ready)!
     await page.context().addCookies([
-      { name: "smithers_session", value: "replacement-cookie", url: origin },
-      { name: "__csrf", value: "csrf", url: origin }
+      { name: "__Host-smithers_session", value: "replacement-cookie", url: origin },
+      { name: "__Host-smithers_csrf", value: "csrf", url: origin }
     ])
     await page.goto(origin)
     const card = page.locator('[data-kind="confirm"]').last()

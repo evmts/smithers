@@ -20,7 +20,7 @@ func TestInstallWorkflowCommandsPostgres(t *testing.T) {
 	f := newLandingGateFixtureWithFactory(t, nil, "", true)
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
-	cfg.Auth.SessionCookieName = "session"
+	cfg.Auth.SessionCookieName = "smithers_local_session"
 	cfg.Server.PublicURL = "http://example.com"
 	cfg.Server.AllowedOrigins = []string{"http://example.com"}
 	workflow := services.NewWorkflowAPIService(f.q, services.NewWorkflowRunService(f.q))
@@ -61,8 +61,8 @@ func TestInstallWorkflowCommandsPostgres(t *testing.T) {
 				if cell.token != "" {
 					req.Header.Set("Authorization", "Bearer "+cell.token)
 				} else {
-					req.AddCookie(&http.Cookie{Name: "session", Value: cell.session})
-					req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cell.session})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 					req.Header.Set("X-CSRF-Token", "csrf")
 				}
 				var decisions []string
@@ -80,8 +80,8 @@ func TestInstallWorkflowCommandsPostgres(t *testing.T) {
 					cancel := httptest.NewRequest(http.MethodPost, fmt.Sprintf("http://example.com/api/repos/gate-owner/app/runs/%d/cancel", runID), strings.NewReader(`{}`))
 					cancel.Header.Set("Content-Type", "application/json")
 					cancel.Header.Set("Origin", "http://example.com")
-					cancel.AddCookie(&http.Cookie{Name: "session", Value: cookie})
-					cancel.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+					cancel.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: cookie})
+					cancel.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
 					cancel.Header.Set("X-CSRF-Token", "csrf")
 					decisions = nil
 					cancel = cancel.WithContext(services.WithAuthorizationObserver(cancel.Context(), func(command string) { decisions = append(decisions, command) }))
@@ -152,7 +152,7 @@ func TestInstallWorkflowCommandsPostgres(t *testing.T) {
 				if credential.token != "" {
 					req.Header.Set("Authorization", "Bearer "+credential.token)
 				} else {
-					req.AddCookie(&http.Cookie{Name: "session", Value: credential.session})
+					req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: credential.session})
 				}
 				var decisions []string
 				req = req.WithContext(services.WithAuthorizationObserver(req.Context(), func(command string) { decisions = append(decisions, command) }))
