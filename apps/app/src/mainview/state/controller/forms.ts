@@ -367,7 +367,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       fields = fields.filter(field => missing.includes(field.name))
     }
     // A new flow belongs to the repository the person is in unless the line named another (Will, 2026-10-13; #3823).
-    if (request.name === "flow.new" && typeof given["repo"] !== "string") {
+    if ((request.name === "flow.new" || request.name === "change.ask") && typeof given["repo"] !== "string") {
       const target = resolveTargetRepo(store, undefined)
       if ("repo" in target) given = { ...given, repo: target.repo }
     }
@@ -441,7 +441,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       card: {
         id: cardId,
         kind: "flow-form",
-        title: title ?? (request.name === "issue.add-flow" && typeof given.number === "number"
+        title: title ?? (request.name === "change.ask" ? (typeof given.request === "string" && given.request ? `Start an agent on ${given.repo ?? "this repository"}?` : "Change request") : request.name === "issue.add-flow" && typeof given.number === "number"
           ? `Add a flow to issue #${given.number}`
           : (entry ?? ctx.commands.find(request.name))?.metadata.summary ?? request.name),
         status: "active",
@@ -604,7 +604,9 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
      * The agent can never launder an act through a human's form: its own call
      * is always the agent's.
      */
-    const asAgent = actor === "smithers" || via === "agent"
+    // The populated change.ask form is its confirmation: the person's Start agent press acts.
+    // An agent submitting the same form keeps its own actor and still meets Commands.ts's confirm gate.
+    const asAgent = actor === "smithers" || (via === "agent" && card.payload.flow !== "change.ask")
     const continuation = invocation ?? continuationFor(card)
     /*
      * The submission belongs to the account that pressed Submit. Sign-out

@@ -550,7 +550,7 @@ What §6.3, §6.12, §6.14 and §6.15 already specify stays as written: issues a
 | Signup poll, first-run checklist, five job tiles, practice repository | Cut | J1 replaces them. |
 | Multi-repository management (one console across repositories) | Defer | One repository at a time. The launcher at `/` opens, creates and explores repositories (M-45); it manages none of them. |
 | Issue-sweep / burndown | Cut from the product | Our own operations tool; the home card is the product version. |
-| Cloud agent sessions outside TODOs | Cut | Coding agents live on branches. |
+| Hosted change from Ask | In | W41 (Will 2026-10-18 13:55), hosted-p0-plan |
 | Subagent grid | Cut | The home and Branch cards replace it. |
 | Branch locks (one holder per branch) | Cut | They contradict a shared branch. |
 | Workspace Services, Egress and Environment-images views | Defer (§16) | SSH covers hands-on access to the machine. |
@@ -843,6 +843,8 @@ Coding agents and external agents can't call these (they have no screen). The ap
 
 ### B.2 Install flows (Install; shared state)
 
+<!-- Hosted Ask authority: PM d-u2m6ss (2026-10-18 15:10), W41; CEO a-j13xn0. ~/Smithers-Ops/Launch/2026-10-19/smithers/hosted-p0-plan.md. -->
+
 | Flow today | What | Who | MVP | Card |
 | --- | --- | --- | --- | --- |
 | `history.show`, `history.view` | The stack | P, A, X | Rename → `/stack` | stack (home) |
@@ -894,6 +896,8 @@ Coding agents and external agents can't call these (they have no screen). The ap
 | `runs.takeover`, `runs.release`, `runs.handoff`, `runs.burndown.*` | Take over a run, handoff brief, burndown board | – | Cut | – |
 | `agent.list` | The factory's agents | P, A, X | Rename → `/agents` | agents |
 | `model.*` (restore from `5b77095672`) | Choose an agent's model | Owner | Keep, Missing (restore) | agent |
+| `change.ask` | Start an agent on a change `{repo, request}` | P, A | Keep: agent confirms; typed `/change <request>` is the person's confirmation | hosted-change |
+| `change.open-pull` | Open pull request `{repo, session}` | P, A | Keep: people merge on GitHub | hosted-change |
 | `agent.session.*` | Cloud agent sessions | – | Cut: coding agents live on branches | – |
 | `browser.open` | Read a web page as a card | P, A | Keep | browser |
 | `secrets.list`, `.set`, `.delete`, `.scope`, `.bind` | Repository secrets | Maintainer (P only; agents: never) | Rename → `/secrets` | secrets |

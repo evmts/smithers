@@ -685,3 +685,26 @@ describe("a text field whose options are suggestions", () => {
     expect(form.refusals).toEqual([])
   })
 })
+
+test("a hosted change confirmation is one full-height card with native Start and Cancel", () => {
+  const card = { ...formCard({ flow: "change.ask", via: "agent", fields: [{name:"request",label:"Change request",kind:"textarea",required:true}],draft:{request:"add slugify(text) with tests"},given:{repo:"maya/tinyhttp",request:"add slugify(text) with tests"} }), title:"Start an agent on maya/tinyhttp?" }
+  const calls: unknown[]=[]
+  const host=mount(<FlowFormCardBody card={card} onRunCommand={(...args)=>{calls.push(args)}}/>)
+  expect(host.querySelectorAll(".hosted-change-card")).toHaveLength(1)
+  expect(host.querySelector("strong")?.textContent).toBe(card.title)
+  expect(host.querySelector("blockquote")?.textContent).toBe("“add slugify(text) with tests”")
+  expect(host.querySelectorAll("button")).toHaveLength(2)
+  const start=host.querySelector<HTMLButtonElement>("button")!
+  expect(start.textContent).toBe("Start agent");start.focus();expect(document.activeElement).toBe(start);start.click()
+  expect(calls).toEqual([["form.submit",card.id]])
+  expect(host.textContent).not.toContain("new branch")
+})
+
+for (const via of ["agent", "user"] as const) test(`submitted hosted ${via} form keeps only a read-only request record`, () => {
+  const request = "add slugify(text) with tests"
+  const card = formCard({ flow: "change.ask", via, fields: [{ name: "request", label: "Change request", kind: "textarea", required: true }], draft: { request }, given: via === "agent" ? { repo: "maya/tinyhttp", request } : { repo: "maya/tinyhttp" } }, "acted")
+  const host = mount(<FlowFormCardBody card={card} onRunCommand={() => { throw new Error("submitted form acted again") }} />)
+  expect(host.querySelector('[role="status"]')?.textContent).toBe(request)
+  expect(host.querySelector("form, textarea, input, select, button")).toBeNull()
+  expect(host.textContent).not.toContain("Start agent")
+})

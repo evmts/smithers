@@ -620,7 +620,7 @@ function AppContent() {
       */}
 
       <MessageScrollerProvider key={transcriptKey} scrollAnchor={launcherOpening ? "none" : "bottom"}
-            initialMessageId={controller.sharedConversation ? sharedConversation.view?.scroll_anchor : initialReadId}
+            initialMessageId={controller.sharedConversation ? sharedConversation.initialScrollAnchor : initialReadId}
             readAnchor={controller.sharedConversation && readEntry === undefined && !(latestEntry?.kind === "card" && latestEntry.card.kind === "docs") ? undefined : { messageId: latestReadId ?? "",
               targetId: readTarget?.kind === "card" && readTarget.card.kind === "docs" ? readTarget.card.payload.anchor : undefined,
               /* A recorded read IS the person's own ask; nothing else claims to be. */

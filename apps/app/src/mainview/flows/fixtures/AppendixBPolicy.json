@@ -179,7 +179,7 @@
         "search.boxes"
       ],
       "status": "cut",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.1",
@@ -230,7 +230,7 @@
         "wiki.pane"
       ],
       "status": "keep",
-      "who": "P, A (create: A✓)"
+      "who": "P, A (create: A\u2713)"
     },
     {
       "section": "B.1",
@@ -240,7 +240,7 @@
         "wiki.delete.confirm"
       ],
       "status": "keep",
-      "who": "P (A✓)"
+      "who": "P (A\u2713)"
     },
     {
       "section": "B.1",
@@ -250,7 +250,7 @@
         "tab.select"
       ],
       "status": "cut",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.1",
@@ -259,7 +259,7 @@
         "world.*"
       ],
       "status": "cut",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.1",
@@ -275,7 +275,7 @@
         "notifications.tag"
       ],
       "status": "cut",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.1",
@@ -291,7 +291,7 @@
         "admin.reset*"
       ],
       "status": "hidden",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -311,7 +311,7 @@
         "history.todo"
       ],
       "status": "rename",
-      "who": "P, A✓, X",
+      "who": "P, A\u2713, X",
       "replacement": [
         "todo.new"
       ]
@@ -322,7 +322,7 @@
         "issue.implement"
       ],
       "status": "rename",
-      "who": "P, A✓, X",
+      "who": "P, A\u2713, X",
       "replacement": [
         "todo.from-issue"
       ]
@@ -336,7 +336,7 @@
         "stack.move"
       ],
       "status": "keep",
-      "who": "P, X; A for open and move, A✓ for amend and drop"
+      "who": "P, X; A for open and move, A\u2713 for amend and drop"
     },
     {
       "section": "B.2",
@@ -406,7 +406,7 @@
         "change.land"
       ],
       "status": "rename",
-      "who": "P (maintainer). A✓ and X open the person's Review & merge confirmation",
+      "who": "P (maintainer). A\u2713 and X open the person's Review & merge confirmation",
       "replacement": [
         "merge"
       ]
@@ -488,7 +488,7 @@
         "box.select"
       ],
       "status": "cut",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -498,7 +498,7 @@
         "branch.rebase"
       ],
       "status": "keep",
-      "who": "P, X; A for fork and rebase, A✓ for add to stack"
+      "who": "P, X; A for fork and rebase, A\u2713 for add to stack"
     },
     {
       "section": "B.2",
@@ -506,7 +506,7 @@
         "branch.archive"
       ],
       "status": "keep",
-      "who": "P, A✓, X✓"
+      "who": "P, A\u2713, X\u2713"
     },
     {
       "section": "B.2",
@@ -531,7 +531,7 @@
         "files.add"
       ],
       "status": "cut",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -563,7 +563,7 @@
         "change.resolve"
       ],
       "status": "keep",
-      "who": "P, A✓"
+      "who": "P, A\u2713"
     },
     {
       "section": "B.2",
@@ -573,7 +573,7 @@
         "change.revert"
       ],
       "status": "cut",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -593,7 +593,7 @@
         "prs.triage"
       ],
       "status": "rename",
-      "who": "P, A✓, X",
+      "who": "P, A\u2713, X",
       "replacement": [
         "review"
       ]
@@ -604,7 +604,7 @@
         "prs.review"
       ],
       "status": "defer",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -612,7 +612,7 @@
         "prs.create"
       ],
       "status": "cut",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -621,7 +621,7 @@
         "findings.not-useful"
       ],
       "status": "keep",
-      "who": "P, A✓"
+      "who": "P, A\u2713"
     },
     {
       "section": "B.2",
@@ -634,7 +634,7 @@
         "review.reopen"
       ],
       "status": "defer",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -647,7 +647,7 @@
         "issues.create"
       ],
       "status": "keep",
-      "who": "P, A (writes: A✓), X"
+      "who": "P, A (writes: A\u2713), X"
     },
     {
       "section": "B.2",
@@ -660,7 +660,7 @@
         "issues"
       ],
       "status": "cut",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -671,7 +671,7 @@
         "issue.flows"
       ],
       "status": "defer",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -687,7 +687,7 @@
         "wiki.attach"
       ],
       "status": "keep",
-      "who": "P, A (delete: A✓), C (read), X"
+      "who": "P, A (delete: A\u2713), C (read), X"
     },
     {
       "section": "B.2",
@@ -703,7 +703,7 @@
         "wiki.ask"
       ],
       "status": "cut",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -725,7 +725,7 @@
         "flow.run.stop-all"
       ],
       "status": "rename",
-      "who": "P, A (create: A✓), X",
+      "who": "P, A (create: A\u2713), X",
       "replacement": [
         "flows",
         "flow.run",
@@ -741,7 +741,7 @@
         "flow.source"
       ],
       "status": "keep",
-      "who": "Show and open source: P, A, X. Propose an edit: P, A✓, X. Co-edit source on a machine: P, X."
+      "who": "Show and open source: P, A, X. Propose an edit: P, A\u2713, X. Co-edit source on a machine: P, X."
     },
     {
       "section": "B.2",
@@ -780,7 +780,7 @@
         "runs.signal"
       ],
       "status": "defer",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -791,7 +791,7 @@
         "runs.burndown.*"
       ],
       "status": "cut",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -818,7 +818,7 @@
         "agent.session.*"
       ],
       "status": "cut",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -940,7 +940,7 @@
         "repo.update"
       ],
       "status": "defer",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -949,7 +949,7 @@
         "notifications.read"
       ],
       "status": "cut",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -962,7 +962,7 @@
         "triggers.run"
       ],
       "status": "defer",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -974,7 +974,7 @@
         "box.images"
       ],
       "status": "defer",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -995,7 +995,7 @@
         "cloud.*"
       ],
       "status": "defer",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -1014,7 +1014,7 @@
         "system.recommend"
       ],
       "status": "cut",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.4",
@@ -1039,7 +1039,7 @@
         "branch.discard-foreign"
       ],
       "status": "keep",
-      "who": "P (maintainer for Discard); A✓"
+      "who": "P (maintainer for Discard); A\u2713"
     },
     {
       "section": "B.4",
@@ -1089,7 +1089,7 @@
         "learning.dismiss"
       ],
       "status": "keep",
-      "who": "P, A✓"
+      "who": "P, A\u2713"
     },
     {
       "section": "B.4",
@@ -1203,7 +1203,7 @@
         "search.secrets"
       ],
       "status": "hidden",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.2",
@@ -1211,7 +1211,7 @@
         "issue-sweep"
       ],
       "status": "cut",
-      "who": "–"
+      "who": "\u2013"
     },
     {
       "section": "B.1",
@@ -1228,7 +1228,23 @@
         "chat.dictate"
       ],
       "status": "cut",
-      "who": "–"
+      "who": "\u2013"
+    },
+    {
+      "section": "B.2",
+      "ids": [
+        "change.ask"
+      ],
+      "status": "keep",
+      "who": "P, A"
+    },
+    {
+      "section": "B.2",
+      "ids": [
+        "change.open-pull"
+      ],
+      "status": "keep",
+      "who": "P, A"
     }
   ],
   "publicIds": [

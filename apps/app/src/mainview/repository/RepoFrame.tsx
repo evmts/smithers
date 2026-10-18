@@ -26,14 +26,14 @@ export function RepoFrame({ repo, login, publicRepo, ask, onAsk, onSignIn, child
   }, [])
   const docked = useSyncExternalStore(subscribeWidth, () => (frame.current?.clientWidth ?? 0) >= 1440, () => false)
   const [open, setOpen] = useState<boolean | undefined>(undefined)
-  const expanded = Boolean(login) && (open ?? docked)
+  const expanded = open ?? (Boolean(login) && docked)
   const trigger = useRef<HTMLButtonElement>(null)
   const base = `/${repo}`
   const [owner, name] = repo.split("/")
   const fileRoute = /^\/(?:tree|blob)\//.test(window.location.pathname.slice(base.length))
-  const openAsk = () => { if (!login) { onSignIn(); return }; setOpen(true); onAsk() }
+  const openAsk = () => { setOpen(true); if (login) onAsk() }
   const close = () => { setOpen(false); trigger.current?.focus() }
-  return <div ref={frame} className="repo-frame" data-ask-open={!login ? "false" : open === undefined ? "auto" : String(open)} onKeyDown={event => {
+  return <div ref={frame} className="repo-frame" data-ask-open={open === undefined ? (login ? "auto" : "false") : String(open)} onKeyDown={event => {
     if (event.defaultPrevented) return
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault(); event.stopPropagation(); openAsk()
@@ -63,7 +63,7 @@ export function RepoFrame({ repo, login, publicRepo, ask, onAsk, onSignIn, child
     </div>
     <aside id="repo-ask" className="repo-frame-ask" aria-label="Ask" data-keyboard-pane="Ask">
       <div className="repo-frame-ask-heading"><h2>Ask</h2><button className="repo-ui-icon-btn" aria-label="Close Ask" onClick={close}><X size={18}/></button></div>
-      <div className="repository-chat">{typeof ask === "function" ? ask(expanded) : ask}</div>
+      <div className="repository-chat">{login ? (typeof ask === "function" ? ask(expanded) : ask) : <div className="repo-ask-sign-in"><p>Sign in to start an agent.</p><button className="repo-ui-btn repo-ui-btn-primary" onClick={onSignIn}>Sign in</button></div>}</div>
     </aside></div>
     </div>
   </div>

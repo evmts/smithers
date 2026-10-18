@@ -177,6 +177,16 @@ export const FlowFormCardBody = ({
     }
   }, [])
   const cancel = flowAction(onRunCommand, "card.dismiss", card.id)
+  // The existing acted receipt is a read-only record, never another editable change request.
+  if (flow === "change.ask" && settled) return <p className="hosted-change-confirm" role="status">{String(draft.request ?? card.payload.given?.request ?? "")}</p>
+  if (flow === "change.ask" && typeof card.payload.given?.request === "string" && card.payload.given.request && !settled) return <section className="hosted-change-card hosted-change-confirm">
+    <strong>{card.title}</strong>
+    <blockquote>“{card.payload.given.request}”</blockquote>
+    <p>The agent writes and tests the change. You open the pull request and merge it on GitHub.</p>
+    <button className="repo-ui-btn repo-ui-btn-primary" disabled={busy} onClick={() => onRunCommand("form.submit", card.id)}>Start agent</button>
+    <button className="repo-ui-btn repo-ui-btn-quiet" onClick={() => onRunCommand("card.dismiss", card.id)}>Cancel</button>
+    {error && <p role="alert">{error}</p>}
+  </section>
   return (
     <form ref={bindFocus} className="flow-form" data-flow-name={flow} data-via={card.payload.via} onSubmit={(event) => {
       event.preventDefault()

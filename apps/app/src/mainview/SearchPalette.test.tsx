@@ -561,3 +561,13 @@ for (const touch of [false, true]) test(`Ask Smithers carries its name alone on 
   expect(ask?.getAttribute("role")).toBe("option")
   expect(view.host.textContent).not.toContain("Type a question or a task")
 })
+
+test("bare slash renders /change and its hosted-change description", async () => {
+  const view = await mount()
+  await view.act(() => view.controller.changeDraft("/"))
+  const description = [...view.host.querySelectorAll(".slash-menu-description")].find(node => node.textContent === "Start an agent on a change")
+  expect(description).toBeDefined()
+  const button = description!.closest("button")!
+  expect(button.querySelector(".slash-menu-name")?.textContent).toBe("/change")
+  expect(button.dataset.flow).toBe("change.ask")
+})
