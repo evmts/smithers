@@ -10,13 +10,18 @@ const runtime = new Miniflare(convertV4MiniflareOptions({
   host: "127.0.0.1", port: 49400 + Math.floor(Math.random() * 2000), https: true,
   workers: [
     { name: "edge", modules: true, script, compatibilityDate: "2026-08-01",
-      bindings: { SMITHERS_BACKEND_ORIGIN: process.env.SMITHERS_COOKIE_PROOF_BACKEND }, serviceBindings: { ASSETS: "assets" } },
+      bindings: { SMITHERS_BACKEND_ORIGIN: process.env.SMITHERS_COOKIE_PROOF_BACKEND, SMITHERS_APP_HOSTS: "smithers.test,attacker.smithers.test" }, serviceBindings: { ASSETS: "assets" } },
     { name: "assets", modules: true, script: `export default { fetch() {
       const headers = new Headers({"content-type":"text/html"});
       headers.append("set-cookie", "smithers_session=browser-fixture-session; Domain=smithers.test; Path=/; Secure");
       headers.append("set-cookie", "__Host-smithers_session=browser-fixture-session; Domain=smithers.test; Path=/; Secure");
       headers.append("set-cookie", "__Host-smithers_session=browser-fixture-session; Path=/; Secure");
       headers.append("set-cookie", "__Host-smithers_csrf=attacker; Domain=smithers.test; Path=/; Secure");
+      for (const name of ["oauth_state", "cli_callback", "return_to"]) {
+        headers.append("set-cookie", "smithers_" + name + "=browser-fixture-session; Domain=smithers.test; Path=/; Secure");
+        headers.append("set-cookie", "__Host-smithers_" + name + "=browser-fixture-session; Domain=smithers.test; Path=/; Secure");
+        headers.append("set-cookie", "__Host-smithers_" + name + "=browser-fixture-session; Path=/; Secure");
+      }
       return new Response("<!doctype html><title>cookie injection fixture</title>", {headers});
     } }` }
   ]

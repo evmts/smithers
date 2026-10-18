@@ -58,7 +58,7 @@ func TestAuthNativeCallbackStateRoundTrip(t *testing.T) {
 			for _, cookie := range start.Result().Cookies() {
 				callback.AddCookie(cookie)
 			}
-			port, state, ok := cliCallbackFromRequest(callback)
+			port, state, ok := cliCallbackFromRequest(callback, true)
 			require.True(t, ok)
 			require.Equal(t, "41523", port)
 			require.Equal(t, callbackState, state)
@@ -90,7 +90,7 @@ func TestAuthNativeCallbackStateRefusesInvalidAndUnboundState(t *testing.T) {
 		request := httptest.NewRequest(http.MethodGet, "/callback", nil)
 		request.AddCookie(&http.Cookie{Name: oauthStateCookieName, Value: "current"})
 		request.AddCookie(&http.Cookie{Name: cliCallbackCookieName, Value: cookie})
-		_, _, ok := cliCallbackFromRequest(request)
+		_, _, ok := cliCallbackFromRequest(request, true)
 		require.False(t, ok)
 	}
 }
