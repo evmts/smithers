@@ -1441,5 +1441,29 @@
     "minimumRole": "member",
     "agent": "confirm",
     "http": null
+  },
+  {
+    "name": "site",
+    "summary": "Manage the repository site",
+    "slash": "/site",
+    "cli": [
+      "site"
+    ],
+    "journey": [
+      "J1"
+    ],
+    "group": "Repository",
+    "visibility": "core",
+    "actors": [
+      "person",
+      "app_agent",
+      "external_agent"
+    ],
+    "minimumRole": "owner",
+    "agent": "run",
+    "http": {
+      "method": "POST",
+      "path": "/api/repos/{owner}/{repo}/site"
+    }
   }
 ]

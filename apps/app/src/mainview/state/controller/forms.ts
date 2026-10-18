@@ -487,6 +487,23 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     const card = original!
     const { payload } = decided.card
     const { draft } = payload
+    let fields = card.payload.fields
+    const entry = ctx.commands.find(card.payload.flow)
+    const hints = entry?.metadata.form
+    if (entry !== undefined && hints?.requires !== undefined) {
+      const before = hints.requires({ ...card.payload.given, ...card.payload.draft }) ?? []
+      const values = { ...payload.given, ...draft }
+      const required = hints.requires(values) ?? []
+      const optional = hints.optionalFields?.(values) ?? []
+      const previousOptional = hints.optionalFields?.({ ...card.payload.given, ...card.payload.draft }) ?? []
+      if (JSON.stringify([before, previousOptional]) !== JSON.stringify([required, optional])) {
+        const derived = formFieldsFor(entry.input, hints, values).map(field => required.includes(field.name) ? { ...field, required: true } : field)
+        const missing = missingFields(derived, draftFrom(derived, values))
+        const visible = new Set(fields.map(field => field.name))
+        fields = withOptions(derived.filter(field => missing.includes(field.name) || optional.includes(field.name) ||
+          (visible.has(field.name) && field.required)), draft, card.payload.flow)
+      }
+    }
     /*
      * Options were supplied at render and stay as the card holds them; only a
      * field that can change WHICH harness the model list belongs to, or which
@@ -495,7 +512,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
      * harness answered with).
      */
     const dependency = ["harness", "harnessId", "id", "roleId", "seat"].includes(name)
-    await patch(card, { ...payload, draft, fields: dependency ? withOptions(card.payload.fields, draft, card.payload.flow) : card.payload.fields }, "active")
+    await patch(card, { ...payload, draft, fields: dependency ? withOptions(fields, draft, card.payload.flow) : fields }, "active")
     if (name === "repo") {
       await refreshFileList(cardId)
       await refreshListOptions(cardId)

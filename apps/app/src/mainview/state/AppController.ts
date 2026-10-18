@@ -1,4 +1,5 @@
 import { createHostedChangeSeam } from "./seams/HostedChangeSeam"
+import { createRepositorySiteSeam } from "./seams/RepositorySiteSeam"
 import { createBranchMutations } from "./seams/BranchMutationsSeam"
 import { draftIssueTodo } from "./seams/IssueTodoDraft"
 import { createBranchControlsSeam } from "./seams/BranchControlsSeam"
@@ -197,6 +198,7 @@ import type { ContextContainerProps } from "../ContextContainer"
 import { createContextSeam, type ContextProvider } from "./seams/ContextSeam"
 
 export interface AppController extends IssueFlowsController {
+ readonly repositorySite: (input: {action:string;repo?:string;name?:string;appPrefix?:string;domain?:string;version?:string;expected?:string}) => Promise<import("../flows/entries/Declare").CommandResult>
   readonly secretsProviders?: SecretsProviders
   readonly storageRecoveryState: StorageRecoveryAction["state"]
   readonly promptStorageRecovery: () => Promise<void>
@@ -1162,6 +1164,11 @@ export const createAppController = (
     if (now - memberViewReadAt >= 2000) { memberViewReadAt = now; void membersSeam.read() }
   }
   /* Flows (T-APP-05): an install reads its catalog from GET /api/flows; the seeded flows stand in only off an install. */
+  const repositorySiteSeam = createRepositorySiteSeam(seamCtx,withToast,() => ctx.accountEpoch)
+  ctx.onDispose(repositorySiteSeam.dispose)
+  const siteOwnerSubscription = store.collections.identitySessions.subscribeChanges(repositorySiteSeam.resume)
+  ctx.onDispose(() => siteOwnerSubscription.unsubscribe())
+  repositorySiteSeam.resume()
   const homeBackground = createHomeBackgroundSeam({
     http: (path, init) => seamCtx.http(`${baseUrl.replace(/\/$/, "")}${path}`, init),
     owner: () => installHost ? ctx.accountOwner() ?? undefined : undefined, epoch: () => ctx.accountEpoch,
@@ -2799,6 +2806,13 @@ export const createAppController = (
     openBillingPortal: billingSeam.openBillingPortal,
     ...repositoryUpdate,
     secretAuthority,
+    repositorySite: input => {
+      const repo = input.repo ?? activeRepositoryId(store)
+      if (!repo) return Promise.resolve("Repository required")
+      const body:Record<string,string> = {action:input.action}
+      for (const key of ["name","appPrefix","domain","version","expected"] as const) if (input[key] !== undefined) body[key]=input[key]
+      return repositorySiteSeam.request(repo,body)
+    },
     listSecrets: secretsSeam.listSecrets,
     scopeSecret: secretsSeam.scopeSecret,
     bindSecret: secretsSeam.bindSecret,

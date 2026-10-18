@@ -72,7 +72,28 @@ export const paramRepo = (search: string): string | null => {
  * What the URL asks for: the repository path and its subject first, else the
  * `repo` parameter at `/`, which names a repository and never a subject.
  */
+export const repositorySite = (): { readonly repository: string; readonly appPrefix: string } | undefined => {
+  const siteMeta = typeof document === "undefined" ? null : document.querySelector('meta[name="smithers-repository-site"]')?.getAttribute("content")
+  if (siteMeta) {
+    try {
+      const site = JSON.parse(siteMeta) as { repository?: unknown; appPrefix?: unknown }
+      if (typeof site.repository === "string" && pathRepo(`/${site.repository}`) === site.repository && typeof site.appPrefix === "string" &&
+        (site.appPrefix === "" || /^\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*\/$/.test(site.appPrefix))) {
+        return { repository: site.repository, appPrefix: site.appPrefix }
+      }
+    } catch { /* A malformed boot projection cannot select a different repository. */ }
+  }
+  return undefined
+}
+
 export const requestedTarget = (location: Pick<Location, "pathname" | "search">): RequestedTarget | null => {
+  const site = repositorySite()
+  if (site) {
+    const canonical = pathTarget(location.pathname + location.search)
+    if (canonical?.repo.toLowerCase() === site.repository.toLowerCase()) return canonical
+    const local = site.appPrefix !== "" && location.pathname.startsWith(site.appPrefix) ? location.pathname.slice(site.appPrefix.length) : site.appPrefix === "" ? location.pathname.replace(/^\//, "") : ""
+    return pathTarget(`/${site.repository}/${local}${location.search}`) ?? { repo: site.repository }
+  }
   const path = pathTarget(location.pathname + location.search)
   if (path !== null) return path
   const param = location.pathname === "/" ? paramRepo(location.search) : null
@@ -138,7 +159,7 @@ const queryString = (params: URLSearchParams): string => params.toString()
  * `validBrowserReturn`), so a subject path needs nothing new there.
  */
 export const signInReturnTo = (location: Pick<Location, "pathname" | "search">): string | null => {
-  if (pathRepo(location.pathname) === null) return null
+  if (repositorySite() === undefined && pathRepo(location.pathname) === null) return null
   const params = new URLSearchParams(location.search)
   params.delete(AUTH_SIGNED_IN_PARAM)
   params.delete("auth")
@@ -376,6 +397,7 @@ export const openRequestedRepo = async (
   }
   let catalog: unknown
   let memberDocument: { full_name: string; description?: unknown; default_bookmark?: unknown } | undefined
+  let sitePrivate = false
   let guest: { sessionId: string; landingId:string; revision: string } | undefined
   let declaration: RepositoryDeclaration = {}
   try {
@@ -385,10 +407,13 @@ export const openRequestedRepo = async (
     diagnostics.documentStatus = response.status
     const backendRequestId = response.headers.get("x-request-id")
     if (backendRequestId !== null && /^[\w/.-]{1,160}$/.test(backendRequestId)) diagnostics.documentRequestId = backendRequestId
+    if ([401, 403, 404].includes(response.status) && repositorySite()?.repository.toLowerCase() === requested.toLowerCase()) return finish("Repository unavailable", "not-public")
     if (!response.ok && ![401, 403, 404].includes(response.status)) return finish(`Repository unavailable (HTTP ${response.status}).`)
     const document = response.ok ? await response.json() as { is_public?: unknown; description?: unknown; full_name?:unknown; default_bookmark?: unknown } & Record<string, unknown> : undefined
     if (!current()) return
     const canonical = typeof document?.full_name === "string" && document.full_name.toLowerCase() === requested.toLowerCase() ? document.full_name : requested
+    sitePrivate = response.ok && document?.is_public === false && repositorySite()?.repository.toLowerCase() === requested.toLowerCase() &&
+      controller.store.collections.identitySessions.get("identity")?.state === "signed-in"
     /*
      * The one declaration read: the row below carries it for the issue and
      * pull seams, and a fresh document is authoritative for both fields (a
@@ -406,7 +431,7 @@ export const openRequestedRepo = async (
     declaration = { issueTracker: read.issueTracker, githubSource: read.githubSource }
     githubSync = githubSyncOf(document)
     canWrite = typeof document?.full_name === "string" && document.full_name.toLowerCase() === requested.toLowerCase() && typeof document.can_write === "boolean" ? document.can_write : undefined
-    catalog = { repos: document?.is_public === true ? [{ name: canonical, summary: document.description }] : [] }
+    catalog = { repos: document?.is_public === true || sitePrivate ? [{ name: canonical, summary: document?.description }] : [] }
     if (document?.is_public === false && typeof document.full_name === "string" &&
       document.full_name.toLowerCase() === requested.toLowerCase() && identityAtStart?.state !== "signed-in" &&
       controller.store.collections.identitySessions.get("identity")?.state === "signed-in") {
@@ -527,7 +552,7 @@ export const openRequestedRepo = async (
        * treats it as "no org changesets", never as a fabricated org.
        * `catalog` records where the row came from: readable signed out.
        */
-      repository: { ...existing, ...repository, ...declaration, guest, canWrite, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: true }
+      repository: { ...existing, ...repository, ...declaration, guest, canWrite, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: !sitePrivate }
     })
   }
   if (options.activate === false || options.scope === "command") return finish()
