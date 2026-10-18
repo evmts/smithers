@@ -20,3 +20,7 @@
 .repo-ui-markdown h3 { font-size:var(--fs-4); margin:20px 0 12px; }
 .repo-ui-tabs { overflow-x:auto; }
 .repo-ui-tabs > a { flex-shrink:0; }
+/* Repository routes occupy the session shell; Ask retains the chat shell. */
+.session-shell:has(> .repo-frame) { padding-top: 0; }
+.session-shell > .repo-frame { flex: 1; width: 100%; min-width: 0; }
+.session-shell:has(> .repo-frame) > .session-navigation { display: none; }

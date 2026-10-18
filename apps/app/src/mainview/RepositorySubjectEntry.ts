@@ -237,7 +237,7 @@ const openRequestedFile = async (
   owner: string | null | undefined,
   options: SubjectEntryOptions
 ): Promise<string | void> => {
-  const readKey = codeReadKey(repo, subject.kind, subject.location)
+  const readKey = codeReadKey(repo, subject.kind, subject.location, options.requestId)
   setCodeRead(readKey, "loading")
   const target = selectedRepoId(controller.store, repo)
   const inventory = await authoritativeRefs(controller, target)

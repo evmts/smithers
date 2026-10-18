@@ -617,10 +617,7 @@ function AppContent() {
         view — the first thing a first visit sees would be the page's end
         rather than the launcher it came for (#4041).
       */}
-      {codeTarget && !missingRepositoryScope && <RepositoryCodeView
-        repo={codeTarget.repo} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
-        admitted={bootEntry?.phase === "ready"}
-        onAsk={text => { controller.changeDraft(text); controller.runCommand("chat") }} /> }
+
       <MessageScrollerProvider key={transcriptKey} scrollAnchor={launcherOpening ? "none" : "bottom"}
             initialMessageId={controller.sharedConversation ? sharedConversation.view?.scroll_anchor : initialReadId}
             readAnchor={controller.sharedConversation && readEntry === undefined && !(latestEntry?.kind === "card" && latestEntry.card.kind === "docs") ? undefined : { messageId: latestReadId ?? "",
@@ -764,12 +761,14 @@ function AppContent() {
   if (bootRepository === null || bootEntry?.phase !== "ready") return chat
   const repository = repositoryRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())
   const rootRoute = window.location.pathname.replace(/\/$/, "") === `/${bootRepository}`
-  if (!rootRoute) return chat
+  const codeRoute = codeTarget?.subject?.kind === "tree" || codeTarget?.subject?.kind === "blob"
+  if (!rootRoute && !codeRoute) return chat
   return <RepoFrame repo={bootRepository} publicRepo={repository?.catalog === true}
     login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
     member={identity?.state === "signed-in" && repository !== undefined && repository.catalog !== true}
     onAsk={() => controller.runCommand("chat.open")} onSignIn={() => controller.runCommand("sign-in")} ask={chat}>
-    {<CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
+    {codeRoute ? <RepositoryCodeView repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
+      admitted={true} requestId={bootEntry.requestId} onAsk={text => controller.changeDraft(text)} /> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
       tree={repoTreeRows.find(row => row.copyId === homeTreeCopy && row.path === "")}
       home={repositoryHome} summary={repository?.summary}/>}
   </RepoFrame>
