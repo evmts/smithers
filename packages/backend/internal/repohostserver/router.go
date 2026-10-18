@@ -238,6 +238,8 @@ func (s *Server) Handler() http.Handler {
 			r.Method(http.MethodGet, "/repos/{id}/docs/history/*", s.withAppError(s.listDocHistory))
 			r.Method(http.MethodDelete, "/repos/{id}/wiki/pages/{page_name}", s.withAppError(s.deleteWikiPage))
 			r.Method(http.MethodDelete, "/repos/{id}/docs/files/*", s.withAppError(s.deleteDoc))
+			r.Method(http.MethodGet, "/repos/{id}/history", s.withAppError(s.repositoryHistory))
+			r.Method(http.MethodGet, "/repos/{id}/history/{sha}", s.withAppError(s.repositoryCommit))
 			r.Method(http.MethodGet, "/repos/{id}/bookmarks", s.withAppError(s.listBookmarks))
 			r.Method(http.MethodPost, "/repos/{id}/bookmarks", s.withAppError(s.createBookmark))
 			r.Method(http.MethodPut, "/repos/{id}/default-bookmark", s.withAppError(s.setDefaultBookmark))
