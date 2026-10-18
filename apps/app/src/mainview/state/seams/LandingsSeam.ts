@@ -951,7 +951,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
         return `Pull requests for ${repo} couldn't be listed — the platform didn't answer.`
       }
       if (!response.ok) {
-        return ctx.store.collections.identitySessions.get("identity")?.state === "signed-out"
+        return ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in"
           ? readErrorMessage(response, `Pull requests for ${repo} couldn't be listed (HTTP ${response.status}).`)
           : readRepositoryListError(response, `Pull requests for ${repo} couldn't be listed.`)
       }

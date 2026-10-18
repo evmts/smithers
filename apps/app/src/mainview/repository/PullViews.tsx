@@ -5,7 +5,7 @@ import { parseUnifiedFile } from "@smthrs/ui/diff-paginate"
 import "./pulls.css"
 
 type Pull = Extract<Card, { kind: "pr" }>["payload"]
-const isOpen = (state: string) => ["open", "draft"].includes(state)
+import { isOpenPull as isOpen } from "../cards/GithubParts"
 
 export function DiffView({ files }: { files: NonNullable<Pull["files"]> }) {
   return <div className="repo-ui-diffs">{files.map(file => {
