@@ -238,7 +238,7 @@ func TestAReleaseNeverTearsDownATurnAnotherReplicaAdmitted(t *testing.T) {
 		reaper  bool
 		outcome string
 	}{
-		{name: "a turn arriving during a quiesce waits for it", reaper: true, outcome: "outcome=quiesced"},
+		{name: "a turn arriving during a release that once kept a reaped box warm waits and rebuilds", reaper: true, outcome: "outcome=retired"},
 		{name: "a turn arriving during a retirement after an unconfirmed reap waits and rebuilds", outcome: "outcome=retired"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -328,9 +328,20 @@ func (f *agentBoxRelease) requireRetiredAndRebuilt(t *testing.T) {
 	require.Empty(t, f.hosted.captured, "it captured nothing")
 	box := f.box(t)
 	require.Equal(t, "running", box.Status)
-	require.NotEqual(t, db.AgentBoxUnreapedStage, box.ProvisioningStage, "the new guest is clean")
+	require.NotEqual(t, "vm-agent-box", box.VmID, "a new guest")
+	require.Equal(t, box.VmID, box.AgentBoxDirtyVmID, "marked dirty by its own head token, not the old guest's")
 	require.False(t, db.IsAgentBoxLease(box.ProvisioningStage), "and no release holds it")
 	require.True(t, box.HeadPushTokenID.Valid, "the new guest publishes with a fresh head token")
+}
+
+// endRunUnreleased ends the run and its session as a release that never ran
+// leaves them: the box keeps its guest and its dirty mark.
+func (f *agentBoxRelease) endRunUnreleased(t *testing.T) {
+	t.Helper()
+	_, err := f.pool.Exec(f.ctx, `UPDATE workflow_runs SET status='failure' WHERE id=$1`, f.run)
+	require.NoError(t, err)
+	_, err = f.pool.Exec(f.ctx, `UPDATE agent_sessions SET status='failed', finished_at=NOW() WHERE id=$1`, f.session)
+	require.NoError(t, err)
 }
 
 // A join waits while a live release holds the box and refuses, retryably,
@@ -345,7 +356,7 @@ func TestAJoinWaitsForALiveReleaseAndRetiresTheBoxOfADeadOne(t *testing.T) {
 
 	t.Run("a live release", func(t *testing.T) {
 		f := newAgentBoxRelease(t, "running")
-		f.finish(t)
+		f.endRunUnreleased(t)
 		claim, err := f.q.ClaimAgentBoxRelease(f.ctx, db.ClaimAgentBoxReleaseParams{WorkspaceID: f.workspace, CheckUse: true})
 		require.NoError(t, err)
 		require.NotEmpty(t, claim.Lease, "nothing uses the finished box")
@@ -353,35 +364,32 @@ func TestAJoinWaitsForALiveReleaseAndRetiresTheBoxOfADeadOne(t *testing.T) {
 		err = f.nextTurn(t)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "still being released")
-		require.False(t, f.box(t).HeadPushTokenID.Valid, "the waiting join minted nothing")
+		require.Zero(t, f.hosted.creates, "the waiting join built nothing")
+		require.Zero(t, f.runtime.deletes.Load(), "and deleted nothing under the release")
 
 		require.NoError(t, f.q.EndAgentBoxLease(f.ctx, f.workspace, claim.Lease, ""))
 		_, err = f.pool.Exec(f.ctx, `UPDATE workflow_runs SET status='failure' WHERE repository_id=$1 AND status IN ('queued','running')`, f.box(t).RepositoryID)
 		require.NoError(t, err)
 		require.NoError(t, f.nextTurn(t), "the turn joins once the release ends")
-		require.True(t, f.box(t).HeadPushTokenID.Valid)
-		require.Zero(t, f.runtime.deletes.Load(), "a release that ended cleanly leaves its box to reuse")
+		f.requireRetiredAndRebuilt(t)
 	})
 
 	for _, tc := range []struct {
-		name   string
-		reaped bool
+		name    string
+		retired bool
 	}{
-		{name: "a release that died after its reap", reaped: true},
-		{name: "a release that died before its reap", reaped: false},
+		{name: "a release that died after it retired the guest", retired: true},
+		{name: "a release that died before it reached the guest", retired: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newAgentBoxRelease(t, "running")
 			f.publishHead(t)
-			if tc.reaped {
+			if tc.retired {
 				f.finish(t)
 			} else {
-				// The run ended, its release took the lease and died: no
-				// reap, and the run's reader still runs.
-				_, err := f.pool.Exec(f.ctx, `UPDATE workflow_runs SET status='failure' WHERE id=$1`, f.run)
-				require.NoError(t, err)
-				_, err = f.pool.Exec(f.ctx, `UPDATE agent_sessions SET status='failed', finished_at=NOW() WHERE id=$1`, f.session)
-				require.NoError(t, err)
+				// The run ended, its release took the lease and died before
+				// it reached the guest, and the run's reader still runs.
+				f.endRunUnreleased(t)
 				f.hosted.processes["reader"] = true
 			}
 			dead := fmt.Sprintf("%s%d:dead", db.AgentBoxLeasePrefix, time.Now().Add(-2*db.AgentBoxLeaseSeconds*time.Second).Unix())
@@ -395,9 +403,10 @@ func TestAJoinWaitsForALiveReleaseAndRetiresTheBoxOfADeadOne(t *testing.T) {
 	}
 }
 
-// A release that fails after it took the box's lease and before a confirmed
-// reap leaves the box unreaped, never clean: its next turn retires it.
-func TestAReleaseThatFailsBeforeItsReapLeavesTheBoxToBeRetired(t *testing.T) {
+// A release that fails after it took the box's lease and before it reached
+// the guest leaves the box's dirty mark as it was: its next turn retires the
+// guest (guardian f-giktpr).
+func TestAReleaseThatFailsEarlyLeavesTheBoxToBeRetired(t *testing.T) {
 	f := newAgentBoxRelease(t, "running")
 	f.publishHead(t)
 	f.hosted.processes["reader"] = true
@@ -408,10 +417,9 @@ func TestAReleaseThatFailsBeforeItsReapLeavesTheBoxToBeRetired(t *testing.T) {
 	f.finish(t)
 
 	require.Contains(t, f.releaseLog(t), "outcome=release_failed")
-	require.Zero(t, f.reaper.reaped, "the release failed before its reap")
-	box := f.box(t)
-	require.Equal(t, db.AgentBoxUnreapedStage, box.ProvisioningStage, "the box's state is unknown, not clean")
-	require.False(t, box.HeadPushTokenID.Valid, "the run's head token is revoked all the same")
+	require.Zero(t, f.runtime.deletes.Load(), "the release failed before it reached the guest")
+	f.requireDirty(t, "the box's guest is still dirty")
+	require.False(t, f.box(t).HeadPushTokenID.Valid, "the run's head token is revoked all the same")
 
 	f.boxes.runtimeIdentity = nil
 	require.NoError(t, f.nextTurn(t), "the turn gets a working box, never a refusal")
@@ -485,7 +493,8 @@ func (f *agentBoxRelease) addBox(t *testing.T, i int) string {
 // RELEASES PROGRESS ON A SMALL POOL (guardian-review b-k7umb5, plue#839). A
 // release never holds a pooled connection while it waits for another, so one
 // release on a pool of one connection, and more concurrent releases than the
-// pool has connections, all finish within their deadline. None hangs.
+// pool has connections, all retire their boxes within their deadline. None
+// hangs.
 func TestAgentBoxReleasesProgressOnASmallPool(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -534,7 +543,7 @@ func TestAgentBoxReleasesProgressOnASmallPool(t *testing.T) {
 				select {
 				case got := <-results:
 					require.NoError(t, got.err, "release of %s", got.id)
-					require.Equal(t, agentWorkspaceQuiesced, got.release.Outcome, "release of %s: %s", got.id, got.release.Detail)
+					require.Equal(t, agentWorkspaceRetired, got.release.Outcome, "release of %s: %s", got.id, got.release.Detail)
 				case <-time.After(45 * time.Second):
 					t.Fatalf("a release hung on a pool of %d connections", tc.conns)
 				}

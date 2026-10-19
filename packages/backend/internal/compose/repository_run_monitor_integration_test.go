@@ -13,11 +13,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/jobs"
 	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
@@ -373,4 +375,50 @@ func TestRepositoryRunMonitorsProgressPostgres(t *testing.T) {
 	t.Run("following a run admitted, created and resumed nothing", func(t *testing.T) {
 		require.Equal(t, before, f.admissions())
 	})
+}
+
+// A run on an agent session's own box is that session's person's alone
+// (plue#869, Security d-b01lum): another reader of the repository lists none
+// and reads none of it, as if it did not exist. The reads go straight to
+// serveReads as the authorized repository door does, with the reader's
+// identity on the request.
+func TestRepositoryRunMonitorsKeepASessionBoxToItsPersonPostgres(t *testing.T) {
+	f := newRepositoryMonitorFixture(t)
+	var owner, collaborator, machines int64
+	require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT id FROM users WHERE lower_username='monitor-owner'`).Scan(&owner))
+	require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT id FROM users WHERE lower_username='monitor-collaborator'`).Scan(&collaborator))
+	require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT id FROM users WHERE lower_username='smithers-machines'`).Scan(&machines))
+	var session, box string
+	require.NoError(t, f.pool.QueryRow(f.ctx, `INSERT INTO agent_sessions (id, repository_id, user_id, status)
+		VALUES (gen_random_uuid(), $1, $2, 'active') RETURNING id::text`, f.private, owner).Scan(&session))
+	require.NoError(t, f.pool.QueryRow(f.ctx, `INSERT INTO workspaces (repository_id, user_id, name, kind, status, target_bookmark, agent_session_id)
+		VALUES ($1, $2, '', 'container', 'running', 'main', $3) RETURNING id::text`, f.private, machines, session).Scan(&box))
+	f.admit(f.private, box, "own-run", "running")
+	f.admit(f.private, "box-a", "shared-run", "running")
+
+	monitors := &runMonitors{pool: f.pool, reader: f.reader}
+	door := chi.NewRouter()
+	serve := func(w http.ResponseWriter, r *http.Request) { monitors.serveReads(w, r, f.private) }
+	door.Get("/monitors", serve)
+	door.Get("/monitors/{id}", serve)
+	door.Get("/monitors/{id}/trace", serve)
+	read := func(as int64, path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req = req.WithContext(middleware.ContextWithAuthInfo(req.Context(), &middleware.AuthInfo{User: &db.User{ID: as}}))
+		out := httptest.NewRecorder()
+		door.ServeHTTP(out, req)
+		return out
+	}
+
+	rows := monitorRows(t, read(owner, "/monitors"))
+	require.ElementsMatch(t, []string{box + ":own-run", "box-a:shared-run"}, monitorIDs(rows), "the session's person lists its run")
+	require.Equal(t, 200, read(owner, "/monitors/"+box+":own-run").Code)
+
+	rows = monitorRows(t, read(collaborator, "/monitors"))
+	require.Equal(t, []string{"box-a:shared-run"}, monitorIDs(rows), "another reader lists none of the box's runs")
+	for _, path := range []string{"/monitors/" + box + ":own-run", "/monitors/" + box + ":own-run/trace"} {
+		out := read(collaborator, path)
+		require.Equal(t, 404, out.Code, path)
+		require.NotContains(t, out.Body.String(), "own-run", path)
+	}
 }

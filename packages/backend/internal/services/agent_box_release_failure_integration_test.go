@@ -23,8 +23,8 @@ import (
 // s-50rmyl, guardian-review f-6kwj6g). The run may have copied its landing
 // token, so a token that outlives the turn stays a working credential. A
 // release whose head, landing or cache token revocation fails, or is not read
-// back as gone, fails; its box stays unreaped; and the sweep retries until
-// every token is gone.
+// back as gone, fails; its box stays dirty; and the sweep retries until every
+// token is gone.
 
 // faultyReleaseStore is the hosted store with failures injected into named
 // methods until cleared: an error, or a call that outlasts its deadline.
@@ -115,15 +115,12 @@ func TestARunWhoseCredentialRevocationFailsLeavesItsBoxDirtyUntilTheSweepRevokes
 			f.finish(t)
 
 			require.Contains(t, f.releaseLog(t), "outcome=release_failed", "the release fails")
-			require.Zero(t, f.reaper.reaped, "the box is not quiesced")
-			box := f.box(t)
-			require.Equal(t, "running", box.Status)
-			require.Equal(t, db.AgentBoxUnreapedStage, box.ProvisioningStage, "the box stays dirty")
+			f.requireDirty(t, "the box stays dirty")
 			require.True(t, f.tokenLive(t, tc.leftLive), "the %s token the failure left is still live", tc.leftLive)
 
 			// The sweep retries; while the failure lasts the box stays dirty.
 			require.Error(t, f.boxes.RetireIdleAgentBoxes(f.ctx))
-			require.Equal(t, db.AgentBoxUnreapedStage, f.box(t).ProvisioningStage)
+			f.requireDirty(t, "the box stays dirty")
 			require.Zero(t, f.runtime.deletes.Load())
 
 			store.clear()
@@ -137,10 +134,9 @@ func TestARunWhoseCredentialRevocationFailsLeavesItsBoxDirtyUntilTheSweepRevokes
 	}
 }
 
-// A runtime that does not declare workspaceapi.WorkspaceGuestFence could stop,
-// reap or delete a guest built since the release was decided, so a release
-// on it touches no guest: it fails and leaves the box dirty (Security
-// s-r9rwwx).
+// A runtime that does not declare workspaceapi.WorkspaceGuestFence could stop
+// or delete a guest built since the release was decided, so a release on it
+// touches no guest: it fails and leaves the box dirty (Security s-r9rwwx).
 func TestAReleaseOnARuntimeThatCannotFenceAGuestTouchesNoGuest(t *testing.T) {
 	f := newAgentBoxRelease(t, "running")
 	f.hosted.unfenced = true
@@ -150,9 +146,8 @@ func TestAReleaseOnARuntimeThatCannotFenceAGuestTouchesNoGuest(t *testing.T) {
 	require.Contains(t, f.releaseLog(t), "outcome=release_failed")
 	require.Contains(t, f.releaseLog(t), "workspace.WorkspaceGuestFence")
 	require.Empty(t, f.hosted.stopped, "no host was stopped")
-	require.Zero(t, f.reaper.reaped, "nothing was reaped")
 	require.Zero(t, f.runtime.deletes.Load(), "nothing was deleted")
-	require.Equal(t, db.AgentBoxUnreapedStage, f.box(t).ProvisioningStage, "the box stays dirty")
+	f.requireDirty(t, "the box stays dirty")
 }
 
 // A hosted coding host's landing and cache credentials live two hours; an
@@ -216,12 +211,12 @@ func TestQuiesceAgentBoxRevokesEveryCredentialAndEndsTheGitCredentialCache(t *te
 		}
 		require.Contains(t, f.hosted.stopped, "smithers-coding-host", "the coding host is stopped")
 		require.False(t, f.hosted.credentialCache, "the git credential cache socket is gone")
-		require.Zero(t, f.reaper.reaped, "a quiesce does not reap")
-		require.Zero(t, f.runtime.deletes.Load(), "nor retire")
+		require.Zero(t, f.runtime.deletes.Load(), "a quiesce does not retire")
 		box := f.box(t)
 		require.Equal(t, "running", box.Status)
-		require.Empty(t, box.ProvisioningStage, "the box is clean")
+		require.Empty(t, box.ProvisioningStage)
 		require.Equal(t, "vm-agent-box", box.VmID)
+		require.Equal(t, box.VmID, box.AgentBoxDirtyVmID, "the guest stays dirty: its next turn retires it")
 
 		again, err := f.boxes.QuiesceAgentBox(f.ctx, f.workspace, f.session, f.run)
 		require.NoError(t, err, "quiesce is idempotent")
@@ -238,20 +233,18 @@ func TestQuiesceAgentBoxRevokesEveryCredentialAndEndsTheGitCredentialCache(t *te
 		require.ErrorIs(t, err, errAgentBoxCredentialCacheLive)
 		require.Equal(t, agentWorkspaceReleaseFailed, got.Outcome)
 		require.False(t, got.Quiesced)
-		require.Equal(t, db.AgentBoxUnreapedStage, f.box(t).ProvisioningStage, "the box stays dirty for the sweep")
+		f.requireDirty(t, "the box stays dirty for the sweep")
 	})
 
-	t.Run("an unreaped box stays unreaped", func(t *testing.T) {
+	t.Run("a quiesce never clears the dirty mark", func(t *testing.T) {
 		f := newAgentBoxRelease(t, "running")
-		_, err := f.pool.Exec(f.ctx, `UPDATE workspaces SET provisioning_stage=$2 WHERE id=$1`, f.workspace, db.AgentBoxUnreapedStage)
-		require.NoError(t, err)
 
 		got, err := f.boxes.QuiesceAgentBox(f.ctx, f.workspace, f.session, f.run)
 
 		require.NoError(t, err)
-		require.Equal(t, agentWorkspaceUnreaped, got.Outcome)
-		require.False(t, f.tokenLive(t, "landing"), "its credentials are revoked all the same")
-		require.Equal(t, db.AgentBoxUnreapedStage, f.box(t).ProvisioningStage, "only a retirement makes it clean")
+		require.Equal(t, agentWorkspaceQuiesced, got.Outcome)
+		require.False(t, f.tokenLive(t, "landing"), "its credentials are revoked")
+		f.requireDirty(t, "only a retirement's new guest makes it clean")
 	})
 }
 
