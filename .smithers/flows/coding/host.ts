@@ -110,7 +110,8 @@ export interface Options extends NativeOptions {
   /** The only tool names the host may offer; startup stops on any other. */
   readonly toolAllowlist?: ReadonlyArray<string> | undefined
   /** Serves the flow catalog loaded at startup for the host's life and loads no
-   * module from `repositoryPath` after it (`repositoryRegistration`'s `fixedRoot`). */
+   * module from `repositoryPath` after it (`repositoryRegistration`'s `fixedRoot`).
+   * Serving the live checkout, it loads no repository flow ({@link repositoryFlowsServed}). */
   readonly fixedFlowCatalog?: boolean | undefined
 
   /** Exact system names from the backend's packaged flow catalog. */
@@ -171,6 +172,20 @@ export interface Options extends NativeOptions {
    */
   readonly stateRoot?: string | undefined
 }
+
+/**
+ * Whether this host discovers and loads the repository's own flows.
+ *
+ * A hosted host that serves the live checkout does not: agent turns write that
+ * tree, and a box rebuilt for the next turn starts from a branch head that
+ * already holds their edits. It runs its bundled and system flows only. A
+ * pinned host reads an authorized immutable export instead, and an install
+ * loads them as before.
+ */
+export const repositoryFlowsServed = (
+  options: Pick<Options, "fixedFlowCatalog" | "flowSourceRoot" | "repositoryPath">
+): boolean =>
+  options.fixedFlowCatalog !== true || (options.flowSourceRoot ?? options.repositoryPath) !== options.repositoryPath
 
 /** The optional routes advertised by this configured host. */
 export const configuredCodingRoutes = (
@@ -793,7 +808,8 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
             HostRegistry.layer(
               options.flowSourceRoot ?? options.repositoryPath,
               stateRoot,
-              native.layerGuardedPlatform(options.flowSourceRoot ?? options.repositoryPath)
+              native.layerGuardedPlatform(options.flowSourceRoot ?? options.repositoryPath),
+              repositoryFlowsServed(options)
             ).pipe(
               Layer.provide(Layer.merge(native.layerHostPlatform, platform.crypto))
             )
@@ -844,7 +860,8 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
             loadFlowsLayer(
               options.flowSourceRoot ?? options.repositoryPath,
               options.systemFlows,
-              options.checkEnvironment
+              options.checkEnvironment,
+              repositoryFlowsServed(options)
             ).pipe(Layer.provide(Layer.succeed(FileSystem.FileSystem)(fs)))
           ),
           pocPolicy,

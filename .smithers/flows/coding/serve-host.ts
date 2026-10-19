@@ -11,7 +11,7 @@ import { layer as checkReceiptLayer } from "../repository/check-receipt.ts"
 import { remoteLayer } from "../repository/remote.ts"
 import { consume as consumeCheckEnvironment } from "./check-environment.ts"
 import { HOSTED_ROOT, localProvider } from "./filesystem.ts"
-import { share } from "./host-modules.ts"
+import { seal, share } from "./host-modules.ts"
 import { layer, operatorSeats, type Options, optionsFromEnv, systemFlowsFromEnv, toolCallLimitFromEnv } from "./host.ts"
 import { prepareFlowDependencies, withImmutableCommit, withPinnedSource } from "./immutable-source.ts"
 import { consumeInstallProject } from "./install-project.ts"
@@ -89,6 +89,17 @@ export const hostedAdapters = (): Pick<
   fixedFlowCatalog: true
 })
 
+/**
+ * The adapters `--root` selects. The hosted workspace gets {@link hostedAdapters},
+ * and from this point on the process loads no module from under it: the
+ * checkout holds agent edits, and this process holds the session's
+ * credentials. The release exists for tests; the entry never calls it.
+ */
+export const composeRoot = (root: string, hostedRoot: string = HOSTED_ROOT) => {
+  if (root !== hostedRoot) return { adapters: {}, release: () => {} }
+  return { adapters: hostedAdapters(), release: seal(root) }
+}
+
 /** Code-owned host adapters. The installed entry supplies none; a hosted
  * developer box's root selects {@link hostedAdapters}. */
 export const serve = async (
@@ -145,7 +156,7 @@ export const serve = async (
     const toolCallLimitMs = toolCallLimitFromEnv(process.env)
     share()
     const root = resolve(parsed.values.root ?? process.cwd())
-    const composed = root === HOSTED_ROOT ? { ...hostedAdapters(), ...adapters } : adapters
+    const composed = { ...composeRoot(root).adapters, ...adapters }
     const port = Number(parsed.values.port)
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("port must be an integer from 0 to 65535")
     const bind: Serve.Bind = {

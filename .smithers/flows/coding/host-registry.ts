@@ -42,13 +42,20 @@ export const relocateExecutionArchive = (sourceRoot: string, stateRoot: string) 
     catch: (error) => error instanceof Error ? error : new Error(String(error))
   })
 
+/**
+ * The project registry over `sourceRoot`. With `repositoryFlows` false it
+ * discovers nothing there: a hosted host serving the live checkout runs only
+ * its bundled and system flows, because the checkout holds agent edits.
+ */
 export const layer = (
   sourceRoot: string,
   stateRoot: string,
-  bodyPlatform: Layer.Layer<FileSystem.FileSystem | Path.Path>
+  bodyPlatform: Layer.Layer<FileSystem.FileSystem | Path.Path>,
+  repositoryFlows = true
 ) =>
   Layer.unwrap(Effect.gen(function*() {
-    yield* relocateExecutionArchive(sourceRoot, stateRoot)
     const snapshots = yield* ExecutionSnapshot.makeFileSystem({ root: join(stateRoot, "registry") })
+    if (!repositoryFlows) return Registry.layerFromDescriptors([], [], snapshots).pipe(Layer.provide(bodyPlatform))
+    yield* relocateExecutionArchive(sourceRoot, stateRoot)
     return Registry.layerProject({ root: sourceRoot, snapshots }).pipe(Layer.provide(bodyPlatform))
   })).pipe(Layer.orDie)

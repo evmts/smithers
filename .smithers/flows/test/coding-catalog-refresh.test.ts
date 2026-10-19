@@ -22,14 +22,17 @@ import { Node } from "@smthrs/plan"
 import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
-import { Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import assert from "node:assert/strict"
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
+import * as HostRegistry from "../coding/host-registry.ts"
+import { repositoryFlowsServed } from "../coding/host.ts"
+import { composeRoot } from "../coding/serve-host.ts"
 import {
   bindRepositoryRegistry,
   provisionBuiltins,
@@ -535,6 +538,112 @@ for (const hosted of [false, true]) {
             "required agent"
           ])
         ])
+      )
+    }
+  )
+}
+
+/*
+ * A hosted host serving the live checkout loads no repository flow at all: a
+ * box rebuilt for the next turn starts from a branch head that already holds
+ * the agent's edits. These compose the root, registry, catalog and
+ * registration from the functions `.smithers/flows/coding/serve-host.ts` and
+ * `.smithers/flows/coding/host.ts` call.
+ */
+const composedHost = (repositoryPath: string, stateRoot: string, hosted: boolean, registered: Array<string>) =>
+  Effect.gen(function*() {
+    const adapters =
+      composeRoot(repositoryPath, hosted ? repositoryPath : join(repositoryPath, "..", "hosted")).adapters
+    const served = repositoryFlowsServed({ repositoryPath, ...adapters })
+    const builtins = yield* provisionBuiltins(stateRoot, policy)
+    const services = Layer.merge(platform, NodeCrypto.layer)
+    const project = Context.get(
+      yield* Layer.build(
+        HostRegistry.layer(repositoryPath, stateRoot, services, served).pipe(Layer.provide(services))
+      ),
+      Registry.Registry
+    )
+    const registry = bindRepositoryRegistry(project, builtins.registry, policy, systemFlows)
+    const options = { delegates: [Agent, Project, Reserved] }
+    const built = yield* repositoryCatalog(options, builtins.load).pipe(
+      Effect.provideService(Registry.Registry, registry)
+    )
+    const fixedRoot = "fixedFlowCatalog" in adapters && adapters.fixedFlowCatalog ? repositoryPath : undefined
+    return {
+      served,
+      registry,
+      built,
+      layer: repositoryRegistration(options, built, Layer.empty, fixedRoot).pipe(
+        Layer.provideMerge(Layer.mergeAll(observed(registered), Action.layerImplementations, NodeCrypto.layer)),
+        Layer.provideMerge(Layer.succeed(Registry.Registry, registry))
+      )
+    }
+  })
+
+for (const hosted of [false, true]) {
+  test(
+    `committed repository flows ${
+      hosted ? "never load on a hosted host, across an edit and a restart" : "load on an install"
+    }`,
+    async (t) => {
+      const { repositoryPath, stateRoot, marks, put, ran } = await moduleWorkspace(t)
+      const evil = (version: string) =>
+        markedFlow("evil", marks, version, `import { helper } from "./helper.ts"`, "helper")
+      await put(".smithers/flows/evil/flow.ts", evil("committed"))
+      await put(".smithers/flows/evil/helper.ts", markedHelper("helper", marks, "committed"))
+      await put(".smithers/flows/benign/flow.ts", markedFlow("benign", marks, "committed"))
+      const repositoryNames = ["evil", "benign"]
+      // From process start, on hosted, nothing under the root loads.
+      const start = composeRoot(repositoryPath, hosted ? repositoryPath : join(repositoryPath, "..", "hosted"))
+      t.after(start.release)
+      if (hosted) {
+        const direct = await import(pathToFileURL(join(repositoryPath, ".smithers/flows/evil/flow.ts")).href).then(
+          () => "loaded",
+          (error: Error) => error.message
+        )
+        assert.match(direct, /loads no workspace code after it starts/)
+      }
+      // A restart is a second host over the same tree.
+      for (const restart of [false, true]) {
+        const registered: Array<string> = []
+        await Effect.runPromise(Effect.scoped(
+          Effect.gen(function*() {
+            const composed = yield* composedHost(repositoryPath, stateRoot, hosted, registered)
+            assert.equal(composed.served, !hosted)
+            // What the model is shown, and what the host can plan and run.
+            const visible = (yield* composed.registry.visible()).map((entry) => entry.name)
+            const listed = (yield* composed.registry.list()).map((entry) => entry.name)
+            const loaded = composed.built.executables.map((entry) => entry.descriptor.name)
+            for (const name of repositoryNames) {
+              for (const [where, names] of [["visible", visible], ["listed", listed], ["catalog", loaded]] as const) {
+                assert.equal(names.includes(name), !hosted, `${name} ${where}: ${names.join(",")}`)
+              }
+            }
+            const setup = composed.built.executables.find((entry) => entry.descriptor.name === "repository/setup")
+            assert.ok(setup, "the built-in setup job is served")
+            assert.ok(Graph.build(setup.flow, { input: {} }).nodes.length > 0, "a built-in plan completes")
+            return yield* Effect.gen(function*() {
+              const catalog = yield* Executable.Catalog
+              const refresh = yield* Executable.Refresh
+              if (!restart) {
+                // The agent edits the committed flow and its helper during the turn.
+                yield* Effect.promise(async () => {
+                  await put(".smithers/flows/evil/flow.ts", evil("agent"))
+                  await put(".smithers/flows/evil/helper.ts", markedHelper("helper", marks, "agent"))
+                })
+              }
+              const outcome = yield* refresh.flow("evil")
+              const evilLoaded = yield* Effect.result(catalog.load!("evil"))
+              assert.equal(outcome._tag, hosted ? "Fixed" : "Registered")
+              assert.equal(evilLoaded._tag, hosted ? "Failure" : "Success")
+              assert.equal(repositoryNames.some((name) => registered.includes(name)), !hosted)
+            }).pipe(Effect.provide(composed.layer))
+          }).pipe(Effect.provide(platform))
+        ))
+      }
+      assert.deepEqual(
+        await ran(),
+        new Set(hosted ? [] : ["helper committed", "evil committed", "benign committed", "helper agent", "evil agent"])
       )
     }
   )
