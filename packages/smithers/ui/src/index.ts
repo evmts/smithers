@@ -64,6 +64,7 @@ export {
 } from "./styles";
 
 export { Button, buttonVariants, type ButtonProps } from "./button";
+export { Wordmark, WORDMARK, type WordmarkProps } from "./wordmark/Wordmark";
 export { Badge, badgeVariants, type BadgeProps } from "./badge";
 export { StatusPill, type StatusPillProps } from "./status-pill";
 export {

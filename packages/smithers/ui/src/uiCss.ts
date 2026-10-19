@@ -42,6 +42,7 @@ import { sandboxCss } from "./sandbox/sandboxCss";
 import { canvasCss } from "./canvas/canvasCss";
 import { calendarCss } from "./calendar/calendarCss";
 import { vaultCss } from "./vault/vaultCss";
+import { wordmarkCss } from "./wordmark/wordmarkCss";
 
 const shadowCard = t.shadow2;
 const shadowOverlay = t.shadow3;
@@ -733,6 +734,7 @@ export const smithersUiCss = [
   canvasCss,
   calendarCss,
   vaultCss,
+  wordmarkCss,
   reducedMotionCss,
 ]
   .map((block) => block.trim())

@@ -17,6 +17,10 @@
       "types": "./src/button.tsx",
       "default": "./src/button.tsx"
     },
+    "./wordmark": {
+      "types": "./src/wordmark/Wordmark.tsx",
+      "default": "./src/wordmark/Wordmark.tsx"
+    },
     "./marker": {
       "types": "./src/chat/Marker.tsx",
       "default": "./src/chat/Marker.tsx"
