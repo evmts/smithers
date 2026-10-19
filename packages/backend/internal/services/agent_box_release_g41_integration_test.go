@@ -69,7 +69,13 @@ func TestAReleaseOfABoxThatIsNotRunningRevokesEveryCredentialClass(t *testing.T)
 			got, err := f.boxes.ReleaseAgentWorkspace(f.ctx, f.workspace, f.session, f.run)
 
 			require.NoError(t, err)
-			require.Equal(t, agentWorkspaceAlreadyReleased, got.Outcome)
+			// A stopped or failed box that still names its guest is retired
+			// too, so it holds no instance (QA b-jpt11m).
+			outcome := agentWorkspaceAlreadyReleased
+			if status != "suspended" {
+				outcome = agentWorkspaceRetired
+			}
+			require.Equal(t, outcome, got.Outcome)
 			require.True(t, got.Quiesced)
 			require.True(t, got.HeadTokenRevoked)
 			f.requireEveryCredentialGone(t, children, binding, control)
@@ -113,8 +119,10 @@ func TestALateReleaseOfAStoppedBoxNeverTouchesTheSameSessionsNextRun(t *testing.
 // sweep until every credential is gone.
 func TestAFailedRevocationOfAStoppedBoxIsRetriedByTheSweep(t *testing.T) {
 	f := newAgentBoxRelease(t, "stopped")
+	// The release retires a stopped box; listing its hosts fails, so its
+	// quiesce and the sweep's revocation both fail until the fault clears.
 	store := &faultyReleaseStore{hostedProductStore: hostedProductStore{Product: productstore.New(f.pool)},
-		faults: map[string]string{"RevokeStoppedAgentBoxCredentials": "error"}}
+		faults: map[string]string{"RevokeStoppedAgentBoxCredentials": "error", "ListFlowHostBindingHolders": "error"}}
 	f.useStore(store)
 	binding, control := f.sealHostCredential(t)
 	children := f.mintChildrenToken(t)
