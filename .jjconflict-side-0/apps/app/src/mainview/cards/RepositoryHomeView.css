@@ -1,0 +1,63 @@
+/* A repository's declared default view at `/owner/repo` (M-45). */
+.repository-home {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sui-space-3, 0.75rem);
+  align-items: flex-start;
+}
+.repository-home-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sui-space-2, 0.5rem);
+  width: 100%;
+}
+.repository-home-block h2 {
+  font-size: var(--sui-font-size-sm, 0.875rem);
+  font-weight: 600;
+  margin: 0;
+}
+.repository-home-notice {
+  color: var(--sui-color-text-muted, inherit);
+  font-size: var(--sui-font-size-sm, 0.875rem);
+  margin: 0;
+}
+.repository-home-links {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sui-space-1, 0.25rem);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.repository-home-stack-counts {
+  color: var(--sui-color-text-muted, inherit);
+  font-size: var(--sui-font-size-sm, 0.875rem);
+  margin: 0;
+}
+.repository-home-stack-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sui-space-1, 0.25rem);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.repository-home-stack-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sui-space-2, 0.5rem);
+  font-size: var(--sui-font-size-sm, 0.875rem);
+}
+.repository-home-stack-reason {
+  color: var(--sui-color-text-muted, inherit);
+}
+.repository-home-stack-more {
+  align-items: center;
+  color: var(--sui-color-text-muted, inherit);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--sui-font-size-sm, 0.875rem);
+  gap: var(--sui-space-2, 0.5rem);
+  margin: 0;
+}

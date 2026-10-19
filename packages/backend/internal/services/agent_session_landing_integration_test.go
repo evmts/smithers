@@ -224,6 +224,8 @@ func TestSessionLandingMissingSourceDoesNotPublish(t *testing.T) {
 	params := db.CreateLandingRequestParams{RepositoryID: x.f.repoID, AuthorID: x.user.ID, Title: "Missing source", TargetBookmark: "main", StackSize: 1, AgentAuthored: true, AuthorAgentSessionID: x.session.ID}
 	landing, err := q.CreateLandingRequestIdempotent(ctx, db.CreateLandingRequestIdempotentParams{RepositoryID: params.RepositoryID, AuthorID: params.AuthorID, Title: params.Title, TargetBookmark: params.TargetBookmark, StackSize: params.StackSize, AgentAuthored: params.AgentAuthored, AuthorAgentSessionID: params.AuthorAgentSessionID, RequestID: key, CreateRequestHash: landingCreateDigest(params, []string{x.changeID})})
 	require.NoError(t, err)
+	_, err = x.pool.Exec(ctx, `UPDATE landing_requests SET request_id=$1::uuid WHERE id=$2`, sessionLandingRequestID(x.session.ID, reply.ID), landing.ID)
+	require.NoError(t, err)
 	_, err = q.AddLandingRequestChange(ctx, db.AddLandingRequestChangeParams{LandingRequestID: landing.ID, ChangeID: x.changeID, PositionInStack: 1})
 	require.NoError(t, err)
 	_, err = x.service.Open(ctx, &x.user, "smithers-canary", "smithers", x.session.ID, nil)

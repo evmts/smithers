@@ -1,0 +1,359 @@
+import { decodeLiveDocBinary, encodeLiveDocBinary, LiveDocReply, parseLiveDocTopic } from "@smthrs/rpc/LiveDoc"
+import { createBrowserPresence, type BrowserWhere } from "../state/seams/BranchSeam"
+import type { DocumentEvent } from "./LiveDocProvider"
+import { LiveReplySchema } from "@smthrs/rpc/Live"
+
+export interface TopicSnapshot<T = unknown> {
+  readonly topic: string
+  readonly data?: T
+  readonly cursor?: number
+  readonly error?: string
+}
+export interface LiveSocket {
+  binaryType?: string
+  readyState: number
+  onopen: (() => void) | null
+  onclose: (() => void) | null
+  onmessage: ((event: { data: unknown }) => void) | null
+  send(data: string | Uint8Array): void
+  close(): void
+}
+export interface LiveChannelOptions {
+  /** Explicit contract seam; browser boot enables it on the shared channel. */
+  documentFrames?: boolean
+  socket?: () => LiveSocket
+  random?: () => number
+  schedule?: (callback: () => void, ms: number) => unknown
+  cancel?: (timer: unknown) => void
+  /** Topic owners supply their delta reducer; an unknown delta never guesses state. */
+  project?: (topic: string, previous: unknown, delta: unknown) => unknown
+}
+
+
+/** One transport, reference-counted topics, and committed projection rows. */
+export class LiveChannel {
+  private readonly topics = new Map<string, { id: number; listeners: Set<() => void>; snapshot: TopicSnapshot; awaitingSnapshot: boolean }>()
+  private readonly projectors = new Map<string, (previous: unknown, delta: unknown) => unknown>()
+  /** Register the publishing topic's decoder before its consumers subscribe. */
+  registerProjection(topic: string, project: (previous: unknown, delta: unknown) => unknown): void {
+    const existing = this.projectors.get(topic)
+    if (existing && existing !== project) throw new Error(`Projection already registered: ${topic}`)
+    this.projectors.set(topic, project)
+  }
+  private presenceId?: number
+  private readonly presenceOwners = new Map<symbol, BrowserWhere>()
+  private readonly heartbeat = createBrowserPresence({
+    presence: where => this.presence(where),
+    schedule: (callback, ms) => (this.options.schedule ?? setTimeout)(callback, ms),
+    cancel: timer => (this.options.cancel ?? (value => clearTimeout(value as ReturnType<typeof setTimeout>)))(timer)
+  })
+  /** Locations never include identity: the server binds the socket's member. */
+  presence(where: BrowserWhere): void {
+    if (this.disposed || this.socket?.readyState !== 1) return
+    this.presenceId ??= this.nextId++
+    this.send({ t: "presence", id: this.presenceId, where })
+  }
+  /** A mounted reader owns a lease; the latest move wins within this browser tab. */
+  trackPresence(where: BrowserWhere): { move(where: BrowserWhere): void; release(): void } {
+    const owner = Symbol()
+    const move = (next: BrowserWhere) => {
+      if (this.disposed) return
+      this.presenceOwners.delete(owner)
+      this.presenceOwners.set(owner, { ...next })
+      this.heartbeat.move(next)
+    }
+    move(where)
+    let released = false
+    return { move: next => { if (!released) move(next) }, release: () => {
+      if (released) return
+      released = true
+      this.presenceOwners.delete(owner)
+      const remaining = [...this.presenceOwners.values()].at(-1)
+      if (remaining) this.heartbeat.move(remaining)
+      else { this.heartbeat.pause(); this.presence({ branch: "" }) }
+    } }
+  }
+  private enabled = true
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled
+    if (enabled) this.connect()
+    else this.disconnect()
+  }
+  private socket?: LiveSocket
+  private timer?: unknown
+  private nextId = 1
+  private attempt = 0
+  /** True once a handshake on this host has reached `open`, so the channel knows the deployment serves `/api/live`. */
+  private served = false
+  private disposed = false
+  constructor(private readonly options: LiveChannelOptions = {}) {}
+  private readonly documents = new Map<string, Set<(event: DocumentEvent) => void>>()
+  private readonly admittedDocuments = new Set<string>()
+  private readonly documentRetries = new Map<string, { timer: unknown; attempt: number }>()
+  private readonly documentClients = new Map<string, number>()
+  private isDarkTopic(topic: string) { return topic.startsWith("doc:") && !this.options.documentFrames }
+  subscribeDocument(topic: string, receive: (event: DocumentEvent) => void, clientId?: number) {
+    if (clientId !== undefined) this.documentClients.set(topic, clientId)
+    if (this.disposed) { receive({ kind: "refused" }); return { send() {}, release() {} } }
+    try { parseLiveDocTopic(topic) } catch {
+      receive({ kind: "refused" }); return { send() {}, release() {} }
+    }
+    const listeners = this.documents.get(topic) ?? new Set<(event: DocumentEvent) => void>()
+    this.documents.set(topic, listeners); listeners.add(receive)
+    const notify = () => {
+      const snapshot = this.getSnapshot(topic)
+      if (snapshot?.error) receive({ kind: "refused" })
+      else if (snapshot?.data) {
+        const result = LiveDocReply.safeParse({ t: "snap", id: this.topics.get(topic)?.id, cursor: snapshot.cursor, data: snapshot.data })
+        if (result.success && result.data.t === "snap") receive({ kind: "assigned", epoch: result.data.data.epoch, clientId: result.data.data.client_id })
+      }
+    }
+    const unsubscribe = this.subscribe(topic, notify)
+    if (this.getSnapshot(topic)?.data) notify()
+    let released = false
+    return {
+      send: (kind: 1 | 2, payload: Uint8Array) => {
+        const entry = this.topics.get(topic)
+        if (this.disposed || released || this.isDarkTopic(topic) || !entry || entry.awaitingSnapshot || entry.snapshot.error || this.socket?.readyState !== 1) return
+        try { this.socket.send(encodeLiveDocBinary({ kind, id: entry.id, payload })) } catch { /* Refused/malformed sends have no effect. */ }
+      },
+      release: () => {
+        if (released) return
+        released = true; listeners.delete(receive)
+        if (!listeners.size) { this.documents.delete(topic); this.documentClients.delete(topic); this.admittedDocuments.delete(topic) }
+        unsubscribe()
+      }
+    }
+  }
+  private documentEvent(topic: string, event: DocumentEvent) {
+    for (const receive of this.documents.get(topic) ?? []) receive(event)
+  }
+  getSnapshot = (topic: string): TopicSnapshot | undefined => this.topics.get(topic)?.snapshot
+  subscribe = (topic: string, listener: () => void): (() => void) => {
+    if (this.disposed) throw new Error("Live channel disposed")
+    let entry = this.topics.get(topic)
+    if (!entry) {
+      entry = { id: this.nextId++, listeners: new Set(), snapshot: { topic }, awaitingSnapshot: true }
+      this.topics.set(topic, entry)
+      if (this.socket?.readyState === 1) this.sub(topic, entry)
+    }
+    // Each subscription owns a distinct token, even when callbacks are identical.
+    const notify = () => listener()
+    entry.listeners.add(notify)
+    // T-COL-08: no code-document transport until the real providers and checks
+    // are connected. This replaces speculative subscription with a refusal.
+    if (this.isDarkTopic(topic)) {
+      if (entry.snapshot.error !== "unsupported") this.publish(topic, entry, { topic, error: "unsupported" })
+    } else this.connect()
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      entry.listeners.delete(notify)
+      if (entry.listeners.size) return
+      if (!this.isDarkTopic(topic) && this.socket?.readyState === 1) this.send({ t: "unsub", id: entry.id })
+      this.cancelDocumentRetry(topic)
+      this.topics.delete(topic)
+      if (!this.hasTransportTopics()) this.disconnect()
+    }
+  }
+  private send(frame: unknown) { this.socket?.send(JSON.stringify(frame)) }
+  private sub(topic: string, entry: { id: number; snapshot: TopicSnapshot; awaitingSnapshot: boolean }) {
+    if (this.isDarkTopic(topic)) return
+    this.send({ t: "sub", id: entry.id, topic, ...(topic.startsWith("doc:") && this.documentClients.has(topic) ? { client_id: this.documentClients.get(topic) } : {}), ...(entry.awaitingSnapshot || entry.snapshot.cursor === undefined ? {} : { cursor: entry.snapshot.cursor }) })
+  }
+  private cancelDocumentRetry(topic: string) {
+    const retry = this.documentRetries.get(topic)
+    if (retry?.timer !== undefined) (this.options.cancel ?? (timer => clearTimeout(timer as ReturnType<typeof setTimeout>)))(retry.timer)
+    this.documentRetries.delete(topic)
+  }
+  private retryDocument(topic: string) {
+    const previous = this.documentRetries.get(topic)
+    if (previous?.timer !== undefined) return
+    const attempt = previous?.attempt ?? 0
+    const delay = Math.min(5000, 250 * 2 ** Math.min(attempt, 5))
+    const retry = { attempt: attempt + 1, timer: undefined as unknown }
+    this.documentRetries.set(topic, retry)
+    retry.timer = (this.options.schedule ?? setTimeout)(() => {
+      retry.timer = undefined
+      const entry = this.topics.get(topic)
+      if (this.enabled && !this.disposed && entry && this.socket?.readyState === 1 && entry.snapshot.error === "unsupported") this.sub(topic, entry)
+    }, delay)
+  }
+  private hasTransportTopics() { return [...this.topics.keys()].some(topic => !this.isDarkTopic(topic)) }
+  private connect() {
+    if (!this.enabled || this.socket || this.timer !== undefined || !this.hasTransportTopics() || this.disposed) return
+    try {
+      const socket = this.options.socket?.() ?? new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/live`, "smithers.live.v1") as unknown as LiveSocket
+      this.socket = socket
+      socket.binaryType = "arraybuffer"
+      socket.onopen = () => {
+        if (this.socket !== socket) return
+        this.attempt = 0
+        this.served = true
+        for (const [topic, entry] of this.topics) this.sub(topic, entry)
+        const where = [...this.presenceOwners.values()].at(-1)
+        if (where) this.presence(where)
+      }
+      socket.onmessage = event => { if (this.socket === socket) this.receive(event.data) }
+      socket.onclose = () => {
+        if (this.socket !== socket) return
+        this.socket = undefined
+        for (const topic of this.documentRetries.keys()) this.cancelDocumentRetry(topic)
+        // A closed socket's document assignments must not be announced again.
+        for (const [topic, entry] of this.topics) if (topic.startsWith("doc:")) entry.snapshot = { topic }
+        this.notifyContinuityLoss()
+        for (const [topic, entry] of this.topics) {
+          if (topic.startsWith("confirmations:")) {
+            entry.awaitingSnapshot = true
+            this.publish(topic, entry, { topic })
+          }
+          if (topic.startsWith("doc:") || (topic === "members" || topic === "secrets")) entry.awaitingSnapshot = true
+          if (topic.startsWith("doc:")) {
+            // Like a gap: typing stays pending and is sent only after a fresh
+            // authenticated assignment. The resubscription carries the client
+            // id, which the host admits again when the daemon's authors map
+            // assigns it to this member, so a host restart needs no recovery.
+            this.documentEvent(topic, { kind: "offline" })
+          }
+        }
+        this.retry()
+      }
+    } catch { this.retry() }
+  }
+  /**
+   * A reconnect ladder with two ceilings, because the two failures it covers
+   * are not alike. A socket that opened and dropped is a blip: retry fast, up
+   * to five seconds. A socket that has never opened on this host says the
+   * deployment does not serve `/api/live` at all — the hosted, many-owner
+   * boundary installs the route only for a single-owner install (backend
+   * compose/router.go) — so the fast ladder would refuse and log forever,
+   * once every few seconds, for as long as the tab stays open. Those attempts
+   * ramp to a minute instead, which still recovers a route that appears later
+   * without turning a by-design absence into standing console noise.
+   */
+  private retry() {
+    if (!this.hasTransportTopics() || this.disposed) return
+    const ceiling = this.served ? 5000 : 60000
+    const cap = Math.min(ceiling, 250 * 2 ** Math.min(this.attempt++, 8))
+    const delay = Math.max(250, Math.min(ceiling, cap * (0.5 + (this.options.random ?? Math.random)() / 2)))
+    this.timer = (this.options.schedule ?? setTimeout)(() => { this.timer = undefined; this.connect() }, delay)
+  }
+  private receive(raw: unknown) {
+    if (typeof raw !== "string") {
+      try {
+        const bytes = raw instanceof ArrayBuffer ? new Uint8Array(raw) : raw instanceof Uint8Array ? raw : undefined
+        if (!bytes) return
+        const frame = decodeLiveDocBinary(bytes)
+        const pair = [...this.topics].find(([, entry]) => entry.id === frame.id)
+        if (!pair || !pair[0].startsWith("doc:") || this.isDarkTopic(pair[0]) || pair[1].awaitingSnapshot || pair[1].snapshot.error) return
+        this.documentEvent(pair[0], { kind: frame.kind === 1 ? "sync" : "awareness", payload: frame.payload })
+      } catch { /* Invalid binary frames are inert. */ }
+      return
+    }
+    let frame: Record<string, unknown>
+    try { frame = JSON.parse(raw) } catch { return }
+    if (!frame || typeof frame !== "object") return
+    const pair = [...this.topics].find(([, entry]) => entry.id === frame.id)
+    if (!pair) return
+    const [topic, entry] = pair
+    if (this.isDarkTopic(topic)) return
+    if (topic.startsWith("doc:")) {
+      const result = LiveDocReply.safeParse(frame)
+      if (!result.success) return
+      const reply = result.data
+      if (reply.t === "authors") {
+ if (!entry.awaitingSnapshot && !entry.snapshot.error) this.documentEvent(topic, { kind: "authors", actors: reply.data })
+ return
+ }
+ if (reply.t === "saved") {
+        if (entry.awaitingSnapshot || entry.snapshot.error) return
+        try { this.documentEvent(topic, { kind: "saved", seq: reply.seq, vector: Uint8Array.from(atob(reply.sv), char => char.charCodeAt(0)) }) } catch { /* Malformed vectors never save. */ }
+        return
+      }
+      if (reply.t === "gap") {
+        // The server ended this subscription (spec §7.1.1). Typing stays
+        // pending; resubscribing with the same client id restarts sync step 1
+        // and resends it, so a gap needs no recovery.
+        if (entry.awaitingSnapshot || entry.snapshot.error) return
+        entry.awaitingSnapshot = true
+        this.documentEvent(topic, { kind: "offline" })
+        // The closed stream's assignment must not be announced again.
+        entry.snapshot = { topic }
+        this.notifyContinuityLoss()
+        this.sub(topic, entry)
+        return
+      }
+    }
+    // A provider refusal invalidates retained data even when its code is
+    // newer than the shared protocol enum. Validate the envelope before clearing.
+    if (frame.t === "err" && typeof frame.code === "string" &&
+      LiveReplySchema.safeParse({ ...frame, code: "forbidden" }).success) {
+      entry.awaitingSnapshot = true
+      this.publish(topic, entry, { topic, error: frame.code })
+      // A previously admitted document may be temporarily unavailable while
+      // its daemon restarts. Reauthorize it on the same socket; no edits or
+      // receipts pass until the authority supplies a fresh assignment.
+      if (topic.startsWith("doc:") && frame.code === "unsupported" && this.admittedDocuments.has(topic)) this.retryDocument(topic)
+      else this.cancelDocumentRetry(topic)
+      return
+    }
+    const decoded = LiveReplySchema.safeParse(frame)
+    if (!decoded.success) return
+    const reply = decoded.data
+    if (reply.t === "gap") {
+      entry.awaitingSnapshot = true
+      this.notifyContinuityLoss()
+      this.publish(topic, entry, { topic, data: entry.snapshot.data })
+      this.send({ t: "sub", id: entry.id, topic })
+      return
+    }
+    if (reply.t !== "snap" && reply.t !== "delta") return
+    if (!("data" in frame)) return
+    if (!Number.isSafeInteger(reply.cursor) || (reply.cursor as number) < 0) return
+    if (topic.startsWith("doc:") && reply.t === "snap") {
+      const assigned = LiveDocReply.safeParse(frame)
+      if (!assigned.success || assigned.data.t !== "snap") return
+      this.cancelDocumentRetry(topic)
+      this.admittedDocuments.add(topic)
+      this.documentClients.set(topic, assigned.data.data.client_id)
+    }
+    const cursor = reply.cursor as number
+    if (reply.t === "delta" && entry.snapshot.cursor !== undefined && cursor <= entry.snapshot.cursor) return
+    if (reply.t === "delta" && entry.awaitingSnapshot) return
+    const project = this.projectors.get(topic) ?? (this.options.project ? (previous: unknown, delta: unknown) => this.options.project!(topic, previous, delta) : undefined)
+    if (reply.t === "delta" && !project) {
+      entry.awaitingSnapshot = true
+      this.notifyContinuityLoss()
+      this.send({ t: "sub", id: entry.id, topic })
+      return
+    }
+    let data: unknown
+    try { data = reply.t === "snap" ? reply.data : project!(entry.snapshot.data, reply.data) }
+    catch { entry.awaitingSnapshot = true; this.notifyContinuityLoss(); this.send({ t: "sub", id: entry.id, topic }); return }
+    entry.awaitingSnapshot = false
+    this.publish(topic, entry, { topic, cursor, data })
+  }
+  /** Topic observers must reauthorize retained actions after transport continuity is lost. */
+  private notifyContinuityLoss() {
+    for (const entry of this.topics.values()) for (const listener of entry.listeners) listener()
+  }
+  private publish(_topic: string, entry: { snapshot: TopicSnapshot; listeners: Set<() => void> }, snapshot: TopicSnapshot) {
+    entry.snapshot = snapshot
+    for (const listener of entry.listeners) listener()
+  }
+  private disconnect() {
+    for (const topic of this.documentRetries.keys()) this.cancelDocumentRetry(topic)
+    if (this.timer !== undefined) (this.options.cancel ?? (timer => clearTimeout(timer as ReturnType<typeof setTimeout>)))(this.timer)
+    this.timer = undefined
+    const socket = this.socket
+    this.socket = undefined
+    if (socket) { socket.onopen = null; socket.onclose = null; socket.onmessage = null; socket.close() }
+    this.attempt = 0
+  }
+  dispose() { this.disposed = true; this.heartbeat.dispose(); this.presenceOwners.clear(); for (const topic of this.documents.keys()) this.documentEvent(topic, { kind: "refused" }); this.disconnect(); this.topics.clear(); this.documents.clear(); this.admittedDocuments.clear() }
+}
+
+/** Lazy module singleton: exactly one channel for the browser tab. */
+let browserChannel: LiveChannel | undefined
+export const liveChannel = (): LiveChannel => browserChannel ??= new LiveChannel({ documentFrames: true })

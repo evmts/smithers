@@ -1,0 +1,127 @@
+package middleware
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+)
+
+const terminalScopes = "read:repository,read:user,repo:7,via:terminal,branch:0b1c-branch,profile:terminal_s1,terminal-session:5e55-session"
+
+// A system-issued token with an issuer-bound via is delegated (spec §5.3.0);
+// the same entries on a person's own token, or a token without via, are not.
+func TestDelegatedCredentialKind(t *testing.T) {
+	assert.Equal(t, CredentialDelegated, TokenCredentialKind(true, terminalScopes, "user"))
+	assert.Equal(t, CredentialPerson, TokenCredentialKind(false, terminalScopes, "user"), "a person cannot mint delegation")
+	assert.Equal(t, CredentialAgentRun, TokenCredentialKind(false, terminalScopes, "bot"))
+	assert.Equal(t, CredentialAgentRun, TokenCredentialKind(true, "read:repository,repo:7,branch:x,profile:terminal_s1", "user"), "no via, no delegation")
+	assert.Equal(t, CredentialSync, TokenCredentialKind(true, "credential:sync,via:terminal", "user"))
+	assert.Equal(t, CredentialDelegated, ParseCredentialKind("delegated"))
+	assert.True(t, CredentialDelegated.Agent(), "a delegated credential has an agent run's restrictions")
+	assert.True(t, CredentialAgentRun.Agent())
+	assert.False(t, CredentialPerson.Agent())
+	assert.False(t, CredentialDelegated.Reviewed())
+	assert.Equal(t, ScopeSet{ScopeReadRepository: {}, ScopeReadUser: {}}, ParseTokenScopes(terminalScopes), "delegation entries grant nothing")
+}
+
+func TestDelegationScopesRoundTrip(t *testing.T) {
+	entries := DelegationScopes(Delegation{Via: "Terminal", Branch: "0B1C-branch", Profile: TerminalProfileS1, Session: "5e55-session"})
+	assert.Equal(t, []string{"via:terminal", "branch:0b1c-branch", "profile:terminal_s1", "terminal-session:5e55-session"}, entries)
+	got, ok := ParseTokenDelegation(true, "read:user,"+strings.Join(entries, ","))
+	require.True(t, ok)
+	assert.Equal(t, Delegation{Via: "terminal", Branch: "0b1c-branch", Profile: "terminal_s1", Session: "5e55-session"}, got)
+	assert.Equal(t, []string{"via:cli"}, DelegationScopes(Delegation{Via: "cli"}))
+	_, ok = ParseTokenDelegation(false, strings.Join(entries, ","))
+	assert.False(t, ok)
+	info := &AuthInfo{IsTokenAuth: true, TokenSystemIssued: true, RawScopes: terminalScopes}
+	got, ok = info.Delegation()
+	require.True(t, ok)
+	assert.Equal(t, "terminal", got.Via)
+	_, ok = (&AuthInfo{TokenSystemIssued: true, RawScopes: terminalScopes}).Delegation()
+	assert.False(t, ok, "a browser session is never delegated")
+}
+
+// The Smithers-Via hint attributes a terminal's or the CLI's credential to the
+// agent working in it, and never changes any other stored via (spec §6.4).
+func TestEffectiveVia(t *testing.T) {
+	for _, tc := range []struct{ stored, hint, want string }{
+		{"terminal", "claude-code", "claude-code"},
+		{"terminal", "Codex", "codex"},
+		{"terminal", "", "terminal"},
+		{"terminal", "smithers", "terminal"},
+		{"cli", "claude-code", "claude-code"},
+		{"claude-code", "codex", "claude-code"},
+		{"smithers", "claude-code", "smithers"},
+	} {
+		assert.Equal(t, tc.want, EffectiveVia(tc.stored, tc.hint), "%s + %s", tc.stored, tc.hint)
+	}
+}
+
+// A request's acting via is its delegated credential's EffectiveVia; only a
+// stage-1 terminal's credential is a TerminalDelegation; every other
+// credential acts through no via, whatever header it sends.
+func TestActingViaAndTerminalDelegation(t *testing.T) {
+	terminal := &AuthInfo{User: &db.User{ID: 2}, IsTokenAuth: true, TokenSystemIssued: true, RawScopes: terminalScopes, ViaHint: "claude-code"}
+	assert.Equal(t, "claude-code", terminal.ActingVia())
+	delegation, ok := terminal.TerminalDelegation()
+	require.True(t, ok)
+	assert.Equal(t, "0b1c-branch", delegation.Branch)
+	terminal.ViaHint = "browser"
+	assert.Equal(t, "terminal", terminal.ActingVia(), "a hint that names no agent changes nothing")
+	cli := &AuthInfo{User: &db.User{ID: 2}, IsTokenAuth: true, TokenSystemIssued: true, RawScopes: "read:repository,via:cli", ViaHint: "codex"}
+	assert.Equal(t, "codex", cli.ActingVia())
+	_, ok = cli.TerminalDelegation()
+	assert.False(t, ok, "a delegated credential of another profile is not a terminal's")
+	for _, other := range []*AuthInfo{
+		nil,
+		{User: &db.User{ID: 2}, SessionHash: "s", ViaHint: "claude-code"},
+		{User: &db.User{ID: 2}, IsTokenAuth: true, TokenSystemIssued: true, RawScopes: "write:repository,repo:7", ViaHint: "claude-code"},
+		{User: &db.User{ID: 2}, IsTokenAuth: true, RawScopes: terminalScopes, ViaHint: "claude-code"},
+	} {
+		assert.Equal(t, "", other.ActingVia())
+		_, ok = other.TerminalDelegation()
+		assert.False(t, ok)
+	}
+}
+
+// A terminal's repository-bound credential reads its person's identity
+// (GET /api/user, smthrs auth status); any other repository-bound token is
+// still refused outside its repository.
+func TestTerminalCredentialReadsItsPersonOutsideTheRepository(t *testing.T) {
+	handler := RequireScope(ScopeReadUser)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	serve := func(scopes string) int {
+		req := httptest.NewRequest(http.MethodGet, "/api/user", nil)
+		req = req.WithContext(ContextWithAuthInfo(req.Context(), &AuthInfo{User: &db.User{ID: 2}, IsTokenAuth: true, TokenSystemIssued: true, RawScopes: scopes, Scopes: ParseTokenScopes(scopes)}))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	assert.Equal(t, http.StatusNoContent, serve(terminalScopes))
+	assert.Equal(t, http.StatusForbidden, serve("read:user,repo:7"))
+	assert.Equal(t, http.StatusForbidden, serve("read:user,repo:7,via:cli"))
+}
+
+func TestCatalogDelegationRetainsTerminalSubject(t *testing.T) {
+	for _, fixture := range []struct {
+		via, branch, session, profile string
+		want                          bool
+	}{
+		{"cli", "", "", "", true},
+		{"terminal", "branch-a", "session-a", "", true},
+		{"ssh", "branch-a", "session-a", "", true},
+		{"terminal", "branch-a", "session-a", "terminal_s1", false},
+		{"terminal", "branch-a", "", "", false},
+		{"claude-code", "branch-a", "session-a", "", false},
+		{"terminal", "branch-a", "session-a", "unknown", false},
+	} {
+		info := &AuthInfo{IsTokenAuth: true, TokenSystemIssued: true, RawScopes: strings.Join(DelegationScopes(Delegation{Via: fixture.via, Branch: fixture.branch, Session: fixture.session, Profile: fixture.profile}), ",")}
+		assert.Equal(t, fixture.want, info.CatalogDelegation(), fixture)
+	}
+	assert.False(t, (*AuthInfo)(nil).CatalogDelegation())
+}

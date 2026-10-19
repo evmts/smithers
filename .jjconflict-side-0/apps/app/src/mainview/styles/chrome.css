@@ -1,0 +1,109 @@
+/*
+ * Session bodies and the left chrome rail: the bodies stay mounted while
+ * hidden, and the dock (left side, always on screen) carries the chrome
+ * actions as icons — no sidebar, no drawer, no toggle.
+ */
+
+/* The whole session area: the chat and every other tab body. */
+.app-main {
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	flex: 1;
+	flex-direction: column;
+}
+
+/* Every tab body stays mounted; an inactive one is hidden, never unmounted. */
+.tab-body {
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	flex: 1;
+	flex-direction: column;
+}
+
+.tab-body[hidden] {
+	display: none;
+}
+
+/* One row recipe: 32px, 8px inline padding, 8px radius. */
+.chrome-action {
+	display: flex;
+	min-height: 32px;
+	align-items: center;
+	gap: var(--sp-2);
+	padding: 0 var(--sp-2);
+	border-radius: var(--r-sm);
+	text-align: left;
+	font-size: var(--fs-small);
+}
+
+.chrome-action:hover,
+.chrome-action:focus-visible {
+	background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+/* Sign-in shares the card action's readable foreground. */
+.chrome-action[data-flow="sign-in"] {
+	background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+	color: var(--action-primary);
+	font-weight: 500;
+}
+
+.chrome-action[data-flow="sign-in"]:hover,
+.chrome-action[data-flow="sign-in"]:focus-visible {
+	background: color-mix(in srgb, var(--brand) 16%, var(--surface));
+	color: var(--action-primary);
+}
+
+.app-chat-controls { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-4); min-height: 52px; padding: var(--sp-2) var(--sp-5); }
+.app-chat-controls[hidden] { display: none; }
+/* Withheld Chat arrives once, rising and fading in (App.tsx chatArrives). */
+.app-chat-controls[data-arriving] { animation: chat-controls-arrive 420ms ease-out; }
+@keyframes chat-controls-arrive {
+	from { opacity: 0; transform: translateY(16px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+	.app-chat-controls[data-arriving] { animation: none; }
+}
+@media (max-width: 600px) {
+	/* Beside the rail a phone leaves ~330px: tighten the bar so each control keeps one line. */
+	.app-chat-controls { flex-wrap: wrap; gap: var(--sp-2); padding-inline: var(--sp-3); }
+}
+/*
+ * The shared keyboard controls keep the quiet text-button
+ * look — app tokens, a real hover, and the same
+ * bordered keycap recipe.
+ */
+.app-chat-controls .guide-button {
+	min-height: var(--ctl-h-sm);
+	padding: var(--sp-1) var(--sp-2);
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+	font-size: var(--fs-small);
+	border-radius: var(--r-sm);
+	white-space: nowrap;
+}
+.app-chat-controls .guide-button:hover:not(:disabled) {
+	background: var(--hover-subtle);
+	color: var(--text);
+}
+.app-chat-controls .guide-button .guide-button-key {
+	min-width: 20px;
+	min-height: 20px;
+	padding: 0 var(--sp-2);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	background: var(--surface);
+	box-shadow: 0 1px 0 color-mix(in srgb, var(--text) 12%, transparent);
+	color: var(--text-muted);
+	font-size: var(--fs-caption);
+}
+.app-chat-controls .guide-button:focus-visible {
+	outline: 2px solid var(--ring-border);
+	outline-offset: 2px;
+}
+

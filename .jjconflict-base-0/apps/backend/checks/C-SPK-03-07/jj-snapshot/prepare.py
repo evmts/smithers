@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Provision only this disposable VM, through its existing host bridge."""
+import base64
+import hashlib
+import json
+import os
+import platform
+from pathlib import Path
+import subprocess
+import sys
+import tarfile
+import urllib.request
+
+if os.geteuid() != 19999 or platform.system() != 'Linux':
+    raise ValueError('preparation requires Linux guest agent uid 19999')
+store_only = len(sys.argv) == 3 and sys.argv[2] == '--store-only'
+if len(sys.argv) not in [2, 3] or len(sys.argv) == 3 and not store_only:
+    raise ValueError('invalid preparation arguments')
+root = Path('/workspace')
+proxy = sys.argv[1]
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({'https': proxy}))
+
+
+def download(url, destination, algorithm, expected):
+    digest = hashlib.new(algorithm)
+    with opener.open(url, timeout=120) as source, destination.open('wb') as output:
+        while data := source.read(1024 * 1024):
+            output.write(data)
+            digest.update(data)
+    if digest.digest() != expected:
+        raise RuntimeError(f'digest mismatch: {url}')
+
+
+store_archive = root / 'snapshot-store.tar'
+if not store_only and not store_archive.is_file():
+    raise RuntimeError('snapshot blocked: complete Linux ARM64 pnpm store archive required')
+store = root / 'snapshot-store'
+store.mkdir()
+store_digest = None
+if not store_only:
+    with tarfile.open(store_archive) as archive:
+        archive.extractall(store, filter='data')
+    with store_archive.open('rb') as archive_stream:
+        store_digest = hashlib.file_digest(archive_stream, 'sha256').hexdigest()
+    store_archive.unlink()
+
+node = root / 'snapshot-node' 
+node.mkdir()
+tar = root / 'snapshot-node.tar.gz'
+download('https://nodejs.org/dist/v26.5.0/node-v26.5.0-linux-arm64.tar.gz', tar,
+         'sha256', bytes.fromhex('308e5fe89a82461ba5a6cf15ff5221b2cdbd7ae87600aa72bb3c3fbdc66412d1'))
+with tarfile.open(tar) as archive:
+    archive.extractall(node, filter='data')
+tar.unlink()
+pnpm = root / 'snapshot-pnpm'
+pnpm.mkdir()
+with opener.open('https://registry.npmjs.org/pnpm/11.25.0', timeout=120) as response:
+    package = json.load(response)
+algorithm, integrity = package['dist']['integrity'].split('-', 1)
+tar = root / 'snapshot-pnpm.tar.gz'
+download(package['dist']['tarball'], tar, algorithm, base64.b64decode(integrity))
+with tarfile.open(tar) as archive:
+    archive.extractall(pnpm, filter='data')
+tar.unlink()
+env = dict(os.environ, HTTPS_PROXY=proxy, https_proxy=proxy, HTTP_PROXY=proxy,
+           http_proxy=proxy, CI='1')
+env['PATH'] = str(node / 'node-v26.5.0-linux-arm64/bin') + ':' + env['PATH']
+repo = root / 'snapshot-repo'
+subprocess.run([str(root / 'col01-jj'), 'git', 'clone', '--no-colocate', '--depth',
+                '1', '--fetch-tags', 'none', '--branch', 'main',
+                'https://github.com/smithersai/smithers.git', str(repo)], env=env, check=True)
+# An offline frozen install also reads registry metadata; store.sh archives it
+# under cache/ beside the content-addressable v11/ store.
+install = ['node', str(pnpm / 'package/bin/pnpm.cjs'), 'install',
+           '--frozen-lockfile', '--store-dir', str(store), '--cache-dir', str(store / 'cache')]
+if store_only:
+    # Both the online population and offline verification stay at agent uid.
+    subprocess.run(install + ['--ignore-scripts'], cwd=repo, env=env, check=True)
+    subprocess.run(install + ['--offline', '--force', '--ignore-scripts'],
+                   cwd=repo, env=env, check=True)
+    def archive_filter(info):
+        return None if info.name == 'v11/projects' or info.name.startswith('v11/projects/') else info
+    with tarfile.open(store_archive, 'w') as archive:
+        for path in sorted(store.iterdir()):
+            archive.add(path, arcname=path.name, filter=archive_filter)
+    with store_archive.open('rb') as archive_stream:
+        store_digest = hashlib.file_digest(archive_stream, 'sha256').hexdigest()
+else:
+    subprocess.run(install + ['--offline'], cwd=repo, env=env, check=True)
+
+receipt = {'repository': 'https://github.com/smithersai/smithers.git',
+           'uid': os.geteuid(),
+           'lockfile_sha256': hashlib.sha256((repo / 'pnpm-lock.yaml').read_bytes()).hexdigest(), 'store_archive_sha256': store_digest, 'store_only': store_only, 'dependency_install': 'offline',
+           'depth': 1, 'branch': 'main', 'pnpm': package['version'],
+           'pnpm_integrity': package['dist']['integrity'],
+           'node': subprocess.check_output(['node', '--version'], env=env, text=True).strip(),
+           'revision': subprocess.check_output([str(root / 'col01-jj'), 'log',
+                     '--ignore-working-copy', '-r', 'main@origin', '--no-graph',
+                     '-T', 'commit_id'], cwd=repo, env=env, text=True).strip()}
+(root / 'snapshot-prepare.json').write_text(json.dumps(receipt, indent=2) + '\n')
+print('SNAPSHOT PREPARED', json.dumps(receipt), flush=True)
