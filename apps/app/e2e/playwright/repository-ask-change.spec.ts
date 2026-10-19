@@ -129,14 +129,19 @@ async function fixture(page: Page, target: string, reader = false, signedOut = f
     const finalStage = stages.indexOf(targetState)
     observed =
       poll < stages.length ? stages[Math.min(poll++, finalStage < 0 ? stages.length - 1 : finalStage)]! : targetState
+    const busy = (targetState === "box-busy" && starts <= 2) || targetState === "box-busy-exhausted"
+    if (targetState === "queued") observed = "allocating"
+    if (targetState === "box-busy" || targetState === "box-busy-exhausted") observed = busy ? "box-busy" : "ready"
     if (finalStage >= 0) observed = stages[Math.min(poll - 1, finalStage)]!
     const terminal = !stages.includes(observed),
-      failed = failures.includes(observed)
+      failed = failures.includes(observed) || busy
     return route.fulfill({
       json: {
         id: "hosted-session",
         message_count: observed === "model" || observed === "testing" || (terminal && !failed) ? 2 : 1,
-        status: failed
+        stage: targetState === "queued" ? "queued" : null,
+        queued_at: targetState === "queued" ? iso(0) : null,
+        status: busy ? "failed" : failed
           ? observed === "refused"
             ? "failed"
             : observed === "timed-out"
@@ -145,8 +150,8 @@ async function fixture(page: Page, target: string, reader = false, signedOut = f
           : terminal
             ? "completed"
             : "active",
-        reason_code: failed ? "capacity" : null,
-        reason: failed
+        reason_code: busy ? "box_busy" : failed ? "capacity" : null,
+        reason: busy ? "The workspace service is busy starting other boxes; try again in a moment." : failed
           ? observed === "refused"
             ? "Not started: no machine is free."
             : "The machine stopped before finishing the change."
@@ -367,6 +372,9 @@ const scenarios = [
   "no-tests",
   "test-env-unavailable",
   "no-change",
+  "box-busy",
+  "box-busy-exhausted",
+  "queued",
   "zero-tests",
   "count-unknown",
   "failed",
@@ -396,6 +404,7 @@ for (const [width, scheme] of [
         signedOut = state === "signed-out"
       const target =
         state === "slash" ? "admitted" : state === "diff" || state === "pr" || state === "merged" ? "ready" : state
+      if (state === "box-busy" || state === "box-busy-exhausted" || state === "queued") await page.clock.install()
       const f = await fixture(page, target, reader, signedOut)
       if (state === "commands") {
         await page.locator("#repo-ask textarea").last().fill("/")
@@ -460,6 +469,37 @@ for (const [width, scheme] of [
         return
       }
       await start(page)
+      if (state === "queued") {
+        // The first read is queued; the observation clock keeps advancing without another response.
+        await expect(page.getByText("Queued: starting soon", { exact: true })).toBeVisible({ timeout: 20_000 })
+        await page.clock.runFor(1000)
+        await expect(page.locator('.hosted-change-stage[data-tone="live"]')).toContainText("Queued: starting soon")
+        await expect(page.locator('.hosted-change-stage[data-tone="live"] .hosted-change-duration')).toContainText(/\d+ (?:min \d+ )?s/)
+        return
+      }
+      if (state === "box-busy" || state === "box-busy-exhausted") {
+        const waits = state === "box-busy" ? [2000, 4000] : [2000, 4000, 8000, 16000]
+        for (const [index, delay] of waits.entries()) {
+          await expect(page.getByText("Starting a machine, please wait…", { exact: true })).toBeVisible({ timeout: 20_000 })
+          await expect(page.locator('.hosted-change-stage[data-tone="live"]')).toContainText("Allocating a machine")
+          await expect(page.locator('.hosted-change-card [role="alert"]')).toHaveCount(0)
+          await expect(page.locator(`.hosted-change-card[data-busy-retries="${index}"]`)).toBeVisible()
+          await page.clock.runFor(delay)
+          await expect.poll(f.starts).toBe(index + 2)
+        }
+        if (state === "box-busy") {
+          await expect(page.getByRole("button", { name: "Open pull request", exact: true })).toBeVisible({ timeout: 20_000 })
+        } else {
+          await expect(page.locator(".hosted-change-card [role=alert]")).toHaveText("The workspace service is busy starting other boxes; try again in a moment.")
+          const retry = page.locator(".hosted-change-card").getByRole("button", { name: "Try again", exact: true })
+          await expect(retry).toHaveClass(/repo-ui-btn-quiet/)
+          await expect(retry).not.toHaveClass(/repo-ui-btn-primary/)
+          await retry.click()
+          await expect.poll(f.starts).toBe(6)
+          await expect(page.getByText("Starting a machine, please wait…", { exact: true }).last()).toBeVisible()
+        }
+        return
+      }
       if (stages.includes(state)) {
         const label = {
           admitted: "Allocating a machine",

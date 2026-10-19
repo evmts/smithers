@@ -16,6 +16,8 @@ export const CodingResultSchema = z.object({
 export const HostedSessionSchema = z
   .object({
     id: z.string(),
+    stage: z.enum(["queued", "started"]).nullable().optional(),
+    queued_at: z.iso.datetime({ offset: true }).nullable().optional(),
     message_count: z.number().int().nonnegative().optional(),
     status: z.enum(["active", "completed", "failed", "cancelled", "timed_out"]),
     reason_code: z.string().nullable(),
@@ -57,6 +59,8 @@ export const HostedObservationSchema = z.object({
   files: z.array(z.object({ path: z.string(), additions: z.number().optional(), deletions: z.number().optional() })),
   merged: z.object({ by: z.string().nullable(), commit: z.string().nullable() }).optional(),
   observedAt: z.number().optional(),
+  busyRetries: z.number().int().min(0).max(4).optional(),
+  busyWaiting: z.boolean().optional(),
   noChange: z.boolean().optional(),
   outcome: z.string().optional(),
   activity: z.string().optional(),

@@ -1,10 +1,11 @@
+import { useCallback } from "react"
 import { createPortal } from "react-dom"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useController } from "../ControllerContext"
 import { flowAction } from "../flows/FlowAction"
 import { describedFailure, FailureNotice } from "../FailureNotice"
 import { flowArgs } from "../flows/FlowArgs"
-import { deriveHostedChange, type HostedObservation } from "../state/seams/HostedChange"
+import { BOX_BUSY_WAITING, deriveHostedChange, type HostedObservation } from "../state/seams/HostedChange"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import "./HostedChangeCard.css"
 
@@ -23,11 +24,11 @@ export const HostedChangeView = ({ row, run: runCommand }: { row: HostedObservat
   const open = flowAction(runCommand, "change.open-pull", flowArgs("change.open-pull", { repo: row.repo, session: row.id }))
   if (row.phase === "failed")
     return (
-      <section className="hosted-change-card" aria-label="Agent run">
+      <section className="hosted-change-card" aria-label="Agent run" data-busy-retries={row.busyRetries}>
         <p role="alert">{view.reason}</p>
         {view.retryable && (
           <button
-            className="repo-ui-btn repo-ui-btn-primary"
+            className={`repo-ui-btn${row.busyRetries !== undefined ? " repo-ui-btn-quiet" : " repo-ui-btn-primary"}`}
             {...flowAction(runCommand, "change.ask", flowArgs("change.ask", { repo: row.repo, request: row.request }))}
           >
             Try again
@@ -37,7 +38,7 @@ export const HostedChangeView = ({ row, run: runCommand }: { row: HostedObservat
     )
   return (
     <div className="hosted-change-thread">
-      <section className="hosted-change-card" aria-label="Agent run">
+      <section className="hosted-change-card" aria-label="Agent run" data-busy-retries={row.busyRetries}>
         <header>
           <strong>{row.request}</strong>
           <span className="hosted-change-chip" data-tone={running ? "running" : view.testing.tested && !view.testing.passed && row.result?.test_receipt ? "failed" : undefined}>
@@ -67,8 +68,13 @@ export const HostedChangeView = ({ row, run: runCommand }: { row: HostedObservat
           const contents = (
             <>
               <i aria-hidden="true" />
-              <span>{stage.label}</span>
-              {stage.duration && <span className="hosted-change-duration">{stage.duration}</span>}
+              <span>{stage.label === "Allocating a machine" && row.session?.stage === "queued" ? "Queued: starting soon" : stage.label}</span>
+              {stage.label === "Allocating a machine" && row.session?.stage === "queued" && row.session.queued_at && Number.isFinite(Date.parse(row.session.queued_at)) ? (
+                <span className="hosted-change-duration"> · {(() => {
+                  const seconds = Math.max(0, Math.floor(((row.observedAt ?? Date.now()) - Date.parse(row.session!.queued_at!)) / 1000))
+                  return seconds >= 60 ? `${Math.floor(seconds / 60)} min ${seconds % 60} s` : `${seconds} s`
+                })()}</span>
+              ) : stage.duration && <span className="hosted-change-duration">{stage.duration}</span>}
               {detail && (
                 <svg
                   data-stage-chevron
@@ -100,6 +106,7 @@ export const HostedChangeView = ({ row, run: runCommand }: { row: HostedObservat
             </div>
           )
         })}
+        {running && row.busyWaiting && <p>{BOX_BUSY_WAITING}</p>}
         {running && row.error && <FailureNotice failure={hostedRequestFailure(row.error)} />}
         {running && <footer>Keeps running if you close this tab.</footer>}
       </section>
@@ -217,6 +224,7 @@ export const HostedChangeView = ({ row, run: runCommand }: { row: HostedObservat
 }
 const HostedChangeBody = ({ id }: { id: string }) => {
   const controller = useController()
+  const lifecycle = useCallback((node: HTMLDivElement | null) => node ? controller.watchHostedChange(id) : undefined, [controller, id])
   const sessions = useLiveQuery(controller.store.collections.sessions).data
   const row = sessions
     .find((session) => session.id === "main")
@@ -225,7 +233,7 @@ const HostedChangeBody = ({ id }: { id: string }) => {
   return row ? (
     <>
       <HostedChangeView row={row} run={controller.runCommand} />
-      <div id={`${id}-end`} />
+      <div ref={lifecycle} id={`${id}-end`} />
       {row.diffOpen &&
         target &&
         createPortal(

@@ -16,6 +16,7 @@ import {
   hostedDiffText
 } from "./HostedChangeSchema"
 import {
+  BOX_BUSY_REASON,
   observeStages,
   hostedSessionPhase,
   hostedFailureReason,
@@ -23,6 +24,16 @@ import {
   type HostedObservation
 } from "./HostedChange"
 
+export interface HostedChangeScheduler {
+  schedule: (delay: number, callback: () => void) => () => void
+  now?: () => number
+}
+const scheduler: HostedChangeScheduler = {
+  schedule: (delay, callback) => { const timer = setTimeout(callback, delay); return () => clearTimeout(timer) }
+}
+// Automatic retries cover the start cap, which clears in seconds. A box_busy that ends a queue wait (the
+// 20-minute queue bound) or a long attempt means sustained saturation: the person decides with Try again (8e f-85pitc).
+export const BOX_BUSY_RETRY_WINDOW_MS = 60_000
 export const hostedChangePolling = { delayMs: 2000, maxAttempts: 900 }
 const repoPath = (repo: string) => `/repos/${repo.split("/").map(encodeURIComponent).join("/")}`
 const messageSchema = z.object({
@@ -77,9 +88,36 @@ export const codingResultOf = (messages: unknown) => {
   }
   return null
 }
-export const createHostedChangeSeam = (ctx: SeamContext) => {
-  const client = createCloudClient(ctx)
+export const createHostedChangeSeam = (ctx: SeamContext, clock: HostedChangeScheduler = scheduler) => {
+  const client = createCloudClient(ctx, { retainFailurePayload: true })
   const flights = actorSharedState(ctx, "hosted-change-flights", () => new Map<string, Promise<unknown>>())
+  const cycles = actorSharedState(ctx, "hosted-change-cycles", () => new Map<string, AbortController>())
+  const retired = actorSharedState(ctx, "hosted-change-retired-retries", () => new WeakSet<AbortController>())
+  const mounted = actorSharedState(ctx, "hosted-change-mounted", () => new Set<string>())
+  const cancelHostedRetries = (all = false) => {
+    for (const [id, cycle] of cycles) {
+      retired.add(cycle)
+      // An unrelated prompt must not interrupt observation of an ordinary run.
+      if (all || read(id)?.busyWaiting) cycle.abort()
+    }
+  }
+  const watchHostedChange = (cardId: string) => {
+    const id = cardId.replace(/^hosted-change-/, "")
+    mounted.add(id)
+    const row = read(id)
+    if (row?.phase === "running" && row.accepted && !flights.has(id)) background(row, false, Promise.resolve())
+    return () => {
+      mounted.delete(id)
+      // React can detach and attach the same ref in one commit (including StrictMode).
+      queueMicrotask(() => { if (!mounted.has(id)) cycles.get(id)?.abort() })
+    }
+  }
+  const wait = (delay: number, signal: AbortSignal) => new Promise<void>(resolve => {
+    if (signal.aborted) { resolve(); return }
+    const finish = () => { cancel(); signal.removeEventListener("abort", finish); resolve() }
+    const cancel = clock.schedule(delay, finish)
+    signal.addEventListener("abort", finish, { once: true })
+  })
   const owner = () => accountOwnerOf(ctx.store.collections.identitySessions.get("identity")) ?? null
   const rows = () => ctx.store.session().hostedChanges ?? []
   const read = (id: string) => rows().find((row) => row.id === id)
@@ -91,7 +129,7 @@ export const createHostedChangeSeam = (ctx: SeamContext) => {
     }).isPersisted.promise
   const patch = async (id: string, values: Partial<HostedObservation>) => {
     const row = read(id)
-    if (row) await save({ ...row, ...values })
+    if (row) await save({ ...row, ...(values.phase === "failed" && values.busyRetries === undefined ? { busyWaiting: false, busyRetries: undefined } : {}), ...values })
   }
   const card = async (row: HostedObservation) => {
     const id = `hosted-change-${row.id}`
@@ -110,7 +148,7 @@ export const createHostedChangeSeam = (ctx: SeamContext) => {
       }
     }).isPersisted.promise
   }
-  const follow = async (id: string, current: () => boolean): Promise<string | typeof TOAST_SUPERSEDED | void> => {
+  const follow = async (id: string, current: () => boolean, signal: AbortSignal, queued: () => void): Promise<string | typeof TOAST_SUPERSEDED | void> => {
     for (let attempt = 0; attempt < hostedChangePolling.maxAttempts && current(); attempt++) {
       const row = read(id)
       if (!row?.sessionId) return
@@ -128,6 +166,10 @@ export const createHostedChangeSeam = (ctx: SeamContext) => {
         return error
       }
       const session = parsed.data
+      if (session.status === "failed" && session.reason_code === "box_busy" && session.retryable) {
+        await patch(id, { session, error: null })
+        return "box_busy"
+      }
       // ListMessages is oldest-first; cursorToPage requires offsets divisible by limit.
       const limit = 100
       let cursor = Math.floor(Math.max(0, (session.message_count ?? 1) - 1) / limit) * limit
@@ -162,6 +204,8 @@ export const createHostedChangeSeam = (ctx: SeamContext) => {
       const stages = observeStages(row.stages, session, row.accepted, result, row.pull, Date.now())
       await patch(id, {
         session,
+        busyWaiting: false,
+        ...(failed ? { busyRetries: undefined } : {}),
         observedAt: Date.now(),
         activity,
         outcome: done ? codingActivityOf(messages) : row.outcome,
@@ -173,6 +217,7 @@ export const createHostedChangeSeam = (ctx: SeamContext) => {
         phase: failed ? "failed" : "running",
         error: failed ? hostedFailureReason(session) : null
       })
+      queued()
       if (failed) return hostedFailureReason(session)
       if (done) {
         if (result?.head_change_id) {
@@ -207,54 +252,111 @@ export const createHostedChangeSeam = (ctx: SeamContext) => {
         await patch(id, { phase: "done" })
         return
       }
-      await new Promise((resolve) => setTimeout(resolve, hostedChangePolling.delayMs))
+      await wait(hostedChangePolling.delayMs, signal)
     }
     return current() ? "The agent run is still running. Reload to reconnect." : TOAST_SUPERSEDED
   }
   const background = (row: HostedObservation, launch: boolean, persisted: Promise<unknown>) => {
     if (flights.has(row.id)) return
     const owned = captureCloudOwner(ctx, false)
-    const current = () => owned() && read(row.id)?.owner === owner()
+    const cycle = new AbortController()
+    cycles.set(row.id, cycle)
+    const selection = ctx.store.session().activeRepoKey
+    const subscription = ctx.store.collections.sessions.subscribeChanges(changes => {
+      if (changes.some(change => change.value.id === "main" && change.value.activeRepoKey !== selection)) cycle.abort()
+    })
+    let following = true
+    const current = () => following && !cycle.signal.aborted && owned() && read(row.id)?.owner === owner()
+    let stopQueueClock: (() => void) | undefined
+    const now = clock.now ?? Date.now
+    let attemptStart = row.stages.Admitted ?? now()
+    let sawQueue = false
+    const queued = () => {
+      stopQueueClock?.()
+      stopQueueClock = undefined
+      if (read(row.id)?.session?.stage === "queued") sawQueue = true
+      if (current() && read(row.id)?.phase === "running" && read(row.id)?.session?.stage === "queued") {
+        stopQueueClock = clock.schedule(1000, () => {
+          if (!current()) return
+          void patch(row.id, { observedAt: Date.now() }).then(queued)
+        })
+      }
+    }
     const work = async () => {
       await persisted
       if (!current()) return TOAST_SUPERSEDED
       await card(row)
-      if (launch) {
-        const created = await client.send("POST", `${repoPath(row.repo)}/agent/sessions`, { title: row.request })
-        if (!current()) return TOAST_SUPERSEDED
-        if ("error" in created) {
-          await patch(row.id, { phase: "failed", error: created.error })
-          return created.error
+      if (!current()) return TOAST_SUPERSEDED
+      let shouldLaunch = launch
+      let retries = row.busyRetries ?? 0
+      while (current()) {
+        if (shouldLaunch) {
+          attemptStart = now()
+          sawQueue = false
+          const created = await client.send("POST", `${repoPath(row.repo)}/agent/sessions`, { title: row.request })
+          if (!current()) return TOAST_SUPERSEDED
+          if ("error" in created) {
+            if (created.code === "box_busy" && created.status === 503) {
+              const busy = z.object({ reason: z.string().trim().min(1).max(500).optional(), message: z.string().trim().min(1).max(500).optional() }).safeParse(created.payload)
+              const reason = busy.success ? busy.data.reason ?? busy.data.message ?? BOX_BUSY_REASON : BOX_BUSY_REASON
+              if (await retryBusy(reason)) { shouldLaunch = true; continue }
+              return cycle.signal.aborted ? TOAST_SUPERSEDED : reason
+            }
+            await patch(row.id, { phase: "failed", busyWaiting: false, busyRetries: undefined, error: created.error })
+            return created.error
+          }
+          const session = z.object({ id: z.string() }).safeParse(created.body)
+          if (!session.success) {
+            const error = "The agent run could not be started."
+            await patch(row.id, { phase: "failed", error })
+            return error
+          }
+          await patch(row.id, { sessionId: session.data.id, phase: "running", stages: { ...row.stages, Admitted: Date.now() } })
+          await card({ ...row, sessionId: session.data.id })
         }
-        const session = z.object({ id: z.string() }).safeParse(created.body)
-        if (!session.success) {
-          const error = "The agent run could not be started."
-          await patch(row.id, { phase: "failed", error })
-          return error
+        const latest = read(row.id)!
+        if (!latest.accepted) {
+          // Only this live launch posts the message. Reload recovery never repeats an unacknowledged write.
+          const posted = await client.send(
+            "POST",
+            `${repoPath(row.repo)}/agent/sessions/${encodeURIComponent(latest.sessionId!)}/messages`,
+            { role: "user", text: row.request }
+          )
+          if (!current()) return TOAST_SUPERSEDED
+          if ("error" in posted) {
+            await patch(row.id, { phase: "failed", error: posted.error })
+            return posted.error
+          }
+          await patch(row.id, {
+            accepted: true,
+            phase: "running",
+            stages: observeStages(latest.stages, null, true, null, null, Date.now())
+          })
         }
-        await patch(row.id, { sessionId: session.data.id, phase: "running", stages: { ...row.stages, Admitted: Date.now() } })
-        await card({ ...row, sessionId: session.data.id })
+        const outcome = await follow(row.id, current, cycle.signal, queued)
+        if (outcome !== "box_busy") return outcome
+        if (sawQueue || now() - attemptStart > BOX_BUSY_RETRY_WINDOW_MS) retries = 4
+        if (!(await retryBusy())) return cycle.signal.aborted ? TOAST_SUPERSEDED : read(row.id)?.session?.reason ?? BOX_BUSY_REASON
+        shouldLaunch = true
       }
-      const latest = read(row.id)!
-      if (!latest.accepted) {
-        // Only this live launch posts the message. Reload recovery never repeats an unacknowledged write.
-        const posted = await client.send(
-          "POST",
-          `${repoPath(row.repo)}/agent/sessions/${encodeURIComponent(latest.sessionId!)}/messages`,
-          { role: "user", text: row.request }
-        )
-        if (!current()) return TOAST_SUPERSEDED
-        if ("error" in posted) {
-          await patch(row.id, { phase: "failed", error: posted.error })
-          return posted.error
+      return TOAST_SUPERSEDED
+
+      async function retryBusy(reason = read(row.id)?.session?.reason ?? BOX_BUSY_REASON) {
+        stopQueueClock?.()
+        if (retries === 4 || retired.has(cycle)) {
+          await patch(row.id, { phase: "failed", busyWaiting: false, busyRetries: retries, error: reason })
+          return false
         }
-        await patch(row.id, {
-          accepted: true,
-          phase: "running",
-          stages: observeStages(latest.stages, null, true, null, null, Date.now())
-        })
+        // The backoff starts as the waiting state shows; a slow write must not delay it.
+        await Promise.all([
+          patch(row.id, { phase: "running", busyWaiting: true, busyRetries: retries,
+            sessionId: null, accepted: false, result: null, session: null, error: null, stages: {} }),
+          wait(2000 * 2 ** retries, cycle.signal)
+        ])
+        if (!current()) return false
+        retries++
+        return true
       }
-      return follow(row.id, current)
     }
     const pending = (
       ctx.withToast
@@ -265,7 +367,20 @@ export const createHostedChangeSeam = (ctx: SeamContext) => {
         ctx.report?.("Hosted change", error)
         if (current()) await patch(row.id, { error: "The agent run could not be followed. Reload to reconnect." })
       })
-      .finally(() => flights.delete(row.id))
+      .finally(() => {
+        following = false
+        stopQueueClock?.()
+        subscription.unsubscribe()
+        cycles.delete(row.id)
+        flights.delete(row.id)
+        if (cycle.signal.aborted && read(row.id)?.busyWaiting) void patch(row.id, {
+          phase: "failed", busyWaiting: false, busyRetries: read(row.id)?.busyRetries, error: BOX_BUSY_REASON
+        })
+        else if (cycle.signal.aborted && mounted.has(row.id) && owned() && ctx.store.session().activeRepoKey === selection) {
+          const latest = read(row.id)
+          if (latest?.phase === "running" && latest.accepted) background(latest, false, Promise.resolve())
+        }
+      })
     flights.set(row.id, pending)
   }
   const askHostedChange = async (input: { repo?: string; request: string }): Promise<string | void> => {
@@ -285,6 +400,7 @@ export const createHostedChangeSeam = (ctx: SeamContext) => {
       )
     )
       return
+    cancelHostedRetries()
     const row: HostedObservation = {
       id: randomUuid(),
       repo: target.repo,
@@ -433,5 +549,5 @@ export const createHostedChangeSeam = (ctx: SeamContext) => {
     const parsed = HostedDiffSchema.safeParse(response.body)
     if (parsed.success) await patch(id, { diff: hostedDiffText(parsed.data), diffOpen: true })
   }
-  return { askHostedChange, openHostedPull, openHostedDiff, resume }
+  return { askHostedChange, openHostedPull, openHostedDiff, resume, cancelHostedRetries, watchHostedChange }
 }

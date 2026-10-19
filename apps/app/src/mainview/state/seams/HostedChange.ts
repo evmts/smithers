@@ -1,3 +1,5 @@
+export const BOX_BUSY_REASON = "The workspace service is busy starting other boxes; try again in a moment."
+export const BOX_BUSY_WAITING = "Starting a machine, please wait…"
 /** Observed hosted coding records; no clocks or optimistic stage completion. */
 export interface TestReceipt {
   command: string
@@ -16,6 +18,8 @@ export interface CodingResult {
 export interface HostedSession {
   [key: string]: unknown
   id: string
+  stage?: "queued" | "started" | null
+  queued_at?: string | null
   message_count?: number
   status: "active" | "completed" | "failed" | "cancelled" | "timed_out"
   reason_code: string | null
@@ -63,6 +67,8 @@ export interface HostedObservation {
   files: { path: string; additions?: number; deletions?: number }[]
   merged?: { by: string | null; commit: string | null }
   observedAt?: number
+  busyRetries?: number
+  busyWaiting?: boolean
   noChange?: boolean
   outcome?: string
   activity?: string
@@ -159,7 +165,7 @@ export const deriveHostedChange = (row: HostedObservation) => {
           : row.accepted && (row.session?.run?.status === "queued" || row.session?.workspace === null)
             ? 1
             : row.sessionId ? 1 : 0
-  const active = Math.max(
+  const active = row.busyWaiting || row.session?.stage === "queued" ? 1 : Math.max(
     signalled,
     ...HOSTED_STAGES.map((label, index) => (row.stages[label] === undefined ? -1 : index))
   )
@@ -168,11 +174,11 @@ export const deriveHostedChange = (row: HostedObservation) => {
     model: row.session?.run?.model ?? null,
     finished: finishedCopy(row.session),
     reason: row.session?.reason ?? row.error,
-    retryable: row.session?.retryable ?? false,
+    retryable: row.busyRetries !== undefined || (row.session?.retryable ?? false),
     stages: HOSTED_STAGES.map((label, index) => {
       const start = row.stages[label]
       const nextStart = row.stages[HOSTED_STAGES[index + 1]!]
-      const tone = index === 0 && row.sessionId ? "done" : !row.accepted
+      const tone = (row.busyWaiting || row.session?.stage === "queued") && index === 1 ? "live" : index === 0 && row.sessionId ? "done" : !row.accepted
         ? "pending"
         : index === 5 && !row.pull
           ? "pending"

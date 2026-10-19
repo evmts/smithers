@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test"
 import { createAppStore } from "../AppStore"
-import { createHostedChangeSeam, codingResultOf, codingActivityOf } from "./HostedChangeSeam"
+import { createHostedChangeSeam, codingResultOf, codingActivityOf, type HostedChangeScheduler } from "./HostedChangeSeam"
 import type { SeamContext } from "./SeamContext"
 import type { HostedSession } from "./HostedChange"
 import { HostedObservationSchema, HostedSessionSchema } from "./HostedChangeSchema"
@@ -18,7 +18,7 @@ const stops: (() => void)[] = []
 afterEach(() => {
   for (const stop of stops.splice(0)) stop()
 })
-const setup = async (http: SeamContext["http"]) => {
+const setup = async (http: SeamContext["http"], clock?: HostedChangeScheduler) => {
   const data = new Map<string, string>()
   const store = await createAppStore({
     kind: "localStorage",
@@ -59,7 +59,7 @@ const setup = async (http: SeamContext["http"]) => {
       return pending
     }
   }
-  return { store, seam: createHostedChangeSeam(ctx), done: () => work, ctx, data }
+  return { store, seam: createHostedChangeSeam(ctx, clock), done: () => work, ctx, data }
 }
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
@@ -683,4 +683,301 @@ test("browser no-change fixture completes with empty files and an offline testin
     phase: "done", noChange: true, filesRead: true, files: [], result: codingResult,
     outcome, error: null, pull: null, session: { status: "completed" }
   })
+})
+
+const fakeScheduler = () => {
+  const pending = new Map<number, { delay: number; callback: () => void }>()
+  const delays: number[] = []
+  let ordinal = 0
+  return {
+    pending, delays,
+    schedule(delay: number, callback: () => void) {
+      delays.push(delay)
+      const id = ++ordinal
+      pending.set(id, { delay, callback })
+      return () => { pending.delete(id) }
+    },
+    advance() {
+      const first = pending.entries().next().value!
+      expect(first).toBeDefined()
+      pending.delete(first[0])
+      first[1].callback()
+    }
+  }
+}
+const until = async (condition: () => boolean) => {
+  for (let i = 0; i < 100 && !condition(); i++) await new Promise(resolve => setTimeout(resolve, 0))
+  expect(condition()).toBe(true)
+}
+const busyReason = "The workspace service is busy starting other boxes; try again in a moment."
+for (const path of ["session", "start"] as const) {
+  test(`box_busy ${path}: retries at 2, 4, 8, 16 seconds and Try again starts a fresh cycle`, async () => {
+    const clock = fakeScheduler()
+    let starts = 0
+    const h = await setup(async (url, init) => {
+      if (url.endsWith("/agent/sessions") && init?.method === "POST") {
+        starts++
+        return path === "start" ? json({ code: "box_busy" }, 503) : json({ id: `session-${starts}` }, 201)
+      }
+      if (url.split("?")[0]!.endsWith("/messages")) return json([])
+      return json({ ...session, status: "failed", reason_code: "box_busy", reason: busyReason, retryable: true })
+    }, clock)
+    const request = { repo: "maya/tinyhttp", request: "change" }
+    await h.seam.askHostedChange(request)
+    for (const [index, delay] of [2000, 4000, 8000, 16000].entries()) {
+      await until(() => clock.pending.size === 1)
+      const row = h.store.session().hostedChanges!.at(-1)!
+      expect(row).toMatchObject({ phase: "running", busyWaiting: true, error: null })
+      expect(starts).toBe(index + 1)
+      expect(clock.delays[index]).toBe(delay)
+      clock.advance()
+    }
+    await h.done()
+    expect(starts).toBe(5)
+    expect(clock.pending.size).toBe(0)
+    expect(h.store.session().hostedChanges!.at(-1)).toMatchObject({
+      phase: "failed", busyWaiting: false, busyRetries: 4, error: busyReason
+    })
+    await h.seam.askHostedChange(request)
+    await until(() => clock.pending.size === 1)
+    expect(starts).toBe(6)
+    expect(clock.delays.at(-1)).toBe(2000)
+    h.seam.cancelHostedRetries()
+    await h.done()
+    expect(clock.pending.size).toBe(0)
+  })
+}
+// A box_busy that ends a queue wait or a long attempt is not retried automatically (8e f-85pitc).
+test("a box_busy after a queue wait goes straight to Try again, without another start", async () => {
+  const clock = fakeScheduler()
+  let starts = 0
+  let reads = 0
+  const h = await setup(async (url, init) => {
+    if (url.endsWith("/agent/sessions") && init?.method === "POST") { starts++; return json({ id: `session-${starts}` }, 201) }
+    if (url.split("?")[0]!.endsWith("/messages")) return json([])
+    return json(reads++ === 0
+      ? { ...session, status: "active", run: null, workspace: null, stage: "queued", queued_at: "2026-10-19T06:30:00-07:00" }
+      : { ...session, status: "failed", reason_code: "box_busy", reason: busyReason, retryable: true })
+  }, clock)
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "change" })
+  for (let i = 0; i < 20 && h.store.session().hostedChanges![0]?.phase !== "failed"; i++) {
+    await until(() => clock.pending.size > 0 || h.store.session().hostedChanges![0]?.phase === "failed")
+    if (clock.pending.size > 0) clock.advance()
+  }
+  await h.done()
+  expect(starts).toBe(1)
+  expect(clock.pending.size).toBe(0)
+  expect(h.store.session().hostedChanges![0]).toMatchObject({ phase: "failed", busyWaiting: false, error: busyReason })
+})
+test("a box_busy after more than a minute of attempt goes straight to Try again", async () => {
+  let time = 0
+  const clock = { ...fakeScheduler(), now: () => time }
+  let starts = 0
+  const h = await setup(async (url, init) => {
+    if (url.endsWith("/agent/sessions") && init?.method === "POST") { starts++; return json({ id: `session-${starts}` }, 201) }
+    if (url.split("?")[0]!.endsWith("/messages")) return json([])
+    time += 61_000
+    return json({ ...session, status: "failed", reason_code: "box_busy", reason: busyReason, retryable: true })
+  }, clock)
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "change" })
+  await h.done()
+  expect(starts).toBe(1)
+  expect(clock.delays).toEqual([])
+  expect(h.store.session().hostedChanges![0]).toMatchObject({ phase: "failed", busyWaiting: false, error: busyReason })
+})
+test("the busy backoff starts with the waiting state, not after its write persists", async () => {
+  const clock = fakeScheduler()
+  let starts = 0
+  const h = await setup(async (url, init) => {
+    if (url.endsWith("/agent/sessions") && init?.method === "POST") { starts++; return json({ id: `session-${starts}` }, 201) }
+    if (url.split("?")[0]!.endsWith("/messages")) return json([])
+    return json({ ...session, status: "failed", reason_code: "box_busy", reason: busyReason, retryable: true })
+  }, clock)
+  // The waiting state's write stays unpersisted until released, as a slow view-state write does in the browser.
+  const held: (() => void)[] = []
+  const dispatch = h.ctx.dispatch
+  Object.assign(h.ctx, {
+    dispatch: ((event: Parameters<typeof dispatch>[0]) => {
+      const result = dispatch(event)
+      if (event.type !== "hosted.changes.changed" || !event.requests.some(row => row.busyWaiting)) return result
+      const persisted = new Promise<void>(resolve => held.push(() => void result.isPersisted.promise.then(() => resolve())))
+      return { ...result, isPersisted: { ...result.isPersisted, promise: persisted } }
+    }) as typeof dispatch
+  })
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "change" })
+  await until(() => h.store.session().hostedChanges!.at(-1)?.busyWaiting === true)
+  await until(() => clock.pending.size === 1)
+  expect(clock.delays).toEqual([2000])
+  expect(starts).toBe(1)
+  h.seam.cancelHostedRetries()
+  for (const release of held.splice(0)) release()
+  await h.done()
+  expect(starts).toBe(1)
+})
+test("two busy sessions retry then complete the same request without a failed card", async () => {
+  const clock = fakeScheduler()
+  let starts = 0
+  const posted: unknown[] = []
+  const h = await setup(async (url, init) => {
+    if (url.endsWith("/agent/sessions")) { starts++; return json({ id: `s${starts}` }, 201) }
+    if (url.split("?")[0]!.endsWith("/messages")) {
+      if (init?.method === "POST") { posted.push(JSON.parse(init.body as string)); return json({}) }
+      return json([{ role: "assistant", parts: [{ type: "coding_result", content: result }] }])
+    }
+    if (url.endsWith("/files")) return json([])
+    if (url.endsWith("/diff")) return json({ diff: "" })
+    return json(starts <= 2 ? { ...session, status: "failed", reason_code: "box_busy", reason: busyReason, retryable: true } : session)
+  }, clock)
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "same request" })
+  for (let i = 0; i < 2; i++) { await until(() => clock.pending.size === 1); clock.advance() }
+  await h.done()
+  expect(posted).toEqual(Array(3).fill({ role: "user", text: "same request" }))
+  expect(h.store.session().hostedChanges![0]).toMatchObject({ phase: "done", busyWaiting: false, error: null })
+})
+test("unmount cancels the pending busy timer and never launches another session", async () => {
+  const clock = fakeScheduler()
+  let starts = 0
+  const h = await setup(async () => { starts++; return json({ code: "box_busy" }, 503) }, clock)
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "change" })
+  await until(() => clock.pending.size === 1)
+  const row = h.store.session().hostedChanges![0]!
+  h.seam.watchHostedChange(`hosted-change-${row.id}`)()
+  await h.done()
+  expect(clock.pending.size).toBe(0)
+  expect(starts).toBe(1)
+})
+test("non-busy start refusal does not schedule retries", async () => {
+  const clock = fakeScheduler()
+  const h = await setup(async () => json({ code: "forbidden", message: "No access." }, 403), clock)
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "change" })
+  await h.done()
+  expect(clock.delays).toEqual([])
+  expect(h.store.session().hostedChanges![0]).toMatchObject({ phase: "failed" })
+  expect(h.store.session().hostedChanges![0]?.busyRetries).toBeUndefined()
+})
+// A start call that timed out at the edge may have started a turn, so it is never retried (f-x1r8tw).
+for (const body of [{ code: "upstream_timeout", message: "The server took too long." }, { code: "box_busy", message: "Busy." }]) {
+  test(`a 504 start call (${body.code}) does not schedule retries`, async () => {
+    const clock = fakeScheduler()
+    let starts = 0
+    const h = await setup(async () => (starts++, json(body, 504)), clock)
+    await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "change" })
+    await h.done()
+    expect(clock.delays).toEqual([])
+    expect(starts).toBe(1)
+    expect(h.store.session().hostedChanges![0]).toMatchObject({ phase: "failed" })
+    expect(h.store.session().hostedChanges![0]?.busyRetries).toBeUndefined()
+  })
+}
+test("queued fields are optional, nullable, and validate the platform stage and RFC3339 time", () => {
+  expect(HostedSessionSchema.parse(session).stage).toBeUndefined()
+  expect(HostedSessionSchema.parse({ ...session, stage: null, queued_at: null })).toMatchObject({ stage: null, queued_at: null })
+  for (const stage of ["queued", "started"] as const) expect(HostedSessionSchema.parse({
+    ...session, stage, queued_at: "2026-10-19T06:30:00-07:00"
+  }).stage).toBe(stage)
+  expect(HostedSessionSchema.safeParse({ ...session, stage: "other" }).success).toBe(false)
+  expect(HostedSessionSchema.safeParse({ ...session, queued_at: "yesterday" }).success).toBe(false)
+})
+
+test("changing repositories clears a pending busy retry", async () => {
+  const clock = fakeScheduler()
+  let starts = 0
+  const h = await setup(async () => { starts++; return json({ code: "box_busy" }, 503) }, clock)
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "change" })
+  await until(() => clock.pending.size === 1)
+  await h.store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "another/repo", org: "another", ownerKind: "user", name: "repo", head: null }] }).isPersisted.promise
+  await h.store.dispatch({ type: "repo.selected", actor: "user", id: "another/repo" }).isPersisted.promise
+  await h.done()
+  expect(clock.pending.size).toBe(0)
+  expect(starts).toBe(1)
+})
+test("asking for another change cancels the old backoff", async () => {
+  const clock = fakeScheduler()
+  const h = await setup(async () => json({ code: "box_busy" }, 503), clock)
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "first" })
+  await until(() => clock.pending.size === 1)
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "second" })
+  await until(() => h.store.session().hostedChanges!.some(row => row.request === "first" && row.phase === "failed") && clock.pending.size === 1)
+  h.seam.cancelHostedRetries()
+  await h.done()
+  expect(clock.pending.size).toBe(0)
+})
+test("queued elapsed observation ticks without awaiting a network poll and stops on unmount", async () => {
+  const clock = fakeScheduler()
+  const h = await setup(async (url, init) => {
+    if (init?.method === "POST") return json(url.endsWith("/messages") ? {} : { id: "s" })
+    if (url.split("?")[0]!.endsWith("/messages")) return json([])
+    return json({ ...session, status: "active", stage: "queued", queued_at: "2026-10-19T13:30:00Z" })
+  }, clock)
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "queued" })
+  await until(() => clock.pending.size === 2)
+  expect(clock.delays).toEqual([1000, 2000])
+  const at = h.store.session().hostedChanges![0]!.observedAt!
+  await new Promise(resolve => setTimeout(resolve, 2))
+  clock.advance()
+  await until(() => h.store.session().hostedChanges![0]!.observedAt! > at)
+  h.seam.watchHostedChange(`hosted-change-${h.store.session().hostedChanges![0]!.id}`)()
+  await h.done()
+  expect(clock.pending.size).toBe(0)
+})
+
+for (const payload of [
+  { code: "box_busy", message: "The machine service asked us to wait." },
+  { code: "box_busy", reason: "The machine service is starting boxes." }
+]) test(`busy start preserves the typed sentence: ${JSON.stringify(payload)}`, async () => {
+  const clock = fakeScheduler()
+  const h = await setup(async () => json(payload, 503), clock)
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "change" })
+  for (let i = 0; i < 4; i++) { await until(() => clock.pending.size === 1); clock.advance() }
+  await h.done()
+  expect(h.store.session().hostedChanges![0]?.error).toBe(("reason" in payload ? payload.reason : payload.message)!)
+})
+test("a non-busy session failure after a busy retry retains its own retry behavior", async () => {
+  const clock = fakeScheduler()
+  let starts = 0
+  const h = await setup(async (url, init) => {
+    if (init?.method === "POST" && url.endsWith("/agent/sessions")) { starts++; return json({ id: `s${starts}` }) }
+    if (url.split("?")[0]!.endsWith("/messages")) return json([])
+    return json({ ...session, status: "failed", reason_code: starts === 1 ? "box_busy" : "turn_timed_out",
+      reason: starts === 1 ? busyReason : "The turn timed out.", retryable: true })
+  }, clock)
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "change" })
+  await until(() => clock.pending.size === 1)
+  clock.advance()
+  await h.done()
+  expect(h.store.session().hostedChanges![0]).toMatchObject({ phase: "failed", busyWaiting: false,
+    error: "The turn timed out.", session: { reason_code: "turn_timed_out", retryable: true } })
+  expect(h.store.session().hostedChanges![0]?.busyRetries).toBeUndefined()
+  expect(clock.pending.size).toBe(0)
+})
+test("an in-flight busy response cannot schedule a retry after unmount", async () => {
+  const clock = fakeScheduler()
+  let finish!: (value: Response) => void
+  const pending = new Promise<Response>(resolve => { finish = resolve })
+  const h = await setup(async () => pending, clock)
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "change" })
+  h.seam.watchHostedChange(`hosted-change-${h.store.session().hostedChanges![0]!.id}`)()
+  finish(json({ code: "box_busy" }, 503))
+  await h.done()
+  expect(clock.delays).toEqual([])
+})
+
+for (const code of ["box_busy", "turn_timed_out"] as const) test(`an unrelated prompt preserves the session verdict but retires retries: ${code}`, async () => {
+  const clock = fakeScheduler()
+  let release!: (response: Response) => void
+  let reading = false
+  const pending = new Promise<Response>(resolve => { release = resolve })
+  const h = await setup(async (url, init) => {
+    if (init?.method === "POST") return json(url.endsWith("/messages") ? {} : { id: "s" })
+    if (url.split("?")[0]!.endsWith("/messages")) return json([])
+    reading = true
+    return pending
+  }, clock)
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "change" })
+  await until(() => reading)
+  h.seam.cancelHostedRetries()
+  release(json({ ...session, status: "failed", reason_code: code, reason: "Backend reason.", retryable: true }))
+  await h.done()
+  expect(h.store.session().hostedChanges![0]).toMatchObject({ phase: "failed", error: "Backend reason." })
+  expect(clock.delays).toEqual([])
 })

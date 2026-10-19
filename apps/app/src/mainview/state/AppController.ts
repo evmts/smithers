@@ -654,6 +654,7 @@ export interface AppController extends IssueFlowsController {
   readonly saveInstallModelKey: InstallSeam["saveInstallModelKey"]
   readonly repositorySnapshots: RepositoryHistorySeam["snapshots"]
   readonly openHostedDiff: ReturnType<typeof createHostedChangeSeam>["openHostedDiff"]
+  readonly watchHostedChange: ReturnType<typeof createHostedChangeSeam>["watchHostedChange"]
   readonly hostedChangeGate: (repo?: string) => Promise<string | undefined>
   readonly askHostedChange: ReturnType<typeof createHostedChangeSeam>["askHostedChange"]
   readonly openHostedPull: ReturnType<typeof createHostedChangeSeam>["openHostedPull"]
@@ -1699,6 +1700,7 @@ export const createAppController = (
     return undefined
   }
   const hostedChangeSeam = actors.pair(seamCtx, context => createHostedChangeSeam(context))
+  ctx.onDispose(() => hostedChangeSeam.cancelHostedRetries(true))
   const repoImportSeam = actors.pair(seamCtx, (context) => createRepoImportSeam(context))
   /*
    * `/branches` off an install reads the connected Cloud repository through
@@ -2271,6 +2273,7 @@ export const createAppController = (
     await store.dispatch({ type: "message.response.completed", actor: "smithers", turnId, ...context }).isPersisted.promise
   }
   const designSend: TurnController["send"] = (text, admission, capturedDraft) => {
+    hostedChangeSeam.cancelHostedRetries()
     if (sharedPrompts && store.collections.identitySessions.get("identity")?.state === "signed-in"
       && parseSubmit(text, ctx.commands.all()).kind === "prompt") return sharedPrompts.submit(text, capturedDraft)
     const viewer = design.viewer()
@@ -3193,6 +3196,7 @@ export const createAppController = (
   const { snapshot: _snapshot, ...sharedActions } = commandActions
   return {
     ...sharedActions,
+    watchHostedChange: hostedChangeSeam.watchHostedChange,
     observeReviewConfirmation: issueFlows.observeReviewConfirmation,
     fileDocuments,
     readRepositoryFilePage: (repo, path, ref) => readFilePage(seamCtx, repo, path, ref),

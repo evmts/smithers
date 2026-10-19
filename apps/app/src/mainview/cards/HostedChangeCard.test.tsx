@@ -62,6 +62,7 @@ const render = (row: HostedObservation) => {
   return {
     host,
     calls,
+    update: (row: HostedObservation) => flushSync(() => root.render(<HostedChangeView row={row} run={(...args) => { calls.push(args) }} />)),
     close: () => {
       flushSync(() => root.unmount())
       host.remove()
@@ -301,5 +302,41 @@ for (const [reason_code, reason] of [
   expect(h.host.querySelector('.hosted-change-failure')).toBeNull()
   expect(h.host.textContent).not.toContain("Tests failed")
   expect(h.host.textContent).not.toContain("No test command found")
+  h.close()
+})
+
+test("box_busy stays live while waiting, then offers the quiet typed Try again", () => {
+  const waiting: HostedObservation = { ...base, result: null, phase: "running", busyWaiting: true,
+    busyRetries: 2, accepted: false, sessionId: null, session: null, stages: {} }
+  const h = render(waiting)
+  expect(h.host.textContent).toContain("Starting a machine, please wait…")
+  expect(h.host.querySelector('[role="alert"]')).toBeNull()
+  expect(h.host.querySelector('[data-tone="live"]')?.textContent).toContain("Allocating a machine")
+  expect(h.host.querySelector("button[data-flow='change.ask']")).toBeNull()
+  h.update({ ...waiting, phase: "failed", busyWaiting: false, busyRetries: 4,
+    error: "The workspace service is busy starting other boxes; try again in a moment." })
+  expect(h.host.querySelector('[role="alert"]')?.textContent).toBe("The workspace service is busy starting other boxes; try again in a moment.")
+  const retry = h.host.querySelector<HTMLButtonElement>('button[data-flow="change.ask"]')!
+  expect(retry.textContent?.trim()).toBe("Try again")
+  expect(retry.classList.contains("repo-ui-btn-quiet")).toBe(true)
+  expect(retry.classList.contains("repo-ui-btn-primary")).toBe(false)
+  retry.click()
+  expect(h.calls).toEqual([["change.ask", JSON.stringify({ repo: base.repo, request: base.request })]])
+  h.close()
+})
+test("queued row displays live elapsed time, then restores the allocating label on started or absent stage", () => {
+  const queued: HostedObservation = { ...base, phase: "running", result: null,
+    session: { ...base.session!, status: "active", stage: "queued", queued_at: "2026-10-19T13:30:00Z" },
+    observedAt: Date.parse("2026-10-19T13:31:12Z") }
+  const h = render(queued)
+  expect(h.host.querySelector('[data-tone="live"]')?.textContent).toContain("Queued: starting soon · 1 min 12 s")
+  expect(h.host.querySelector(".hosted-change-duration")?.textContent).toBe(" · 1 min 12 s")
+  h.update({ ...queued, observedAt: Date.parse("2026-10-19T13:31:13Z") })
+  expect(h.host.textContent).toContain("1 min 13 s")
+  for (const stage of ["started", undefined] as const) {
+    h.update({ ...queued, session: { ...queued.session!, stage } })
+    expect(h.host.textContent).not.toContain("Queued: starting soon")
+    expect(h.host.textContent).toContain("Allocating a machine")
+  }
   h.close()
 })

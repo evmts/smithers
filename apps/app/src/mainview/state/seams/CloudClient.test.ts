@@ -192,3 +192,14 @@ test("GitHub refusal copy is bounded and typed while already-landed details surv
   expect(landed.details).toEqual(details)
   expect(landed).not.toHaveProperty("githubRefusal")
 })
+
+
+test("only opted-in domain policies receive the typed failure envelope", async () => {
+  const payload = { code: "box_busy", message: "Please try shortly." }
+  const context = { baseUrl: "", http: async () => Response.json(payload, { status: 503 }) }
+  const ordinary = await createCloudClient(context).send("POST", "/sessions")
+  const policy = await createCloudClient(context, { retainFailurePayload: true }).send("POST", "/sessions")
+  expect(ordinary).not.toHaveProperty("payload")
+  expect(policy).toMatchObject({ code: "box_busy", status: 503, payload })
+  expect(policy).toMatchObject({ error: "error" in ordinary ? ordinary.error : undefined })
+})

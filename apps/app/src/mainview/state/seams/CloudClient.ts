@@ -22,6 +22,8 @@ export interface CloudFailure {
   readonly status: number | null
   readonly retryAfterSeconds: number | null
   readonly githubRefusal?: { readonly sentence: string }
+  /** Wire envelope for domain-specific typed retry policy; never rendered directly. */
+  readonly payload?: unknown
   readonly details?: unknown
   readonly refusal: Refusal
 }
@@ -33,7 +35,7 @@ export type CloudResult =
 /** Cloud currently supplies delta-seconds, not HTTP dates. */
 export const retryAfterSecondsOf = (response: Response): number | null => retryAfterHeader(response.headers)
 
-export const cloudFailure = async (response: Response, fallback: string): Promise<CloudFailure> => {
+export const cloudFailure = async (response: Response, fallback: string, retainPayload = false): Promise<CloudFailure> => {
   const body: unknown = await response.json().catch(() => null)
   /*
    * plue states `code` and `fault`, and the Worker's pass-through preserves
@@ -53,6 +55,7 @@ export const cloudFailure = async (response: Response, fallback: string): Promis
     ...(isRecord(body) && typeof body.code === "string" && body.code.startsWith("github_") &&
       typeof body.message === "string" && body.message.trim() && body.message.length <= 500
       ? { githubRefusal: { sentence: body.message } } : {}),
+    ...(retainPayload ? { payload: body } : {}),
     error: refusalLine(refusal, fallback),
     code: refusal.rawCode,
     status: refusal.status,
@@ -88,7 +91,7 @@ export const fallbackSentence = (method: string, label: string | undefined, stat
     : `The request ${label === undefined ? "to Smithers Cloud" : `for ${label}`} failed (${status})`
 
 /** Domain seams share transport; authorization, DTOs, and retry decisions remain in the seam. */
-export const createCloudClient = (ctx: Pick<SeamContext, "http" | "baseUrl">) => {
+export const createCloudClient = (ctx: Pick<SeamContext, "http" | "baseUrl">, options?: { retainFailurePayload?: boolean }) => {
   const url = (path: string): string => `${ctx.baseUrl}/api${path}`
   const request = async (
     method: string,
@@ -111,7 +114,7 @@ export const createCloudClient = (ctx: Pick<SeamContext, "http" | "baseUrl">) =>
       return cloudUnreachable(error)
     }
     if (!response.ok) {
-      return cloudFailure(response, fallbackSentence(method, label, response.status))
+      return cloudFailure(response, fallbackSentence(method, label, response.status), options?.retainFailurePayload)
     }
     return { body: await response.json().catch(() => null), status: response.status, response }
   }
