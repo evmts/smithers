@@ -52,7 +52,19 @@ func (s *WorkspaceService) AuthorizeTerminalBranch(ctx context.Context, branch s
 	if err = p.Authorize(ctx, tx, "branch.join", repo, row.TargetBookmark, member); err != nil {
 		return row, err
 	}
-	if err = p.LaneBinding(ctx, tx, repo, row.TargetBookmark, row.ID); err != nil {
+	// An agent session's own box admits only that session's person
+	// (plue#869), and answers to its branch's lane authority.
+	lane := row.ID
+	box, err := s.requireSessionBoxPerson(ctx, tx, row.ID, member)
+	if err != nil {
+		return row, err
+	}
+	if box {
+		if lane, err = branchMachineID(ctx, tx, repo, row.TargetBookmark); err != nil {
+			return row, err
+		}
+	}
+	if err = p.LaneBinding(ctx, tx, repo, row.TargetBookmark, lane); err != nil {
 		return row, err
 	}
 	return row, tx.Commit(ctx)

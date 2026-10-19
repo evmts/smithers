@@ -119,6 +119,11 @@ func InstallScratchArchiveSubject(ctx context.Context, q *db.Queries, repository
 	} else {
 		row, err = q.GetBranchWorkspace(ctx, db.GetBranchWorkspaceParams{RepositoryID: repository, TargetBookmark: selector})
 	}
+	if err == nil && row.AgentSessionID.Valid {
+		// An agent session's own box is no member's branch to archive
+		// (plue#869).
+		err = pgx.ErrNoRows
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = pkgerrors.NotFound("branch not found")
 	}
