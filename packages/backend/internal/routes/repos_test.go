@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
@@ -898,4 +899,35 @@ func TestRepoHandler_PatchRepo_ServiceError(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.PatchRepo(rec, req)
 	require.Equal(t, http.StatusConflict, rec.Code)
+}
+
+func TestRepoHandler_GetRepoIssueTracker(t *testing.T) {
+	for _, viewer := range []*db.User{nil, {ID: 42, Username: "non-member"}} {
+		h := RepoHandler{Service: mockRepoRouteService{getRepoViewFn: func(ctx context.Context, got *db.User, owner, repo string) (services.RepoView, error) {
+			require.Equal(t, viewer, got)
+			return services.RepoView{Repository: routeRepo(nil), IssueTracker: "github", GitHubSource: &services.GitHubSource{Owner: "upstream", Repo: "project"}}, nil
+		}}}
+		req := withRouteParams(httptest.NewRequest(http.MethodGet, "/api/repos/alice/demo", nil), map[string]string{"owner": "alice", "repo": "demo"})
+		req = req.WithContext(context.WithValue(req.Context(), middleware.UserContextKey, viewer))
+		rec := httptest.NewRecorder()
+		h.GetRepo(rec, req)
+		require.Equal(t, 200, rec.Code)
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		require.Equal(t, "github", body["issue_tracker"])
+		require.Equal(t, map[string]any{"owner": "upstream", "repo": "project"}, body["github_source"])
+	}
+}
+
+func TestRepoHandler_GetRepoPrivateRemainsHiddenSignedOut(t *testing.T) {
+	h := RepoHandler{Service: mockRepoRouteService{getRepoViewFn: func(ctx context.Context, viewer *db.User, owner, repo string) (services.RepoView, error) {
+		require.Nil(t, viewer)
+		return services.RepoView{}, pkgerrors.NotFound("repository not found")
+	}}}
+	req := withRouteParams(httptest.NewRequest(http.MethodGet, "/api/repos/alice/private", nil), map[string]string{"owner": "alice", "repo": "private"})
+	rec := httptest.NewRecorder()
+	h.GetRepo(rec, req)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.NotContains(t, rec.Body.String(), "issue_tracker")
+	require.NotContains(t, rec.Body.String(), "github_source")
 }

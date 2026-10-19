@@ -1067,7 +1067,9 @@ func (s *RepoService) GetRepo(ctx context.Context, viewer *db.User, owner, repo 
 // reduced to guessing — and the guess that fork is harmless is how a reader
 // ends up with an unasked-for copy of someone else's repository.
 type RepoView struct {
-	Repository db.Repository
+	// IssueTracker uses the same authoritative binding as the repository list.
+	IssueTracker string
+	Repository   db.Repository
 	// GitHubSource is present only when one ready import durably binds this
 	// repository to one GitHub source. The repository description is not proof.
 	GitHubSource *GitHubSource
@@ -1121,6 +1123,7 @@ func (s *RepoService) GetRepoView(ctx context.Context, viewer *db.User, owner, r
 		return RepoView{}, err
 	}
 	view := RepoView{Repository: repository, ForkOf: s.upstreamFullName(ctx, repository)}
+	view.IssueTracker = issueTrackersOf(ctx, s.queries, []db.Repository{repository})[repository.ID]
 	if viewer != nil {
 		canWrite, err := s.canWriteRepo(ctx, repository, viewer.ID)
 		if err != nil {

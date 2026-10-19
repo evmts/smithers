@@ -6,6 +6,7 @@ import { createAppController } from "../AppController"
 import type { AppServices } from "../AppController"
 import type { Card, CloudRepository } from "../AppState"
 import { createAppStore } from "../AppStore"
+import { openRequestedRepo } from "../../RepoLink"
 import { parseRepo } from "./RepositoriesSeam"
 
 /*
@@ -393,4 +394,101 @@ describe("a declared issue transition", () => {
     expect(outcome.status).not.toBe("executed")
     expect(writes(calls)).toEqual([])
   })
+})
+
+for (const signedIn of [false, true]) {
+  for (const tracker of ["github", undefined]) {
+    test(`repository read resolves imported tracker without inventory: signedIn=${signedIn}, tracker=${tracker}`, async () => {
+      const calls: string[] = []
+      const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+      const controller = createAppController(store, unavailableAgent, backend({
+        "GET /api/repos/canary/mirror": json(200, { full_name: "canary/mirror", is_public: true, issue_tracker: tracker, github_source: { owner: "upstream", repo: "project" } }),
+        "GET /api/repos/canary/mirror/issues": json(200, []),
+        "GET /api/user/github-repos/upstream/project/issues": json(200, [wireGithubIssue(7)]),
+        "GET /api/repos/canary/mirror/github/metadata/issues/7": json(200, wireGithubIssue(7)),
+        "GET /api/user/github-repos/upstream/project/issues/7/comments": json(200, [])
+      }, calls))
+      if (signedIn) {
+        store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "reader", admin: false, scopesPlain: null })
+        store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "reader/other", org: "reader", ownerKind: "user", name: "other", head: null, issueTracker: "smithers-cloud" }] })
+      } else {
+        store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, admin: false, scopesPlain: null })
+      }
+      await settled()
+      await openRequestedRepo(controller, backend({ "GET /api/repos/canary/mirror": json(200, { full_name: "canary/mirror", is_public: true, issue_tracker: tracker, github_source: { owner: "upstream", repo: "project" } }) }, calls).fetchImpl!, "canary/mirror", undefined, { activate: false })
+      await controller.viewIssue(7, "canary/mirror")
+      expect(calls.filter(call => call === "GET /api/repos/canary/mirror")).toHaveLength(1)
+      if (!signedIn) {
+        expect(calls).not.toContain("GET /api/repos/canary/mirror/issues/7")
+        expect(store.collections.repositories.get("canary/mirror")?.githubSource).toEqual({ owner: "upstream", repo: "project" })
+        return
+      }
+      expect(calls).toContain("GET /api/user/github-repos/upstream/project/issues")
+      expect(calls).not.toContain("GET /api/repos/canary/mirror/issues/7")
+      expect(issueCards(store).some(card => card.payload.source === "github")).toBe(true)
+      await controller.listIssues("open", "canary/mirror")
+      const list = [...store.collections.cards.values()].find(card => card.kind === "issue-list")
+      expect(list?.kind === "issue-list" && list.payload.issues.some(row => row.number === 7 && row.source === "github")).toBe(true)
+    })
+  }
+}
+
+for (const tracker of ["smithers-cloud", undefined]) {
+  test(`repository read without a source keeps its tracker or existing fallback: ${tracker}`, async () => {
+    const calls: string[] = []
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableAgent, backend({
+      "GET /api/repos/canary/native": json(200, { full_name: "canary/native", is_public: true, issue_tracker: tracker }),
+      "GET /api/repos/canary/native/issues/7": json(200, wireCloudIssue(7)),
+      "GET /api/repos/canary/native/issues/7/comments": json(200, [])
+    }, calls))
+    await openRequestedRepo(controller, backend({ "GET /api/repos/canary/native": json(200, { full_name: "canary/native", is_public: true, issue_tracker: tracker }) }, calls).fetchImpl!, "canary/native", undefined, { activate: false })
+    await controller.viewIssue(7, "canary/native")
+    expect(calls).toContain("GET /api/repos/canary/native/issues/7")
+    expect(calls.some(call => call.includes("/github/metadata/"))).toBe(false)
+  })
+}
+
+test("an absent inventory row uses the GitHub source coordinates for authenticated GitHub routes", async () => {
+  const calls: string[] = []
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableAgent, backend({
+    "GET /api/repos/canary/mirror": json(200, { full_name: "canary/mirror", issue_tracker: "github", github_source: { owner: "upstream", repo: "project" } }),
+    "GET /api/user/github-repos/upstream/project/issues": json(200, [wireGithubIssue(7)]),
+    "GET /api/user/github-repos/upstream/project/issues/7/comments": json(200, [])
+  }, calls))
+  store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "reader", admin: false, scopesPlain: null })
+  await settled()
+  await openRequestedRepo(controller, backend({ "GET /api/repos/canary/mirror": json(200, { full_name: "canary/mirror", is_public: true, github_source: { owner: "upstream", repo: "project" } }) }, calls).fetchImpl!, "canary/mirror", undefined, { activate: false })
+  await controller.viewIssue(7, "canary/mirror")
+  expect(calls).toContain("GET /api/user/github-repos/upstream/project/issues")
+  await controller.viewIssue(7, "CANARY/MIRROR")
+  expect(calls.some(call => call.includes("/api/user/github-repos/canary/mirror"))).toBe(false)
+  expect(calls.some(call => call.includes("/api/user/github-repos/CANARY/MIRROR"))).toBe(false)
+  expect(issueCards(store).some(card => card.payload.source === "github")).toBe(true)
+})
+
+test("a later admitted document clears a previously visible GitHub source", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableAgent, backend({}, []))
+  for (const source of [{ owner: "upstream", repo: "project" }, undefined]) {
+    await openRequestedRepo(controller, backend({ "GET /api/repos/canary/mirror": json(200, { full_name: "canary/mirror", is_public: true, github_source: source }) }, []).fetchImpl!, "canary/mirror", undefined, { activate: false })
+    expect(store.collections.repositories.get("canary/mirror")?.githubSource).toEqual(source)
+  }
+})
+
+test("an admitted GitHub tracker without visible coordinates never guesses a GitHub repository", async () => {
+  const calls: string[] = []
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const services = backend({
+    "GET /api/repos/canary/mirror": json(200, { full_name: "canary/mirror", is_public: true, issue_tracker: "github", github_source_unavailable: true })
+  }, calls)
+  const controller = createAppController(store, unavailableAgent, services)
+  store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "reader", admin: false, scopesPlain: null })
+  await settled()
+  await openRequestedRepo(controller, services.fetchImpl!, "canary/mirror", undefined, { activate: false })
+  await controller.viewIssue(7, "canary/mirror")
+  await controller.listIssues("open", "canary/mirror")
+  expect(calls.filter(call => call.includes("/api/user/github-repos/canary/mirror/"))).toEqual([])
+  expect(issueCards(store).some(card => card.payload.source === "smithers-cloud")).toBe(false)
 })

@@ -86,7 +86,7 @@ func TestAuthenticatedUserReposNameTheirIssueTrackerFromTheGitHubBinding(t *test
 // being told Smithers Cloud for a repository whose issues are GitHub's.
 func TestIssueTrackersAreAbsentWhenTheBindingCannotBeRead(t *testing.T) {
 	service := &UserService{queries: trackerlessQuerier{}}
-	trackers := service.issueTrackersOf(context.Background(), []db.Repository{{ID: 7}})
+	trackers := issueTrackersOf(context.Background(), service.queries, []db.Repository{{ID: 7}})
 	assert.Nil(t, trackers, "no binding reader means no tracker claim at all")
 }
 

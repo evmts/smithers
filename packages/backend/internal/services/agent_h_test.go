@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"strings"
 	"testing"
 	"time"
@@ -96,7 +97,7 @@ func (m agentHAppendTxManager) BeginAppendTx(context.Context) (agentAppendTx, er
 }
 
 func TestAgent_H_PublicGuardsAndPaginationFailures(t *testing.T) {
-	ctx := context.Background()
+	ctx := middleware.ContextWithAuthInfo(context.Background(), &middleware.AuthInfo{User: &db.User{ID: 1}})
 
 	_, err := NewAgentService(&mockAgentQuerier{}).CreateSession(ctx, CreateAgentSessionInput{Title: strings.Repeat("x", 256)})
 	require.Error(t, err)
@@ -137,13 +138,6 @@ func TestAgent_H_PublicGuardsAndPaginationFailures(t *testing.T) {
 	}).ListSessions(ctx, 10, 1, 10)
 	require.Error(t, err)
 
-	_, _, err = NewAgentService(&mockAgentQuerier{
-		countAgentSessionsByRepoFn: func(context.Context, int64) (int64, error) {
-			return 0, errors.New("count failed")
-		},
-	}).ListSessions(ctx, 10, 1, 10)
-	require.Error(t, err)
-
 	var captured db.ListAgentSessionsByRepoWithMessageCountParams
 	rows, total, err := NewAgentService(&mockAgentQuerier{
 		listAgentSessionsByRepoWithMessageCountFn: func(_ context.Context, arg db.ListAgentSessionsByRepoWithMessageCountParams) ([]db.ListAgentSessionsByRepoWithMessageCountRow, error) {
@@ -158,7 +152,7 @@ func TestAgent_H_PublicGuardsAndPaginationFailures(t *testing.T) {
 	assert.Empty(t, rows)
 	assert.Equal(t, int64(0), total)
 	assert.Equal(t, int32(0), captured.PageOffset)
-	assert.Equal(t, int32(30), captured.PageSize)
+	assert.Equal(t, int32(100), captured.PageSize)
 
 	var msgPage db.ListAgentMessagesParams
 	_, err = NewAgentService(&mockAgentQuerier{

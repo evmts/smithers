@@ -26,6 +26,44 @@ const search = (values: Record<string, string | number | boolean | undefined>): 
   return query.size === 0 ? "" : `?${query}`
 }
 
+export type SessionLanding = {
+  landing_number: number
+  branch: string
+  pull_number: number
+  pull_url: string
+  head_commit: string
+  tested: boolean
+  passed: boolean
+}
+
+export type AgentSessionRead = {
+  id: string
+  repository_id: number
+  user_id: number
+  title: string
+  status: string
+  message_count: number
+  created_at: string
+  updated_at: string
+  metadata: AnyJSON
+  workspace_id?: string
+  workspace: null | {
+    id: string
+    name: string
+    status: string
+  }
+  run: null | {
+    id: number
+    status: string
+    model: string | null
+    started_at: string | null
+    finished_at: string | null
+  }
+  reason_code: string | null
+  reason: string | null
+  retryable: boolean
+}
+
 export type AppBootstrap = {
   apiVersion: 1
   host: "cloud"
@@ -3679,7 +3717,7 @@ export interface DeleteApiReposOwnerRepoAgentEnvironmentSecretsNameInput {
 export const deleteApiReposOwnerRepoAgentEnvironmentSecretsName = (transport: Transport, input: DeleteApiReposOwnerRepoAgentEnvironmentSecretsNameInput): Promise<void> =>
   transport.request("DELETE", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/agent-environment/secrets/${segment(input.path.name)}`).then(() => undefined)
 
-export type GetApiReposOwnerRepoAgentSessionsIdResponse = AnyJSON
+export type GetApiReposOwnerRepoAgentSessionsIdResponse = AgentSessionRead
 
 export interface GetApiReposOwnerRepoAgentSessionsIdInput {
   readonly path: { readonly owner: string; readonly repo: string; readonly id: string }
@@ -4500,6 +4538,38 @@ export interface GetApiReposOwnerRepoGitRefsInput {
 /** GET /api/repos/{owner}/{repo}/git/refs */
 export const getApiReposOwnerRepoGitRefs = (transport: Transport, input: GetApiReposOwnerRepoGitRefsInput): Promise<GetApiReposOwnerRepoGitRefsResponse> =>
   transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/git/refs`) as Promise<GetApiReposOwnerRepoGitRefsResponse>
+
+export type GetApiReposOwnerRepoBranchesResponse = AnyJSON
+
+export interface GetApiReposOwnerRepoBranchesInput {
+  readonly path: { readonly owner: string; readonly repo: string }
+  readonly query?: { readonly cursor?: string; readonly limit?: number }
+}
+
+/** GET /api/repos/{owner}/{repo}/branches */
+export const getApiReposOwnerRepoBranches = (transport: Transport, input: GetApiReposOwnerRepoBranchesInput): Promise<GetApiReposOwnerRepoBranchesResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/branches${search({ cursor: input.query?.cursor, limit: input.query?.limit })}`) as Promise<GetApiReposOwnerRepoBranchesResponse>
+
+export type GetApiReposOwnerRepoCommitsResponse = AnyJSON
+
+export interface GetApiReposOwnerRepoCommitsInput {
+  readonly path: { readonly owner: string; readonly repo: string }
+  readonly query?: { readonly ref?: string; readonly path?: string; readonly cursor?: string; readonly limit?: number }
+}
+
+/** GET /api/repos/{owner}/{repo}/commits */
+export const getApiReposOwnerRepoCommits = (transport: Transport, input: GetApiReposOwnerRepoCommitsInput): Promise<GetApiReposOwnerRepoCommitsResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/commits${search({ ref: input.query?.ref, path: input.query?.path, cursor: input.query?.cursor, limit: input.query?.limit })}`) as Promise<GetApiReposOwnerRepoCommitsResponse>
+
+export type GetApiReposOwnerRepoCommitsShaResponse = AnyJSON
+
+export interface GetApiReposOwnerRepoCommitsShaInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly sha: string }
+}
+
+/** GET /api/repos/{owner}/{repo}/commits/{sha} */
+export const getApiReposOwnerRepoCommitsSha = (transport: Transport, input: GetApiReposOwnerRepoCommitsShaInput): Promise<GetApiReposOwnerRepoCommitsShaResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/commits/${segment(input.path.sha)}`) as Promise<GetApiReposOwnerRepoCommitsShaResponse>
 
 export type GetApiReposOwnerRepoGithubAppStatusResponse = AnyJSON
 
@@ -6469,6 +6539,21 @@ export interface PostApiReposOwnerRepoWorkspacesIdChildrenChildIdStopInput {
 export const postApiReposOwnerRepoWorkspacesIdChildrenChildIdStop = (transport: Transport, input: PostApiReposOwnerRepoWorkspacesIdChildrenChildIdStopInput): Promise<PostApiReposOwnerRepoWorkspacesIdChildrenChildIdStopResponse> =>
   transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/workspaces/${segment(input.path.id)}/children/${segment(input.path.child_id)}/stop`) as Promise<PostApiReposOwnerRepoWorkspacesIdChildrenChildIdStopResponse>
 
+export type PostApiReposOwnerRepoAgentSessionsSessionIdLandingBody = {
+  reply_id?: number
+}
+
+export type PostApiReposOwnerRepoAgentSessionsSessionIdLandingResponse = SessionLanding
+
+export interface PostApiReposOwnerRepoAgentSessionsSessionIdLandingInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly session_id: string }
+  readonly body: PostApiReposOwnerRepoAgentSessionsSessionIdLandingBody
+}
+
+/** POST /api/repos/{owner}/{repo}/agent/sessions/{session_id}/landing: Open a person's pull request from a coding turn */
+export const postApiReposOwnerRepoAgentSessionsSessionIdLanding = (transport: Transport, input: PostApiReposOwnerRepoAgentSessionsSessionIdLandingInput): Promise<PostApiReposOwnerRepoAgentSessionsSessionIdLandingResponse> =>
+  transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/agent/sessions/${segment(input.path.session_id)}/landing`, input.body) as Promise<PostApiReposOwnerRepoAgentSessionsSessionIdLandingResponse>
+
 export type GetApiRepoConnectionResponse = AnyJSON
 
 /** GET /api/repo-connection */
@@ -6602,6 +6687,28 @@ export interface GetApiRunsIdBackgroundStatusInput {
 /** GET /api/runs/{id}/background-status: Read a background run receipt */
 export const getApiRunsIdBackgroundStatus = (transport: Transport, input: GetApiRunsIdBackgroundStatusInput): Promise<GetApiRunsIdBackgroundStatusResponse> =>
   transport.request("GET", `/api/runs/${segment(input.path.id)}/background-status`) as Promise<GetApiRunsIdBackgroundStatusResponse>
+
+export type GetApiReposOwnerRepoSearchCodeResponse = AnyJSON
+
+export interface GetApiReposOwnerRepoSearchCodeInput {
+  readonly path: { readonly owner: string; readonly repo: string }
+  readonly query?: { readonly q?: string; readonly cursor?: string; readonly limit?: number }
+}
+
+/** GET /api/repos/{owner}/{repo}/search/code */
+export const getApiReposOwnerRepoSearchCode = (transport: Transport, input: GetApiReposOwnerRepoSearchCodeInput): Promise<GetApiReposOwnerRepoSearchCodeResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/search/code${search({ q: input.query?.q, cursor: input.query?.cursor, limit: input.query?.limit })}`) as Promise<GetApiReposOwnerRepoSearchCodeResponse>
+
+export type GetApiReposOwnerRepoSearchIssuesResponse = AnyJSON
+
+export interface GetApiReposOwnerRepoSearchIssuesInput {
+  readonly path: { readonly owner: string; readonly repo: string }
+  readonly query?: { readonly q?: string; readonly state?: string; readonly label?: string; readonly assignee?: string; readonly milestone?: string; readonly cursor?: string; readonly limit?: number }
+}
+
+/** GET /api/repos/{owner}/{repo}/search/issues */
+export const getApiReposOwnerRepoSearchIssues = (transport: Transport, input: GetApiReposOwnerRepoSearchIssuesInput): Promise<GetApiReposOwnerRepoSearchIssuesResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/search/issues${search({ q: input.query?.q, state: input.query?.state, label: input.query?.label, assignee: input.query?.assignee, milestone: input.query?.milestone, cursor: input.query?.cursor, limit: input.query?.limit })}`) as Promise<GetApiReposOwnerRepoSearchIssuesResponse>
 
 export type GetApiSearchCodeResponse = AnyJSON
 

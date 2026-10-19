@@ -35,7 +35,7 @@ export const PLUE_FAILURE_SCHEMA_VERSION = 1
  * @since 1.0.0
  * @category constants
  */
-export const PLUE_FAILURE_DIGEST = "sha256:1944d0e96e0ebb3e5532d85f86357b697f7c62ff91c1795ed0fc98fabe1e896a"
+export const PLUE_FAILURE_DIGEST = "sha256:88d23b1289eae6e7e7b4eca58aed5491c1524b6c3c27c3fa6c19f3bfc197acbd"
 
 /**
  * Whose problem a failure is — the registry's verdict, and the only question the app
@@ -71,7 +71,9 @@ export type PlueFault = (typeof PLUE_FAULTS)[number]
 export const PLUE_FAILURE_CODES = [
   "FORBIDDEN_ACTION",
   "access_denied",
+  "agent_credential_refused",
   "agent_loop_retired",
+  "already_landed",
   "append_not_requested",
   "append_prepare_invalid",
   "append_prepare_unavailable",
@@ -114,7 +116,9 @@ export const PLUE_FAILURE_CODES = [
   "github_reconnect_required",
   "github_unavailable",
   "guest_not_ready",
+  "guest_refused",
   "guest_user_required",
+  "head_receipt_mismatch",
   "host_lease_lost",
   "idempotency_conflict",
   "idempotency_key_required",
@@ -136,6 +140,8 @@ export const PLUE_FAILURE_CODES = [
   "language_server_missing",
   "listing_secret_detected",
   "no_capacity",
+  "no_coding_result",
+  "no_turn_head",
   "non_replayable_operation",
   "not_found",
   "not_implemented",
@@ -149,6 +155,7 @@ export const PLUE_FAILURE_CODES = [
   "preview_unavailable",
   "profile_unavailable",
   "provisioning_failed",
+  "push_permission_required",
   "push_too_large",
   "push_too_slow",
   "quiesce_failed",
@@ -169,8 +176,10 @@ export const PLUE_FAILURE_CODES = [
   "sandbox_control_busy",
   "secret_delivery_unavailable",
   "service_unavailable",
+  "session_not_found",
   "setup_closed",
   "setup_request_reused",
+  "sign_in_required",
   "snapshot_in_use",
   "snapshot_not_found",
   "snapshot_too_large",
@@ -242,8 +251,12 @@ export const PLUE_FAILURES = {
   "FORBIDDEN_ACTION": { fault: "user", status: 403, retryAfter: 0 },
   /** The access grant presented to the controller does not cover this sandbox. */
   "access_denied": { fault: "user", status: 403, retryAfter: 0 },
+  /** An agent credential cannot open this pull request. */
+  "agent_credential_refused": { fault: "user", status: 403, retryAfter: 0 },
   /** plue's own 0.x agent loop was retired and the Smithers 1.0 replacement has no entrypoint for a single dispatched task yet. Nothing the caller did. */
   "agent_loop_retired": { fault: "bug", status: 501, retryAfter: 0 },
+  /** The session already has a landing. */
+  "already_landed": { fault: "user", status: 409, retryAfter: 0 },
   /** The landing's existing task is not a native append request. */
   "append_not_requested": { fault: "user", status: 409, retryAfter: 0 },
   /** Native append preparation did not return the requested exact source identities. */
@@ -328,8 +341,12 @@ export const PLUE_FAILURES = {
   "github_unavailable": { fault: "dependency", status: 502, retryAfter: 0 },
   /** The guest is reachable but activation has not finished exposing its login shell. */
   "guest_not_ready": { fault: "wait", status: 503, retryAfter: 3 },
+  /** A guest cannot open a pull request. */
+  "guest_refused": { fault: "user", status: 403, retryAfter: 0 },
   /** The exec request did not name the guest user to run as. */
   "guest_user_required": { fault: "user", status: 400, retryAfter: 0 },
+  /** The turn head differs from the test receipt. */
+  "head_receipt_mismatch": { fault: "user", status: 409, retryAfter: 0 },
   /** The controller's lease on a sandbox host has expired, so the host is no longer the controller's to act on. */
   "host_lease_lost": { fault: "infra", status: 503, retryAfter: 0 },
   /** The idempotency key was reused with a different request body. */
@@ -372,6 +389,10 @@ export const PLUE_FAILURES = {
   "listing_secret_detected": { fault: "user", status: 400, retryAfter: 0 },
   /** No worker in the pool has free CPU, memory or VM slots for the box, at placement or at resume. The box and its disk are untouched. */
   "no_capacity": { fault: "infra", status: 503, retryAfter: 30 },
+  /** No reply carries a coding result. */
+  "no_coding_result": { fault: "user", status: 422, retryAfter: 0 },
+  /** The coding result has no immutable turn head. */
+  "no_turn_head": { fault: "user", status: 422, retryAfter: 0 },
   /** The recorded operation for this idempotency key cannot be replayed. */
   "non_replayable_operation": { fault: "user", status: 409, retryAfter: 0 },
   /** The addressed resource does not exist, or the caller may not see that it does. */
@@ -398,6 +419,8 @@ export const PLUE_FAILURES = {
   "profile_unavailable": { fault: "infra", status: 503, retryAfter: 1 },
   /** Provisioning a box failed for a reason plue has no specific code for. Persisted on the workspace row as failure_code. */
   "provisioning_failed": { fault: "bug", status: 500, retryAfter: 0 },
+  /** The person needs repository push access. */
+  "push_permission_required": { fault: "user", status: 403, retryAfter: 0 },
   /** The push exceeds the repository push size limit. */
   "push_too_large": { fault: "user", status: 413, retryAfter: 0 },
   /** The push held its repository longer than the push duration limit and was stopped; nothing changed. */
@@ -438,10 +461,14 @@ export const PLUE_FAILURES = {
   "secret_delivery_unavailable": { fault: "infra", status: 501, retryAfter: 0 },
   /** plue is up but a component it needs is not answering. */
   "service_unavailable": { fault: "infra", status: 503, retryAfter: 0 },
+  /** The repository session does not exist. */
+  "session_not_found": { fault: "user", status: 404, retryAfter: 0 },
   /** The owner claim invalidated the setup credential. */
   "setup_closed": { fault: "user", status: 401, retryAfter: 0 },
   /** The setup request identity was already admitted with different input. */
   "setup_request_reused": { fault: "infra", status: 409, retryAfter: 0 },
+  /** Sign in to open a pull request. */
+  "sign_in_required": { fault: "user", status: 401, retryAfter: 0 },
   /** The snapshot backs a live sandbox and cannot be changed or deleted. */
   "snapshot_in_use": { fault: "user", status: 409, retryAfter: 0 },
   /** The named sandbox snapshot does not exist. Distinct from not_found so a bad golden snapshot is diagnosable. */

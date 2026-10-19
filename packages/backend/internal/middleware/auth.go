@@ -528,6 +528,7 @@ var installMemberRoutes = []struct {
 	{http.MethodGet, "repo.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/(?:bookmarks|changes(?:/count|/[^/]+(?:/(?:walkthrough|findings|diff|files|conflicts|operations))?)?|operations|status)$`)},
 	{http.MethodGet, "repo.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/(?:user-refs|lfs/objects|commits/[^/]+/statuses)$`)},
 	{http.MethodGet, "repo.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/file/[^/]+/.+$`)},
+	{http.MethodGet, "repo.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/(?:commits(?:/[^/]+)?|branches|search/(?:code|issues))$`)},
 	{http.MethodGet, "repo.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/(?:git/refs|contents(?:/.+)?|github/metadata/.+)$`)},
 	// Existing persisted coding-run messages remain readable by repository members.
 	{http.MethodGet, "repo.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/agent/sessions/[^/]+/stream$`)},
@@ -743,6 +744,7 @@ var installMemberRoutes = []struct {
 	{http.MethodDelete, "denied", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/landings/[^/]+/auto-land$`)},
 	{http.MethodPost, "agent.turn", regexp.MustCompile(`^/api/agent/turn/erase$`)},
 	{http.MethodPost, "flow.run", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/agent/sessions$`)},
+	{http.MethodPost, "denied", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/agent/sessions/[^/]+/landing$`)},
 	{http.MethodPost, "denied", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/changes/[^/]+/revert$`)},
 	{http.MethodPatch, "issue.comment", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/issues/comments/[^/]+$`)},
 	// The repository's own GitHub issue tracker. Each act is the catalog's
