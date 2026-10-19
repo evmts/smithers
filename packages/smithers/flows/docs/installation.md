@@ -42,9 +42,9 @@ declares.
 
 ## Requirements
 
-- Node.js 26.4.0 or later, which also runs a `.ts` file directly, with no build
-  step. Durable execution is tested on Node.js 26.4+ and Bun 1.4+; `engines`
-  requires Node `>=26.4.0`.
+- Node.js 22.19.0 or later, which also runs a `.ts` file directly, with no build
+  step. Durable execution is tested on Node.js 22.19+ and Bun 1.4+; `engines`
+  requires Node `>=22.19.0`.
 - [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/) 0.39.0 or later
   on `PATH`, or `SMITHERS_JJ_PATH` naming the binary, for the steps that use
   it: a compensable step, which the engine snapshots before each attempt; a
@@ -114,7 +114,7 @@ re-exports. What bundles is the authoring and inspection surface: you can
 declare flows, read a plan, and decode a journal event in a browser.
 
 Durable execution is a different claim: it needs a native Node.js or Bun host and
-SQLite or PostgreSQL. Durable execution is tested on Node.js 26.4+ and Bun 1.4+; `engines` requires Node `>=26.4.0`. A browser or edge runtime is not a supported durable host even
+SQLite or PostgreSQL. Durable execution is tested on Node.js 22.19+ and Bun 1.4+; `engines` requires Node `>=22.19.0`. A browser or edge runtime is not a supported durable host even
 when you supply another SQL client. Native modules are subpaths
 precisely so importing the root never opens `node:sqlite`.
 

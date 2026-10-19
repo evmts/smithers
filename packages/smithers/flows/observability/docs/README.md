@@ -42,7 +42,7 @@ identity, so `service.name` means the same thing whichever one you pick.
 npm install @smthrs/observability@next effect
 ```
 
-Node.js 26.4.0 or later. For the import forms and the browser rule, see
+Node.js 22.19.0 or later. For the import forms and the browser rule, see
 [Installation](./installation.md).
 
 ## Export all three signals

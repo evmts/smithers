@@ -168,3 +168,9 @@ test("the public installation entry gives the current npm path before planned ho
   assert.ok(installation.indexOf("## Install the CLI") < installation.indexOf("## Mac host (planned)"))
   assert.doesNotMatch(cli, /host start|smithersai\/tap/)
 })
+
+
+test("the landing Node requirement matches the published CLI floor", () => {
+  const floor = JSON.parse(read("packages/smithers/package.json")).engines.node.replace(/^>=/, "").replace(/\.0$/, "")
+  assert.ok(read("apps/site/src/data/landingCopy.ts").includes(`Needs Node.js ${floor} or later`))
+})

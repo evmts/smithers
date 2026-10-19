@@ -41,7 +41,7 @@ diagram, or a test.
 npm install @smthrs/core@next effect
 ```
 
-The package needs Node.js 26.4.0 or later. It has no platform bindings, so the
+The package needs Node.js 22.19.0 or later. It has no platform bindings, so the
 same build runs in Node, in Bun, in a browser, and in a Cloudflare Worker.
 
 ## Declare a step before it runs

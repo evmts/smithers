@@ -192,7 +192,7 @@ export const buildPrivateEffectAdapters = async (packageRoot, { distRoot = join(
     splitting: true,
     bundle: true,
     platform: "node",
-    target: "node26",
+    target: "node22.19",
     metafile: true,
     external: ["effect", "effect/*", ...ordinary.keys(), "bun", "bun:*"],
     logLevel: "silent"

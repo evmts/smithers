@@ -46,7 +46,7 @@ test.
 npm install @smthrs/run-store@next effect
 ```
 
-Node.js 26.4.0 or later. [Installation](./installation.md) covers the import
+Node.js 22.19.0 or later. [Installation](./installation.md) covers the import
 forms and the two services a composition has to supply.
 
 ## Take a run, do the work, settle it
