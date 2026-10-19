@@ -86,6 +86,22 @@ WHERE id = sqlc.arg(id)
   AND agent_session_id IS NOT NULL
   AND deleted_at IS NULL;
 
+-- name: AgentBoxDirtyOutsideTurn :one
+-- Whether a start must be refused: the agent session box's live guest is
+-- marked dirty and no turn of its session is in progress. A start reads it on
+-- its own authorization transaction, never from the row it loaded before,
+-- after it took the session's advisory lock shared
+-- (LockAgentBoxSessionForStart): no release can run between this check and
+-- what the start mints. A box no session owns answers no row.
+SELECT (
+  w.vm_id <> ''
+  AND w.agent_box_dirty_vm_id = w.vm_id
+  AND NOT (s.status = 'active' AND s.deleted_at IS NULL)
+)::boolean AS refuse
+FROM workspaces w
+JOIN agent_sessions s ON s.id = w.agent_session_id
+WHERE w.id = sqlc.arg(id);
+
 -- name: RecordAgentBoxGuest :one
 -- Records the new guest of a retired agent box. It is the only write that
 -- clears the box's dirty mark (plue#869): a box is retired only after the

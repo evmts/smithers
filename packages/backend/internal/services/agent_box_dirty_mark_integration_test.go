@@ -368,6 +368,8 @@ func TestAFailedIdleRetirementKeepsTheGuestDirtyUntilTheNextTurnReplacesIt(t *te
 			// A real idle box is dirty: its turn's head token marked its guest.
 			_, err := f.pool.Exec(f.ctx, `UPDATE workspaces SET agent_box_dirty_vm_id = vm_id WHERE id = $1`, f.workspace)
 			require.NoError(t, err)
+			// Its last run left a credential reader behind.
+			f.hosted.processes["reader"] = true
 			clear := tc.fault(f)
 			store, ok := f.boxes.q.(agentBoxIdleCapStore)
 			require.True(t, ok)
@@ -380,9 +382,14 @@ func TestAFailedIdleRetirementKeepsTheGuestDirtyUntilTheNextTurnReplacesIt(t *te
 			require.Error(t, f.boxes.RetireIdleAgentBoxes(f.ctx))
 			f.requireDirty(t, "a failed sweep leaves the guest dirty")
 
+			require.True(t, f.hosted.processes["reader"], "the failed retirement left the guest as it was")
+
 			clear()
 			require.NoError(t, f.nextTurn(t))
+			// A new guest, the reader gone with the old one and nothing
+			// captured, and every token of the old run revoked.
 			f.requireRetiredAndRebuilt(t)
+			f.requireRunTokensRevoked(t, "head", "landing", "cache", "api")
 		})
 	}
 }
