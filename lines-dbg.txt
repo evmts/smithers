@@ -1,0 +1,1 @@
+bash packages/backend/scripts/with-test-postgres.sh go -C packages/backend test ./internal/compose -run "TestDebugAPIInvokeWithoutIsolationPostgres|TestBackgroundMachineCaptureSleepRetire" -count=1 2>&1 | grep -E "^(ok|FAIL|---)|Error:|!==|ffi library" | head -20
