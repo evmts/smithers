@@ -837,6 +837,24 @@ export const privateMembers = (errors, pkg, dir) => {
   return out
 }
 
+/**
+ * Per module relative to `dir`, the `code:name` pairs of exports whose inferred type TypeScript
+ * reports it can't name portably (TS2883, TS2742). It emits no declaration for such a module,
+ * and a faithful twin reproduces the same errors (S17-1: coding's layers reached through a
+ * dependency's own linked package).
+ */
+export const unnamedInferredTypes = (errors, pkg, dir) => {
+  const out = new Map()
+  for (const e of errors) {
+    const m = e.match(/^(.+?\.(?:tsx?|vibe))\(\d+,\d+\): error (TS2883|TS2742): The inferred type of '([^']+)'/)
+    if (!m) continue
+    const rel = relative(join(pkg, dir), resolve(pkg, m[1])).replace(/\.(?:tsx?|vibe)$/, "")
+    if (rel.startsWith("..")) continue
+    out.set(rel, new Set([...(out.get(rel) ?? []), `${m[2]}:${m[3]}`]))
+  }
+  return out
+}
+
 /** The modules, relative to the source root, for which TypeScript reported TS4094. */
 export const undeclarableModules = (tsErrors, pkg) => new Set(privateMembers(tsErrors, pkg, sourceRoot(pkg)).keys())
 
@@ -1164,11 +1182,15 @@ const runUnlocked = (pkgArg) => {
   // TypeScript reports TS4094 and emits no .d.ts for a module whose exported anonymous class has
   // private members (E-6). A faithful twin reproduces exactly that: its TS4094 is not a twin
   // error, and its missing .d.ts is not a missing output (S9-1). The .js is still required.
-  const undeclarable = undeclarableModules(ts.errors, pkg)
+  const unnamed = unnamedInferredTypes(ts.errors, pkg, sourceRoot(pkg))
+  const undeclarable = new Set([...undeclarableModules(ts.errors, pkg), ...unnamed.keys()])
   const privates = { ts: privateMembers(ts.errors, pkg, sourceRoot(pkg)), twin: privateMembers(twin.errors, pkg, "src-vibe") }
   twin.errors = twin.errors.filter((e) => {
     const m = e.match(/^src-vibe\/(.+)\.vibe\(\d+,\d+\): error TS4094:/)
-    return !(m && undeclarable.has(m[1]))
+    if (m && undeclarable.has(m[1])) return false
+    // The same export's inferred type that TypeScript itself can't name portably (S17-1).
+    const n = e.match(/^src-vibe\/(.+)\.vibe\(\d+,\d+\): error (TS2883|TS2742): The inferred type of '([^']+)'/)
+    return !(n && unnamed.get(n[1])?.has(`${n[2]}:${n[3]}`))
   })
   const missingOutputs = twinned.flatMap((rel) => [
     join(twinOutDir(pkg), `${rel}.js`),

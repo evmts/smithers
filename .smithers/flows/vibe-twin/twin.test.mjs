@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { affectedTests, dropDefaultNever, exportDocs, privateMembers, suiteEnv, undeclarableModules, exactPathPattern, fallbackFor, localNames, sourceExports, normalizeDts, parseDts, quality, sameReferencedLocals, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
+import { affectedTests, dropDefaultNever, exportDocs, privateMembers, suiteEnv, undeclarableModules, unnamedInferredTypes, exactPathPattern, fallbackFor, localNames, sourceExports, normalizeDts, parseDts, quality, sameReferencedLocals, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
 
 test("declarations that differ only in relative import extensions are equal", () => {
   const ts = `import { type A } from "./ErrorCode.ts";\nexport { B } from "../x/y.ts";\nexport declare const c: import("./z.ts").Z;\n`
@@ -287,4 +287,14 @@ test("default-never normalization leaves string literals and comments alone (gua
   assert.equal(dropDefaultNever("/** Effect.Effect<A, never> */ x"), "/** Effect.Effect<A, never> */ x")
   assert.equal(dropDefaultNever("// Effect.Effect<A, never>\nx"), "// Effect.Effect<A, never>\nx")
   assert.equal(normalizeDts("export declare const r: Effect.Effect<R<H>, E, never>;"), normalizeDts("export declare const r: Effect.Effect<R<H>, E>;"))
+})
+
+test("an export TypeScript itself can't name is reproduced, not a twin error (S17-1)", () => {
+  const pkg = mkdtempSync(join(tmpdir(), "vibe-twin-"))
+  const m = unnamedInferredTypes([
+    "correction.ts(512,14): error TS2883: The inferred type of 'correctionLayers' cannot be named without a reference to 'MemoryStore' from '../x.ts'. This is likely not portable.",
+    "../repository/execution.ts(206,14): error TS2883: The inferred type of 'captureJobSource' cannot be named",
+    "host.ts(1,1): error TS2322: nope"
+  ], pkg, ".")
+  assert.deepEqual([...m].map(([k, v]) => [k, [...v]]), [["correction", ["TS2883:correctionLayers"]]])
 })
