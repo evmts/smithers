@@ -95,13 +95,13 @@ const host = (clarification: string, gather = () => context, onAnswer: () => voi
     ))),
     declineLayer,
     planningPolicy,
+    // Interpreter.layer registers the built-in human task; this fake answers in its place.
     HumanTask.action.toLayer(({ prompt }) =>
       Effect.promise(async () => {
         seen.asked.push(prompt)
         await onAnswer()
         return "Answered now"
-      })
-    ),
+      }), { override: true }),
     VerifyContext.toLayer(({ context }) => Effect.succeed(context)),
     GatherContext.toLayer((input) =>
       Effect.sync(() => {
