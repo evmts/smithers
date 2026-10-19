@@ -53,11 +53,12 @@ for (const key of ["Enter", "Space"]) test(`a Chat refusal survives account clea
     await expect(input).toBeHidden()
     await expect(notice).toBeVisible()
     expect(signIns).toEqual([])
-    // The explicit retry runs the signed-out Ask door once, keeping this route.
+    // The explicit retry runs the signed-out Ask door once, keeping this route. The Ask door's
+    // sign-in returns to the page with Ask open (Design d-fbhqgy, 1279014a): `?ask=1`, no draft.
     await ask.focus()
     await page.keyboard.press(key)
     await expect.poll(() => signIns.length).toBe(1)
-    expect(new URL(signIns[0]!).searchParams.get("return_to")).toBe("/smithersai/smithers/")
+    expect(new URL(signIns[0]!).searchParams.get("return_to")).toBe("/smithersai/smithers/?ask=1")
     expect(new URL(page.url()).pathname).toBe("/smithersai/smithers/")
     // A later act does not acknowledge the refusal; it stays until dismissed.
     await expect(notice).toBeVisible()
