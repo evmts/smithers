@@ -1,0 +1,874 @@
+package services
+
+import (
+	"context"
+	"encoding/json"
+	stdErrors "errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"os"
+	"path"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
+)
+
+const (
+	defaultWorkflowSandboxSchedulerInterval = 5 * time.Second
+	defaultWorkflowSandboxSchedulerClaim    = int32(5)
+
+	workflowSandboxFinalizeTimeout = 15 * time.Second
+	// Claims expire after two minutes in SQL. Refresh every 30 seconds so a
+	// healthy worker has several chances to renew through a transient database
+	// error, while a crashed worker becomes reclaimable promptly.
+	workflowSandboxClaimHeartbeatInterval = 30 * time.Second
+	// Stop accepting work slightly before the database lease expires. This
+	// absorbs ordinary clock skew and response latency so a replacement worker
+	// cannot reclaim the row while the previous sandbox is still executing.
+	workflowSandboxClaimExpirySafetyMargin = 5 * time.Second
+)
+
+// WorkflowSandboxSchedulerQuerier is the DB contract needed by the sandbox scheduler.
+type WorkflowSandboxSchedulerQuerier interface {
+	ClaimQueuedWorkflowRuns(ctx context.Context, limitCount int32) ([]runtimeports.ClaimQueuedWorkflowRunsRow, error)
+	RenewWorkflowSandboxClaim(ctx context.Context, arg runtimeports.RenewWorkflowSandboxClaimParams) (pgtype.Timestamptz, error)
+	MarkWorkflowRunSuccess(ctx context.Context, arg runtimeports.MarkWorkflowRunSuccessParams) (db.WorkflowRun, error)
+	MarkWorkflowRunFailure(ctx context.Context, arg runtimeports.MarkWorkflowRunFailureParams) (db.WorkflowRun, error)
+
+	GetRepoByID(ctx context.Context, id int64) (db.Repository, error)
+	GetUserByID(ctx context.Context, id int64) (db.User, error)
+	GetOrgByID(ctx context.Context, id int64) (db.Organization, error)
+	GetOrgCredentialOwnerID(ctx context.Context, organizationID int64) (int64, error)
+
+	CancelWorkflowTasks(ctx context.Context, workflowRunID int64) error
+
+	// NixOS CI plane: a sandbox-plane run that carries a rendered job graph
+	// runs each job in its own kind=vm guest (see workflow_nix_ci.go).
+	ListTaskStepInfoForRun(ctx context.Context, workflowRunID int64) ([]db.ListTaskStepInfoForRunRow, error)
+	GetWorkflowTask(ctx context.Context, arg db.GetWorkflowTaskParams) (db.WorkflowTask, error)
+	MarkWorkflowTaskVMRunning(ctx context.Context, arg db.MarkWorkflowTaskVMRunningParams) (int64, error)
+	MarkWorkflowTaskTerminalByID(ctx context.Context, arg db.MarkWorkflowTaskTerminalByIDParams) (int64, error)
+	UnblockWorkflowTask(ctx context.Context, id int64) error
+	SkipBlockedWorkflowTask(ctx context.Context, id int64) error
+	UpdateWorkflowStepStatusRunning(ctx context.Context, stepID int64) (int64, error)
+	UpdateWorkflowStepStatusTerminal(ctx context.Context, arg db.UpdateWorkflowStepStatusTerminalParams) (int64, error)
+
+	InsertWorkflowRunLogNextSequence(ctx context.Context, arg db.InsertWorkflowRunLogNextSequenceParams) (db.InsertWorkflowRunLogNextSequenceRow, error)
+	NotifyWorkflowRunLog(ctx context.Context, arg db.NotifyWorkflowRunLogParams) error
+	NotifyWorkflowRunEvent(ctx context.Context, arg db.NotifyWorkflowRunEventParams) error
+
+	CreateAccessToken(ctx context.Context, arg db.CreateAccessTokenParams) (db.AccessToken, error)
+	DeleteAccessToken(ctx context.Context, arg db.DeleteAccessTokenParams) error
+	UpdateWorkflowRunJJHubTokenID(ctx context.Context, arg db.UpdateWorkflowRunJJHubTokenIDParams) error
+	ClearWorkflowRunJJHubTokenID(ctx context.Context, id int64) error
+}
+
+// WorkflowSandboxVMClient is the minimal sandbox provider API surface for run execution.
+type WorkflowSandboxVMClient interface {
+	CreateSandbox(ctx context.Context, req sandbox.CreateRequest) (sandbox.CreateResult, error)
+	Execute(ctx context.Context, vmID string, req sandbox.ExecRequest) (sandbox.ExecResult, error)
+	DeleteSandbox(ctx context.Context, vmID string) error
+}
+
+type WorkflowSandboxSchedulerOption func(*WorkflowSandboxSchedulerWorker)
+
+// WorkflowSandboxSchedulerWorker claims queued sandbox-plane workflow runs
+// (workflow_runs.execution_plane = 'sandbox') and runs each CI job in its
+// own NixOS kind=vm guest. ClaimQueuedWorkflowRuns enforces the plane filter
+// atomically, so agent-plane and flow-plane runs are never claimed here.
+type WorkflowSandboxSchedulerWorker struct {
+	queries  WorkflowSandboxSchedulerQuerier
+	sandbox  WorkflowSandboxVMClient
+	logger   *slog.Logger
+	interval time.Duration
+	limit    int32
+
+	finalizeTimeout time.Duration
+	claimHeartbeat  time.Duration
+
+	apiBaseURL     string
+	gitBaseURL     string
+	secretInjector *SecretInjector
+
+	// ciGuests builds the kind=vm NixOS guest request for a CI task. Unset,
+	// every sandbox-plane run fails.
+	ciGuests WorkflowCIGuestProvisioner
+	// ciPollInterval is the live-log flush cadence for NixOS CI guests.
+	ciPollInterval time.Duration
+	// ciJobCredentials mints each NixOS CI job's cache/artifact token, and
+	// ciInternalBaseURL is where the guest reaches the /internal routes.
+	ciJobCredentials  WorkflowCIJobCredentialStore
+	ciInternalBaseURL string
+
+	// terminalPublisher settles the commit status, check run and workflow_run
+	// webhook the run announced at creation, and fires downstream triggers.
+	terminalPublisher WorkflowRunTerminalPublisher
+}
+
+func WithWorkflowSandboxSchedulerLogger(logger *slog.Logger) WorkflowSandboxSchedulerOption {
+	return func(w *WorkflowSandboxSchedulerWorker) {
+		if logger != nil {
+			w.logger = logger
+		}
+	}
+}
+
+func WithWorkflowSandboxSchedulerAPIBaseURL(apiBaseURL string) WorkflowSandboxSchedulerOption {
+	return func(w *WorkflowSandboxSchedulerWorker) {
+		w.apiBaseURL = strings.TrimSpace(apiBaseURL)
+	}
+}
+
+func WithWorkflowSandboxSchedulerGitBaseURL(gitBaseURL string) WorkflowSandboxSchedulerOption {
+	return func(w *WorkflowSandboxSchedulerWorker) {
+		w.gitBaseURL = strings.TrimSpace(gitBaseURL)
+	}
+}
+
+// WithWorkflowSandboxSchedulerCIPollInterval overrides the NixOS CI live-log
+// flush cadence. Production keeps nixCIPollInterval, which mirrors the runner's
+// LOG_FLUSH_INTERVAL_MS; tests shorten it so a job's log order is observable
+// without waiting on wall clock.
+func WithWorkflowSandboxSchedulerCIPollInterval(interval time.Duration) WorkflowSandboxSchedulerOption {
+	return func(w *WorkflowSandboxSchedulerWorker) {
+		if interval > 0 {
+			w.ciPollInterval = interval
+		}
+	}
+}
+
+// WithWorkflowSandboxSchedulerCIGuests wires the NixOS CI guest provisioner.
+// WorkspaceService supplies it, so a CI task guest and a kind=vm workspace are
+// built by the same code from the same closure image.
+func WithWorkflowSandboxSchedulerCIGuests(provisioner WorkflowCIGuestProvisioner) WorkflowSandboxSchedulerOption {
+	return func(w *WorkflowSandboxSchedulerWorker) {
+		w.ciGuests = provisioner
+	}
+}
+
+// WithWorkflowSandboxSchedulerTerminalPublisher wires the publisher that every
+// won terminal transition calls. The workflow run service supplies it, so a
+// run's external announcements are settled by the service that made them.
+func WithWorkflowSandboxSchedulerTerminalPublisher(publisher WorkflowRunTerminalPublisher) WorkflowSandboxSchedulerOption {
+	return func(w *WorkflowSandboxSchedulerWorker) {
+		w.terminalPublisher = publisher
+	}
+}
+
+func WithWorkflowSandboxSchedulerSecretInjector(injector *SecretInjector) WorkflowSandboxSchedulerOption {
+	return func(w *WorkflowSandboxSchedulerWorker) {
+		w.secretInjector = injector
+	}
+}
+
+func NewWorkflowSandboxSchedulerWorker(
+	queries WorkflowSandboxSchedulerQuerier,
+	sandboxClient WorkflowSandboxVMClient,
+	opts ...WorkflowSandboxSchedulerOption,
+) *WorkflowSandboxSchedulerWorker {
+	worker := &WorkflowSandboxSchedulerWorker{
+		queries:         queries,
+		sandbox:         sandboxClient,
+		logger:          slog.Default(),
+		interval:        envDuration("SMITHERS_WORKFLOW_SANDBOX_POLL_INTERVAL", defaultWorkflowSandboxSchedulerInterval),
+		limit:           envInt32("SMITHERS_WORKFLOW_SANDBOX_CLAIM_LIMIT", defaultWorkflowSandboxSchedulerClaim),
+		finalizeTimeout: workflowSandboxFinalizeTimeout,
+		claimHeartbeat:  workflowSandboxClaimHeartbeatInterval,
+		ciPollInterval:  nixCIPollInterval,
+	}
+
+	for _, opt := range opts {
+		if opt != nil {
+			opt(worker)
+		}
+	}
+
+	if worker.limit <= 0 {
+		worker.limit = defaultWorkflowSandboxSchedulerClaim
+	}
+	if worker.interval <= 0 {
+		worker.interval = defaultWorkflowSandboxSchedulerInterval
+	}
+
+	return worker
+}
+
+// workflowSandboxRunClaim couples the workflow data needed for execution with
+// the durable ownership generation required by every terminal write.
+type workflowSandboxRunClaim struct {
+	Run            db.WorkflowRun
+	Token          string
+	Generation     int64
+	LeaseExpiresAt time.Time
+}
+
+func workflowSandboxRunClaimFromRow(row runtimeports.ClaimQueuedWorkflowRunsRow) workflowSandboxRunClaim {
+	return workflowSandboxRunClaim{
+		Run: db.WorkflowRun{
+			ID:                   row.ID,
+			RepositoryID:         row.RepositoryID,
+			WorkflowDefinitionID: row.WorkflowDefinitionID,
+			TriggerRef:           row.TriggerRef,
+			TriggerCommitSha:     row.TriggerCommitSha,
+			TriggerEvent:         row.TriggerEvent,
+		},
+		Token:          UUIDString(row.ClaimToken),
+		Generation:     row.ClaimGeneration,
+		LeaseExpiresAt: row.ClaimLeaseExpiresAt.Time,
+	}
+}
+
+func (claim workflowSandboxRunClaim) successParams() runtimeports.MarkWorkflowRunSuccessParams {
+	return runtimeports.MarkWorkflowRunSuccessParams{
+		ID: claim.Run.ID, ClaimToken: claim.Token, ClaimGeneration: claim.Generation,
+	}
+}
+
+func (claim workflowSandboxRunClaim) failureParams() runtimeports.MarkWorkflowRunFailureParams {
+	return runtimeports.MarkWorkflowRunFailureParams{
+		ID: claim.Run.ID, ClaimToken: claim.Token, ClaimGeneration: claim.Generation,
+	}
+}
+
+// execution names this claim's execution of the run: a later claim of the
+// same run is a different execution.
+func (claim workflowSandboxRunClaim) execution() string {
+	return claim.Token + "/" + strconv.FormatInt(claim.Generation, 10)
+}
+
+func (claim workflowSandboxRunClaim) renewalParams() runtimeports.RenewWorkflowSandboxClaimParams {
+	return runtimeports.RenewWorkflowSandboxClaimParams{
+		ID: claim.Run.ID, ClaimToken: claim.Token, ClaimGeneration: claim.Generation,
+	}
+}
+
+// Start runs the scheduler loop until the context is cancelled. Each poll is
+// recovered individually so a panic in one iteration becomes a logged error
+// instead of permanently stopping the scheduler goroutine. Shutdown is
+// decided solely by the scheduler's own context (ctx.Err()), never by
+// inspecting the poll error's identity: pgx/pgconn wraps transient DB
+// connect timeouts as context.DeadlineExceeded, and a live parent ctx (no
+// deadline of its own) must not let that transient error be mistaken for a
+// shutdown signal and permanently stop the loop.
+func (w *WorkflowSandboxSchedulerWorker) Start(ctx context.Context) {
+	w.logger.Info("workflow sandbox scheduler started", "interval", w.interval, "limit", w.limit)
+
+	for {
+		if err := w.pollOnceRecovering(ctx); err != nil {
+			if ctx.Err() != nil {
+				w.logger.Info("workflow sandbox scheduler stopping", "reason", err)
+				return
+			}
+			w.logger.Error("workflow sandbox scheduler poll failed", "error", err)
+		}
+
+		select {
+		case <-ctx.Done():
+			w.logger.Info("workflow sandbox scheduler stopped")
+			return
+		case <-time.After(w.interval):
+		}
+	}
+}
+
+// PollOnce claims queued workflow runs and executes each in an ephemeral sandbox provider VM.
+func (w *WorkflowSandboxSchedulerWorker) PollOnce(ctx context.Context) error {
+	if w.queries == nil {
+		return fmt.Errorf("workflow sandbox scheduler store unavailable")
+	}
+	if w.sandbox == nil {
+		return fmt.Errorf("workflow sandbox scheduler sandbox provider unavailable")
+	}
+
+	rows, err := w.queries.ClaimQueuedWorkflowRuns(ctx, w.limit)
+	if err != nil {
+		return err
+	}
+	claims := make([]workflowSandboxRunClaim, 0, len(rows))
+	for _, row := range rows {
+		claim := workflowSandboxRunClaimFromRow(row)
+		// Skip a claim this worker cannot own instead of aborting the batch:
+		// every other row is already claimed in the database and would sit
+		// idle until its lease expires. A skipped row is re-claimed once its
+		// own lease lapses; it cannot be fenced-finalized without ownership.
+		if claim.Token == "" || claim.Generation <= 0 || !row.ClaimLeaseExpiresAt.Valid {
+			w.logger.Error("workflow sandbox claim missing durable ownership; skipping", "run_id", claim.Run.ID, "generation", claim.Generation)
+			continue
+		}
+		if !claim.LeaseExpiresAt.After(time.Now()) {
+			w.logger.Error("workflow sandbox claim already expired on arrival; skipping (check host clock skew against the database)",
+				"run_id", claim.Run.ID, "generation", claim.Generation, "lease_expires_at", claim.LeaseExpiresAt)
+			continue
+		}
+		claims = append(claims, claim)
+	}
+
+	type claimControl struct {
+		ctx    context.Context
+		cancel context.CancelFunc
+	}
+	controls := make([]claimControl, len(claims))
+	for i, claim := range claims {
+		claimCtx, cancelClaim := context.WithCancel(ctx)
+		controls[i] = claimControl{ctx: claimCtx, cancel: cancelClaim}
+		go w.maintainClaimLease(claimCtx, claim, cancelClaim)
+	}
+	defer func() {
+		for _, control := range controls {
+			control.cancel()
+		}
+	}()
+
+	for i, claim := range claims {
+		select {
+		case <-ctx.Done():
+			// Shutdown arrived mid-batch. Leases make these runs recoverable if
+			// the process dies, but an orderly shutdown can settle them now and
+			// give users immediate, resumable failures instead of waiting for
+			// lease expiry.
+			w.failUnstartedClaimedRuns(ctx, claims[i:])
+			return ctx.Err()
+		default:
+		}
+
+		if err := w.executeRunRecovering(controls[i].ctx, claim); err != nil {
+			w.logger.Error("workflow sandbox execution failed", "run_id", claim.Run.ID, "error", err)
+		}
+		controls[i].cancel()
+	}
+
+	return nil
+}
+
+// workflowSandboxClaimCancellationDeadline returns a conservative local
+// deadline derived from the database-authoritative lease expiry. Short test
+// leases use a proportional margin so the watchdog remains deterministic.
+func workflowSandboxClaimCancellationDeadline(expiresAt, now time.Time) time.Time {
+	remaining := expiresAt.Sub(now)
+	if remaining <= 0 {
+		return now
+	}
+	margin := workflowSandboxClaimExpirySafetyMargin
+	if proportional := remaining / 4; margin > proportional {
+		margin = proportional
+	}
+	return expiresAt.Add(-margin)
+}
+
+// maintainClaimLease keeps both executing and not-yet-started claims in a
+// batch alive. Losing the token/generation or reaching the last confirmed
+// database lease expiry cancels the run context so a stale worker tears down
+// its VM and its fenced finalizer becomes a no-op. Renewal calls themselves
+// are bounded by that deadline, so a wedged database connection cannot strand
+// the watchdog inside the query past ownership expiry.
+func (w *WorkflowSandboxSchedulerWorker) maintainClaimLease(
+	ctx context.Context,
+	claim workflowSandboxRunClaim,
+	cancelClaim context.CancelFunc,
+) {
+	interval := w.claimHeartbeat
+	if interval <= 0 {
+		interval = workflowSandboxClaimHeartbeatInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	deadline := workflowSandboxClaimCancellationDeadline(claim.LeaseExpiresAt, time.Now())
+
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			w.logger.Warn("workflow sandbox claim lease expired; canceling execution", "run_id", claim.Run.ID, "generation", claim.Generation)
+			cancelClaim()
+			return
+		}
+		expiryTimer := time.NewTimer(remaining)
+
+		select {
+		case <-ctx.Done():
+			expiryTimer.Stop()
+			return
+		case <-expiryTimer.C:
+			w.logger.Warn("workflow sandbox claim lease expired; canceling execution", "run_id", claim.Run.ID, "generation", claim.Generation)
+			cancelClaim()
+			return
+		case <-ticker.C:
+			if !expiryTimer.Stop() {
+				select {
+				case <-expiryTimer.C:
+				default:
+				}
+			}
+			renewCtx, cancelRenew := context.WithDeadline(ctx, deadline)
+			renewedUntil, err := w.queries.RenewWorkflowSandboxClaim(renewCtx, claim.renewalParams())
+			cancelRenew()
+			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				if stdErrors.Is(err, pgx.ErrNoRows) {
+					w.logger.Info("workflow sandbox claim lost; canceling stale execution", "run_id", claim.Run.ID, "generation", claim.Generation)
+					cancelClaim()
+					return
+				}
+				w.logger.Warn("failed to renew workflow sandbox claim", "run_id", claim.Run.ID, "generation", claim.Generation, "error", err)
+				continue
+			}
+			if !renewedUntil.Valid {
+				w.logger.Warn("workflow sandbox claim renewal returned no expiry; canceling execution", "run_id", claim.Run.ID, "generation", claim.Generation)
+				cancelClaim()
+				return
+			}
+			deadline = workflowSandboxClaimCancellationDeadline(renewedUntil.Time, time.Now())
+		}
+	}
+}
+
+// pollOnceRecovering converts a panicking poll into an ordinary error so the
+// scheduler loop keeps running.
+func (w *WorkflowSandboxSchedulerWorker) pollOnceRecovering(ctx context.Context) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("workflow sandbox scheduler poll panicked: %v", r)
+		}
+	}()
+	return w.PollOnce(ctx)
+}
+
+// executeRunRecovering converts a panic while executing one claimed run into a
+// terminal failure for that run, so a single malformed workflow can neither
+// kill the scheduler nor leave its run stuck 'running'. executeRun's defers
+// (VM delete, token revocation) have already run by the time recover fires.
+func (w *WorkflowSandboxSchedulerWorker) executeRunRecovering(ctx context.Context, claim workflowSandboxRunClaim) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = w.failRun(ctx, claim, 0, fmt.Sprintf("workflow sandbox execution panicked: %v", r))
+		}
+	}()
+	return w.executeRun(ctx, claim)
+}
+
+// failUnstartedClaimedRuns terminalizes claimed-but-never-executed runs during
+// shutdown. failRun mints a context detached from the cancelled ctx, so the
+// writes still land.
+func (w *WorkflowSandboxSchedulerWorker) failUnstartedClaimedRuns(ctx context.Context, claims []workflowSandboxRunClaim) {
+	for _, claim := range claims {
+		err := w.failRun(ctx, claim, 0, "workflow sandbox scheduler shut down before execution started")
+		w.logger.Warn("failed claimed workflow run on scheduler shutdown", "run_id", claim.Run.ID, "detail", err)
+	}
+}
+
+func (w *WorkflowSandboxSchedulerWorker) executeRun(ctx context.Context, claim workflowSandboxRunClaim) error {
+	run := claim.Run
+
+	// Every sandbox-plane run is CI: it carries a rendered job graph and runs
+	// one NixOS kind=vm guest per job. Invoked flows run on the flow plane
+	// (InvokedFlowService), so a run without tasks has nothing to run here.
+	nixCI, err := runHasTaskGraph(ctx, w.queries, run.ID)
+	if err != nil {
+		return w.failRun(ctx, claim, 0, "failed to load workflow job graph")
+	}
+	if !nixCI {
+		return w.failRun(ctx, claim, 0, "workflow run has no CI jobs to run")
+	}
+	if w.ciGuests == nil {
+		return w.failRun(ctx, claim, 0, "CI guests are not configured on this deployment")
+	}
+
+	// Each job carries its own 120m ceiling; this is the whole-run backstop.
+	runCtx, cancel := context.WithTimeout(ctx, w.nixCIRunTimeout())
+	defer cancel()
+
+	logger := middleware.LoggerWithWorkflowRun(runCtx, run.ID)
+
+	// The claim flipped the row to running; tell status streamers (the run's
+	// lifecycle SSE subscribers) that execution has actually started.
+	NotifyWorkflowRunEvent(runCtx, w.queries, run.ID, "workflow_sandbox.running")
+
+	repository, owner, cloneUserID, err := w.resolveRepositoryOwner(runCtx, run.RepositoryID)
+	if err != nil {
+		return w.failRun(runCtx, claim, 0, "failed to resolve workflow repository owner")
+	}
+
+	// redactEnv collects every sensitive value bound for the guests (true
+	// repository/org secrets plus per-run tokens, NOT plain variables) so run
+	// logs can be scrubbed before insertion and SSE broadcast.
+	redactEnv := map[string]string{}
+
+	plainEnv := map[string]string{}
+	secrets := map[string]string{}
+	// bound carries every credential a guest's egress proxy substitutes:
+	// repository and organization secrets bound to hosts, then the platform's.
+	var bound []sandbox.EgressProxySecret
+	if w.secretInjector != nil {
+		snapshot, err := w.secretInjector.RepositorySecrets(runCtx, run.RepositoryID, workflowRunOnTrustedMain(run, repository))
+		if err != nil {
+			message := "failed to load repository secrets"
+			var apiErr *pkgerrors.APIError
+			if stdErrors.As(err, &apiErr) && apiErr.Status == http.StatusForbidden {
+				// A stored subscription-token refusal names the secret, never its value.
+				message = apiErr.Message
+			}
+			return w.failRun(runCtx, claim, 0, message)
+		}
+		for name, value := range snapshot.Env {
+			if _, secret := snapshot.Secrets[name]; !secret {
+				plainEnv[name] = value
+			}
+		}
+		for name, value := range snapshot.Secrets {
+			secrets[name] = value
+			redactEnv[name] = value
+		}
+		for _, secret := range snapshot.Bound {
+			bound = append(bound, secret)
+			redactEnv[secret.Name] = secret.Value
+		}
+	}
+
+	// Mint a per-run scoped jjhub API token so the jobs can call the REST API
+	// as the owning user. It reaches the guests only through their egress
+	// proxies, bound to the API host's authorization header. Best-effort: a
+	// mint failure or an unbindable API host must not fail the run (the
+	// tools simply 401 if used). Org-owned repos have no user-scoped token
+	// (cloneUserID == 0), so skip them.
+	if repository.UserID.Valid && cloneUserID > 0 {
+		if host, bindErr := nixCIEgressHost("SMITHERS_JJHUB_TOKEN", w.apiBaseURL); bindErr != nil {
+			logger.Warn("per-run jjhub api token withheld", "error", bindErr)
+		} else if apiToken, apiErr := issueTemporaryRepoAPIToken(runCtx, w.queries, cloneUserID, run.RepositoryID, fmt.Sprintf("sandbox-run-%d", run.ID)); apiErr != nil {
+			logger.Warn("failed to mint per-run jjhub api token", "error", apiErr)
+		} else {
+			bound = append(bound, nixCIEgressSecret("SMITHERS_JJHUB_TOKEN", apiToken.Plaintext, host))
+			plainEnv["SMITHERS_JJHUB_API_URL"] = w.apiBaseURL
+			redactEnv["SMITHERS_JJHUB_TOKEN"] = apiToken.Plaintext
+			if persistErr := w.queries.UpdateWorkflowRunJJHubTokenID(runCtx, db.UpdateWorkflowRunJJHubTokenIDParams{
+				JjhubTokenID: pgtype.Int8{Int64: apiToken.ID, Valid: true},
+				ID:           run.ID,
+			}); persistErr != nil {
+				logger.Warn("failed to persist per-run jjhub api token id", "error", persistErr)
+			}
+			defer func() {
+				if apiToken.ID > 0 {
+					revokeTemporaryRepoCloneToken(context.Background(), w.queries, cloneUserID, apiToken.ID)
+					_ = w.queries.ClearWorkflowRunJJHubTokenID(context.Background(), run.ID)
+				}
+			}()
+		}
+	}
+
+	return w.executeNixCIRun(runCtx, claim, nixCIRunEnvironment{
+		Execution:      claim.execution(),
+		RepositoryID:   run.RepositoryID,
+		Owner:          owner,
+		RepositoryName: repository.Name,
+		CloneUserID:    cloneUserID,
+		Revision:       resolveWorkflowTargetRevision(run),
+		Env:            plainEnv,
+		Secrets:        secrets,
+		Bound:          bound,
+		RedactEnv:      redactEnv,
+	})
+}
+
+// publishTerminal settles the run's external announcements. Call it only
+// after this worker's claim-fenced write moved the run to a terminal status;
+// a lost fence means the run's new owner publishes instead.
+func (w *WorkflowSandboxSchedulerWorker) publishTerminal(ctx context.Context, run db.WorkflowRun) {
+	if w.terminalPublisher != nil {
+		w.terminalPublisher.PublishWorkflowRunTerminal(ctx, run)
+	}
+}
+
+// cancelRunTasks terminalizes any tasks still active for a run the scheduler
+// just terminalized, so leftover pending/blocked/running tasks cannot
+// disagree with the aggregate run status. Only called after winning the
+// run's atomic queued/running -> terminal transition.
+func (w *WorkflowSandboxSchedulerWorker) cancelRunTasks(ctx context.Context, runID int64) {
+	if err := w.queries.CancelWorkflowTasks(ctx, runID); err != nil {
+		w.logger.Warn("failed to cancel workflow tasks after sandbox terminalization", "run_id", runID, "error", err)
+	}
+}
+
+// failRun mints its own finalize context (detached from the caller's, which may
+// be at or past its run deadline) so the terminal-status write always has a
+// fresh short budget, then records the failure.
+func (w *WorkflowSandboxSchedulerWorker) failRun(ctx context.Context, claim workflowSandboxRunClaim, stepID int64, message string) error {
+	finalizeCtx, cancel := w.finalizeContext(ctx)
+	defer cancel()
+	return w.finalizeFailure(finalizeCtx, claim, stepID, message)
+}
+
+// finalizeFailure performs the terminal-failure writes on the given context. The
+// caller is responsible for supplying a context with an unexpired budget (see
+// workflowSandboxFinalizeContext); executeRun reuses the finalizeCtx it already
+// minted after the exec so a single fresh budget covers log + status writes.
+// The atomic, claim-fenced run transition goes first: if the token/generation
+// is no longer current, we must not overwrite step status or emit a terminal
+// event for the replacement owner.
+func (w *WorkflowSandboxSchedulerWorker) finalizeFailure(ctx context.Context, claim workflowSandboxRunClaim, stepID int64, message string) error {
+	runID := claim.Run.ID
+	if strings.TrimSpace(message) == "" {
+		message = "workflow sandbox run failed"
+	}
+	run, err := w.queries.MarkWorkflowRunFailure(ctx, claim.failureParams())
+	if err != nil {
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			w.logger.Info("workflow run already terminal, skipping sandbox failure finalization", "run_id", runID)
+			return stdErrors.New(message)
+		}
+		return err
+	}
+	if stepID > 0 {
+		_, _ = w.queries.UpdateWorkflowStepStatusTerminal(ctx, db.UpdateWorkflowStepStatusTerminalParams{
+			StepID: stepID,
+			Status: "failure",
+		})
+		_ = w.appendLog(ctx, runID, stepID, "system", message)
+	}
+	RevokeWorkflowRunCredentials(ctx, w.queries, runID, run.RepositoryID)
+	w.cancelRunTasks(ctx, runID)
+	NotifyWorkflowRunEvent(ctx, w.queries, runID, "workflow_sandbox.failure")
+	w.publishTerminal(ctx, run)
+	return stdErrors.New(message)
+}
+
+// finalizeContext returns a context detached from ctx's cancellation/deadline
+// (so it survives an already-expired run context) with its own short budget.
+// It MUST be minted at finalization time, not at run start, or the budget is
+// consumed by the run itself.
+func (w *WorkflowSandboxSchedulerWorker) finalizeContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	timeout := w.finalizeTimeout
+	if timeout <= 0 {
+		timeout = workflowSandboxFinalizeTimeout
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), timeout)
+}
+
+func (w *WorkflowSandboxSchedulerWorker) buildCloneURL(
+	ctx context.Context,
+	repositoryID int64,
+	owner string,
+	repo string,
+	cloneUserID int64,
+) (string, string, func(), error) {
+	return w.buildCloneURLWithToken(ctx, owner, repo, cloneUserID, func() (temporaryRepoCloneToken, error) {
+		return issueTemporaryBoundRepoCloneToken(ctx, w.queries, cloneUserID, repositoryID, "workflow-sandbox-clone")
+	})
+}
+
+func (w *WorkflowSandboxSchedulerWorker) buildCloneURLWithToken(
+	ctx context.Context,
+	owner, repo string,
+	cloneUserID int64,
+	mint func() (temporaryRepoCloneToken, error),
+) (string, string, func(), error) {
+	if cloneUserID > 0 {
+		token, err := mint()
+		if err == nil {
+			cloneURL, cloneErr := buildAuthenticatedRepoCloneURL(w.gitBaseURL, owner, repo, token.Plaintext)
+			if cloneErr == nil {
+				return cloneURL, token.Plaintext, func() {
+					revokeTemporaryRepoCloneToken(context.Background(), w.queries, cloneUserID, token.ID)
+				}, nil
+			}
+			revokeTemporaryRepoCloneToken(ctx, w.queries, cloneUserID, token.ID)
+		}
+	}
+
+	cloneURL, err := buildPublicRepoCloneURL(w.gitBaseURL, owner, repo)
+	if err != nil {
+		return "", "", nil, err
+	}
+	return cloneURL, "", func() {}, nil
+}
+
+func (w *WorkflowSandboxSchedulerWorker) resolveRepositoryOwner(
+	ctx context.Context,
+	repositoryID int64,
+) (db.Repository, string, int64, error) {
+	repository, err := w.queries.GetRepoByID(ctx, repositoryID)
+	if err != nil {
+		return db.Repository{}, "", 0, err
+	}
+	if repository.UserID.Valid {
+		user, userErr := w.queries.GetUserByID(ctx, repository.UserID.Int64)
+		if userErr != nil {
+			return db.Repository{}, "", 0, userErr
+		}
+		return repository, user.Username, user.ID, nil
+	}
+	if repository.OrgID.Valid {
+		org, orgErr := w.queries.GetOrgByID(ctx, repository.OrgID.Int64)
+		if orgErr != nil {
+			return db.Repository{}, "", 0, orgErr
+		}
+		ownerID, ownerErr := w.queries.GetOrgCredentialOwnerID(ctx, org.ID)
+		if stdErrors.Is(ownerErr, pgx.ErrNoRows) {
+			return repository, org.Name, 0, nil
+		}
+		if ownerErr != nil {
+			return db.Repository{}, "", 0, ownerErr
+		}
+		return repository, org.Name, ownerID, nil
+	}
+	return db.Repository{}, "", 0, fmt.Errorf("repository owner not set")
+}
+
+func (w *WorkflowSandboxSchedulerWorker) appendLog(
+	ctx context.Context,
+	runID int64,
+	stepID int64,
+	stream string,
+	entry string,
+) error {
+	entry = storableWorkflowLogEntry(entry)
+	if starter, ok := w.queries.(runnerTxStarter); ok {
+		return w.appendLogWithTx(ctx, starter, runID, stepID, stream, entry)
+	}
+
+	inserted, err := appendWorkflowRunLogWithoutTx(ctx, w.queries, db.InsertWorkflowRunLogNextSequenceParams{
+		WorkflowRunID:  runID,
+		WorkflowStepID: stepID,
+		Stream:         stream,
+		Entry:          entry,
+	})
+	if err != nil {
+		return err
+	}
+
+	payloadBytes, _ := json.Marshal(map[string]any{
+		"log_id":           inserted.ID,
+		"workflow_step_id": inserted.WorkflowStepID,
+		"sequence":         inserted.Sequence,
+		"stream":           inserted.Stream,
+		"entry":            inserted.Entry,
+	})
+	return w.queries.NotifyWorkflowRunLog(ctx, db.NotifyWorkflowRunLogParams{
+		RunID:   runID,
+		Payload: string(payloadBytes),
+	})
+}
+
+// PostgreSQL TEXT rejects NUL and invalid UTF-8. Replace them so a malformed
+// CI output line cannot strand a log batch or disappear from the run stream.
+func storableWorkflowLogEntry(entry string) string {
+	return strings.ReplaceAll(strings.ToValidUTF8(entry, "\uFFFD"), "\x00", "\uFFFD")
+}
+
+// appendLogWithTx serializes MAX(sequence)+1 allocation per workflow run on a
+// single database connection. The advisory lock is deliberately a separate
+// statement: hiding it inside the insert's CTE does not guarantee PostgreSQL
+// acquires it before evaluating the sibling MAX(sequence) expression.
+func (w *WorkflowSandboxSchedulerWorker) appendLogWithTx(
+	ctx context.Context,
+	starter runnerTxStarter,
+	runID int64,
+	stepID int64,
+	stream string,
+	entry string,
+) error {
+	tx, err := starter.BeginTx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin workflow run log transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback(context.Background())
+	}()
+
+	if _, err := tx.Exec(ctx, `SELECT id FROM workflow_runs WHERE id = $1 FOR UPDATE`, runID); err != nil {
+		return fmt.Errorf("lock workflow run log stream: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, runID); err != nil {
+		return fmt.Errorf("lock workflow run log sequence: %w", err)
+	}
+
+	inserted, err := db.New(tx).InsertWorkflowRunLogNextSequence(ctx, db.InsertWorkflowRunLogNextSequenceParams{
+		WorkflowRunID:  runID,
+		WorkflowStepID: stepID,
+		Stream:         stream,
+		Entry:          entry,
+	})
+	if err != nil {
+		return err
+	}
+
+	payloadBytes, _ := json.Marshal(map[string]any{
+		"log_id":           inserted.ID,
+		"workflow_step_id": inserted.WorkflowStepID,
+		"sequence":         inserted.Sequence,
+		"stream":           inserted.Stream,
+		"entry":            inserted.Entry,
+	})
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit workflow run log transaction: %w", err)
+	}
+
+	return w.queries.NotifyWorkflowRunLog(ctx, db.NotifyWorkflowRunLogParams{
+		RunID:   runID,
+		Payload: string(payloadBytes),
+	})
+}
+
+func resolveWorkflowTargetRevision(run db.WorkflowRun) string {
+	if sha := strings.TrimSpace(run.TriggerCommitSha); sha != "" {
+		return sha
+	}
+	return strings.TrimSpace(run.TriggerRef)
+}
+
+func envDuration(key string, fallback time.Duration) time.Duration {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func envInt32(key string, fallback int32) int32 {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 32)
+	if err != nil {
+		return fallback
+	}
+	return int32(parsed)
+}
+
+func buildPublicRepoCloneURL(baseURL, owner, repo string) (string, error) {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return "", fmt.Errorf("git base url is required")
+	}
+	if strings.TrimSpace(owner) == "" || strings.TrimSpace(repo) == "" {
+		return "", fmt.Errorf("repository owner and name are required")
+	}
+
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return "", fmt.Errorf("parse git base url: %w", err)
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("git base url must include scheme and host")
+	}
+
+	parsed.Path = path.Join(parsed.Path, owner, repo+".git")
+	parsed.User = nil
+	return parsed.String(), nil
+}

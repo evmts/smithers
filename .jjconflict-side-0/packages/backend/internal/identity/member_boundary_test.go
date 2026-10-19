@@ -1,0 +1,119 @@
+package identity
+
+import (
+	"context"
+	"testing"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+)
+
+type ownerQueries struct {
+	owner db.User
+	err   error
+	calls int
+}
+
+func (q *ownerQueries) GetSelfHostOwner(context.Context) (db.User, error) {
+	q.calls++
+	return q.owner, q.err
+}
+
+// GetInstallSetting answers a verified owner: the repository binding and the
+// owner's access check name the same repository.
+func (q *ownerQueries) GetInstallSetting(_ context.Context, key string) (db.InstallSetting, error) {
+	settings := map[string]string{
+		"github.repository": `{"owner_login":"maya","repository_name":"demo","repository_id":3}`,
+		"owner.access":      `{"owner_login":"maya","repository_name":"demo","repository_id":3,"last_access_check_at":"2026-10-06T10:00:00Z"}`,
+	}
+	value, ok := settings[key]
+	if !ok {
+		return db.InstallSetting{}, pgx.ErrNoRows
+	}
+	return db.InstallSetting{Value: []byte(value)}, nil
+}
+
+// ownerOnlyQueries resolves the owner but cannot read install settings.
+type ownerOnlyQueries struct{ owner db.User }
+
+func (q ownerOnlyQueries) GetSelfHostOwner(context.Context) (db.User, error) { return q.owner, nil }
+
+// An owner whose verification settings the querier cannot read is refused
+// owner_unverified, never admitted unverified (§5.1.0). Setup routes keep
+// their exemption, since they run before the owner's access check.
+func TestMemberBoundaryRefusesOwnerWithoutSettingsReader(t *testing.T) {
+	boundary := &MemberBoundary{queries: ownerOnlyQueries{owner: db.User{ID: 7}}}
+	err := boundary.AuthorizeMember(context.Background(), 7)
+	require.NotNil(t, err)
+	assert.Equal(t, pkgerrors.CodeOwnerUnverified, err.Code)
+	require.Nil(t, boundary.AuthorizeMember(WithSetupScope(context.Background()), 7))
+}
+
+func TestMemberBoundaryCachesOwnerAndRejectsForeignPrincipal(t *testing.T) {
+	q := &ownerQueries{owner: db.User{ID: 7}}
+	boundary := NewMemberBoundary(q)
+	require.Nil(t, boundary.AuthorizeMember(context.Background(), 7))
+	require.Nil(t, boundary.AuthorizeMember(context.Background(), 7))
+	assert.Equal(t, 1, q.calls)
+
+	err := boundary.AuthorizeMember(context.Background(), 8)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "installation owner")
+}
+
+func TestMemberBoundaryDoesNotCacheUninitializedState(t *testing.T) {
+	q := &ownerQueries{err: pgx.ErrNoRows}
+	boundary := NewMemberBoundary(q)
+	require.NotNil(t, boundary.AuthorizeMember(context.Background(), 7))
+
+	q.err = nil
+	q.owner = db.User{ID: 7}
+	require.Nil(t, boundary.AuthorizeMember(context.Background(), 7))
+	assert.Equal(t, 2, q.calls)
+}
+
+type rosterQueries struct {
+	ownerQueries
+	permissions map[int64]string
+}
+
+func (q *rosterQueries) InstallationMemberPermission(_ context.Context, userID int64) (string, error) {
+	if permission, ok := q.permissions[userID]; ok {
+		return permission, nil
+	}
+	return "", pgx.ErrNoRows
+}
+
+// A roster member passes the boundary only on a route the HTTP boundary
+// marked as a member route; a person off the roster never does.
+func TestMemberBoundaryAdmitsRosterMembersOnMemberRoutes(t *testing.T) {
+	q := &rosterQueries{ownerQueries: ownerQueries{owner: db.User{ID: 7}}, permissions: map[int64]string{8: "write", 9: "admin", 10: "read"}}
+	boundary := NewMemberBoundary(q)
+	member := WithMemberRoute(context.Background())
+	for _, id := range []int64{8, 9} {
+		require.Nil(t, boundary.AuthorizeMember(member, id), "member %d on a member route", id)
+		err := boundary.AuthorizeMember(context.Background(), id)
+		require.NotNil(t, err, "member %d on an owner route", id)
+		assert.Contains(t, err.Error(), "installation owner")
+		require.NotNil(t, boundary.AuthorizeMember(WithSetupScope(context.Background()), id), "setup scope is not a member route")
+	}
+	absent := boundary.AuthorizeMember(member, 11)
+	require.NotNil(t, absent)
+	assert.Equal(t, 403, absent.Status)
+	assert.Equal(t, "permission", string(absent.Code))
+	dead := boundary.AuthorizeMember(WithMemberBoundCredential(member), 11)
+	require.NotNil(t, dead)
+	assert.Equal(t, 401, dead.Status)
+	assert.Equal(t, "unauthenticated", string(dead.Code))
+	for _, id := range []int64{10} {
+		err := boundary.AuthorizeMember(member, id)
+		require.NotNil(t, err, "%d is not a member", id)
+		assert.Equal(t, 401, err.Status)
+		assert.Equal(t, "unauthenticated", string(err.Code))
+		assert.Equal(t, "Sign in again", err.Message)
+	}
+}
