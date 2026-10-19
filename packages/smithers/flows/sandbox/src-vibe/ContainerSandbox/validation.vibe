@@ -1,0 +1,19 @@
+// Plain JavaScript contracts supported by D263.
+import type { ContainerSandboxOptions } from "./make.vibe"
+import type { ResourceLimits } from "../Sandbox/ResourceLimits.vibe"
+export function validateNetwork(options: ContainerSandboxOptions): asserts options is ContainerSandboxOptions & { readonly network?: "none" | "open" } {
+if (typeof options.network === "object") {
+    throw new TypeError(
+      "container-sandbox: cannot enforce a network allowlist; the engine network mode is not a host firewall"
+    )
+  }
+}
+export const validateOverrides = (limits: ResourceLimits, createArgs: ReadonlyArray<string>, ceilingFlags: Readonly<Record<keyof ResourceLimits, ReadonlyArray<string>>>, flagsOf: (arg: string) => ReadonlyArray<string>): void => {
+  for (const name of Object.keys(ceilingFlags) as Array<keyof ResourceLimits>) {
+    if (limits[name] === undefined) continue
+    const flag = createArgs.flatMap(flagsOf).find((flag) => ceilingFlags[name].includes(flag))
+    if (flag !== undefined) {
+      throw new TypeError(`container-sandbox: createArgs ${flag} would override limits.${name}; name one`)
+    }
+  }
+}

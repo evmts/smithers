@@ -1,0 +1,148 @@
+panic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]
+[signal SIGSEGV: segmentation violation code=0x2 addr=0x0 pc=0x104abe328]
+
+goroutine 33709 [running]:
+sync.(*WaitGroup).Go.func1.1()
+	sync/waitgroup.go:251 +0x48
+panic({0x105c07468?, 0x105fd0380?})
+	runtime/panic.go:859 +0x120
+github.com/microsoft/TypeScript/tsc/internal/checker.(*Type).Flags(...)
+	github.com/microsoft/TypeScript/tsc/internal/checker/types.go:832
+github.com/microsoft/TypeScript/tsc/internal/vibelang.unionMembers(0x0?)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/wire.go:114 +0x18
+github.com/microsoft/TypeScript/tsc/internal/vibelang.escapes(0x1fcf8d958008, {0x1fcf9f801a80, 0x4, 0x2?}, {0x1fcf9f801aa0, 0x4, 0x1fcfa79be358?}, 0x1fcf890ab400)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/contracts.go:288 +0x100
+github.com/microsoft/TypeScript/tsc/internal/vibelang.(*analyzer).checkContract(0x1fcf814f1680, 0x1fcfa79bfae8?, 0x1fcf7eebe3f0)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/contracts.go:258 +0x280
+github.com/microsoft/TypeScript/tsc/internal/vibelang.checkContracts.func1(0x1fcf7eebe3f0)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/contracts.go:212 +0x54
+github.com/microsoft/TypeScript/tsc/internal/ast.visit(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:34
+github.com/microsoft/TypeScript/tsc/internal/ast.(*VariableDeclaration).ForEachChild(0x1fcf88f84eb0, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:1785 +0xe4
+github.com/microsoft/TypeScript/tsc/internal/ast.(*Node).ForEachChild(0x1fcf88f84eb0, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:8816 +0xcc4
+github.com/microsoft/TypeScript/tsc/internal/vibelang.checkContracts.func1(0x1fcf88f84eb0)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/contracts.go:214 +0x64
+github.com/microsoft/TypeScript/tsc/internal/ast.visitNodes(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:41
+github.com/microsoft/TypeScript/tsc/internal/ast.visitNodeList(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:50
+github.com/microsoft/TypeScript/tsc/internal/ast.(*VariableDeclarationList).ForEachChild(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:1830
+github.com/microsoft/TypeScript/tsc/internal/ast.(*Node).ForEachChild(0x1fcf88f886f0, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:8818 +0x1a7c
+github.com/microsoft/TypeScript/tsc/internal/vibelang.checkContracts.func1(0x1fcf88f886f0)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/contracts.go:214 +0x64
+github.com/microsoft/TypeScript/tsc/internal/ast.visit(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:34
+github.com/microsoft/TypeScript/tsc/internal/ast.(*VariableStatement).ForEachChild(0x1fcf853290e0?, 0x1fcfa79bfae8?)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:1735 +0x68
+github.com/microsoft/TypeScript/tsc/internal/ast.(*Node).ForEachChild(0x1fcf88f8b4c0, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:8814 +0x9cc
+github.com/microsoft/TypeScript/tsc/internal/vibelang.checkContracts.func1(0x1fcf88f8b4c0)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/contracts.go:214 +0x64
+github.com/microsoft/TypeScript/tsc/internal/ast.visitNodes(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:41
+github.com/microsoft/TypeScript/tsc/internal/ast.visitNodeList(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:50
+github.com/microsoft/TypeScript/tsc/internal/ast.(*Block).ForEachChild(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:1690
+github.com/microsoft/TypeScript/tsc/internal/ast.(*Node).ForEachChild(0x1fcf89532af0, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:8812 +0x1acc
+github.com/microsoft/TypeScript/tsc/internal/vibelang.checkContracts.func1(0x1fcf89532af0)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/contracts.go:214 +0x64
+github.com/microsoft/TypeScript/tsc/internal/ast.visit(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:34
+github.com/microsoft/TypeScript/tsc/internal/ast.(*ArrowFunction).ForEachChild(0x1fcf7db27320, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:4001 +0x168
+github.com/microsoft/TypeScript/tsc/internal/ast.(*Node).ForEachChild(0x1fcf7db27320, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:8894 +0x638
+github.com/microsoft/TypeScript/tsc/internal/vibelang.checkContracts.func1(0x1fcf7db27320)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/contracts.go:214 +0x64
+github.com/microsoft/TypeScript/tsc/internal/ast.visitNodes(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:41
+github.com/microsoft/TypeScript/tsc/internal/ast.visitNodeList(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:50
+github.com/microsoft/TypeScript/tsc/internal/ast.(*CallExpression).ForEachChild(0x1fcf89533b80, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:4355 +0x114
+github.com/microsoft/TypeScript/tsc/internal/ast.(*Node).ForEachChild(0x1fcf89533b80, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:8908 +0x570
+github.com/microsoft/TypeScript/tsc/internal/vibelang.checkContracts.func1(0x1fcf89533b80)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/contracts.go:214 +0x64
+github.com/microsoft/TypeScript/tsc/internal/ast.visit(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:34
+github.com/microsoft/TypeScript/tsc/internal/ast.(*BinaryExpression).ForEachChild(0x1fcf8953c808, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:3815 +0x6c
+github.com/microsoft/TypeScript/tsc/internal/ast.(*Node).ForEachChild(0x1fcf8953c808, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:8886 +0x738
+github.com/microsoft/TypeScript/tsc/internal/vibelang.checkContracts.func1(0x1fcf8953c808)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/contracts.go:214 +0x64
+github.com/microsoft/TypeScript/tsc/internal/ast.visit(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:34
+github.com/microsoft/TypeScript/tsc/internal/ast.(*ArrowFunction).ForEachChild(0x1fcf7db277a0, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:4001 +0x168
+github.com/microsoft/TypeScript/tsc/internal/ast.(*Node).ForEachChild(0x1fcf7db277a0, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:8894 +0x638
+github.com/microsoft/TypeScript/tsc/internal/vibelang.checkContracts.func1(0x1fcf7db277a0)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/contracts.go:214 +0x64
+github.com/microsoft/TypeScript/tsc/internal/ast.visit(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:34
+github.com/microsoft/TypeScript/tsc/internal/ast.(*VariableDeclaration).ForEachChild(0x1fcf8953ca80, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:1785 +0xe4
+github.com/microsoft/TypeScript/tsc/internal/ast.(*Node).ForEachChild(0x1fcf8953ca80, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:8816 +0xcc4
+github.com/microsoft/TypeScript/tsc/internal/vibelang.checkContracts.func1(0x1fcf8953ca80)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/contracts.go:214 +0x64
+github.com/microsoft/TypeScript/tsc/internal/ast.visitNodes(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:41
+github.com/microsoft/TypeScript/tsc/internal/ast.visitNodeList(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:50
+github.com/microsoft/TypeScript/tsc/internal/ast.(*VariableDeclarationList).ForEachChild(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:1830
+github.com/microsoft/TypeScript/tsc/internal/ast.(*Node).ForEachChild(0x1fcf89533740, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:8818 +0x1a7c
+github.com/microsoft/TypeScript/tsc/internal/vibelang.checkContracts.func1(0x1fcf89533740)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/contracts.go:214 +0x64
+github.com/microsoft/TypeScript/tsc/internal/ast.visit(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:34
+github.com/microsoft/TypeScript/tsc/internal/ast.(*VariableStatement).ForEachChild(0x1fcf8953f6c0?, 0x1fcfa79bfae8?)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:1735 +0x68
+github.com/microsoft/TypeScript/tsc/internal/ast.(*Node).ForEachChild(0x1fcf8953f6c0, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:8814 +0x9cc
+github.com/microsoft/TypeScript/tsc/internal/vibelang.checkContracts.func1(0x1fcf8953f6c0)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/contracts.go:214 +0x64
+github.com/microsoft/TypeScript/tsc/internal/ast.visitNodes(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:41
+github.com/microsoft/TypeScript/tsc/internal/ast.visitNodeList(...)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:50
+github.com/microsoft/TypeScript/tsc/internal/ast.(*SourceFile).ForEachChild(0x1fcf88747888, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast.go:2708 +0xa4
+github.com/microsoft/TypeScript/tsc/internal/ast.(*Node).ForEachChild(0x1fcf88747888, 0x1fcfa79bfae8)
+	github.com/microsoft/TypeScript/tsc/internal/ast/ast_generated.go:9078 +0x1368
+github.com/microsoft/TypeScript/tsc/internal/vibelang.checkContracts(0x1fcf8d958008, 0x1fcf88747888)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/contracts.go:216 +0x3dc
+github.com/microsoft/TypeScript/tsc/internal/vibelang.checkSourceFile(0x1fcf8d958008, 0x1fcf88747888)
+	github.com/microsoft/TypeScript/tsc/internal/vibelang/diagnostics.go:310 +0xe0
+github.com/microsoft/TypeScript/tsc/internal/checker.(*Checker).applySourceFileCheckHooks(0x1fcf8d958008, 0x1fcf88747888)
+	github.com/microsoft/TypeScript/tsc/internal/checker/extensions.go:142 +0x44
+github.com/microsoft/TypeScript/tsc/internal/checker.(*Checker).checkSourceFile(0x1fcf8d958008, {0x105d2ad68?, 0x106031d80?}, 0x1fcf88747888, 0x0)
+	github.com/microsoft/TypeScript/tsc/internal/checker/checker.go:2284 +0x230
+github.com/microsoft/TypeScript/tsc/internal/checker.(*Checker).getDiagnostics(0x1fcf8d958008, {0x105d2ad68?, 0x106031d80?}, 0x1fcf88747888, 0x1fcf8d958258)
+	github.com/microsoft/TypeScript/tsc/internal/checker/checker.go:14254 +0x70
+github.com/microsoft/TypeScript/tsc/internal/checker.(*Checker).GetDiagnostics(...)
+	github.com/microsoft/TypeScript/tsc/internal/checker/checker.go:14244
+github.com/microsoft/TypeScript/tsc/internal/compiler.(*Program).getBindAndCheckDiagnosticsWithChecker(0x1fcf7c966708, {0x105d2ad68, 0x106031d80}, 0x1fcf8d958008, 0x1fcf88747888, 0x0)
+	github.com/microsoft/TypeScript/tsc/internal/compiler/program.go:1539 +0xc0
+github.com/microsoft/TypeScript/tsc/internal/compiler.(*Program).getSemanticDiagnosticsWithChecker(0x1fcf7c966708, {0x105d2ad68?, 0x106031d80?}, 0x0?, 0x1fcf88747888)
+	github.com/microsoft/TypeScript/tsc/internal/compiler/program.go:1519 +0x30
+github.com/microsoft/TypeScript/tsc/internal/compiler.(*Program).collectCheckerDiagnosticsFromFiles.func1(0x1fcf7e96cf28?, 0x65c, 0x1fcf7e96cf68?)
+	github.com/microsoft/TypeScript/tsc/internal/compiler/program.go:755 +0x44
+github.com/microsoft/TypeScript/tsc/internal/compiler.(*checkerPool).forEachCheckerGroupDo.func1()
+	github.com/microsoft/TypeScript/tsc/internal/compiler/checkerpool.go:487 +0x168
+github.com/microsoft/TypeScript/tsc/internal/core.(*parallelWorkGroup).Queue.func1()
+	github.com/microsoft/TypeScript/tsc/internal/core/workgroup.go:40 +0x24
+sync.(*WaitGroup).Go.func1()
+	sync/waitgroup.go:258 +0x48
+created by sync.(*WaitGroup).Go in goroutine 1
+	sync/waitgroup.go:238 +0x78

@@ -1,0 +1,65 @@
+import { Effect } from "effect"
+import { CONVERSATIONS_PATH, CONVERSATION_REPLAY_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import { AgentConversationPageSchema, AgentConversationReplaySchema } from "@smthrs/rpc/AgentTurnJournal"
+import type { FetchLike } from "@smthrs/rpc/NativeAgent"
+import type { AgentPort } from "../runtime/AgentPort"
+import { AgentJournalIntegrityError } from "../runtime/AgentPort"
+// A-2/E-4/E-5 (D38): an async function's body runs for its TypeScript caller through runAsync.
+import { runAsync } from "../runtime/Host.native.ts"
+// E-7 (EK4402): the platform fetch is the default door.
+import { platformFetch } from "./ConversationHistory.native.ts"
+
+/** Earlier reads persisted legacy conversations without granting an execution door. */
+export const createConversationHistory = (options: { readonly baseUrl?: string; readonly fetchImpl?: FetchLike } = {}): AgentPort => {
+  const baseUrl = options.baseUrl ?? ""
+  const fetchImpl = options.fetchImpl ?? platformFetch()
+  // Account reads are finite JSON, with the deadline covering their body.
+  // The cap matches the app request seam and exceeds the bounded server page.
+  function historyJson(path: string, init: RequestInit | undefined): unknown!Error {
+    return Effect.timeoutOrElse(try(async (fetchImpl: FetchLike, baseUrl: string, path: string, init: RequestInit | undefined, Integrity: typeof AgentJournalIntegrityError, signal: AbortSignal) => {
+      const response = await fetchImpl(`${baseUrl}${path}`, { ...init, signal })
+      if (!response.ok) { void response.body?.cancel().catch(() => {}); throw new Error("This saved conversation is unavailable.") }
+      const reader = response.body?.getReader()
+      if (!reader) throw new Integrity("Invalid conversation response")
+      const abort = (): void => { void reader.cancel().catch(() => {}) }
+      signal.addEventListener("abort", abort, { once: true })
+      try {
+        const decoder = new TextDecoder(), parts: string[] = []; let bytes = 0
+        while (true) {
+          const chunk = await reader.read()
+          if (signal.aborted) throw new Error("Conversation history timed out.")
+          if (chunk.done) break
+          bytes += chunk.value.byteLength
+          if (bytes > 8 * 1024 * 1024) throw new Integrity("Conversation response exceeds its bound")
+          parts.push(decoder.decode(chunk.value, { stream: true }))
+        }
+        parts.push(decoder.decode())
+        try { const value: unknown = JSON.parse(parts.join("")); return value }
+        catch { throw new Integrity("Invalid conversation response") }
+      } finally { signal.removeEventListener("abort", abort); abort(); reader.releaseLock() }
+    }, (error) => error instanceof Error ? error : new Error("Conversation history is unavailable."), fetchImpl, baseUrl, path, init, AgentJournalIntegrityError), {
+      duration: 10_000,
+      orElse: () => { throw new Error("Conversation history timed out.") }
+    })
+  }
+
+  return {
+    available: false,
+    history: {
+      list: after => runAsync(() => {
+        const query = after === undefined ? "" : `?after=${encodeURIComponent(after)}`
+        const parsed = AgentConversationPageSchema.safeParse(historyJson(`${CONVERSATIONS_PATH}${query}`, undefined))
+        if (!parsed.success) throw new AgentJournalIntegrityError("Invalid conversation index")
+        return parsed.data
+      }),
+      replay: access => runAsync(() => {
+        const parsed = AgentConversationReplaySchema.safeParse(historyJson(CONVERSATION_REPLAY_PATH, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(access) }))
+        if (!parsed.success) throw new AgentJournalIntegrityError("Invalid account replay")
+        return parsed.data
+      })
+    },
+    startTurn: () => runAsync(() => ({ status: "error", message: "Conversation unavailable" })),
+    cancelTurn: () => runAsync(() => {}),
+    subscribe: () => () => {}
+  }
+}

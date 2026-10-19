@@ -1,0 +1,192 @@
+import { httpCommandSelector } from "./state/CommandSelection"
+import type { ClientErrorReporter } from "./state/ClientErrors"
+import { isWriterOwnershipError } from "./state/StorageRecoveryContract"
+import { selectFirstRunRepository } from "./state/BootRepositoryTarget"
+import { hasCapability } from "@smthrs/rpc/AppBootstrap"
+import { loadRuntimeApplicationClient } from "./runtime/ApplicationTransport"
+import { beginRepositoryEntry, openRequestedRepo, requestedTarget, withoutRepoParam } from "./RepoLink"
+import { openRequestedSubject } from "./RepositorySubjectEntry"
+import { createBrowserFrameHistory, ROOT_APP_PATH } from "./runtime/FrameHistory"
+import { BootstrapFailure, createRuntime, warmBootstrap, unavailableAgent } from "./runtime/Runtime"
+import { createAppController } from "./state/AppController"
+import type { AppController } from "./state/AppController"
+import { createAppStore } from "./state/AppStore"
+import { canPaintAppBeforeIdentity, followSignIn, loadControllerBootInputs } from "./ControllerBootMemo"
+import { createTurnEraser } from "./runtime/TurnErasure"
+import { liveChannel } from "./runtime/LiveChannel"
+import { installDaemonLsp } from "./state/CloudLspClient"
+// A-2/E-4 (D38): the boot program's runner hands a Promise to AppMount.
+import { runAsync } from "./runtime/Host.native.ts"
+// E-7 (EK4402): the browser window, its history and import.meta.env.
+import { browserWindow, buildMode, entryLocation, followPageLifetime, remoteCaretsFlag, replaceEntryUrl } from "./ControllerBoot.client.native.ts"
+
+/** A Promise-shaped factory; a named type keeps it plain (D-4). */
+type PromiseFactory<A> = () => Promise<A>
+
+function promiseEffect<A>(label: string, run: PromiseFactory<A>) {
+  return try(
+    async (run: PromiseFactory<A>) => run(),
+    (cause) => isWriterOwnershipError(cause) || cause instanceof BootstrapFailure
+      // Keep the cause: the startup panel presents a tagged cause by its `_tag`,
+      // and an untagged one's raw text only in Details (failureDetail's "Caused by").
+      ? cause : new Error(`Startup could not ${label}.`, { cause }),
+    run
+  )
+}
+
+/*
+ * Browser-only boot. Promise-shaped factories enter the Effect program at
+ * this boundary.
+ *
+ * The app's chat is the host's agent: the HTTP agent against the app origin
+ * (LOCAL-APP.md), or the unavailable adapter when this runtime has no agent
+ * capability. There is no second, in-page loop to choose between.
+ */
+/** How the one boot runs; AppMount.tsx sets it before the first render. */
+export interface ControllerBootOptions {
+  readonly clientErrors?: ClientErrorReporter
+  /** Keep the address bar on the entry URL (runtime/FrameHistory.ts `keepUrl`). */
+  readonly keepUrl?: boolean
+}
+
+function bootProgram(options: ControllerBootOptions = {}) {
+  // Read the entry URL before the controller exists: creating it installs the
+  // frame history, which writes the first history entry within the first
+  // frame, long before identity has loaded.
+  // The whole target, not only its repository: `/owner/repo/pull/2/files` is
+  // a pull request's Files tab, opened after that repository is admitted.
+  const target = requestedTarget(entryLocation())
+  const requested = target?.repo ?? null
+  // The entry URL's query, read before frame history rewrites the address bar: the OAuth and
+  // GitHub App setup-URL returns ride on it, and by the end of boot it is gone.
+  const entrySearch = entryLocation().search
+  const requestedCard = new URLSearchParams(entrySearch).get("card")
+  const card = requestedCard === "settings" || requestedCard === "members" || requestedCard === "secrets" ? requestedCard : undefined
+  const setupEntry = entryLocation().pathname === "/setup"
+  const client = promiseEffect("resolve application backend", loadRuntimeApplicationClient)
+  const http = client.fetch
+  const bootstrapRead = warmBootstrap(http)
+  const { bootstrap, store } = promiseEffect("prepare runtime and persisted state", () =>
+    loadControllerBootInputs(() => bootstrapRead, () => createAppStore(undefined, { eraseTurn: createTurnEraser(http) })))
+  const repositoryEntryId = store.savedStoreUnavailable ? undefined : beginRepositoryEntry(store, requested)
+  const runtime = createRuntime({
+    bootstrap,
+    http,
+  })
+  const agent = runtime.backend.agent ?? unavailableAgent()
+  const channel = liveChannel()
+  const pageLifetime = new AbortController()
+  // Closed until a person is signed in, on every host (ControllerBootMemo.ts followSignIn).
+  followSignIn(channel, store.collections.identitySessions, pageLifetime.signal)
+  const controller = createAppController(
+    store,
+    agent,
+    {
+      fetchImpl: runtime.http,
+      features: { remoteCarets: remoteCaretsFlag() === "1" },
+      live: channel,
+      documentOptions: { channel, prerequisites: { contract: true, actor: true, file: true, recovery: true, catalog: true, machine: true } },
+      // Selection needs a backend that serves it; one that does not advertises no row and turns run on the pinned commands.
+      ...(hasCapability(bootstrap, "commands.select") ? { commandSelector: httpCommandSelector(runtime.http, client.baseUrl) } : {}),
+      // Code intelligence exists only where the install composed member exec sessions.
+      ...(hasCapability(bootstrap, "code.intelligence") ? { daemonLsp: installDaemonLsp(runtime.http, client.baseUrl) } : {}),
+      pageLifetime: pageLifetime.signal,
+      clientErrors: options.clientErrors,
+      baseUrl: client.baseUrl,
+      applicationTarget: client.target,
+      applicationIdentity: client.identity,
+      authorizeSocket: client.authorizeWebSocket,
+      bootstrap: runtime.bootstrap,
+      // The browser journey host builds with --mode test; production
+      // islands use the real backend even when it has no install routes.
+      // A journey that checks what a hosted page renders opts out with ?design=off.
+      designFixture: buildMode() === "test" && new URLSearchParams(entryLocation().search).get("design") !== "off",
+      repositoryApp: store.savedStoreUnavailable ? undefined : requested ?? undefined,
+      frameHistory: createBrowserFrameHistory(browserWindow(), { keepUrl: options.keepUrl === true || setupEntry }),
+    }
+  )
+
+  followPageLifetime(pageLifetime, () => controller.dispose())
+
+  // The recorded store is still on disk. A temporary empty store must not
+  // route URLs, resume deferred commands through identity, or start new work.
+  if (store.savedStoreUnavailable) return controller
+
+  if (!hasCapability(bootstrap, "identity")) {
+    promiseEffect("record unavailable identity", () => controller.adoptSession({
+      state: "unavailable",
+      login: null,
+      admin: false
+    }))
+  } else if (card === undefined && canPaintAppBeforeIdentity({
+    requestedRepo: requested,
+    hasTranscript: store.collections.cards.size > 0 || store.collections.messages.size > 0,
+    identityState: sync((store) => store.collections.identitySessions.get("identity"), store)?.state,
+    identityLogin: sync((store) => store.collections.identitySessions.get("identity"), store)?.login,
+    accountOwnerLogin: sync((store) => store.collections.identitySessions.get("identity"), store)?.accountOwnerLogin,
+  })) {
+    /*
+     * The desktop shell never gates on sign-in (LOCAL-APP.md), and its
+     * identity read rides a proxied seam — a slow or captive network held
+     * the whole boot on the session shell for as long as the upstream took.
+     * It runs beside the other inventory loads, never on the paint path:
+     * identity "unknown" is a first-class state the app already renders,
+     * and the answer lands in the store whenever it comes.
+     * A fresh anonymous entry is public content: its real controls need
+     * not wait on identity. Retained content/account ownership keep the
+     * cloud identity barrier.
+     */
+    // A failed read is an answer too (BootRepositoryTarget.ts): both sides
+    // settle, or a rejected identity promise parks a command forever.
+    const settle = () => { if (requested === null) selectFirstRunRepository(store, controller.settleFirstRunTarget) }
+    void controller.loadSession().then(settle, settle)
+  } else {
+    /*
+     * A web origin — hosted or self-hosted — gates the transcript on the
+     * signed-out answer, so the probe stays on the boot path: awaiting it
+     * keeps the gate from flashing the opening read first. Same-origin, never a proxy hop.
+     */
+    promiseEffect("load identity session", () => controller.loadSession())
+  }
+  // The awaited branch above has its identity answer here; the non-blocking
+  // one does not, so this call is its own no-op and the `.then()` decides.
+  if (requested === null) selectFirstRunRepository(store, controller.settleFirstRunTarget)
+  // `/api/user` above is also the selected backend's Cloud-capability
+  // identity; no second native/cloud session probe is started.
+  // Both URL rewrites keep the entry's state: on a repository path the
+  // frame history stores the frame location there, not in the URL.
+  // A GitHub App setup-URL return carries its own parameters.
+  if (controller.handleInstallReturn(entrySearch)) {
+    replaceEntryUrl(entryLocation().pathname === "/" && options.keepUrl === true ? ROOT_APP_PATH : entryLocation().pathname)
+  }
+  if (controller.handleAuthReturn(entrySearch)) {
+    replaceEntryUrl(entryLocation().pathname === "/" && options.keepUrl === true ? ROOT_APP_PATH : entryLocation().pathname)
+  }
+  // `/owner/name` (or the landing page's `/?repo=owner/name`) preselects a public-catalog repository.
+  // The path stays in the address bar; the parameter leaves it.
+  if (requested !== null) {
+    void openRequestedRepo(controller, runtime.http, requested, repositoryEntryId)
+      // The subject waits on the admission: a URL grants no access, and an
+      // ambient or retained repository is not this URL's authority.
+      .then(() => openRequestedSubject(controller, requested, target?.subject, { requestId: repositoryEntryId, signal: pageLifetime.signal }))
+      .catch(() => {})
+    if (entryLocation().search !== "") {
+      replaceEntryUrl(withoutRepoParam(entryLocation()))
+    }
+  }
+  // CLI card doors carry no credential or mutation; the browser uses its own identity.
+  if (card !== undefined) {
+    void controller.runCommandForResult(card).then(result => {
+      if (result.status !== "executed") return
+      const opened = [...store.collections.cards.values()].filter(row => row.kind === card).sort((a, b) => b.ordinal - a.ordinal)[0]
+      if (opened !== undefined) controller.maximizeCard(opened.id)
+    })
+    const url = new URL(entryLocation().href)
+    url.searchParams.delete("card")
+    replaceEntryUrl(url.pathname + url.search + url.hash)
+  }
+  return controller
+}
+
+export const runControllerBoot = (options: ControllerBootOptions = {}): Promise<AppController> =>
+  runAsync(() => bootProgram(options))

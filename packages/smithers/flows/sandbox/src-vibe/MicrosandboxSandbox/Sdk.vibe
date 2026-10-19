@@ -1,0 +1,176 @@
+/**
+ * The structural slice of the Microsandbox SDK used by this provider.
+ *
+ * The SDK is injected by callers so this package remains browser-bundleable
+ * and owns no vendor dependency. The private shapes below mirror the vendor's
+ * fluent builders, streaming command handle, lifecycle handles, label-scoped
+ * listing, default-backend selection, and guest filesystem operations.
+ *
+ * @since 0.1.0
+ */
+
+interface GuestFs {
+  mutable write(path: string, data: Uint8Array | string): Promise<void>
+  mutable read(path: string): Promise<Uint8Array>
+  mutable readToString(path: string): Promise<string>
+  mutable mkdir(path: string): Promise<void>
+}
+
+/** One event of a streamed command, in the order the guest produced it. */
+type ExecEvent =
+  | { readonly kind: "started"; readonly pid: number }
+  | { readonly kind: "stdout"; readonly data: Uint8Array }
+  | { readonly kind: "stderr"; readonly data: Uint8Array }
+  | { readonly kind: "exited"; readonly code: number }
+
+interface ExecHandle {
+  /**
+   * The next event, or `null` once the command's stream has ended. The vendor
+   * answers `undefined` for a guest event it does not normalise; the one the
+   * guest agent sends today is its report that the command could not be
+   * started at all, such as a missing program or working directory.
+   */
+  mutable recv(): Promise<ExecEvent | null | undefined>
+  /** Delivers a Linux signal number to the command's process group. */
+  mutable signal(signal: number): Promise<void>
+  mutable kill(): Promise<void>
+}
+
+interface ExecBuilder {
+  mutable args(args: Array<string>): this
+  mutable cwd(cwd: string): this
+  mutable envs(vars: Record<string, string>): this
+  mutable stdinBytes(data: Uint8Array): this
+}
+
+interface DestroyOptions {
+  /** How long the stop and removal may take to converge. */
+  readonly timeoutMs: number
+  /** Stop the machine without the graceful shutdown first. */
+  readonly force?: boolean
+}
+
+interface Sandbox {
+  readonly name: string
+  readonly backendKind: "local" | "cloud"
+  mutable fs(): GuestFs
+  mutable execStreamWith(command: string, configure: (builder: ExecBuilder) => ExecBuilder): Promise<ExecHandle>
+  mutable destroy(options: DestroyOptions): Promise<void>
+}
+
+interface SandboxHandle {
+  readonly name: string
+  readonly status: string
+  /** Stops the machine gracefully, keeping its disk. */
+  mutable stop(): Promise<void>
+  /** Captures a stopped machine's disk as a named snapshot. */
+  mutable snapshot(name: string): Promise<unknown>
+  /** The persisted configuration as JSON, labels included. */
+  readonly configJson: string
+  mutable connect(): Promise<Sandbox>
+  mutable start(): Promise<Sandbox>
+  mutable startDetached(): Promise<Sandbox>
+  mutable refresh(): Promise<SandboxHandle>
+  mutable modify(options: {
+    readonly labels: Record<string, string>
+    readonly policy: "next_start"
+  }): Promise<{ readonly applied: boolean }>
+  mutable destroy(options: DestroyOptions): Promise<void>
+}
+
+interface SandboxList {
+  mutable label(key: string, value: string): this
+  mutable cursor(cursor: string): this
+}
+
+interface SandboxPage {
+  readonly sandboxes: ReadonlyArray<SandboxHandle>
+  readonly nextCursor?: string | undefined
+}
+
+/**
+ * One ordered egress or ingress rule of a guest network policy, in the
+ * vendor's own shape.
+ */
+interface NetworkRule {
+  readonly direction: "egress" | "ingress" | "any"
+  readonly destination:
+    | { readonly kind: "any" }
+    | { readonly kind: "cidr"; readonly cidr: string }
+    | { readonly kind: "domain"; readonly domain: string }
+    | { readonly kind: "domainSuffix"; readonly suffix: string }
+    | { readonly kind: "group"; readonly group: string }
+  readonly protocols: ReadonlyArray<"tcp" | "udp" | "icmpv4" | "icmpv6">
+  readonly ports: ReadonlyArray<{ readonly start: number; readonly end: number }>
+  readonly action: "allow" | "deny"
+}
+
+/**
+ * A guest network policy: per-direction defaults and ordered first-match
+ * rules, as the vendor evaluates them.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface NetworkPolicy {
+  readonly defaultEgress: "allow" | "deny"
+  readonly defaultIngress: "allow" | "deny"
+  readonly rules: ReadonlyArray<NetworkRule>
+}
+
+interface NetworkBuilder {
+  mutable policy(policy: NetworkPolicy): this
+}
+
+interface SnapshotEntry {
+  readonly name: string | null
+  readonly createdAt: Date
+}
+
+interface SandboxBuilder {
+  mutable image(image: string): this
+  mutable fromSnapshot(pathOrName: string): this
+  mutable rootDisk(sizeMib: number): this
+  mutable network(configure: (builder: NetworkBuilder) => NetworkBuilder): this
+  mutable cpus(count: number): this
+  mutable maxCpus(count: number): this
+  mutable memory(mib: number): this
+  mutable maxMemory(mib: number): this
+  mutable security(profile: "default" | "restricted"): this
+  mutable pullPolicy(policy: string): this
+  mutable labels(labels: Record<string, string>): this
+  mutable maxDuration(seconds: number): this
+  mutable idleTimeout(seconds: number): this
+  mutable ephemeral(enabled: boolean): this
+  mutable detached(enabled: boolean): this
+  mutable disableNetwork(): this
+  mutable create(): Promise<Sandbox>
+}
+
+/**
+ * The Microsandbox SDK entry point required by the provider.
+ *
+ * `defaultBackendKind` is what the provider reads before it provisions, so it
+ * can refuse to run anywhere but this machine; `setDefaultBackend` is the
+ * vendor's own pin, and a composition that must never leave this machine calls
+ * `sdk.setDefaultBackend("local")` once at startup, which overrides the
+ * `MSB_BACKEND`, `MSB_API_KEY`, and `MSB_PROFILE` environment selection.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Sdk {
+  readonly Sandbox: {
+    mutable builder(name: string): SandboxBuilder
+    mutable get(name: string): Promise<SandboxHandle>
+    mutable listWith(configure: (list: SandboxList) => SandboxList): Promise<SandboxPage>
+  }
+  readonly Snapshot: {
+    /** The indexed snapshot of that name; rejects when there is none. */
+    mutable get(name: string): Promise<SnapshotEntry>
+    mutable list(): Promise<ReadonlyArray<SnapshotEntry>>
+    mutable remove(name: string, options?: { readonly force?: boolean }): Promise<void>
+  }
+  mutable defaultBackendKind(): "local" | "cloud"
+  mutable setDefaultBackend(backend: "local"): void
+}

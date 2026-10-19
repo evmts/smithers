@@ -1,0 +1,7 @@
+type NormalizePackRelativePath = (value: string) => string
+export const normalizePackRelativePathImpl: NormalizePackRelativePath = (value: string): string => {
+  if (!(value.length > 0 && !value.includes("\0") && !value.includes("\\") && !value.startsWith("/") && !/^[A-Za-z]:/.test(value) && value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".."))) {
+    throw new TypeError(`Pack path ${JSON.stringify(value)} is not a safe pack-relative path`)
+  }
+  return value
+}

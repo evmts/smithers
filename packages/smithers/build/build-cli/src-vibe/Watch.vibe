@@ -1,0 +1,163 @@
+/** Dependency-aware execution in fresh processes, with cancellation on file changes.
+ * @since 0.1.0
+ */
+
+import { Cause, Effect, Exit, Queue, Stream } from "effect"
+import { watch } from "node:fs"
+import { createRequire } from "node:module"
+import { fileURLToPath, pathToFileURL } from "node:url"
+import * as ContainedProcess from "./internal/ContainedProcess.vibe"
+import { PackageError } from "./PackageError.vibe"
+import * as Native from "./Watch.native.ts"
+
+/** Runs fresh CLI processes until interrupted, cancelling stale work when an input changes.
+ * @category execution
+ * @since 0.1.0
+ */
+export const run = (options: {
+  readonly root: string
+  readonly args: ReadonlyArray<string>
+  readonly ignored: ReadonlyArray<string>
+  readonly signal?: AbortSignal | undefined
+  readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+  readonly debounceMs: number
+  /** How often the workspace is rescanned for changes the notifier dropped. Defaults to 1000 ms. */
+  readonly rescanMs?: number | undefined
+  readonly once: boolean
+  readonly stdout: (text: string) => void
+  readonly stderr: (text: string) => void
+  readonly cycleCompleted?:
+    | ((cycle: {
+      readonly number: number
+      readonly exitCode: number
+      readonly output: string
+    }) => void)
+    | undefined
+}): Promise<{ mutable cycles: number; mutable exitCode: number; mutable stopped: boolean }> =>
+  Native.run(options, watching)
+
+/** A plain path filter, called from the watcher's callbacks (D-4). */
+type Relevant = (path: string) => boolean
+
+/** The watch loop: one fresh CLI process per cycle, replaced when the tree changes. */
+const watching = (options: Parameters<typeof run>[0], state: Native.State) => {
+  // The package bootstrap installs declaration identity hooks before importing
+  // any command modules, both in a checkout and in a compiled distribution.
+  const entry = sync(() => {
+    const manifest = createRequire(import.meta.url).resolve("@smthrs/build-cli/package.json")
+    return fileURLToPath(new URL("./src/main.js", pathToFileURL(manifest)))
+  })
+  const ignored = [".git", "node_modules", ...options.ignored].map((path) =>
+    path.replaceAll("\\", "/").replace(/\/$/, "")
+  )
+  const relevant: Relevant = (path) =>
+    !path.split("/").includes("node_modules") &&
+    !ignored.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
+  // The notifier coalesces and drops events under load (FSEvents discards its
+  // must-scan notifications, and a busy fseventsd can hold or lose an edit),
+  // so each cycle records a digest of the watched tree and a periodic rescan
+  // starts a replacement when the tree no longer matches it. `state` holds
+  // that digest, the cycle count and exit code, the retained containment
+  // failure (switchMap discards a replaced stream's error, so a replacement
+  // cannot start after containment failed), and the observed and covered
+  // change counters (a replacement starts after its stale cycle's cleanup, so
+  // it already sees every change observed until then).
+  const recordBaseline = () => {
+    const since = state.observed
+    const tree = try(
+      async (root, relevant) => Native.digest(root, relevant),
+      (cause) =>
+        cause instanceof Error ? cause : new PackageError("watch_refresh_failed", "workspace rescan failed", { cause }),
+      options.root,
+      relevant
+    )
+    state.baseline = tree
+    state.baselineObserved = since
+  }
+  const launch = () => {
+    const number = ++state.cycles
+    let output = ""
+    const command = sync(process.execPath)
+    return ContainedProcess.runEffect({
+      command,
+      args: [entry, ...options.args, "--workspace", options.root],
+      cwd: options.root,
+      environment: options.environment,
+      stdout: (text) => {
+        if (options.cycleCompleted !== undefined) output = `${output}${text}`.slice(-16 * 1024)
+        options.stdout(text)
+      },
+      stderr: options.stderr
+    }) |> Effect.onExit(%, (exit) => {
+      state.exitCode = Exit.isSuccess(exit) ? exit.value : 1
+      if (Exit.isFailure(exit)) {
+        if (Cause.hasInterruptsOnly(exit.cause)) state.covered = state.observed
+        else state.failure = Cause.squash(exit.cause)
+      }
+      options.cycleCompleted?.({ number, exitCode: state.exitCode, output })
+    })
+  }
+  const cycle = () => {
+    if (state.failure !== undefined) throw state.failure
+    if (!options.once) recordBaseline()
+    return launch()
+  }
+  const changes = Stream.callback<number, Error>((queue) => {
+    Effect.acquireRelease(
+      try((queue, state, root, relevant, rescanMs) => {
+        let closed = false
+        let scanning = false
+        let again = false
+        // Offers a change only when no event arrived since the running
+        // cycle's digest; an observed event already has a replacement coming.
+        const rescan = (): void => {
+          if (closed || state.baseline === undefined) return
+          if (scanning) {
+            again = true
+            return
+          }
+          scanning = true
+          const expected = state.baseline
+          Native.digest(root, relevant).then(
+            (tree) => {
+              if (!closed && tree !== expected && state.baseline === expected && state.observed === state.baselineObserved) {
+                Queue.offerUnsafe(queue, ++state.observed)
+              }
+            },
+            (error) => {
+              if (!closed) Queue.failCauseUnsafe(queue, Cause.fail(error))
+            }
+          ).finally(() => {
+            scanning = false
+            if (again) {
+              again = false
+              rescan()
+            }
+          })
+        }
+        const timer = setInterval(rescan, rescanMs ?? 1000)
+        const watcher = watch(root, { recursive: true }, (_event, filename) => {
+          // A notification without a name says only that something changed.
+          if (filename === null) return rescan()
+          const path = filename.toString().replaceAll("\\", "/")
+          if (relevant(path)) Queue.offerUnsafe(queue, ++state.observed)
+        }).on("error", (error) => {
+          Queue.failCauseUnsafe(queue, Cause.fail(error))
+        })
+        return () => {
+          closed = true
+          clearInterval(timer)
+          watcher.close()
+        }
+      }, (cause) => cause instanceof Error ? cause : new Error("filesystem watch failed", { cause }), queue, state, options.root, relevant, options.rescanMs),
+      (close) => sync((close) => close(), close)
+    )
+  }, { bufferSize: 1, strategy: "sliding" })
+    |> Stream.debounce(%, options.debounceMs)
+    |> Stream.filter(%, (change) => change > state.covered)
+    |> Stream.prepend(%, [0])
+  return (options.once ? Stream.make(0) : changes)
+    |> Stream.switchMap(%, () => Stream.fromEffect(() => cycle()), { bufferSize: 1 })
+    |> Stream.runDrain(%)
+    |> Effect.scoped(%)
+}
