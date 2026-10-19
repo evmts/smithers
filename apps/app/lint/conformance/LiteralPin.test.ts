@@ -79,6 +79,10 @@ interface Excuse {
  */
 const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
   {
+    literal: "card", file: "e2e/playwright/form-focus.spec.ts",
+    reason: "EntityRecovery.ts EntityRecoveryValue envelope discriminator (kind: \"card\"); formSaved waits for the recovery record to commit, not for a wire card kind."
+  },
+  {
     literal: "control.engine.event", file: "e2e/real/agent-terminal.spec.ts",
     reason: "Native journal envelope from packages/smithers flows journal, inspected through Projection.Snapshot run-events; never a wire card."
   },
