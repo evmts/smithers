@@ -162,7 +162,7 @@ func TestSandboxUsageWorkspaceStopsAndSweep(t *testing.T) {
 				svc.markWorkspaceProvisionFailed(ctx, w, errBranchMachineAdmission)
 			case "agent release":
 				var release AgentWorkspaceRelease
-				release, err = svc.ReleaseAgentWorkspace(ctx, w.ID, "")
+				release, err = svc.ReleaseAgentWorkspace(ctx, w.ID, "", 0)
 				require.Equal(t, agentWorkspaceKeptWithoutRuntime, release.Outcome, "a box this service cannot stop is kept")
 			case "pod stopped":
 				err = svc.UpdateWorkspacePodStatus(ctx, UpdateWorkspacePodStatusInput{WorkspaceID: w.ID, Status: "stopped"})

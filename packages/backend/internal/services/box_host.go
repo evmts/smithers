@@ -27,10 +27,27 @@ import (
 // host (a flowhost binding), so every start revokes the one before it.
 func boxHostLandingTokenName(hostID string) string { return "flow-host-landing-" + hostID }
 
-// boxHostLandingTokenTTL bounds the coding host's landing credential. Every
-// stop revokes it, so the TTL is only a leak backstop for a host whose box
-// disappears without a verified stop. It matches the workspace head token.
+// boxHostLandingTokenTTL bounds an install's coding host landing and cache
+// credentials. Every stop revokes them, so the TTL is only a leak backstop for
+// a host whose box disappears without a verified stop. It matches the
+// workspace head token.
 const boxHostLandingTokenTTL = 7 * 24 * time.Hour
+
+// hostedBoxHostTokenTTL bounds the same credentials on a hosted deployment
+// (no machine admission), where a box's runs are untrusted agent turns: a
+// run can copy its landing token, so one that outlives a failed revocation
+// stays a working credential for this long at most (Security s-50rmyl). An
+// agent turn's runtime is far shorter.
+const hostedBoxHostTokenTTL = 2 * time.Hour
+
+// boxHostTokenTTL is the lifetime of a coding host's landing and cache
+// credentials in this deployment.
+func (s *WorkspaceService) boxHostTokenTTL() time.Duration {
+	if s.machineAdmission == nil {
+		return hostedBoxHostTokenTTL
+	}
+	return boxHostLandingTokenTTL
+}
 
 // boxHostLandingTokenScopes is the minimum the coding/vibe landing flow
 // needs: it lists bookmarks, prepares an append, creates the landing request
@@ -163,15 +180,8 @@ func (s *WorkspaceService) PrepareBoxHost(ctx context.Context, hostID, workspace
 		landingScopes += "," + middleware.AgentSessionRestrictionScope(run)
 	}
 	s.RetireBoxHostCredential(ctx, hostID, userID)
-	token, err := issueTemporaryRepoTokenWithTTL(ctx, q, userID, boxHostLandingTokenName(hostID),
-		landingScopes, boxHostLandingTokenTTL)
+	token, cache, err := s.mintBoxHostCredentials(ctx, q, hostID, userID, repositoryID, workspace.ID, landingScopes)
 	if err != nil {
-		return nil, err
-	}
-	cache, err := issueTemporaryRepoTokenWithTTL(ctx, q, userID, boxHostCacheTokenName(hostID),
-		boxHostCacheTokenScopes(repositoryID, workspace.ID), boxHostLandingTokenTTL)
-	if err != nil {
-		revokeTemporaryRepoCloneToken(ctx, q, userID, token.ID)
 		return nil, err
 	}
 	environment["SMITHERS_JJHUB_TOKEN"], environment["SMITHERS_JJHUB_API_URL"] = token.Plaintext, base+"/api"
@@ -209,6 +219,22 @@ func (s *WorkspaceService) boxHostAgentEnvironment(ctx context.Context, reposito
 
 func boxHostAgentVariable(name string) bool {
 	return agentEnvironmentNamePattern.MatchString(name) && flowhost.RepositoryVariable(name)
+}
+
+// mintBoxHostCredentials mints a coding host's landing and cache credentials
+// for this deployment's lifetime (boxHostTokenTTL).
+func (s *WorkspaceService) mintBoxHostCredentials(ctx context.Context, q boxHostQuerier, hostID string, userID, repositoryID int64, workspaceID, landingScopes string) (landing, cache temporaryRepoCloneToken, err error) {
+	ttl := s.boxHostTokenTTL()
+	landing, err = issueTemporaryRepoTokenWithTTL(ctx, q, userID, boxHostLandingTokenName(hostID), landingScopes, ttl)
+	if err != nil {
+		return landing, cache, err
+	}
+	cache, err = issueTemporaryRepoTokenWithTTL(ctx, q, userID, boxHostCacheTokenName(hostID), boxHostCacheTokenScopes(repositoryID, workspaceID), ttl)
+	if err != nil {
+		revokeTemporaryRepoCloneToken(ctx, q, userID, landing.ID)
+		return temporaryRepoCloneToken{}, temporaryRepoCloneToken{}, err
+	}
+	return landing, cache, nil
 }
 
 // RetireBoxHostCredential revokes a box coding host's landing and cache

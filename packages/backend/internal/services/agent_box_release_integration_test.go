@@ -67,7 +67,19 @@ type hostedBoxRuntime struct {
 	// of every service a credential is minted for.
 	processes map[string]bool
 	captured  []string
+	// unfenced makes the double a runtime that does not declare
+	// workspaceapi.WorkspaceGuestFence.
+	unfenced bool
+	// credentialCache is the guest's git credential cache socket, which the
+	// head publisher's start opens; credentialCacheStuck keeps its daemon from
+	// exiting.
+	credentialCache      bool
+	credentialCacheStuck bool
 }
+
+// FencesGuests: the double honors workspaceapi.WithGuest as hosted's
+// placement adapter must.
+func (r *hostedBoxRuntime) FencesGuests() bool { return !r.unfenced }
 
 // reapingBoxRuntime is hosted's runtime once it confirms a run's processes
 // ended (WorkspaceRunProcessReaper): it ends every process but the box's own.
@@ -77,7 +89,10 @@ type reapingBoxRuntime struct {
 	reapErr error
 }
 
-func (r *reapingBoxRuntime) ReapRunProcesses(context.Context, string) error {
+func (r *reapingBoxRuntime) ReapRunProcesses(ctx context.Context, id string) error {
+	if r.guestGone(ctx, id) {
+		return workspaceapi.ErrGuestGone
+	}
 	if r.reapErr != nil {
 		return r.reapErr
 	}
@@ -88,6 +103,21 @@ func (r *reapingBoxRuntime) ReapRunProcesses(context.Context, string) error {
 		}
 	}
 	return nil
+}
+
+// guestGone reports a call scoped to a guest (workspaceapi.WithGuest) the
+// workspace no longer has; the double then answers workspaceapi.ErrGuestGone
+// and touches nothing.
+func (r *hostedBoxRuntime) guestGone(ctx context.Context, id string) bool {
+	guest := workspaceapi.GuestFromContext(ctx)
+	if guest == "" {
+		return false
+	}
+	var current string
+	if err := r.pool.QueryRow(context.WithoutCancel(ctx), `SELECT vm_id FROM workspaces WHERE id=$1`, id).Scan(&current); err != nil {
+		return false
+	}
+	return current != guest
 }
 
 func (*hostedBoxRuntime) Capabilities() workspaceapi.WorkspaceCapabilities {
@@ -110,6 +140,9 @@ func (r *hostedBoxRuntime) StartWorkspace(_ context.Context, id string) (workspa
 }
 
 func (r *hostedBoxRuntime) DeleteWorkspace(ctx context.Context, id string) error {
+	if r.guestGone(ctx, id) {
+		return workspaceapi.ErrGuestGone
+	}
 	if err := r.interruptedReleaseRuntime.DeleteWorkspace(ctx, id); err != nil {
 		return err
 	}
@@ -170,8 +203,18 @@ func (r *hostedBoxRuntime) WriteRepositoryReceipt(_ context.Context, _ string, c
 
 // ExecuteCommand answers the commands a checkout is built and checked with,
 // and reports the head publisher running only once a join has started one.
-func (r *hostedBoxRuntime) ExecuteCommand(_ context.Context, _ string, command workspaceapi.Command) (workspaceapi.CommandResult, error) {
+func (r *hostedBoxRuntime) ExecuteCommand(ctx context.Context, id string, command workspaceapi.Command) (workspaceapi.CommandResult, error) {
+	if r.guestGone(ctx, id) {
+		return workspaceapi.CommandResult{}, workspaceapi.ErrGuestGone
+	}
 	r.commands = append(r.commands, command.Args)
+	if len(command.Args) == 3 && command.Args[2] == agentBoxCredentialCacheEnd {
+		r.credentialCache = r.credentialCache && r.credentialCacheStuck
+		if r.credentialCache {
+			return workspaceapi.CommandResult{ExitCode: 1}, nil
+		}
+		return workspaceapi.CommandResult{}, nil
+	}
 	if _, probe := command.Environment["SMITHERS_WORKSPACE_TOKEN_ID"]; probe && !slices.Contains(r.started, workspaceHeadReporterService) {
 		return workspaceapi.CommandResult{ExitCode: 1}, nil
 	}
@@ -201,6 +244,9 @@ func (r *hostedBoxRuntime) StartService(_ context.Context, _ string, spec worksp
 		r.captured = append(r.captured, spec.Name)
 	}
 	r.started = append(r.started, spec.Name)
+	if spec.Name == workspaceHeadReporterService {
+		r.credentialCache = true
+	}
 	return workspaceapi.Service{Name: spec.Name}, nil
 }
 
@@ -208,7 +254,10 @@ func (*hostedBoxRuntime) InspectService(context.Context, string, string) (worksp
 	return workspaceapi.ServiceObservation{State: workspaceapi.ServiceRunning}, nil
 }
 
-func (r *hostedBoxRuntime) StopService(_ context.Context, _ string, name string) error {
+func (r *hostedBoxRuntime) StopService(ctx context.Context, id string, name string) error {
+	if r.guestGone(ctx, id) {
+		return workspaceapi.ErrGuestGone
+	}
 	if r.serviceErr != nil {
 		return r.serviceErr
 	}
@@ -294,7 +343,7 @@ func newAgentBoxReleaseWith(t *testing.T, status string, reaper bool) *agentBoxR
 	}
 	f.runtime = &interruptedReleaseRuntime{guest: f.guest}
 	f.hosted = &hostedBoxRuntime{interruptedReleaseRuntime: f.runtime, pool: pool, bookmark: "main", repository: repo,
-		processes: map[string]bool{"relay": true, "supervisor": true}}
+		processes: map[string]bool{"relay": true, "supervisor": true}, credentialCache: true}
 	slug, err := q.GetRepoOwnerSlugAndNameByID(ctx, repo)
 	require.NoError(t, err)
 	f.hosted.cloneURL = testWorkspaceGitBaseURL + "/" + slug.OwnerSlug + "/" + slug.RepoName + ".git"
@@ -451,7 +500,7 @@ func TestAFailedHostStopStillRevokesTheRunsTokens(t *testing.T) {
 
 	// The next release retries the stop and clears the mark.
 	f.hosted.serviceErr = nil
-	release, err := f.boxes.ReleaseAgentWorkspace(f.ctx, f.workspace, "")
+	release, err := f.boxes.ReleaseAgentWorkspace(f.ctx, f.workspace, "", 0)
 	require.NoError(t, err)
 	require.Equal(t, agentWorkspaceQuiesced, release.Outcome)
 	require.Equal(t, []string{"smithers-coding-host"}, f.hosted.stopped, "the owed stop is retried")
