@@ -181,6 +181,9 @@ const (
 	agentBoxAfterEmptyUse = "after_empty_use"
 	// After a release renewed its lease, before it stops the coding hosts.
 	agentBoxBeforeStop = "before_stop"
+	// After a release renewed its lease, before it stops the guest's head
+	// reporter.
+	agentBoxBeforeHeadReporterStop = "before_head_reporter_stop"
 	// After a release renewed its lease, before it ends the guest's git
 	// credential cache.
 	agentBoxBeforeCredentialCache = "before_credential_cache"

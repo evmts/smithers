@@ -38,9 +38,12 @@ type CodingTurnExec struct {
 // PATH is the system's (never the developer's ~/.local/bin), git runs with
 // no system or global config, no hooks and no fsmonitor, and jj runs with
 // signing, fsmonitor and its pager off, so no repository config runs a
-// program. The test runs only when that commit is head and the working tree
-// is exactly head: git compares the files with head through a private index,
-// and a read that fails refuses, never passes. The test itself runs with the
+// program. jj reads the working commit of its last operation and never
+// snapshots: the offline facet mounts .jj and .git read-only, and an edit
+// since that snapshot is caught by the tree check. The test runs only when
+// that commit is head and the working tree is exactly head: git compares the
+// files with head through a private index, and a read that fails refuses,
+// never passes. The test itself runs with the
 // developer's PATH under env -i with only HOME and PATH, a hard timeout and
 // no input. Its output streams through tail, which keeps only the last 8 KiB
 // while it runs, so a flood never fills the disk; its exit status returns
@@ -57,7 +60,7 @@ say() { printf 'smithers-coding-test %s\n' "$*"; }
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_OPTIONAL_LOCKS=0
 safe_git() { git -c safe.directory="$PWD" -c core.fsmonitor=false -c core.hooksPath=/dev/null -c core.untrackedCache=false -c core.alternateRefsCommand= "$@"; }
 if [ -d .jj ]; then
-  at=$(jj --no-pager --config fsmonitor.backend=none --config signing.behavior=drop --config signing.backend=none --config ui.pager=:builtin log --no-graph -r @ -T commit_id 2>/dev/null) || at=""
+  at=$(jj --no-pager --ignore-working-copy --config fsmonitor.backend=none --config signing.behavior=drop --config signing.backend=none --config ui.pager=:builtin log --no-graph -r @ -T commit_id 2>/dev/null) || at=""
 else
   at=$(safe_git rev-parse --verify HEAD 2>/dev/null) || at=""
 fi

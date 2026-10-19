@@ -47,8 +47,8 @@ type codingResultRuntime struct {
 	runs []workspaceapi.Command
 	// guests is the guest each run was scoped to (WithGuest).
 	guests []string
-	// quiescedAtRun: the coding host was stopped and the head, landing and
-	// cache tokens were gone when the test started.
+	// quiescedAtRun: the coding host and the head reporter were stopped and
+	// the head, landing and cache tokens were gone when the test started.
 	quiescedAtRun []bool
 }
 
@@ -59,6 +59,7 @@ func (r *codingResultRuntime) RunOfflineAsDeveloper(ctx context.Context, id stri
 	r.runs = append(r.runs, command)
 	r.guests = append(r.guests, workspaceapi.GuestFromContext(ctx))
 	r.quiescedAtRun = append(r.quiescedAtRun, slices.Contains(r.hostedBoxRuntime.stopped, "smithers-coding-host") &&
+		!r.hostedBoxRuntime.running[workspaceHeadReporterService] &&
 		!r.f.tokenLive(r.t, "head") && !r.f.tokenLive(r.t, "landing") && !r.f.tokenLive(r.t, "cache"))
 	if r.path != "" {
 		return r.repo.run(r.t, command, "PATH="+r.path), nil
@@ -205,7 +206,7 @@ func TestCodingResultRecordsTheTestTheServerRan(t *testing.T) {
 	require.True(t, result.Passed())
 	require.Equal(t, fmt.Sprintf("`node --test` exited 0 in the agent's sandbox at %s · 2 tests", f.rt.repo.head[:12]), CodingResultSummary(result))
 
-	require.Equal(t, []bool{true}, f.rt.quiescedAtRun, "the test ran only after the coding host stopped and every run token was gone (Security d-3ensz3)")
+	require.Equal(t, []bool{true}, f.rt.quiescedAtRun, "the test ran only after the coding host and the head reporter stopped and every run token was gone (Security d-3ensz3)")
 	require.Equal(t, []string{"vm-agent-box"}, f.rt.guests, "the test ran on the guest that ended the turn")
 	// The release then retires the box the test ran on: a session box is
 	// never kept warm for its next turn (G3b-2 e15400b6, Security d-am9s3m).
