@@ -1,3 +1,4 @@
+import { digestSync } from "@smthrs/crypto"
 /** RFC 8785 (JCS), restricted to the signing I-JSON domain. JSON keys sort lexicographically by UTF-16 code units at every depth; arrays
  * retain order. JSON primitives use JSON.stringify, with no whitespace. Inputs
  * are JSON values (the form parses JSON before signing). No Unicode normalization.
@@ -12,8 +13,9 @@ export const canonicalJson = (value: unknown): string => {
   return encoded
 }
 export const base64url = (bytes: ArrayBuffer): string => btoa(String.fromCharCode(...new Uint8Array(bytes))).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")
+// The shared synchronous SHA-256 (repo rule: no crypto.subtle in shipped app code); the challenge is its raw 32 bytes.
 export const answerChallenge = async (waitRunId: string, waitName: string, askId: string, answer: unknown, issuedAt: string): Promise<ArrayBuffer> =>
-  crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalJson(["smithers-answer/v1", waitRunId, waitName, askId, answer, issuedAt])))
+  Uint8Array.from(digestSync(canonicalJson(["smithers-answer/v1", waitRunId, waitName, askId, answer, issuedAt])).match(/../g)!, byte => parseInt(byte, 16)).buffer
 
 export const signingProperty = (schema: unknown): string | undefined => {
   const properties = (schema as { properties?: Record<string, { format?: unknown }> } | undefined)?.properties

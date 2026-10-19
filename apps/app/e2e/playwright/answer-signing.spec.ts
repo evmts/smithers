@@ -41,6 +41,11 @@ const openQuestion = async (page: Page, origin: string) => {
   await page.getByTestId("approval-answer-text").fill(unsigned)
   return answers
 }
+// The pinned Ask composer overlays the card's controls, so send from the keyboard as runs.spec.ts does.
+const sendAnswer = async (page: Page) => {
+  await page.getByTestId("approval-answer-send").focus()
+  await page.keyboard.press("Enter")
+}
 // Test-only reference verifier, independent of the shipped challenge code.
 async function verify(answer: any, privateKey: string, origin: string, expectedText = "Ship", run = "wait-execution", askId = "flow-ask-1") {
   const e = answer.evidence
@@ -79,7 +84,7 @@ test("real passkey assertion binds answer, run and origin", async ({ page, baseU
     await navigator.credentials.create({ publicKey: { rp: { id: "localhost", name: "Test" }, user: { id: new Uint8Array([1]), name: "test", displayName: "Test" }, challenge: new Uint8Array([1, 2, 3]), pubKeyCredParams: [{ type: "public-key", alg: -7 }], authenticatorSelection: { residentKey: "required", userVerification: "required" } } })
   })
   const { credentials } = await cdp.send("WebAuthn.getCredentials", { authenticatorId })
-  await page.getByTestId("approval-answer-send").click()
+  await sendAnswer(page)
   await expect.poll(() => answers.length).toBe(1)
   await verify(answers[0], credentials[0]!.privateKey, origin)
   expect(answers[0].text).toBe("Ship")
@@ -95,22 +100,22 @@ test("editing during signing refuses stale assertion and keeps answer", async ({
   await page.evaluate(() => {
     Object.defineProperty(navigator.credentials, "get", { value: () => new Promise(resolve => { (window as any).finishSigning = resolve }) })
   })
-  await page.getByTestId("approval-answer-send").click()
+  await sendAnswer(page)
   await expect.poll(() => page.evaluate(() => typeof (window as any).finishSigning)).toBe("function")
   await page.getByTestId("approval-answer-text").fill('{"text":"Changed"}')
   await page.evaluate(() => {
     const bytes = new Uint8Array([1]).buffer
     ;(window as any).finishSigning({ rawId: bytes, response: { clientDataJSON: bytes, authenticatorData: bytes, signature: bytes, userHandle: null } })
   })
-  await expect(page.getByRole("alert")).toContainText("Answer changed. Sign again.")
+  await expect(page.getByTestId("approval-answer-note")).toContainText("Answer changed. Sign again.")
   expect(answers).toHaveLength(0)
   await expect(page.getByTestId("approval-answer-text")).toHaveValue('{"text":"Changed"}')
 })
 
 test("IP origin refuses signing and sends nothing", async ({ page, baseURL }) => {
   const answers = await openQuestion(page, baseURL!)
-  await page.getByTestId("approval-answer-send").click()
-  await expect(page.getByRole("alert")).toHaveText(`Signing needs http://localhost:${new URL(baseURL!).port}`)
+  await sendAnswer(page)
+  await expect(page.getByTestId("approval-answer-note")).toHaveText(`Signing needs http://localhost:${new URL(baseURL!).port}`)
   expect(answers).toHaveLength(0)
   await expect(page.getByTestId("approval-answer-text")).toHaveValue(unsigned)
 })
@@ -121,8 +126,8 @@ test("cancelled and failed authenticators preserve the draft without submitting"
     await page.evaluate(name => {
       Object.defineProperty(navigator.credentials, "get", { configurable: true, value: async () => { throw new DOMException("Authenticator unavailable", name) } })
     }, name)
-    await page.getByTestId("approval-answer-send").click()
-    await expect(page.getByRole("alert")).toContainText(name === "NotAllowedError" ? "Signing cancelled" : "Authenticator unavailable")
+    await sendAnswer(page)
+    await expect(page.getByTestId("approval-answer-note")).toContainText(name === "NotAllowedError" ? "Signing cancelled" : "Authenticator unavailable")
     expect(answers).toHaveLength(0)
     await expect(page.getByTestId("approval-answer-text")).toHaveValue(unsigned)
   }
