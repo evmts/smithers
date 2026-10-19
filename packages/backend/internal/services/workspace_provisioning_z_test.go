@@ -665,7 +665,7 @@ func TestWorkspaceProvisioning_Z_ForkFastPathAndCloneBranches(t *testing.T) {
 	assert.Contains(t, metrics.activeDeltas, float64(1))
 
 	noExec := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceSandboxClient(&workspaceZNoExecSandbox{}))
-	err := noExec.switchForkedWorkspaceBookmark(ctx, "vm", CreateWorkspaceSessionInput{UserID: 1, SourceBookmark: "feature"})
+	err := noExec.switchForkedWorkspaceBookmark(ctx, "vm", 101, CreateWorkspaceSessionInput{UserID: 1, SourceBookmark: "feature"})
 	assert.Equal(t, http.StatusInternalServerError, apiStatus(t, err))
 	err = noExec.cloneWorkspaceRepository(ctx, "vm", "https://example.test/repo.git", "tok", "", 0, workspaceCloneSource{})
 	assert.Equal(t, http.StatusInternalServerError, apiStatus(t, err))
@@ -673,14 +673,14 @@ func TestWorkspaceProvisioning_Z_ForkFastPathAndCloneBranches(t *testing.T) {
 	err = newWorkspaceServiceForTests(&mockWorkspaceQuerier{createAccessTokenFn: func(context.Context, db.CreateAccessTokenParams) (db.AccessToken, error) {
 		return db.AccessToken{}, stderrors.New("token failed")
 	}}, WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{})).
-		switchForkedWorkspaceBookmark(ctx, "vm", CreateWorkspaceSessionInput{UserID: 1, SourceBookmark: "feature"})
+		switchForkedWorkspaceBookmark(ctx, "vm", 101, CreateWorkspaceSessionInput{UserID: 1, SourceBookmark: "feature"})
 	assert.Equal(t, http.StatusInternalServerError, apiStatus(t, err))
 
 	err = newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{
 		execAwaitFn: func(context.Context, string, sandbox.ExecRequest) (sandbox.ExecResult, error) {
 			return sandbox.ExecResult{}, stderrors.New("exec failed")
 		},
-	})).switchForkedWorkspaceBookmark(ctx, "vm", CreateWorkspaceSessionInput{UserID: 1, SourceBookmark: "feature"})
+	})).switchForkedWorkspaceBookmark(ctx, "vm", 101, CreateWorkspaceSessionInput{UserID: 1, SourceBookmark: "feature"})
 	assert.Equal(t, http.StatusInternalServerError, apiStatus(t, err))
 
 	err = newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{
@@ -688,7 +688,7 @@ func TestWorkspaceProvisioning_Z_ForkFastPathAndCloneBranches(t *testing.T) {
 			code := int32(9)
 			return sandbox.ExecResult{StatusCode: &code, Stderr: strings.Repeat("x", 1200)}, nil
 		},
-	})).switchForkedWorkspaceBookmark(ctx, "vm", CreateWorkspaceSessionInput{UserID: 1, SourceBookmark: "feature"})
+	})).switchForkedWorkspaceBookmark(ctx, "vm", 101, CreateWorkspaceSessionInput{UserID: 1, SourceBookmark: "feature"})
 	assert.Equal(t, http.StatusInternalServerError, apiStatus(t, err))
 
 	err = newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{

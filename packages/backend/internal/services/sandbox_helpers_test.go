@@ -32,7 +32,7 @@ func (s sandboxHelperTokenStore) DeleteAccessToken(ctx context.Context, arg db.D
 	return nil
 }
 
-func TestIssueTemporaryRepoCloneTokenSetsExpiry(t *testing.T) {
+func TestIssueTemporaryBoundRepoCloneTokenSetsExpiryAndBinding(t *testing.T) {
 	t.Parallel()
 
 	before := time.Now().UTC()
@@ -44,15 +44,30 @@ func TestIssueTemporaryRepoCloneTokenSetsExpiry(t *testing.T) {
 		},
 	}
 
-	token, err := issueTemporaryRepoCloneToken(context.Background(), store, 42, "sandbox-agent-clone")
+	token, err := issueTemporaryBoundRepoCloneToken(context.Background(), store, 42, 101, "sandbox-agent-clone")
 	require.NoError(t, err)
 	assert.Equal(t, int64(10), token.ID)
 	assert.True(t, strings.HasPrefix(token.Plaintext, "smithers_"))
 	assert.Equal(t, int64(42), captured.UserID)
-	assert.Equal(t, "read:repository", captured.Scopes)
+	assert.Equal(t, "read:repository,repo:101", captured.Scopes)
 	require.True(t, captured.ExpiresAt.Valid)
 	assert.True(t, captured.ExpiresAt.Time.After(before.Add(temporaryRepoTokenTTL-time.Minute)))
 	assert.True(t, captured.ExpiresAt.Time.Before(time.Now().UTC().Add(temporaryRepoTokenTTL+time.Minute)))
+}
+
+func TestIssueTemporaryBoundRepoCloneTokenRefusesAMissingRepository(t *testing.T) {
+	t.Parallel()
+
+	minted := false
+	store := sandboxHelperTokenStore{
+		createFn: func(context.Context, db.CreateAccessTokenParams) (db.AccessToken, error) {
+			minted = true
+			return db.AccessToken{ID: 10}, nil
+		},
+	}
+	_, err := issueTemporaryBoundRepoCloneToken(context.Background(), store, 42, 0, "sandbox-agent-clone")
+	require.Error(t, err)
+	assert.False(t, minted, "a clone token without a repository binding is never minted")
 }
 
 func TestRevokeTemporaryRepoCloneTokenDetachesFromCanceledContext(t *testing.T) {

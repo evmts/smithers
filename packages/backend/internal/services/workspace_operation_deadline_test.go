@@ -122,7 +122,7 @@ func TestWorkspaceService_MicrosandboxOperationsHavePerCallDeadlines(t *testing.
 			},
 		}
 		svc := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceSandboxClient(vm))
-		err := svc.switchForkedWorkspaceBookmark(context.Background(), "vm-forked", forkOpenInput("landing/demo/main"))
+		err := svc.switchForkedWorkspaceBookmark(context.Background(), "vm-forked", 101, forkOpenInput("landing/demo/main"))
 		require.NoError(t, err)
 	})
 

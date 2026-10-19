@@ -2311,7 +2311,7 @@ func TestDispatchAgentRun_CreatesMicrosandboxVMWithRepositoryClone(t *testing.T)
 		createAccessTokenFn: func(ctx context.Context, arg db.CreateAccessTokenParams) (db.AccessToken, error) {
 			// Capture the clone token (read:repository); the per-run API token
 			// (write:repository) is a separate id that survives the happy path.
-			if arg.Scopes == "read:repository" {
+			if strings.HasPrefix(arg.Scopes, "read:repository") {
 				capturedCreateToken = arg
 				return db.AccessToken{ID: 88, UserID: arg.UserID, Name: arg.Name}, nil
 			}
@@ -2349,7 +2349,7 @@ func TestDispatchAgentRun_CreatesMicrosandboxVMWithRepositoryClone(t *testing.T)
 
 	assert.Equal(t, int64(7), capturedCreateToken.UserID)
 	assert.Equal(t, "sandbox-agent-clone", capturedCreateToken.Name)
-	assert.Equal(t, "read:repository", capturedCreateToken.Scopes)
+	assert.Equal(t, "read:repository,repo:101", capturedCreateToken.Scopes)
 	assert.NotEmpty(t, capturedCreateToken.TokenHash)
 
 	require.Len(t, capturedVMRequest.GitRepos, 1)

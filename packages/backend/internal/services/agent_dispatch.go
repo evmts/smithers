@@ -47,10 +47,10 @@ type agentDispatch struct {
 	repositoryPath string
 	task           db.WorkflowTask
 
-	// Clone token state
-	gitRepos       []sandbox.GitRepositorySpec
-	tempCloneToken temporaryRepoCloneToken
-	hasCloneToken  bool
+	// Clone token state: one read token per cloned repository, each bound to
+	// that repository, all revoked once the box exists.
+	gitRepos    []sandbox.GitRepositorySpec
+	cloneTokens []temporaryRepoCloneToken
 
 	// Per-run scoped jjhub API token (write:repository) injected into the VM so
 	// runner tools can call the REST API as the user. Survives the whole run and
@@ -228,18 +228,27 @@ func (d *agentDispatch) cleanup() {
 	}
 }
 
-// revokeCloneToken revokes the temporary repo clone token if one was issued.
+// revokeCloneToken revokes every temporary repo clone token this dispatch issued.
 func (d *agentDispatch) revokeCloneToken() {
 	d.revokeCloneTokenWithContext(d.ctx)
 }
 
 func (d *agentDispatch) revokeCloneTokenWithContext(ctx context.Context) {
-	if !d.hasCloneToken {
-		return
+	for _, token := range d.cloneTokens {
+		revokeTemporaryRepoCloneToken(ctx, d.svc.dispatchQ, d.input.UserID, token.ID)
 	}
-	revokeTemporaryRepoCloneToken(ctx, d.svc.dispatchQ, d.input.UserID, d.tempCloneToken.ID)
-	d.hasCloneToken = false
-	d.tempCloneToken = temporaryRepoCloneToken{}
+	d.cloneTokens = nil
+}
+
+// issueCloneToken mints a read token bound to the one repository it clones and
+// records it for revokeCloneToken.
+func (d *agentDispatch) issueCloneToken(repositoryID int64) (temporaryRepoCloneToken, error) {
+	token, err := issueTemporaryBoundRepoCloneToken(d.ctx, d.svc.dispatchQ, d.input.UserID, repositoryID, "sandbox-agent-clone")
+	if err != nil {
+		return temporaryRepoCloneToken{}, err
+	}
+	d.cloneTokens = append(d.cloneTokens, token)
+	return token, nil
 }
 
 // markInfraFailed marks the dispatch as infrastructure-failed and returns a
@@ -613,14 +622,12 @@ func (d *agentDispatch) prepareRepoClone() error {
 		return nil
 	}
 
-	tempCloneToken, err := issueTemporaryRepoCloneToken(d.ctx, d.svc.dispatchQ, d.input.UserID, "sandbox-agent-clone")
+	cloneToken, err := d.issueCloneToken(d.input.RepositoryID)
 	if err != nil {
 		return d.markInfraFailed("create repo clone token: " + err.Error())
 	}
-	d.tempCloneToken = tempCloneToken
-	d.hasCloneToken = true
 
-	cloneURL, cloneErr := buildAuthenticatedRepoCloneURL(d.svc.gitBaseURL, d.input.RepoOwner, d.input.RepoName, d.tempCloneToken.Plaintext)
+	cloneURL, cloneErr := buildAuthenticatedRepoCloneURL(d.svc.gitBaseURL, d.input.RepoOwner, d.input.RepoName, cloneToken.Plaintext)
 	if cloneErr != nil {
 		return d.markInfraFailed("build repo clone url: " + cloneErr.Error())
 	}
@@ -650,7 +657,11 @@ func (d *agentDispatch) prepareRepoClone() error {
 			return d.markInfraFailed("materialize changeset: " + err.Error())
 		}
 		for _, member := range members {
-			memberURL, urlErr := buildAuthenticatedRepoCloneURL(d.svc.gitBaseURL, member.Owner, member.Repo, d.tempCloneToken.Plaintext)
+			memberToken, tokenErr := d.issueCloneToken(member.RepositoryID)
+			if tokenErr != nil {
+				return d.markInfraFailed("create changeset member clone token: " + tokenErr.Error())
+			}
+			memberURL, urlErr := buildAuthenticatedRepoCloneURL(d.svc.gitBaseURL, member.Owner, member.Repo, memberToken.Plaintext)
 			if urlErr != nil {
 				return d.markInfraFailed("build changeset member clone url: " + urlErr.Error())
 			}

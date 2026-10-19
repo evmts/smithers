@@ -1517,7 +1517,7 @@ func (s *WorkspaceService) provisionWorkspaceVM(ctx context.Context, workspace d
 		tempCloneToken temporaryRepoCloneToken
 	)
 	if !workspace.SourceSnapshotID.Valid && strings.TrimSpace(input.RepoOwner) != "" && strings.TrimSpace(input.RepoName) != "" {
-		issued, err := issueTemporaryRepoCloneToken(ctx, s.q, input.UserID, "sandbox-workspace-clone")
+		issued, err := issueTemporaryBoundRepoCloneToken(ctx, s.q, input.UserID, workspace.RepositoryID, "sandbox-workspace-clone")
 		if err != nil {
 			s.markWorkspaceProvisionFailed(ctx, workspace, err)
 			return workspace, workspaceProvisioningError("create repo clone token", err)
@@ -1869,7 +1869,7 @@ func (s *WorkspaceService) tryForkDerivedFromPrimary(ctx context.Context, worksp
 	// Switch the fork onto the target bookmark BEFORE registering its VM id, so
 	// a switch failure just deletes the fork and falls back to cold with the
 	// workspace row untouched (no stale vm_id to reconcile).
-	if err := s.switchForkedWorkspaceBookmark(ctx, vm.ID, input); err != nil {
+	if err := s.switchForkedWorkspaceBookmark(ctx, vm.ID, workspace.RepositoryID, input); err != nil {
 		s.deleteOrphanedWorkspaceVM(ctx, vm.ID)
 		slog.Warn("fork bookmark switch failed; falling back to cold clone", "fork_vm", vm.ID, "error", err)
 		return workspace, false
@@ -1908,10 +1908,11 @@ func (s *WorkspaceService) tryForkDerivedFromPrimary(ctx context.Context, worksp
 // switchForkedWorkspaceBookmark points a freshly forked VM's working copy at
 // the target bookmark. The fork inherits the primary's full repo, so this is a
 // fast LOCAL operation — a delta git fetch (not a re-clone) plus jj bookmark
-// ops. A short-lived repo read token authenticates the fetch.
-func (s *WorkspaceService) switchForkedWorkspaceBookmark(ctx context.Context, vmID string, input CreateWorkspaceSessionInput) error {
+// ops. A short-lived read token bound to the workspace's repository
+// authenticates the fetch.
+func (s *WorkspaceService) switchForkedWorkspaceBookmark(ctx context.Context, vmID string, repositoryID int64, input CreateWorkspaceSessionInput) error {
 	bookmark := strings.TrimSpace(input.SourceBookmark)
-	return s.runForkedWorkspaceCommand(ctx, vmID, input.UserID, func(token string) string {
+	return s.runForkedWorkspaceCommand(ctx, vmID, input.UserID, repositoryID, func(token string) string {
 		return buildForkBookmarkSwitchCommand(token, bookmark)
 	})
 }

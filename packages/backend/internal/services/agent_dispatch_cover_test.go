@@ -187,19 +187,19 @@ func TestAgentDispatch_Cov_LoadHistoryPrepareCloneAndMarkRunning(t *testing.T) {
 		input: DispatchAgentRunInput{UserID: 7, RepoOwner: " ", RepoName: "demo"},
 	}
 	require.NoError(t, blankClone.prepareRepoClone())
-	assert.False(t, blankClone.hasCloneToken)
+	assert.Empty(t, blankClone.cloneTokens)
 	assert.Empty(t, blankClone.repositoryPath)
 
 	cloneDispatch := &agentDispatch{
 		svc:   newTestDispatchService(&mockAgentDispatchQuerier{}, nil),
 		ctx:   ctx,
-		input: DispatchAgentRunInput{SessionID: sessionID, UserID: 7, RepoOwner: "alice", RepoName: "demo"},
+		input: DispatchAgentRunInput{SessionID: sessionID, RepositoryID: 101, UserID: 7, RepoOwner: "alice", RepoName: "demo"},
 		run:   db.WorkflowRun{ID: 10},
 		step:  db.WorkflowStep{ID: 20},
 		task:  db.WorkflowTask{ID: 30},
 	}
 	require.NoError(t, cloneDispatch.prepareRepoClone())
-	assert.True(t, cloneDispatch.hasCloneToken)
+	assert.Len(t, cloneDispatch.cloneTokens, 1)
 	assert.Equal(t, "/workspace", cloneDispatch.repositoryPath)
 	require.Len(t, cloneDispatch.gitRepos, 1)
 	assert.Contains(t, cloneDispatch.gitRepos[0].Repo, "x-access-token")
@@ -208,7 +208,7 @@ func TestAgentDispatch_Cov_LoadHistoryPrepareCloneAndMarkRunning(t *testing.T) {
 	badClone := &agentDispatch{
 		svc:   newTestDispatchService(&mockAgentDispatchQuerier{}, nil),
 		ctx:   ctx,
-		input: DispatchAgentRunInput{SessionID: sessionID, UserID: 7, RepoOwner: "alice", RepoName: "demo"},
+		input: DispatchAgentRunInput{SessionID: sessionID, RepositoryID: 101, UserID: 7, RepoOwner: "alice", RepoName: "demo"},
 		run:   db.WorkflowRun{ID: 10},
 		step:  db.WorkflowStep{ID: 20},
 		task:  db.WorkflowTask{ID: 30},
@@ -289,8 +289,7 @@ func TestAgentDispatch_Cov_CleanupRevokesDeletesAndFailsRun(t *testing.T) {
 		run:               db.WorkflowRun{ID: 88},
 		step:              db.WorkflowStep{ID: 99},
 		task:              db.WorkflowTask{ID: 100},
-		tempCloneToken:    temporaryRepoCloneToken{ID: 123, Plaintext: "secret"},
-		hasCloneToken:     true,
+		cloneTokens:       []temporaryRepoCloneToken{{ID: 123, Plaintext: "secret"}},
 		vm:                agentDispatchCovVM("vm-cleanup"),
 		vmCreated:         true,
 		watchdogStarted:   true,
@@ -299,7 +298,7 @@ func TestAgentDispatch_Cov_CleanupRevokesDeletesAndFailsRun(t *testing.T) {
 	dispatch.cleanup()
 	assert.Equal(t, db.DeleteAccessTokenParams{ID: 123, UserID: 77}, deletedToken)
 	assert.Equal(t, "vm-cleanup", deletedVM)
-	assert.False(t, dispatch.hasCloneToken)
+	assert.Empty(t, dispatch.cloneTokens)
 	assert.Equal(t, int64(100), terminal.ID)
 	assert.Equal(t, "dispatch failed", terminal.LastError.String)
 	assert.Zero(t, failedRun, "task-backed cleanup should advance through task status, not direct fail")
@@ -307,7 +306,7 @@ func TestAgentDispatch_Cov_CleanupRevokesDeletesAndFailsRun(t *testing.T) {
 	taskless := *dispatch
 	taskless.task = db.WorkflowTask{}
 	taskless.infraFailedMarked = false
-	taskless.hasCloneToken = false
+	taskless.cloneTokens = nil
 	taskless.vmCreated = false
 	taskless.watchdogStarted = false
 	taskless.cleanup()

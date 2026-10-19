@@ -107,14 +107,14 @@ func (s *WorkspaceService) CreateAgentWorkspace(ctx context.Context, input Creat
 	return AgentWorkspaceResult{WorkspaceID: row.ID, VMID: workspace.VmID}, nil
 }
 
-// runForkedWorkspaceCommand mints a short-lived fetch token and runs the
-// builder's command as root in the forked VM.
-func (s *WorkspaceService) runForkedWorkspaceCommand(ctx context.Context, vmID string, userID int64, build func(token string) string) error {
+// runForkedWorkspaceCommand mints a short-lived fetch token bound to the
+// workspace's repository and runs the builder's command as root in the forked VM.
+func (s *WorkspaceService) runForkedWorkspaceCommand(ctx context.Context, vmID string, userID, repositoryID int64, build func(token string) string) error {
 	execClient, ok := s.sandbox.(sandboxExecClient)
 	if !ok {
 		return pkgerrors.Internal("sandbox exec client unavailable")
 	}
-	token, err := issueTemporaryRepoCloneToken(ctx, s.q, userID, "sandbox-fork-fetch")
+	token, err := issueTemporaryBoundRepoCloneToken(ctx, s.q, userID, repositoryID, "sandbox-fork-fetch")
 	if err != nil {
 		return pkgerrors.Internal("create fork fetch token: " + err.Error())
 	}
