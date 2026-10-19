@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:1944d0e96e0ebb3e5532d85f86357b697f7c62ff91c1795ed0fc98fabe1e896a",
+  "digest": "sha256:88d23b1289eae6e7e7b4eca58aed5491c1524b6c3c27c3fa6c19f3bfc197acbd",
   "faults": [
     "user",
     "wait",
@@ -26,11 +26,25 @@
       "doc": "The access grant presented to the controller does not cover this sandbox."
     },
     {
+      "code": "agent_credential_refused",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "An agent credential cannot open this pull request."
+    },
+    {
       "code": "agent_loop_retired",
       "fault": "bug",
       "status": 501,
       "retry_after": 0,
       "doc": "plue's own 0.x agent loop was retired and the Smithers 1.0 replacement has no entrypoint for a single dispatched task yet. Nothing the caller did."
+    },
+    {
+      "code": "already_landed",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The session already has a landing."
     },
     {
       "code": "append_not_requested",
@@ -327,11 +341,25 @@
       "doc": "The guest is reachable but activation has not finished exposing its login shell."
     },
     {
+      "code": "guest_refused",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "A guest cannot open a pull request."
+    },
+    {
       "code": "guest_user_required",
       "fault": "user",
       "status": 400,
       "retry_after": 0,
       "doc": "The exec request did not name the guest user to run as."
+    },
+    {
+      "code": "head_receipt_mismatch",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The turn head differs from the test receipt."
     },
     {
       "code": "host_lease_lost",
@@ -481,6 +509,20 @@
       "doc": "No worker in the pool has free CPU, memory or VM slots for the box, at placement or at resume. The box and its disk are untouched."
     },
     {
+      "code": "no_coding_result",
+      "fault": "user",
+      "status": 422,
+      "retry_after": 0,
+      "doc": "No reply carries a coding result."
+    },
+    {
+      "code": "no_turn_head",
+      "fault": "user",
+      "status": 422,
+      "retry_after": 0,
+      "doc": "The coding result has no immutable turn head."
+    },
+    {
       "code": "non_replayable_operation",
       "fault": "user",
       "status": 409,
@@ -570,6 +612,13 @@
       "status": 500,
       "retry_after": 0,
       "doc": "Provisioning a box failed for a reason plue has no specific code for. Persisted on the workspace row as failure_code."
+    },
+    {
+      "code": "push_permission_required",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The person needs repository push access."
     },
     {
       "code": "push_too_large",
@@ -712,6 +761,13 @@
       "doc": "plue is up but a component it needs is not answering."
     },
     {
+      "code": "session_not_found",
+      "fault": "user",
+      "status": 404,
+      "retry_after": 0,
+      "doc": "The repository session does not exist."
+    },
+    {
       "code": "setup_closed",
       "fault": "user",
       "status": 401,
@@ -724,6 +780,13 @@
       "status": 409,
       "retry_after": 0,
       "doc": "The setup request identity was already admitted with different input."
+    },
+    {
+      "code": "sign_in_required",
+      "fault": "user",
+      "status": 401,
+      "retry_after": 0,
+      "doc": "Sign in to open a pull request."
     },
     {
       "code": "snapshot_in_use",

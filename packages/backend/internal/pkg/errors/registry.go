@@ -40,6 +40,18 @@ type Code string
 type Fault string
 
 const (
+	CodeSignInRequired         Code = "sign_in_required"
+	CodeGuestRefused           Code = "guest_refused"
+	CodePushPermissionRequired Code = "push_permission_required"
+	CodeAgentCredentialRefused Code = "agent_credential_refused"
+	CodeSessionNotFound        Code = "session_not_found"
+	CodeAlreadyLanded          Code = "already_landed"
+	CodeHeadReceiptMismatch    Code = "head_receipt_mismatch"
+	CodeNoCodingResult         Code = "no_coding_result"
+	CodeNoTurnHead             Code = "no_turn_head"
+)
+
+const (
 	FaultUser       Fault = "user"
 	FaultWait       Fault = "wait"
 	FaultInfra      Fault = "infra"
@@ -323,6 +335,16 @@ const (
 // without a row cannot reach the wire with a fault, and a row without a
 // constant cannot be raised.
 var registry = map[Code]Entry{
+	CodeSignInRequired:         {Status: 401, Fault: FaultUser, Class: ClassPermission, Doc: "Sign in to open a pull request."},
+	CodeGuestRefused:           {Status: 403, Fault: FaultUser, Class: ClassNever, Doc: "A guest cannot open a pull request."},
+	CodePushPermissionRequired: {Status: 403, Fault: FaultUser, Class: ClassPermission, Doc: "The person needs repository push access."},
+	CodeAgentCredentialRefused: {Status: 403, Fault: FaultUser, Class: ClassNever, Doc: "An agent credential cannot open this pull request."},
+	CodeSessionNotFound:        {Status: 404, Fault: FaultUser, Class: ClassUser, Doc: "The repository session does not exist."},
+	CodeAlreadyLanded:          {Status: 409, Fault: FaultUser, Class: ClassConflict, Doc: "The session already has a landing."},
+	CodeHeadReceiptMismatch:    {Status: 409, Fault: FaultUser, Class: ClassConflict, Doc: "The turn head differs from the test receipt."},
+	CodeNoCodingResult:         {Status: 422, Fault: FaultUser, Class: ClassUser, Doc: "No reply carries a coding result."},
+	CodeNoTurnHead:             {Status: 422, Fault: FaultUser, Class: ClassUser, Doc: "The coding result has no immutable turn head."},
+
 	CodeAppendTaskMissing:        {Status: http.StatusNotFound, Fault: FaultUser, Class: ClassUser, Doc: "No append task has been queued for this landing."},
 	CodeAppendNotRequested:       {Status: http.StatusConflict, Fault: FaultUser, Class: ClassConflict, Doc: "The landing's existing task is not a native append request."},
 	CodeAppendReceiptUnavailable: {Status: http.StatusServiceUnavailable, Fault: FaultInfra, Class: ClassInfra, Doc: "The exact native append receipt cannot currently be verified."},

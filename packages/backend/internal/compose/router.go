@@ -609,6 +609,7 @@ func buildRouter(
 			r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
 			r.Use(authLoader(queries, cfg.Auth))
 			r.Use(sseTicketAuth)
+			r.Use(routes.AgentSessionReadPrivacy)
 			if config.IsSingleOwner(cfg.Auth) {
 				r.Use(memberCommands(queries))
 			}
@@ -1068,6 +1069,7 @@ func buildRouter(
 		r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
 		r.Use(middleware.JSONAllowContentType("application/json", routes.LFSJSONMediaType))
 		r.Use(middleware.MaxBodySizeForRequest(apiBodyLimit))
+		r.Use(routes.PullPublicationAgentCredentialFirst(config.IsMultitenant(cfg.Auth)))
 		// Global API rate limit: 5000/hr auth, 600/hr anon. AuthLoader runs first
 		// so user context is available for limit selection. Search routes excluded
 		// (they have their own SearchRateLimit). The worker token-exchange is
@@ -1078,6 +1080,7 @@ func buildRouter(
 		// WITHOUT the valid worker bearer, so no protection is lost by the skip.
 		r.Use(lfsauth.HTTPMiddleware(lfsAuthManager))
 		r.Use(authLoader(queries, cfg.Auth))
+		r.Use(routes.AgentSessionReadPrivacy)
 		r.Use(apiCSRFMiddleware)
 		r.Use(middleware.ExcludePaths(middleware.GlobalAPIRateLimit(queries), "/api/search/", "/api/_test/", "/api/telemetry/", "/api/auth/github/token-exchange"))
 		if config.IsSingleOwner(cfg.Auth) {
@@ -1466,6 +1469,11 @@ func buildRouter(
 				// A merge's credential is refused before the repository is
 				// resolved, as the numbered door refuses it.
 				r.Use(routes.MergeCredentialFirst)
+				if config.IsMultitenant(cfg.Auth) {
+					r.Use(routes.HostedPullPublicationCredentialFirst)
+					r.Use(routes.HostedSessionLandingOrigin(allowedOrigins))
+				}
+				r.Use(routes.SessionLandingCredentialFirst)
 				if queries != nil {
 					r.Use(middleware.LoadRepoContext(queries))
 				}
@@ -1800,6 +1808,8 @@ func buildRouter(
 					r.With(append(writeRepo, gateAgents)...).Post("/agent/sessions", agentSessionHandler.CreateSession)
 					r.With(append(readRepo, gateAgents)...).Get("/agent/sessions", agentSessionHandler.ListSessions)
 					r.With(append(readRepo, gateAgents)...).Get("/agent/sessions/{id}", agentSessionHandler.GetSession)
+					sessionLandingRepo := []func(http.Handler) http.Handler{middleware.RequireScope(middleware.ScopeWriteRepository), repoAPIQuota}
+					r.With(append(sessionLandingRepo, gateAgents)...).Post("/agent/sessions/{session_id}/landing", agentSessionHandler.OpenLanding)
 					if config.IsMultitenant(cfg.Auth) {
 						r.With(append(readRepo, gateAgents)...).Get("/agent-sessions/{id}/egress", agentSessionHandler.ListEgressAudit)
 					}
@@ -2119,6 +2129,11 @@ func buildRouter(
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/contents", repoHandler.GetRepoContents)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/contents/*", repoHandler.GetRepoContents)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/home", repoHandler.GetRepositoryHome)
+			r.With(append(append([]func(http.Handler) http.Handler{}, readRepo...), gateSearch, middleware.SearchRateLimit(queries))...).Get("/repos/{owner}/{repo}/search/code", searchHandler.SearchCode)
+			r.With(append(append([]func(http.Handler) http.Handler{}, readRepo...), gateSearch, middleware.SearchRateLimit(queries), withholdConversation)...).Get("/repos/{owner}/{repo}/search/issues", searchHandler.SearchIssues)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/branches", repoHandler.ListRepositoryBranches)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/commits", repoHandler.ListRepositoryCommits)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/commits/{sha}", repoHandler.GetRepositoryCommit)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/git/refs", repoHandler.ListGitRefs)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/commits/{ref}/statuses", commitStatusHandler.GetCommitStatuses)
 			// jj VCS read routes: bookmarks, changes, operations.

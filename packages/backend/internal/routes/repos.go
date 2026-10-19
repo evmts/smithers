@@ -43,6 +43,7 @@ type UpdateRepoRequest struct {
 
 // RepoResponse is the API response for repo operations.
 type RepoResponse struct {
+	IssueTracker               string     `json:"issue_tracker,omitempty"`
 	ID                         int64      `json:"id"`
 	Owner                      string     `json:"owner"`
 	Name                       string     `json:"name"`
@@ -229,6 +230,7 @@ func (h *RepoHandler) GetRepo(w http.ResponseWriter, r *http.Request) {
 
 	resp := mapRepoResponse(owner, view.Repository, h.SSHHost)
 	resp.CanWrite = view.CanWrite
+	resp.IssueTracker = view.IssueTracker
 	// The route's own loaded permission, never a role the client sent or a
 	// rank inferred from can_write: "write" and "admin" both write, and only
 	// one of them administers.
@@ -662,6 +664,11 @@ func (h *RepoHandler) ListGitRefs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	refs, err := h.Service.ListGitRefs(r.Context(), middleware.UserFromContext(r.Context()), owner, repoName)
+	if apiErr, ok := err.(*errors.APIError); ok && apiErr.Status == http.StatusForbidden && middleware.UserFromContext(r.Context()) == nil {
+		// Like its contents, a private repository answers strangers as if it did not exist.
+		errors.WriteError(w, errors.NotFound("repository not found"))
+		return
+	}
 	if err != nil {
 		writeRouteError(w, r, err)
 		return

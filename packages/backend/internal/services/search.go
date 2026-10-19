@@ -40,13 +40,14 @@ type SearchRepositoriesInput struct {
 }
 
 type SearchIssuesInput struct {
-	Query     string `json:"query"`
-	State     string `json:"state"`
-	Label     string `json:"label"`
-	Assignee  string `json:"assignee"`
-	Milestone string `json:"milestone"`
-	Page      int    `json:"page"`
-	PerPage   int    `json:"per_page"`
+	RepositoryID int64  `json:"repository_id"`
+	Query        string `json:"query"`
+	State        string `json:"state"`
+	Label        string `json:"label"`
+	Assignee     string `json:"assignee"`
+	Milestone    string `json:"milestone"`
+	Page         int    `json:"page"`
+	PerPage      int    `json:"per_page"`
 }
 
 type SearchUsersInput struct {
@@ -56,9 +57,10 @@ type SearchUsersInput struct {
 }
 
 type SearchCodeInput struct {
-	Query   string `json:"query"`
-	Page    int    `json:"page"`
-	PerPage int    `json:"per_page"`
+	RepositoryID int64  `json:"repository_id"`
+	Query        string `json:"query"`
+	Page         int    `json:"page"`
+	PerPage      int    `json:"per_page"`
 }
 
 type RepositorySearchResult struct {
@@ -210,6 +212,7 @@ func (s *SearchService) SearchIssues(ctx context.Context, viewer *db.User, input
 	pageOffset := ClampInt32((page - 1) * perPage)
 
 	total, err := s.queries.CountSearchIssuesFTS(ctx, db.CountSearchIssuesFTSParams{
+		RepositoryID:    input.RepositoryID,
 		Query:           query,
 		StateFilter:     state,
 		LabelFilter:     label,
@@ -230,6 +233,7 @@ func (s *SearchService) SearchIssues(ctx context.Context, viewer *db.User, input
 	}
 
 	rows, err := s.queries.SearchIssuesFTS(ctx, db.SearchIssuesFTSParams{
+		RepositoryID:    input.RepositoryID,
 		Query:           query,
 		StateFilter:     state,
 		LabelFilter:     label,
@@ -330,8 +334,9 @@ func (s *SearchService) SearchCode(ctx context.Context, viewer *db.User, input S
 	pageOffset := ClampInt32((page - 1) * perPage)
 
 	total, err := s.queries.CountSearchCodeFTS(ctx, db.CountSearchCodeFTSParams{
-		Query:    query,
-		ViewerID: viewerID,
+		RepositoryID: input.RepositoryID,
+		Query:        query,
+		ViewerID:     viewerID,
 	})
 	if err != nil {
 		return CodeSearchResultPage{}, pkgerrors.Internal("failed to count code results").WithCause(err)
@@ -346,10 +351,11 @@ func (s *SearchService) SearchCode(ctx context.Context, viewer *db.User, input S
 	}
 
 	rows, err := s.queries.SearchCodeFTS(ctx, db.SearchCodeFTSParams{
-		Query:      query,
-		ViewerID:   viewerID,
-		PageOffset: pageOffset,
-		PageSize:   int32(perPage),
+		RepositoryID: input.RepositoryID,
+		Query:        query,
+		ViewerID:     viewerID,
+		PageOffset:   pageOffset,
+		PageSize:     int32(perPage),
 	})
 	if err != nil {
 		return CodeSearchResultPage{}, pkgerrors.Internal("failed to search code").WithCause(err)

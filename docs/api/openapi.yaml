@@ -9181,7 +9181,7 @@ paths:
           $ref: '#/components/responses/InternalError'
     get:
       summary: GET /api/repos/{owner}/{repo}
-      description: 'Reads one repository as this viewer sees it. `can_write` is the viewer''s write access. `permission` is the viewer''s effective permission on this repository — `read`, `write`, `admin` or `owner` — and is what a client reads before offering a setting only an administrator may change, such as a secret. It is absent when the answer carries none, and an absent value grants nothing.'
+      description: 'Reads one repository as this viewer sees it. `issue_tracker` is the repository tracker (`github` or `smithers-cloud`), when resolved from the same binding as the repository list. `github_source` names the authorized GitHub source when visible. `can_write` is the viewer''s write access. `permission` is the viewer''s effective permission on this repository — `read`, `write`, `admin` or `owner` — and is what a client reads before offering a setting only an administrator may change, such as a secret. It is absent when the answer carries none, and an absent value grants nothing.'
       operationId: get_api_repos_owner_repo
       tags:
         - Repositories
@@ -9476,7 +9476,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AnyJSON'
+                $ref: '#/components/schemas/AgentSessionRead'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -13396,6 +13396,188 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/AuthorizationForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/repos/{owner}/{repo}/branches:
+    get:
+      summary: GET /api/repos/{owner}/{repo}/branches
+      description: >-
+        Lists the repository's bookmarks with their head commits, for repository
+        readers.
+      operationId: get_api_repos_owner_repo_branches
+      tags:
+        - Repositories
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          description: A decimal offset into the list.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Page size, 1 to 100. Defaults to 30.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/repos/{owner}/{repo}/commits:
+    get:
+      summary: GET /api/repos/{owner}/{repo}/commits
+      description: >-
+        Lists repository history newest first, one bounded page at a time, under the
+        same read rule as repository contents.
+      operationId: get_api_repos_owner_repo_commits
+      tags:
+        - Repositories
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ref
+          in: query
+          required: false
+          description: The revision to start from; absent starts at the repository head.
+          schema:
+            type: string
+        - name: path
+          in: query
+          required: false
+          description: Only commits that change this path, followed across renames.
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          description: The `next_cursor` of the previous page.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Page size, 1 to 100. Defaults to 30.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/repos/{owner}/{repo}/commits/{sha}:
+    get:
+      summary: GET /api/repos/{owner}/{repo}/commits/{sha}
+      description: >-
+        Reads one immutable commit and its file summary. An unknown commit
+        answers 404.
+      operationId: get_api_repos_owner_repo_commits_sha
+      tags:
+        - Repositories
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sha
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '422':
@@ -21729,7 +21911,10 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: Forbidden; hosted agent credentials return agent_credential_refused
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
         '404':
           $ref: '#/components/responses/NotFound'
         '422':
@@ -22272,6 +22457,68 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/repos/{owner}/{repo}/agent/sessions/{session_id}/landing:
+    post:
+      summary: Open a person's pull request from a coding turn
+      operationId: post_api_repos_owner_repo_agent_sessions_session_id_landing
+      tags:
+        - Repositories
+      description: Uses the recorded turn head. Never merges or changes main. Agent credentials and guests are refused.
+      parameters:
+        - {name: owner, in: path, required: true, schema: {type: string}}
+        - {name: repo, in: path, required: true, schema: {type: string}}
+        - {name: session_id, in: path, required: true, schema: {type: string}}
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reply_id: {type: integer, format: int64, minimum: 1}
+      responses:
+        '201':
+          description: Pull request opened
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionLanding'
+        '401':
+          description: sign_in_required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403':
+          description: guest_refused, push_permission_required, or agent_credential_refused
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404':
+          description: session_not_found (missing or not owned by the caller)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '409':
+          description: head_receipt_mismatch or already_landed (details contains the existing SessionLanding)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422':
+          description: no_coding_result or no_turn_head
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /api/repo-connection:
     delete:
       summary: DELETE /api/repo-connection
@@ -22634,6 +22881,156 @@ paths:
         '403': {$ref: '#/components/responses/AuthorizationForbidden'}
         '404': {description: Run unavailable}
         '503': {description: Background runs unavailable}
+  /api/repos/{owner}/{repo}/search/code:
+    get:
+      summary: GET /api/repos/{owner}/{repo}/search/code
+      description: >-
+        Searches code in one repository, with the repository's read permission.
+      operationId: get_api_repos_owner_repo_search_code
+      tags:
+        - Search
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: false
+          description: The search text.
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          description: A decimal offset into the results.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Page size, 1 to 100. Defaults to 30.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/repos/{owner}/{repo}/search/issues:
+    get:
+      summary: GET /api/repos/{owner}/{repo}/search/issues
+      description: >-
+        Searches issues in one repository, with the repository's read permission.
+      operationId: get_api_repos_owner_repo_search_issues
+      tags:
+        - Search
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: false
+          description: The search text.
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: label
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: assignee
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: milestone
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          description: A decimal offset into the results.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Page size, 1 to 100. Defaults to 30.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /api/search/code:
     get:
       summary: GET /api/search/code
@@ -26450,6 +26847,54 @@ components:
       scheme: bearer
       description: Shared first-party Worker secret from auth.worker_exchange_token / SMITHERS_AUTH_WORKER_EXCHANGE_TOKEN.
   schemas:
+    SessionLanding:
+      type: object
+      required: [landing_number, branch, pull_number, pull_url, head_commit, tested, passed]
+      properties:
+        landing_number: {type: integer, format: int64}
+        branch: {type: string}
+        pull_number: {type: integer, format: int64}
+        pull_url: {type: string, format: uri}
+        head_commit: {type: string, pattern: '^[0-9a-f]{40}$'}
+        tested: {type: boolean}
+        passed: {type: boolean, description: False for zero tests even when the command exits zero.}
+    AgentSessionRead:
+      type: object
+      required: [id, repository_id, user_id, title, status, message_count, created_at, updated_at, metadata, workspace, run, reason_code, reason, retryable]
+      properties:
+        id: {type: string}
+        repository_id: {type: integer, format: int64}
+        user_id: {type: integer, format: int64}
+        title: {type: string}
+        status: {type: string}
+        message_count: {type: integer, format: int64}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        metadata: {$ref: '#/components/schemas/AnyJSON'}
+        workspace_id: {type: string}
+        workspace:
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [id, name, status]
+              properties:
+                id: {type: string}
+                name: {type: string}
+                status: {type: string}
+        run:
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [id, status, model, started_at, finished_at]
+              properties:
+                id: {type: integer, format: int64}
+                status: {type: string}
+                model: {type: [string, 'null']}
+                started_at: {type: [string, 'null'], format: date-time}
+                finished_at: {type: [string, 'null'], format: date-time}
+        reason_code: {type: [string, 'null']}
+        reason: {type: [string, 'null']}
+        retryable: {type: boolean}
     AppBootstrap:
       type: object
       required:

@@ -125,7 +125,9 @@ func TestRepos_H_ErrorBranches(t *testing.T) {
 	reposHStatus(t, h, h.GetRepoContents, reposHReq(http.MethodGet, "/contents", ``, noOwner, false), http.StatusBadRequest)
 	reposHStatus(t, h, h.GetRepoContents, reposHReq(http.MethodGet, "/contents/missing", ``, map[string]string{"owner": "alice", "repo": "demo", "*": "missing"}, false), http.StatusNotFound)
 	reposHStatus(t, h, h.ListGitRefs, reposHReq(http.MethodGet, "/refs", ``, noOwner, false), http.StatusBadRequest)
-	reposHStatus(t, h, h.ListGitRefs, reposHReq(http.MethodGet, "/refs", ``, params, false), http.StatusForbidden)
+	// A stranger cannot tell a private repository from a missing one; a signed-in person keeps the 403.
+	reposHStatus(t, h, h.ListGitRefs, reposHReq(http.MethodGet, "/refs", ``, params, false), http.StatusNotFound)
+	reposHStatus(t, h, h.ListGitRefs, reposHReq(http.MethodGet, "/refs", ``, params, true), http.StatusForbidden)
 
 	reposHStatus(t, h, h.PatchRepo, reposHReq(http.MethodPatch, "/repo", `{"archived":true}`, params, true), http.StatusForbidden)
 	reposHStatus(t, h, h.PatchRepo, reposHReq(http.MethodPatch, "/repo", `{"archived":false}`, params, true), http.StatusForbidden)

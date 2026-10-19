@@ -39,6 +39,17 @@
  * @category models
  */
 export type RepositorySubject =
+  | { readonly kind: "commits"; readonly location?: string }
+  | { readonly kind: "commit"; readonly sha: string }
+  | { readonly kind: "branches" }
+  | { readonly kind: "flows"; readonly name?: string }
+  | { readonly kind: "settings"; readonly section?: string }
+  | { readonly kind: "search"; readonly q: string }
+  | { readonly kind: "runs" }
+  | { readonly kind: "run"; readonly id: string }
+  | { readonly kind: "approvals" }
+  | { readonly kind: "redirect"; readonly to: "runs" }
+  | { readonly kind: "redirect"; readonly to: "issues"; readonly from: "labels" | "milestones" }
   | { readonly kind: "pull"; readonly number: number; readonly tab: "conversation" | "commits" | "checks" | "files" }
   | { readonly kind: "pulls" }
   | { readonly kind: "issue"; readonly number: number }
@@ -239,6 +250,26 @@ export const resolveRefLocation = (
  */
 export const parseRepositorySubject = (segments: ReadonlyArray<string>): RepositorySubject | undefined => {
   const [head, ...below] = segments
+  if (head === "commits") {
+    if (below.length === 0) return { kind: "commits" }
+    const location = repositoryLocation(below)
+    return location === undefined ? undefined : { kind: "commits", location }
+  }
+  if (below.length === 0) {
+    if (head === "branches" || head === "runs" || head === "approvals" || head === "flows" || head === "settings") {
+      return { kind: head }
+    }
+    if (head === "search") return { kind: "search", q: "" }
+    if (head === "actions") return { kind: "redirect", to: "runs" }
+    if (head === "labels" || head === "milestones") return { kind: "redirect", to: "issues", from: head }
+  }
+  if (below.length === 1 && repositoryLocation(below) !== undefined) {
+    const value = below[0]!
+    if (head === "commit" && /^[0-9a-fA-F]{7,40}$/.test(value)) return { kind: "commit", sha: value }
+    if (head === "flows") return { kind: "flows", name: value }
+    if (head === "settings") return { kind: "settings", section: value }
+    if (head === "runs") return { kind: "run", id: value }
+  }
   if (head === "tree" || head === "blob") {
     const location = repositoryLocation(below)
     return location === undefined ? undefined : { kind: head, location }
@@ -276,10 +307,69 @@ export const parseRepositorySubject = (segments: ReadonlyArray<string>): Reposit
 export const splitRepositoryPath = (
   pathname: string
 ): { readonly owner: string; readonly name: string; readonly subject?: RepositorySubject } | undefined => {
+  const query = pathname.indexOf("?")
+  const search = query < 0 ? "" : pathname.slice(query)
+  pathname = query < 0 ? pathname : pathname.slice(0, query)
   if (!pathname.startsWith("/")) return undefined
   const [owner, name, ...rest] = pathname.replace(/\/$/, "").slice(1).split("/")
   if (owner === undefined || owner === "" || name === undefined || name === "") return undefined
   if (rest.length === 0) return { owner, name }
-  const subject = parseRepositorySubject(rest)
+  const parsed = parseRepositorySubject(rest)
+  const subject = parsed?.kind === "search" ? { ...parsed, q: new URLSearchParams(search).get("q") ?? "" } : parsed
   return subject === undefined ? undefined : { owner, name, subject }
 }
+
+/**
+ * Format a parsed subject below its repository root, preserving opaque locations.
+ * @since 0.1.0
+ * @category formatters
+ */
+export const formatRepositorySubject = (subject: RepositorySubject): string => {
+  switch (subject.kind) {
+    case "pull":
+      return `pull/${subject.number}${subject.tab === "conversation" ? "" : `/${subject.tab}`}`
+    case "issue":
+      return `issues/${subject.number}`
+    case "tree":
+    case "blob":
+      return `${subject.kind}/${subject.location}`
+    case "commits":
+      return `commits${subject.location === undefined ? "" : `/${subject.location}`}`
+    case "commit":
+      return `commit/${subject.sha}`
+    case "flows":
+      return `flows${subject.name === undefined ? "" : `/${subject.name}`}`
+    case "settings":
+      return `settings${subject.section === undefined ? "" : `/${subject.section}`}`
+    case "search":
+      return `search${subject.q === "" ? "" : `?${new URLSearchParams({ q: subject.q })}`}`
+    case "run":
+      return `runs/${subject.id}`
+    case "redirect":
+      return subject.to === "runs" ? "actions" : subject.from
+    default:
+      return subject.kind
+  }
+}
+
+/**
+ * Site and infrastructure owners that cannot name a repository in either host.
+ * @since 0.1.0
+ * @category constants
+ */
+export const RESERVED_SITE_SEGMENTS: ReadonlyArray<string> = [
+  "404",
+  "_astro",
+  "api",
+  "blog",
+  "changelogs",
+  "demo",
+  "docs",
+  "download",
+  "migration",
+  "pricing",
+  "privacy",
+  "refunds",
+  "terms",
+  "w"
+]

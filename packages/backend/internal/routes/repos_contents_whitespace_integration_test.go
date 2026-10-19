@@ -106,7 +106,11 @@ func TestContentsWhitespacePathsIntegration(t *testing.T) {
 		require.Equal(t, "plain file", plain.Content)
 		require.Equal(t, "whitespace-only dir", readFile("   /OWNERS").Content)
 		blank := readFile("  ")
-		require.Equal(t, services.RepoContent{Name: "  ", Path: "  ", Type: "file", Encoding: "utf-8", Content: "whitespace-only file", Size: 20}, blank)
+		require.Equal(t, services.RepoContent{
+			Name: "  ", Path: "  ", Type: "file", CommitSHA: commit,
+			RawURL:   "/api/repos/alice/demo/contents/%20%20?raw=1&ref=" + commit,
+			Encoding: "utf-8", Content: "whitespace-only file", Size: 20,
+		}, blank)
 	})
 
 	t.Run("directory_paging_keeps_exact_names", func(t *testing.T) {

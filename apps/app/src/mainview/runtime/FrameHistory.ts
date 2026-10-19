@@ -74,10 +74,10 @@ const stateLocation = (state: unknown): FrameLocation | undefined => {
  *   (`/w/<workspace>/b/<branch>/f/<frame>`) and the location is read back
  *   from the pathname.
  * - Booted from a repository path (`/owner/name`, RepoLink.pathRepo): the
- *   address bar keeps that exact path for the life of the page, so a reload
- *   or a shared link reselects the repository. Frame navigation still pushes
- *   history entries and back/forward still fire popstate; the location
- *   travels in each entry's state instead of its URL.
+ *   address bar keeps the current repository subject path, so a reload or
+ *   shared link reselects it. RepositoryRouter owns subject changes; frame
+ *   navigation preserves that URL and carries the frame location in state.
+ *   Back/forward still fire popstate for both subscribers.
  * - Mounted with `keepUrl` (AppMount.tsx, the smithers.sh home page): the
  *   address the visitor is on is kept as it is. Other entry paths stay pinned.
  */
@@ -97,22 +97,33 @@ export const createBrowserFrameHistory = (
    * reading it at write time never restores an entry marker boot has spent.
    */
   const subject = pathTarget(path)?.subject
+  // RepositoryRouter changes subjects in place, so read the current route, not the boot path.
   const subjectUrl = () => {
+    const pathname = host.location.pathname
+    const kind = pathTarget(pathname)?.subject?.kind
     const source = new URLSearchParams(host.location.search ?? "")
     const query = new URLSearchParams()
-    const keys = subject?.kind === "tree" || subject?.kind === "blob" ? ["L", "raw", "view"]
-      : subject?.kind === "issue" ? ["source"] : ["q"]
+    const keys = kind === "tree" || kind === "blob" ? ["L", "raw", "view"]
+      : kind === "issue" ? ["source"] : ["q"]
     for (const key of keys) {
       const value = source.get(key)
       if (value === null || (key === "source" && value !== "github" && value !== "smithers-cloud")) continue
       query.set(key, value)
     }
-    return `${path}${query.size ? `?${query}` : ""}`
+    return `${pathname}${query.size ? `?${query}` : ""}`
+  }
+  // Repository subjects change in-place; frame writes retain the current route,
+  // never the boot URL. The spent legacy tutorial marker is still removed.
+  const repositoryUrl = (): string => {
+    const params = new URLSearchParams(host.location.search ?? "")
+    params.delete("tutorial")
+    const search = params.toString()
+    return `${host.location.pathname}${search === "" ? "" : `?${search}`}`
   }
   const pinned: (() => string) | undefined = options.keepUrl === true && path === "/"
     ? () => `${host.location.pathname}${host.location.search}`
     : subject?.kind === "tree" || subject?.kind === "blob" || subject?.kind === "issue" || subject?.kind === "issues" || subject?.kind === "pulls" ? subjectUrl
-    : pathRepo(path) !== null || options.keepUrl === true ? () => path : undefined
+    : pathRepo(path) !== null || options.keepUrl === true ? repositoryUrl : undefined
   const current = (): FrameLocation | undefined =>
     pinned === undefined ? parseFramePath(host.location.pathname) : stateLocation(host.history.state)
   const url = (location: FrameLocation): string => pinned === undefined ? framePath(location) : pinned()

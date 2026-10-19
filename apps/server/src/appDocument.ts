@@ -1,4 +1,4 @@
-import { splitRepositoryPath } from "@smthrs/rpc/RepositorySubjectPath"
+import { RESERVED_SITE_SEGMENTS, splitRepositoryPath } from "@smthrs/rpc/RepositorySubjectPath"
 import { AVAILABLE_REPOS, COMING_SOON_REPOS } from "./publicRepoCatalog"
 
 /*
@@ -73,9 +73,7 @@ export const catalogDocumentPath = (pathname: string): string | undefined => {
  * appDocument.test.ts walks both source trees so a new route cannot silently
  * become a GitHub owner. Keep this the one routing reservation list.
  */
-export const RESERVED_SITE_SEGMENTS: ReadonlyArray<string> = [
-  "404", "_astro", "api", "blog", "changelogs", "demo", "docs", "download", "migration", "pricing", "privacy", "refunds", "terms", "w"
-]
+export { RESERVED_SITE_SEGMENTS }
 
 /** GitHub owner and repository slugs, with exactly two segments outside the site's routes. */
 export const isRepositoryPath = (pathname: string): boolean => {
@@ -102,4 +100,13 @@ export const repositorySubjectRoot = (pathname: string): string | undefined => {
   if (target?.subject === undefined) return undefined
   const root = `/${target.owner}/${target.name}`
   return isRepositoryPath(root) ? root : undefined
+}
+
+
+/** The canonical replacement for a retired repository subject, preserving query. */
+export const repositoryRedirectPath = (pathname: string): string | undefined => {
+  const target = splitRepositoryPath(pathname)
+  if (target?.subject?.kind !== "redirect") return undefined
+  const root = `/${target.owner}/${target.name}`
+  return isRepositoryPath(root) ? `${root}/${target.subject.to}` : undefined
 }

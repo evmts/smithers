@@ -3398,3 +3398,20 @@ func TestServerRouter_OrgReadIsNotFeatureGated(t *testing.T) {
 
 	assert.NotContains(t, rec.Body.String(), "feature not available")
 }
+
+func TestRepositorySearchFeatureFlagGate(t *testing.T) {
+	router := routerWithFeatureFlags(config.FeatureFlagsConfig{}, nil, nil, nil)
+	var globalBody string
+	for _, path := range []string{"/api/search/code?q=hello", "/api/search/issues?q=hello", "/api/repos/alice/demo/search/code?q=hello", "/api/repos/alice/demo/search/issues?q=hello"} {
+		t.Run(path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+			require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+			require.Contains(t, rec.Body.String(), "feature not available")
+			if globalBody == "" {
+				globalBody = rec.Body.String()
+			}
+			require.JSONEq(t, globalBody, rec.Body.String())
+		})
+	}
+}

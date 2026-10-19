@@ -395,13 +395,13 @@ func TestAgentService_ListSessions_Success(t *testing.T) {
 	svc := NewAgentService(&mockAgentQuerier{
 		listAgentSessionsByRepoWithMessageCountFn: func(ctx context.Context, arg db.ListAgentSessionsByRepoWithMessageCountParams) ([]db.ListAgentSessionsByRepoWithMessageCountRow, error) {
 			assert.Equal(t, int64(101), arg.RepositoryID)
-			// page=2, perPage=10 → offset=10
-			assert.Equal(t, int32(10), arg.PageOffset)
-			assert.Equal(t, int32(10), arg.PageSize)
-			return []db.ListAgentSessionsByRepoWithMessageCountRow{
+			// Filter the complete repository before slicing owned page 2.
+			assert.Equal(t, int32(0), arg.PageOffset)
+			assert.Equal(t, int32(100), arg.PageSize)
+			return append(makeOwnedSessionPrefix(10), []db.ListAgentSessionsByRepoWithMessageCountRow{
 				{ID: "s1", RepositoryID: 101, UserID: 1, Title: "first", Status: "active", MessageCount: 3, CreatedAt: now, UpdatedAt: now},
 				{ID: "s2", RepositoryID: 101, UserID: 1, Title: "second", Status: "completed", MessageCount: 7, CreatedAt: now, UpdatedAt: now},
-			}, nil
+			}...), nil
 		},
 		countAgentSessionsByRepoFn: func(ctx context.Context, repositoryID int64) (int64, error) {
 			assert.Equal(t, int64(101), repositoryID)
@@ -409,9 +409,9 @@ func TestAgentService_ListSessions_Success(t *testing.T) {
 		},
 	})
 
-	sessions, total, err := svc.ListSessions(context.Background(), 101, 2, 10)
+	sessions, total, err := svc.ListSessions(middleware.ContextWithAuthInfo(context.Background(), &middleware.AuthInfo{User: &db.User{ID: 1}}), 101, 2, 10)
 	require.NoError(t, err)
-	assert.Equal(t, int64(22), total)
+	assert.Equal(t, int64(12), total)
 	assert.Len(t, sessions, 2)
 	assert.Equal(t, "first", sessions[0].Title)
 	assert.Equal(t, "second", sessions[1].Title)
@@ -426,7 +426,7 @@ func TestAgentService_ListSessions_DefaultPagination(t *testing.T) {
 		listAgentSessionsByRepoWithMessageCountFn: func(ctx context.Context, arg db.ListAgentSessionsByRepoWithMessageCountParams) ([]db.ListAgentSessionsByRepoWithMessageCountRow, error) {
 			// page=0 defaults to page=1, perPage=0 defaults to 30
 			assert.Equal(t, int32(0), arg.PageOffset)
-			assert.Equal(t, int32(30), arg.PageSize)
+			assert.Equal(t, int32(100), arg.PageSize)
 			return nil, nil
 		},
 		countAgentSessionsByRepoFn: func(ctx context.Context, repositoryID int64) (int64, error) {
@@ -434,7 +434,7 @@ func TestAgentService_ListSessions_DefaultPagination(t *testing.T) {
 		},
 	})
 
-	sessions, total, err := svc.ListSessions(context.Background(), 101, 0, 0)
+	sessions, total, err := svc.ListSessions(middleware.ContextWithAuthInfo(context.Background(), &middleware.AuthInfo{User: &db.User{ID: 1}}), 101, 0, 0)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), total)
 	assert.Empty(t, sessions)
@@ -446,7 +446,7 @@ func TestAgentService_ListSessions_PerPageExceedingMaxResetsToDefault(t *testing
 	svc := NewAgentService(&mockAgentQuerier{
 		listAgentSessionsByRepoWithMessageCountFn: func(ctx context.Context, arg db.ListAgentSessionsByRepoWithMessageCountParams) ([]db.ListAgentSessionsByRepoWithMessageCountRow, error) {
 			// perPage=200 > 100, service resets to default of 30
-			assert.Equal(t, int32(30), arg.PageSize)
+			assert.Equal(t, int32(100), arg.PageSize)
 			return nil, nil
 		},
 		countAgentSessionsByRepoFn: func(ctx context.Context, repositoryID int64) (int64, error) {
@@ -454,7 +454,7 @@ func TestAgentService_ListSessions_PerPageExceedingMaxResetsToDefault(t *testing
 		},
 	})
 
-	_, _, err := svc.ListSessions(context.Background(), 101, 1, 200)
+	_, _, err := svc.ListSessions(middleware.ContextWithAuthInfo(context.Background(), &middleware.AuthInfo{User: &db.User{ID: 1}}), 101, 1, 200)
 	require.NoError(t, err)
 }
 
@@ -3176,8 +3176,8 @@ func TestAgentService_ListSessions_TombstonedRowsExcluded(t *testing.T) {
 	svc := NewAgentService(&mockAgentQuerier{
 		listAgentSessionsByRepoWithMessageCountFn: func(_ context.Context, arg db.ListAgentSessionsByRepoWithMessageCountParams) ([]db.ListAgentSessionsByRepoWithMessageCountRow, error) {
 			return []db.ListAgentSessionsByRepoWithMessageCountRow{
-				{ID: "live-a", RepositoryID: arg.RepositoryID, Status: "active", MessageCount: 3},
-				{ID: "live-b", RepositoryID: arg.RepositoryID, Status: "completed", MessageCount: 7},
+				{UserID: 1, ID: "live-a", RepositoryID: arg.RepositoryID, Status: "active", MessageCount: 3},
+				{UserID: 1, ID: "live-b", RepositoryID: arg.RepositoryID, Status: "completed", MessageCount: 7},
 			}, nil
 		},
 		countAgentSessionsByRepoFn: func(_ context.Context, _ int64) (int64, error) {
@@ -3185,7 +3185,7 @@ func TestAgentService_ListSessions_TombstonedRowsExcluded(t *testing.T) {
 		},
 	})
 
-	sessions, total, err := svc.ListSessions(context.Background(), 101, 1, 30)
+	sessions, total, err := svc.ListSessions(middleware.ContextWithAuthInfo(context.Background(), &middleware.AuthInfo{User: &db.User{ID: 1}}), 101, 1, 30)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), total)
 	require.Len(t, sessions, 2)
@@ -3297,12 +3297,11 @@ func TestAgentService_ListSessions_IncludesMessageCount(t *testing.T) {
 		},
 	})
 
-	results, total, err := svc.ListSessions(context.Background(), 101, 1, 30)
+	results, total, err := svc.ListSessions(middleware.ContextWithAuthInfo(context.Background(), &middleware.AuthInfo{User: &db.User{ID: 1}}), 101, 1, 30)
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), total) // from default mock CountAgentSessionsByRepo
-	require.Len(t, results, 2)
+	assert.Equal(t, int64(1), total) // only the caller's row counts
+	require.Len(t, results, 1)
 	assert.Equal(t, int64(10), results[0].MessageCount)
-	assert.Equal(t, int64(25), results[1].MessageCount)
 }
 
 // -----------------------------------------------------------------------------
@@ -3526,4 +3525,12 @@ func TestAgentService_IngestRunnerEvent_PopulatesDenormFields(t *testing.T) {
 	assert.Equal(t, sessionID, capturedParts[0].SessionID,
 		"IngestRunnerEvent must populate agent_parts.session_id (ticket 0118)")
 	assert.Equal(t, "text", capturedParts[0].PartType)
+}
+
+func makeOwnedSessionPrefix(count int) []db.ListAgentSessionsByRepoWithMessageCountRow {
+	rows := make([]db.ListAgentSessionsByRepoWithMessageCountRow, count)
+	for i := range rows {
+		rows[i].UserID = 1
+	}
+	return rows
 }

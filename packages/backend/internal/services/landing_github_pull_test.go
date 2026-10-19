@@ -565,3 +565,42 @@ func TestLandingGitHubConditionalReadPreservesStatusHeadersAndCachedFact(t *test
 	require.Equal(t, "80", header.Get("X-RateLimit-Remaining"))
 	require.Equal(t, 2, calls)
 }
+
+func TestLandingGitHubPullHostedRefusesAgentCredentialsBeforeRepository(t *testing.T) {
+	for _, kind := range []string{"box-host", "agent-session", "run", "bot", "service", "raw-agent"} {
+		t.Run(kind, func(t *testing.T) {
+			ctx := context.Background()
+			actor := &db.User{ID: 1, UserType: "user"}
+			if kind == "bot" || kind == "service" {
+				actor.UserType = kind
+			} else if kind == "raw-agent" {
+				ctx = middleware.ContextWithAgentToken(ctx, "secret")
+			} else {
+				rawScopes := "write:repository"
+				if kind != "run" {
+					rawScopes += "," + middleware.RepositoryRestrictionScope(9) + "," + middleware.LandingWorkspaceScope(pullWorkspace) + "," + middleware.PathRestrictionScopes([]string{"**"})[0]
+				}
+				if kind == "agent-session" {
+					rawScopes += "," + middleware.AgentSessionRestrictionScope("session")
+				}
+				ctx = middleware.ContextWithAuthInfo(ctx, &middleware.AuthInfo{User: actor, IsTokenAuth: true, TokenSystemIssued: true, RawScopes: rawScopes, Scopes: middleware.ParseTokenScopes(rawScopes)})
+			}
+			_, err := (&LandingGitHubPullService{}).OpenLandingGitHubPull(ctx, actor, "missing", "absent", 1, LandingGitHubPullInput{})
+			var api *pkgerrors.APIError
+			require.ErrorAs(t, err, &api)
+			require.Equal(t, pkgerrors.CodeAgentCredentialRefused, api.Code)
+		})
+	}
+}
+
+// Security/PM Tuesday ruling: the install factory OpenPull retains its landing credential.
+func TestLandingGitHubPullInstallRulingKeepsFactoryOpenPull(t *testing.T) {
+	f := newLandingPullFixture(t)
+	f.service.landings.installMainMirror = true
+	actor := &db.User{ID: 1, UserType: "user"}
+	ctx := middleware.ContextWithAuthInfo(t.Context(), &middleware.AuthInfo{User: actor, IsTokenAuth: true, TokenSystemIssued: true})
+	pull, err := f.service.OpenLandingGitHubPull(ctx, actor, "owner", "demo", 12, LandingGitHubPullInput{CommitID: pullTip})
+	require.NoError(t, err)
+	require.True(t, pull.Created)
+	require.Len(t, f.pulls.creates, 1)
+}
