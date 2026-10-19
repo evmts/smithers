@@ -1,15 +1,22 @@
+import { Effect, Stream } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
+
 export type ChatTurn = { role: "user" | "assistant"; content: string }
 
-export const CHAT_FAILED = "Smithers couldn't answer. Try again."
+// The header that ties one answer's browser logs, Worker logs and model span together.
+export const ANSWER_ID_HEADER = "x-smithers-answer-id"
 
-// Streams Smithers' answer to the conversation as text chunks, from the Worker's POST /api/chat.
-export async function* streamAnswer(history: ReadonlyArray<ChatTurn>): AsyncGenerator<string> {
-  const response = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ messages: history }),
-  })
-  if (!response.ok || !response.body) throw new Error(CHAT_FAILED)
-  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
-  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) yield chunk.value
-}
+// Smithers' answer to the conversation, as text chunks streamed from the Worker's POST /api/chat.
+export const streamAnswer = (chatUrl: string, answerId: string, history: ReadonlyArray<ChatTurn>) =>
+  Stream.unwrap(
+    Effect.gen(function* () {
+      const client = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk)
+      const response = yield* client.execute(
+        HttpClientRequest.post(chatUrl).pipe(
+          HttpClientRequest.setHeader(ANSWER_ID_HEADER, answerId),
+          HttpClientRequest.bodyJsonUnsafe({ messages: history }),
+        ),
+      )
+      return response.stream.pipe(Stream.decodeText)
+    }),
+  )

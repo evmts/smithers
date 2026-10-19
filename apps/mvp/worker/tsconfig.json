@@ -6,8 +6,15 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "lib": ["ES2022"],
-    "types": ["@cloudflare/workers-types"]
+    "lib": [
+      "ES2022"
+    ],
+    "types": [
+      "@cloudflare/workers-types"
+    ],
+    "allowImportingTsExtensions": true
   },
-  "include": ["."]
+  "include": [
+    "."
+  ]
 }

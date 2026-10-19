@@ -1,40 +1,30 @@
-import { CHAT_FAILED, streamAnswer } from "./api"
-import { composer, messages, type Composer, type Message } from "./collections"
+import type { Store } from "@livestore/livestore"
+import { events, QUESTION_MAX_LENGTH, type schema } from "./schema"
 
-// Every write to chat state goes through these actions.
+export type ChatStore = Store<typeof schema>
 
-const updateComposer = (change: (draft: Composer) => void) => composer.update("composer", change)
+// What a person does to chat state: one synchronous commit each, called from React event handlers and
+// key bindings with the tab's store. Answers are written by the answerer (answerer.ts), never by a component.
 
-export const openComposer = () => updateComposer((draft) => void (draft.open = true))
-export const closeComposer = () => updateComposer((draft) => void (draft.open = false))
-export const toggleComposer = () => updateComposer((draft) => void (draft.open = !draft.open))
-export const setDraft = (text: string) => updateComposer((draft) => void (draft.draft = text))
+export const openComposer = (store: ChatStore) => store.commit(events.composerSet({ open: true }))
+export const closeComposer = (store: ChatStore) => store.commit(events.composerSet({ open: false }))
+export const toggleComposer = (store: ChatStore, open: boolean) => store.commit(events.composerSet({ open: !open }))
+export const setDraft = (store: ChatStore, draft: string) => store.commit(events.composerSet({ draft }))
 
-const addMessage = (role: Message["role"], text: string, status: Message["status"]) => {
-  const id = crypto.randomUUID()
-  messages.insert({ id, role, text, status, createdAt: Date.now() })
-  return id
-}
-
-const history = () =>
-  [...messages.values()]
-    .filter((message) => message.status === "done")
-    .sort((a, b) => a.createdAt - b.createdAt)
-    .map(({ role, text }) => ({ role, content: text }))
-
-// Sends the user's text with the conversation so far and streams Smithers' answer into a new message.
-export async function sendMessage(text: string) {
-  setDraft("")
-  addMessage("user", text, "done")
-  const turns = history()
-  const answer = addMessage("assistant", "", "streaming")
-  try {
-    for await (const delta of streamAnswer(turns)) messages.update(answer, (draft) => void (draft.text += delta))
-    messages.update(answer, (draft) => void (draft.status = "done"))
-  } catch {
-    messages.update(answer, (draft) => {
-      draft.text = CHAT_FAILED
-      draft.status = "failed"
-    })
-  }
+// Clears the draft and asks the question; this tab's answerer picks up the empty answer. A blank or too long
+// question commits nothing and keeps the draft. Returns whether the question was asked.
+export const ask = (store: ChatStore, text: string) => {
+  const question = text.trim()
+  if (question === "" || question.length > QUESTION_MAX_LENGTH) return false
+  store.commit(
+    events.composerSet({ draft: "" }),
+    events.questionAsked({
+      id: crypto.randomUUID(),
+      text: question,
+      answerId: crypto.randomUUID(),
+      askedBy: store.sessionId,
+      createdAt: Date.now(),
+    }),
+  )
+  return true
 }

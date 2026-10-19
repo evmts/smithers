@@ -1,5 +1,4 @@
-import { Button } from "@smthrs/ui/button"
-import { Wordmark } from "@smthrs/ui/wordmark"
+import { Button, Wordmark } from "@smthrs/ui"
 import { Link } from "@tanstack/react-router"
 import "./landing.css"
 

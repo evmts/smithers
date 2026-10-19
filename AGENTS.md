@@ -219,6 +219,22 @@ never leave two implementations of one behavior. The product backend is
 `packages/backend` only; Plue composes it and adds private deployment ports.
 Never add product code to Plue.
 
+## Use the Smithers libraries (Will, 2026-10-19)
+
+Before writing code that calls a model, runs an agent loop, makes a durable
+workflow, renders UI, or touches GitHub, use the Smithers library for that job
+from [the library catalog](docs/libraries.md). Hand-rolling one needs a stated
+reason in the change, such as a missing feature and its issue.
+
+Platform code (`node:*`, `Bun.*`, the DOM, child processes, sockets, the
+filesystem) lives only in the host packages `@smthrs/platform-node`,
+`@smthrs/platform-bun` and `@smthrs/platform-browser`, and reaches every other
+package as injected Effect services and layers. Every other library must
+import and run in a browser, a Cloudflare Worker, Node and Bun, and consumers
+import only from a package's root entry. A package that breaks this has a bug;
+the catalog lists the known ones. Apps, command-line programs and `@smthrs/ui`
+components are exempt.
+
 ## One mythical stack; append-only main (Will, 2026-09-25)
 
 A repository's history is one linear `mythical` stack of logical changes that

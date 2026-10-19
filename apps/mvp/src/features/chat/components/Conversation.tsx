@@ -1,8 +1,9 @@
 import { ChatMessage, ChatTranscript, MessageResponse, Wordmark } from "@smthrs/ui"
-import { useConversation } from "../queries"
+import { useAppStore } from "../../../livestore/store"
+import { conversation$ } from "../queries"
 
 export function Conversation() {
-  const conversation = useConversation()
+  const conversation = useAppStore().useQuery(conversation$)
   return (
     <ChatTranscript empty={<Wordmark />}>
       {conversation.map((message) => (

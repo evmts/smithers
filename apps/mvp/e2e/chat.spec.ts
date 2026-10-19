@@ -1,9 +1,10 @@
-import { expect, test } from "@playwright/test"
+import { answerTo, expect, test } from "./fixtures"
 
 // Real browser, real Worker, real model: no mocks. Runs locally, or against production with BASE_URL.
 
 test("⌘K opens and hides chat, and Esc and the Hide button hide it too", async ({ page }) => {
   await page.goto("/app")
+  await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
   const composer = page.getByRole("textbox", { name: "Message Smithers" })
   await expect(composer).toBeHidden()
 
@@ -31,13 +32,40 @@ test("⌘K opens and hides chat, and Esc and the Hide button hide it too", async
 
 test("a user asks Smithers and gets a streamed answer", async ({ page }) => {
   await page.goto("/app")
+  await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
   await page.keyboard.press("ControlOrMeta+k")
   const composer = page.getByRole("textbox", { name: "Message Smithers" })
-  await composer.fill("Reply with exactly the word: pong")
+  // The conversation is shared and persists, so each run asks for its own word.
+  const word = `pong-${Date.now()}`
+  await composer.fill(`Reply with exactly the word: ${word}`)
   await composer.press("Enter")
 
   const conversation = page.getByRole("region", { name: "Conversation", exact: true })
-  await expect(conversation.getByText("Reply with exactly the word: pong")).toBeVisible()
-  await expect(conversation.getByText(/^pong\.?$/i)).toBeVisible({ timeout: 60_000 })
-  await expect(conversation).not.toContainText("Smithers couldn't answer")
+  await expect(conversation.getByText(`Reply with exactly the word: ${word}`)).toBeVisible()
+  await expect(answerTo(conversation, `Reply with exactly the word: ${word}`)).toContainText(word, { timeout: 60_000 })
+})
+
+test("reloading mid-answer fails that answer and leaves chat usable", async ({ page }) => {
+  await page.goto("/app")
+  await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
+  await page.keyboard.press("ControlOrMeta+k")
+  const composer = page.getByRole("textbox", { name: "Message Smithers" })
+  const word = `count-${Date.now()}`
+  await composer.fill(`Write ${word}, then count from 1 to 3000 in words, one number per line.`)
+  await composer.press("Enter")
+
+  // The page reloads as soon as the answer is underway; a long answer takes seconds to finish.
+  const conversation = page.getByRole("region", { name: "Conversation", exact: true })
+  const answer = answerTo(conversation, `Write ${word}`)
+  await expect(answer).toHaveAttribute("data-role", "assistant")
+  await page.reload()
+
+  await expect(answer).toContainText("Smithers couldn't answer. Try again.", { timeout: 30_000 })
+
+  // The composer stays open across the reload, and the next question gets its answer.
+  const next = `after-${Date.now()}`
+  await expect(composer).toBeVisible()
+  await composer.fill(`Reply with exactly the word: ${next}`)
+  await composer.press("Enter")
+  await expect(answerTo(conversation, `Reply with exactly the word: ${next}`)).toContainText(next, { timeout: 60_000 })
 })

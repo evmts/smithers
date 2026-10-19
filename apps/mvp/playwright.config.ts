@@ -1,16 +1,13 @@
 import { defineConfig } from "@playwright/test"
 
-// Real browser against the real app: no route mocks. BASE_URL points it at production;
-// without it, Playwright starts the local app and Worker.
-const baseURL = process.env.BASE_URL ?? "http://localhost:5190"
+// Real browsers against the real app, Worker, Durable Object and model: no mocks.
+// BASE_URL points the tests at a deployment; without it, Playwright starts `alchemy dev`
+// (which needs the chat model's credential, CEREBRAS_API_KEY by default, in the environment).
+const baseURL = process.env.BASE_URL ?? "http://localhost:1337"
 
 export default defineConfig({
   testDir: "e2e",
-  use: { baseURL, video: "on" },
-  webServer: process.env.BASE_URL
-    ? undefined
-    : [
-        { command: "pnpm dev:worker", url: "http://localhost:8790/", reuseExistingServer: true },
-        { command: "pnpm dev", url: "http://localhost:5190", reuseExistingServer: true },
-      ],
+  timeout: 90_000,
+  use: { baseURL, video: "on", trace: "retain-on-failure" },
+  webServer: process.env.BASE_URL ? undefined : { command: "pnpm dev", url: baseURL, reuseExistingServer: true, timeout: 120_000 },
 })

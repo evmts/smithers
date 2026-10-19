@@ -1,14 +1,12 @@
-import { useLiveQuery } from "@tanstack/react-db"
-import { composer, messages } from "./collections"
+import { queryDb } from "@livestore/livestore"
+import { tables } from "./schema"
 
-// Every read of chat state goes through these live queries.
+export const conversation$ = queryDb(tables.messages.orderBy("position", "asc"))
 
-export const useConversation = () =>
-  useLiveQuery((q) => q.from({ message: messages }).orderBy(({ message }) => message.createdAt)).data
+export const composer$ = queryDb(tables.composer.get())
 
-export const useComposer = () => {
-  const [row] = useLiveQuery((q) => q.from({ composer })).data
-  return row ?? { id: "composer" as const, open: false, draft: "" }
-}
-
-export const useAnswering = () => useConversation().some((message) => message.status === "streaming")
+// Answers a tab asked for that are still streaming.
+export const awaiting$ = (sessionId: string) =>
+  queryDb(tables.messages.where({ role: "assistant", status: "streaming", askedBy: sessionId }), {
+    deps: [sessionId],
+  })

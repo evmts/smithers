@@ -1,8 +1,10 @@
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 
-// In dev, /api goes to the Worker running under `pnpm dev:worker`.
+// Alchemy injects the Cloudflare plugin, which runs worker/index.ts beside the app in dev and build.
 export default defineConfig({
   plugins: [react()],
-  server: { proxy: { "/api": "http://localhost:8790" } },
+  worker: { format: "es" },
+  server: { port: 5190, strictPort: true, fs: { strict: false } },
+  build: { target: "esnext" },
 })

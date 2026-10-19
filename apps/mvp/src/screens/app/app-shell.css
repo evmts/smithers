@@ -14,3 +14,12 @@
 .app-shell-composer { display: flex; justify-content: center; }
 .app-shell-composer > * { flex: 1; }
 .app-shell-composer > button { flex: none; }
+
+.app-status {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
