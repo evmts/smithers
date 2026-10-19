@@ -226,5 +226,7 @@ export const landingRefusal = (code: string | null, fallback: string): string =>
     session_not_found: "This agent run could not be found.",
     head_receipt_mismatch: "Tests not run at this commit. Run the change again before opening a pull request.",
     no_coding_result: "The agent has not returned a change yet.",
-    no_turn_head: "The agent has not returned a change head yet."
+    no_turn_head: "The agent has not returned a change head yet.",
+    // A Smithers-native repository has no GitHub repository to open a pull request on (PM d-ky555a).
+    github_destination_required: "This repository isn't connected to GitHub, so a pull request can't open here."
   })[code ?? ""] ?? fallback
