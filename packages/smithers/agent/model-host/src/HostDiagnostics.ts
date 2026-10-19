@@ -70,7 +70,7 @@ export interface HostDiagnostics {
 export interface HostDiagnosticOptions {
   /** The turn these records belong to; omitted when there is none to name. */
   readonly turnId?: string
-  /** Where one record line goes; the guest's standard error by default. */
+  /** Where one record line goes; the runtime's error console (standard error under Node and Bun) by default. */
   readonly write?: (line: string) => void
   /** Monotonic milliseconds. */
   readonly clock?: () => number
@@ -111,6 +111,16 @@ const safeFields = (fields: HostDiagnosticFields): {
 }
 
 /**
+ * Lets the process exit with the timer pending. Node and Bun hand back a
+ * handle that would otherwise hold the process open; a runtime whose timers
+ * are plain numbers has no process to hold.
+ */
+const unref = (timer: unknown): void => {
+  const handle = timer as { readonly unref?: () => unknown }
+  handle.unref?.()
+}
+
+/**
  * Creates a bounded recorder. Nothing it writes names a host, header,
  * destination, credential or message, and its total output is bounded, so it
  * is safe to leave on for every hosted turn.
@@ -119,8 +129,13 @@ const safeFields = (fields: HostDiagnosticFields): {
  * @since 1.0.0-rc.0
  */
 export const createHostDiagnostics = (options: HostDiagnosticOptions = {}): HostDiagnostics => {
+  // The runtime's own error stream, which is standard error under Node and
+  // Bun and the platform's error log elsewhere: every runtime has one, so the
+  // recorder needs nothing from its host. A record line ends in its newline,
+  // and the console adds its own.
   const write = options.write ?? ((line: string) => {
-    process.stderr.write(line)
+    // eslint-disable-next-line no-console -- the default sink is the runtime's error stream by design.
+    console.error(line.slice(0, -1))
   })
   const clock = options.clock ?? (() => performance.now())
   const pendingMillis = options.pendingMillis ?? 15_000
@@ -172,7 +187,7 @@ export const createHostDiagnostics = (options: HostDiagnosticOptions = {}): Host
         emit(event, "pending", { ...fields, pendingMillis: Math.round(clock() - openedAt) })
       }, pendingMillis)
       // A pending report never keeps the guest process alive past its turn.
-      timer.unref()
+      unref(timer)
       let settled = false
       return (outcome = {}) => {
         // A completion reached twice, say from a finalizer and a handler,

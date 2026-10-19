@@ -13,6 +13,9 @@
  * incarnation of this host abandoned; `HostLiveness` answers whether a recorded
  * run owner is still running here. `ScopedProcess` runs transient commands with
  * supervised process cleanup and owns their input and output pipes.
+ * `FetchTransport` reports how far each `fetch` to one origin got on the wire,
+ * which is how the Node model host attributes a journal callback that never
+ * answered.
  *
  * `AtomicFileSystem` is `NodeHost`'s filesystem slot. It executes operations
  * through the packaged `smithers-jj-export --atomic-fs` helper, selected by
@@ -27,6 +30,9 @@ export * as NodeHost from "./NodeHost.ts"
 
 /** The outbound HTTP client a Node process should use, read off its environment. */
 export * as EgressHttpClient from "./EgressHttpClient.ts"
+
+/** The transport phase each `fetch` to one origin reached, read from Node's `undici` channels. */
+export * as FetchTransport from "./FetchTransport.ts"
 
 /** Whether a recorded run owner is still alive on this host. */
 export * as HostLiveness from "./HostLiveness.ts"

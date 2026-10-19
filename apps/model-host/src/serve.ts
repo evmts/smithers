@@ -1,11 +1,12 @@
 import {
   bearerAuthorization,
+  createModelProbe,
   createModelTurnHandler,
   environmentModelResolver,
   MODEL_HOST_PROTOCOL
 } from "@smthrs/model-host"
-import { createModelProbe } from "@smthrs/model-host/ModelProbe"
-import { MODEL_TEST_BODY_MAX_BYTES, ModelTestRequestSchema } from "@smthrs/rpc/ConfiguredModel"
+import { FetchTransport } from "@smthrs/platform-node"
+import { ConfiguredModel } from "@smthrs/rpc"
 import { createServer } from "node:http"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { parseArgs } from "node:util"
@@ -72,7 +73,10 @@ const handle = createModelTurnHandler({
   authorization,
   callbackBaseUrl,
   resolve: environmentModelResolver({ binding, preflightBinding, env: process.env, maxTokens: requestedMaxTokens }),
-  docs
+  docs,
+  // This host is Node, so its journal callbacks are read off Node's own
+  // `undici` channels: a callback that never answers names the phase it died in.
+  observeTransport: FetchTransport.observe
 })
 const modelProbe = createModelProbe({ env: process.env, egress: true })
 const authorized = bearerAuthorization(authorization)
@@ -81,10 +85,10 @@ const testModel = async (request: Request): Promise<Response> => {
     return Response.json({ code: "unauthorized" }, { status: 401 })
   }
   const bytes = await request.arrayBuffer()
-  if (bytes.byteLength > MODEL_TEST_BODY_MAX_BYTES) return Response.json({ code: "request_invalid" }, { status: 400 })
+  if (bytes.byteLength > ConfiguredModel.MODEL_TEST_BODY_MAX_BYTES) return Response.json({ code: "request_invalid" }, { status: 400 })
   let body: unknown
   try { body = JSON.parse(new TextDecoder().decode(bytes)) } catch { return Response.json({ code: "request_invalid" }, { status: 400 }) }
-  const parsed = ModelTestRequestSchema.safeParse(body)
+  const parsed = ConfiguredModel.ModelTestRequestSchema.safeParse(body)
   if (!parsed.success) return Response.json({ code: "request_invalid" }, { status: 400 })
   return Response.json(await modelProbe.test(parsed.data.model, parsed.data.input))
 }

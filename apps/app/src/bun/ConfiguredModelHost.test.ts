@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Message } from "@smthrs/model/ModelRequest"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import { Effect } from "effect"
-import { planOnLocal } from "@smthrs/model-host/LocalModel"
+import { planOnLocal } from "@smthrs/model-host"
 import { sealedTurn } from "./ConfiguredModelHost"
 
 /*

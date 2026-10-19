@@ -4,6 +4,7 @@
  * @since 1.0.0-rc.0
  */
 
+import { digestSync } from "@smthrs/crypto"
 import type * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import { AgentTurnCursorSchema } from "@smthrs/rpc/AgentTurnJournal"
@@ -12,8 +13,8 @@ import type { ContextPreflightInput } from "@smthrs/rpc/ContextPreflight"
 import type { DocsPage } from "@smthrs/rpc/DocsPages"
 import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { Cause, Effect, Exit, Metric, Option } from "effect"
-import { createHash, timingSafeEqual } from "node:crypto"
 import { z } from "zod"
+import type { CallbackTransportObserver } from "./CallbackTransport.ts"
 import { runContextPreflight } from "./ContextPreflight.ts"
 import { runDurableChatTurn } from "./DurableChatProducer.ts"
 import type { DurableChatGrant } from "./DurableChatProducer.ts"
@@ -130,6 +131,12 @@ export interface ModelTurnHandlerOptions {
   readonly fetchImpl?: FetchLike
   /** The in-app docs pages this host's build bundles; host-owned turns read them through `docs`. */
   readonly docs?: ReadonlyArray<DocsPage>
+  /**
+   * Observes each turn's journal callbacks, so a failed one answers with the
+   * phase it reached. The Node host passes `FetchTransport.observe` from
+   * `@smthrs/platform-node`; without one, failures carry no transport phase.
+   */
+  readonly observeTransport?: CallbackTransportObserver
 }
 
 const normalizedBaseUrl = (raw: string): string => {
@@ -319,7 +326,17 @@ const streamRefused = (
   return Response.json({ status: "error", code: "stream_failed", ...refusal }, { status: 502 })
 }
 
-const digest = (value: string): Buffer => createHash("sha256").update(value).digest()
+const utf8 = new TextEncoder()
+
+/** SHA-256 of the UTF-8 bytes, so a lone surrogate is the replacement character rather than a thrown error. */
+const digest = (value: string): string => digestSync(utf8.encode(value))
+
+/** Two equal-length digests compared without an early exit, so the time taken never says how much matched. */
+const sameDigest = (left: string, right: string): boolean => {
+  let difference = 0
+  for (let index = 0; index < left.length; index += 1) difference |= left.charCodeAt(index) ^ right.charCodeAt(index)
+  return difference === 0
+}
 
 /**
  * The bearer check every model host route runs: compares the presented
@@ -333,7 +350,7 @@ export const bearerAuthorization = (authorization: string): (request: Request) =
   const expected = digest(`Bearer ${authorization}`)
   return (request) => {
     const presented = request.headers.get("authorization")
-    return presented !== null && timingSafeEqual(digest(presented), expected)
+    return presented !== null && sameDigest(digest(presented), expected)
   }
 }
 
@@ -458,7 +475,9 @@ export const createModelTurnHandler = (options: ModelTurnHandlerOptions): (reque
             callbackBaseUrl,
             options.fetchImpl,
             preflight,
-            options.docs
+            options.docs,
+            undefined,
+            options.observeTransport
           )
         )
       ),

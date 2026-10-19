@@ -40,6 +40,11 @@ not required by the single-owner container.
 - `LocalModel` plans a binding against the host's credentials, reports the
   catalog, refuses redirects, and maps provider failures to the contract.
 - `ModelProbe` runs the one bounded model Test both local hosts serve.
+- The package root runs on Node, Bun, browsers and Cloudflare Workers, and
+  imports no `node:` or `bun:` built-in. A host injects what only its platform
+  can do: the Node executable passes `FetchTransport.observe` from
+  `@smthrs/platform-node` as `observeTransport`, so a journal callback that
+  never answers names the transport phase it reached.
 
 `apps/model-host` is only a loopback executable and immutable bundle builder.
 The app imports the package directly. Neither entrypoint owns another agent

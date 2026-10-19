@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "Every export of @smthrs/platform-node: the NodeHost layers, the AtomicFileSystem adapter and its glob grammar, HostLiveness, ScopedProcess, and ProcessReaper's lifecycle and refusals."
+description: "Every export of @smthrs/platform-node: the NodeHost layers, the AtomicFileSystem adapter and its glob grammar, HostLiveness, ScopedProcess, FetchTransport, and ProcessReaper's lifecycle and refusals."
 ---
 
 `@smthrs/platform-node` composes the closed five-tag Host surface for Node.
@@ -72,8 +72,9 @@ to use another one, point the adapter at it. See
 | `@smthrs/platform-node/ProcessConfinement` | [src/ProcessConfinement.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/ProcessConfinement.ts) | Node / Bun |
 | `@smthrs/platform-node/ProcessSandbox`     | [src/ProcessSandbox.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/ProcessSandbox.ts)         | Node / Bun |
 
-The barrel exports `NodeHost`, `EgressHttpClient`, `HostLiveness`, `ProcessReaper`,
-`ScopedProcess`, `ProcessConfinement`, and `ProcessSandbox`.
+The barrel exports `NodeHost`, `EgressHttpClient`, `FetchTransport`, `HostLiveness`,
+`ProcessReaper`, `ScopedProcess`, `ProcessConfinement`, and `ProcessSandbox`.
+`FetchTransport` has no subpath of its own; import it from the barrel.
 `AtomicFileSystem` is reached as `NodeHost.AtomicFileSystem` or through its own
 subpath, never from the barrel.
 
@@ -499,6 +500,53 @@ fails with a `TransportError` whose `cause` is an `EgressAddressError` (`_tag`
 Pinned web requests support HTTP and HTTPS proxies only. Other proxy schemes
 fail closed. The transport sets Host from the URL and discards caller-supplied
 proxy authorization and connection framing headers.
+
+## FetchTransport
+
+`FetchTransport.observe(origin)` reports how far each `fetch` to one origin got
+on the wire. It reads Node's own `undici` diagnostics channels, so it is Node
+only. It is not a Host service: like `NodeCrypto`, it carries no host authority,
+so it sits beside `NodeHost` rather than in the closed list.
+`@smthrs/model-host` takes it as its `CallbackTransportObserver`, and the Node
+model host passes it so a journal callback that never answers names its phase.
+
+```ts
+import { FetchTransport } from "@smthrs/platform-node"
+
+const observer = FetchTransport.observe("https://journal.example")
+const attempt = observer.begin()
+await attempt.run(() => fetch("https://journal.example/commit", { method: "POST" }))
+attempt.fields() // { transport: "received", reusedSocket: false, connectBegan: 1, connectEnded: 1 }
+observer.close()
+```
+
+| Member             | What it does                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| `observe(origin)`  | subscribes to the channels and returns an `Observer` for that origin                  |
+| `Observer.begin()` | starts one `Attempt`; after `close` it returns an attempt that reports `{}`           |
+| `Observer.runtime` | `{ node, platform, arch }` of this process, the build that fixes the bundled `undici` |
+| `Observer.close()` | stops observing; observers share one subscription, and a second `close` is ignored    |
+| `Attempt.run(fn)`  | runs one request so the dispatcher's records are attributed to this attempt           |
+| `Attempt.fields()` | ends the attempt and returns its `Fields`                                             |
+
+`fields()` always carries `transport`, the `Phase` the attempt reached:
+
+| Phase       | Meaning                                                                   |
+| ----------- | ------------------------------------------------------------------------- |
+| `none`      | the dispatcher never took the request                                     |
+| `created`   | the dispatcher took it and has not written it to a socket                 |
+| `sent`      | the request's headers are on a socket and the origin has answered nothing |
+| `responded` | the origin's response headers arrived and its body has not ended          |
+| `received`  | the response body ended                                                   |
+
+It adds `reusedSocket`, the connection counts `connectBegan`, `connectEnded` and
+`connectFailed` with `connectCode`, the resolution counts `lookupBegan` and
+`lookupEnded` with `lookupCode`, and a failure's `errorName` and `errorCode`,
+each only when there is something to report. Nothing names a path, header, body
+or destination. One attempt claims one request to its own origin; another
+origin's requests, and requests made outside any attempt, are attributed to
+nothing. A dial that a forward proxy carried records no resolution, because the
+name the socket resolved is the proxy's.
 
 ## ProcessConfinement
 

@@ -2,6 +2,7 @@
 import { Smithers } from "@smthrs/targets"
 import { Package as appPackage } from "../app/PACKAGE.ts"
 import { Package as modelHostPackage } from "../../packages/smithers/agent/model-host/PACKAGE.ts"
+import { Package as platformNodePackage } from "../../packages/smithers/flows/platform-node/PACKAGE.ts"
 
 import { Package as harnessPackage } from "../../packages/smithers/agent/harness/PACKAGE.ts"
 
@@ -19,7 +20,7 @@ const backendInputs = Smithers.Filegroup({ srcs: [sources, Smithers.file("build.
 
 const check = Smithers.Typecheck({
   srcs: [sources],
-  deps: [modelHostPackage.lib, harnessPackage.lib],
+  deps: [modelHostPackage.lib, platformNodePackage.lib, harnessPackage.lib],
   tsconfig: Smithers.file("tsconfig.json"),
   buildMode: false,
   incremental: false,
@@ -29,7 +30,7 @@ const check = Smithers.Typecheck({
 const bundle = Smithers.NodeTest({
   runner: Smithers.entrypoint(Smithers.file("build.mjs")),
   srcs: [sources, Smithers.file("build.mjs"), Smithers.file("package.json"), ...docsSources],
-  deps: [modelHostPackage.lib, harnessPackage.lib, appPackage.docsInputs],
+  deps: [modelHostPackage.lib, platformNodePackage.lib, harnessPackage.lib, appPackage.docsInputs],
   cwd
 })
 
@@ -42,7 +43,7 @@ const test = Smithers.NodeTest({
     Smithers.file("../../packages/smithers/agent/harness/test/fixtures/external/codex-0.160/rollout.jsonl"),
     Smithers.file("../../packages/smithers/agent/harness/test/fixtures/external/codex-machine-0.160/rollout.jsonl"),
     Smithers.file("../../packages/smithers/agent/harness/test/fixtures/external/claude-code-2.1/session.jsonl")],
-  deps: [modelHostPackage.lib, harnessPackage.lib, appPackage.docsInputs],
+  deps: [modelHostPackage.lib, platformNodePackage.lib, harnessPackage.lib, appPackage.docsInputs],
   cwd
 })
 

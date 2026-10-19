@@ -32,6 +32,7 @@ const result = await build({
     "@smthrs/harness": resolve(root, "packages/smithers/agent/harness/src"),
     "@smthrs/model-host": resolve(root, "packages/smithers/agent/model-host/src"),
     "@smthrs/model": resolve(root, "packages/smithers/agent/model/src"),
+    "@smthrs/platform-node": resolve(root, "packages/smithers/flows/platform-node/src"),
     "@smthrs/rpc": resolve(root, "packages/rpc/src")
   },
   entryPoints: [fileURLToPath(new URL("./src/serve.ts", import.meta.url))],

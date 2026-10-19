@@ -19,7 +19,7 @@ import {
   INSTALL_MODEL, PROVIDER_CONFIDENCE, PROVIDER_ECHO_LEAD, PROVIDER_MODEL, PROVIDER_PATHS, PROVIDER_READ_LEAD, PROVIDER_REPLY, PROVIDER_RETRY_AFTER_SECONDS,
   type ProviderProtocol
 } from "./model-provider-behaviors"
-import { runContextPreflight } from "@smthrs/model-host/ContextPreflight"
+import { runContextPreflight } from "@smthrs/model-host"
 import { launchModelProvider, type ModelProvider } from "./model-provider-process"
 
 // The provider is judged by the REAL client: every answer below is read by an

@@ -17,8 +17,13 @@ import type { ContextPreflightFrame, ContextPreflightInput, ContextPreflightResu
 import type { DocsPage } from "@smthrs/rpc/DocsPages"
 import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { Duration, Effect } from "effect"
-import { inertCallbackTransport, observeCallbackTransport } from "./CallbackTransport.ts"
-import type { CallbackAttempt, CallbackTransport } from "./CallbackTransport.ts"
+import { inertCallbackTransport } from "./CallbackTransport.ts"
+import type {
+  CallbackAttempt,
+  CallbackTransport,
+  CallbackTransportObserver,
+  ObservedCallbackTransport
+} from "./CallbackTransport.ts"
 import { runContextPreflight } from "./ContextPreflight.ts"
 import { createHostDiagnostics } from "./HostDiagnostics.ts"
 import type { HostDiagnosticFields, HostDiagnostics } from "./HostDiagnostics.ts"
@@ -144,7 +149,7 @@ const bounded = <A, E, R>(
   })
 
 const sha256Hex = async (value: string): Promise<string> => {
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
@@ -416,9 +421,14 @@ export class DurableChatProducer {
   }
 }
 
+/** The observer a turn gets when its host composition supplies none: no phase, no runtime. */
+const unobserved: CallbackTransportObserver = () => ({ ...inertCallbackTransport, runtime: {}, close: () => {} })
+
 /**
  * Runs commands on the host until the model answers and durably commits each
  * projected frame. Documentation comes from the pages the host bundles.
+ * `observeTransport` is the host's callback observer; without one, a failed
+ * callback carries no transport phase.
  *
  * @category runners
  * @since 1.0.0-rc.0
@@ -435,15 +445,16 @@ export const runDurableChatTurn = (
     readonly options: ModelTurnOptions
   },
   docs?: ReadonlyArray<DocsPage>,
-  diagnostics: HostDiagnostics = createHostDiagnostics({ turnId: grant.turnId })
+  diagnostics: HostDiagnostics = createHostDiagnostics({ turnId: grant.turnId }),
+  observeTransport: CallbackTransportObserver = unobserved
 ): Effect.Effect<void, Model.ModelFailure | ProducerError> =>
-  // The dispatcher's records for this turn's callbacks, observed for exactly
-  // as long as the turn runs: an attempt that ends without an answer reports
-  // the phase it reached, so an operator reading the guest's own log tells a
+  // The runtime's records for this turn's callbacks, observed for exactly as
+  // long as the turn runs: an attempt that ends without an answer reports the
+  // phase it reached, so an operator reading the guest's own log tells a
   // request the dispatcher never took from one whose connection never came up
   // from one whose bytes the journal already has.
   Effect.acquireUseRelease(
-    Effect.sync(() => observeCallbackTransport(callbackBaseUrl)),
+    Effect.sync(() => observeTransport(callbackBaseUrl)),
     (observer) => runTurn(model, grant, options, callbackBaseUrl, fetchImpl, observer, preflight, docs, diagnostics),
     (observer) => Effect.sync(() => observer.close())
   )
@@ -454,7 +465,7 @@ const runTurn = (
   options: ModelTurnOptions,
   callbackBaseUrl: string,
   fetchImpl: FetchLike,
-  observer: CallbackTransport,
+  observer: ObservedCallbackTransport,
   preflight:
     | {
       readonly input: ContextPreflightInput
@@ -475,20 +486,16 @@ const runTurn = (
       observer
     )
     const write = (frame: AgentTurnFrame) => producer.write(frame)
-    // The guest's own runtime build, written before this turn's first
-    // callback. Why a commit attempt never put a socket on the wire is still
-    // open, and its one untested variable is the Node build the guest runs —
-    // which fixes the bundled undici this fetch goes through. A stalled turn
-    // is read from this log while its sandbox is still alive, so the answer
-    // has to already be in the same log rather than raced for afterwards once
-    // the turn ends and the sandbox is deleted. Version strings only, and
-    // written when the turn runs rather than when its Effect is built, so one
-    // record means one turn.
-    diagnostics.record("host_runtime", "start", {
-      node: process.versions.node,
-      platform: process.platform,
-      arch: process.arch
-    })
+    // The guest's own runtime build, as its transport observer names it,
+    // written before this turn's first callback. Why a commit attempt never
+    // put a socket on the wire is still open, and its one untested variable is
+    // the build the guest runs — which fixes the HTTP stack this fetch goes
+    // through. A stalled turn is read from this log while its sandbox is still
+    // alive, so the answer has to already be in the same log rather than raced
+    // for afterwards once the turn ends and the sandbox is deleted. Version
+    // strings only, and written when the turn runs rather than when its Effect
+    // is built, so one record means one turn.
+    diagnostics.record("host_runtime", "start", observer.runtime)
     // Shared prompt admission must never degrade to a transcript-only answer
     // while the authorized host context provider is unavailable.
     if (grant.request.sharedConversation === true && preflight === undefined) {

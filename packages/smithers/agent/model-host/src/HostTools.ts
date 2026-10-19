@@ -19,6 +19,7 @@
 
 import { type CatalogDescriptor, catalogDescriptors } from "@smthrs/cli/Catalog"
 import { type CatalogHttpRequest, catalogRequest } from "@smthrs/cli/CatalogRequest"
+import { digestSync } from "@smthrs/crypto"
 import type * as Model from "@smthrs/model/Model"
 import type { ModelError } from "@smthrs/model/ModelError"
 import {
@@ -66,8 +67,6 @@ import {
   UiInstructionFrameSchema
 } from "@smthrs/rpc/UiInstruction"
 import { Effect } from "effect"
-import { Buffer } from "node:buffer"
-import { createHash } from "node:crypto"
 import { z } from "zod"
 import type { DurableChatGrant } from "./DurableChatProducer.ts"
 import type { HostDiagnostics } from "./HostDiagnostics.ts"
@@ -200,6 +199,8 @@ export interface HostTransport {
   readonly docs?: ReadonlyArray<DocsPage> | undefined
 }
 
+const utf8 = new TextEncoder()
+
 /** A callback refusal's code, or the status it answered without one. */
 const refusalCode = (response: Response, body: unknown): string =>
   typeof body === "object" && body !== null && "code" in body && typeof body.code === "string"
@@ -302,7 +303,7 @@ export const apiCaller =
             : { code: "invalid_answer" }
         }
         const reader = response.body.getReader()
-        const decoder = new TextDecoder("utf-8", { fatal: true })
+        const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false })
         let raw = "", bytes = 0
         try {
           for (;;) {
@@ -1062,15 +1063,16 @@ export const runHostTurn = <E>(
      * lengths, counts, flags and a prompt DIGEST — never a line of the prompt,
      * never a credential, and never a word the person wrote.
      */
+    const instructions = utf8.encode(request.instructions)
     diagnostics?.record("host_tools", "prompt", {
       replaced: offered.length > 0,
       // Bytes as the wire and the digest count them: the prompt's dashes and
       // ellipses are multi-byte, so a code-unit count would not match either.
-      instructionBytes: Buffer.byteLength(request.instructions),
+      instructionBytes: instructions.byteLength,
       instructionLines: request.instructions.split("\n").length,
-      instructionSha: createHash("sha256").update(request.instructions).digest("hex").slice(0, 12),
+      instructionSha: digestSync(instructions).slice(0, 12),
       appended: grant.agentInstructions !== undefined,
-      appendedBytes: grant.agentInstructions === undefined ? 0 : Buffer.byteLength(grant.agentInstructions),
+      appendedBytes: grant.agentInstructions === undefined ? 0 : utf8.encode(grant.agentInstructions).byteLength,
       context: request.context !== undefined,
       contextVersion: request.context?.version ?? 0,
       capabilities: request.context?.capabilities.length ?? 0,

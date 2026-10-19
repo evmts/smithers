@@ -42,7 +42,7 @@ export const readContextStream = async (response: Response): Promise<ContextPref
   let complete = false
   let size = 0
   let fragments: Array<Uint8Array> = []
-  const decode = new TextDecoder("utf-8", { fatal: true })
+  const decode = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false })
   try {
     for (;;) {
       const { done, value } = await reader.read()

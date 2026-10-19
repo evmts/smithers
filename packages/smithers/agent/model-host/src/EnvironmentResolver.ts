@@ -10,12 +10,12 @@ import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import { hostModelCredentials, modelCredentialEnvName, planModelBinding } from "@smthrs/rpc/ConfiguredModel"
 import type { ModelCredentialEnv, ModelPlan } from "@smthrs/rpc/ConfiguredModel"
 import { Effect, Layer, Redacted } from "effect"
-import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { toModel } from "./ConfiguredModelRoute.ts"
 import { fastModelFallback } from "./FastModelFallback.ts"
 import type { ModelTurnResolver } from "./HostServer.ts"
 import { readContextStream } from "./internal/ContextStream.ts"
 import { ResolveFailed } from "./ModelHostError.ts"
+import { providerTransport, refusingRedirects } from "./ProviderTransport.ts"
 
 /**
  * Inputs for the single-owner environment-backed model resolver.
@@ -30,23 +30,6 @@ export interface EnvironmentModelResolverOptions {
   readonly env: ModelCredentialEnv
   readonly fetchImpl?: typeof globalThis.fetch
   readonly maxTokens?: number
-}
-
-/**
- * A fetch that never follows a redirect. A provider 3xx rejects the call, so
- * a custom key header such as x-api-key cannot ride a redirect to another
- * origin; fetch strips only Authorization on a cross-origin hop.
- */
-const refusingRedirects = (base: typeof globalThis.fetch): typeof globalThis.fetch => {
-  const guarded = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const response = await base(input, { ...init, redirect: "manual" })
-    if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
-      await response.body?.cancel()
-      throw new Error("model provider redirect refused")
-    }
-    return response
-  }) as typeof globalThis.fetch
-  return guarded
 }
 
 /**
@@ -78,9 +61,7 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
   if (credential === undefined || credential === "") {
     return Effect.fail(new ResolveFailed({ message: "configured model credential is unavailable" }))
   }
-  const transport = FetchHttpClient.layer.pipe(
-    Layer.provide(Layer.succeed(FetchHttpClient.Fetch, refusingRedirects(options.fetchImpl ?? globalThis.fetch)))
-  )
+  const transport = providerTransport(options.fetchImpl ?? globalThis.fetch)
   const fastExecutor = Layer.effect(
     RequestExecutor.RequestExecutor,
     Effect.flatMap(

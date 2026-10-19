@@ -4,6 +4,8 @@ Provider-neutral model streaming and the durable callback producer shared by the
 
 The package is private: it ships inside the Smithers host executables, not on npm.
 
+It runs on Node, Bun, browsers and Cloudflare Workers. The root entry imports no `node:` or `bun:` built-in, and `test/BrowserBundle.test.ts` and the repository browser contract hold it to that. What only one platform can do is injected by the host composition. Import from `@smthrs/model-host` only; the package has no deep entry points.
+
 ## What it does
 
 A model host is a trusted process that holds the owner's provider credential. The backend sends it a signed turn grant; the host calls the provider, removes any echo of the credential from the output, and commits each frame back to the backend's durable chat journal.
@@ -21,6 +23,7 @@ Every `POST` route requires `Authorization: Bearer <authorization>` and reads at
 
 ```ts
 import { createModelTurnHandler, environmentModelResolver } from "@smthrs/model-host"
+import { FetchTransport } from "@smthrs/platform-node"
 
 // The owner's configured model binding, as the backend stores it.
 declare const configuredBinding: unknown
@@ -28,22 +31,25 @@ declare const configuredBinding: unknown
 const handler = createModelTurnHandler({
   authorization: process.env["MODEL_HOST_TOKEN"] ?? "",
   callbackBaseUrl: "http://127.0.0.1:4000",
-  resolve: environmentModelResolver({ binding: configuredBinding, env: process.env })
+  resolve: environmentModelResolver({ binding: configuredBinding, env: process.env }),
+  // A Node host reads each journal callback's transport phase off Node's own `undici` channels.
+  observeTransport: FetchTransport.observe
 })
-
-Bun.serve({ fetch: handler })
 ```
+
+The handler is a `(request: Request) => Promise<Response>`, so any server that speaks Fetch serves it: `apps/model-host` adapts `node:http`, and a Worker or `Bun.serve` passes it as `fetch`.
 
 - `createModelTurnHandler` throws when `authorization` is empty or whitespace, or when `callbackBaseUrl` is not an HTTP or HTTPS URL without user information, query or fragment.
 - A turn grant is refused with `400 request_invalid` when it is expired, malformed, names a different run or leg in its cursor, or names a producer origin other than `callbackBaseUrl`.
 - `environmentModelResolver` plans the configured binding, reads exactly one named credential from `env`, and refuses provider redirects. A request may pick another model only on the same credential and origin.
+- `observeTransport` is the host's `CallbackTransportObserver`. With one, a turn records the host's runtime build before its first callback, and a callback that never answers carries the phase it reached (`none`, `created`, `sent`, `responded`, `received`) in its record and in the `502` answer. Without one, failures carry no transport phase.
 
 ## Building blocks
 
 - `runModelTurn` streams one model call into turn frames and cuts the credential out of text, reasoning and tool calls, including echoes split across chunks (`StreamingCredentialCutter`).
 - `DurableChatProducer` and `runDurableChatTurn` commit frames to the journal callback and verify each receipt against the expected cursor.
-- `fastModelFallback` (from `@smthrs/model-host/FastModelFallback`) tries the next source only when one fails as unavailable before it emitted any output.
-- `createHostDiagnostics` writes bounded, marker-tagged records to standard error. Fields that are not counts, flags or short tokens are dropped and counted.
+- `fastModelFallback` tries the next source only when one fails as unavailable before it emitted any output.
+- `createHostDiagnostics` writes bounded, marker-tagged records to `console.error`, which is standard error under Node and Bun. Fields that are not counts, flags or short tokens are dropped and counted.
 - `createModelProbe` tests a configured model and dials only its planned origin.
 
 ## Failures

@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@smthrs/model-host": "workspace:*",
+    "@smthrs/platform-node": "workspace:*",
     "@smthrs/rpc": "workspace:*",
     "effect": "4.0.5",
     "@smthrs/harness": "workspace:*"

@@ -235,6 +235,43 @@ test("cancels the provider call when the caller disconnects mid-turn", async (t)
   assert.equal(aborted, "/v1/chat/completions", "the disconnect must abort the in-flight provider request")
 })
 
+test("answers a refused journal callback with the transport phase Node's dispatcher reached", async () => {
+  // The executable is a Node host, so it injects @smthrs/platform-node's
+  // FetchTransport observer: a callback that dies names the phase it died in,
+  // and the guest's log names the Node build before the first callback.
+  const journal = await listen(() => {})
+  const closedOrigin = journal.origin
+  await new Promise((resolve) => journal.server.close(resolve))
+  const host = await launch(hostEnv({
+    SMITHERS_CHAT_CALLBACK_URL: closedOrigin,
+    SMITHERS_CHAT_MODEL: JSON.stringify({
+      protocol: "openai-chat",
+      baseUrl: "http://127.0.0.1:9",
+      modelId: "fixture",
+      credential: "FIXTURE"
+    }),
+    SMITHERS_MODEL_KEY_FIXTURE: "provider-key",
+    SMITHERS_MODEL_KEY_FIXTURE_ORIGIN: "http://127.0.0.1:9"
+  }))
+  try {
+    const answer = await send(host.identity.port, {
+      headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" },
+      body: JSON.stringify(grantFor(closedOrigin))
+    })
+    assert.equal(answer.status, 502)
+    const body = JSON.parse(answer.text)
+    assert.equal(body.code, "turn_failed")
+    assert.equal(body.transport.transport, "created")
+    assert.equal(body.transport.connectCode, "ECONNREFUSED")
+  } finally {
+    host.child.kill("SIGTERM")
+  }
+  const { stderr } = await host.exited
+  const runtime = stderr.split("\n").filter((line) => line.includes("\"host_runtime\"")).map((line) => JSON.parse(line))
+  assert.equal(runtime.length, 1)
+  assert.equal(runtime[0].node, process.versions.node)
+})
+
 test("routes by the request path, never by the Host header", async (t) => {
   const host = await launch()
   t.after(() => host.child.kill("SIGKILL"))

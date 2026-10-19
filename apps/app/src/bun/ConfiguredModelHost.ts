@@ -2,7 +2,7 @@
  * The bounded configured-model turn the local host serves, and the one
  * line a card shows for a model failure. Planning, credentials, the catalog,
  * the redirect-refusing transport and the failure mapping live in
- * @smthrs/model-host/LocalModel.
+ * @smthrs/model-host.
  */
 import { ModelError } from "@smthrs/model/ModelError"
 import { Message, ModelRequest, SystemPart } from "@smthrs/model/ModelRequest"
@@ -12,9 +12,8 @@ import { cutModelCredential } from "@smthrs/rpc/ConfiguredModel"
 import type { ModelTestFailure } from "@smthrs/rpc/ConfiguredModel"
 import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { Effect, Layer, Redacted, Stream } from "effect"
-import { toModel } from "@smthrs/model-host/ConfiguredModelRoute"
-import { manualRedirects, modelFailureOf } from "@smthrs/model-host/LocalModel"
-import type { LocalPlanned } from "@smthrs/model-host/LocalModel"
+import { manualRedirects, modelFailureOf, toModel } from "@smthrs/model-host"
+import type { LocalPlanned } from "@smthrs/model-host"
 
 /** The most a configured-model answer may run to. */
 const SEALED_TURN_MAX_TOKENS = 1024

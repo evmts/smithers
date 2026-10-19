@@ -252,9 +252,8 @@ test("the model stream names the stage that refused it and hides the resolver's 
 
 test("a refused model stream records its stage on the guest's diagnostics", async () => {
   const records: Array<Record<string, unknown>> = []
-  const write = vi.spyOn(process.stderr, "write").mockImplementation((line: any) => {
-    for (const row of String(line).trim().split("\n")) records.push(JSON.parse(row))
-    return true
+  const write = vi.spyOn(console, "error").mockImplementation((line: unknown) => {
+    records.push(JSON.parse(String(line)))
   })
   try {
     const response = await createModelTurnHandler(options)(streamPost({ runId: "run", messages: [] }))
@@ -461,10 +460,20 @@ test("answers the caller with the phase a failed callback reached", async () => 
   // with the guest, so a turn whose callback failed leaves no copy of how far
   // it got. The refusal carries the phase out over the connection a callback
   // fault does not break — this answer — and the API's bounded read of this
-  // body is what makes the reading durable. Here the callback is a stub rather
-  // than a socket, so the honest phase is `none`: no dispatcher record exists.
+  // body is what makes the reading durable. The reading is the host's
+  // observer's (`FetchTransport` on Node); here it is scripted, and says the
+  // dispatcher never took the request.
+  const opened: Array<string> = []
   const handler = createModelTurnHandler({
     ...options,
+    observeTransport: (callbackBaseUrl) => {
+      opened.push(callbackBaseUrl)
+      return {
+        begin: () => ({ run: (action) => action(), fields: () => ({ transport: "none" }) }),
+        runtime: {},
+        close: () => {}
+      }
+    },
     resolve: () =>
       Effect.succeed({
         model: Model.make({
@@ -483,6 +492,26 @@ test("answers the caller with the phase a failed callback reached", async () => 
     code: "turn_failed",
     transport: { transport: "none" }
   })
+  expect(opened).toEqual([new URL(options.callbackBaseUrl).toString()])
+})
+
+test("answers a failed callback without a phase when the host observes none", async () => {
+  const handler = createModelTurnHandler({
+    ...options,
+    resolve: () =>
+      Effect.succeed({
+        model: Model.make({
+          stream: () => Stream.fromIterable<ModelEvent.ModelEvent>([{ type: "settle", stopReason: "stop" }])
+        }),
+        options: { modelId: "fixture" }
+      }),
+    fetchImpl: async () => {
+      throw new Error("callback refused")
+    }
+  })
+  const response = await handler(post(JSON.stringify(grant)))
+  expect(response.status).toBe(502)
+  expect(await response.json()).toEqual({ status: "error", code: "turn_failed" })
 })
 
 test("counts a refused commit under its own failure class", async () => {

@@ -45,7 +45,14 @@ export const BROWSER_SAFE = [
   { name: "@smthrs/std/Grep", entry: "packages/smithers/agent/std/src/Grep.ts" },
   { name: "@smthrs/std/Glob", entry: "packages/smithers/agent/std/src/Glob.ts" },
   { name: "@smthrs/std/Search", entry: "packages/smithers/agent/std/src/Search.ts" },
-  { name: "@smthrs/std/PortableSearch", entry: "packages/smithers/agent/std/src/PortableSearch.ts" }
+  { name: "@smthrs/std/PortableSearch", entry: "packages/smithers/agent/std/src/PortableSearch.ts" },
+  // The model call path a Cloudflare Worker imports (apps/mvp/worker): a model,
+  // its configured route and the contracts around it. The Node pieces are the
+  // host's to inject (`FetchTransport` in @smthrs/platform-node), never these
+  // roots' to import.
+  { name: "@smthrs/model", entry: "packages/smithers/agent/model/src/index.ts" },
+  { name: "@smthrs/model-host", entry: "packages/smithers/agent/model-host/src/index.ts" },
+  { name: "@smthrs/rpc", entry: "packages/rpc/src/index.ts" }
 ]
 
 /**

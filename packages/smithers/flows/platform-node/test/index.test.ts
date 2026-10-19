@@ -1,6 +1,7 @@
 /** Barrel parity with the platform-browser and platform-bun packages. */
 import { describe, expect, it } from "@effect/vitest"
 import * as EgressHttpClient from "../src/EgressHttpClient.ts"
+import * as FetchTransport from "../src/FetchTransport.ts"
 import * as Index from "../src/index.ts"
 import * as NodeHost from "../src/NodeHost.ts"
 import * as ProcessConfinement from "../src/ProcessConfinement.ts"
@@ -11,6 +12,7 @@ describe("@smthrs/platform-node barrel", () => {
   it("re-exports every module as a namespace", () => {
     expect(Object.keys(Index).sort()).toEqual([
       "EgressHttpClient",
+      "FetchTransport",
       "HostLiveness",
       "NodeHost",
       "ProcessConfinement",
@@ -23,6 +25,7 @@ describe("@smthrs/platform-node barrel", () => {
     expect(Index.NodeHost.layerContained).toBe(NodeHost.layerContained)
     expect(Index.NodeHost.layerContainedAt).toBe(NodeHost.layerContainedAt)
     expect(Index.EgressHttpClient.layer).toBe(EgressHttpClient.layer)
+    expect(Index.FetchTransport.observe).toBe(FetchTransport.observe)
     expect(Index.NodeHost.EgressHttpClient).toBe(EgressHttpClient)
     expect(Index.ProcessConfinement.make).toBe(ProcessConfinement.make)
     expect(Index.ProcessConfinement.layer).toBe(ProcessConfinement.layer)

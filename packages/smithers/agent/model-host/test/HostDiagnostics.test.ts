@@ -4,6 +4,8 @@ import type { AgentTurnCursor } from "@smthrs/rpc/AgentTurnJournal"
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { Duration, Effect, Fiber, Stream } from "effect"
 import { describe, expect, test, vi } from "vitest"
+import { inertCallbackTransport } from "../src/CallbackTransport.ts"
+import type { CallbackTransportObserver } from "../src/CallbackTransport.ts"
 import { DurableChatProducer, runDurableChatTurn } from "../src/DurableChatProducer.ts"
 import { createHostDiagnostics, HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.ts"
 import { runModelTurn } from "../src/ModelTurnHost.ts"
@@ -126,18 +128,21 @@ describe("createHostDiagnostics", () => {
     })
   })
 
-  test("writes to the guest's own standard error by default", () => {
+  test("writes one line per record to the runtime's error console by default", () => {
+    // Standard error under Node and Bun, and the platform's error log
+    // elsewhere: the recorder needs nothing from its host to be heard.
     const written: Array<string> = []
-    const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
-      written.push(String(chunk))
-      return true
+    const console = vi.spyOn(globalThis.console, "error").mockImplementation((line: unknown) => {
+      written.push(String(line))
     })
     try {
       createHostDiagnostics().record("model_stream", "first_event", { kind: "text-delta" })
     } finally {
-      stderr.mockRestore()
+      console.mockRestore()
     }
     expect(written).toHaveLength(1)
+    // The console ends the line itself, so the record carries no newline of its own.
+    expect(written[0]?.includes("\n")).toBe(false)
     const record = JSON.parse(String(written[0])) as Record<string, unknown>
     expect(record.diagnostic).toBe(HOST_DIAGNOSTIC_MARKER)
     expect(record.atMillis).toBeTypeOf("number")
@@ -250,6 +255,15 @@ describe("callback attempt diagnostics", () => {
 // the same log the stall itself is read from, written before the first
 // callback is attempted rather than raced for afterwards.
 describe("the guest runtime a turn reports", () => {
+  // The build is the host's to name: the Node model host's observer reads it
+  // off the process it runs in (`FetchTransport` in `@smthrs/platform-node`).
+  const runtime = { node: "26.5.0", platform: "linux", arch: "arm64" }
+  const observeTransport: CallbackTransportObserver = () => ({
+    ...inertCallbackTransport,
+    runtime,
+    close: () => {}
+  })
+
   test("is recorded before this turn's first callback, as version strings", async () => {
     const sink = collector()
     // A turn whose journal refuses its very first callback: the record has to
@@ -263,19 +277,15 @@ describe("the guest runtime a turn reports", () => {
         () => Promise.resolve(new Response(null, { status: 403 })),
         undefined,
         undefined,
-        createHostDiagnostics({ turnId: grant.turnId, write: sink.write })
+        createHostDiagnostics({ turnId: grant.turnId, write: sink.write }),
+        observeTransport
       )
     )
     expect(exit._tag).toBe("Failure")
-    const [runtime] = sink.phase("host_runtime", "start")
-    expect(runtime).toMatchObject({
-      turnId: "turn",
-      node: process.versions.node,
-      platform: process.platform,
-      arch: process.arch
-    })
+    const [recorded] = sink.phase("host_runtime", "start")
+    expect(recorded).toMatchObject({ turnId: "turn", ...runtime })
     // Before the first attempt, so a stalled turn's log carries it.
-    expect(sink.lines.indexOf(runtime!)).toBeLessThan(
+    expect(sink.lines.indexOf(recorded!)).toBeLessThan(
       sink.lines.findIndex((line) => line.event === "chat_callback")
     )
     // One record per turn that RAN: building the Effect writes nothing.
@@ -288,9 +298,34 @@ describe("the guest runtime a turn reports", () => {
       () => Promise.resolve(new Response(null, { status: 403 })),
       undefined,
       undefined,
-      createHostDiagnostics({ turnId: grant.turnId, write: unrun.write })
+      createHostDiagnostics({ turnId: grant.turnId, write: unrun.write }),
+      observeTransport
     )
     expect(unrun.phase("host_runtime", "start")).toHaveLength(0)
+  })
+
+  test("names no build when the host supplied no observer", async () => {
+    const sink = collector()
+    await Effect.runPromiseExit(
+      runDurableChatTurn(
+        Model.make({ stream: () => Stream.fromIterable([{ type: "settle", stopReason: "stop" } as const]) }),
+        grant,
+        { modelId: "m" },
+        "http://host.test/",
+        () => Promise.resolve(new Response(null, { status: 403 })),
+        undefined,
+        undefined,
+        createHostDiagnostics({ turnId: grant.turnId, write: sink.write })
+      )
+    )
+    const [recorded] = sink.phase("host_runtime", "start")
+    expect(recorded).toEqual({
+      diagnostic: HOST_DIAGNOSTIC_MARKER,
+      turnId: "turn",
+      event: "host_runtime",
+      phase: "start",
+      atMillis: expect.any(Number)
+    })
   })
 })
 

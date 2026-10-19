@@ -99,8 +99,9 @@ Complete host bundles build without jj. The first `Jj` operation probes the bina
 
 ## Modules
 
-The barrel exports four namespaces: `NodeHost`, `HostLiveness`,
-`ProcessReaper`, and `ScopedProcess`. `AtomicFileSystem` is deliberately not among them; it is reached
+The barrel exports eight namespaces: `NodeHost`, `EgressHttpClient`,
+`FetchTransport`, `HostLiveness`, `ProcessReaper`, `ScopedProcess`,
+`ProcessConfinement`, and `ProcessSandbox`. `AtomicFileSystem` is deliberately not among them; it is reached
 as `NodeHost.AtomicFileSystem` or through the
 `@smthrs/platform-node/AtomicFileSystem` subpath.
 
@@ -111,6 +112,7 @@ as `NodeHost.AtomicFileSystem` or through the
 | `HostLiveness`     | whether a recorded run owner is still alive: `isAlive`, `Owner`, `Options`                                                                                                           |
 | `ProcessReaper`    | live containment and restart reconciliation: `layerSpawner`, `SpawnerOptions`, `processLifecycle`, `reap`, `layer`, `System`, `Refusal`, `posixSystem`, `windowsSystem`, `systemFor` |
 | `ScopedProcess`    | transient scoped commands with the same lifecycle: `Options`, `Handle`, `spawn`, `Status`, `status`                                                                                  |
+| `FetchTransport`   | how far each `fetch` to one origin got on the wire, read from Node's `undici` channels: `observe`, `Observer`, `Attempt`, `Phase`, `Fields`                                          |
 
 `NodeCrypto` is re-exported for a different reason than the rest: `Crypto` is not
 a Host service, so it is not in the closed list, but every durable composition
