@@ -397,9 +397,12 @@ func resolveGitHubDestination(ctx context.Context, q gitHubDestinationStore, con
 		if err != nil {
 			return "", "", pkgerrors.Internal("load GitHub mirror destination").WithCause(err)
 		}
+		if len(sources) > 1 {
+			return "", "", pkgerrors.Conflict("This repository has more than one GitHub source, so Smithers can't tell which one to use.")
+		}
 		if len(sources) == 1 {
 			destination = sources[0].GithubOwner + "/" + sources[0].GithubRepo
-		} else if len(sources) == 0 && connection != nil {
+		} else if connection != nil {
 			status, err := connection.GetRepoConnectionStatus(ctx, userID, owner, repo)
 			if err != nil {
 				return "", "", err
@@ -409,7 +412,7 @@ func resolveGitHubDestination(ctx context.Context, q gitHubDestinationStore, con
 			}
 		}
 		if destination == "" {
-			return "", "", pkgerrors.Conflict("Connect one GitHub destination before reconciling this repository")
+			return "", "", pkgerrors.New(pkgerrors.CodeGitHubDestinationRequired, "This repository isn't connected to GitHub.")
 		}
 	}
 	return mirrorDestination(destination)
