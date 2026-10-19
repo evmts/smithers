@@ -424,6 +424,12 @@ func (service *AgentService) ProjectFlowRuntime(ctx context.Context, update flow
 		// Observe the box before the transaction and before release.
 		result := service.observeCodingTurn(ctx, owner, projection)
 		session, replies, err = service.completeCodingTurn(ctx, update, terminal, messages, result)
+	} else if finalStatus == "failed" {
+		// The box, its host or the turn failed: the session says which, and
+		// the turn ends with that sentence instead of no reply at all.
+		session, err = service.failAgentSession(ctx, func(ctx context.Context, w db.AgentSessionEnds) (db.AgentSession, error) {
+			return w.UpdateAgentSessionTerminalStatusForFlow(ctx, terminal)
+		}, failingWith(agentSessionFailureForFlow(update.Checkpoint)))
 	} else {
 		session, err = service.dispatchQ.UpdateAgentSessionTerminalStatusForFlow(ctx, terminal)
 	}
@@ -432,11 +438,6 @@ func (service *AgentService) ProjectFlowRuntime(ctx context.Context, update flow
 	}
 	if err != nil {
 		return fmt.Errorf("project canonical Flow terminal status: %w", err)
-	}
-	if finalStatus == "failed" {
-		// The box, its host or the turn failed: the session says which, and the
-		// turn ends with that sentence instead of no reply at all.
-		session = service.recordAgentSessionFailure(ctx, session, agentSessionFailureForFlow(update.Checkpoint))
 	}
 	// As with ordinary appends, notify after commit and before terminal status.
 	// Delivery is best-effort; oversized text remains available through replay.

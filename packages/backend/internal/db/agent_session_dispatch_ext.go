@@ -196,7 +196,8 @@ type AgentSessionFailureRecord struct {
 // Only a terminal row (status <> 'active') that carries no recorded failure is
 // written, so a re-dispatched session cannot keep a stale reason and a
 // repeated call never appends a second reply. Returns false when nothing was
-// written.
+// written. A path that ends a session calls FailAgentSession, which runs this
+// in the transaction that writes the status.
 func (q *Queries) RecordAgentSessionFailure(ctx context.Context, sessionID string, failure AgentSessionFailure) (AgentSessionFailureRecord, bool, error) {
 	tx, err := q.BeginTx(ctx)
 	if err != nil {
@@ -258,6 +259,51 @@ RETURNING id, repository_id, user_id, workflow_run_id, title, status, metadata, 
 		return AgentSessionFailureRecord{}, false, err
 	}
 	return record, true, nil
+}
+
+// AgentSessionEnds are the writes that move one session out of 'active'.
+// FailAgentSession runs one of them on its transaction.
+type AgentSessionEnds interface {
+	UpdateAgentSessionTerminalStatus(ctx context.Context, arg UpdateAgentSessionTerminalStatusParams) (AgentSession, error)
+	UpdateAgentSessionTerminalStatusForFlow(ctx context.Context, arg UpdateAgentSessionTerminalStatusForFlowParams) (AgentSession, error)
+	UpdateAgentSessionTimedOut(ctx context.Context, arg UpdateAgentSessionTimedOutParams) (AgentSession, error)
+	FailNeverStartedAgentSession(ctx context.Context, arg FailNeverStartedAgentSessionParams) (AgentSession, error)
+}
+
+// FailAgentSession fails a session with its typed reason in one transaction:
+// end writes the terminal status, and RecordAgentSessionFailure records
+// failure(the row end returned) and the final reply before anything commits.
+// No read sees the failed status without its reason_code, reason and
+// retryable (QA f-qjwko8: a reaper timeout committed 'failed' first and a read
+// in between answered a bare failure).
+//
+// end's error comes back unchanged, pgx.ErrNoRows included, when the session
+// was not end's to fail; nothing is written then. The record's Reply is zero
+// when the row already carried a recorded failure, which RecordAgentSessionFailure
+// never overwrites. On a transaction that is already open the work runs in a
+// savepoint of it.
+func (q *Queries) FailAgentSession(ctx context.Context, end func(context.Context, AgentSessionEnds) (AgentSession, error), failure func(AgentSession) AgentSessionFailure) (AgentSessionFailureRecord, error) {
+	tx, err := q.BeginTx(ctx)
+	if err != nil {
+		return AgentSessionFailureRecord{}, fmt.Errorf("fail agent session: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	inTx := q.WithTx(tx)
+	ended, err := end(ctx, inTx)
+	if err != nil {
+		return AgentSessionFailureRecord{}, err
+	}
+	record, recorded, err := inTx.RecordAgentSessionFailure(ctx, ended.ID, failure(ended))
+	if err != nil {
+		return AgentSessionFailureRecord{}, err
+	}
+	if !recorded {
+		record = AgentSessionFailureRecord{Session: ended}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return AgentSessionFailureRecord{}, err
+	}
+	return record, nil
 }
 
 // RecordAgentSessionModel stores the provider:model a dispatched turn runs on

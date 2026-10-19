@@ -198,10 +198,11 @@ func (s *AgentService) reapQueuedTurns(ctx context.Context) error {
 
 // failQueuedTurn fails the turn in one transaction, and only while its
 // request is still queued: the session goes failed with box_busy's reason
-// and final reply, and the request is cancelled. It holds the request's
-// delivery row, which a worker's claim skips while it is locked, so a turn is
-// either failed here or dispatched, never both. Returns false when a worker
-// claimed the request first or the session is no longer active.
+// and final reply (FailAgentSession, in a savepoint), and the request is
+// cancelled. It holds the request's delivery row, which a worker's claim
+// skips while it is locked, so a turn is either failed here or dispatched,
+// never both. Returns false when a worker claimed the request first or the
+// session is no longer active.
 func (s *AgentService) failQueuedTurn(ctx context.Context, turn queuedAgentTurn) (db.AgentSessionFailureRecord, bool, error) {
 	tx, err := s.messagePool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -217,22 +218,16 @@ FROM product_job_dispatches WHERE operation_id = $1 FOR UPDATE`, turn.operationI
 	if err != nil {
 		return db.AgentSessionFailureRecord{}, false, err
 	}
-	q := db.New(tx)
-	_, err = q.UpdateAgentSessionTerminalStatus(ctx, db.UpdateAgentSessionTerminalStatusParams{
-		ID: turn.sessionID, Status: "failed", FinishedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
-	})
+	record, err := db.New(tx).FailAgentSession(ctx, func(ctx context.Context, w db.AgentSessionEnds) (db.AgentSession, error) {
+		return w.UpdateAgentSessionTerminalStatus(ctx, db.UpdateAgentSessionTerminalStatusParams{
+			ID: turn.sessionID, Status: "failed", FinishedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		})
+	}, failingWith(agentSessionBoxBusy))
 	if stdErrors.Is(err, pgx.ErrNoRows) {
 		return db.AgentSessionFailureRecord{}, false, nil
 	}
 	if err != nil {
 		return db.AgentSessionFailureRecord{}, false, err
-	}
-	record, recorded, err := q.RecordAgentSessionFailure(ctx, turn.sessionID, agentSessionBoxBusy)
-	if err != nil {
-		return db.AgentSessionFailureRecord{}, false, err
-	}
-	if !recorded {
-		return db.AgentSessionFailureRecord{}, false, fmt.Errorf("session %s already carries a failure reason", turn.sessionID)
 	}
 	if _, err := s.messageJobs.RequestCancellationInTx(ctx, tx, turn.scope, turn.operationID); err != nil {
 		return db.AgentSessionFailureRecord{}, false, err
@@ -245,7 +240,6 @@ FROM product_job_dispatches WHERE operation_id = $1 FOR UPDATE`, turn.operationI
 
 type neverStartedAgentQuerier interface {
 	ListNeverStartedAgentSessions(context.Context, time.Time) ([]db.AgentSession, error)
-	FailNeverStartedAgentSession(context.Context, db.FailNeverStartedAgentSessionParams) (db.AgentSession, error)
 }
 
 var _ neverStartedAgentQuerier = (*db.Queries)(nil)
@@ -266,7 +260,9 @@ func (s *AgentService) reapNeverStartedSessions(ctx context.Context) error {
 	}
 	var failures []error
 	for _, row := range rows {
-		terminal, err := q.FailNeverStartedAgentSession(ctx, db.FailNeverStartedAgentSessionParams{ID: row.ID, Cutoff: cutoff.Time, WorkflowRunID: row.WorkflowRunID})
+		terminal, err := s.failAgentSession(ctx, func(ctx context.Context, w db.AgentSessionEnds) (db.AgentSession, error) {
+			return w.FailNeverStartedAgentSession(ctx, db.FailNeverStartedAgentSessionParams{ID: row.ID, Cutoff: cutoff.Time, WorkflowRunID: row.WorkflowRunID})
+		}, failingWith(agentSessionNeverStarted))
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			continue
 		}
@@ -274,7 +270,6 @@ func (s *AgentService) reapNeverStartedSessions(ctx context.Context) error {
 			failures = append(failures, err)
 			continue
 		}
-		terminal = s.recordAgentSessionFailure(ctx, terminal, agentSessionNeverStarted)
 		s.notifyAgentSessionStatus(ctx, terminal)
 		s.finalizeAgentSession(ctx, terminal, "failed", "never_started")
 	}
@@ -316,9 +311,18 @@ func (s *AgentService) reapExpiredSession(ctx context.Context, session db.AgentS
 		return nil
 	}
 
-	timedOutSession, err := s.dispatchQ.UpdateAgentSessionTimedOut(ctx, db.UpdateAgentSessionTimedOutParams{
-		ID:         session.ID,
-		FinishedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	timedOutSession, err := s.failAgentSession(ctx, func(ctx context.Context, w db.AgentSessionEnds) (db.AgentSession, error) {
+		return w.UpdateAgentSessionTimedOut(ctx, db.UpdateAgentSessionTimedOutParams{
+			ID:         session.ID,
+			FinishedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		})
+	}, func(ended db.AgentSession) agentSessionFailure {
+		// The sentence says how long the turn ran, counted from its start
+		// (started_at); the reaper only selects a started session.
+		if ended.StartedAt.Valid && ended.FinishedAt.Valid {
+			return agentSessionTurnTimedOutAfter(ended.FinishedAt.Time.Sub(ended.StartedAt.Time))
+		}
+		return agentSessionTurnTimedOut
 	})
 	if err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
@@ -329,13 +333,6 @@ func (s *AgentService) reapExpiredSession(ctx context.Context, session db.AgentS
 
 	s.cancelAgentFlowRunBestEffort(ctx, timedOutSession, "timeout")
 	s.observeAgentSessionTimeout()
-	// The sentence says how long the turn ran, counted from when its message
-	// was accepted (started_at); the reaper only selects a started session.
-	failure := agentSessionTurnTimedOut
-	if timedOutSession.StartedAt.Valid && timedOutSession.FinishedAt.Valid {
-		failure = agentSessionTurnTimedOutAfter(timedOutSession.FinishedAt.Time.Sub(timedOutSession.StartedAt.Time))
-	}
-	timedOutSession = s.recordAgentSessionFailure(ctx, timedOutSession, failure)
 	s.notifyAgentSessionStatus(ctx, timedOutSession)
 	s.finalizeAgentSession(ctx, timedOutSession, "timed_out", "agent session timed out")
 	return nil
@@ -346,21 +343,29 @@ func (s *AgentService) transitionAgentSessionTerminalStatus(ctx context.Context,
 }
 
 // transitionAgentSessionTerminalStatusWithFailure also records the typed
-// reason the session's owner sees, when there is one.
-//
-// Recording happens after the status write and only when the write won, so a
+// reason the session's owner sees, when there is one, in the transaction that
+// writes the status (failAgentSession). Only a write that wins records, so a
 // session another run already finished keeps its own reason.
 func (s *AgentService) transitionAgentSessionTerminalStatusWithFailure(ctx context.Context, sessionID, status string, expectedWorkflowRunID pgtype.Int8, failure *agentSessionFailure) (db.AgentSession, bool, error) {
 	if s.dispatchQ == nil {
 		return db.AgentSession{}, false, nil
 	}
 
-	session, err := s.dispatchQ.UpdateAgentSessionTerminalStatus(ctx, db.UpdateAgentSessionTerminalStatusParams{
+	terminal := db.UpdateAgentSessionTerminalStatusParams{
 		ID:                    sessionID,
 		Status:                status,
 		FinishedAt:            pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
 		ExpectedWorkflowRunID: expectedWorkflowRunID,
-	})
+	}
+	var session db.AgentSession
+	var err error
+	if failure != nil {
+		session, err = s.failAgentSession(ctx, func(ctx context.Context, w db.AgentSessionEnds) (db.AgentSession, error) {
+			return w.UpdateAgentSessionTerminalStatus(ctx, terminal)
+		}, failingWith(*failure))
+	} else {
+		session, err = s.dispatchQ.UpdateAgentSessionTerminalStatus(ctx, terminal)
+	}
 	if err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.AgentSession{}, false, nil
@@ -368,41 +373,43 @@ func (s *AgentService) transitionAgentSessionTerminalStatusWithFailure(ctx conte
 		return db.AgentSession{}, false, err
 	}
 	meterSandboxUsage(ctx, s.dispatchQ, session.UserID, "agent", sessionID, false)
-	if failure != nil {
-		session = s.recordAgentSessionFailure(ctx, session, *failure)
-	}
 	s.notifyAgentSessionStatus(ctx, session)
 	return session, true, nil
 }
 
-// recordAgentSessionFailure stores a terminal session's typed reason and its
-// final reply, announces the reply, and returns the session as recorded.
+// failAgentSession is the one way a session fails: end writes its terminal
+// status, and the status, failure(the ended row) and the final reply commit
+// together (db.FailAgentSession), so no session read answers a failed status
+// without its reason_code, reason and retryable (G1; QA f-qjwko8). It then
+// announces the reply and returns the failed row. end's pgx.ErrNoRows comes
+// back when the session was not end's to fail; nothing is written then.
 //
 // The session row's only carrier for the reason is its metadata, which the
 // session read returns as reason_code, reason and retryable, and the reply
 // ends the turn with the same sentence so the transcript does not stop in
-// silence. The caller has already won the terminal write. A failure to record
-// is logged and swallowed: the session is already terminal, and losing the
-// explanation must not strand the row in 'active'.
-func (s *AgentService) recordAgentSessionFailure(ctx context.Context, session db.AgentSession, failure agentSessionFailure) db.AgentSession {
-	record, ok, err := s.dispatchQ.RecordAgentSessionFailure(ctx, session.ID, failure)
+// silence. Any other error rolls back the status with the reason: the
+// session stays active until the caller retries or a session bound fails it.
+func (s *AgentService) failAgentSession(ctx context.Context, end func(context.Context, db.AgentSessionEnds) (db.AgentSession, error), failure func(db.AgentSession) agentSessionFailure) (db.AgentSession, error) {
+	record, err := s.dispatchQ.FailAgentSession(ctx, end, failure)
 	if err != nil {
-		middleware.LoggerWithAgentSession(ctx, session.ID).
-			Error("failed to record agent session failure reason", "reason_code", failure.Code, "error", err)
-		return session
-	}
-	if !ok {
-		return session
+		return db.AgentSession{}, err
 	}
 	s.announceAgentSessionFailureReply(ctx, record)
-	// Only the reason changed; the caller's terminal row keeps its run link.
-	session.Metadata, session.UpdatedAt = record.Session.Metadata, record.Session.UpdatedAt
-	return session
+	return record.Session, nil
+}
+
+// failingWith is a failure that does not depend on the ended row.
+func failingWith(failure agentSessionFailure) func(db.AgentSession) agentSessionFailure {
+	return func(db.AgentSession) agentSessionFailure { return failure }
 }
 
 // announceAgentSessionFailureReply tells the session's streams about the
-// final reply a recorded failure wrote.
+// final reply a recorded failure wrote. A record without a reply (the row
+// already carried a failure) announces nothing.
 func (s *AgentService) announceAgentSessionFailureReply(ctx context.Context, record db.AgentSessionFailureRecord) {
+	if record.Reply.ID == 0 {
+		return
+	}
 	reply := AgentMessageResponse{
 		ID: record.Reply.ID, SessionID: record.Reply.SessionID, Role: record.Reply.Role,
 		Sequence: record.Reply.Sequence, CreatedAt: record.Reply.CreatedAt,

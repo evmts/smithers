@@ -1355,6 +1355,35 @@ func (m *mockAgentDispatchQuerier) RecordAgentSessionFailure(ctx context.Context
 	return db.AgentSessionFailureRecord{Session: s}, true, nil
 }
 
+// FailAgentSession runs end on the mock itself, then RecordAgentSessionFailure,
+// as db.FailAgentSession does on its transaction.
+func (m *mockAgentDispatchQuerier) FailAgentSession(ctx context.Context, end func(context.Context, db.AgentSessionEnds) (db.AgentSession, error), failure func(db.AgentSession) db.AgentSessionFailure) (db.AgentSessionFailureRecord, error) {
+	return m.failAgentSessionOn(ctx, m, end, failure)
+}
+
+// failAgentSessionOn is FailAgentSession with end run on ends, so a fake that
+// embeds the mock and overrides one terminal write still sees end call it.
+func (m *mockAgentDispatchQuerier) failAgentSessionOn(ctx context.Context, ends db.AgentSessionEnds, end func(context.Context, db.AgentSessionEnds) (db.AgentSession, error), failure func(db.AgentSession) db.AgentSessionFailure) (db.AgentSessionFailureRecord, error) {
+	ended, err := end(ctx, ends)
+	if err != nil {
+		return db.AgentSessionFailureRecord{}, err
+	}
+	record, recorded, err := m.RecordAgentSessionFailure(ctx, ended.ID, failure(ended))
+	if err != nil {
+		return db.AgentSessionFailureRecord{}, err
+	}
+	if !recorded {
+		return db.AgentSessionFailureRecord{Session: ended}, nil
+	}
+	ended.Metadata, ended.UpdatedAt = record.Session.Metadata, record.Session.UpdatedAt
+	record.Session = ended
+	return record, nil
+}
+
+func (m *mockAgentDispatchQuerier) FailNeverStartedAgentSession(context.Context, db.FailNeverStartedAgentSessionParams) (db.AgentSession, error) {
+	return db.AgentSession{}, pgx.ErrNoRows
+}
+
 func (m *mockAgentDispatchQuerier) InsertWorkflowRunLogNextSequence(ctx context.Context, arg db.InsertWorkflowRunLogNextSequenceParams) (db.InsertWorkflowRunLogNextSequenceRow, error) {
 	if m.insertWorkflowRunLogFn != nil {
 		return m.insertWorkflowRunLogFn(ctx, arg)

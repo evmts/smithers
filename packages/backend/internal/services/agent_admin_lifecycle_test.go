@@ -32,6 +32,9 @@ func (f *neverStartedFake) FailNeverStartedAgentSession(_ context.Context, p db.
 	}
 	return db.AgentSession{ID: p.ID, Status: "failed", Metadata: []byte(`{"failure_reason":"never_started"}`)}, nil
 }
+func (f *neverStartedFake) FailAgentSession(ctx context.Context, end func(context.Context, db.AgentSessionEnds) (db.AgentSession, error), failure func(db.AgentSession) db.AgentSessionFailure) (db.AgentSessionFailureRecord, error) {
+	return f.failAgentSessionOn(ctx, f, end, failure)
+}
 func TestAgentReaperNeverStarted(t *testing.T) {
 	for _, timeout := range []time.Duration{0, 2 * time.Hour} {
 		t.Run(timeout.String(), func(t *testing.T) {
