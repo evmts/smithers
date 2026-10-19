@@ -50,7 +50,7 @@ func (transcriptWorkspaceBackend) CheckAgentWorkspaceQuota(context.Context, int6
 func (transcriptWorkspaceBackend) CreateAgentWorkspace(context.Context, services.CreateAgentWorkspaceInput) (services.AgentWorkspaceResult, error) {
 	return services.AgentWorkspaceResult{}, nil
 }
-func (transcriptWorkspaceBackend) ReleaseAgentWorkspace(context.Context, string, string) (services.AgentWorkspaceRelease, error) {
+func (transcriptWorkspaceBackend) ReleaseAgentWorkspace(context.Context, string, string, int64) (services.AgentWorkspaceRelease, error) {
 	return services.AgentWorkspaceRelease{}, nil
 }
 func (transcriptWorkspaceBackend) SnapshotAgentWorkspace(context.Context, string, string) (string, error) {
