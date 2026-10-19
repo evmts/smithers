@@ -84,5 +84,13 @@
       "src"
     ],
     "affectedOnly": "direct"
+  },
+  "packages/smithers/flows/capability": {
+    "why": "test/CapabilityLiterals.test.ts (HARDEN-2) scans the whole repository for capability literals, skipping only node_modules, dist and .git, so it also sees every package's src-vibe twins and .vibe-twin outputs, which copy the TypeScript's literals until cutover. It fails in both runs because of the twins' existence, not their behavior, so both runs exclude it. It runs once, without twins present, before cutover.",
+    "kind": "vitest",
+    "args": [
+      "--exclude",
+      "test/CapabilityLiterals.test.ts"
+    ]
   }
 }
