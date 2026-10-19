@@ -104,8 +104,11 @@ export interface Options extends NativeOptions {
   readonly agentTerminal?: NativeControl.Platform["agentTerminal"]
   /** Teaching for every model action when this host offers no `bash`. */
   readonly withoutTerminal?: ReadonlyArray<string> | undefined
-  /** Confines the agent's file reads to the served root (`CodingFileSystem.confineReads`). */
+  /** Confines the agent's file reads to the served root (`CodingFileSystem.confineReads`),
+   * its instruction file to the root's own, and starts no host language server. */
   readonly confinedReads?: boolean | undefined
+  /** The only tool names the host may offer; startup stops on any other. */
+  readonly toolAllowlist?: ReadonlyArray<string> | undefined
 
   /** Exact system names from the backend's packaged flow catalog. */
   readonly systemFlows: ReadonlyArray<string>
@@ -675,7 +678,9 @@ export const nativePlatform = (
       return options.confinedReads === true ? CodingFileSystem.confineReads(coding, canonicalRoot) : coding
     }).pipe(Effect.orDie),
   fileMutations: CodingFileSystem.mutable,
-  agentSystem: (offered) => offered.includes("bash") ? undefined : options.withoutTerminal
+  agentSystem: (offered) => offered.includes("bash") ? undefined : options.withoutTerminal,
+  confinedWorkspace: options.confinedReads === true,
+  toolAllowlist: options.toolAllowlist
 })
 
 /** Both platform entries call this one recipe; no second executor or store. */

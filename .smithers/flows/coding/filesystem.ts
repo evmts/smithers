@@ -262,6 +262,8 @@ export const Anchored = {
     try {
       const info = await file.stat()
       if (!info.isFile()) throw refused(path, "it is not a regular file")
+      // A hard link could name a file outside the tree under an inside name.
+      if (info.nlink > 1) throw refused(path, "it is hard-linked")
       return { bytes: new Uint8Array(await file.readFile()), mode: info.mode & 0o7777 }
     } finally {
       await file.close()
@@ -436,6 +438,11 @@ export const confineReads = <F extends FileSystem.FileSystem>(fs: F, canonicalRo
     ...fs,
     access: (path, options) => Effect.flatMap(guard("access", path), (absolute) => fs.access(absolute, options)),
     exists: (path) => Effect.flatMap(guard("exists", path), (absolute) => fs.exists(absolute)),
+    glob: (pattern, options) =>
+      Effect.flatMap(
+        guard("glob", options?.root ?? root),
+        (absolute) => fs.glob(pattern, { ...options, root: absolute })
+      ),
     readDirectory: (path, options) =>
       Effect.flatMap(guard("readDirectory", path), (absolute) => fs.readDirectory(absolute, options)),
     readFile: (path) => Effect.flatMap(guard("readFile", path), (absolute) => fs.readFile(absolute)),

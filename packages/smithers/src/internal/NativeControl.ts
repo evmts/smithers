@@ -143,6 +143,31 @@ import * as SupervisorMemory from "./SupervisorMemory.ts"
 import * as Telemetry from "./Telemetry.ts"
 import * as WorkspaceRouting from "./WorkspaceRouting.ts"
 
+const instructionNames = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"]
+
+/**
+ * A confined workspace's instruction file: the first of the root's own
+ * candidates `fs` reads. `fs` is the agent's filesystem, so a candidate that is
+ * a link out of the tree, or one swapped for a link before the read, is
+ * refused like any read and the next candidate is tried. No parent directory
+ * and no home file is consulted.
+ *
+ * @private
+ * @since 1.0.0
+ */
+export const confinedInstructions = (
+  fs: FileSystem.FileSystem,
+  root: string
+): Effect.Effect<ReadonlyArray<{ readonly path: string; readonly text: string }>> =>
+  Effect.gen(function*() {
+    for (const name of instructionNames) {
+      const path = join(root, name)
+      const text = yield* Effect.option(fs.readFileString(path))
+      if (Option.isSome(text)) return [{ path, text: text.value }]
+    }
+    return []
+  })
+
 /** Match the TUI's repository-bounded instruction file precedence. */
 const workspaceInstructions = (cwd: string): ReadonlyArray<{ readonly path: string; readonly text: string }> => {
   const files: Array<string> = []
@@ -158,8 +183,7 @@ const workspaceInstructions = (cwd: string): ReadonlyArray<{ readonly path: stri
     }
   }
   for (const directory of directories) {
-    const first = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"]
-      .map((name) => join(directory, name)).find((path) => existsSync(path))
+    const first = instructionNames.map((name) => join(directory, name)).find((path) => existsSync(path))
     if (first !== undefined && !files.includes(first)) files.push(first)
   }
   return files.map((path) => ({ path, text: readFileSync(path, "utf8") }))
@@ -420,6 +444,14 @@ export interface Platform {
   readonly fileMutations?: ((filesystem: FileSystem.FileSystem) => boolean) | undefined
   /** System teaching every model action on this host receives, chosen from the tools it offers. */
   readonly agentSystem?: ((offered: ReadonlyArray<string>) => ReadonlyArray<string> | undefined) | undefined
+  /**
+   * Nothing the agent sees comes from outside the workspace. Its instruction
+   * file is read only from the root, through the composed filesystem, and
+   * never from the home; no host language server starts.
+   */
+  readonly confinedWorkspace?: boolean | undefined
+  /** The only tool names this host may offer; the startup self-check stops it on any other. */
+  readonly toolAllowlist?: ReadonlyArray<string> | undefined
   readonly httpClient: (
     environment: Readonly<Record<string, string | undefined>>
   ) => Layer.Layer<KernelHttpClient.HttpClient>
@@ -445,8 +477,16 @@ export interface Platform {
  */
 export const offeredWithoutProvider = (
   offered: ReadonlyArray<string>,
-  providers: { readonly fileMutations: boolean; readonly terminal: boolean }
+  providers: { readonly fileMutations: boolean; readonly terminal: boolean },
+  allowlist?: ReadonlyArray<string> | undefined
 ): HarnessError | undefined => {
+  const unlisted = allowlist === undefined ? undefined : offered.find((name) => !allowlist.includes(name))
+  if (unlisted !== undefined) {
+    return new HarnessError({
+      code: "assembly_failed",
+      message: `Host self-check: ${unlisted} is offered but this host allows only ${allowlist!.join(", ")}`
+    })
+  }
   const missing = offered.find((name) =>
     (!providers.fileMutations && (name === "write" || name === "edit" || name === "apply_patch")) ||
     (!providers.terminal && (name === "bash" || name === "test"))
@@ -1634,7 +1674,9 @@ export const make = (
           KernelChildProcessSpawner.ChildProcessSpawner,
           toolSpawner!
         )
-        const languageServer = sealedTo === undefined
+        // A confined workspace starts none: a server runs outside the agent's
+        // filesystem and its diagnostics would carry what it reads.
+        const languageServer = sealedTo === undefined && native.confinedWorkspace !== true
           ? yield* HostLanguageServers.make(workspaceRoot, environment).pipe(Effect.provideContext(ownerShellServices))
           : undefined
         // Each configured server is a startup-time connection the operator
@@ -1709,13 +1751,15 @@ export const make = (
         const unprovided = offeredWithoutProvider(offered, {
           fileMutations: sealedTo !== undefined || fileMutations,
           terminal: native.shellTerminal !== "agent" || terminalPort !== undefined
-        })
+        }, native.toolAllowlist)
         if (unprovided !== undefined) return yield* Effect.die(unprovided)
         // The judge `evaluatorFor` requires arms nudges and memory insertion
         // in the run and in every subagent step; memory writes wait for a
         // memory database of the operator's own.
         const supervisorOptions = SupervisorMemory.options(environment, workspaceRoot)
-        const instructions = workspaceInstructions(workspaceRoot)
+        const instructions = native.confinedWorkspace === true
+          ? yield* confinedInstructions(Context.get(filesystemServices, FileSystem.FileSystem), workspaceRoot)
+          : workspaceInstructions(workspaceRoot)
         const actionHost = AgentAction.makeHost({
           registry: yield* Registry.Registry,
           limits: native.agentLimits === undefined
