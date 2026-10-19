@@ -14,6 +14,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/flowhost"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
@@ -100,10 +101,30 @@ func (l *admittedFlowLauncher) StartFlowHost(ctx context.Context, launch flowhos
 	}
 	payerCtx := sandbox.WithServicePayerOrgs(sandbox.WithBillingOwner(ctx, payer), l.servicePayerOrgs)
 	if err := l.policy.AuthorizeCountedSandboxResume(payerCtx, payer.ID, workspace.ID, workspace.VmID); err != nil {
+		var refusal *pkgerrors.APIError
+		if errors.As(err, &refusal) && refusal.Code == pkgerrors.CodePlanLimitExceeded {
+			return flowhost.Connection{}, sandboxPlanRefusal{cause: refusal}
+		}
 		return flowhost.Connection{}, err
 	}
 	return l.Launcher.StartFlowHost(ctx, launch)
 }
+
+// sandboxPlanRefusal ends the run whose machine the payer's plan refuses to
+// start, at once and typed: retrying the start cannot free the payer's other
+// machine, and three retries over four minutes used to end the turn as
+// flow_host_unavailable and stop its box (QA b-jpt11m). Its code names the
+// plan limit (services.PlanLimitFlowCode) and its detail is the refusal's own
+// sentence, which the session repeats (agentSessionFailureForFlow).
+type sandboxPlanRefusal struct{ cause *pkgerrors.APIError }
+
+func (r sandboxPlanRefusal) Error() string { return r.cause.Error() }
+func (r sandboxPlanRefusal) Unwrap() error { return r.cause }
+func (r sandboxPlanRefusal) FlowRuntimeCode() string {
+	return services.PlanLimitFlowCode(r.cause.LimitKind)
+}
+func (sandboxPlanRefusal) FlowRuntimeRetryable() bool  { return false }
+func (r sandboxPlanRefusal) FlowRuntimeDetail() string { return r.cause.Message }
 
 // AbandonFlowHostStart forwards a refused start to the launcher it admitted.
 func (l *admittedFlowLauncher) AbandonFlowHostStart(ctx context.Context, binding flowhost.Binding) {

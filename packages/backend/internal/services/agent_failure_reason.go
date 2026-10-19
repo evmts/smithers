@@ -326,6 +326,11 @@ func agentSessionFailureForFlow(checkpoint flowdispatch.RuntimeCheckpoint) agent
 			failure.Reason = detail + " Nothing ran, and trying again will not help."
 		}
 		return failure
+	case strings.HasPrefix(code, planLimitFlowCodePrefix):
+		// The payer's plan refused the box's start (sandboxPlanRefusal in
+		// compose): the run ends as a dispatch the plan refused would.
+		return agentSessionFailureForError(&pkgerrors.APIError{Code: pkgerrors.CodePlanLimitExceeded,
+			LimitKind: strings.TrimPrefix(code, planLimitFlowCodePrefix), Message: strings.TrimSpace(checkpoint.FailureDetail)})
 	case code == flowhost.WorkspaceInitializingCode || code == "wake_timeout" || code == string(pkgerrors.CodeGuestNotReady):
 		return agentSessionBoxNotReady
 	case code == "isolation_required" || code == "host_lease_lost" || code == "http_refused" || code == "health_refused" ||
@@ -335,6 +340,14 @@ func agentSessionFailureForFlow(checkpoint flowdispatch.RuntimeCheckpoint) agent
 		return agentSessionStartFailure
 	}
 }
+
+// planLimitFlowCodePrefix begins the code of a Flow run whose box's start a
+// plan limit refused; the limit kind follows it.
+const planLimitFlowCodePrefix = "plan_limit:"
+
+// PlanLimitFlowCode is the Flow failure code of a box start the payer's plan
+// refused for limitKind (pkgerrors.APIError.LimitKind).
+func PlanLimitFlowCode(limitKind string) string { return planLimitFlowCodePrefix + limitKind }
 
 // agentSessionFailureFromMetadata reads the recorded reason back out of a
 // session row so the session read and its status event can repeat it without

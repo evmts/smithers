@@ -181,3 +181,15 @@ func sandboxEntitlementForUser(ctx context.Context, policy BillingPolicy, userID
 	}
 	return policy.SandboxEntitlement(ctx, userID)
 }
+
+// sandboxLimitError is what a turn gets when its billing owner already runs
+// every machine its plan allows (agentDispatch.reserveOwnerSandbox): the
+// plan's own refusal, which the turn ends with at once, retryably (Platform
+// d-wlfa6x). It is the one place that chooses refusal over waiting
+// (pkgerrors.QuotaExceeded parks a turn instead; smithers#4381).
+func sandboxLimitError(entitlement SandboxEntitlement) error {
+	if entitlement.ConcurrentInUse < entitlement.ConcurrentSandboxes {
+		entitlement.ConcurrentInUse = entitlement.ConcurrentSandboxes
+	}
+	return authorizeSandboxEntitlement(entitlement)
+}

@@ -565,17 +565,55 @@ func (f *agentBoxRelease) bindingErrorCode(t *testing.T) string {
 	return code
 }
 
-func TestARunOnAnAlreadyStoppedBoxRevokesTheHeadTokenItLeftLive(t *testing.T) {
+// A run that ends on its session's stopped box revokes everything the box
+// still holds and retires the box: a stopped box that keeps its guest keeps
+// that guest's disk and VM slot with nothing left to delete it (QA b-jpt11m).
+func TestARunOnAnAlreadyStoppedBoxRetiresItAndRevokesTheHeadTokenItLeftLive(t *testing.T) {
 	f := newAgentBoxRelease(t, "stopped")
 	f.update.State = jobs.StateFailed
 	f.update.Checkpoint.Run = nil
 
 	require.NoError(t, f.agent.ProjectFlowRuntime(f.ctx, f.update))
 
-	require.Zero(t, f.runtime.stops.Load(), "a stopped box is not stopped again")
-	require.Equal(t, "stopped", f.box(t).Status)
-	f.requireRunTokensRevoked(t, "head", "api")
-	require.Contains(t, f.releaseLog(t), "outcome=already_released")
+	f.requireHaltedBoxRetired(t)
+	f.requireRunTokensRevoked(t, "head", "landing", "cache", "api")
+}
+
+// requireHaltedBoxRetired checks that a box the turn's end found halted was
+// retired, not left stopped: its guest is deleted (its instance's desired
+// state becomes deleted) and the row reads as retired.
+func (f *agentBoxRelease) requireHaltedBoxRetired(t *testing.T) {
+	t.Helper()
+	require.Equal(t, int32(1), f.runtime.deletes.Load(), "its guest and disk are deleted")
+	box := f.box(t)
+	require.Equal(t, "suspended", box.Status, "a retired box reads suspended")
+	require.Empty(t, box.VmID, "it names no guest")
+	require.Equal(t, db.AgentBoxRetiredStage, box.ProvisioningStage)
+	require.False(t, box.HeadPushTokenID.Valid)
+	require.Contains(t, f.releaseLog(t), "outcome=retired")
+}
+
+// A turn whose coding host never started (flow_host_unavailable after the
+// resolver's last start failure released the machine, which stops it) gives
+// its box back through the same retirement as a finished turn: no stopped
+// box keeps its instance (QA b-jpt11m: msb_f2409f3c, msb_d5593a79).
+func TestATurnWhoseCodingHostNeverStartedRetiresItsBox(t *testing.T) {
+	f := newAgentBoxRelease(t, "running")
+	box := f.box(t)
+	require.NoError(t, f.boxes.ReleaseFailedFlowHostMachine(f.ctx, flowhost.Binding{WorkspaceID: f.workspace, RepositoryID: box.RepositoryID}))
+	require.Equal(t, "stopped", f.box(t).Status, "the resolver's release stops the machine")
+	f.update.State = jobs.StateFailed
+	f.update.Checkpoint.Run = nil
+	f.update.Checkpoint.RunID = ""
+	f.update.Checkpoint.FailureCode = "runtime_start_exhausted"
+
+	require.NoError(t, f.agent.ProjectFlowRuntime(f.ctx, f.update))
+
+	session, err := f.q.GetAgentSession(f.ctx, f.session)
+	require.NoError(t, err)
+	require.Equal(t, "failed", session.Status)
+	f.requireHaltedBoxRetired(t)
+	f.requireRunTokensRevoked(t, "head", "landing", "cache", "api")
 }
 
 // A person's open terminal on the branch's box is use too.

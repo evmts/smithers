@@ -272,9 +272,18 @@ func (s *WorkspaceService) releaseAgentBox(ctx context.Context, workspaceID, ses
 	if row.DeletedAt.Valid {
 		return AgentWorkspaceRelease{Outcome: agentWorkspaceAbsent}, nil
 	}
+	// A session's box that is stopped or failed with its guest still named
+	// holds that guest's disk and VM slot. At its turn's end it is retired
+	// like a running one: a failed coding host start leaves it stopped
+	// (ReleaseFailedFlowHostMachine), and only revoking its credentials left
+	// its instance stopped with nothing to delete it (QA b-jpt11m).
+	retireHalted := finish && (row.Status == "stopped" || row.Status == "failed") &&
+		row.AgentSessionID.Valid && strings.TrimSpace(row.VmID) != ""
 	switch row.Status {
 	case "suspended", "stopped", "failed":
-		return s.releaseStoppedAgentBox(ctx, row, sessionID, finishedRunID)
+		if !retireHalted || s.machineAdmission != nil {
+			return s.releaseStoppedAgentBox(ctx, row, sessionID, finishedRunID)
+		}
 	case "running":
 	default:
 		// Another request owns this box's start or release.
@@ -285,13 +294,16 @@ func (s *WorkspaceService) releaseAgentBox(ctx context.Context, workspaceID, ses
 	}
 	store, ok := s.q.(agentWorkspaceReleaseStore)
 	if !ok || !s.hasWorkspaceRuntime() || s.requireBranchMachineProviders() != nil {
+		if retireHalted {
+			return s.releaseStoppedAgentBox(ctx, row, sessionID, finishedRunID)
+		}
 		return AgentWorkspaceRelease{Outcome: agentWorkspaceKeptWithoutRuntime}, nil
 	}
 	unlock := s.lockRuntimeWorkspace(row.ID)
 	defer unlock()
 	s.agentBoxReleasePoint(agentBoxBeforeClaim, row.ID)
 	claim, err := store.ClaimAgentBoxRelease(ctx, db.ClaimAgentBoxReleaseParams{WorkspaceID: row.ID,
-		FinishedSessionID: sessionID, FinishedRunID: finishedRunID, CheckUse: true,
+		FinishedSessionID: sessionID, FinishedRunID: finishedRunID, CheckUse: true, AnyStatus: retireHalted,
 		AfterEmptyUse: func() { s.agentBoxReleasePoint(agentBoxAfterEmptyUse, row.ID) }})
 	if err != nil {
 		return AgentWorkspaceRelease{Outcome: agentWorkspaceReleaseFailed}, err
