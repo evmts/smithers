@@ -249,6 +249,14 @@ describe("the header on other hosts", () => {
 import { CodeHome } from "./repository/CodeHome"
 
 describe("repository Code home availability", () => {
+  test("slash default branches preserve separators in file and folder links", () => {
+    const tree = { id:"copy:", copyId:"copy", path:"", state:"loaded" as const,
+      entries:[{name:"a b.ts",kind:"file" as const},{name:"src",kind:"dir" as const}], expanded:true, loadedAt:1 }
+    const host = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="release/1.2" tree={tree}/>)
+    expect(host.querySelector('a[href="/maya/tinyhttp/blob/release/1.2/a%20b.ts"]')?.textContent).toContain("a b.ts")
+    expect(host.querySelector('a[href="/maya/tinyhttp/tree/release/1.2/src"]')?.textContent).toContain("src")
+    expect(host.querySelector('a[href*="release%2F"]')).toBeNull()
+  })
   test("files wait for an authoritative default branch before becoming links", () => {
     const tree = { id:"copy:", copyId:"copy", path:"", state:"loaded" as const, entries:[{name:"README.md",kind:"file" as const}], expanded:true, loadedAt:1 }
     const unknown = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" tree={tree}/>)
@@ -314,7 +322,7 @@ describe("repository Code home metadata", () => {
   test("a complete bookmark read supplies names and branch count; failures stay visible", () => {
     const host = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="main" branches={{ id:"maya/tinyhttp", state:"ready", names:["main", "docs/ui"] }}/>)
     expect(host.textContent).toContain("2 branches")
-    expect(host.querySelector('a[href="/maya/tinyhttp/tree/docs%2Fui"]')?.textContent).toBe("docs/ui")
+    expect(host.querySelector('a[href="/maya/tinyhttp/tree/docs/ui"]')?.textContent).toBe("docs/ui")
     const failed = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="main" branches={{ id:"maya/tinyhttp", state:"failed", names:["stale"], error:"Permission denied" }}/>)
     const failure = failed.querySelector('[role="alert"]')!
     expect(failure.querySelector("p")?.textContent).toBe("Couldn’t load branches.")
