@@ -9,6 +9,9 @@ import { themeRegistry, useInjectUiCss } from "../styles";
 import { useResolvedTheme } from "../internal/useResolvedTheme";
 import { useResolvedPalette } from "../internal/useResolvedPalette";
 import type { ResolvedPalette } from "../internal/resolvePalette";
+import { registerVibe } from "./code-view/vibe";
+
+registerVibe();
 
 /**
  * PierreDiffView is the high-fidelity, syntax-highlighted diff surface: it runs

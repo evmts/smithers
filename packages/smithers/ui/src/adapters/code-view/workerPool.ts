@@ -24,6 +24,9 @@
 import type { DiffsThemeNames, ThemesType } from "@pierre/diffs";
 import { getOrCreateWorkerPoolSingleton, terminateWorkerPoolSingleton } from "@pierre/diffs/worker";
 import type { WorkerPoolManager } from "@pierre/diffs/worker";
+import { registerVibe } from "./vibe";
+
+registerVibe();
 
 export type CodeViewPoolState = "off" | "starting" | "ready" | "failed";
 
