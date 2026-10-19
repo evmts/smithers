@@ -170,6 +170,7 @@ type Product interface {
 	NotifyWorkflowRunLog(ctx context.Context, arg db.NotifyWorkflowRunLogParams) error
 	NotifyWorkspaceStatus(ctx context.Context, arg db.NotifyWorkspaceStatusParams) error
 	OpenSandboxUsageInterval(ctx context.Context, arg db.OpenSandboxUsageIntervalParams) error
+	RecordAgentSessionModel(ctx context.Context, sessionID, model string) (bool, error)
 	RecordWorkflowRunCodingHost(ctx context.Context, arg db.RecordWorkflowRunCodingHostParams) (db.WorkflowRunCodingHost, error)
 	RecordWorkspaceCodingOperation(ctx context.Context, arg db.RecordWorkspaceCodingOperationParams) (db.JjOperation, error)
 	RegisterWorkspaceVM(ctx context.Context, arg db.RegisterWorkspaceVMParams) (db.Workspace, error)

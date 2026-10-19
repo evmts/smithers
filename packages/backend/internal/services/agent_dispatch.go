@@ -251,7 +251,7 @@ func (d *agentDispatch) revokeCloneTokenWithContext(ctx context.Context) {
 // here would silently skip persisting the failure while the flag suppresses
 // cleanup()'s retry — leaving the run/task/session stuck in an active state.
 func (d *agentDispatch) markInfraFailed(message string) error {
-	return d.markInfraFailedWithReason(message, agentSessionStartFailureMessage)
+	return d.markInfraFailedWithReason(message, agentSessionStartFailure)
 }
 
 // markInfraFailedFromError is markInfraFailed for a step that holds the
@@ -259,14 +259,14 @@ func (d *agentDispatch) markInfraFailed(message string) error {
 // generic sentence. step names the operation ("create sandbox"); err's chain
 // stays on the operator side.
 func (d *agentDispatch) markInfraFailedFromError(step string, err error) error {
-	return d.markInfraFailedWithReason(step+": "+err.Error(), agentSessionFailureReasonForError(err))
+	return d.markInfraFailedWithReason(step+": "+err.Error(), agentSessionFailureForError(err))
 }
 
-func (d *agentDispatch) markInfraFailedWithReason(message, reason string) error {
+func (d *agentDispatch) markInfraFailedWithReason(message string, failure agentSessionFailure) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(d.ctx), 30*time.Second)
 	defer cancel()
 	d.infraFailedMarked = true
-	d.svc.markAgentDispatchInfrastructureFailedWithReason(ctx, d.task.ID, d.step.ID, d.run.ID, d.input.SessionID, message, reason)
+	d.svc.markAgentDispatchInfrastructureFailedWithReason(ctx, d.task.ID, d.step.ID, d.run.ID, d.input.SessionID, message, failure)
 	return pkgerrors.Internal(message)
 }
 
@@ -306,7 +306,7 @@ func (d *agentDispatch) refuseRetiredAgentLoop() error {
 		defer cancel()
 		d.infraFailedMarked = true
 		d.svc.markAgentDispatchInfrastructureFailedWithReason(ctx, d.task.ID, d.step.ID, d.run.ID, d.input.SessionID,
-			agentLoopRetiredMessage, agentSessionLoopRetiredMessage)
+			agentLoopRetiredMessage, agentSessionLoopRetired)
 	}
 	return &pkgerrors.APIError{
 		Status:  http.StatusNotImplemented,

@@ -199,9 +199,12 @@ type RuntimeCheckpoint struct {
 	FailureMissingTool  *CertifiedMissingTool           `json:"failureMissingTool,omitempty"`
 	FailureClass        string                          `json:"failureClass,omitempty"`
 	FailureCode         string                          `json:"failureCode,omitempty"`
-	FailureObservedAt   int64                           `json:"failureObservedAt,omitempty"`
-	FailureStep         string                          `json:"failureStep,omitempty"`
-	WakeStartedAt       int64                           `json:"wakeStartedAt,omitempty"`
+	// FailureDetail is the product sentence a typed runtime failure wrote
+	// beside its code (FlowRuntimeDetail), never an adapter's error text.
+	FailureDetail     string `json:"failureDetail,omitempty"`
+	FailureObservedAt int64  `json:"failureObservedAt,omitempty"`
+	FailureStep       string `json:"failureStep,omitempty"`
+	WakeStartedAt     int64  `json:"wakeStartedAt,omitempty"`
 	// IdlePolls counts consecutive polls without progress. It stops growing
 	// once the backoff reaches its limit, so idle polls stop changing the
 	// checkpoint.

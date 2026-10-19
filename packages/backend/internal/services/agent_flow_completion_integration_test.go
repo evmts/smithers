@@ -184,6 +184,12 @@ func TestCodingCompletionRefusesInvalidOutputAndOwnership(t *testing.T) {
 			require.Equal(t, wantStatus, current.Status)
 			messages, err := service.ListMessages(ctx, owner.ID, 1, 100)
 			require.NoError(t, err)
+			if name == "failed" {
+				// A failed turn ends with its reason; the delayed completion adds nothing.
+				require.Len(t, messages, 2)
+				require.Equal(t, "assistant", messages[1].Role)
+				return
+			}
 			require.Len(t, messages, 1)
 		})
 	}
