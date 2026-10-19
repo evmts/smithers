@@ -1722,6 +1722,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	// RFD-004: agent runs execute in kind=agent workspaces.
 	agentService.SetWorkspaceBackend(workspaceService)
+	// A completed coding turn's coding_result comes from the repo host's ref
+	// for its box and a test the API runs in that box, never from the flow.
+	agentService.SetCodingTurnObserver(services.NewCodingTurnObservation(queries, repoHostClient, workspaceService, secretInjector))
 	adminManageService := services.NewAdminManageService(queries, agentService, workspaceService)
 	var deploymentAdminRoutes []ports.AdminRoute
 	if options.AdminRoutes != nil && options.topology.servesHTTP() {
