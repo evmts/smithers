@@ -996,7 +996,7 @@ const spawnLogged = (command, args, options, outputFile) => {
   let child
   try {
     // A test run that never ends becomes a result instead of a hang: 20 minutes, then SIGKILL.
-    child = spawnSync(command, args, { ...options, stdio: ["ignore", fd, fd], timeout: 20 * 60 * 1000, killSignal: "SIGKILL" })
+    child = spawnSync(command, args, { ...options, stdio: ["ignore", fd, fd], timeout: Number(process.env.VIBE_TWIN_TEST_TIMEOUT_MIN ?? 20) * 60 * 1000, killSignal: "SIGKILL" })
   } finally {
     closeSync(fd)
   }
