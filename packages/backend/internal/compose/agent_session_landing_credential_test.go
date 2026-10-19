@@ -137,25 +137,40 @@ func TestSessionLandingHostedExactOriginComposed(t *testing.T) {
 	cfg.Server.AllowedOrigins = []string{"https://smithers.test"}
 	publication := &hostedPublicationProbe{userID: user.ID}
 	router := hostStatusProductionRouter(cfg, q, &services.InstallCapacityService{}, conformanceServices{landing: &routes.LandingHandler{GitHubPull: publication}, agentSession: &routes.AgentSessionHandler{Landing: publication}})
-	for _, origin := range []string{"", "https://evil.test", "https://sub.smithers.test", "http://smithers.test", "https://smithers.test:444", "https://smithers.test"} {
-		t.Run(origin, func(t *testing.T) {
-			req := httptest.NewRequest("POST", "https://smithers.test/api/repos/browser/app/agent/sessions/session/landing", strings.NewReader(`{}`))
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Origin", origin)
-			req.AddCookie(&http.Cookie{Name: cfg.Auth.SessionCookieName, Value: raw})
-			req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf-proof"})
-			req.Header.Set("X-CSRF-Token", "csrf-proof")
-			rec := httptest.NewRecorder()
-			router.ServeHTTP(rec, req)
-			if origin == "https://smithers.test" {
-				require.Equal(t, 201, rec.Code, rec.Body.String())
-			} else {
-				require.Equal(t, 403, rec.Code, rec.Body.String())
-				var body map[string]any
-				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-				require.Equal(t, "origin", body["code"])
-			}
-		})
+	// The edge fetches the API by its own host and forwards the public host from
+	// a non-loopback peer (apps/server/src/edge.ts), so neither Host nor
+	// X-Forwarded-Host may decide the outcome: only the configured origins do.
+	hosts := []struct{ host, forwarded string }{
+		{"smithers.test", ""},
+		{"api.internal.example:8080", "smithers.test"},
+		{"api.internal.example:8080", "evil.test"},
+		{"evil.test", ""},
+	}
+	for _, h := range hosts {
+		for _, origin := range []string{"", "https://evil.test", "https://sub.smithers.test", "http://smithers.test", "https://smithers.test:444", "https://smithers.test"} {
+			t.Run(h.host+"/"+h.forwarded+"/"+origin, func(t *testing.T) {
+				req := httptest.NewRequest("POST", "https://smithers.test/api/repos/browser/app/agent/sessions/session/landing", strings.NewReader(`{}`))
+				req.Host = h.host
+				if h.forwarded != "" {
+					req.Header.Set("X-Forwarded-Host", h.forwarded)
+				}
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Origin", origin)
+				req.AddCookie(&http.Cookie{Name: cfg.Auth.SessionCookieName, Value: raw})
+				req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf-proof"})
+				req.Header.Set("X-CSRF-Token", "csrf-proof")
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+				if origin == "https://smithers.test" {
+					require.Equal(t, 201, rec.Code, rec.Body.String())
+				} else {
+					require.Equal(t, 403, rec.Code, rec.Body.String())
+					var body map[string]any
+					require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+					require.Equal(t, "origin", body["code"])
+				}
+			})
+		}
 	}
 	req := httptest.NewRequest("PUT", "https://smithers.test/api/repos/browser/app/landings/1/github/pull", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")

@@ -124,15 +124,21 @@ func HostedPullPublicationCredentialFirst(next http.Handler) http.Handler {
 	})
 }
 
-// HostedSessionLandingOrigin checks the configured request origin for cookie
-// authentication. Stateless tokens retain the existing CSRF exemption.
+// HostedSessionLandingOrigin checks a cookie request's Origin exactly against
+// the configured public origins. The edge reaches the API by its own host, so
+// neither Host nor X-Forwarded-Host may choose the origin. Stateless tokens
+// retain the existing CSRF exemption.
 func HostedSessionLandingOrigin(origins []string) func(http.Handler) http.Handler {
+	allowed := make(map[string]bool, len(origins))
+	for _, origin := range origins {
+		allowed[middleware.CanonicalOrigin(origin)] = true
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			info := middleware.AuthInfoFromContext(r.Context())
 			if isSessionLandingPost(r) && info != nil && info.User != nil && !info.IsTokenAuth {
-				origin, ok := middleware.ResolveEffectiveOrigin(r, origins)
-				if !ok || len(r.Header.Values("Origin")) != 1 || r.Header.Get("Origin") != origin {
+				values := r.Header.Values("Origin")
+				if len(values) != 1 || !allowed[values[0]] {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusForbidden)
 					_, _ = w.Write([]byte(`{"class":"permission","code":"origin","message":"origin"}`))
