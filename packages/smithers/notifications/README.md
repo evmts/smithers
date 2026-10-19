@@ -14,7 +14,7 @@ Durable notification queue, admission policy, and journal projection for flows. 
 npm install @smthrs/notifications@next effect
 ```
 
-Node.js 26.4.0 or later. `@smthrs/journal` holds the durable records, and the
+Node.js 22.19.0 or later. `@smthrs/journal` holds the durable records, and the
 example below imports it directly, so declare it in your own package too.
 
 ## Public API

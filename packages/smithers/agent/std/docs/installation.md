@@ -14,7 +14,7 @@ npm install @smthrs/std@next effect
 The `next` tag carries the 1.0 release candidates.
 
 It requires
-Node.js 26.4.0 or later and ships as both ESM and CommonJS with TypeScript
+Node.js 22.19.0 or later and ships as both ESM and CommonJS with TypeScript
 declarations. Its runtime dependencies install with it:
 [`effect`](https://effect.website), plus [`@smthrs/core`](/api/core) for the
 flow declaration type, [`@smthrs/kernel`](/api/kernel) for the permission-aware

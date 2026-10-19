@@ -16,7 +16,7 @@ A runnable copy lives in the Smithers repository, as
 
 ## Prerequisites
 
-- Node.js 26.4.0 or later.
+- Node.js 22.19.0 or later.
 - A project with the packages installed: `npm install @smthrs/sync@next @smthrs/journal@next effect`.
 
 ## Name the run

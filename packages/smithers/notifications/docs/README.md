@@ -39,7 +39,7 @@ alerts about a run that has been stuck too long.
 npm install @smthrs/notifications@next effect
 ```
 
-Node.js 26.4.0 or later. `@smthrs/journal` is where the durable records go, and
+Node.js 22.19.0 or later. `@smthrs/journal` is where the durable records go, and
 the example below imports it directly. See [Installation](./installation.md) for
 the SQLite composition a deployment uses.
 
