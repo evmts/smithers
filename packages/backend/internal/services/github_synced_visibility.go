@@ -23,6 +23,8 @@ func (s *GitHubSyncedRepoService) refreshSourceVisibility(ctx context.Context, r
 			return s.forgetSourceVisibility(ctx, row, err)
 		}
 	}
+	// Deliberately discard the commit closure: visibility requires a fresh body,
+	// never a committed ETag/304 that could preserve a revoked public receipt.
 	fetch, _ = s.conditionalPages(row, fetch)
 	if fetch == nil {
 		return gitHubFetchUnavailable()
@@ -39,33 +41,34 @@ func (s *GitHubSyncedRepoService) refreshSourceVisibility(ctx context.Context, r
 		return s.forgetSourceVisibility(ctx, row, err)
 	}
 	var source struct {
-		ID      int64 `json:"id"`
-		Private *bool `json:"private"`
+		ID         int64  `json:"id"`
+		Private    *bool  `json:"private"`
+		Visibility string `json:"visibility"`
 	}
 	if err := json.Unmarshal(body, &source); err != nil {
 		return s.forgetSourceVisibility(ctx, row, fmt.Errorf("decode GitHub repository visibility: %w", err))
 	}
-	if source.ID != row.GithubRepositoryID.Int64 || source.Private == nil {
+	if source.ID != row.GithubRepositoryID.Int64 || source.Private == nil || (source.Visibility != "public" && source.Visibility != "private" && source.Visibility != "internal") {
 		return s.forgetSourceVisibility(ctx, row, fmt.Errorf("GitHub repository visibility missing or identity changed"))
 	}
-	return s.setSourceVisibility(ctx, row, pgtype.Bool{Bool: *source.Private, Valid: true})
+	return s.setSourceVisibility(ctx, row, pgtype.Bool{Bool: *source.Private, Valid: true}, pgtype.Text{String: source.Visibility, Valid: true})
 }
 
 // forgetSourceVisibility closes a previously public source when GitHub
 // refuses the repository or answers without a usable visibility: unknown
 // counts as private until a later sync confirms it again.
 func (s *GitHubSyncedRepoService) forgetSourceVisibility(ctx context.Context, row db.GithubSyncedRepo, cause error) error {
-	if err := s.setSourceVisibility(ctx, row, pgtype.Bool{}); err != nil {
+	if err := s.setSourceVisibility(ctx, row, pgtype.Bool{}, pgtype.Text{}); err != nil {
 		return errors.Join(cause, err)
 	}
 	return cause
 }
 
-func (s *GitHubSyncedRepoService) setSourceVisibility(ctx context.Context, row db.GithubSyncedRepo, visibility pgtype.Bool) error {
+func (s *GitHubSyncedRepoService) setSourceVisibility(ctx context.Context, row db.GithubSyncedRepo, visibility pgtype.Bool, reported pgtype.Text) error {
 	return s.store.SetGitHubSyncedRepoVisibility(ctx, db.SetGitHubSyncedRepoVisibilityParams{
 		ID: row.ID, InstallationID: row.InstallationID, GithubRepositoryID: row.GithubRepositoryID,
 		OwnerLogin: row.OwnerLogin, RepoName: row.RepoName,
-		GithubPrivate: visibility,
+		GithubPrivate: visibility, GithubVisibility: reported, VisibilityGeneration: row.VisibilityGeneration,
 	})
 }
 
@@ -73,8 +76,14 @@ func (s *GitHubSyncedRepoService) setSourceVisibility(ctx context.Context, row d
 // delivery cannot show that the repository is public. Only a sync re-opens it.
 func (s *GitHubSyncedRepoService) CloseSourceVisibility(ctx context.Context, owner, repo string, githubRepoID int64) error {
 	row, ok, err := s.lookupEnrolled(ctx, owner, repo, githubRepoID)
-	if err != nil || !ok || !row.GithubPrivate.Valid || row.GithubPrivate.Bool {
+	if err != nil || !ok {
 		return err
 	}
-	return s.setSourceVisibility(ctx, row, pgtype.Bool{})
+	return s.setSourceVisibility(ctx, row, pgtype.Bool{}, pgtype.Text{})
+}
+
+// githubSourceIsPublic is the shared visibility gate for source discovery and
+// anonymous metadata. A failed mirror cannot serve its last public receipt.
+func githubSourceIsPublic(row db.GithubSyncedRepo) bool {
+	return row.GithubPrivate.Valid && !row.GithubPrivate.Bool && row.GithubVisibility.Valid && row.GithubVisibility.String == "public" && row.SyncState != "failed" && row.SyncState != "disabled"
 }

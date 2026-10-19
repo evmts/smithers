@@ -1611,7 +1611,7 @@ func (s *Server) repositoryAs(repo Repository, login string) map[string]any {
 		defaultBranch = "main"
 	}
 	permission, _ := s.permission(login)
-	return map[string]any{"id": repo.ID, "name": name, "full_name": repo.FullName, "private": repo.Private, "default_branch": defaultBranch, "allow_squash_merge": true, "owner": map[string]string{"login": owner},
+	return map[string]any{"id": repo.ID, "name": name, "full_name": repo.FullName, "private": repo.Private, "visibility": map[bool]string{true: "private", false: "public"}[repo.Private], "default_branch": defaultBranch, "allow_squash_merge": true, "owner": map[string]string{"login": owner},
 		"permissions": map[string]bool{
 			"admin": permission == "admin",
 			"push":  permission == "admin" || permission == "maintain" || permission == "write",

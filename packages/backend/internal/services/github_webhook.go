@@ -84,6 +84,7 @@ ON CONFLICT (delivery_id) DO NOTHING;
 
 var supportedGitHubWebhookEvents = map[string]struct{}{
 	"push":                        {},
+	"repository":                  {},
 	"issues":                      {},
 	"issue_comment":               {},
 	"pull_request":                {},
@@ -259,6 +260,18 @@ func (s *GitHubWebhookService) HandleGitHubWebhook(ctx context.Context, delivery
 		}
 
 		switch normalizedEvent {
+		case "repository":
+			if (action == "privatized" || action == "transferred" || action == "renamed") && envelope.repositoryID() > 0 {
+				// Invalidate inside the delivery transaction, by immutable ID: a
+				// rename/transfer payload already carries the new coordinates.
+				// Bump even an unknown receipt to fence every older visibility GET.
+				if _, err := execer.Exec(ctx, `UPDATE github_synced_repos
+SET github_private=NULL, github_visibility=NULL,
+    visibility_generation=visibility_generation+1, updated_at=NOW()
+WHERE github_repository_id=$1`, envelope.repositoryID()); err != nil {
+					return false, pkgerrors.Internal("failed to close GitHub source visibility").WithCause(err)
+				}
+			}
 		case "installation":
 			if err := s.handleInstallationEvent(ctx, execer, action, envelope); err != nil {
 				return false, err
@@ -361,6 +374,11 @@ func (s *GitHubWebhookService) applySyncedRepoEvent(ctx context.Context, event, 
 				"event", event, "action", action, "owner", owner, "repo", name, "error", err)
 			return
 		}
+	}
+	if event == "repository" {
+		// Repository actions were invalidated transactionally above; retain
+		// the shared non-public close, but do not apply repository data.
+		return
 	}
 	var err error
 	switch event {

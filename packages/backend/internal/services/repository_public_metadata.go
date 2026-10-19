@@ -30,30 +30,32 @@ func (s *RepoService) ReadPublicRepositoryMetadata(ctx context.Context, viewer *
 	if !repository.IsPublic {
 		return GitHubRepoMetadataResult{}, pkgerrors.NotFound("repository not found")
 	}
-	if !publicMetadataPath.MatchString(resource) {
-		return GitHubRepoMetadataResult{}, pkgerrors.BadRequest("invalid repository metadata path")
-	}
 	source, ambiguous, err := s.githubSource(ctx, repository.ID)
 	if err != nil || ambiguous {
-		return GitHubRepoMetadataResult{}, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "GitHub source unavailable")
+		return GitHubRepoMetadataResult{}, pkgerrors.NotFound("repository not found")
 	}
 	if source == nil {
-		return GitHubRepoMetadataResult{}, pkgerrors.NotFound("GitHub source not found")
+		return GitHubRepoMetadataResult{}, pkgerrors.NotFound("repository not found")
+	}
+
+	if s.pool == nil {
+		return GitHubRepoMetadataResult{}, pkgerrors.NotFound("repository not found")
+	}
+	store := db.New(s.pool)
+	registry, err := store.GetGitHubSyncedRepo(ctx, db.GetGitHubSyncedRepoParams{OwnerLogin: source.Owner, RepoName: source.Repo})
+	if err != nil || !githubSourceIsPublic(registry) {
+		return GitHubRepoMetadataResult{}, pkgerrors.NotFound("repository not found")
+	}
+	// Validate only after the source gate: an invalid query must not reveal
+	// whether a hidden source exists versus an absent or ambiguous source.
+	if !publicMetadataPath.MatchString(resource) {
+		return GitHubRepoMetadataResult{}, pkgerrors.BadRequest("invalid repository metadata path")
 	}
 	normalized, err := normalizeGitHubRepoMetadataQuery(strings.Split(resource, "/")[0], query)
 	if err != nil {
 		return GitHubRepoMetadataResult{}, err
 	}
-
-	if s.pool == nil {
-		return GitHubRepoMetadataResult{}, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "Metadata mirror unavailable")
-	}
-	store := db.New(s.pool)
-	registry, err := store.GetGitHubSyncedRepo(ctx, db.GetGitHubSyncedRepoParams{OwnerLogin: source.Owner, RepoName: source.Repo})
-	if err == nil && (!registry.GithubPrivate.Valid || registry.GithubPrivate.Bool) {
-		return GitHubRepoMetadataResult{}, pkgerrors.NotFound("repository not found")
-	}
-	if err != nil || !registry.SyncMetadata || registry.SyncState == "disabled" || !registry.LastSyncedAt.Valid {
+	if !registry.SyncMetadata || !registry.LastSyncedAt.Valid {
 		return GitHubRepoMetadataResult{}, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "Metadata mirror unavailable")
 	}
 	// Both the local repository and the GitHub source are confirmed public.

@@ -31,7 +31,7 @@ func TestPublicMetadataRepositoryAccessPostgres(t *testing.T) {
 	}{{"unknown", nil}, {"private", true}, {"public", false}} {
 		t.Run(test.name, func(t *testing.T) {
 			visibility := test.visibility
-			_, err := pool.Exec(ctx, `UPDATE github_synced_repos SET github_private=$1 WHERE id=$2`, visibility, syncedID)
+			_, err := pool.Exec(ctx, `UPDATE github_synced_repos SET github_visibility='public',github_private=$1 WHERE id=$2`, visibility, syncedID)
 			require.NoError(t, err)
 			public := visibility == false
 			for _, viewer := range []*db.User{nil, {ID: 1002}} {
@@ -83,7 +83,7 @@ func TestPublicMetadataRepositoryAccessPostgres(t *testing.T) {
 	_, err = pool.Exec(ctx, `UPDATE github_synced_repos SET sync_state='disabled' WHERE id=$1`, syncedID)
 	require.NoError(t, err)
 	_, err = svc.ReadPublicRepositoryMetadata(ctx, nil, "owner", "repo", "issues", nil)
-	require.Equal(t, 503, apiStatus(t, err))
+	require.Equal(t, 404, apiStatus(t, err))
 
 	_, err = pool.Exec(ctx, `UPDATE repositories SET is_public=false WHERE id=$1`, id)
 	require.NoError(t, err)

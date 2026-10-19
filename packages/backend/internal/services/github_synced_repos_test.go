@@ -859,8 +859,12 @@ func (f *fakeSyncedRepoStore) SetGitHubSyncedRepoVisibility(_ context.Context, a
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, row := range f.repos {
-		if row.ID == arg.ID && row.InstallationID == arg.InstallationID && row.GithubRepositoryID == arg.GithubRepositoryID && row.OwnerLogin == arg.OwnerLogin && row.RepoName == arg.RepoName {
+		if row.ID == arg.ID && row.InstallationID == arg.InstallationID && row.GithubRepositoryID == arg.GithubRepositoryID && row.OwnerLogin == arg.OwnerLogin && row.RepoName == arg.RepoName && row.VisibilityGeneration == arg.VisibilityGeneration {
 			row.GithubPrivate = arg.GithubPrivate
+			row.GithubVisibility = arg.GithubVisibility
+			if !arg.GithubPrivate.Valid {
+				row.VisibilityGeneration++
+			}
 		}
 	}
 	return nil
