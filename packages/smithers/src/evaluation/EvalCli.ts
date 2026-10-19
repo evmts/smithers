@@ -21,6 +21,22 @@ const localOptions = {
 const runArgument = z.object({ run: z.string().describe("Evaluation run ID or saved run JSON file") })
 const next = [{ command: "eval compare --help", description: "Compare results with a baseline" }]
 
+const writeRunJson = async (file: string, source: string, option: string, signal?: AbortSignal) => {
+  try {
+    await Evaluation.writeJson(file, source, false, signal)
+  } catch (cause) {
+    const error = cause as NodeJS.ErrnoException | undefined
+    if (error?.code === "EEXIST" && error.syscall === "link") {
+      throw new CliError.Refused({
+        fault: "user",
+        code: "eval_run_exists",
+        message: `${file} already exists; pass another --${option} or remove it`
+      })
+    }
+    throw cause
+  }
+}
+
 /**
  * Builds the fixed-suite evaluation command group.
  * @category constructors
@@ -70,10 +86,10 @@ export const createEvalCli = (runtime: RuntimeConfig = {}) =>
           }, runtime)
           runtime.signal?.throwIfAborted()
           const source = `${JSON.stringify(result, null, 2)}\n`
-          await Evaluation.writeJson(file, source, false, runtime.signal)
+          await writeRunJson(file, source, "run-id", runtime.signal)
           if (context.options.output !== undefined) {
             const output = resolve(root, context.options.output)
-            if (output !== file) await Evaluation.writeJson(output, source, false, runtime.signal)
+            if (output !== file) await writeRunJson(output, source, "output", runtime.signal)
           }
         } catch (cause) {
           return Presentation.fail(context, cause, { code: "eval_run_failed", exitCode: 5 })

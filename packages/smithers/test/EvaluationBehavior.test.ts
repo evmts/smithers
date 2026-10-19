@@ -329,7 +329,7 @@ describe("evaluation suite discovery and execution", () => {
     await writeFile(output, "original\n")
     const copied = await serve(root, ["run", "exact", "--run-id", "new", "--output", "existing.json"])
     expect(copied.code).toBe(5)
-    expect(copied.output).toContain("eval_run_failed")
+    expect(copied.output).toContain("eval_run_exists")
     expect(await readFile(output, "utf8")).toBe("original\n")
     const originalRun = await readFile(Evaluation.runPath(root, "new"), "utf8")
     expect(Evaluation.RunArtifact.parse(JSON.parse(originalRun)).runId).toBe("new")

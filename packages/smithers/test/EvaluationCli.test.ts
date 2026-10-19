@@ -131,6 +131,43 @@ describe("evaluation CLI", () => {
     expect(saved.observations).toHaveLength(3)
   })
 
+  it.each(["output", "run-id"])("run names an existing %s file as a user refusal", async (collision) => {
+    const root = await fixture()
+    await mkdir(join(root, "evals"))
+    const base = fileURLToPath(new URL("../../..", import.meta.url)).replace(/\/$/, "")
+    const effectPath = createRequire(import.meta.url).resolve("effect/Effect")
+    await writeFile(
+      join(root, "evals", "collision.eval.ts"),
+      [
+        `import * as Effect from "${effectPath}"`,
+        `import * as CaseExecutor from "${base}/packages/smithers/agent/evals/src/CaseExecutor.ts"`,
+        "export const suite = { name: 'collision', concurrency: 1, cases: [{ name: 'one', input: 1 }], bindings: [] }",
+        "export const executor = CaseExecutor.make(() => Effect.succeed({ output: 1, stepKey: 'step', latencyMs: 0, target: { name: 'target' } }))"
+      ].join("\n")
+    )
+    const file = collision === "output" ? join(root, "existing.json") : Evaluation.runPath(root, "reused")
+    await mkdir(join(file, ".."), { recursive: true })
+    await writeFile(file, "original")
+    const flags = collision === "output" ? ["--output", "existing.json"] : ["--run-id", "reused"]
+    const refused = await serve(root, ["run", "collision", ...flags])
+    expect(refused.code, refused.output).toBe(5)
+    expect(refused.json).toMatchObject({
+      code: "eval_run_exists",
+      message: `${file} already exists; pass another --${collision} or remove it`
+    })
+    expect(refused.output).not.toContain("Not your fault")
+    expect(await readFile(file, "utf8")).toBe("original")
+    // A blocked parent is an unexpected write failure, not an existing destination.
+    if (collision === "output") {
+      const failed = await serve(root, ["run", "collision", "--output", "existing.json/child.json"])
+      expect(failed.code, failed.output).toBe(5)
+      expect(failed.json).toMatchObject({
+        code: "eval_run_failed",
+        message: "Something went wrong on our side. Not your fault."
+      })
+    }
+  })
+
   it("lists the repo\u0027s shipped fixed suites from its root", async () => {
     // The shipped suites live under the repository root's `evals/`; vitest
     // runs from `packages/smithers`, so the root is named from this file.
