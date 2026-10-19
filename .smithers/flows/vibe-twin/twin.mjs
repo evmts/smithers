@@ -69,6 +69,10 @@ export const dropDefaultNever = (text) => {
 
 export const normalizeDts = (text) =>
   dropDefaultNever(text)
+    // The VibeLang emitter writes import("m", { with: { "resolution-mode": "import" } }) where
+    // tsc writes import("m") (C-9). Every twinned package resolves type imports in import mode
+    // already (ESM, or bundler resolution in apps/app), so the attribute changes nothing (S10-3).
+    .replaceAll(/, \{ with: \{ "resolution-mode": "import" \} \}/g, "")
     .replaceAll(/(from\s+["']\.{1,2}\/[^"']*?)\.(?:vibe|ts|tsx|js)(["'])/g, "$1.js$2")
     .replaceAll(/(import\(["']\.{1,2}\/[^"']*?)\.(?:vibe|ts|tsx|js)(["'])/g, "$1.js$2")
     .replaceAll(/^\/\/# sourceMappingURL=.*$/gm, "")
@@ -130,7 +134,7 @@ export const localDeclarations = (text) =>
   statementsOf(text)
     .map(bodyOf)
     .filter((body) => !body.startsWith("export "))
-    .map((body) => normalizeDts(body).replaceAll(/, \{ with: \{ "resolution-mode": "import" \} \}/g, ""))
+    .map((body) => normalizeDts(body))
     .sort()
 
 /**
@@ -216,7 +220,10 @@ export const parseDts = (text) => {
  * because a module may import TypeScript outside its package (apps/app imports
  * .smithers/flows/coding schemas, F-2); every output then stays under .vibe-twin/out/.
  */
-export const twinOutDir = (pkg) => join(pkg, ".vibe-twin", "out", relative(repoRoot(pkg), pkg), "src-vibe")
+// The emitted twin lives under .vibe-twin/src/: framework code that recognizes its own stack
+// frames by a /packages/smithers/**/src/ path (flows/flow DeclarationSite) must recognize the
+// twin's frames as it does the TypeScript's (B-9).
+export const twinOutDir = (pkg) => join(pkg, ".vibe-twin", "src", relative(repoRoot(pkg), pkg), "src-vibe")
 
 /** The repository root: the nearest folder above the package with a pnpm workspace or .jj. */
 const repoRoot = (pkg) => {
@@ -267,7 +274,7 @@ const linkPartialTwin = (pkg, work) => {
   // repository), and the twin's relative imports reach those copies: a second instance of the
   // module, so a test's spy on the real one never fires (E-16). Each copy becomes a re-export
   // of the real source file: one instance, live bindings.
-  const outRoot = join(work, "out")
+  const outRoot = join(work, "src")
   const repo = repoRoot(pkg)
   for (const f of walk(outRoot).filter((x) => x.endsWith(".js"))) {
     const emitted = join(outRoot, f)
@@ -1058,12 +1065,17 @@ const runUnlocked = (pkgArg) => {
     ...common,
     rootDir: relative(work, repoRoot(pkg)) || ".",
     rootDirs: [join("..", sourceRoot(pkg)), "../src-vibe"],
-    outDir: "out",
+    outDir: "src",
     declaration: true,
     emitDeclarationOnly: false,
     allowImportingTsExtensions: true,
     rewriteRelativeImportExtensions: true,
-    sourceMap: true
+    // No source maps: a test runner would remap the twin's frames to src-vibe/*.vibe, outside
+    // any /src/ path, and framework code that skips its own frames would take them for the
+    // author's (B-9). Stacks name the emitted .js under .vibe-twin/src/.
+    sourceMap: false,
+    inlineSourceMap: false,
+    inlineSources: false
   }, ["../src-vibe/**/*"])
   // The module list is explicit: tests, configs and test folders are not API modules.
   // rootDir is the repository root: with the package's src as rootDir, declarations of the

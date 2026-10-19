@@ -47,7 +47,7 @@ export {};
 
 test("an import that resolves into src/ goes to the compiled twin when it exists", () => {
   const pkg = mkdtempSync(join(tmpdir(), "vibe-twin-"))
-  const out = join(pkg, ".vibe-twin", "out", "src-vibe")
+  const out = join(pkg, ".vibe-twin", "src", "src-vibe")
   mkdirSync(join(out, "a"), { recursive: true })
   mkdirSync(join(pkg, "src"), { recursive: true })
   writeFileSync(join(out, "a", "b.js"), "")
@@ -63,7 +63,7 @@ test("an import that resolves into src/ goes to the compiled twin when it exists
 
 test("twin code falls back to src/ for a module the twin does not have yet", () => {
   const pkg = mkdtempSync(join(tmpdir(), "vibe-twin-"))
-  const out = join(pkg, ".vibe-twin", "out", "src-vibe")
+  const out = join(pkg, ".vibe-twin", "src", "src-vibe")
   mkdirSync(join(out, "a"), { recursive: true })
   mkdirSync(join(pkg, "src", "a"), { recursive: true })
   writeFileSync(join(out, "a", "b.js"), "")
@@ -131,7 +131,7 @@ test("test names compare without run-dependent dates and numbers", () => {
 
 test("a flat package's modules sit at its root, beside test/ (the .smithers/flows layout)", () => {
   const pkg = mkdtempSync(join(tmpdir(), "vibe-twin-"))
-  const out = join(pkg, ".vibe-twin", "out", "src-vibe")
+  const out = join(pkg, ".vibe-twin", "src", "src-vibe")
   mkdirSync(join(out, "coding"), { recursive: true })
   writeFileSync(join(out, "coding", "atoms.js"), "")
   writeFileSync(join(out, ".vibe-twin-modules.json"), JSON.stringify(["coding/atoms"]))
@@ -266,4 +266,16 @@ test("an export's docs are its own JSDoc and its members', not a dropped private
   assert.notEqual(exportDocs("/** Grades  a\n * suite, differently. */\nexport declare const ciGrade: number;"), exportDocs(own))
   assert.equal(exportDocs("/** Grades\n *   a suite. */\nexport declare const ciGrade: number;"), exportDocs(own), "whitespace is not a difference")
   assert.notEqual(exportDocs("export interface A {\n  /** x */\n  x: 1\n}"), exportDocs("export interface A {\n  x: 1\n}"), "member docs count")
+})
+
+test("an import type's resolution-mode import attribute is not a difference (S10-3)", () => {
+  assert.equal(
+    normalizeDts(`export declare const make: () => import("effect/Crypto", { with: { "resolution-mode": "import" } }).Crypto;`),
+    normalizeDts(`export declare const make: () => import("effect/Crypto").Crypto;`)
+  )
+  assert.notEqual(
+    normalizeDts(`export declare const make: () => import("effect/Crypto", { with: { "resolution-mode": "require" } }).Crypto;`),
+    normalizeDts(`export declare const make: () => import("effect/Crypto").Crypto;`),
+    "require mode is a different resolution"
+  )
 })
