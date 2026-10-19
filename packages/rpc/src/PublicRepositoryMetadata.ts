@@ -1,6 +1,7 @@
 /** Public repository issue and pull metadata uses the same GitHub JSON shape.
  * @since 0.1.0
  */
+
 import { z } from "zod"
 
 /** A GitHub issue or pull record, retaining fields consumed by each view.
