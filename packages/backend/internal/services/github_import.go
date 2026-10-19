@@ -2114,9 +2114,10 @@ func (s *GitHubImportService) bookmarkExists(ctx context.Context, owner, repo, n
 }
 
 // createBoundWorkspace starts the imported bookmark's workspace. When the
-// user's sandbox allowance is full, the repository is still imported: the
-// result carries only the bookmark (no ID) and the workspace starts when the
-// user opens it, where the same allowance refusal is reported. Without a
+// user's sandbox allowance is full, or the user is not on a hosted
+// deployment's staff list (workspaces_unavailable), the repository is still
+// imported: the result carries only the bookmark (no ID) and the workspace
+// starts when the user opens it, where the same refusal is reported. Without a
 // provisioner (the self-hosted install, whose machines start per branch) the
 // import ends when the mirror holds the bookmark: Source ready (spec §8.6.3).
 func (s *GitHubImportService) createBoundWorkspace(ctx context.Context, userID int64, repository db.Repository, owner, repo, bookmark string) (WorkspaceResponse, error) {
@@ -2132,7 +2133,7 @@ func (s *GitHubImportService) createBoundWorkspace(ctx context.Context, userID i
 		SourceBookmark: bookmark,
 	})
 	var apiErr *pkgerrors.APIError
-	if errors.As(err, &apiErr) && (apiErr.Code == pkgerrors.CodePlanLimitExceeded || apiErr.Code == pkgerrors.CodeQuotaExceeded) {
+	if errors.As(err, &apiErr) && (apiErr.Code == pkgerrors.CodePlanLimitExceeded || apiErr.Code == pkgerrors.CodeQuotaExceeded || apiErr.Code == pkgerrors.CodeWorkspacesUnavailable) {
 		slog.Info("mirror.import.workspace_deferred", "repository_id", repository.ID, "user_id", userID, "code", apiErr.Code)
 		return WorkspaceResponse{TargetBookmark: bookmark}, nil
 	}

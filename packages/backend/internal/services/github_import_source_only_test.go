@@ -38,8 +38,9 @@ func TestGitHubImportWithoutProvisionerEndsAtSourceReady(t *testing.T) {
 }
 
 // The hosted composition wires a provisioner: the import provisions the bound
-// machine once, a refusal fails the import, and a full allowance defers the
-// machine to first open while the import still succeeds.
+// machine once, a refusal fails the import, and a full allowance or a hosted
+// staff-list refusal defers the machine to first open while the import still
+// succeeds.
 func TestGitHubImportWithProvisionerProvisionsTheBoundMachine(t *testing.T) {
 	repository := db.Repository{ID: 42, Name: "demo"}
 	for name, test := range map[string]struct {
@@ -50,6 +51,8 @@ func TestGitHubImportWithProvisionerProvisionsTheBoundMachine(t *testing.T) {
 		"provisioned": {want: WorkspaceResponse{ID: "11111111-1111-1111-1111-111111111111", TargetBookmark: "main"}},
 		"refused":     {err: assert.AnError, wantErr: "create bound workspace"},
 		"allowance":   {err: pkgerrors.New(pkgerrors.CodeQuotaExceeded, "sandbox allowance full"), want: WorkspaceResponse{TargetBookmark: "main"}},
+		// A hosted import by a person off the staff list ends at source ready.
+		"not staff": {err: pkgerrors.New(pkgerrors.CodeWorkspacesUnavailable, "Workspaces aren't open on smithers.sh yet. Ask for a change instead."), want: WorkspaceResponse{TargetBookmark: "main"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			workspaces := &countingWorkspaces{err: test.err}

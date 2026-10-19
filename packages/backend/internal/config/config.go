@@ -358,6 +358,12 @@ type SandboxConfig struct {
 	// Env: SMITHERS_FLOW_JOURNAL_POSTGRES_URL.
 	FlowJournalPostgresURL string `mapstructure:"flow_journal_postgres_url"`
 
+	// HostedWorkspaceUsers is the hosted staff list, parsed by Load from
+	// sandbox.hosted_workspace_user_ids (SMITHERS_HOSTED_WORKSPACE_USER_IDS).
+	// On a multitenant deployment only these users may create or wake a box
+	// outside an agent turn. Empty, the default, admits nobody; "*" is refused.
+	HostedWorkspaceUsers HostedWorkspaceUsers `mapstructure:"-"`
+
 	// PreviewRelayToken is the shared credential the preview gateway demands
 	// for platform domains (its SMITHERS_PREVIEW_RELAY_TOKEN). The gateway is
 	// public for user previews, so the preview relay presents this on every
@@ -606,6 +612,7 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("webhook.github_sync_secret", "")
 	v.SetDefault("agents.never_started_timeout", "1h")
 	v.SetDefault("agents.hosted_coding_user_ids", "")
+	v.SetDefault("sandbox.hosted_workspace_user_ids", "")
 	v.SetDefault("cleanup.auth_interval", "5m")
 	v.SetDefault("cleanup.workflow_cache_interval", "1h")
 	v.SetDefault("cleanup.sandbox_egress_audit_retention_days", 30)
@@ -797,6 +804,7 @@ func Load(configFile string) (*Config, error) {
 		{"webhook.github_sync_secret", "SMITHERS_WEBHOOK_GITHUB_SYNC_SECRET"},
 		{"agents.never_started_timeout", "SMITHERS_AGENT_NEVER_STARTED_TIMEOUT"},
 		{"agents.hosted_coding_user_ids", "SMITHERS_HOSTED_CODING_USER_IDS"},
+		{"sandbox.hosted_workspace_user_ids", "SMITHERS_HOSTED_WORKSPACE_USER_IDS"},
 		{"cleanup.auth_interval", "SMITHERS_CLEANUP_AUTH_INTERVAL"},
 		{"cleanup.workflow_cache_interval", "SMITHERS_CLEANUP_WORKFLOW_CACHE_INTERVAL"},
 		{"cleanup.sandbox_egress_audit_retention_days", "SMITHERS_CLEANUP_SANDBOX_EGRESS_AUDIT_RETENTION_DAYS"},
@@ -988,6 +996,13 @@ func Load(configFile string) (*Config, error) {
 		return nil, fmt.Errorf("agents.hosted_coding_user_ids: %w", err)
 	}
 	cfg.Agents.HostedCodingUsers = hostedCodingUsers
+	// The hosted staff list has no wildcard; a malformed or "*" value refuses
+	// startup rather than open boxes to accounts the operator did not name.
+	hostedWorkspaceUsers, err := ParseHostedWorkspaceUserIDs(hostedCodingUserIDsValue(v.Get("sandbox.hosted_workspace_user_ids"), v.GetString("sandbox.hosted_workspace_user_ids")))
+	if err != nil {
+		return nil, fmt.Errorf("sandbox.hosted_workspace_user_ids: %w", err)
+	}
+	cfg.Sandbox.HostedWorkspaceUsers = hostedWorkspaceUsers
 	if err := normalizeAgentAvailability(&cfg); err != nil {
 		return nil, err
 	}

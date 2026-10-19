@@ -235,6 +235,13 @@ const (
 	CodeHostedCodingNotOpen Code = "hosted_coding_not_open"
 )
 
+// Hosted workspaces. A multitenant deployment creates or wakes a box outside
+// an agent turn only for its staff list (sandbox.hosted_workspace_user_ids);
+// everyone else is refused before anything is provisioned.
+const (
+	CodeWorkspacesUnavailable Code = "workspaces_unavailable"
+)
+
 // Repositories, landings, imports and sharing.
 const (
 	CodeForkNotNeeded             Code = "fork_not_needed"
@@ -551,7 +558,8 @@ var registry = map[Code]Entry{
 	CodeAgentLoopRetired: {Status: http.StatusNotImplemented, Fault: FaultBug, Class: ClassInfra, RetryAfter: 0, Doc: "plue's own 0.x agent loop was retired and the Smithers 1.0 replacement has no entrypoint for a single dispatched task yet. Nothing the caller did."},
 	// A multitenant deployment refused a hosted coding turn for an account
 	// its operator has not listed.
-	CodeHostedCodingNotOpen: {Status: http.StatusForbidden, Fault: FaultUser, Class: ClassPermission, RetryAfter: 0, Doc: "This deployment runs hosted coding only for the accounts its operator lists, and the caller's account is not one of them yet."},
+	CodeHostedCodingNotOpen:   {Status: http.StatusForbidden, Fault: FaultUser, Class: ClassPermission, RetryAfter: 0, Doc: "This deployment runs hosted coding only for the accounts its operator lists, and the caller's account is not one of them yet."},
+	CodeWorkspacesUnavailable: {Status: http.StatusServiceUnavailable, Fault: FaultInfra, Class: ClassInfra, RetryAfter: 0, Doc: "This deployment creates and wakes workspaces outside an agent turn only for its staff list, and the caller is not on it. Retrying does not help until the operator opens workspaces."},
 	// Another coding operation holds the box's reporter lock.
 	CodeCodingWorkspaceBusy: {Status: http.StatusServiceUnavailable, Fault: FaultWait, Class: ClassCapacity, RetryAfter: 1, Doc: "Another coding operation holds the box's reporter lock."},
 	// The box's reporter is older than the operation requires; it upgrades
