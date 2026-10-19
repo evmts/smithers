@@ -20,7 +20,7 @@ func TestSessionLandingCredentialFirst(t *testing.T) {
 		status int
 		code   string
 	}{
-		{"signed out", nil, false, 401, "sign_in_required"},
+		{"signed out", nil, false, 401, "unauthenticated"},
 		{"guest", &db.User{ID: 1, UserType: "guest"}, false, 403, "guest_refused"},
 		{"agent account", &db.User{ID: 1, UserType: "bot"}, false, 403, "agent_credential_refused"},
 		{"agent credential", &db.User{ID: 1}, true, 403, "agent_credential_refused"},

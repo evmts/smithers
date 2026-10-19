@@ -35,7 +35,7 @@ export const PLUE_FAILURE_SCHEMA_VERSION = 1
  * @since 1.0.0
  * @category constants
  */
-export const PLUE_FAILURE_DIGEST = "sha256:88d23b1289eae6e7e7b4eca58aed5491c1524b6c3c27c3fa6c19f3bfc197acbd"
+export const PLUE_FAILURE_DIGEST = "sha256:84d6072d627ed4ad97da56fb9a7be68305f64ca0c5f9acf7f1e952e33ba92ced"
 
 /**
  * Whose problem a failure is — the registry's verdict, and the only question the app
@@ -179,7 +179,6 @@ export const PLUE_FAILURE_CODES = [
   "session_not_found",
   "setup_closed",
   "setup_request_reused",
-  "sign_in_required",
   "snapshot_in_use",
   "snapshot_not_found",
   "snapshot_too_large",
@@ -467,8 +466,6 @@ export const PLUE_FAILURES = {
   "setup_closed": { fault: "user", status: 401, retryAfter: 0 },
   /** The setup request identity was already admitted with different input. */
   "setup_request_reused": { fault: "infra", status: 409, retryAfter: 0 },
-  /** Sign in to open a pull request. */
-  "sign_in_required": { fault: "user", status: 401, retryAfter: 0 },
   /** The snapshot backs a live sandbox and cannot be changed or deleted. */
   "snapshot_in_use": { fault: "user", status: 409, retryAfter: 0 },
   /** The named sandbox snapshot does not exist. Distinct from not_found so a bad golden snapshot is diagnosable. */

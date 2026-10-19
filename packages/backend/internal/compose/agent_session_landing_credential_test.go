@@ -59,7 +59,7 @@ func TestSessionLandingRealGuestCookieHasNoAuthority(t *testing.T) {
 		require.Equal(t, 401, result.Code, result.Body.String())
 		var body map[string]any
 		require.NoError(t, json.Unmarshal(result.Body.Bytes(), &body))
-		require.Equal(t, "sign_in_required", body["code"])
+		require.Equal(t, "unauthenticated", body["code"])
 		require.NotContains(t, result.Body.String(), f.cookie.Value)
 	}
 	require.Zero(t, f.calls.Load(), "guest cannot reach the model or publication")

@@ -5,7 +5,7 @@
     "path": "packages/backend/docs/github-app.md",
     "digest": "b54920294ae62f8c7d8437b42b7bce8be7ee517b6af879f96b98706ed1e63ae9"
   },
-  "closure": "6ada1b0829a63b04c676d096619af8e66f179ad12d2fba90a843b363ec6f4661",
+  "closure": "3c85b61f827d5a030aacd596e904ef79c69606e4e98423b168f28696bb94befd",
   "inputs": [
     {
       "path": "docs/api/openapi/install.yaml",
@@ -69,7 +69,7 @@
     },
     {
       "path": "packages/backend/internal/pkg/errors/registry.go",
-      "digest": "66e98a624fbf0e842fcbd88ceeab88e7954859cc5b0252801f91dfcbfadb195a"
+      "digest": "09112bdd58d561b3660377b33b21246937e2d5cefe00acd9dc6075c758da4ea4"
     },
     {
       "path": "packages/backend/internal/repohost/refs.go",
