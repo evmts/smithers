@@ -967,9 +967,11 @@ LIMIT sqlc.arg(max_rows)::integer;
 -- Includes excluded-index sources and retained failures; none permit replacement.
 -- Canonical creation holds the branch advisory lock. A no-key update lock
 -- protects metadata without waiting for a launch's long-lived key-share grant.
+-- An agent session's own box is never the branch's machine.
 SELECT * FROM workspaces
 WHERE repository_id = sqlc.arg(repository_id)
   AND target_bookmark = sqlc.arg(target_bookmark)::text
+  AND agent_session_id IS NULL
   AND deleted_at IS NULL
 FOR NO KEY UPDATE;
 

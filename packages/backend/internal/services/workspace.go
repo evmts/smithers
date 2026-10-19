@@ -433,13 +433,9 @@ type CreateWorkspaceInput struct {
 	// ClientLeaseSeconds, when positive, leases the workspace to a client that
 	// renews it; a lapsed lease lets the abandon reaper reclaim it (#2457).
 	ClientLeaseSeconds int32
-	// JoinsAnyMachineSize takes the branch's machine at whatever size it has.
-	// Only a dispatched agent turn sets it: the turn names no size because a
-	// branch machine's size belongs to the branch, and with it unset an
-	// unnamed size resolves to this deployment's default and refuses every
-	// machine of another one — on the only machine the repository has, with
-	// "delete it or choose another name" offering neither (#3877).
-	JoinsAnyMachineSize bool
+	// AgentSessionID makes the workspace that agent session's own box
+	// (plue#869). Only a dispatched agent turn sets it.
+	AgentSessionID string
 }
 
 // CreateWorkspaceSessionInput is the input for creating a new workspace session.
@@ -1375,6 +1371,8 @@ type workspaceCreateMetadata struct {
 	kind        string
 	environment WorkspaceEnvironment
 	resources   WorkspaceResources
+	// agentSessionID is the agent session whose own box this is, or "".
+	agentSessionID string
 }
 
 func normalizeWorkspaceCreateMetadata(metadata workspaceCreateMetadata) workspaceCreateMetadata {
