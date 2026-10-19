@@ -141,7 +141,8 @@ export const parseDts = (text) => {
     if (!body.startsWith("export ") || /^export \{\s*\};?$/.test(body)) continue
     // A named re-export is one entry per name, so a twin that re-exports the same names from a
     // differently spelled path is compared by type, not by path text (E-14).
-    const named = body.match(/^export\s+(type\s+)?\{([^}]*)\}\s*from\s*["'][^"']+["'];?$/)
+    // A local export list (export { a, b as c };) is per name too: each is checked by type (E-14).
+    const named = body.match(/^export\s+(type\s+)?\{([^}]*)\}(?:\s*from\s*["'][^"']+["'])?;?$/)
     if (named) {
       for (const part of named[2].split(",").map((x) => x.trim()).filter(Boolean)) {
         const m = part.match(/^(type\s+)?([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$/)

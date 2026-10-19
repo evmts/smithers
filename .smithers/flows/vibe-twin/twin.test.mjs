@@ -193,3 +193,8 @@ test("errors in a dependency's declarations are findings, not twin errors (E-14)
   const dep = "../../../node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/classic/schemas.d.cts(790,5): error TS5115: Instantiations appear infinitely circular"
   assert.deepEqual(splitTwinErrors([dep, "src-vibe/a.vibe(1,1): error EK1: x"]), { twin: ["src-vibe/a.vibe(1,1): error EK1: x"], typescript: [dep] })
 })
+
+test("a local export list is one entry per name (E-14)", () => {
+  const e = parseDts(`declare const ImplementPlan: number;\nexport { ImplementPlan };\ntype Hidden = string;\nexport { type Hidden as Shown };\n`)
+  assert.deepEqual(e.map((x) => [x.name, x.kind]), [["ImplementPlan", "value"], ["Shown", "type"]])
+})
