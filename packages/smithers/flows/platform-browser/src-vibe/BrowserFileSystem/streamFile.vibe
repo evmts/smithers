@@ -1,0 +1,136 @@
+/**
+ * Bounded-chunk file streaming over a ZenFS file handle.
+ *
+ * @since 1.0.0-rc.0
+ */
+
+import * as ByteSize from "effect/ByteSize"
+import * as Option from "effect/Option"
+import * as PlatformError from "effect/PlatformError"
+import * as Stream from "effect/Stream"
+import { platformError } from "./platformError.vibe"
+import type { ZenFsPromisesLike } from "./ZenFsPromisesLike.vibe"
+
+/**
+ * The chunk a caller gets when it asks for no particular size.
+ *
+ * @private
+ */
+const defaultChunkSize = 64 * 1024
+
+/**
+ * The largest single allocation a caller may ask for. A chunk size is a
+ * buffer this adapter allocates on the caller's behalf, and a tab has one
+ * heap for the whole page, so the ceiling is stated rather than left to the
+ * allocator to discover.
+ *
+ * @private
+ */
+const maximumChunkSize = 64 * 1024 * 1024
+
+/**
+ * Caller input that is not a byte count, refused before anything is opened.
+ *
+ * @private
+ */
+const rejected = (description: string): PlatformError.PlatformError =>
+  PlatformError.badArgument({ module: "FileSystem", method: "stream", description })
+
+/**
+ * A caller-supplied byte count, or its default. Clamping a nonsense bound
+ * would answer a question the caller did not ask: a negative `offset` is not
+ * "the start", and a fractional `chunkSize` is not a buffer length.
+ *
+ * @private
+ */
+const count = (
+  name: string,
+  value: ByteSize.Input | undefined,
+  fallback: number
+): number!PlatformError.PlatformError! => {
+  if (value === undefined) return fallback
+  const numeric = Number(Option.getOrUndefined(ByteSize.fromInput(value)))
+  if (Number.isSafeInteger(numeric) && numeric >= 0) return numeric
+  throw rejected(`${name} must be a whole, non-negative number of bytes`)
+}
+
+/**
+ * The chunk size to allocate, refused when it is not a length this adapter
+ * will allocate.
+ *
+ * @private
+ */
+const chunk = (
+  value: ByteSize.Input | undefined
+): number!PlatformError.PlatformError! => {
+  if (value === undefined) return defaultChunkSize
+  const numeric = Number(Option.getOrUndefined(ByteSize.fromInput(value)))
+  if (Number.isSafeInteger(numeric) && numeric >= 1 && numeric <= maximumChunkSize) return numeric
+  throw rejected(`chunkSize must be a whole number of bytes between 1 and ${maximumChunkSize}`)
+}
+
+/**
+ * The refusal for a backend that reports having read a length that cannot
+ * have gone into the buffer it was handed. Trusting it would move the read
+ * position backwards and grow the remaining count, so the unfold would never
+ * terminate.
+ *
+ * @private
+ */
+const misreported = (path: string): PlatformError.PlatformError =>
+  PlatformError.systemError({
+    _tag: "BadResource",
+    module: "FileSystem",
+    method: "stream.read",
+    pathOrDescriptor: path,
+    description: "the backend reported a read length outside the requested buffer"
+  })
+
+/**
+ * Streams a file in bounded file-handle chunks rather than loading the whole
+ * file, honouring `offset`, `bytesToRead`, and `chunkSize`.
+ *
+ * @private
+ * @since 1.0.0-rc.0
+ * @slop
+ */
+export const streamFile = (
+  fs: ZenFsPromisesLike,
+  path: string,
+  options?: {
+    readonly bytesToRead?: ByteSize.Input | undefined
+    readonly chunkSize?: ByteSize.Input | undefined
+    readonly offset?: ByteSize.Input | undefined
+  }
+): Stream.Stream<Uint8Array, PlatformError.PlatformError> =>
+  Stream.unwrap(() => {
+    const start = count("offset", options?.offset, 0)
+    const bytesToRead = count("bytesToRead", options?.bytesToRead, Number.POSITIVE_INFINITY)
+    const chunkSize = chunk(options?.chunkSize)
+    const handle = Effect.acquireRelease(
+      try(async (fs, path) => fs.open(path, "r"), platformError("stream", path), fs, path),
+      (open) => Effect.orDie(try(async (open) => open.close(), platformError("stream.close", path), open))
+    )
+    return Stream.unfold(
+      { position: start, remaining: bytesToRead },
+      ({ position, remaining }) => {
+        if (remaining === 0) return undefined
+        const size = Math.min(chunkSize, remaining)
+        const buffer = new Uint8Array(size)
+        // Keep the handle open until this non-cancellable read settles.
+        const { bytesRead } = uninterruptible(
+          try(async (handle, buffer, size, position) => handle.read(buffer, 0, size, position), platformError("stream.read", path), handle, buffer, size, position)
+        )
+        if (!Number.isSafeInteger(bytesRead) || bytesRead < 0 || bytesRead > size) throw misreported(path)
+        return bytesRead === 0
+          ? undefined
+          : [
+            bytesRead === buffer.length ? buffer : buffer.subarray(0, bytesRead),
+            {
+              position: position + bytesRead,
+              remaining: remaining - bytesRead
+            }
+          ] as const
+      }
+    )
+  })
