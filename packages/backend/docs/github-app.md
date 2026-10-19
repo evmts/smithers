@@ -132,14 +132,16 @@ anonymous metadata read closes before anything from it is stored.
 
 The anonymous public metadata read (`GET /api/repos/{owner}/{repo}/github/metadata/*`)
 serves only while the local repository is public and the registry row's
-`github_private` is `false`. Only a sync sets `false`: before any discussion
-read, each sync passes the same fetched-state authorization as the streams and
-reads `GET /repos/{owner}/{repo}` with the installation token, storing `private`
-when the immutable repository id matches. A refused, failed, malformed or
+`github_private` is `false` and its `github_visibility` is `public`. Only a sync
+sets them: before any discussion read, each sync passes the same fetched-state
+authorization as the streams and reads `GET /repos/{owner}/{repo}` with the
+installation token, storing `private` and `visibility` when the immutable
+repository id matches. A refused, failed, malformed or
 identity-changed answer clears the receipt to NULL, which counts as private; a
 rate limit or a cancelled sync keeps it, and the stream's pause applies.
 Rebinding the source also clears it. Discussion streams do not write while the
-visibility is unconfirmed, and an unknown visibility is due on the next sweep.
+visibility is unconfirmed. An unknown or incomplete receipt (no `github_visibility`,
+as rows written by code older than migration 0173) is due on the next sweep.
 
 Fetched issue and pull-request batches commit their cache rows and consumer
 requests together in the existing product jobs store. Each request identifies

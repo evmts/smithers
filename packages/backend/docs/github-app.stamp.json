@@ -3,9 +3,9 @@
   "producer": null,
   "output": {
     "path": "packages/backend/docs/github-app.md",
-    "digest": "b54920294ae62f8c7d8437b42b7bce8be7ee517b6af879f96b98706ed1e63ae9"
+    "digest": "e1653460858649eb05839d84ea85cd8ed27a89ae5ae461526df4f450e520a518"
   },
-  "closure": "84d19c7f17e4964ad89244b27f880ee9e59d38d1082849d53bfab82b5e502cb7",
+  "closure": "2ec9166dece58d67d39c05e4c4d24998e67a15c19211af876365ea9bb8aabfdd",
   "inputs": [
     {
       "path": "docs/api/openapi/install.yaml",
@@ -197,7 +197,7 @@
     },
     {
       "path": "packages/backend/internal/services/github_synced_repos.go",
-      "digest": "40046ed46d78822b6b2801d38235608126196683d2d38de91a67492cf1f2eeb2"
+      "digest": "2ea95d20fb684d372dd86c8c346b59a0995b04cfe4d93086987004f12f9bffb9"
     },
     {
       "path": "packages/backend/internal/services/github_user_repos.go",
