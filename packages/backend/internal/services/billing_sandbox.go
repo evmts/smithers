@@ -52,6 +52,7 @@ func (s *BillingService) SandboxEntitlement(ctx context.Context, userID int64) (
 		DayResetsAt:        midnight.AddDate(0, 0, 1),
 		ConcurrentChildren: workspaceChildPlanLimits[plan.Key].concurrent,
 		ChildMaxTTLSecs:    workspaceChildPlanLimits[plan.Key].maxTTLSecs,
+		OwnerType:          owner.Type,
 	}, nil
 }
 
@@ -103,22 +104,21 @@ func (s *BillingService) AuthorizeCountedSandboxResume(ctx context.Context, user
 }
 
 func authorizeSandboxEntitlement(entitlement SandboxEntitlement) error {
-	name := billingPlanDisplayName(entitlement.PlanKey)
-	upgrade, capacity := "", int64(0)
-	switch entitlement.PlanKey {
-	case BillingPlanFree:
-		upgrade, capacity = BillingPlanPro, 3
+	upgrade := ""
+	if entitlement.PlanKey == BillingPlanFree {
+		upgrade = BillingPlanPro
 	}
 	if entitlement.ConcurrentSandboxes < unlimitedBillingQuantity && entitlement.ConcurrentInUse >= entitlement.ConcurrentSandboxes {
-		noun := "sandboxes"
-		if entitlement.ConcurrentSandboxes == 1 {
-			noun = "sandbox"
-		}
-		message := fmt.Sprintf("Your %s plan allows %d running %s. ", name, entitlement.ConcurrentSandboxes, noun)
-		if upgrade != "" {
-			message += fmt.Sprintf("Upgrade to %s for %d, or suspend one to continue.", billingPlanDisplayName(upgrade), capacity)
-		} else {
-			message += "Suspend one to continue."
+		// Visitor copy names no plan: pricing is pure usage (2026-09-29, PM d-azsvyx).
+		// The plan keys stay on the error as data.
+		message := "You can run one machine at a time. Wait for your other change to finish, then try again."
+		switch {
+		case entitlement.OwnerType == BillingOwnerTypeOrg && entitlement.ConcurrentSandboxes == 1:
+			message = "This organization can run one machine at a time, and another change is using it. Try again when it finishes."
+		case entitlement.OwnerType == BillingOwnerTypeOrg:
+			message = fmt.Sprintf("This organization can run %d machines at a time, and other changes are using them. Try again when one finishes.", entitlement.ConcurrentSandboxes)
+		case entitlement.ConcurrentSandboxes != 1:
+			message = fmt.Sprintf("You can run %d machines at a time. Wait for another change to finish, then try again.", entitlement.ConcurrentSandboxes)
 		}
 		return sandboxPlanLimitError(entitlement, "concurrent_sandboxes", entitlement.ConcurrentSandboxes, upgrade, message)
 	}
@@ -139,12 +139,7 @@ func sandboxDailyHoursError(entitlement SandboxEntitlement) *pkgerrors.APIError 
 	if entitlement.PlanKey == BillingPlanFree {
 		upgrade = BillingPlanPro
 	}
-	message := fmt.Sprintf("Your %s plan includes %d sandbox-hours per day; you have used them. ", billingPlanDisplayName(entitlement.PlanKey), entitlement.HoursPerDay)
-	if upgrade != "" {
-		message += fmt.Sprintf("Upgrade to %s for unlimited hours, or try again after %s.", billingPlanDisplayName(upgrade), entitlement.DayResetsAt.Format(time.RFC3339))
-	} else {
-		message += fmt.Sprintf("Try again after %s.", entitlement.DayResetsAt.Format(time.RFC3339))
-	}
+	message := fmt.Sprintf("You have used today's %d machine hours. Try again after %s.", entitlement.HoursPerDay, entitlement.DayResetsAt.Format(time.RFC3339))
 	e := sandboxPlanLimitError(entitlement, "sandbox_hours_per_day", entitlement.HoursPerDay, upgrade, message)
 	resetAt := entitlement.DayResetsAt
 	e.ResetAt = &resetAt

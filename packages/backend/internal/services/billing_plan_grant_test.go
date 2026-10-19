@@ -313,7 +313,7 @@ func TestBillingServiceGrantPlanConcurrentSandboxesAdmitsToGrantedLimit(t *testi
 			require.Equal(t, BillingPlanMax, api.PlanKey)
 			require.NotNil(t, api.Limit)
 			require.Equal(t, 256, *api.Limit)
-			require.Equal(t, "Your Max plan allows 256 running sandboxes. Suspend one to continue.", api.Message)
+			require.Equal(t, "You can run 256 machines at a time. Wait for another change to finish, then try again.", api.Message)
 		})
 	}
 }

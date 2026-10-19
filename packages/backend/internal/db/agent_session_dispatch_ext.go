@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ClaimAgentSessionForDispatch atomically re-points an agent session at a new
@@ -268,6 +269,21 @@ type AgentSessionEnds interface {
 	UpdateAgentSessionTerminalStatusForFlow(ctx context.Context, arg UpdateAgentSessionTerminalStatusForFlowParams) (AgentSession, error)
 	UpdateAgentSessionTimedOut(ctx context.Context, arg UpdateAgentSessionTimedOutParams) (AgentSession, error)
 	FailNeverStartedAgentSession(ctx context.Context, arg FailNeverStartedAgentSessionParams) (AgentSession, error)
+	EndUndispatchedAgentSession(ctx context.Context, id string, workflowRunID pgtype.Int8) (AgentSession, error)
+}
+
+// EndUndispatchedAgentSession fails an active session whose turn its dispatch
+// refused before a run attached, only while the session still names the run
+// the dispatch read (workflowRunID; NULL for none). pgx.ErrNoRows means a run
+// attached or the session ended since: the session is not this end's.
+func (q *Queries) EndUndispatchedAgentSession(ctx context.Context, id string, workflowRunID pgtype.Int8) (AgentSession, error) {
+	var i AgentSession
+	err := q.db.QueryRow(ctx, `UPDATE agent_sessions SET status = 'failed', finished_at = NOW(), updated_at = NOW()
+WHERE id = $1 AND status = 'active' AND deleted_at IS NULL AND workflow_run_id IS NOT DISTINCT FROM $2
+RETURNING id, repository_id, user_id, workflow_run_id, title, status, metadata, workspace_id, started_at, finished_at, created_at, updated_at, deleted_at`, id, workflowRunID).Scan(
+		&i.ID, &i.RepositoryID, &i.UserID, &i.WorkflowRunID, &i.Title, &i.Status, &i.Metadata,
+		&i.WorkspaceID, &i.StartedAt, &i.FinishedAt, &i.CreatedAt, &i.UpdatedAt, &i.DeletedAt)
+	return i, err
 }
 
 // FailAgentSession fails a session with its typed reason in one transaction:

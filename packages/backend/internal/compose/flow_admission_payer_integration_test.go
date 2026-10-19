@@ -97,6 +97,6 @@ func TestUnlistedOrganizationHostStartIsAdmittedUnderItsOwnPlan(t *testing.T) {
 	require.ErrorContains(t, start(listedRepo, "second"), "external host refused launch", "the listed organization runs on the service user's plan")
 	require.Equal(t, before+1, attempts.Load())
 	err = start(outsideRepo, "second")
-	require.ErrorContains(t, err, "1 running sandbox", "the outside organization's free plan allows one running machine")
+	require.ErrorContains(t, err, "one machine at a time", "the outside organization's free plan allows one running machine")
 	require.Equal(t, before+1, attempts.Load(), "a refused start never reaches the host")
 }

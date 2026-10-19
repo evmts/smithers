@@ -61,6 +61,9 @@ const (
 	// lists (agents.hosted_coding_user_ids), and the session's user is not
 	// one of them.
 	agentFailureHostedCodingNotOpen = "hosted_coding_not_open"
+	// The account already runs as many machines as it may; another change
+	// has to finish first.
+	agentFailureSandboxLimit = "sandbox_limit"
 )
 
 // agentSessionFailureCodes is the whole vocabulary, in the order above.
@@ -71,6 +74,7 @@ var agentSessionFailureCodes = []string{
 	agentFailureModelUnavailable, agentFailureModelRateLimited, agentFailureOutOfCredit,
 	agentFailureTurnFailed, agentFailureTurnTimedOut, agentFailureBoxBusy,
 	agentFailureDispatchFailed, agentFailureAgentsUnavailable, agentFailureHostedCodingNotOpen,
+	agentFailureSandboxLimit,
 }
 
 // The metadata keys a failed session carries. The API returns
@@ -160,6 +164,14 @@ var (
 	agentSessionLoopRetired          = agentSessionFailure{Code: agentFailureAgentsUnavailable, Reason: agentSessionLoopRetiredMessage}
 	agentSessionHostedCodingNotOpen  = agentSessionFailure{Code: agentFailureHostedCodingNotOpen, Reason: hostedCodingNotOpenMessage}
 	agentSessionOutOfCredit          = agentSessionFailure{Code: agentFailureOutOfCredit, Reason: "This account is out of model credit. Add credit, then try again."}
+	// A turn its dispatch refused before anything ran, for a reason retrying
+	// cannot fix (agent_message_dispatch.go).
+	agentSessionDispatchNotPermitted = agentSessionFailure{Code: agentFailureDispatchFailed, Reason: "You can no longer change this repository, so the agent did not start. Nothing ran."}
+	agentSessionRepositoryGone       = agentSessionFailure{Code: agentFailureDispatchFailed, Reason: "This repository is no longer available, so the agent did not start. Nothing ran."}
+	// Usage limits whose billing text names a plan (agentSessionFailureForLimit).
+	agentSessionAgentRunsUsed = agentSessionFailure{Code: agentFailureDispatchFailed, Reason: "This account has used all of its agent runs for now, so the agent did not start. Nothing ran."}
+	agentSessionCIMinutesUsed = agentSessionFailure{Code: agentFailureDispatchFailed, Reason: "This account has used all of its CI minutes for now, so the agent did not start. Nothing ran."}
+	agentSessionUsageLimit    = agentSessionFailure{Code: agentFailureDispatchFailed, Reason: "This account has reached a usage limit, so the agent did not start. Nothing ran."}
 )
 
 // The failures of a turn the Flow runtime admitted.
@@ -244,9 +256,36 @@ func agentSessionFailureForError(err error) agentSessionFailure {
 			return agentSessionBoxNotReady
 		case pkgerrors.CodeOutOfCredit:
 			return agentSessionOutOfCredit
+		case pkgerrors.CodePlanLimitExceeded:
+			return agentSessionFailureForLimit(apiErr)
+		case pkgerrors.CodeInternal:
+			if errors.Is(apiErr.Cause(), errAgentSandboxUnconfigured) {
+				return agentSessionLoopRetired
+			}
 		}
 	}
 	return agentSessionStartFailure
+}
+
+// agentSessionFailureForLimit names the usage limit a dispatch met. Only the
+// sandbox limits' messages are visitor sentences that name no plan
+// (billing_sandbox.go); every other limit's message is billing's own text,
+// which names the plan, so it gets a fixed sentence here (8e d-sbxese). None
+// but the machine limit clears when another change finishes, so only that
+// one offers a retry.
+func agentSessionFailureForLimit(apiErr *pkgerrors.APIError) agentSessionFailure {
+	switch apiErr.LimitKind {
+	case "concurrent_sandboxes":
+		return agentSessionFailure{Code: agentFailureSandboxLimit, Reason: apiErr.Message, Retryable: true}
+	case "sandbox_hours_per_day":
+		return agentSessionFailure{Code: agentFailureDispatchFailed, Reason: apiErr.Message}
+	case BillingMetricAgentRuns:
+		return agentSessionAgentRunsUsed
+	case BillingMetricCIMinutes:
+		return agentSessionCIMinutesUsed
+	default:
+		return agentSessionUsageLimit
+	}
 }
 
 // agentSessionFailureForFlow classifies an admitted turn that the Flow runtime

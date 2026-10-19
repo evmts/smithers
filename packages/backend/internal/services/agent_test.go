@@ -1044,6 +1044,7 @@ func TestToAgentSessionResponse(t *testing.T) {
 
 // mockAgentDispatchQuerier implements AgentDispatchQuerier for unit tests.
 type mockAgentDispatchQuerier struct {
+	endUndispatchedAgentSessionFn func(ctx context.Context, id string, workflowRunID pgtype.Int8) (db.AgentSession, error)
 	sandboxUsageRecorder
 	upsertAgentWorkflowDefinitionFn       func(ctx context.Context, repositoryID int64) (db.WorkflowDefinition, error)
 	createWorkflowRunFn                   func(ctx context.Context, arg db.CreateWorkflowRunParams) (db.WorkflowRun, error)
@@ -1382,6 +1383,15 @@ func (m *mockAgentDispatchQuerier) failAgentSessionOn(ctx context.Context, ends 
 
 func (m *mockAgentDispatchQuerier) FailNeverStartedAgentSession(context.Context, db.FailNeverStartedAgentSessionParams) (db.AgentSession, error) {
 	return db.AgentSession{}, pgx.ErrNoRows
+}
+
+func (m *mockAgentDispatchQuerier) EndUndispatchedAgentSession(ctx context.Context, id string, workflowRunID pgtype.Int8) (db.AgentSession, error) {
+	if m.endUndispatchedAgentSessionFn != nil {
+		return m.endUndispatchedAgentSessionFn(ctx, id, workflowRunID)
+	}
+	s := sampleDBAgentSession(id, 101, 1, "default")
+	s.Status = "failed"
+	return s, nil
 }
 
 func (m *mockAgentDispatchQuerier) InsertWorkflowRunLogNextSequence(ctx context.Context, arg db.InsertWorkflowRunLogNextSequenceParams) (db.InsertWorkflowRunLogNextSequenceRow, error) {

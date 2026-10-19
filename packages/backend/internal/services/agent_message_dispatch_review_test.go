@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
@@ -213,7 +214,13 @@ func TestAgentMessageDispatchReviewDeterministicRefusalsHaveNoExternalMarker(t *
 	for _, retired := range []bool{false, true} {
 		t.Run(fmt.Sprint("retired=", retired), func(t *testing.T) {
 			service, input := newBoundaryMessageSession(t)
-			service = reviewDispatchService(service, &mockAgentDispatchQuerier{})
+			var ended atomic.Value
+			service = reviewDispatchService(service, &mockAgentDispatchQuerier{endUndispatchedAgentSessionFn: func(_ context.Context, id string, _ pgtype.Int8) (db.AgentSession, error) {
+				ended.Store(id)
+				session := sampleDBAgentSession(id, 101, 1, "default")
+				session.Status = "failed"
+				return session, nil
+			}})
 			if retired {
 				service.guestEntrypointAssumed = false
 			} else {
@@ -225,7 +232,13 @@ func TestAgentMessageDispatchReviewDeterministicRefusalsHaveNoExternalMarker(t *
 			var started bool
 			require.NoError(t, service.messagePool.QueryRow(t.Context(), `SELECT external_started_at IS NOT NULL FROM product_job_dispatches WHERE operation_id=$1`, operation.ID).Scan(&started))
 			require.False(t, started, "a deterministic refusal must not require reconciliation")
-			appendBoundaryMessage(t, service, input)
+			// The refusal ends the turn with its typed reason: the session never
+			// waits 'active' for a run that will not exist. A retry is a new
+			// change (a new session), as the Ask card sends it.
+			// (This service's dispatch querier is a mock, so the guarded end runs
+			// there; TestAgentMessageDispatchRefusalEndsTheTurn reads the failed
+			// session back on real PostgreSQL.)
+			require.Equal(t, input.SessionID, ended.Load(), "the refusal ends the session through the guarded end")
 		})
 	}
 }
