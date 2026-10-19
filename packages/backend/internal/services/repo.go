@@ -1141,13 +1141,23 @@ func (s *RepoService) GetRepoView(ctx context.Context, viewer *db.User, owner, r
 	}
 	if !view.CanWrite && view.GitHubSource != nil {
 		registry, lookupErr := db.New(s.pool).GetGitHubSyncedRepo(ctx, db.GetGitHubSyncedRepoParams{OwnerLogin: view.GitHubSource.Owner, RepoName: view.GitHubSource.Repo})
-		if lookupErr != nil || !registry.GithubPrivate.Valid || registry.GithubPrivate.Bool {
+		if lookupErr != nil || !githubSourceIsPublic(registry) {
 			view.GitHubSource, view.GitHubSourceAmbiguous, view.GitHubSourceUnavailable = nil, false, true
 		}
 	}
 	if !repository.IsPublic && !view.CanWrite && (view.GitHubSource != nil || view.GitHubSourceAmbiguous) {
 		// A readable Cloud mirror does not grant GitHub source metadata.
 		view.GitHubSource, view.GitHubSourceAmbiguous, view.GitHubSourceUnavailable = nil, false, true
+	}
+	if !view.CanWrite {
+		// Hidden, ambiguous and absent sources have one non-writer projection,
+		// so the tracker follows the source this viewer may see: a bound but
+		// hidden GitHub source reads exactly like a native repository.
+		view.GitHubSourceAmbiguous, view.GitHubSourceUnavailable = false, false
+		view.IssueTracker = IssueTrackerSmithers
+		if view.GitHubSource != nil {
+			view.IssueTracker = IssueTrackerGitHub
+		}
 	}
 	return view, nil
 }

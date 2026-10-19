@@ -24,7 +24,7 @@ func TestPublicMetadataSharedCacheClosesWhenUpstreamTurnsPrivate(t *testing.T) {
 	private := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/repos/acme/app" {
-			fmt.Fprintf(w, `{"id":100,"private":%t}`, private)
+			fmt.Fprintf(w, `{"id":100,"private":%t,"visibility":%q}`, private, map[bool]string{true: "private", false: "public"}[private])
 			return
 		}
 		f.upstream.Handler().ServeHTTP(w, r)
@@ -96,7 +96,7 @@ func TestPublicMetadataHostedPrivateWebhookKeepsDoorClosed(t *testing.T) {
 	require.NoError(t, err)
 	row, err := db.New(pool).EnrollGitHubSyncedRepo(ctx, db.EnrollGitHubSyncedRepoParams{OwnerLogin: "acme", RepoName: "app", InstallationID: pgtype.Int8{Int64: 91, Valid: true}, GithubRepositoryID: pgtype.Int8{Int64: 100, Valid: true}, SyncMetadata: true, EnrolledVia: GitHubSyncedRepoEnrolledViaInstallation})
 	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `UPDATE github_synced_repos SET github_private=false, sync_state='ready', last_synced_at=now(), last_webhook_at=now() WHERE id=$1`, row.ID)
+	_, err = pool.Exec(ctx, `UPDATE github_synced_repos SET github_visibility='public',github_private=false, sync_state='ready', last_synced_at=now(), last_webhook_at=now() WHERE id=$1`, row.ID)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `INSERT INTO github_synced_issues(synced_repo_id,resource,number,github_id,payload) VALUES($1,'issues',7,7,'{"number":7,"title":"Public item","state":"open","comments":0}')`, row.ID)
 	require.NoError(t, err)

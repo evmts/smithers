@@ -60,6 +60,14 @@ SET owner_login     = EXCLUDED.owner_login,
         THEN NULL
         ELSE github_synced_repos.github_private
     END,
+    github_visibility = CASE
+        WHEN EXCLUDED.github_repository_id IS NOT NULL
+             AND github_synced_repos.github_repository_id IS DISTINCT FROM EXCLUDED.github_repository_id
+        THEN NULL ELSE github_synced_repos.github_visibility END,
+    visibility_generation = github_synced_repos.visibility_generation + CASE
+        WHEN EXCLUDED.github_repository_id IS NOT NULL
+             AND github_synced_repos.github_repository_id IS DISTINCT FROM EXCLUDED.github_repository_id
+        THEN 1 ELSE 0 END,
     sync_refs       = github_synced_repos.sync_refs OR EXCLUDED.sync_refs,
     sync_metadata   = github_synced_repos.sync_metadata OR EXCLUDED.sync_metadata,
     -- A rebind restarts sync bookkeeping. An operator-disabled row stays
@@ -427,12 +435,16 @@ WHERE g.mirror_owner IS NOT NULL
 -- name: SetGitHubSyncedRepoVisibility :exec
 -- Match the installation and immutable source identity observed by the sync.
 UPDATE github_synced_repos
-SET github_private = sqlc.arg(github_private), updated_at = NOW()
+SET github_private = sqlc.arg(github_private),
+    github_visibility = sqlc.narg(github_visibility)::text,
+    visibility_generation = visibility_generation + CASE WHEN sqlc.arg(github_private)::boolean IS NULL THEN 1 ELSE 0 END,
+    updated_at = NOW()
 WHERE id = sqlc.arg(id)
   AND installation_id = sqlc.arg(installation_id)
   AND github_repository_id = sqlc.arg(github_repository_id)
   AND owner_login = sqlc.arg(owner_login)
-  AND repo_name = sqlc.arg(repo_name);
+  AND repo_name = sqlc.arg(repo_name)
+  AND visibility_generation = sqlc.arg(visibility_generation);
 
 -- name: DeferGitHubSyncedRepoSync :exec
 -- Schedule another background attempt without claiming success or a failure.
@@ -453,6 +465,8 @@ UPDATE github_synced_repos
 SET installation_id = sqlc.arg(installation_id),
     github_repository_id = COALESCE(github_repository_id, sqlc.arg(github_repository_id)),
     github_private = NULL,
+    github_visibility = NULL,
+    visibility_generation = visibility_generation + 1,
     updated_at = NOW()
 WHERE id = sqlc.arg(id)
   AND installation_id IS NULL
