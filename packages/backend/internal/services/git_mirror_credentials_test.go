@@ -253,3 +253,27 @@ func TestGitMirrorPreservesNotesAndCustomRefScope(t *testing.T) {
 		{name: "refs/notes/review", from: "", to: "note"},
 	}, changes)
 }
+
+// A Smithers-native repository has no GitHub destination: every GitHub act on
+// it refuses with one typed code a client maps to its own sentence, not the
+// generic conflict (b5 d-53sea9, PM d-ik3z1c).
+func TestResolveGitHubDestinationRefusesANativeRepositoryTyped(t *testing.T) {
+	q := &mirrorCredentialStore{fakeGitMirrorSyncStore: newFakeGitMirrorSyncStore()}
+	_, _, err := resolveGitHubDestination(context.Background(), q, nil, 0, 9, "", "")
+	var refusal *pkgerrors.APIError
+	require.ErrorAs(t, err, &refusal)
+	require.Equal(t, pkgerrors.CodeGitHubDestinationRequired, refusal.Code)
+	require.Equal(t, 409, refusal.Status)
+	require.Equal(t, "This repository isn't connected to GitHub.", refusal.Message)
+	q.sources = []db.ListRepositoryGitHubSourcesRow{{GithubOwner: "upstream", GithubRepo: "renamed"}}
+	owner, repo, err := resolveGitHubDestination(context.Background(), q, nil, 0, 9, "", "")
+	require.NoError(t, err)
+	require.Equal(t, "upstream/renamed", owner+"/"+repo)
+	// Two sources are connected, just ambiguous: the refusal says so, not
+	// "isn't connected" (8e d-er038o).
+	q.sources = append(q.sources, db.ListRepositoryGitHubSourcesRow{GithubOwner: "other", GithubRepo: "copy"})
+	_, _, err = resolveGitHubDestination(context.Background(), q, nil, 0, 9, "", "")
+	require.ErrorAs(t, err, &refusal)
+	require.Equal(t, pkgerrors.CodeConflict, refusal.Code)
+	require.Equal(t, "This repository has more than one GitHub source, so Smithers can't tell which one to use.", refusal.Message)
+}

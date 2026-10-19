@@ -256,6 +256,7 @@ const (
 	CodeGitHubUnavailable         Code = "github_unavailable"
 	CodeGitHubPermission          Code = "github_permission"
 	CodeGitHubNotInstalled        Code = "github_not_installed"
+	CodeGitHubDestinationRequired Code = "github_destination_required"
 	CodeListingSecretDetected     Code = "listing_secret_detected"
 	CodeWikiUnavailable           Code = "wiki_unavailable"
 	CodeWikiSpaceUnreadable       Code = "wiki_space_unreadable"
@@ -585,7 +586,10 @@ var registry = map[Code]Entry{
 	// deliberately refusing, and from bad_gateway, which names no upstream.
 	CodeGitHubPermission:   {Status: http.StatusBadGateway, Fault: FaultDependency, Class: ClassGitHub, Doc: "GitHub did not grant access to a required resource."},
 	CodeGitHubNotInstalled: {Status: http.StatusBadGateway, Fault: FaultDependency, Class: ClassGitHub, Doc: "GitHub did not find the requested App installation."},
-	CodeGitHubUnavailable:  {Status: http.StatusBadGateway, Fault: FaultDependency, Class: ClassGitHub, RetryAfter: 0, Doc: "plue could not complete a call it made to GitHub on the caller's behalf: the request failed, or GitHub answered with something plue could not read."},
+	// A Smithers-native repository has no GitHub repository to open a pull
+	// request on, mirror to, or reconcile from.
+	CodeGitHubDestinationRequired: {Status: http.StatusConflict, Fault: FaultUser, Class: ClassConflict, Doc: "The repository has no GitHub destination, so nothing can open on or sync with GitHub from it."},
+	CodeGitHubUnavailable:         {Status: http.StatusBadGateway, Fault: FaultDependency, Class: ClassGitHub, RetryAfter: 0, Doc: "plue could not complete a call it made to GitHub on the caller's behalf: the request failed, or GitHub answered with something plue could not read."},
 	// The share listing contains something that scans as a credential; it
 	// was not published.
 	CodeListingSecretDetected: {Status: http.StatusBadRequest, Fault: FaultUser, Class: ClassUser, RetryAfter: 0, Doc: "The share listing contains something that scans as a credential; it was not published."},

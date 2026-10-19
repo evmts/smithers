@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:9099b27cd19c0a0835fc45e107b78e3b4369cda5467c39dc0a5389e9691bb140",
+  "digest": "sha256:aa1152712d1ebbd98af5e2f4f861b9ae1e1efeb059fa65f2f3d44d87fae0033e",
   "faults": [
     "user",
     "wait",
@@ -276,6 +276,13 @@
       "status": 400,
       "retry_after": 0,
       "doc": "The worker request omitted the placement generation that fences it."
+    },
+    {
+      "code": "github_destination_required",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The repository has no GitHub destination, so nothing can open on or sync with GitHub from it."
     },
     {
       "code": "github_import_already_active",
