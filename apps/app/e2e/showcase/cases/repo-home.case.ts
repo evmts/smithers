@@ -29,7 +29,7 @@ export default showcase({
   id: "repo-home",
   order: 60,
   title: "Repository",
-  summary: "Open owner/name: its homepage, files and branches, in chat.",
+  summary: "Open owner/name: its repository frame, files and branches.",
   flows: ["files", "file", "branches"],
   run: async ({ page, app, backend }) => {
     await backend.cloud()
@@ -42,13 +42,14 @@ export default showcase({
       ]
     })
     await backend.json("/api/public/repos", { repos: [{ name: REPO }] })
-    await backend.json(API, { default_bookmark: "main" })
+    await backend.json(API, { full_name: REPO, is_public: true, default_bookmark: "main" })
     await backend.json(`${API}/contents`, TREE)
     await backend.json(`${API}/contents/README.md`, { type: "file", path: "README.md", content: README, encoding: "utf-8" })
 
     await app.open(`/${REPO}`)
-    const home = page.locator(".home").first()
-    await expect(home).toContainText("T8")
+    const home = page.locator("#repo-content")
+    await expect(page.getByRole("navigation", { name: "Repository", exact: true }).getByRole("link", { name: "Code", exact: true })).toHaveAttribute("aria-current", "page")
+    await expect(home).toContainText("Durable flows for coding agents")
     await app.show(home)
     await app.beat(1500)
 
@@ -59,7 +60,12 @@ export default showcase({
     await app.show(list)
     await app.beat(900)
 
-    await app.click(list.getByText("README.md", { exact: true }).first())
+    const readme = list.getByRole("button", { name: "README.md", exact: true })
+    await readme.scrollIntoViewIfNeeded()
+    const readmeBounds = (await readme.boundingBox())!
+    const inputBounds = (await page.getByTestId("composer-input").boundingBox())!
+    expect(readmeBounds.y + readmeBounds.height).toBeLessThanOrEqual(inputBounds.y)
+    await app.click(readme)
     const file = page.locator('[data-kind="file"]').last()
     await expect(file).toContainText("Durable flows for coding agents")
     await app.show(file)

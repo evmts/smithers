@@ -39,6 +39,8 @@ test("C-ACC-03: removal keeps TODO history and the Owner cannot be removed", asy
   })
   await page.route("**/api/todos", route => route.fulfill({ json: [todo] }))
   await page.route("**/api/todos/3", route => { todoReads++; return route.fulfill({ json: todo }) })
+  // Admit the repository before the frame opens Ask (59f7a91e, bf0ae9f8).
+  await page.route("**/api/repos/smithers-mvp-canary/node", route => route.fulfill({ json: { full_name: "smithers-mvp-canary/node", is_public: true, default_bookmark: "main" } }))
   await page.goto("/smithers-mvp-canary/node")
   await expect(page.getByTestId("composer-input")).toBeAttached({ timeout: 20_000 })
   await say(page, "/members")

@@ -198,12 +198,19 @@ test("member card view and scroll anchor restore after reload", async ({ page })
   await expect(file).toHaveAttribute("data-maximized", "true")
   await page.reload()
   await expect(file).toHaveAttribute("data-maximized", "true")
+  const minimized = page.waitForResponse(response => response.url().endsWith("/api/conversations/main/view-state") &&
+    response.request().method() === "PUT" && response.request().postDataJSON().card_view?.["shared-file"] === undefined)
   await file.locator('[data-flow="card.minimize"]').click()
   await expect(file).toHaveAttribute("data-maximized", "false")
+  await (await minimized).finished()
+  const previousAnchor = view.scroll_anchor
+  const scrolled = page.waitForResponse(response => response.url().endsWith("/api/conversations/main/view-state") &&
+    response.request().method() === "PUT" && response.request().postDataJSON().scroll_anchor !== previousAnchor)
   const viewport = page.getByRole("region", { name: "Conversation messages", exact: true })
   await viewport.evaluate(node => { node.scrollTop = 900; node.dispatchEvent(new Event("scroll", { bubbles: true })) })
-  await expect.poll(() => typeof view.scroll_anchor === "string" && view.scroll_anchor !== "turn-4:prompt").toBe(true)
-  const savedAnchor = String(view.scroll_anchor)
+  const receipt = await scrolled
+  expect(receipt.ok()).toBe(true)
+  const savedAnchor = String((await receipt.json()).scroll_anchor)
   await page.reload()
   await expect.poll(async () => page.locator(`[data-message-id="${savedAnchor}"]`).evaluate(node => {
     const container = node.closest('[data-slot="message-scroller-viewport"]')!

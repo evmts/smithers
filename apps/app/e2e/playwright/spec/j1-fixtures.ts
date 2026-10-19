@@ -4,9 +4,15 @@ import { say } from "../composer"
 
 export { say }
 
+// The canary repository must be admitted before its frame exposes Ask (59f7a91e, bf0ae9f8).
+const admitCanaryRepository = (page: Page) => page.route("**/api/repos/smithers-mvp-canary/node", route => route.fulfill({
+  json: { full_name: "smithers-mvp-canary/node", is_public: true, default_bookmark: "main" }
+}))
+
 // Owner privilege is required by J1 setup; do not raise the shared member fixture.
 export async function owner(page: Page) {
   await installCloudFixture(page)
+  await admitCanaryRepository(page)
   await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", route => route.fulfill({ json: { id: 1, username: "canary-owner", is_admin: false } }))
 }
 export const setup = (page: Page) => page.getByRole("region", { name: "Set up Smithers" })
@@ -26,6 +32,7 @@ export async function firstTodo(page: Page, prompt: string) {
 /** Browser session and served install identity for owner-only TODO controls. */
 export async function mergeOwner(page: Page, defaultWrites: boolean[] = []) {
   await installCloudFixture(page, { capabilities: ["identity", "install"] })
+  await admitCanaryRepository(page)
   await page.route("**/api/members", route => route.fulfill({ json: { members: [{ login: "benortiz", name: "Ben", avatar_url: "https://example.com/ben.png", color_index: 0, role: "owner", needs_access: false, suspended: false, actions: [] }], access_url: "https://github.com/smithers-mvp-canary/node/settings/access" } }))
   let preapproved = false
   // This action requires a maintainer; the shared browser identity has no roster role.

@@ -2,7 +2,6 @@ import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { expect, test } from "./browserTest"
 import { SCOPED_TEST_USER, identityRoute, signedOutVisitor } from "./identity"
-import { fillComposer } from "./composer"
 import { APPLICATION_SIGN_IN_PATH } from "@smthrs/rpc/ApplicationAuth"
 
 /*
@@ -44,12 +43,10 @@ test("the repository sign-in door returns to the repository page signed in", asy
       return route.continue({ url: `${origin}${url.pathname}${url.search}` })
     })
 
+    await page.route("**/api/repos/smithersai/smithers", route => route.fulfill({ json: { full_name: "smithersai/smithers", is_public: true, default_bookmark: "main" } }))
     await page.goto("/smithersai/smithers/")
-    await fillComposer(page, "/auth.prompt")
-    await page.getByTestId("composer-input").press("Enter")
-    await page.getByTestId("composer-input").press("Escape")
     const navigated = page.waitForEvent("framenavigated", frame => frame === page.mainFrame() && new URL(frame.url()).searchParams.get("signed-in") === "github")
-    await page.getByTestId("transcript").getByRole("button", { name: "Sign in with GitHub", exact: true }).last().click()
+    await page.getByRole("button", { name: "Sign in", exact: true }).click()
     const returned = await navigated
     const destination = new URL(returned.url())
     expect(destination.origin).toBe(new URL(baseURL!).origin)
@@ -61,6 +58,7 @@ test("the repository sign-in door returns to the repository page signed in", asy
     expect(identity.status).toBe(200)
     expect(identity.user).toMatchObject({ username: SCOPED_TEST_USER.login })
     await expect(page.getByTestId("transcript").locator('[data-flow="sign-in"]')).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Sign in", exact: true })).toHaveCount(0)
     await expect.poll(() => new URL(page.url()).searchParams.has("signed-in")).toBe(false)
     expect(new URL(page.url()).pathname).toBe("/smithersai/smithers/")
   } finally {

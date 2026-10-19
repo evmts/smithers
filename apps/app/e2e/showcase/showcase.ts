@@ -25,7 +25,7 @@ export interface ShowcaseApp {
   readonly slash: (line: string) => Promise<void>
   /** Open Chat if needed, type a prompt, send it. */
   readonly say: (text: string) => Promise<void>
-  /** Close the composer if it is open. */
+  /** Close a popup composer; Ask keeps its input beside its results. */
   readonly closeComposer: () => Promise<void>
   /** Press a chord; while recording, the chord is shown on screen. */
   readonly press: (keys: string) => Promise<void>
@@ -266,6 +266,12 @@ export const prepare = async (page: Page, recording: boolean): Promise<ShowcaseR
   const composer = page.getByTestId("composer-input")
   const openComposer = async (): Promise<void> => {
     if (await composer.isVisible()) return
+    const ask = page.getByRole("button", { name: "Ask", exact: true })
+    if (await ask.isVisible()) {
+      await click(ask)
+      await expect(composer).toBeEditable()
+      return
+    }
     await showChord("Meta+k")
     await page.keyboard.press("ControlOrMeta+k")
     await expect(composer).toBeVisible()
@@ -294,6 +300,12 @@ export const prepare = async (page: Page, recording: boolean): Promise<ShowcaseR
     say: submit,
     closeComposer: async () => {
       if (!await composer.isVisible()) return
+      if (await page.getByRole("button", { name: "Close Ask", exact: true }).isVisible()) {
+        await showChord("Escape")
+        await composer.press("Escape")
+        await expect(composer).toBeEditable()
+        return
+      }
       await showChord("Escape")
       await composer.press("Escape")
       await expect(composer).toBeHidden()
