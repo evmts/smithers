@@ -85,6 +85,7 @@ export const releaseGates = [
   { name: "Release step flows", verb: "test", target: "//.smithers/flows:releaseSteps" },
   { name: "Repository flows", verb: "test", target: "//.smithers/flows:pack" },
   { name: "Judge egress", verb: "test", target: "//.smithers/flows:egress" },
+  { name: "Coding host size", verb: "test", target: "//.smithers/flows:codingHostSize" },
   { name: "Repository flow fixtures", verb: "test", target: "//.smithers/flows:repository" },
   { name: "Wiki and release fixtures", verb: "test", target: "//.smithers/flows:fixtures" },
   { name: "Repository flows lint", verb: "lint", target: "//.smithers/flows/..." },
