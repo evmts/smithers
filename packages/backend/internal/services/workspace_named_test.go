@@ -116,15 +116,18 @@ func TestBranchMachineStateProjection(t *testing.T) {
 	}
 }
 
-func TestAgentRunFailurePreservesSharedMachine(t *testing.T) {
+// A run's end never stops a branch machine it cannot prove free: without the
+// workspace runtime and the use reads, the shared machine is kept untouched.
+func TestAgentRunEndKeepsAMachineItCannotProveFree(t *testing.T) {
 	svc := NewWorkspaceService(&mockWorkspaceQuerier{
 		getWorkspaceFn: func(context.Context, string) (db.Workspace, error) {
-			t.Fatal("run failure must not mutate or stop its branch machine")
-			return db.Workspace{}, nil
+			return db.Workspace{ID: "shared", Status: "running", VmID: "vm-shared"}, nil
 		},
 	})
-	require.NoError(t, svc.FailAgentWorkspace(context.Background(), "shared"))
-	require.NoError(t, svc.SuspendAgentWorkspace(context.Background(), "shared"))
+	release, err := svc.ReleaseAgentWorkspace(context.Background(), "shared", "finished")
+	require.NoError(t, err)
+	require.Equal(t, agentWorkspaceKeptWithoutRuntime, release.Outcome)
+	require.False(t, release.HeadTokenRevoked)
 }
 
 func TestBranchMachineProviderFailureOrdering(t *testing.T) {

@@ -237,6 +237,11 @@ type WorkspaceDiskReclaimer interface {
 	ReclaimWorkspaceDisk(ctx context.Context, workspaceID string) error
 }
 
+// ErrGuestGone refuses a call scoped to a guest (WithGuest) that is not the
+// workspace's current guest: another guest replaced it, so the caller's
+// decision is stale. The runtime touched nothing. It is retryable.
+var ErrGuestGone = errors.New("workspace guest is gone")
+
 // WorkspaceEnvironmentLinker is an optional facet. After the product
 // checkout, it finishes the workspace's prepared environment offline, for
 // example by linking dependencies from a prepared store.
@@ -367,6 +372,18 @@ type WorkspaceExecution interface {
 	StartService(ctx context.Context, workspaceID string, spec ServiceSpec) (Service, error)
 	InspectService(ctx context.Context, workspaceID, name string) (ServiceObservation, error)
 	StopService(ctx context.Context, workspaceID, name string) error
+}
+
+// WorkspaceOfflineCommandRunner is an optional facet for running untrusted
+// code the guest holds, such as a repository's tests, with nothing to reach.
+// RunOfflineAsDeveloper runs command as ExecuteCommand would (the guest's
+// developer account, in the checkout), but in its own network namespace with
+// only loopback, its own PID namespace (no other guest process is visible),
+// and its own mount namespace in which the guest's credential cache
+// directory is empty. A runtime that cannot provide all three does not
+// implement it. A context naming a guest (WithGuest) that is gone fails.
+type WorkspaceOfflineCommandRunner interface {
+	RunOfflineAsDeveloper(ctx context.Context, workspaceID string, command Command) (CommandResult, error)
 }
 
 // WorkspaceServiceCatalog is optional because not every execution backend can
