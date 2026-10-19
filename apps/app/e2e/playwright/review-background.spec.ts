@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "./browserTest"
 import { installCloudFixture } from "./cloudFixture"
+import { fillComposer } from "./composer"
 import { say } from "./spec/j1-fixtures"
 
 // The canary repository is the owner's own. No public catalog admits it:
@@ -48,6 +49,8 @@ test("review acknowledges before launch and reconnects findings after reload", a
   await expect.poll(() => observations).toBeGreaterThan(0)
   await page.reload()
   completed = true
+  // The repository frame reloads with Ask collapsed below 1440px (59f7a91e); open it to read the conversation.
+  await fillComposer(page, "")
   await expect(page.getByText("Off by one", { exact: true })).toBeVisible()
   await expect(page.getByText("src/cache.ts:20", { exact: true })).toBeVisible()
   expect(launches).toBe(1)
