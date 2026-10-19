@@ -5,7 +5,13 @@ import cli from "../../../../../packages/smithers/test/CatalogCli.fixture.json"
 import { assertCatalogPolicy, auditAppIds, auditCliPaths, auditRuntimeTags } from "../../../scripts/catalog-policy.mts"
 
 test("literal B inventory expands shorthand without authorizing renamed aliases", () => {
-  expect(b.rows).toHaveLength(120)
+  // W41 authorizes exactly two additional hosted-change rows; retain the literal inventory pin.
+  expect(b.rows).toHaveLength(122)
+  for (const id of ["change.ask", "change.open-pull"]) {
+    expect(b.rows.filter(row => row.ids.includes(id))).toEqual([
+      { section: "B.2", ids: [id], status: "keep", who: "P, A" }
+    ])
+  }
   expect(b.rows.flatMap(row => row.ids)).toContain("chat.queue.edit")
   expect(b.rows.flatMap(row => row.ids)).toContain("storage.recovery.export")
   expect(b.rows.flatMap(row => row.ids)).not.toContain("chat.edit")

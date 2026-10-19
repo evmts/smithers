@@ -1425,5 +1425,21 @@
     "minimumRole": "member",
     "agent": "run",
     "http": null
+  },
+  {
+    "name": "change.ask",
+    "summary": "Start an agent on a change",
+    "slash": "/change",
+    "cli": null,
+    "journey": [],
+    "group": "Ask",
+    "visibility": "core",
+    "actors": [
+      "person",
+      "app_agent"
+    ],
+    "minimumRole": "member",
+    "agent": "confirm",
+    "http": null
   }
 ]

@@ -115,6 +115,7 @@ function AppContent() {
       activeBranchId: session.activeBranchId,
       branchNavigation: session.branchNavigation,
       requestedRead: session.requestedRead,
+      hostedChanges: session.hostedChanges,
       devtoolsOpen: session.devtoolsOpen,
       paletteOpen: session.paletteOpen,
       inputMode: session.inputMode,
@@ -500,6 +501,14 @@ function AppContent() {
   /* Asking for the same view twice is two destinations, so the read's own revision keys it. */
   const readVersion = readEntry === undefined || requestedRead === undefined ? undefined : `read:${requestedRead.revision}`
   const readTarget = readEntry ?? latestEntry
+  // Completion is a new read of the action after the files and notes settle.
+  const hostedRead = readTarget?.kind === "card" && readTarget.card.kind === "hosted-change"
+    ? session.hostedChanges?.find(row => `hosted-change-${row.id}` === readTarget.card.id)
+    : undefined
+  const hostedReadVersion = hostedRead === undefined ? undefined : JSON.stringify([
+    hostedRead.phase, hostedRead.filesRead, hostedRead.filesError, hostedRead.error,
+    hostedRead.pull?.pull_number, hostedRead.noChange
+  ])
   const latestReadId = readTarget === undefined ? undefined : entryId(readTarget)
   const initialReadId = launcherOpening ? LAUNCHER_ENTRY_ID : loginScreen ? "login" : repositoryNotice ? authMessage?.id : repositoryEntryMessage !== undefined ? repositoryEntryMessage.id : home ? HOME_ENTRY_ID : undefined
 
@@ -627,14 +636,14 @@ function AppContent() {
       */}
 
       <MessageScrollerProvider key={transcriptKey} scrollAnchor={launcherOpening ? "none" : "bottom"}
-            initialMessageId={controller.sharedConversation ? sharedConversation.view?.scroll_anchor : initialReadId}
-            readAnchor={controller.sharedConversation && readEntry === undefined && !(latestEntry?.kind === "card" && latestEntry.card.kind === "docs") ? undefined : { messageId: latestReadId ?? "",
-              targetId: readTarget?.kind === "card" && readTarget.card.kind === "docs" ? readTarget.card.payload.anchor : undefined,
-              /* A recorded read IS the person's own ask; nothing else claims to be. */
-              actor: readEntry !== undefined || (readTarget?.kind === "message" && readTarget.message.role === "user") ? "user" : "output",
+            initialMessageId={controller.sharedConversation ? sharedConversation.initialScrollAnchor : initialReadId}
+            readAnchor={controller.sharedConversation && readEntry === undefined && !(latestEntry?.kind === "card" && ["docs", "hosted-change"].includes(latestEntry.card.kind)) ? undefined : { messageId: latestReadId ?? "",
+              targetId: readTarget?.kind === "card" && readTarget.card.kind === "docs" ? readTarget.card.payload.anchor : readTarget?.kind === "card" && readTarget.card.kind === "hosted-change" ? `${readTarget.card.id}-end` : undefined,
+              /* Hosted card transitions continue the person's own change request. */
+              actor: hostedRead !== undefined || readEntry !== undefined || (readTarget?.kind === "message" && readTarget.message.role === "user") ? "user" : "output",
               requestId: readRequestRef.current,
               userMessageId: messages.filter(message => message.role === "user").at(-1)?.id,
-              version: readVersion ?? (readTarget?.kind === "card" ? `${readTarget.card.ordinal}:${readTarget.card.kind}` : undefined) }}>
+              version: readVersion ?? hostedReadVersion ?? (readTarget?.kind === "card" ? `${readTarget.card.ordinal}:${readTarget.card.kind}` : undefined) }}>
       <div className="chat-frame" data-pane={session.surface === "chat" ? undefined : session.surface}>
         <div className="chat-column">
           {

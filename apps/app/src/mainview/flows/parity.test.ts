@@ -1454,7 +1454,10 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/AnonymousCeilingCard.tsx": 1,
       "../cards/BillingCards.tsx": 2, // Retained plan checkout and retry, hidden on the install.
       // THE FORM LAW (.specs/engineering/spec.md §6.1): Cancel (card.dismiss), Submit (form.submit), and the retained PR Review (form.submit); fields commit on blur/change.
-      "../cards/FlowFormCards.tsx": 3,
+      // Hosted change confirmation adds Start agent and Cancel to the shared form.
+      "../cards/FlowFormCards.tsx": 5,
+      // Retry, View diff and Close diff; the two PR controls share one typed binding.
+      "../cards/HostedChangeCard.tsx": 3,
       // The plan card's one door, in its two states: Run once a plan exists, Plan again once one was refused.
       "../cards/FlowPlanCard.tsx": 2,
       // The run graph's bar: back to the turns, and the camera switch.

@@ -69,8 +69,16 @@ export const createTurnController = (ctx: ControllerContext, dependencies: TurnC
     const draftCurrent = capturedDraft ?? store.captureComposerDraft(text)
     if (draftCurrent()) store.dispatch({ type: "composer.changed", actor: "user", draft: "" })
     const before = latestOrdinal(store.collections)
-    void ctx.commands.run(parsed.name, parsed.kind === "command" ? parsed.args : undefined).then(outcome => {
-      if (ownershipCurrent(generation)) surfaceCommandFailure(parsed.name, missAsFailure(parsed.name, outcome), before)
+    const login = store.collections.identitySessions.get("identity")?.login
+    const diagnostic = login ? { login, branch: store.session().branchNavigation?.selected_branch ?? "main" } : undefined
+    const recorded = parsed.name === "change.ask" && parsed.kind === "command" && parsed.args?.trim()
+      ? store.dispatch({ type: "message.appended", actor: "user", role: "user", text: text.trim(), diagnostic }).isPersisted.promise
+      : Promise.resolve()
+    void recorded.then(() => ownershipCurrent(generation) ? ctx.commands.run(parsed.name, parsed.kind === "command" ? parsed.args : undefined) : undefined).then(outcome => {
+      if (!outcome || !ownershipCurrent(generation)) return
+      if (parsed.name === "change.ask" && outcome.status === "failed") {
+        store.dispatch({ type: "message.appended", actor: "system", text: outcome.error, diagnostic })
+      } else surfaceCommandFailure(parsed.name, missAsFailure(parsed.name, outcome), before)
     })
   }
   const reset = () => {

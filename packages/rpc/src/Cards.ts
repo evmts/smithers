@@ -784,6 +784,7 @@ export const RepositoryImportRequestSchema = z.object({
 export type RepositoryImportRequest = z.infer<typeof RepositoryImportRequestSchema>
 
 const CurrentCardSchema = z.discriminatedUnion("kind", [
+  z.object({ ...cardBaseShape, kind: z.literal("hosted-change"), payload: z.object({ repo: z.string(), sessionId: z.string(), request: z.string() }) }),
   /* The deferred repository chooser and its shared-backend creation receipt. */
   z.object({
     ...cardBaseShape,

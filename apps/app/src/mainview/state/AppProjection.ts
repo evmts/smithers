@@ -241,6 +241,7 @@ export const APP_TRANSITION_TYPES = {
   "review.requests.changed": true,
   "issue.create.requests.changed": true,
   "install.requests.changed": true,
+  "hosted.changes.changed": true,
   "repository.imports.changed": true,
   "secret.requests.changed": true,
   "egress.requests.changed": true,
@@ -785,6 +786,7 @@ const forgetAccountState = (collections: ProjectionCollections, createdAt: numbe
     delete draft.issueTodoRequests
     delete draft.branchControlRequests
     delete draft.codingProviderRequests
+    delete draft.hostedChanges
     delete draft.repositoryImports
     delete draft.secretRequests
     delete draft.egressRequests
@@ -2191,6 +2193,10 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           collections.sessions.update(SESSION_ID, draft => { draft.installRequests = transition.requests })
           break
         }
+        case "hosted.changes.changed": {
+          collections.sessions.update(SESSION_ID, draft => { draft.hostedChanges = transition.requests })
+          break
+        }
         case "repository.imports.changed": {
           collections.sessions.update(SESSION_ID, draft => { draft.repositoryImports = transition.requests })
           break
@@ -3100,7 +3106,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
         case "message.appended": {
           insertMessage({
             id: `message-appended-${recordId}`,
-            role: "smithers",
+            role: transition.actor === "user" && transition.role === "user" ? "user" : "smithers",
             text: transition.text,
             ...(transition.conversion === undefined ? {} : { conversion: transition.conversion }),
             ...(transition.diagnostic === undefined ? {} : { diagnostic: transition.diagnostic }),
