@@ -1,0 +1,12 @@
+{
+  "administration": "read",
+  "checks": "read",
+  "contents": "write",
+  "emails": "read",
+  "issues": "write",
+  "members": "read",
+  "metadata": "read",
+  "pull_requests": "write",
+  "statuses": "read",
+  "workflows": "write"
+}

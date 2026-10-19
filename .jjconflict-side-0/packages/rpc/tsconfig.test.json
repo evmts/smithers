@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "composite": false
+  },
+  "include": [
+    "src/**/*",
+    "test/**/*"
+  ]
+}

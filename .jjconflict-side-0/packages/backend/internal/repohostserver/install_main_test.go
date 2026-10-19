@@ -1,0 +1,620 @@
+package repohostserver
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"log/slog"
+	"maps"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
+)
+
+// installCommand is one receive-pack ref update.
+type installCommand struct{ old, new, ref string }
+
+// multiPushBody builds one receive-pack request of several commands and a
+// pack of everything their new commits reach beyond their old ones.
+func multiPushBody(t *testing.T, f *laneHTTPFixture, commands ...installCommand) []byte {
+	t.Helper()
+	var body bytes.Buffer
+	var revs strings.Builder
+	for i, command := range commands {
+		line := fmt.Sprintf("%s %s %s", command.old, command.new, command.ref)
+		if i == 0 {
+			line += "\x00report-status atomic"
+		}
+		line += "\n"
+		fmt.Fprintf(&body, "%04x%s", len(line)+4, line)
+		if command.new != laneZeroOID {
+			revs.WriteString(command.new + "\n")
+		}
+		if command.old != laneZeroOID {
+			revs.WriteString("^" + command.old + "\n")
+		}
+	}
+	body.WriteString("0000")
+	cmd := exec.Command("git", "-C", f.clientDir, "pack-objects", "--revs", "--stdout", "-q")
+	cmd.Stdin = strings.NewReader(revs.String())
+	pack, err := cmd.Output()
+	require.NoError(t, err)
+	body.Write(pack)
+	return body.Bytes()
+}
+
+func installFixture(t *testing.T, defaultBookmark string) (*laneHTTPFixture, string) {
+	t.Helper()
+	f := newLaneHTTPFixture(t, nil)
+	f.srv.config.InstallMainMirror = true
+	require.NoError(t, setGitDefaultBookmark(context.Background(), f.repo.gitDir, defaultBookmark))
+	tip := f.commit("reviewed", func(dir string) {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "reviewed.txt"), []byte("reviewed\n"), 0o644))
+	})
+	return f, tip
+}
+
+// One request that updates a feature bookmark and main is refused whole, and
+// a case or Unicode alias of main or of the default bookmark is main.
+func TestReceivePackInstallMainRefusesMultiRefAndAliases(t *testing.T) {
+	f, tip := installFixture(t, "trunk")
+	setup := postReceivePack(t, f, f.pushBody(laneZeroOID, f.base, "refs/heads/trunk"), repohost.PusherCredentialHeader, "sync")
+	require.Equal(t, http.StatusOK, setup.Code, setup.Body.String())
+	for _, kind := range []string{"person", "run", "machine", "platform", ""} {
+		for _, ref := range []string{"refs/heads/main", "refs/heads/MAIN", "refs/heads/ma‌in", "refs/Heads/main",
+			"refs/heads/trunk", "refs/heads/Trunk", "refs/heads/tr‍unk"} {
+			t.Run(kind+"/"+ref, func(t *testing.T) {
+				old := f.repo.refs()[ref]
+				if old == "" {
+					old = laneZeroOID
+				}
+				rec := postReceivePack(t, f, multiPushBody(t, f,
+					installCommand{laneZeroOID, tip, "refs/heads/feature-" + kind},
+					installCommand{old, tip, ref}), repohost.PusherCredentialHeader, kind)
+				require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+				assert.Equal(t, "permission", rec.Header().Get("X-Smithers-Error-Code"))
+				refs := f.repo.refs()
+				assert.Equal(t, f.base, refs["refs/heads/main"])
+				assert.Equal(t, f.base, refs["refs/heads/trunk"])
+				assert.NotContains(t, refs, "refs/heads/feature-"+kind, "a refused push writes none of its refs")
+			})
+		}
+	}
+	rec := postReceivePack(t, f, multiPushBody(t, f,
+		installCommand{laneZeroOID, tip, "refs/heads/feature"},
+		installCommand{laneZeroOID, tip, "refs/heads/topic"}), repohost.PusherCredentialHeader, "person")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, tip, f.repo.refs()["refs/heads/topic"])
+	rec = postReceivePack(t, f, f.pushBody(f.base, tip, "refs/heads/trunk"), repohost.PusherCredentialHeader, "sync")
+	require.Equal(t, http.StatusOK, rec.Code, "the sync fast-forwards the default bookmark: %s", rec.Body.String())
+	assert.Equal(t, tip, f.repo.refs()["refs/heads/trunk"])
+}
+
+// git receive-pack writes through a symbolic ref, so an existing alias of
+// main is main. On an install a push that names any symbolic ref is refused
+// under the repository write lock, the sync's included.
+func TestReceivePackInstallMainRefusesSymbolicAlias(t *testing.T) {
+	for _, install := range []bool{true, false} {
+		t.Run(fmt.Sprintf("install=%v", install), func(t *testing.T) {
+			f, tip := installFixture(t, "main")
+			f.srv.config.InstallMainMirror = install
+			for alias, target := range map[string]string{
+				"refs/heads/alias":   "refs/heads/main",
+				"refs/heads/hop":     "refs/heads/alias",
+				"refs/tags/main-tag": "refs/heads/main",
+			} {
+				out, err := exec.Command("git", "--git-dir", f.repo.gitDir, "symbolic-ref", alias, target).CombinedOutput()
+				require.NoError(t, err, string(out))
+			}
+			for _, ref := range []string{"refs/heads/alias", "refs/heads/hop", "refs/heads/ALIAS", "refs/tags/main-tag"} {
+				for _, kind := range []string{"person", "sync"} {
+					rec := postReceivePack(t, f, f.pushBody(f.base, tip, ref), repohost.PusherCredentialHeader, kind)
+					if install {
+						require.Equal(t, http.StatusForbidden, rec.Code, "%s %s: %s", kind, ref, rec.Body.String())
+						assert.Equal(t, "permission", rec.Header().Get("X-Smithers-Error-Code"), ref)
+						assert.Equal(t, f.base, f.repo.refs()["refs/heads/main"], "%s %s moved main", kind, ref)
+					}
+				}
+			}
+			if !install {
+				// Hosted repositories keep git's own behavior: the alias
+				// writes the ref it names.
+				assert.Equal(t, tip, f.repo.refs()["refs/heads/main"])
+				return
+			}
+			// HEAD names main too, and bare names are not refs: git itself
+			// refuses both, so neither writes main.
+			for _, ref := range []string{"HEAD", "main"} {
+				postReceivePack(t, f, f.pushBody(f.base, tip, ref), repohost.PusherCredentialHeader, "person")
+				assert.Equal(t, f.base, f.repo.refs()["refs/heads/main"], "%s moved main", ref)
+			}
+		})
+	}
+}
+
+// On an install the sync fast-forwards main and the default bookmark but
+// never rewinds or deletes them: a GitHub rewrite waits for the owner's
+// reset (§12.3) and leaves main where it was. Other refs follow GitHub as
+// they are, and hosted repositories keep the sync's exemption.
+func TestReceivePackInstallSyncOnlyFastForwardsMain(t *testing.T) {
+	for _, defaultBookmark := range []string{"main", "trunk"} {
+		t.Run(defaultBookmark, func(t *testing.T) {
+			f, tip := installFixture(t, defaultBookmark)
+			if defaultBookmark != "main" {
+				rec := postReceivePack(t, f, f.pushBody(laneZeroOID, f.base, "refs/heads/"+defaultBookmark), repohost.PusherCredentialHeader, "sync")
+				require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			}
+			// Git refuses to delete the branch HEAD names; jj export can detach
+			// HEAD, and then only the persisted default protects it.
+			require.NoError(t, os.WriteFile(filepath.Join(f.repo.gitDir, "HEAD"), []byte(f.base+"\n"), 0o644))
+			f.git("reset", "-q", "--hard", f.base)
+			rewrite := f.commit("rewritten on GitHub", func(dir string) {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "reviewed.txt"), []byte("rewritten\n"), 0o644))
+			})
+			refs := []string{"refs/heads/main"}
+			if defaultBookmark != "main" {
+				refs = append(refs, "refs/heads/"+defaultBookmark)
+			}
+			for _, ref := range refs {
+				rec := postReceivePack(t, f, f.pushBody(f.base, tip, ref), repohost.PusherCredentialHeader, "sync")
+				require.Equal(t, http.StatusOK, rec.Code, "%s fast-forward: %s", ref, rec.Body.String())
+				for _, op := range []struct{ name, new string }{{"rewrite", rewrite}, {"delete", laneZeroOID}} {
+					rec = postReceivePack(t, f, f.pushBody(tip, op.new, ref), repohost.PusherCredentialHeader, "sync")
+					require.Equal(t, http.StatusForbidden, rec.Code, "%s %s: %s", ref, op.name, rec.Body.String())
+					assert.Equal(t, tip, f.repo.refs()[ref], "%s %s moved it", ref, op.name)
+				}
+			}
+			rec := postReceivePack(t, f, f.pushBody(laneZeroOID, tip, "refs/heads/feature"), repohost.PusherCredentialHeader, "sync")
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			rec = postReceivePack(t, f, f.pushBody(tip, rewrite, "refs/heads/feature"), repohost.PusherCredentialHeader, "sync")
+			require.Equal(t, http.StatusOK, rec.Code, "the sync rewrites other refs as GitHub does: %s", rec.Body.String())
+
+			f.srv.config.InstallMainMirror = false
+			rec = postReceivePack(t, f, f.pushBody(tip, rewrite, "refs/heads/main"), repohost.PusherCredentialHeader, "sync")
+			require.Equal(t, http.StatusOK, rec.Code, "hosted sync copies GitHub's rewrite: %s", rec.Body.String())
+			assert.Equal(t, rewrite, f.repo.refs()["refs/heads/main"])
+		})
+	}
+}
+
+// installJSON serves one repo-host JSON request.
+func installJSON(t *testing.T, f *laneHTTPFixture, method, path, body string) (int, string, string) {
+	t.Helper()
+	rec := serveCaseRef(t, f, method, path, body)
+	return rec.Code, rec.Header().Get("X-Smithers-Error-Code"), rec.Body.String()
+}
+
+// No JSON route carries the sync's authority: on an install, creating,
+// moving or deleting main or the default bookmark through the bookmark or
+// landing routes is refused before the engine is called, whatever the name's
+// spelling. The import's create-if-absent neither moves nor deletes, and on
+// an install it may not create a missing main or default.
+func TestInstallMainJSONWritesAreRefused(t *testing.T) {
+	for _, install := range []bool{true, false} {
+		t.Run(fmt.Sprintf("install=%v", install), func(t *testing.T) {
+			f, _ := installFixture(t, "trunk")
+			f.srv.config.InstallMainMirror = install
+			mock := f.srv.ffi.(*mockFFI)
+			calls := map[string]int{}
+			mock.createBookmarkFn = func(_, name, _ string) (repohost.Bookmark, error) {
+				calls["create"]++
+				return repohost.Bookmark{Name: name}, nil
+			}
+			mock.createBookmarkIfAbsentFn = func(_, name, _ string) (repohost.Bookmark, error) {
+				calls["if_absent"]++
+				return repohost.Bookmark{Name: name}, nil
+			}
+			var deleted []string
+			mock.deleteBookmarkFn = func(_, name string) error {
+				calls["delete"]++
+				deleted = append(deleted, name)
+				return nil
+			}
+			mock.getBookmarkFn = func(string, string) (*repohost.Bookmark, error) {
+				return &repohost.Bookmark{Name: "main", TargetCommitID: f.base}, nil
+			}
+			mock.landChangesFn = func(string, repohost.LandRequest) (repohost.LandResult, error) {
+				calls["land"]++
+				return repohost.LandResult{}, nil
+			}
+			expected := `"` + f.base + `"`
+			for _, name := range []string{"main", "MAIN", "ma‌in", "trunk", "Trunk", "tr‍unk"} {
+				encoded := strings.ReplaceAll(name, "‌", "%E2%80%8C")
+				encoded = strings.ReplaceAll(encoded, "‍", "%E2%80%8D")
+				for _, write := range []struct{ method, path, body string }{
+					{http.MethodPost, "/bookmarks", `{"name":"` + name + `","target_change_id":"x"}`},
+					{http.MethodPost, "/bookmarks", `{"name":"` + name + `","target_change_id":"x","expected_commit_id":` + expected + `}`},
+					{http.MethodPost, "/bookmarks", `{"name":"` + name + `","delete":true,"expected_commit_id":` + expected + `}`},
+					{http.MethodPost, "/bookmarks", `{"name":"` + name + `","delete":true,"if_absent":true,"expected_commit_id":` + expected + `}`},
+					{http.MethodDelete, "/bookmarks/" + encoded, ``},
+					{http.MethodPost, "/land", `{"change_ids":["x"],"target_bookmark":"` + name + `"}`},
+					{http.MethodPost, "/land/append", `{"change_ids":["x"],"target_bookmark":"` + name + `","append":{"source_commit_id":"` + f.base + `","source_base_commit_id":"` + f.base + `"}}`},
+				} {
+					before := fmt.Sprint(calls)
+					code, errCode, body := installJSON(t, f, write.method, write.path, write.body)
+					if install {
+						require.Equal(t, http.StatusForbidden, code, "%s %s %s: %s", write.method, write.path, write.body, body)
+						assert.Equal(t, "permission", errCode)
+						assert.Contains(t, body, `"class":"permission"`)
+						assert.Equal(t, before, fmt.Sprint(calls), "%s %s reached the engine", write.method, write.body)
+					} else if name == "main" || name == "trunk" {
+						assert.NotEqual(t, http.StatusForbidden, code, "hosted %s %s %s: %s", write.method, write.path, write.body, body)
+					}
+				}
+			}
+			// The import's create-if-absent of an existing main writes nothing
+			// and remains; every other bookmark remains.
+			code, _, body := installJSON(t, f, http.MethodPost, "/bookmarks", `{"name":"main","target_change_id":"x","if_absent":true}`)
+			require.Equal(t, http.StatusCreated, code, body)
+			assert.Equal(t, 1, calls["if_absent"])
+			// Audit row 6: create-if-absent would create a missing main or
+			// default; on an install that is refused before the engine.
+			mock.getBookmarkFn = func(string, string) (*repohost.Bookmark, error) { return nil, nil }
+			for _, name := range []string{"main", "Main", "trunk"} {
+				code, errCode, body := installJSON(t, f, http.MethodPost, "/bookmarks", `{"name":"`+name+`","target_change_id":"x","if_absent":true}`)
+				if install {
+					require.Equal(t, http.StatusForbidden, code, "%s: %s", name, body)
+					assert.Equal(t, "permission", errCode)
+					assert.Equal(t, 1, calls["if_absent"], "%s reached the engine", name)
+				} else if name != "Main" {
+					require.Equal(t, http.StatusCreated, code, "hosted %s: %s", name, body)
+				}
+			}
+			mock.getBookmarkFn = func(string, string) (*repohost.Bookmark, error) {
+				return &repohost.Bookmark{Name: "main", TargetCommitID: f.base}, nil
+			}
+			code, _, body = installJSON(t, f, http.MethodPost, "/bookmarks", `{"name":"feature","target_change_id":"x"}`)
+			require.Equal(t, http.StatusCreated, code, body)
+			// The guard and the engine read the same, decoded name.
+			code, _, body = installJSON(t, f, http.MethodDelete, "/bookmarks/feature%2Fx", ``)
+			require.Equal(t, http.StatusNoContent, code, body)
+			assert.Equal(t, "feature/x", deleted[len(deleted)-1])
+			code, _, body = installJSON(t, f, http.MethodPost, "/land", `{"change_ids":["x"],"target_bookmark":"feature"}`)
+			require.Equal(t, http.StatusOK, code, body)
+			// A receipt lookup writes nothing.
+			code, _, body = installJSON(t, f, http.MethodPost, "/land/append", `{"change_ids":["x"],"target_bookmark":"main","lookup_only":true,"append":{"source_commit_id":"`+f.base+`","source_base_commit_id":"`+f.base+`"}}`)
+			require.Equal(t, http.StatusOK, code, body)
+		})
+	}
+}
+
+// A JSON bookmark write fails closed when the install's default bookmark
+// cannot be read: main could not be told apart.
+func TestInstallMainJSONWriteUnreadableDefaultFailsClosed(t *testing.T) {
+	f, _ := installFixture(t, "main")
+	require.NoError(t, os.Remove(filepath.Join(f.repo.gitDir, "smithers-default-bookmark")))
+	require.NoError(t, os.WriteFile(filepath.Join(f.repo.gitDir, "HEAD"), []byte(f.base+"\n"), 0o644))
+	mock := f.srv.ffi.(*mockFFI)
+	created := 0
+	mock.createBookmarkFn = func(_, name, _ string) (repohost.Bookmark, error) {
+		created++
+		return repohost.Bookmark{Name: name}, nil
+	}
+	code, errCode, body := installJSON(t, f, http.MethodPost, "/bookmarks", `{"name":"feature","target_change_id":"x"}`)
+	require.Equal(t, http.StatusForbidden, code, body)
+	assert.Equal(t, "permission", errCode)
+	assert.Contains(t, body, "default bookmark cannot be read")
+	assert.Zero(t, created)
+}
+
+// The install's default bookmark is GitHub's default branch: naming another
+// would hand the sync's ref to every writer, so only a no-op is accepted.
+func TestInstallMainDefaultBookmarkCannotBeRenamed(t *testing.T) {
+	for _, install := range []bool{true, false} {
+		t.Run(fmt.Sprintf("install=%v", install), func(t *testing.T) {
+			f, _ := installFixture(t, "main")
+			f.srv.config.InstallMainMirror = install
+			code, errCode, body := installJSON(t, f, http.MethodPut, "/default-bookmark", `{"name":"feature"}`)
+			current, err := gitDefaultBookmark(context.Background(), f.repo.gitDir)
+			require.NoError(t, err)
+			if install {
+				require.Equal(t, http.StatusForbidden, code, body)
+				assert.Equal(t, "permission", errCode)
+				assert.Equal(t, "main", current)
+				code, _, body = installJSON(t, f, http.MethodPut, "/default-bookmark", `{"name":"main"}`)
+				require.Equal(t, http.StatusNoContent, code, body)
+				return
+			}
+			require.Equal(t, http.StatusNoContent, code, body)
+			assert.Equal(t, "feature", current)
+		})
+	}
+}
+
+// Maintenance never creates or moves main on an install: a legacy variant
+// that would be renamed into main, or removed beside it, is reported to the
+// owner and every ref stays as it was. Hosted repositories still repair.
+func TestRepairRefCaseCollisionsInstallLeavesMainToOwner(t *testing.T) {
+	for _, install := range []bool{true, false} {
+		for _, defaultBookmark := range []string{"main", "trunk"} {
+			t.Run(fmt.Sprintf("install=%v/default=%s", install, defaultBookmark), func(t *testing.T) {
+				f, _ := installFixture(t, defaultBookmark)
+				f.srv.config.InstallMainMirror = install
+				out, err := exec.Command("git", "--git-dir", f.repo.gitDir, "update-ref", "-d", "refs/heads/main").CombinedOutput()
+				require.NoError(t, err, string(out))
+				variant := "refs/heads/MAIN"
+				if defaultBookmark == "trunk" {
+					variant = "refs/heads/TRUNK"
+				}
+				(&caseRepo{t: t, gitDir: f.repo.gitDir}).write(nil, map[string]string{variant: f.base})
+				before := f.repo.refs()
+				rec := serveCaseRef(t, f, http.MethodPost, "/ref-case-collisions/repair", `{}`)
+				require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+				canonical := "refs/heads/" + defaultBookmark
+				if install {
+					assert.Contains(t, rec.Body.String(), `"action":"reported"`)
+					assert.Equal(t, before, f.repo.refs(), "the repair wrote a ref of main")
+					assert.Empty(t, f.importedRefs())
+					return
+				}
+				assert.Contains(t, rec.Body.String(), `"action":"renamed"`)
+				assert.Equal(t, f.base, f.repo.refs()[canonical])
+			})
+		}
+	}
+}
+
+func TestRefuseDefaultBookmarkRewindOnInstall(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	r := newCaseRepo(t, t.TempDir())
+	require.NoError(t, setGitDefaultBookmark(context.Background(), r.gitDir, "trunk"))
+	main, trunk, feature := "refs/heads/main", "refs/heads/trunk", "refs/heads/feature"
+	for _, tc := range []struct {
+		name          string
+		before, after map[string]string
+		install       bool
+		refused       bool
+	}{
+		{"main rewound", map[string]string{main: r.b}, map[string]string{main: r.a}, true, true},
+		{"main deleted", map[string]string{main: r.b}, map[string]string{}, true, true},
+		{"main forward", map[string]string{main: r.a}, map[string]string{main: r.b}, true, false},
+		{"MAIN rewound", map[string]string{"refs/heads/MAIN": r.b}, map[string]string{"refs/heads/MAIN": r.a}, true, true},
+		{"default rewound", map[string]string{trunk: r.b}, map[string]string{trunk: r.a}, true, true},
+		{"feature rewound", map[string]string{feature: r.b}, map[string]string{feature: r.a}, true, false},
+		{"hosted main rewound beside another default", map[string]string{main: r.b}, map[string]string{main: r.a}, false, false},
+		{"hosted default rewound", map[string]string{trunk: r.b}, map[string]string{trunk: r.a}, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := refuseDefaultBookmarkRewind(context.Background(), r.gitDir, tc.before, tc.after, tc.install)
+			if tc.refused {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+// No push writes a replacement ref on an install, the sync's included: a
+// replacement could make a rewrite of main read as a fast-forward.
+func TestReceivePackInstallRefusesReplacementRefs(t *testing.T) {
+	for _, install := range []bool{true, false} {
+		t.Run(fmt.Sprintf("install=%v", install), func(t *testing.T) {
+			f, tip := installFixture(t, "main")
+			f.srv.config.InstallMainMirror = install
+			for _, kind := range []string{"person", "sync", "run"} {
+				for _, ref := range []string{"refs/replace/" + f.base, "refs/Replace/" + f.base} {
+					rec := postReceivePack(t, f, f.pushBody(laneZeroOID, tip, ref), repohost.PusherCredentialHeader, kind)
+					if !install {
+						continue
+					}
+					require.Equal(t, http.StatusForbidden, rec.Code, "%s %s: %s", kind, ref, rec.Body.String())
+					assert.Equal(t, "permission", rec.Header().Get("X-Smithers-Error-Code"))
+					for name := range f.repo.refs() {
+						assert.False(t, strings.HasPrefix(strings.ToLower(name), "refs/replace/"), "%s %s wrote %s", kind, ref, name)
+					}
+				}
+			}
+			if !install {
+				assert.Equal(t, tip, f.repo.refs()["refs/replace/"+f.base], "hosted keeps git's replacement refs")
+			}
+		})
+	}
+}
+
+// A replacement ref the install already holds is ignored when the sync's
+// push is checked: a GitHub rewrite of main stays refused, and the
+// replacement is reported.
+func TestReceivePackInstallSyncRewriteIgnoresExistingReplacement(t *testing.T) {
+	f, tip := installFixture(t, "main")
+	var logs bytes.Buffer
+	f.srv.logger = slog.New(slog.NewJSONHandler(&logs, nil))
+	rec := postReceivePack(t, f, f.pushBody(f.base, tip, "refs/heads/main"), repohost.PusherCredentialHeader, "sync")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	// GitHub rewrites main to a sibling of tip; a planted replacement names
+	// a commit whose parent is tip in its place.
+	f.git("reset", "-q", "--hard", f.base)
+	rewrite := f.commit("rewritten on GitHub", func(dir string) {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "reviewed.txt"), []byte("rewritten\n"), 0o644))
+	})
+	f.git("reset", "-q", "--hard", tip)
+	graft := f.commit("replacement", func(dir string) {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "graft.txt"), []byte("graft\n"), 0o644))
+	})
+	carrier := f.pushBody(tip, graft, "refs/heads/carrier")
+	copy(carrier[4:44], laneZeroOID) // the pack is relative to tip; the command creates the bookmark
+	rec = postReceivePack(t, f, carrier, repohost.PusherCredentialHeader, "person")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	out, err := exec.Command("git", "--git-dir", f.repo.gitDir, "update-ref", "refs/replace/"+rewrite, graft).CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	rec = postReceivePack(t, f, f.pushBody(tip, rewrite, "refs/heads/main"), repohost.PusherCredentialHeader, "sync")
+	require.Equal(t, http.StatusForbidden, rec.Code, "a replacement made the rewrite a fast-forward: %s", rec.Body.String())
+	assert.Equal(t, tip, f.repo.refs()["refs/heads/main"])
+	assert.Contains(t, logs.String(), "install replacement refs are ignored")
+	assert.Contains(t, logs.String(), "refs/replace/"+rewrite)
+}
+
+// Namespace maintenance deletes a symbolic user or workspace ref itself,
+// never the ref it names: main and the default bookmark survive the expiry
+// sweep, the listing's reconciliation and the workspace-ref delete, and a
+// retained source never writes through a symbolic ref.
+func TestSymbolicNamespaceRefsNeverWriteTheirTarget(t *testing.T) {
+	for _, install := range []bool{true, false} {
+		t.Run(fmt.Sprintf("install=%v", install), func(t *testing.T) {
+			f, tip := installFixture(t, "trunk")
+			f.srv.config.InstallMainMirror = install
+			git := func(args ...string) {
+				t.Helper()
+				out, err := exec.Command("git", append([]string{"--git-dir", f.repo.gitDir}, args...)...).CombinedOutput()
+				require.NoError(t, err, string(out))
+			}
+			git("update-ref", "refs/heads/trunk", f.base)
+			start := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+			alias := func(name, target string) string {
+				ref := repohost.UserRef(42, name)
+				git("symbolic-ref", ref, target)
+				return ref
+			}
+			protected := func(when string) {
+				t.Helper()
+				refs := f.repo.refs()
+				assert.Equal(t, f.base, refs["refs/heads/main"], "%s deleted main", when)
+				assert.Equal(t, f.base, refs["refs/heads/trunk"], "%s deleted the default bookmark", when)
+			}
+
+			// The sweep expires symbolic user refs.
+			withUserRefClock(t, start)
+			swept := []string{alias("main-alias", "refs/heads/main"), alias("default-alias", "refs/heads/trunk")}
+			rec := userRefRequest(t, f, http.MethodGet, "42", nil)
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			withUserRefClock(t, start.Add(repohost.DefaultUserRefTTL+time.Hour))
+			f.srv.sweepUserRefs(t.Context())
+			protected("the sweep")
+			for _, ref := range swept {
+				assert.NotContains(t, f.repo.refs(), ref)
+			}
+
+			// The listing's reconciliation expires them too.
+			later := start.Add(2 * repohost.DefaultUserRefTTL)
+			withUserRefClock(t, later)
+			listed := []string{alias("main-alias-2", "refs/heads/main"), alias("default-alias-2", "refs/heads/trunk")}
+			rec = userRefRequest(t, f, http.MethodGet, "42", nil)
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			withUserRefClock(t, later.Add(repohost.DefaultUserRefTTL+time.Hour))
+			rec = userRefRequest(t, f, http.MethodGet, "42", nil)
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			protected("the listing")
+			for _, ref := range listed {
+				assert.NotContains(t, f.repo.refs(), ref)
+			}
+
+			// The workspace-ref delete removes symbolic workspace refs.
+			git("symbolic-ref", repohost.BranchHeadRef(userRefWorkspace), "refs/heads/main")
+			git("symbolic-ref", repohost.WorkspaceSourceRef(userRefWorkspace, f.base), "refs/heads/trunk")
+			rec = serveCaseRef(t, f, http.MethodDelete, "/workspace-refs/"+userRefWorkspace, "")
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			protected("the workspace-ref delete")
+			assert.NotContains(t, f.repo.refs(), repohost.BranchHeadRef(userRefWorkspace))
+
+			// Retaining a user ref never writes through a symbolic source ref.
+			// Git may refuse or replace the dangling alias itself; check all refs
+			// in either case, rather than assuming a version-specific refusal.
+			withUserRefClock(t, later.Add(3*repohost.DefaultUserRefTTL))
+			rec = pushAs(t, f, "42", f.userRefPush(laneZeroOID, tip, repohost.UserRef(42, "work")))
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			sourceRef := repohost.WorkspaceSourceRef(userRefWorkspace, tip)
+			git("symbolic-ref", sourceRef, "refs/heads/planted")
+			beforeRetain := rawRefs(t, f.repo.gitDir)
+			rec = userRefRequest(t, f, http.MethodPost, "42/retain", map[string]string{"name": "work", "workspace_id": userRefWorkspace})
+			afterRetain := rawRefs(t, f.repo.gitDir)
+			target, symbolicErr := exec.Command("git", "--git-dir", f.repo.gitDir, "symbolic-ref", "--quiet", sourceRef).Output()
+			switch rec.Code {
+			case http.StatusOK:
+				expected := maps.Clone(beforeRetain)
+				expected[sourceRef] = tip
+				assert.Equal(t, expected, afterRetain, "retain changed more than its source ref")
+				var exit *exec.ExitError
+				require.ErrorAs(t, symbolicErr, &exit)
+				assert.Equal(t, 1, exit.ExitCode(), "the retained source ref must be direct")
+			case http.StatusInternalServerError:
+				assert.Equal(t, beforeRetain, afterRetain, "a refused retain changed refs")
+				require.NoError(t, symbolicErr)
+				assert.Equal(t, "refs/heads/planted", strings.TrimSpace(string(target)))
+			default:
+				t.Fatalf("unexpected retain status %d: %s", rec.Code, rec.Body.String())
+			}
+			assert.NotContains(t, afterRetain, "refs/heads/planted", "retain wrote through a symbolic source ref")
+			protected("the retain")
+		})
+	}
+}
+
+// rawRefs lists refs with plain git, past any listing cap a test lowered.
+func rawRefs(t *testing.T, gitDir string) map[string]string {
+	t.Helper()
+	out, err := exec.Command("git", "--git-dir", gitDir, "for-each-ref", "--format=%(refname) %(objectname)").Output()
+	require.NoError(t, err)
+	refs := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if name, oid, ok := strings.Cut(line, " "); ok {
+			refs[name] = oid
+		}
+	}
+	return refs
+}
+
+// nonAtomicPushBody builds a receive-pack request without the atomic
+// capability: git applies each command it accepts and rejects the others.
+func nonAtomicPushBody(t *testing.T, f *laneHTTPFixture, packTip string, commands ...installCommand) []byte {
+	t.Helper()
+	var body bytes.Buffer
+	for i, command := range commands {
+		line := fmt.Sprintf("%s %s %s", command.old, command.new, command.ref)
+		if i == 0 {
+			line += "\x00report-status"
+		}
+		line += "\n"
+		fmt.Fprintf(&body, "%04x%s", len(line)+4, line)
+	}
+	body.WriteString("0000")
+	cmd := exec.Command("git", "-C", f.clientDir, "pack-objects", "--revs", "--stdout", "-q")
+	cmd.Stdin = strings.NewReader(packTip + "\n^" + f.base + "\n")
+	pack, err := cmd.Output()
+	require.NoError(t, err)
+	body.Write(pack)
+	return body.Bytes()
+}
+
+// Astra round 3, B1: a member's non-atomic push names raw HEAD beside new
+// tags that carry the ref listing past its cap. Git rejected HEAD and applied
+// the tags, the listing failed, and the rollback ran `git update-ref -d
+// HEAD`, which deleted refs/heads/main. Now the engine refuses a pseudoref
+// before git runs, refuses a push that would carry the listing past its cap
+// before git applies anything, and main and every other ref stay unchanged.
+func TestReceivePackListingCapNeverDeletesMainThroughHEAD(t *testing.T) {
+	for _, install := range []bool{true, false} {
+		t.Run(fmt.Sprintf("install=%v", install), func(t *testing.T) {
+			f, tip := installFixture(t, "main")
+			f.srv.config.InstallMainMirror = install
+			before := rawRefs(t, f.repo.gitDir)
+			listing := int64(0)
+			for name, oid := range before {
+				listing += int64(len(name) + len(oid) + 2)
+			}
+			previous := maxRefListingBytes
+			maxRefListingBytes = listing + 300
+			t.Cleanup(func() { maxRefListingBytes = previous })
+
+			commands := []installCommand{{f.base, tip, "HEAD"}}
+			for i := 0; i < 4; i++ {
+				commands = append(commands, installCommand{laneZeroOID, tip, fmt.Sprintf("refs/tags/%s-%d", strings.Repeat("t", 120), i)})
+			}
+			rec := postReceivePack(t, f, nonAtomicPushBody(t, f, tip, commands...), repohost.PusherCredentialHeader, "person")
+			require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+			assert.Equal(t, before, rawRefs(t, f.repo.gitDir), "the refused push changed refs")
+			assert.Equal(t, f.base, rawRefs(t, f.repo.gitDir)["refs/heads/main"], "main was deleted through HEAD")
+		})
+	}
+}
