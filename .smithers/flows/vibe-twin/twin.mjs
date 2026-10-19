@@ -204,6 +204,21 @@ const linkPartialTwin = (pkg, work) => {
   )
   const names = new Set(twinned.map(({ rel }) => rel))
   mkdirSync(out, { recursive: true })
+  // The twin compile also emits every TypeScript module the twin imports (rootDir is the
+  // repository), and the twin's relative imports reach those copies: a second instance of the
+  // module, so a test's spy on the real one never fires (E-16). Each copy becomes a re-export
+  // of the real source file: one instance, live bindings.
+  const outRoot = join(work, "out")
+  const repo = repoRoot(pkg)
+  for (const f of walk(outRoot).filter((x) => x.endsWith(".js"))) {
+    const emitted = join(outRoot, f)
+    if (emitted.startsWith(out + sep)) continue
+    const base = join(repo, f.replace(/\.js$/, ""))
+    const real = [".ts", ".tsx", ".mts"].map((x) => base + x).find(existsSync)
+    if (real === undefined) continue
+    const hasDefault = /^\s*export\s+default\b/m.test(readFileSync(real, "utf8"))
+    writeFileSync(emitted, `// vibe-twin: the real module, not a compiled copy\nexport * from ${JSON.stringify(real)}\n${hasDefault ? `export { default } from ${JSON.stringify(real)}\n` : ""}`)
+  }
   // A module may read a resource beside it (new URL("./x.ndjson", import.meta.url)); its twin
   // runs from the output folder, so non-code files are copied there too (F-6).
   for (const f of walkSources(join(pkg, sourceRoot(pkg)))) {
