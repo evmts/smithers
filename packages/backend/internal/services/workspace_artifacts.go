@@ -470,6 +470,8 @@ var workspaceBootstrapSecretPatterns = []struct {
 	{regexp.MustCompile(`(?i)([A-Za-z0-9_.-]*(?:token|secret|passw(?:or)?d|api[_-]?key|access[_-]?key|private[_-]?key|credential|auth)[A-Za-z0-9_.-]*["']?\s*[:=]\s*)("[^"]*"|'[^']*'|\S+)`), "${1}[redacted]"},
 	// Well-known credential prefixes and long opaque strings.
 	{regexp.MustCompile(`\b(?:gh[pousr]_|github_pat_|glpat-|sk-|xox[abprs]-|AKIA)[A-Za-z0-9_-]{6,}`), "[redacted]"},
+	// Smithers tokens, including the dotted sandbox form (credentialscan).
+	{regexp.MustCompile(`\bsmithers_[A-Za-z0-9_.-]{6,}`), "[redacted]"},
 	{regexp.MustCompile(`[A-Za-z0-9_+/=-]{32,}`), "[redacted]"},
 }
 
@@ -478,9 +480,15 @@ var workspaceBootstrapSecretPatterns = []struct {
 // The toolchain bootstrap runs before any repository setup secret is written,
 // and these rules are a second line against a tool echoing one anyway.
 func workspaceBootstrapDiagnostic(log string) string {
+	return workspaceGuestOutputTail(log, workspaceBootstrapDiagnosticLines, workspaceBootstrapDiagnosticBytes)
+}
+
+// workspaceGuestOutputTail keeps at most maxLines non-empty lines and maxBytes
+// bytes from the end of guest output, printable only, masked as above.
+func workspaceGuestOutputTail(log string, maxLines, maxBytes int) string {
 	lines := strings.Split(strings.ToValidUTF8(log, ""), "\n")
-	kept := make([]string, 0, workspaceBootstrapDiagnosticLines)
-	for i := len(lines) - 1; i >= 0 && len(kept) < workspaceBootstrapDiagnosticLines; i-- {
+	kept := make([]string, 0, maxLines)
+	for i := len(lines) - 1; i >= 0 && len(kept) < maxLines; i-- {
 		line := strings.Map(func(r rune) rune {
 			if r == '\t' {
 				return ' '
@@ -505,8 +513,8 @@ func workspaceBootstrapDiagnostic(log string) string {
 	for _, rule := range workspaceBootstrapSecretPatterns {
 		text = rule.pattern.ReplaceAllString(text, rule.replacement)
 	}
-	if len(text) > workspaceBootstrapDiagnosticBytes {
-		cut := len(text) - workspaceBootstrapDiagnosticBytes
+	if len(text) > maxBytes {
+		cut := len(text) - maxBytes
 		for cut < len(text) && !utf8.RuneStart(text[cut]) {
 			cut++
 		}

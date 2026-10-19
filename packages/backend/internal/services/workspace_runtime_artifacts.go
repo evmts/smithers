@@ -103,10 +103,34 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceArtifacts(ctx context.Context, 
 		return workspaceArtifactRuntimeFailure(bootstrapCtx, "bootstrap workspace artifacts", err)
 	}
 	begin(workspaceArtifactVerifyCLI)
-	if _, err := artifactCommand(bootstrapCtx, client, current.VmID, command, 30_000); err != nil {
+	if result, err := artifactCommand(bootstrapCtx, client, current.VmID, command, 30_000); err != nil {
+		logWorkspaceCLICheckOutput(row.ID, current.VmID, result)
 		return workspaceArtifactRuntimeFailure(bootstrapCtx, "verify workspace CLI", err)
 	}
 	return nil
+}
+
+const (
+	// workspaceCLICheckOutputLines and workspaceCLICheckOutputBytes bound the
+	// guest output a failed CLI check logs: a Node stack fits, and with the
+	// leading ellipsis the field stays under 4 KiB.
+	workspaceCLICheckOutputLines = 64
+	workspaceCLICheckOutputBytes = 4000
+)
+
+// logWorkspaceCLICheckOutput logs the masked tail of a failed CLI check's
+// output. The row's failure message carries a shorter diagnosis, but canary
+// cleanup deletes the row; this line outlives it. The finite bootstrap record
+// below stays free of guest output.
+func logWorkspaceCLICheckOutput(workspaceID, sandboxID string, result sandbox.ExecResult) {
+	exitCode := -1
+	if result.StatusCode != nil {
+		exitCode = int(*result.StatusCode)
+	}
+	output := strings.TrimSpace(result.Stdout + "\n" + result.Stderr)
+	slog.Warn("workspace runtime CLI check output", "workspace", workspaceCorrelationToken(workspaceID),
+		"workspace_id", workspaceID, "sandbox_id", sandboxID, "operation", string(workspaceArtifactVerifyCLI),
+		"exit_code", exitCode, "output_tail", workspaceGuestOutputTail(output, workspaceCLICheckOutputLines, workspaceCLICheckOutputBytes))
 }
 
 type workspaceArtifactOperation string
