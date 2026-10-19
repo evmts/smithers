@@ -75,8 +75,22 @@ test("the command runs against a fresh required database and its status is kept"
   const result = run(temp, { PG_BIN: bin }, ["bash", "-c", probe])
   assert.equal(result.status, 7, result.stderr)
   assert.match(result.stdout, /^1$/m)
-  assert.match(result.stdout, /required=1 url=postgres:\/\/postgres@127\.0\.0\.1:\d+\/postgres\?sslmode=disable/)
+  assert.match(result.stdout, /required=1 url=postgres:\/\/postgres:[0-9a-f]{32}@127\.0\.0\.1:\d+\/postgres\?sslmode=disable/)
   assert.deepEqual(readdirSync(temp), [], "the server is stopped and its directory removed")
+})
+
+test("the server checks passwords, so password-rejection tests can run", (t) => {
+  const bin = realBin()
+  if (!bin) {
+    t.skip("no PostgreSQL programs on this host")
+    return
+  }
+  const { temp } = scratch(t)
+  const wrong = `"${join(bin, "psql")}" "$(printf %s "$SMITHERS_TEST_DATABASE_URL" | sed -E "s#//postgres:[^@]*@#//postgres:wrong@#")" -tAc "select 1"; echo "wrong=$?"`
+  const result = run(temp, { PG_BIN: bin }, ["bash", "-c", wrong])
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /wrong=2/)
+  assert.match(result.stderr, /password authentication failed/)
 })
 
 const waitFor = async (probe, message) => {
