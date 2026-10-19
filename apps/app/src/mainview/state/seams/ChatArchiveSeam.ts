@@ -80,15 +80,18 @@ export function createChatArchiveSeam(ctx: ControllerContext, options: ChatArchi
   const valid = (revision: number) => active() && generation === revision
   const signedIn = () => ctx.store.collections.identitySessions.get("identity")?.state === "signed-in" && !!ctx.accountOwner()
 
-  const list = async (): Promise<void> => {
+  const list = (): Promise<void> => {
     const revision = generation
-    if (!active() || !signedIn()) return
+    if (!active() || !signedIn()) return Promise.resolve()
     // One read answers every asker: a mount, `/history` and a retry join the request in flight.
     if (listing !== undefined) return listing
-    if (snapshot.reading !== true) publish({ ...snapshot, reading: true })
-    // A failed refresh keeps the rows already shown.
-    const unavailable = () => { if (valid(revision)) { listed = "unavailable"; publish({ ...snapshot, reading: undefined, error: "History unavailable" }) } }
+    // Publishing can synchronously resubscribe a card; reserve its request first.
+    const pending = Promise.withResolvers<void>()
+    listing = pending.promise
     const work = (async (): Promise<void> => {
+      if (snapshot.reading !== true) publish({ ...snapshot, reading: true })
+      // A failed refresh keeps the rows already shown.
+      const unavailable = () => { if (valid(revision)) { listed = "unavailable"; publish({ ...snapshot, reading: undefined, error: "History unavailable" }) } }
       try {
         const response = await ctx.boundedFetch(`${ctx.baseUrl}/api/conversation-archives`, { credentials: "same-origin" })
         if (!response.ok) return unavailable()
@@ -96,8 +99,12 @@ export function createChatArchiveSeam(ctx: ControllerContext, options: ChatArchi
         if (valid(revision)) { listed = "read"; publish({ ...snapshot, archives, reading: undefined, error: undefined }) }
       } catch { unavailable() }
     })()
-    listing = work
-    try { await work } finally { if (listing === work) listing = undefined }
+    const clear = () => { if (listing === pending.promise) listing = undefined }
+    void work.then(
+      () => { clear(); pending.resolve() },
+      error => { clear(); pending.reject(error) }
+    )
+    return pending.promise
   }
 
   /** Loads one archived chat's entries; a refusal is the sentence the person reads. */
