@@ -326,7 +326,7 @@ export const runsCardFamily: CardFamily<"run-list" | "approvals-inbox"> = {
 import { useRef, useState } from "react"
 import type { ApprovalQuestion } from "./ApprovalQuestion"
 import { attemptWords } from "./ApprovalQuestion"
-import { signingProperty, signAnswer, parseSigningAnswer } from "./AnswerSigning"
+import { signingProperty, signAnswer, parseSigningAnswer, signingFailure } from "./AnswerSigning"
 
 /** What a person typed, shaped for the question's kind, or why it cannot be sent. */
 export const answerValue = (
@@ -396,7 +396,7 @@ export const ApprovalAnswerForm = ({
       }
       onAnswer(signed)
     } catch (error) {
-      setAnswerNote(error instanceof Error && error.name !== "NotAllowedError" ? error.message : "Signing cancelled. Try again.")
+      setAnswerNote(signingFailure(error).sentence)
     } finally { signing.current = false }
   }
 
