@@ -494,7 +494,7 @@ func (h *RepoHandler) GetRepoContents(w http.ResponseWriter, r *http.Request) {
 				var decodeErr error
 				data, decodeErr = base64.StdEncoding.DecodeString(content.Content)
 				if decodeErr != nil {
-					writeRouteError(w, r, errors.Internal("invalid repository file encoding"))
+					writeRouteError(w, r, errors.Internal("invalid repository file encoding").WithCause(decodeErr))
 					return
 				}
 			}

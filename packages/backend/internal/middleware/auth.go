@@ -528,7 +528,7 @@ var installMemberRoutes = []struct {
 	{http.MethodGet, "repo.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/(?:bookmarks|changes(?:/count|/[^/]+(?:/(?:walkthrough|findings|diff|files|conflicts|operations))?)?|operations|status)$`)},
 	{http.MethodGet, "repo.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/(?:user-refs|lfs/objects|commits/[^/]+/statuses)$`)},
 	{http.MethodGet, "repo.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/file/[^/]+/.+$`)},
-	{http.MethodGet, "repo.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/(?:git/refs|contents(?:/.+)?)$`)},
+	{http.MethodGet, "repo.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/(?:git/refs|contents(?:/.+)?|github/metadata/.+)$`)},
 	// Existing persisted coding-run messages remain readable by repository members.
 	{http.MethodGet, "repo.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/agent/sessions/[^/]+/stream$`)},
 	{http.MethodGet, "sync.read", regexp.MustCompile(`^/api/github/sync$`)},
