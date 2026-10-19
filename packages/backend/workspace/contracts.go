@@ -273,6 +273,23 @@ type WorkspaceDiskReclaimer interface {
 	ReclaimWorkspaceDisk(ctx context.Context, workspaceID string) error
 }
 
+// ErrGuestGone refuses a call scoped to a guest (WithGuest) that is not the
+// workspace's current guest: another guest replaced it, so the caller's
+// decision is stale. The runtime touched nothing. It is retryable.
+var ErrGuestGone = errors.New("workspace guest is gone")
+
+// WorkspaceGuestFence is implemented by a runtime that honors WithGuest on
+// every call a release makes (StopService, ReapRunProcesses and
+// DeleteWorkspace): when the call names a guest that is not the workspace's
+// current guest it answers ErrGuestGone and touches nothing, so a late call
+// never reaches a newer guest of the same workspace id. FencesGuests reports
+// that the runtime does so. The product runs a release's runtime side effects
+// only on a runtime that declares it; a runtime that hosts one guest per
+// workspace id for the workspace's lifetime need not implement it.
+type WorkspaceGuestFence interface {
+	FencesGuests() bool
+}
+
 // WorkspaceRunProcessReaper ends every guest process an agent run started,
 // keeping only the box's own system processes (its relay and its agent
 // supervisor), and returns only once their end is confirmed. A process a
