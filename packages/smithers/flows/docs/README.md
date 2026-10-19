@@ -44,7 +44,7 @@ step's files also need
 the packages Bun and the browser add, and when to depend on individual engine
 packages instead.
 
-Durable execution is tested on Node.js 26.4+ and Bun 1.4+; `engines` requires Node `>=26.4.0`. The API is
+Durable execution is tested on Node.js 22.19+ and Bun 1.4+; `engines` requires Node `>=22.19.0`. The API is
 [Effect](https://effect.website) throughout: a flow declares its payload and
 result as Effect schemas, an action's implementation is an `Effect`, and a host
 is a `Layer` you provide. The example below is a complete Effect program, and

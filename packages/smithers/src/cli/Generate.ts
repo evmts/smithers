@@ -102,7 +102,7 @@ export const initialize = async (
       "package.json",
       `${JSON.stringify({ name, private: true, type: "module", packageManager: manager }, null, 2)}\n`
     )
-    const runtime = "S.Runtime.Node({ version: \">=26.4.0\" })"
+    const runtime = "S.Runtime.Node({ version: \">=22.19.0\" })"
     const packageManager = manager.startsWith("yarn@") ?
       `S.PackageManager.Yarn({ manifest: packageJson, lockfile: S.file("//yarn.lock"), version: ${
         JSON.stringify(manager.slice(5))
