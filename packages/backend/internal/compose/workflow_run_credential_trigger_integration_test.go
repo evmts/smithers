@@ -76,6 +76,7 @@ func TestRunCredentialCannotStartCacheSavingWorkflowRunsPostgres(t *testing.T) {
 		})})
 	require.NoError(t, err)
 	invokedFlows := services.NewInvokedFlowService(pool, services.NewRepositoryJobService(q, nil, pool), nil)
+	services.ScopeFlowHosts(true, false, invokedFlows, nil)
 	invokedFlows.SetFlowDispatcher(dispatcher)
 	invokedFlows.SetFlowSourceReader(invokeTestSources{})
 	router := buildWorkflowTriggerRouter(q, pool, &routes.WorkflowHandler{

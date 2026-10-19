@@ -57,6 +57,13 @@ type InvokedFlowService struct {
 	terminal       WorkflowRunTerminalPublisher
 	sources        repositorySourceHost
 	background     InvokedBackgroundMachine
+
+	// install is true only once ScopeFlowHosts marks the service an
+	// install. Until then, and on hosted, it refuses every workflow-invoke
+	// host: Invoke answers 503 and a launch already queued fails terminally
+	// before any box is created. A composition that forgets ScopeFlowHosts
+	// is refused, never exposed.
+	install bool
 }
 
 func NewInvokedFlowService(pool *pgxpool.Pool, repositoryJobs *RepositoryJobService, workspaces InvokedFlowWorkspace) *InvokedFlowService {
@@ -144,11 +151,17 @@ func (s *InvokedFlowService) flowSourceCommit(ctx context.Context, launch Invoke
 	return commit, nil
 }
 
+// errInvokedFlowUnavailable is the 503 an invoke answers where no invoked
+// flow can start.
+func errInvokedFlowUnavailable() error {
+	return pkgerrors.New(pkgerrors.CodeServiceUnavailable, "the Flow runtime is not configured on this deployment")
+}
+
 // Invoke creates the queued flow-plane run and admits its Flow launch in one
 // transaction. It returns before any host is resolved or contacted.
 func (s *InvokedFlowService) Invoke(ctx context.Context, launch InvokedFlowLaunch, admit WorkflowRunAdmission) (db.WorkflowRun, db.WorkflowDefinition, error) {
-	if s == nil || s.pool == nil || s.dispatcher == nil || s.repositoryJobs == nil || s.sources == nil {
-		return db.WorkflowRun{}, db.WorkflowDefinition{}, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "the Flow runtime is not configured on this deployment")
+	if s == nil || s.pool == nil || s.dispatcher == nil || s.repositoryJobs == nil || s.sources == nil || !s.install {
+		return db.WorkflowRun{}, db.WorkflowDefinition{}, errInvokedFlowUnavailable()
 	}
 	if admit == nil {
 		return db.WorkflowRun{}, db.WorkflowDefinition{}, pkgerrors.Internal("workflow run admission is required")
@@ -186,6 +199,9 @@ func (s *InvokedFlowService) Invoke(ctx context.Context, launch InvokedFlowLaunc
 // insertInvocation writes the run, its one step, the Flow launch and the
 // invocation record in the caller's transaction.
 func (s *InvokedFlowService) insertInvocation(ctx context.Context, tx pgx.Tx, launch InvokedFlowLaunch, triggerCommit string) (db.WorkflowRun, db.WorkflowDefinition, error) {
+	if !s.install {
+		return db.WorkflowRun{}, db.WorkflowDefinition{}, errInvokedFlowUnavailable()
+	}
 	input := launch.Input
 	if len(input) == 0 {
 		input = json.RawMessage(`{}`)
@@ -316,6 +332,11 @@ func (s *InvokedFlowService) ResolveFlowHostTarget(ctx context.Context, target f
 	}
 	if s == nil || s.pool == nil || s.repositoryJobs == nil {
 		return refuse("runtime_resolver_unavailable", true)
+	}
+	if !s.install {
+		// Hosted starts no workflow-invoke host; a launch queued before
+		// ScopeFlowHosts fails here, before its box exists, and never retries.
+		return refuse("runtime_target_unsupported", false)
 	}
 	runID, err := strconv.ParseInt(target.BindingID, 10, 64)
 	if target.BindingKind != invokedFlowBinding || err != nil || runID <= 0 {

@@ -82,6 +82,7 @@ func TestTrustedMainManualFlowThroughInstallRouter(t *testing.T) {
 	require.NoError(t, err)
 	machine := &trustedMainMachineFixture{}
 	invoked := services.NewInvokedFlowService(pool, services.NewRepositoryJobService(q, nil, pool), machine)
+	services.ScopeFlowHosts(true, false, invoked, nil)
 	invoked.SetFlowSourceReader(invokeTestSources{})
 	invoked.SetFlowDispatcher(dispatch)
 	invoked.SetSecretInjector(services.NewSecretInjector(q, codec))

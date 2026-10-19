@@ -352,6 +352,7 @@ func TestInvokeWorkflowAdmitsInsideCIMinuteAdmission(t *testing.T) {
 		})})
 	require.NoError(t, err)
 	invoked := NewInvokedFlowService(pool, NewRepositoryJobService(q, nil, pool), invokedFlowTestWorkspaces{workspaceID: uuid.NewString()})
+	ScopeFlowHosts(true, false, invoked, nil)
 	invoked.SetFlowDispatcher(dispatcher)
 	invoked.SetFlowSourceReader(invokedFlowTestSources{flows: []string{"echo"}})
 
