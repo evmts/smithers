@@ -261,6 +261,10 @@
 
 ### Changed
 
+- M-49 relocates exported `decisionsDirectory` and template/effect path literals
+  to the `.smithers/` layout. Update consumers to the relocated paths and stop
+  relying on the old literal types.
+
 - `AgentAction` and `Agent` arm no completion judge by default: `claimCap`
   omitted on the action and the host leaves the claim brake off, and a
   positive cap arms it. A workflow that wants a model to read its completions

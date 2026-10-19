@@ -201,6 +201,11 @@
 
 ### Changed
 
+- The private `internal/NativeControl.HostState.executor.prepareAdoption` now
+  requires a third `executionDigest: string | undefined` argument. Internal
+  callers must pass the digest or explicit `undefined`; this is not a public API
+  compatibility change.
+
 - With no `AI_GATEWAY_API_KEY`, `smthrs run` and `smthrs serve` judge on a
   subscription through the model-to-judge adapter instead of failing every
   completion `unconfigured`: Claude Haiku on a signed-in Claude Code

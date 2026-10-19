@@ -124,6 +124,9 @@ of it.
 
 ### Changed
 
+- The `Home.Block`, `Home.Document` and `Home.Declaration` output unions now
+  include `view`. Handle the new member in exhaustive homepage consumers.
+
 - Bun suites can opt into `--isolate` with `testSuite(paths, { isolate: true })`
   for files that mutate process globals; defaults and Node argv stay unchanged.
   This temporary option costs about 3× wall time and is removed after #3696

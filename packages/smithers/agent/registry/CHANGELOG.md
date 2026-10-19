@@ -17,6 +17,10 @@
 
 ### Changed
 
+- Discovery warning outputs now include `retired_root` for the retired root flow
+  directory. Handle this member in exhaustive warning consumers and move flows
+  to `.smithers/flows/`.
+
 - A delegating flow's declared `capabilities` are the ceiling of its delegate
   grant. `flow.ts` and `flow.mdx` descriptors that name `flows` carry the
   intersection of the declaration and the delegate's wildcard instead of `["*"]`;
