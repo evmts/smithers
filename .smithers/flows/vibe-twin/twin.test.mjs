@@ -302,6 +302,11 @@ test("an export TypeScript itself can't name is reproduced, not a twin error (S1
     "host.ts(1,1): error TS2322: nope"
   ], pkg, ".")
   assert.deepEqual([...m].map(([k, v]) => [k, [...v]]), [["correction", ["TS2883:correctionLayers"]]])
+  const n = unnamedInferredTypes([
+    "AppStore.ts(3,14): error TS7056: The inferred type of this node exceeds the maximum length the compiler will serialize.",
+    "AppTransitionValidation.ts(9,14): error TS5088: The inferred type of 'validate' references a type with a cyclic structure which cannot be trivially serialized."
+  ], pkg, ".")
+  assert.deepEqual([...n].map(([k, v]) => [k, [...v]]), [["AppStore", ["TS7056:*"]], ["AppTransitionValidation", ["TS5088:validate"]]])
 })
 
 test("a twin's import.meta names the source file it twins (S20-1)", () => {

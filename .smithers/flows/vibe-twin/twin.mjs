@@ -890,11 +890,13 @@ export const privateMembers = (errors, pkg, dir) => {
 export const unnamedInferredTypes = (errors, pkg, dir) => {
   const out = new Map()
   for (const e of errors) {
-    const m = e.match(/^(.+?\.(?:tsx?|vibe))\(\d+,\d+\): error (TS2883|TS2742): The inferred type of '([^']+)'/)
+    // TS7056 (an inferred type too long to serialize) names no export: it matches by module.
+    const m = e.match(/^(.+?\.(?:tsx?|vibe))\(\d+,\d+\): error (TS2883|TS2742|TS5088): The inferred type of '([^']+)'/) ??
+      e.match(/^(.+?\.(?:tsx?|vibe))\(\d+,\d+\): error (TS7056)()/)
     if (!m) continue
     const rel = relative(join(pkg, dir), resolve(pkg, m[1])).replace(/\.(?:tsx?|vibe)$/, "")
     if (rel.startsWith("..")) continue
-    out.set(rel, new Set([...(out.get(rel) ?? []), `${m[2]}:${m[3]}`]))
+    out.set(rel, new Set([...(out.get(rel) ?? []), `${m[2]}:${m[3] || "*"}`]))
   }
   return out
 }
@@ -1233,8 +1235,9 @@ const runUnlocked = (pkgArg) => {
     const m = e.match(/^src-vibe\/(.+)\.vibe\(\d+,\d+\): error TS4094:/)
     if (m && undeclarable.has(m[1])) return false
     // The same export's inferred type that TypeScript itself can't name portably (S17-1).
-    const n = e.match(/^src-vibe\/(.+)\.vibe\(\d+,\d+\): error (TS2883|TS2742): The inferred type of '([^']+)'/)
-    return !(n && unnamed.get(n[1])?.has(`${n[2]}:${n[3]}`))
+    const n = e.match(/^src-vibe\/(.+)\.vibe\(\d+,\d+\): error (TS2883|TS2742|TS5088): The inferred type of '([^']+)'/) ??
+      e.match(/^src-vibe\/(.+)\.vibe\(\d+,\d+\): error (TS7056)()/)
+    return !(n && unnamed.get(n[1])?.has(`${n[2]}:${n[3] || "*"}`))
   })
   const missingOutputs = twinned.flatMap((rel) => [
     join(twinOutDir(pkg), `${rel}.js`),
