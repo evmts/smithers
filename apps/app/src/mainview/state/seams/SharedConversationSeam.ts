@@ -68,7 +68,8 @@ export const SharedConversationSchema = z.object({
 export type SharedConversation = z.infer<typeof SharedConversationSchema>
 export const ConversationViewSchema = z.object({ instructions: z.array(z.object({ id: z.string(), command: z.string(), payload: z.record(z.string(), z.unknown()) })).default([]), scroll_anchor: z.string().optional(), card_view: z.record(z.string(), z.unknown()).optional(), last_seen_seq: z.number().int().nonnegative().optional(), toasts_hidden: z.boolean().optional(), global_toasts_hidden: z.boolean().optional(), timeline_visible_until: z.string().nullable().optional(), queue: z.array(z.object({ id: z.string(), prompt: z.string() })).default([]) }).passthrough()
 export type ConversationView = z.infer<typeof ConversationViewSchema>
-export interface ConversationSnapshot { readonly view?: ConversationView; readonly queue?: readonly { id: string; prompt: string }[]; readonly conversation?: SharedConversation; readonly error?: string }
+/** Only the first loaded view restores position; later live scroll saves keep following intact. */
+export interface ConversationSnapshot { readonly initialScrollAnchor?: string; readonly view?: ConversationView; readonly queue?: readonly { id: string; prompt: string }[]; readonly conversation?: SharedConversation; readonly error?: string }
 
 /** Shared output stays outside browser history. Account/branch generations fence every read. */
 export function createSharedConversationSeam(ctx: ControllerContext, live?: LiveTopics) {
@@ -76,7 +77,7 @@ export function createSharedConversationSeam(ctx: ControllerContext, live?: Live
   let key = "", branch = "main", stopLive: (() => void) | undefined
   let stopTrace: (() => void) | undefined
   let stopView: (() => void) | undefined
-  let reading = false, again = false, viewRevision = 0
+  let reading = false, again = false, viewRevision = 0, initialViewRead = false
   let saving = Promise.resolve()
   const serializeView = (work: () => Promise<void>) => {
     const result = saving.then(work)
@@ -109,6 +110,12 @@ export function createSharedConversationSeam(ctx: ControllerContext, live?: Live
         // form's draft, and nothing confirms or runs until the person submits.
         // No HTTP command, shared mutation or model continuation reaches this door.
         const outcome = await ctx.commands.submit({ name: command, payload: instruction.payload, actor: "agent", ...(ask ? { ask } : {}) })
+        // A reader's change request was understood and refused, not a broken conversation.
+        // Keep the same gate sentence in Ask; never offer a Start button or dispatch a write.
+        if (ask && command === "change.ask" && outcome.status === "failed") {
+          await ctx.store.dispatch({ type: "message.appended", actor: "system", text: outcome.error, spoken: true, diagnostic: { login: owner, branch: at } }).isPersisted.promise
+          return
+        }
         if (outcome.status !== "form" && (ask || outcome.status !== "executed")) throw new SharedConversationFailure({ sentence: `/${command} unavailable` })
       }).catch(error => { if (valid(revision)) ctx.failures.report("seam.failure", error, "conversation-ui") }).finally(() => applying.delete(id))
     }
@@ -130,7 +137,7 @@ export function createSharedConversationSeam(ctx: ControllerContext, live?: Live
         const viewResponse = await ctx.boundedFetch(`${ctx.baseUrl}/api/conversations/${encodeURIComponent(at)}/view-state`, { credentials: "same-origin" })
         if (!viewResponse.ok) throw new SharedConversationFailure({ sentence: "View unavailable" })
         const view = ConversationViewSchema.parse(await viewResponse.json())
-        if (valid(revision) && viewing === viewRevision) { publish({ ...snapshot, conversation, view, queue: view.queue, error: undefined }); applyInstructions(view, revision) }
+        if (valid(revision) && viewing === viewRevision) { publish({ ...snapshot, ...(!initialViewRead ? { initialScrollAnchor: view.scroll_anchor } : {}), conversation, view, queue: view.queue, error: undefined }); initialViewRead = true; applyInstructions(view, revision) }
         else if (initial) {
           await saving
           if (valid(revision)) publish({ ...snapshot, conversation, error: undefined })
@@ -140,7 +147,7 @@ export function createSharedConversationSeam(ctx: ControllerContext, live?: Live
         // Generation checks still clear all output when the account or branch changes.
         if (valid(revision)) publish({ ...snapshot, conversation, error: "View unavailable" })
       }
-    } catch { if (valid(revision)) publish({ error: "Conversation unavailable" }) }
+    } catch { if (valid(revision)) publish({ initialScrollAnchor: snapshot.initialScrollAnchor, error: "Conversation unavailable" }) }
     finally { reading = false; if (again) { again = false; void read() } }
   }
   const saveView = (patch: Partial<Pick<ConversationView, "scroll_anchor" | "card_view" | "last_seen_seq" | "toasts_hidden" | "global_toasts_hidden" | "timeline_visible_until">>) => {
@@ -199,14 +206,14 @@ export function createSharedConversationSeam(ctx: ControllerContext, live?: Live
     if (next === key) return
     if (scrollTimer !== undefined) clearTimeout(scrollTimer)
     scrollTimer = undefined
-    key = next; branch = nextBranch; ++generation; ++viewRevision; stopLive?.(); stopTrace?.(); stopView?.(); stopLive = undefined; stopTrace = undefined; stopView = undefined; publish({})
+    key = next; branch = nextBranch; initialViewRead = false; ++generation; ++viewRevision; stopLive?.(); stopTrace?.(); stopView?.(); stopLive = undefined; stopTrace = undefined; stopView = undefined; publish({})
     if (!key) return
     // The HTTP response and authorized topic use the same SharedEntries projection.
     // Topic invalidations trigger a fresh bounded read, including reconnects.
     stopLive = live?.subscribe(`conversation:${branch}`, () => {
       const topic = live.getSnapshot(`conversation:${branch}`)
       if (topic?.error === "unsupported") return
-      if (topic?.error) { ++generation; publish({ error: "Conversation unavailable" }); return }
+      if (topic?.error) { ++generation; publish({ initialScrollAnchor: snapshot.initialScrollAnchor, error: "Conversation unavailable" }); return }
       void read()
     })
     // Progress changes the trace snapshot even when the public answer has no
@@ -214,7 +221,7 @@ export function createSharedConversationSeam(ctx: ControllerContext, live?: Live
     stopTrace = live?.subscribe(`conversation-trace:${branch}`, () => {
       const topic = live.getSnapshot(`conversation-trace:${branch}`)
       if (topic?.error === "unsupported") return
-      if (topic?.error) { ++generation; publish({ error: "Conversation unavailable" }); return }
+      if (topic?.error) { ++generation; publish({ initialScrollAnchor: snapshot.initialScrollAnchor, error: "Conversation unavailable" }); return }
       void read()
     })
     if (identity?.memberId) stopView = live?.subscribe(`view:${identity.memberId}:${branch}`, () => { void read() })

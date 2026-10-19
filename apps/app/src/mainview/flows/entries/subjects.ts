@@ -214,14 +214,15 @@ export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
       grammar: positional("subject"),
       form: {
         fields: { operation: { hidden: true }, cardId: { hidden: true } },
-        requires: payload => payload.operation === "file" ? ["cardId", "path"] : payload.operation === "pins" ? ["changeId", "from", "to"] : payload.operation === "checks" ? ["changeId", "seq"] : payload.operation ? ["changeId"] : undefined,
+        requires: payload => payload.operation === "hosted-change" ? ["cardId"] : payload.operation === "file" ? ["cardId", "path"] : payload.operation === "pins" ? ["changeId", "from", "to"] : payload.operation === "checks" ? ["changeId", "seq"] : payload.operation ? ["changeId"] : undefined,
         optionalFields: payload => payload.operation === "change-diff" ? ["from", "to", "path"] : payload.operation === "change" ? ["rev"] : [],
         args: payload => JSON.stringify(payload)
       },
       payloadRequires: payload => payload.operation && payload.operation !== "file" ? ["signed-in"] : [],
       agent: "run", input: Schema.Struct({ subject: Schema.optional(Schema.String), branch: Schema.optional(Schema.String), path: Schema.optional(Schema.String), entry: Schema.optional(Schema.String),
-        operation: Schema.optional(Schema.Literals(["change", "change-diff", "pins", "checks", "file"])), changeId: Schema.optional(Schema.String), rev: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))), from: Schema.optional(Schema.String), to: Schema.optional(Schema.String), seq: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))), cardId: Schema.optional(Schema.String) }),
+        operation: Schema.optional(Schema.Literals(["change", "change-diff", "pins", "checks", "file", "hosted-change"])), changeId: Schema.optional(Schema.String), rev: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))), from: Schema.optional(Schema.String), to: Schema.optional(Schema.String), seq: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))), cardId: Schema.optional(Schema.String) }),
       handler: ({ subject, branch, path, entry, operation, changeId, rev, from, to, seq, cardId }) => {
+        if (operation === "hosted-change") return cardId ? actions.openHostedDiff(cardId) : "Choose a change"
         if (operation === "file") return cardId && path ? actions.openDiffFile(cardId, path) : "Select a diff and file"
         if (operation === "change") return changeId ? actions.viewChange(changeId, rev) : "Choose a change"
         if (operation === "change-diff") return changeId ? actions.diffChange(changeId, from, to, path) : "Choose a change"

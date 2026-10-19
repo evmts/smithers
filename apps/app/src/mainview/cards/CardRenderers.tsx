@@ -1,3 +1,4 @@
+import { hostedChangeCardFamily } from "./HostedChangeCard"
 import { DEFERRED_CARD_KINDS } from "../state/CardAvailability"
 import { proposalCardFamily } from "./ProposalContainer"
 import { SetupCard, setupCardFamily, type SetupCardProps } from "./SetupCard"
@@ -68,6 +69,7 @@ export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
   settingsCardFamily,
   membersCardFamily,
   commandsCardFamily,
+  hostedChangeCardFamily,
   historyCardFamily,
   turnCardFamily,
   approvalCardFamily,
@@ -108,6 +110,7 @@ export const CARD_RENDERERS: CardFamily<RenderedCardKind> = {
   ...settingsCardFamily,
   ...membersCardFamily,
   ...commandsCardFamily,
+  ...hostedChangeCardFamily,
   ...historyCardFamily,
   ...turnCardFamily,
   ...approvalCardFamily,

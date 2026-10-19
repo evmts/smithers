@@ -12,6 +12,10 @@
 .repository-chat .app-shell { height:100%; min-height:0; flex-direction:column; }
 .repository-chat .app-chat-controls,.repository-chat .shell-rail,.repository-chat .auth-shortcut { display:none; }
 .repository-chat .composer-overlay { position:relative; inset:auto; flex:none; padding-top:0; background:var(--surface); }
+.repository-chat .composer-overlay[hidden] { display:none; }
+.repository-chat .app-shell .smithers-transcript .sui-chat-messages > :first-child { margin-top:0; }
+.repository-chat .sui-msg-scroller-item { flex-shrink:0; }
+.repository-chat .app-shell .smithers-transcript .sui-chat-messages { padding:20px; }
 .repository-chat .composer-wrap { width:100%; max-width:100%; }
 .repository-chat .chat-column { width:100%; max-width:100%; }
 .repo-ui-markdown { overflow-wrap:anywhere; }
@@ -75,3 +79,4 @@
 
 .repo-frame-scroll { height:100%; overflow-y:auto; overflow-x:hidden; }
 .repo-frame-global,.repo-frame-page { width:100cqw; }
+

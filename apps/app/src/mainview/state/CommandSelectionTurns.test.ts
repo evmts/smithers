@@ -18,3 +18,15 @@ test("browser prompts cannot run legacy command selection or inference", async (
   expect(store.session().theme).toBe(before)
   expect(store.collections.toolCalls.size).toBe(0)
 })
+
+for (const slash of ["/change add slugify(text) with tests", "/change"]) test(`hosted slash keeps typed requests and gate denial: ${slash}`, async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, silentAgent, {})
+  controller.send(slash)
+  await settled()
+  await store.settled?.()
+  const messages = [...store.collections.messages.values()]
+  expect(messages.filter(message => message.role === "user").map(message => message.text)).toEqual(slash === "/change" ? [] : [slash])
+  expect(messages.some(message => message.text === "Sign in to start an agent.")).toBe(true)
+  expect([...store.collections.cards.values()].some(card => card.kind === "hosted-change")).toBe(false)
+})
