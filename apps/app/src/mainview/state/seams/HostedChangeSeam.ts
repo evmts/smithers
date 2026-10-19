@@ -21,6 +21,7 @@ import {
   hostedSessionPhase,
   hostedFailureReason,
   landingRefusal,
+  type CodingResult,
   type HostedObservation
 } from "./HostedChange"
 
@@ -88,6 +89,10 @@ export const codingResultOf = (messages: unknown) => {
   }
   return null
 }
+// The agent's change is read by its commit. Its head is unlanded, and the changes index holds only landed
+// change ids, so a read by head_change_id answers 404 "commit not found" (QA b-zg9aml, PM d-n65pkn).
+const agentHead = (repo: string, result: CodingResult | null | undefined) =>
+  result?.head_commit ? `${repoPath(repo)}/changes/${encodeURIComponent(result.head_commit)}` : null
 export const createHostedChangeSeam = (ctx: SeamContext, clock: HostedChangeScheduler = scheduler) => {
   const client = createCloudClient(ctx, { retainFailurePayload: true })
   const flights = actorSharedState(ctx, "hosted-change-flights", () => new Map<string, Promise<unknown>>())
@@ -220,11 +225,9 @@ export const createHostedChangeSeam = (ctx: SeamContext, clock: HostedChangeSche
       queued()
       if (failed) return hostedFailureReason(session)
       if (done) {
-        if (result?.head_change_id) {
-          const [files, diff] = await Promise.all([
-            client.get(`${repoPath(row.repo)}/changes/${encodeURIComponent(result.head_change_id)}/files`),
-            client.get(`${repoPath(row.repo)}/changes/${encodeURIComponent(result.head_change_id)}/diff`)
-          ])
+        const head = agentHead(row.repo, result)
+        if (head) {
+          const [files, diff] = await Promise.all([client.get(`${head}/files`), client.get(`${head}/diff`)])
           if (!current()) return TOAST_SUPERSEDED
           if ("body" in files) {
             const body = files.body as { files?: unknown }
@@ -534,13 +537,10 @@ export const createHostedChangeSeam = (ctx: SeamContext, clock: HostedChangeSche
       return
     }
     const current = captureCloudOwner(ctx, false)
-    const suffix = row.pull
-      ? `/landings/${row.pull.landing_number}/diff`
-      : row.result?.head_change_id
-        ? `/changes/${encodeURIComponent(row.result.head_change_id)}/diff`
-        : null
-    if (!suffix) return
-    const response = await client.get(`${repoPath(row.repo)}${suffix}`)
+    const head = agentHead(row.repo, row.result)
+    const path = row.pull ? `${repoPath(row.repo)}/landings/${row.pull.landing_number}/diff` : head ? `${head}/diff` : null
+    if (!path) return
+    const response = await client.get(path)
     if (!current()) return
     if ("error" in response) {
       await patch(id, { filesError: response.error })

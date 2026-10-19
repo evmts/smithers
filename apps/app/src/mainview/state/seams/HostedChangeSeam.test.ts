@@ -676,8 +676,8 @@ test("browser no-change fixture completes with empty files and an offline testin
   expect(reads).toEqual([
     "/api/repos/maya/tinyhttp/agent/sessions/hosted-session",
     "/api/repos/maya/tinyhttp/agent/sessions/hosted-session/messages",
-    "/api/repos/maya/tinyhttp/changes/turn-head/files",
-    "/api/repos/maya/tinyhttp/changes/turn-head/diff"
+    `/api/repos/maya/tinyhttp/changes/${head}/files`,
+    `/api/repos/maya/tinyhttp/changes/${head}/diff`
   ])
   expect(h.store.session().hostedChanges![0]).toMatchObject({
     phase: "done", noChange: true, filesRead: true, files: [], result: codingResult,
@@ -685,6 +685,62 @@ test("browser no-change fixture completes with empty files and an offline testin
   })
 })
 
+// The agent's head is unlanded: the changes index answers 404 for its change id and 200 for its commit
+// (QA b-zg9aml). Every read of the agent's work goes by head_commit (PM d-n65pkn).
+const agentRepo = (headCommit: string | null) => {
+  const sha = "c3a73c11".padEnd(40, "0")
+  const codingResult = { head_commit: headCommit === null ? null : sha, head_change_id: "suoowzuo", test_receipt: null }
+  const reads: string[] = []
+  const http = async (url: string, init?: RequestInit) => {
+    const path = new URL(url, "https://smithers.test").pathname
+    if (init?.method === "POST") return json(path.endsWith("/messages") ? {} : { id: "hosted-session" }, 201)
+    reads.push(path)
+    if (path.endsWith("/messages")) return json([
+      { id: 3, session_id: "hosted-session", sequence: 2, role: "assistant", created_at: "2026-10-19T10:01:12Z",
+        parts: [{ part_index: 0, type: "coding_result", content: codingResult }] }
+    ])
+    if (path.includes("/changes/suoowzuo")) return json({ code: "not_found", message: "commit not found" }, 404)
+    if (path.endsWith("/files")) return json([{ path: "index.js" }, { path: "index.test.js" }])
+    if (path.endsWith("/diff")) return json({ file_diffs: [
+      { path: "index.js", additions: 20, deletions: 1, patch: "+export const x = 1" },
+      { path: "index.test.js", additions: 1, deletions: 0, patch: "+test('x')" }
+    ] })
+    return json({ ...session, id: "hosted-session", message_count: 1, base_commit: "a".repeat(40),
+      run: { id: 42, status: "success", model: "m", started_at: "2026-10-19T10:00:00Z", finished_at: "2026-10-19T10:01:12Z" } })
+  }
+  return { sha, reads, http }
+}
+test("a finished turn reads the agent's files and diff by head_commit, never by change id", async () => {
+  const repo = agentRepo("sha")
+  const h = await setup(repo.http)
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "change" })
+  await h.done()
+  expect(repo.reads.filter(path => path.includes("/changes/"))).toEqual([
+    `/api/repos/maya/tinyhttp/changes/${repo.sha}/files`,
+    `/api/repos/maya/tinyhttp/changes/${repo.sha}/diff`
+  ])
+  expect(h.store.session().hostedChanges![0]).toMatchObject({ phase: "done", filesRead: true })
+  expect(h.store.session().hostedChanges![0]?.filesError).toBeUndefined()
+  expect(h.store.session().hostedChanges![0]?.files.map(file => file.path)).toEqual(["index.js", "index.test.js"])
+})
+test("opening the agent's diff before a pull request reads it by head_commit", async () => {
+  const repo = agentRepo("sha")
+  const h = await setup(repo.http)
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "change" })
+  await h.done()
+  const id = h.store.session().hostedChanges![0]!.id
+  repo.reads.length = 0
+  await h.seam.openHostedDiff(id)
+  expect(repo.reads).toEqual([`/api/repos/maya/tinyhttp/changes/${repo.sha}/diff`])
+  expect(h.store.session().hostedChanges![0]).toMatchObject({ diffOpen: true })
+})
+test("a coding result without a head commit makes no change read", async () => {
+  const repo = agentRepo(null)
+  const h = await setup(repo.http)
+  await h.seam.askHostedChange({ repo: "maya/tinyhttp", request: "change" })
+  await h.done()
+  expect(repo.reads.some(path => path.includes("/changes/"))).toBe(false)
+})
 const fakeScheduler = () => {
   const pending = new Map<number, { delay: number; callback: () => void }>()
   const delays: number[] = []
