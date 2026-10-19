@@ -9,6 +9,9 @@ import "./repository.css"
 
 export const RepositoryAskContext = createContext<((runCommand?: RunDynamicCommand) => void) | null>(null)
 
+/** Whether the frame's Ask is open: a view with its own prompt (the Code home's prompt block) shows one prompt, so it steps aside while the Ask is open. */
+export const RepositoryAskOpenContext = createContext<boolean>(false)
+
 /**
  * The frame's notice region (the mock's `.repo-ui-toasts`), set while the Ask is
  * collapsed: ShellRail portals its already filtered ToastStack there, so a live
@@ -96,7 +99,7 @@ export function RepoFrame({ repo, login, guest, publicRepo, ask, onRunCommand, c
         </div>
         <nav className="repo-ui-tabs" aria-label="Repository">{tabs.map(([path, label]) => <a className="repo-ui-tab" key={path} href={`${base}${path ? `/${path}` : ""}`} aria-current={(path === "issues" ? window.location.pathname.startsWith(`${base}/issues`) : path === "pulls" ? /\/pulls?(?:\/|$)/.test(window.location.pathname.slice(base.length)) : window.location.pathname.replace(/\/$/, "") === base || fileRoute) ? "page" : undefined}>{label}{(path === "issues" ? issueCount : path === "pulls" ? pullCount : undefined) !== undefined && <span className="repo-ui-counter">{path === "issues" ? issueCount : pullCount}</span>}</a>)}</nav>
       </header>
-      <main id="repo-content" tabIndex={-1} className="repo-frame-content" data-keyboard-pane="Repository"><RepositoryAskContext.Provider value={openAsk}>{children}</RepositoryAskContext.Provider></main>
+      <main id="repo-content" tabIndex={-1} className="repo-frame-content" data-keyboard-pane="Repository"><RepositoryAskContext.Provider value={openAsk}><RepositoryAskOpenContext.Provider value={expanded}>{children}</RepositoryAskOpenContext.Provider></RepositoryAskContext.Provider></main>
     </div>
     <aside id="repo-ask" className="repo-frame-ask" aria-label="Ask" data-keyboard-pane="Ask" onKeyDownCapture={event => {
       // A collapsed Ask's only reachable controls are its notices in the frame's region: the chord opens the Ask

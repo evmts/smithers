@@ -2,7 +2,7 @@ import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
-import { createChangeSeam, DEGRADED_CHANGE_REFUSAL } from "./ChangeSeam"
+import { createChangeSeam, DEGRADED_CHANGE_REFUSAL, readRepositoryChange } from "./ChangeSeam"
 import { SIGN_OUT_REFUSAL } from "./CloudSignIn"
 import type { SeamContext } from "./SeamContext"
 
@@ -278,7 +278,7 @@ const harness = async (
       return options.workspaceError ?? { value: `shown ${workspaceId}` }
     }
   })
-  return { store, storage, seam, requests, bodies, shownWorkspaces }
+  return { store, storage, seam, requests, bodies, shownWorkspaces, ctx }
 }
 
 const textOf = (result: unknown): string | undefined =>
@@ -1628,4 +1628,29 @@ test("an unread landing target never invents main for a change's stack (#3831)",
   await seam.viewChange("qupxosqw")
   expect(payloadOf(store)?.stack).toBeNull()
   expect(payloadOf(store)?.unread?.stack).toBeDefined()
+})
+
+/*
+ * The Code home's latest-commit row reads the branch head's change record
+ * (repo-ui-spec view 1): the one DTO, landed in the changes collection, with
+ * no cloud sign-in demanded, since the server decides who reads a public
+ * repository's head. A refusal is the answer; nothing stands in for it.
+ */
+describe("readRepositoryChange", () => {
+  test("lands the head's record for a signed-out reader, with message, author and timestamp", async () => {
+    const h = await harness({ [CHANGE_ROUTE]: json(200, CHANGE) }, { signedIn: false })
+    const read = await readRepositoryChange(h.ctx, "will/smithers", "qupxosqw")
+    expect(read).toMatchObject({ changeId: "qupxosqw", commitId: "a03f5f", description: "Add the split flow\n\nLong body.", authorName: "will", timestamp: "2026-09-01T10:00:00Z" })
+    expect(h.store.collections.changes.get("will/smithers#qupxosqw")).toMatchObject({ authorName: "will", commitId: "a03f5f" })
+    expect(h.requests).toEqual([`GET ${CHANGE_ROUTE}`])
+    expect(changeCardOf(h.store)).toBeUndefined()
+  })
+  test("a refused or malformed read lands nothing", async () => {
+    const refused = await harness({ [CHANGE_ROUTE]: json(401, { message: "authentication required" }) }, { signedIn: false })
+    expect(await readRepositoryChange(refused.ctx, "will/smithers", "qupxosqw")).toEqual({ error: "authentication required" })
+    expect(refused.store.collections.changes.get("will/smithers#qupxosqw")).toBeUndefined()
+    const malformed = await harness({ [CHANGE_ROUTE]: json(200, { nope: true }) }, { signedIn: false })
+    expect(await readRepositoryChange(malformed.ctx, "will/smithers", "qupxosqw")).toEqual({ error: "Smithers Cloud's answer for change qupxosqw was malformed." })
+    expect(malformed.store.collections.changes.get("will/smithers#qupxosqw")).toBeUndefined()
+  })
 })

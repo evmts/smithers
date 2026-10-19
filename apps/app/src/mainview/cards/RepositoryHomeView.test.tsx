@@ -24,13 +24,22 @@ afterEach(() => { while (mounted.length > 0) mounted.pop()?.() })
 
 const COPY = "shared:ada/widgets"
 
-const render = (home: RepositoryHomeAnswer | undefined, treeCopyId: string | null = COPY) => {
+/**
+ * `flows` names what THIS host's registry serves (`Commands.find`); absent,
+ * the view renders outside a controller, as the frame's tests mount it.
+ * `member` is the viewer's membership; absent is a visitor.
+ */
+const render = (home: RepositoryHomeAnswer | undefined, treeCopyId: string | null = COPY, viewer: { member?: boolean; flows?: ReadonlyArray<string> } = {}) => {
   const calls: Array<[string, string | undefined]> = []
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)
-  act(() => root.render(<RepositoryHomeView repo="ada/widgets" home={home} treeCopyId={treeCopyId ?? undefined}
-    onRunCommand={(name, args) => { calls.push([name, args]) }} />))
+  const view = <RepositoryHomeView repo="ada/widgets" home={home} treeCopyId={treeCopyId ?? undefined} member={viewer.member}
+    onRunCommand={(name, args) => { calls.push([name, args]) }} />
+  const controller = viewer.flows === undefined ? null : {
+    commands: { find: (name: string) => viewer.flows!.includes(name) ? { metadata: { name } } : undefined }
+  } as unknown as AppController
+  act(() => root.render(controller === null ? view : <ControllerContext value={controller}>{view}</ControllerContext>))
   mounted.push(() => { act(() => root.unmount()); host.remove() })
   return { host, calls }
 }
@@ -59,14 +68,59 @@ test("a declared homepage replaces the tree, and the tree is one press away", ()
   expect(calls).toEqual([["files", JSON.stringify({ operation: "tree", copy: COPY })]])
 })
 
-test("a declared flow is an offer, never a launch: it runs only when the person presses it", () => {
+test("links open the app's own pages in place and other sites in a new tab", () => {
+  const home = RepositoryHomeSchema.parse({ kind: "blocks", blocks: [
+    { type: "links", links: [{ label: "Docs", url: "https://smithers.sh/docs/" }, { label: "Report a bug", url: "/bug" }] }
+  ] })
+  const { host } = render(home)
+  const docs = host.querySelector<HTMLAnchorElement>('a[href="https://smithers.sh/docs/"]')!
+  expect(docs.target).toBe("_blank")
+  expect(docs.rel).toContain("noopener")
+  const bug = host.querySelector<HTMLAnchorElement>('a[href="/bug"]')!
+  expect(bug.textContent).toBe("Report a bug")
+  expect(bug.target).toBe("")
+  expect(bug.getAttribute("rel")).toBeNull()
+})
+
+test("a declared flow is an offer, never a launch: it runs only when a member presses it", () => {
   const home = RepositoryHomeSchema.parse({ kind: "blocks", blocks: [{ type: "app", flow: "review", title: "Review", picture: "review" }] })
-  const { host, calls } = render(home)
+  const { host, calls } = render(home, COPY, { member: true, flows: ["review"] })
   expect(calls).toEqual([])
   const app = host.querySelector<HTMLButtonElement>('[data-flow="review"]')!
   app.click()
   // The registry owns the run: its actor, role and confirmation are untouched here.
   expect(calls).toEqual([["review", undefined]])
+})
+
+/*
+ * App blocks are member-only (app-spec row 6), and a block whose flow this
+ * host has no door for renders for nobody: the registry's `find` is the one
+ * availability rule, so a visitor never meets a control that answers "This
+ * action is no longer available". The text, prompt and links blocks stay.
+ */
+test("app blocks never render for a visitor, nor for anyone when the host lacks the flow", () => {
+  const home = RepositoryHomeSchema.parse({ kind: "blocks", blocks: [
+    { type: "text", text: "Smithers on Smithers" },
+    { type: "app", flow: "issue.implement", title: "Fix an issue", picture: "issue" },
+    { type: "app", flow: "review", title: "Review a PR", picture: "review" },
+    { type: "links", links: [{ label: "Docs", url: "https://example.com/docs" }] }
+  ] })
+  // Signed out, or signed in without membership: no app block, whatever the host serves.
+  for (const viewer of [{}, { flows: ["review", "issue.implement"] }, { member: false, flows: ["review", "issue.implement"] }]) {
+    const { host } = render(home, COPY, viewer)
+    expect(host.querySelectorAll(".repository-home-app")).toHaveLength(0)
+    expect(host.textContent).toContain("Smithers on Smithers")
+    expect(host.querySelector('a[href="https://example.com/docs"]')).not.toBeNull()
+  }
+  // A member sees only the blocks whose flow this host serves; outside a controller nothing is known, and unknown is offered, never hidden.
+  const served = render(home, COPY, { member: true, flows: ["review"] })
+  expect([...served.host.querySelectorAll(".repository-home-app")].map(button => button.textContent)).toEqual(["Review a PR"])
+  expect(served.host.querySelector('[data-flow="issue.implement"]')).toBeNull()
+  const unknown = render(home, COPY, { member: true })
+  expect(unknown.host.querySelectorAll(".repository-home-app")).toHaveLength(2)
+  // A home of only unserved app blocks leaves nothing, not an empty box.
+  const onlyApps = render(RepositoryHomeSchema.parse({ kind: "blocks", blocks: [{ type: "app", flow: "issue.implement", title: "Fix an issue", picture: "issue" }] }), COPY, { member: true, flows: [] })
+  expect(onlyApps.host.querySelector("[data-testid=repository-home]")).toBeNull()
 })
 
 test("a README homepage renders as the repository's view", () => {

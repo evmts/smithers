@@ -183,12 +183,22 @@ describe("resolved homepage links (unit)", () => {
       .toEqual({ type: "links", links: [{ label: "Guide", url }] })
   })
 
+  // A repository's home links its own host's pages (Install Smithers -> /, Report a bug -> /bug) by origin-relative path.
+  test.each(["/", "/bug", "/docs/installation/", "/smithersai/smithers/issues?q=is:todo"])("accepts the origin-relative path %s", (url) => {
+    expect(RepositoryHomeBlockSchema.parse({ type: "links", links: [{ label: "Here", url }] }))
+      .toEqual({ type: "links", links: [{ label: "Here", url }] })
+  })
+
+  test.each(["//evil.example/x", "bug", "javascript:alert(1)", "/bad\\path", "ftp://example.com/x"])("rejects %s", (url) => {
+    expect(RepositoryHomeBlockSchema.safeParse({ type: "links", links: [{ label: "Here", url }] }).success).toBe(false)
+  })
+
   test.each([
     "ftp://example.com/guide",
     "file:///etc/passwd",
     "mailto:will@example.com",
     "javascript:alert(1)",
-    "/guide",
+    "//guide.example/x",
     "example.com/guide",
     "https://",
     "",
@@ -334,7 +344,8 @@ describe("resolved homepage links", () => {
         "javascript:alert(1)",
         "https://",
         "HtTp://",
-        "/relative"
+        "//relative.example/x",
+        "relative"
       ]
     ) expect(decode(url).success).toBe(false)
   })

@@ -638,10 +638,9 @@ test("a stack-only repository landing shows its fallback and keeps Files reachab
   expect(unavailable.dataset.stack).toBe("refused")
   expect(unavailable.querySelector('[role="status"]')?.textContent).toContain("could not open the history's event stream")
   expect(writes).toEqual([])
-  const files = home!.querySelector<HTMLButtonElement>(".repository-home-files")
-  expect(files).not.toBeNull()
-  flushSync(() => files!.click())
-  await settled()
+  // Design (D): the file table is on the page, opened for the arrival; no Files button to press.
+  expect(host.querySelector(".repository-home-files")).toBeNull()
+  expect(host.querySelector("section[aria-label=Files]")).not.toBeNull()
   expect([...store.collections.repoTree.values()]).toContainEqual(expect.objectContaining({
     copyId: `shared:${REPO}`, path: "", state: "loaded", entries: [{ name: "README.md", kind: "file" }]
   }))
@@ -690,10 +689,9 @@ test("a served stack is the repository landing's own content, with Files reachab
   expect(stack!.querySelector('[role="status"]')).toBeNull()
   // Opening the page read; it never wrote, admitted a model or launched a flow.
   expect(writes).toEqual([])
-  const files = host.querySelector<HTMLButtonElement>(".repository-home-files")
-  expect(files).not.toBeNull()
-  flushSync(() => files!.click())
-  await settled()
+  // Design (D): the file table is on the page, opened for the arrival; no Files button to press.
+  expect(host.querySelector(".repository-home-files")).toBeNull()
+  expect(host.querySelector("section[aria-label=Files]")).not.toBeNull()
   expect([...store.collections.repoTree.values()]).toContainEqual(expect.objectContaining({
     copyId: `shared:${REPO}`, path: "", state: "loaded", entries: [{ name: "README.md", kind: "file" }]
   }))
@@ -741,8 +739,64 @@ test("a stack the host stops serving is not left on the landing as live work", a
   // The work it last read is gone, not presented as current.
   expect(refused.textContent).not.toContain("#2 Wire the deep link")
   expect(refused.querySelector('[data-testid="repository-home-stack-counts"]')).toBeNull()
-  // The tree is still one press away.
-  expect(host.querySelector(".repository-home-files")).not.toBeNull()
+  // The file table is still on the page (Design (D): no Files button).
+  expect(host.querySelector("section[aria-label=Files]")).not.toBeNull()
+})
+
+/*
+ * The README below Files on a declared home (repo-ui-spec view 1) is read
+ * once the root tree arrives, and that arrival is the store's own dispatch:
+ * the tree's change reaches the README reader inside the store's open
+ * transaction. A row written there joined that transaction, so the store's
+ * commit took it back again; when the README answered first, the page's live
+ * view kept the stale row and never painted the README (repository-frame.spec.ts,
+ * member pages, 2026-10-19). The row the Code home reads is written once, by
+ * the read's own answer, and nothing takes it back.
+ */
+test("a declared home's README, read once the tree arrives, is written once and reaches the mounted Code home", async () => {
+  const { readmeReadKey, repositoryReadmeReads } = await import("./repository/RepositoryCodeRead")
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const readmeReads: string[] = []
+  const backend = ownedRepository({
+    [`${ROOT}/home`]: json(200, { kind: "blocks", blocks: [{ type: "text", text: "Repository introduction" }] }),
+    [`${ROOT}/flows`]: json(200, []),
+    [`${ROOT}/bookmarks`]: bookmarks("main"),
+    [`${ROOT}/contents`]: json(200, [{ name: "src", path: "src", type: "dir" }, { name: "README.md", path: "README.md", type: "file", size: 36 }]),
+    [`${ROOT}/contents/README.md`]: json(200, { type: "file", content: "# Read me from the tree\n\nInstall it.", size: 36, encoding: "utf-8", commit_sha: "a".repeat(40), raw_url: `${ROOT}/contents/README.md?raw=1` })
+  })
+  const read = backend.services.fetchImpl
+  backend.services.fetchImpl = async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input)
+    if (new URL(url, "https://smithers.sh").pathname === `${ROOT}/contents/README.md`) { readmeReads.push(url); await gate }
+    return read(input, init)
+  }
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  window.history.replaceState(null, "", `/${REPO}`)
+  const target = requestedTarget(window.location)!
+  const controller = createAppController(store, silentAgent, { bootstrap: WEB, repositoryApp: target.repo, ...backend.services })
+  await controller.loadSession()
+  const { host } = mount(controller)
+  const requestId = beginRepositoryEntry(store, target.repo)
+  const key = readmeReadKey(target.repo, requestId)
+  const writes: string[] = []
+  const watch = repositoryReadmeReads.subscribeChanges(changes => {
+    for (const change of changes) if (change.key === key) writes.push(`${change.type}:${change.value.state}`)
+  })
+  try {
+    await openRequestedRepo(controller, backend.fetchImpl, target.repo, requestId)
+    await openRequestedSubject(controller, target.repo, target.subject, { requestId })
+    for (let attempt = 0; attempt < 40 && readmeReads.length === 0; attempt++) await settled(1)
+    expect(readmeReads).toEqual([`${ROOT}/contents/README.md?ref=main`])
+    // The tree's dispatch has committed while the README read is still out.
+    await settled()
+    release()
+    const heading = () => host.querySelector('section[aria-label="README"] h1')
+    for (let attempt = 0; attempt < 40 && heading() === null; attempt++) await settled(1)
+    expect(heading()?.textContent).toBe("Read me from the tree")
+    expect(host.querySelector('section[aria-label="README"]')?.textContent).toContain("README.md")
+    expect(writes).toEqual(["insert:ready"])
+  } finally { watch.unsubscribe() }
 })
 
 test("an admission lost during branch loading settles its code read as failed", async () => {

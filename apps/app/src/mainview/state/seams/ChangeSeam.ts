@@ -368,6 +368,30 @@ const parseChangeWire = (value: unknown, repoId: string): { readonly input: Chan
   }
 }
 
+/**
+ * One change's record, for a page that shows it rather than a card: the
+ * Code home's latest-commit row reads the branch head's change this way
+ * (message, author, age). The row lands in the changes collection through
+ * `change.loaded`, as a card's read would. The server decides who may read
+ * it: a refusal is the answer, never a stand-in, and no cloud sign-in is
+ * demanded here, since a public repository's head is a public read.
+ */
+export const readRepositoryChange = async (
+  ctx: SeamContext,
+  repoId: string,
+  changeId: string
+): Promise<ChangeInput | { readonly error: string }> => {
+  const current = captureCloudOwner(ctx, false)
+  const [owner = "", name = ""] = repoId.split("/")
+  const answer = await createCloudClient(ctx).get(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/changes/${encodeURIComponent(changeId)}`, `change ${changeId}`)
+  if (!current()) return { error: SIGN_OUT_REFUSAL }
+  if ("error" in answer) return { error: answer.error }
+  const parsed = parseChangeWire(answer.body, repoId)
+  if (parsed === null) return { error: `Smithers Cloud's answer for change ${changeId} was malformed.` }
+  ctx.dispatch({ type: "change.loaded", actor: "system", change: parsed.input })
+  return parsed.input
+}
+
 /* ---- the auxiliaries' wire shapes ---- */
 
 /** One file of the diff route's answer; the hunk inlines only under the cap. */

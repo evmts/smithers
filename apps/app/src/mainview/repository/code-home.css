@@ -126,3 +126,5 @@
 .repo-code-home-fix-links { display:flex; gap:8px; font-family:var(--font-mono); white-space:nowrap; flex:0 0 auto; }
 .repo-code-home-fix-links > a:first-child { min-width:32px; }
 .repo-code-home-fix-title { flex:1 1 180px; min-width:0; overflow-wrap:anywhere; }
+/* Design (B): a button inside a home block keeps its own width (the block is a grid, which would stretch it); never a full-width centered button. */
+.repo-code-home-block > .repo-ui-btn { justify-self: start; }

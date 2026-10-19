@@ -41,6 +41,9 @@ export type CommandActions =
     | "repositoryBranches"
     // Repository page bytes are view data, independent of the bounded chat read.
     | "readRepositoryFilePage"
+    // The Code home's latest-commit reads (the head's change record; Platform's commits read) are page data too.
+    | "readRepositoryChange"
+    | "readLatestCommit"
     // The History card reads archived chats and the header's label; `archive` and `history` are the acts.
     | "chatArchives"
     | "archiveLabel"
