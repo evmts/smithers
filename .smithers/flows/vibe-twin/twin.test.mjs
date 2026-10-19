@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { affectedTests, dropDefaultNever, exactPathPattern, fallbackFor, localNames, sourceExports, normalizeDts, parseDts, quality, sameReferencedLocals, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
+import { affectedTests, dropDefaultNever, suiteEnv, exactPathPattern, fallbackFor, localNames, sourceExports, normalizeDts, parseDts, quality, sameReferencedLocals, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
 
 test("declarations that differ only in relative import extensions are equal", () => {
   const ts = `import { type A } from "./ErrorCode.ts";\nexport { B } from "../x/y.ts";\nexport declare const c: import("./z.ts").Z;\n`
@@ -224,4 +224,14 @@ test("Effect.Effect's default never arguments compare equal, nested and around a
   assert.equal(dropDefaultNever("Effect.Effect<(a: X) => Effect.Effect<B, E, never>, never>"), "Effect.Effect<(a: X) => Effect.Effect<B, E>>")
   assert.equal(dropDefaultNever(`Effect.Effect<"a>b", never>`), `Effect.Effect<"a>b">`)
   assert.equal(dropDefaultNever("MyEffect.Effect<A, never>"), "MyEffect.Effect<A, never>", "another namespace is untouched")
+})
+
+test("suites run without CI, whatever the caller's environment says", () => {
+  process.env.CI = "true"
+  try {
+    assert.equal("CI" in suiteEnv(), false)
+    assert.equal(suiteEnv({ NODE_OPTIONS: "--x" }).NODE_OPTIONS, "--x")
+  } finally {
+    delete process.env.CI
+  }
 })

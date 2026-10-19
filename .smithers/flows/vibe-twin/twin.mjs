@@ -451,7 +451,7 @@ const vitest = (pkg, config, outputFile, files = []) => {
   if (config) args.push("--config", config)
   const vitestBin = bin(pkg, "vitest")
   if (!vitestBin) return { ran: false, pass: 0, fail: 0, skip: 0, failed: ["(no vitest in the package or the root)"] }
-  const child = spawnLogged(vitestBin, args, { cwd: pkg, env: { ...process.env, CI: "1" } }, outputFile)
+  const child = spawnLogged(vitestBin, args, { cwd: pkg, env: suiteEnv() }, outputFile)
   if (!existsSync(outputFile)) return noReport(child, "vitest")
   const report = JSON.parse(readFileSync(outputFile, "utf8"))
   const tests = report.testResults.flatMap((file) =>
@@ -717,6 +717,17 @@ const apiCheck = (pkg, work, twinned = []) => {
  * counts `if (false)`-style guards beyond the TypeScript's own: the shape of an
  * unrestored mutation check, which once disabled wiki-output's boundary check.
  */
+/**
+ * The environment both runs of a suite get. CI is removed: suites turn on assertions about
+ * CI's machine when it is set (migrate: "the native helper is present wherever CI runs"), and
+ * those judge the host, not the twin.
+ */
+export const suiteEnv = (extra = {}) => {
+  const env = { ...process.env, ...extra }
+  delete env.CI
+  return env
+}
+
 export const quality = (pkg) => {
   const count = (dir, re, ext) =>
     walkSources(dir).filter((f) => ext.test(f)).reduce((n, f) => n + (readFileSync(join(dir, f), "utf8").match(re) ?? []).length, 0)
@@ -888,7 +899,7 @@ const noReport = (child, tool) => ({
 /** `bun test <args>`, with an optional preload, read from its JUnit report. */
 const bunTest = (pkg, args, preload, outputFile) => {
   const argv = ["test", ...(preload ? ["--preload", preload] : []), "--reporter=junit", `--reporter-outfile=${outputFile}`, ...args]
-  const child = spawnLogged("bun", argv, { cwd: pkg, env: { ...process.env, CI: "1" } }, outputFile)
+  const child = spawnLogged("bun", argv, { cwd: pkg, env: suiteEnv() }, outputFile)
   // A bunfig.toml [test.reporter] junit path wins over --reporter-outfile (apps/app, F-1).
   const bunfig = join(pkg, "bunfig.toml")
   const configured = existsSync(bunfig) ? readFileSync(bunfig, "utf8").match(/^\s*junit\s*=\s*"([^"]+)"/m)?.[1] : undefined
@@ -904,7 +915,7 @@ const nodeTest = (pkg, args, register, outputFile) => {
   // Suites that spawn `node src/x.ts` reach the twin only if their child processes load the
   // hook too (E-8), so it also goes in NODE_OPTIONS.
   const nodeOptions = register ? [process.env.NODE_OPTIONS, `--import=${register}`].filter(Boolean).join(" ") : process.env.NODE_OPTIONS
-  const env = { ...process.env, CI: "1", ...(nodeOptions ? { NODE_OPTIONS: nodeOptions } : {}) }
+  const env = suiteEnv(nodeOptions ? { NODE_OPTIONS: nodeOptions } : {})
   const child = spawnLogged(process.execPath, argv, { cwd: pkg, env }, outputFile)
   return existsSync(outputFile)
     ? { ...parseJunit(readFileSync(outputFile, "utf8"), pkg), status: child.status, signal: child.signal, error: child.error?.message }
