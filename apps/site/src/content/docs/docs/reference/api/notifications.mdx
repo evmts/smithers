@@ -448,3 +448,35 @@ binding. Promotion consumes the input: a later version returns `consumed: true`
 with the consumed notification, without writing or changing the delivered payload. Older versions are no-ops;
 reusing a version with different content refuses. Replacement and drain share
 the journal transaction, including rollback and cross-process serialization.
+
+## Mailbox
+
+Import `Mailbox` from `@smthrs/notifications` or `@smthrs/notifications/Mailbox`.
+`layer(principal: string | undefined)` provides `Mailbox` over an injected
+`Journal.Journal`. A principal is a machine-user label, not authentication.
+
+| Export                         | Contract                                                                                                                                    |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Address`, `MessageId`, `Text` | Schemas for addresses, `m-` plus sixteen lowercase alphanumerics, and 1-4000 character bodies.                                              |
+| `Message`                      | Schema and type: `{id, seq, at, from, to, kind?, re?, thread, text}`.                                                                       |
+| `SendInput`                    | Schema and type: `{to, text, kind?, re?, key?}`. Extra fields, including `from`, are refused.                                               |
+| `PullInput`                    | Schema and type: `{limit?}`, 1-50, default 20.                                                                                              |
+| `AckInput`                     | Schema and type: `{receipt}`.                                                                                                               |
+| `Sent`                         | `{id, seq, thread, duplicate}`.                                                                                                             |
+| `Batch`                        | `{messages, receipt: string \| null, more}`; at most 64 KiB.                                                                                |
+| `Acked`                        | `{receipt, duplicate}`.                                                                                                                     |
+| `Service`, `Mailbox`           | `send(SendInput)`, `pull(PullInput)`, `ack(AckInput)`, each returning an Effect failing with `MailboxError` or `JournalError`.              |
+| `Policy`, `defaultPolicy`      | Identity `resolve`, own-name `mailboxes`, agent-only `authorize`; channel addresses are refused.                                            |
+| `MailboxError`                 | Safe `code`: `message_invalid`, `message_secret_refused`, `message_forbidden`, `message_key_reused`, `agent_unknown`, or `receipt_invalid`. |
+| `layer(principal)`             | Journal-backed service layer; missing or invalid agent labels fail `agent_unknown` on use.                                                  |
+
+`send` stamps the principal as `from`, and a reply inherits the referenced
+message's `thread`. Optional keys dedupe per sender; reusing a key with different
+content fails. Secret-shaped text and control characters other than newline are
+refused before journaling. Redaction detects a finite set of credential shapes;
+senders remain responsible for keeping secrets out of message text.
+
+`pull` returns oldest messages first, with a durable receipt. Every pull repeats
+that batch until `ack`, including after restart. Acknowledgment means received,
+not work completed. Repeated acknowledgments succeed with `duplicate: true`.
+Readers dedupe by message id. Nothing is deleted or pushed.

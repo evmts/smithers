@@ -22,6 +22,7 @@ Commands:
   login      Log in to Smithers
   merge      Review and merge the next item; waits for the person's confirmation
   monitor    Every run, with its debug view
+  msg        Send and receive agent messages
   pr         Open a pull request's card
   review     Review a change, return findings; waits for the person's confirmation
   run        Advanced

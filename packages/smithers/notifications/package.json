@@ -44,7 +44,8 @@
     "./NotificationState": "./src/NotificationState.ts",
     "./Projection": "./src/Projection.ts",
     "./SteerPayload": "./src/SteerPayload.ts",
-    "./index": "./src/index.ts"
+    "./index": "./src/index.ts",
+    "./Mailbox": "./src/Mailbox.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -154,6 +155,16 @@
         "require": {
           "types": "./dist/cjs/index.d.ts",
           "default": "./dist/cjs/index.js"
+        }
+      },
+      "./Mailbox": {
+        "import": {
+          "types": "./dist/esm/Mailbox.d.ts",
+          "default": "./dist/esm/Mailbox.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Mailbox.d.ts",
+          "default": "./dist/cjs/Mailbox.js"
         }
       }
     }

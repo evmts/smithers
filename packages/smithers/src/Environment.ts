@@ -58,6 +58,8 @@ export const names: ReadonlyArray<Name> = [
   entry("ASKS", "`park` (the default) or `refuse`: whether an in-run `ask` waits for an operator or fails at once"),
   entry("BACKEND", "Database backend: `sqlite` or `postgres`"),
   entry("MEMORY_DB", "Path of a separate SQLite file for the memory store, shared across runs that name it"),
+  entry("AGENT", "Agent mailbox identity stamped on outgoing messages"),
+  entry("MESSAGES_DB", "Shared agent messages SQLite file; defaults to ~/.smithers/messages.db"),
   entry("SUPERVISOR_STANCE", "`careful` (the default) or `paranoid`, the static stance a judged run is taught"),
   entry("BUG_ENDPOINT", "Bug report endpoint"),
   entry("JJ_PATH", "Explicit path to the jj binary"),

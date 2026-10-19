@@ -5466,6 +5466,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/docs/concepts/agent-messages.md"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/docs/concepts/command-surface.md"
       },
       {
@@ -17981,6 +17985,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/notifications/src/Mailbox.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/notifications/src/Notification.ts"
       },
       {
@@ -18670,6 +18678,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/src/operator/Memory.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/operator/Messages.ts"
       },
       {
         "kind": "file",
@@ -21270,6 +21282,7 @@
           "packages/smithers/notifications/src/AlertRuntime.ts",
           "packages/smithers/notifications/src/AlertSink.ts",
           "packages/smithers/notifications/src/Alerts.ts",
+          "packages/smithers/notifications/src/Mailbox.ts",
           "packages/smithers/notifications/src/Notification.ts",
           "packages/smithers/notifications/src/NotificationEvent.ts",
           "packages/smithers/notifications/src/NotificationQueue.ts",
@@ -21444,6 +21457,7 @@
           "packages/smithers/src/operator/Credentials.ts",
           "packages/smithers/src/operator/Integrations.ts",
           "packages/smithers/src/operator/Memory.ts",
+          "packages/smithers/src/operator/Messages.ts",
           "packages/smithers/src/operator/Store.ts",
           "packages/smithers/src/operator/TriggerPlans.ts",
           "packages/smithers/src/operator/Triggers.ts",
@@ -28219,6 +28233,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/notifications/src/Mailbox.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/notifications/src/Notification.ts"
       },
       {
@@ -28912,6 +28930,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/src/operator/Memory.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/operator/Messages.ts"
       },
       {
         "kind": "file",
@@ -31711,6 +31733,7 @@
           "packages/smithers/notifications/src/AlertRuntime.ts",
           "packages/smithers/notifications/src/AlertSink.ts",
           "packages/smithers/notifications/src/Alerts.ts",
+          "packages/smithers/notifications/src/Mailbox.ts",
           "packages/smithers/notifications/src/Notification.ts",
           "packages/smithers/notifications/src/NotificationEvent.ts",
           "packages/smithers/notifications/src/NotificationQueue.ts",
@@ -31884,6 +31907,7 @@
           "packages/smithers/src/operator/Credentials.ts",
           "packages/smithers/src/operator/Integrations.ts",
           "packages/smithers/src/operator/Memory.ts",
+          "packages/smithers/src/operator/Messages.ts",
           "packages/smithers/src/operator/Store.ts",
           "packages/smithers/src/operator/TriggerPlans.ts",
           "packages/smithers/src/operator/Triggers.ts",
@@ -38091,6 +38115,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/notifications/src/Mailbox.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/notifications/src/Notification.ts"
       },
       {
@@ -38780,6 +38808,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/src/operator/Memory.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/operator/Messages.ts"
       },
       {
         "kind": "file",
