@@ -76,15 +76,17 @@ export const hostedTools = [
  * edits go through the workspace owner's local provider, no `bash` is offered,
  * and the agent reads nothing outside the workspace: the box's caches and the
  * host's own process files are readable by the same uid. The host offers
- * nothing beyond {@link hostedTools}. */
+ * nothing beyond {@link hostedTools}, and runs only the flows it loaded at
+ * startup, before any agent edit. */
 export const hostedAdapters = (): Pick<
   Options,
-  "fileMutationProvider" | "withoutTerminal" | "confinedReads" | "toolAllowlist"
+  "fileMutationProvider" | "withoutTerminal" | "confinedReads" | "toolAllowlist" | "fixedFlowCatalog"
 > => ({
   fileMutationProvider: localProvider,
   withoutTerminal: hostedTeaching,
   confinedReads: true,
-  toolAllowlist: hostedTools
+  toolAllowlist: hostedTools,
+  fixedFlowCatalog: true
 })
 
 /** Code-owned host adapters. The installed entry supplies none; a hosted
@@ -92,7 +94,12 @@ export const hostedAdapters = (): Pick<
 export const serve = async (
   adapters: Pick<
     Options,
-    "fileMutationProvider" | "agentTerminal" | "withoutTerminal" | "confinedReads" | "toolAllowlist"
+    | "fileMutationProvider"
+    | "agentTerminal"
+    | "withoutTerminal"
+    | "confinedReads"
+    | "toolAllowlist"
+    | "fixedFlowCatalog"
   > = {}
 ) => {
   const parsed = parseArgs({

@@ -19,6 +19,7 @@ import {
 import Dispatch from "../coding/dispatch/flow.ts"
 import FlowLoad from "../coding/flow-load/flow.ts"
 import ImplementPlan from "../coding/flow.ts"
+import { seal } from "../coding/host-modules.ts"
 import ImplementAtoms from "../coding/implementation/flow.ts"
 import TodoConflict from "../coding/rebase-conflict/flow.ts"
 import Verify from "../coding/verify/flow.ts"
@@ -455,6 +456,12 @@ export const repositoryCatalog = (options: Executable.Options, load: NonNullable
  * `.smithers/flows/<id>/flow.ts` and have the next plan draw it. `refreshableEntry`
  * decides which half may be rebuilt.
  *
+ * A hosted host passes `fixedRoot`, its editable checkout. Its runs are agent
+ * turns that write that tree, and the host holds the session's credentials, so
+ * the catalog built at startup is the catalog for the host's life: no entry is
+ * rebuilt, no new flow is loaded, and no module under `fixedRoot` loads again
+ * (`seal`). A flow a run writes there runs after it lands.
+ *
  * It is one function rather than a composition spelled out at the host's call
  * site because the rule it encodes is the thing under test:
  * `.smithers/flows/test/coding-catalog-refresh.test.ts` builds THIS, so a change to what
@@ -463,10 +470,15 @@ export const repositoryCatalog = (options: Executable.Options, load: NonNullable
 export const repositoryRegistration = <ROut, E, RIn>(
   options: Executable.Options,
   built: Executable.Catalog,
-  leaves: Layer.Layer<ROut, E, RIn>
+  leaves: Layer.Layer<ROut, E, RIn>,
+  fixedRoot?: string | undefined
 ) =>
   Layer.mergeAll(leaves, ...built.executables.map((entry) => entry.layer)).pipe(
     Layer.provideMerge(Layer.unwrap(Effect.gen(function*() {
+      if (fixedRoot !== undefined) {
+        yield* Effect.acquireRelease(Effect.sync(() => seal(fixedRoot)), (release) => Effect.sync(release))
+        return fixedCatalog(built)
+      }
       const registry = yield* Registry.Registry
       const services = yield* Layer.build(
         Executable.layerRefreshable(built, { ...options, refreshable: refreshableEntry })
@@ -504,6 +516,28 @@ export const repositoryRegistration = <ROut, E, RIn>(
         Layer.succeed(Executable.Refresh, { flow })
       )
     })))
+  )
+
+/** The startup catalog, served unchanged: every refresh is `Fixed`, and a
+ * name it does not hold is refused rather than loaded. */
+const fixedCatalog = (built: Executable.Catalog) =>
+  Layer.merge(
+    Layer.succeed(Executable.Catalog, {
+      executables: built.executables,
+      refused: built.refused,
+      load: (name: string) => {
+        const entry = built.executables.find((candidate) => candidate.descriptor.name === name)
+        return entry !== undefined ? Effect.succeed(entry) : Effect.fail(
+          built.refused.find((refusal) => refusal.flow === name) ?? new Executable.ExecutableError({
+            code: "body_unavailable",
+            flow: name,
+            available: [],
+            message: `flow "${name}" was not loaded when this host started`
+          })
+        )
+      }
+    }),
+    Layer.succeed(Executable.Refresh, { flow: () => Effect.succeed({ _tag: "Fixed" } as const) })
   )
 
 /**

@@ -109,6 +109,9 @@ export interface Options extends NativeOptions {
   readonly confinedReads?: boolean | undefined
   /** The only tool names the host may offer; startup stops on any other. */
   readonly toolAllowlist?: ReadonlyArray<string> | undefined
+  /** Serves the flow catalog loaded at startup for the host's life and loads no
+   * module from `repositoryPath` after it (`repositoryRegistration`'s `fixedRoot`). */
+  readonly fixedFlowCatalog?: boolean | undefined
 
   /** Exact system names from the backend's packaged flow catalog. */
   readonly systemFlows: ReadonlyArray<string>
@@ -993,8 +996,15 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
               // the next plan draw it. A reserved job declaration is held fixed: its
               // bytes are the measured bundle this host shipped as, and rebuilding one
               // from the working tree would replace an admitted declaration with
-              // whatever is on disk.
-              Effect.map((built) => repositoryRegistration(executableOptions, built, leaves))
+              // whatever is on disk. A hosted host holds all of it fixed.
+              Effect.map((built) =>
+                repositoryRegistration(
+                  executableOptions,
+                  built,
+                  leaves,
+                  options.fixedFlowCatalog === true ? options.repositoryPath : undefined
+                )
+              )
             )
         ).pipe(Layer.orDie)
         const modules = registration.pipe(

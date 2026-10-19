@@ -24,10 +24,12 @@ import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer, Schema } from "effect"
 import assert from "node:assert/strict"
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
+import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
+import { fileURLToPath } from "node:url"
 import {
   bindRepositoryRegistry,
   provisionBuiltins,
@@ -90,7 +92,7 @@ Do the thing.
 `
 
 /** The catalog and refresh `.smithers/flows/coding/host.ts` composes, over one workspace. */
-const host = (repositoryPath: string, stateRoot: string, registered: Array<string>) =>
+const host = (repositoryPath: string, stateRoot: string, registered: Array<string>, hosted = false) =>
   Effect.gen(function*() {
     const builtins = yield* provisionBuiltins(stateRoot, policy)
     const project = yield* Registry.make({ sources: [Registry.projectSource({ join }, repositoryPath)] }).pipe(
@@ -106,7 +108,7 @@ const host = (repositoryPath: string, stateRoot: string, registered: Array<strin
       built,
       // The host's own composition, not a copy of it: `.smithers/flows/coding/host.ts`
       // serves its catalog through this exact function.
-      layer: repositoryRegistration(options, built, Layer.empty).pipe(
+      layer: repositoryRegistration(options, built, Layer.empty, hosted ? repositoryPath : undefined).pipe(
         Layer.provideMerge(Layer.mergeAll(observed(registered), Action.layerImplementations, NodeCrypto.layer)),
         Layer.provideMerge(Layer.succeed(Registry.Registry, registry))
       )
@@ -335,3 +337,205 @@ test("a live reserved collision without a packaged executable remains a typed re
   ))
   await assert.rejects(access(join(repositoryPath, "merge-imported")), { code: "ENOENT" })
 })
+
+/*
+ * A hosted host's runs are agent turns that write its checkout, and the host
+ * holds the session's credentials. So on a hosted host the catalog loaded at
+ * startup is the catalog for the host's life, and nothing under the checkout
+ * is imported again. Each fixture's top-level code appends a line to `marks`
+ * when it runs; the install variant shows the same fixture does run there.
+ */
+
+/** A module flow whose top level appends `<name> <version>` to `marks`. */
+const markedFlow = (name: string, marks: string, version: string, preamble = "", value = JSON.stringify(version)) => `
+import { Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Schema } from "effect"
+import { appendFileSync } from "node:fs"
+${preamble}
+appendFileSync(${JSON.stringify(marks)}, ${JSON.stringify(`${name} ${version}\n`)})
+export default Flow.make(${JSON.stringify(name)}, {
+  description: ${JSON.stringify(`Repository ${name}`)}, capabilities: [],
+  payload: {}, success: Schema.String,
+  body: () => Node.succeed(${value})
+})
+`
+
+/** A helper module whose top level appends `<name> <version>` to `marks`. */
+const markedHelper = (name: string, marks: string, version: string) => `
+import { appendFileSync } from "node:fs"
+appendFileSync(${JSON.stringify(marks)}, ${JSON.stringify(`${name} ${version}\n`)})
+export const ${name} = ${JSON.stringify(`${name} ${version}`)}
+`
+
+/** A workspace whose flows resolve this package's own `@smthrs` and `effect`. */
+const moduleWorkspace = async (t: TestContext) => {
+  const { repositoryPath, stateRoot } = await workspace(t)
+  await symlink(fileURLToPath(new URL("../node_modules", import.meta.url)), join(repositoryPath, "node_modules"), "dir")
+  const marks = join(repositoryPath, "..", "marks")
+  const put = async (relative: string, text: string) => {
+    await mkdir(join(repositoryPath, relative, ".."), { recursive: true })
+    await writeFile(join(repositoryPath, relative), text)
+  }
+  const ran = async () => new Set((await readFile(marks, "utf8").catch(() => "")).split("\n").filter(Boolean))
+  return { repositoryPath, stateRoot, marks, put, ran }
+}
+
+/** Where a loaded fixture leaves the loads it defers to first use. */
+const deferred = (name: string) => `globalThis[Symbol.for("coding-catalog-refresh/${name}")]`
+const later = (name: string): Promise<unknown> =>
+  (globalThis as Record<symbol, () => Promise<unknown>>)[Symbol.for(`coding-catalog-refresh/${name}`)]!()
+
+for (const hosted of [false, true]) {
+  test(`a flow a run writes is ${hosted ? "never loaded on a hosted host" : "loaded on an install"}`, async (t) => {
+    const { repositoryPath, stateRoot, marks, put, ran } = await moduleWorkspace(t)
+    const registered: Array<string> = []
+    await Effect.runPromise(Effect.scoped(
+      Effect.gen(function*() {
+        const composed = yield* host(repositoryPath, stateRoot, registered, hosted)
+        return yield* Effect.gen(function*() {
+          const catalog = yield* Executable.Catalog
+          const refresh = yield* Executable.Refresh
+          const atStartup = [...registered]
+          yield* Effect.promise(() => put(".smithers/flows/evil/flow.ts", markedFlow("evil", marks, "agent")))
+          // The draw the next plan makes: rebuild the named entry, then load it.
+          const outcome = yield* refresh.flow("evil")
+          const loaded = yield* Effect.result(catalog.load!("evil"))
+          const offered = catalog.executables.some((entry) => entry.descriptor.name === "evil")
+          if (hosted) {
+            assert.equal(outcome._tag, "Fixed")
+            assert.equal(loaded._tag, "Failure")
+            assert.equal(offered, false)
+            assert.deepEqual(registered, atStartup)
+          } else {
+            assert.equal(outcome._tag, "Registered")
+            assert.equal(loaded._tag, "Success")
+            assert.equal(offered, true)
+            assert.ok(registered.includes("evil"))
+          }
+        }).pipe(Effect.provide(composed.layer))
+      }).pipe(Effect.provide(platform))
+    ))
+    assert.deepEqual([...await ran()], hosted ? [] : ["evil agent"])
+  })
+
+  test(
+    `an edit to a loaded flow, its helpers or its packages ${
+      hosted ? "never runs on a hosted host" : "runs on an install"
+    }`,
+    async (t) => {
+      const { repositoryPath, stateRoot, marks, put, ran } = await moduleWorkspace(t)
+      const kept = (version: string) =>
+        markedFlow(
+          "kept",
+          marks,
+          version,
+          [
+            `import { helper } from "./helper.ts"`,
+            `import { shared } from "../../../src/shared.ts"`,
+            `${deferred("package")} = () => import("lazy-dependency")`
+          ].join("\n"),
+          "`${helper} ${shared}`"
+        )
+      const dependency = ".smithers/flows/kept/node_modules/lazy-dependency"
+      const lazyIndex = (version: string) =>
+        `import { appendFileSync } from "node:fs"\nappendFileSync(${
+          JSON.stringify(marks)
+        }, "lazy-dependency ${version}\\n")\n`
+      await put(".smithers/flows/kept/flow.ts", kept("v1"))
+      await put(".smithers/flows/kept/helper.ts", markedHelper("helper", marks, "v1"))
+      await put("src/shared.ts", markedHelper("shared", marks, "v1"))
+      await put(
+        `${dependency}/package.json`,
+        JSON.stringify({ name: "lazy-dependency", type: "module", exports: "./index.js" })
+      )
+      await put(`${dependency}/index.js`, lazyIndex("v1"))
+      await put("src/required.cjs", `require("node:fs").appendFileSync(${JSON.stringify(marks)}, "required v1\\n")\n`)
+      // A helper reached through import(), by path or by a package.json "imports"
+      // entry, would load from the live tree at first use, so the flow that names
+      // one is refused before it is imported.
+      await put(
+        ".smithers/flows/later/flow.ts",
+        markedFlow("later", marks, "v1", `export const later = () => import("./later.ts")`)
+      )
+      await put(".smithers/flows/later/later.ts", markedHelper("later", marks, "v1"))
+      await put(
+        ".smithers/flows/mapped/flow.ts",
+        markedFlow("mapped", marks, "v1", `export const mapped = () => import("#mapped")`)
+      )
+      await put(
+        ".smithers/flows/mapped/package.json",
+        JSON.stringify({ type: "module", imports: { "#mapped": "./mapped.ts" } })
+      )
+      await put(".smithers/flows/mapped/mapped.ts", markedHelper("mappedHelper", marks, "v1"))
+      const registered: Array<string> = []
+      await Effect.runPromise(Effect.scoped(
+        Effect.gen(function*() {
+          const composed = yield* host(repositoryPath, stateRoot, registered, hosted)
+          const startup = composed.built.executables.find((entry) => entry.descriptor.name === "kept")
+          assert.ok(startup, "the repository flow loads at startup")
+          for (const name of ["later", "mapped"]) {
+            assert.equal(composed.built.executables.some((entry) => entry.descriptor.name === name), false)
+            assert.ok(composed.built.refused.some((entry) => entry.flow === name))
+          }
+          assert.deepEqual(yield* Effect.promise(ran), new Set(["helper v1", "shared v1", "kept v1"]))
+          return yield* Effect.gen(function*() {
+            const catalog = yield* Executable.Catalog
+            const refresh = yield* Executable.Refresh
+            yield* Effect.promise(async () => {
+              await put(".smithers/flows/kept/flow.ts", kept("agent"))
+              await put(".smithers/flows/kept/helper.ts", markedHelper("helper", marks, "agent"))
+              await put("src/shared.ts", markedHelper("shared", marks, "agent"))
+              await put(`${dependency}/index.js`, lazyIndex("agent"))
+              await put(".smithers/flows/mapped/mapped.ts", markedHelper("mappedHelper", marks, "agent"))
+              await put(
+                "src/required.cjs",
+                `require("node:fs").appendFileSync(${JSON.stringify(marks)}, "required agent\\n")\n`
+              )
+              await put(".smithers/flows/later/later.ts", markedHelper("later", marks, "agent"))
+            })
+            const outcome = yield* refresh.flow("kept")
+            const entry = yield* catalog.load!("kept")
+            const planned = Graph.build(entry.flow, { input: {} }).nodes.map((node) => node.payload)
+            const lateHelpers = yield* Effect.all([catalog.load!("later"), catalog.load!("mapped")].map(Effect.result))
+            // First use of a package and of a CommonJS module.
+            const settle = (load: () => Promise<unknown>) =>
+              load().then(() => "loaded", (error: unknown) => error instanceof Error ? error.message : String(error))
+            const firstUse = yield* Effect.promise(() =>
+              Promise.all([
+                settle(() => later("package")),
+                settle(async () => createRequire(join(repositoryPath, "package.json"))("./src/required.cjs"))
+              ])
+            )
+            assert.deepEqual(lateHelpers.map((result) => result._tag), ["Failure", "Failure"])
+            if (hosted) {
+              assert.equal(outcome._tag, "Fixed")
+              assert.equal(entry, startup)
+              assert.ok(planned.includes("helper v1 shared v1"), "the plan is the startup code's")
+              for (const refusal of firstUse) assert.match(refusal, /loads no workspace code after it starts/)
+            } else {
+              assert.equal(outcome._tag, "Registered")
+              assert.ok(planned.includes("helper agent shared agent"), "an install plans the edited code")
+              assert.deepEqual(firstUse, ["loaded", "loaded"])
+            }
+          }).pipe(Effect.provide(composed.layer))
+        }).pipe(Effect.provide(platform))
+      ))
+      assert.deepEqual(
+        await ran(),
+        new Set([
+          "helper v1",
+          "shared v1",
+          "kept v1",
+          ...(hosted ? [] : [
+            "helper agent",
+            "shared agent",
+            "kept agent",
+            "lazy-dependency agent",
+            "required agent"
+          ])
+        ])
+      )
+    }
+  )
+}

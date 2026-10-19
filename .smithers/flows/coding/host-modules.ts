@@ -18,9 +18,10 @@
  * source, the host and a flow already resolve one installation, so the map is
  * empty and nothing is registered.
  */
-import { readFileSync } from "node:fs"
+import { readFileSync, realpathSync } from "node:fs"
 import * as NodeModule from "node:module"
-import { dirname, join } from "node:path"
+import { dirname, join, resolve, sep } from "node:path"
+import { fileURLToPath } from "node:url"
 
 /** Bare specifier → the host's own module namespace for it. */
 export const modules: ReadonlyMap<string, object> = new Map()
@@ -110,6 +111,37 @@ export const share = (supplied: ReadonlyMap<string, object> = modules): void => 
       return { format: "module", source, shortCircuit: true }
     }
   })
+}
+
+/**
+ * Refuses every module load from under `root` until the returned release runs.
+ *
+ * A hosted coding host imports its catalog from the session's checkout at
+ * startup. After that, agent runs write the checkout, and this process holds
+ * the session's credentials. So nothing under it loads again: no rebuilt flow,
+ * no helper or package a flow imports lazily, no retried load. Modules loaded
+ * before the seal keep running from the module cache.
+ */
+export const seal = (root: string): () => void => {
+  if ((globalThis as { Bun?: unknown }).Bun !== undefined || typeof NodeModule.registerHooks !== "function") {
+    throw new Error("A hosted coding host needs node:module registerHooks (Node 22.15 or newer)")
+  }
+  const roots = new Set([resolve(root)])
+  try {
+    roots.add(realpathSync(root))
+  } catch {
+    // A root that does not exist holds no module to refuse.
+  }
+  const inside = (file: string) => [...roots].some((candidate) => file.startsWith(candidate + sep))
+  const hooks = NodeModule.registerHooks({
+    load: (url, context, nextLoad) => {
+      if (url.startsWith("file:") && inside(fileURLToPath(url))) {
+        throw new Error(`This hosted session loads no workspace code after it starts: ${fileURLToPath(url)}`)
+      }
+      return nextLoad(url, context)
+    }
+  })
+  return () => hooks.deregister()
 }
 
 /** The part of Bun's runtime plugin API this module uses. */
