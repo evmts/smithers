@@ -593,6 +593,8 @@ export interface AppController extends IssueFlowsController {
   readonly readRepositoryChange: (repo: string, changeId: string) => ReturnType<typeof readRepositoryChange>
   /** The newest commit at a ref (Platform's P-1 commits read, LatestCommitSeam); the server decides the reader. */
   readonly readLatestCommit: (repo: string, ref?: string) => ReturnType<typeof readLatestCommit>
+  /** Repository contents reads for repository pages (the flows route): no chat card, whole source. */
+  readonly repositoryContents: FilesSeam["contents"]
   /** A Cloud repository's branch names as last read and the branch picked in each (RepositoryBranchesSeam): the header's branch selector reads both and asks for a read when it opens. */
   readonly repositoryBranches: { readonly rows: RepositoryBranchRows; readonly picks: RepositoryBranchPicks; readonly load: (repo: string) => Promise<unknown>; readonly pickOf: (repo: string) => string | undefined }
   readonly setBranchNavigationView: (patch: { selected_branch?: string; selected_archive?: string; previous_branch?: string; open?: boolean }) => Promise<void>
@@ -3202,6 +3204,7 @@ export const createAppController = (
     readRepositoryFilePage: (repo, path, ref) => readFilePage(seamCtx, repo, path, ref),
     readRepositoryChange: (repo, changeId) => readRepositoryChange(seamCtx, repo, changeId),
     readLatestCommit: (repo, ref) => readLatestCommit(seamCtx, repo, ref),
+    repositoryContents: filesSeam.contents,
     repositoryBranches: { rows: repositoryBranches.rows, picks: repositoryBranches.picks, load: repositoryBranches.load, pickOf: repositoryBranches.pickOf },
     store,
     privacyNotices: privacyActions.notices,

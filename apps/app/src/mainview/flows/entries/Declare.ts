@@ -44,6 +44,8 @@ export type CommandActions =
     // The Code home's latest-commit reads (the head's change record; Platform's commits read) are page data too.
     | "readRepositoryChange"
     | "readLatestCommit"
+    // The flows route's contents reads are view data too; no flow opens a card through them.
+    | "repositoryContents"
     // The History card reads archived chats and the header's label; `archive` and `history` are the acts.
     | "chatArchives"
     | "archiveLabel"

@@ -26,8 +26,14 @@ export const RepositoryAskOpenContext = createContext<boolean>(false)
  */
 export const RepositoryNoticesContext = createContext<{ readonly host: HTMLElement; readonly reveal: () => void } | null>(null)
 
+/**
+ * The repository tabs, in Monday's order (PM gap list F2): Code, Issues, Pull
+ * requests, Flows, then the repository's declared tabs (b5's
+ * `.smithers/ui/tabs.json` slot, inserted before Settings), then Settings for
+ * members only. Runs and Wiki are cut: no tab, no link.
+ */
 const tabs = [
-  ["", "Code"], ["issues", "Issues"], ["pulls", "Pull requests"]
+  ["", "Code"], ["issues", "Issues"], ["pulls", "Pull requests"], ["flows", "Flows"], ["settings", "Settings"]
 ] as const
 
 /**
@@ -46,9 +52,11 @@ export const guestAdmission = (conversation: string | undefined, repo: string): 
  * an admitted guest opens Ask like a member; signed out without it, Ask leads
  * to sign-in (PM gap list row 15).
  */
-export function RepoFrame({ repo, login, guest, publicRepo, ask, onRunCommand, children, issueCount, pullCount }: {
+export function RepoFrame({ repo, login, guest, publicRepo, member = false, ask, onRunCommand, children, issueCount, pullCount }: {
   issueCount?: number; pullCount?: number
   repo: string; login?: string; guest?: boolean; publicRepo?: boolean
+  /** The repository document's can_write for this viewer (RepositoryEntry.canWrite); only a member sees Settings. */
+  member?: boolean
   onRunCommand: RunDynamicCommand; ask: ReactNode | ((visible: boolean) => ReactNode); children: ReactNode
 }) {
   const frame = useRef<HTMLDivElement>(null)
@@ -69,6 +77,13 @@ export function RepoFrame({ repo, login, guest, publicRepo, ask, onRunCommand, c
   const base = `/${repo}`
   const [owner, name] = repo.split("/")
   const fileRoute = /^\/(?:tree|blob)\//.test(window.location.pathname.slice(base.length))
+  const navigation = tabs.filter(([path]) => path !== "settings" || member)
+  const active = (path: string) => {
+    const below = window.location.pathname.slice(base.length)
+    if (path === "") return window.location.pathname.replace(/\/$/, "") === base || fileRoute
+    if (path === "pulls") return /^\/pulls?(?:\/|$)/.test(below)
+    return below === `/${path}` || below.startsWith(`/${path}/`)
+  }
   const openAsk = (runCommand = onRunCommand) => { if (!canAsk) { runCommand("sign-in"); return }; setOpen(true); runCommand("chat.open") }
   // A notice's action reveals the Ask its target lives in; never sign-in, which only the Ask button and ⌘K lead to.
   const reveal = () => { if (canAsk) openAsk() }
@@ -97,7 +112,7 @@ export function RepoFrame({ repo, login, guest, publicRepo, ask, onRunCommand, c
         <div className="repo-frame-repo-title-row"><div className="repo-frame-repo-title"><BookOpen size={20} aria-hidden="true"/><h1><a href="/">{owner}</a><span>/</span><a href={base}>{name}</a></h1>{publicRepo && <span className="repo-frame-visibility">Public</span>}</div>
           <button ref={trigger} className={`repo-ui-btn ${fileRoute ? "repo-ui-btn-quiet" : "repo-ui-btn-primary"} repo-frame-ask-button`} aria-label="Ask" aria-controls="repo-ask" aria-expanded={expanded} {...flowProps(canAsk ? "chat.open" : "sign-in")} onClick={() => openAsk(onRunCommand)}>Ask <kbd>⌘K</kbd></button>
         </div>
-        <nav className="repo-ui-tabs" aria-label="Repository">{tabs.map(([path, label]) => <a className="repo-ui-tab" key={path} href={`${base}${path ? `/${path}` : ""}`} aria-current={(path === "issues" ? window.location.pathname.startsWith(`${base}/issues`) : path === "pulls" ? /\/pulls?(?:\/|$)/.test(window.location.pathname.slice(base.length)) : window.location.pathname.replace(/\/$/, "") === base || fileRoute) ? "page" : undefined}>{label}{(path === "issues" ? issueCount : path === "pulls" ? pullCount : undefined) !== undefined && <span className="repo-ui-counter">{path === "issues" ? issueCount : pullCount}</span>}</a>)}</nav>
+        <nav className="repo-ui-tabs" aria-label="Repository">{navigation.map(([path, label]) => <a className="repo-ui-tab" key={path} href={`${base}${path ? `/${path}` : ""}`} aria-current={active(path) ? "page" : undefined}>{label}{(path === "issues" ? issueCount : path === "pulls" ? pullCount : undefined) !== undefined && <span className="repo-ui-counter">{path === "issues" ? issueCount : pullCount}</span>}</a>)}</nav>
       </header>
       <main id="repo-content" tabIndex={-1} className="repo-frame-content" data-keyboard-pane="Repository"><RepositoryAskContext.Provider value={openAsk}><RepositoryAskOpenContext.Provider value={expanded}>{children}</RepositoryAskOpenContext.Provider></RepositoryAskContext.Provider></main>
     </div>
