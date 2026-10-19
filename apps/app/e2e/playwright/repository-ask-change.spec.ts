@@ -292,7 +292,8 @@ async function fixture(page: Page, target: string, reader = false, signedOut = f
       }
     })
   )
-  await page.goto(`${origin}/maya/tinyhttp`)
+  // ?design=off: a --mode test build (the browser shards) otherwise boots the design fixture instead of these routes.
+  await page.goto(`${origin}/maya/tinyhttp?design=off`)
   if (!signedOut) await page.getByRole("button", { name: "Ask", exact: true }).click()
   return {
     starts: () => starts,
