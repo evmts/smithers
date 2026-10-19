@@ -25,6 +25,12 @@ type Target struct {
 	BindingID   string
 }
 
+// WorkspaceRuntime exposes the workspace authorized by the host resolver.
+// It is binding metadata from the backend, never an identity claimed by a guest.
+type WorkspaceRuntime interface {
+	RuntimeWorkspaceID() string
+}
+
 type Resolver interface {
 	ResolveFlowRuntime(context.Context, Target) (Runtime, error)
 }

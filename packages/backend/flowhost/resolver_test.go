@@ -2,6 +2,7 @@ package flowhost
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -313,6 +314,14 @@ func TestResolverStartsOnceAuthenticatesAndReusesDurableBinding(t *testing.T) {
 	resolver, store, launcher, target := testResolver(t)
 	runtime, err := resolver.ResolveFlowRuntime(context.Background(), target)
 	require.NoError(t, err)
+	bound, ok := runtime.(flowruntime.WorkspaceRuntime)
+	require.True(t, ok, "host resolution must carry its authorized workspace")
+	require.Equal(t, store.binding.WorkspaceID, bound.RuntimeWorkspaceID())
+	// Wrapping must preserve the optional bridge methods used by run archives.
+	_, ok = runtime.(interface {
+		CallRPC(context.Context, string, json.RawMessage) (json.RawMessage, error)
+	})
+	require.True(t, ok)
 	identity, err := runtime.Identity(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), identity.OwnerGeneration)

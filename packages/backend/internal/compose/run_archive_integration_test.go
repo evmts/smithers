@@ -109,11 +109,13 @@ func TestRunArchivePostgres(t *testing.T) {
 	terminal := page()
 	terminal.Checkpoint.Run = &flowruntime.Run{RunID: "run-1", Status: "completed"}
 	host.summaryStatus = "parked"
-	require.ErrorContains(t, archive.ProjectFlowRuntime(ctx, terminal), "terminal host summary has not settled")
+	require.ErrorContains(t, archive.capture(ctx, terminal.Checkpoint), "terminal host summary has not settled")
+	require.NoError(t, archive.ProjectFlowRuntime(ctx, terminal))
 	host.summaryStatus = ""
 	require.NoError(t, archive.ProjectFlowRuntime(ctx, terminal))
 	host.stopped = true
-	require.ErrorContains(t, archive.ProjectFlowRuntime(ctx, terminal), "runtime_host_not_running")
+	require.ErrorContains(t, archive.capture(ctx, terminal.Checkpoint), "runtime_host_not_running")
+	require.NoError(t, archive.ProjectFlowRuntime(ctx, terminal))
 	host.stopped = false
 
 	// A capture on a stopped host never fails the observation, keeps the
