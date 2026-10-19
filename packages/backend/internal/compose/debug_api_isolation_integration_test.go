@@ -46,6 +46,7 @@ func TestDebugAPIInvokeWithoutIsolationPostgres(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, composition, "no registry means no host launcher or dispatcher")
 	invoked := services.NewInvokedFlowService(pool, services.NewRepositoryJobService(q, nil, pool), nil)
+	services.ScopeFlowHosts(true, false, invoked, nil)
 	server := httptest.NewUnstartedServer(nil)
 	cfg.Server.PublicURL = "http://" + server.Listener.Addr().String()
 	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}

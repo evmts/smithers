@@ -83,6 +83,7 @@ func TestHomeBackgroundRetryIdempotent(t *testing.T) {
 	_, err = pool.Exec(ctx, `INSERT INTO workflow_run_flow_invocations(workflow_run_id,user_id,flow_id,operation_id,trigger_commit,source_revision) VALUES($1,$2,'wiki',$3,$4,$4)`, failed.ID, owner.ID, original.OperationID, source)
 	require.NoError(t, err)
 	invoker := services.NewInvokedFlowService(pool, nil, nil)
+	services.ScopeFlowHosts(true, false, invoker, nil)
 	invoker.SetFlowDispatcher(dispatcher)
 	provider := &services.HomeBackground{Pool: pool, Invoker: invoker, Billing: services.NewUnlimitedBillingPolicy(), Machine: homeMachineBoundary{workspace.IsolationSandboxed}}
 	service := services.NewMythicalService(pool, nil)

@@ -1475,8 +1475,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		composeGitHubInstallAuthority(gitHubSyncedRepoService, gitHubAppCredentials, os.Geteuid() != 0)
 	}
 	mythicalService.SetPublicURL(publicBaseURL)
-	// Every main move loads the repository's flows (spec §11.3.1).
-	mythicalService.SetFlowLoad(cfg.FeatureFlags.FlowLoad)
 	gitHubMainPullService.SetMainMoved(mythicalService.MainMoved)
 	// GET/POST /api/github/sync serve the install's sync; elsewhere they
 	// answer unavailable.
@@ -1756,6 +1754,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	invokedFlowService.SetSecretInjector(secretInjector)
 	invokedFlowService.SetFlowSourceReader(repoHostClient)
 	invokedFlowService.SetTerminalPublisher(workflowRunTerminalPublisher)
+	// Every main move loads the repository's flows (spec §11.3.1), on an
+	// install only; hosted starts neither a flow-load nor a workflow-invoke
+	// host, whatever its flags say.
+	services.ScopeFlowHosts(config.IsSingleOwner(cfg.Auth), cfg.FeatureFlags.FlowLoad, invokedFlowService, mythicalService)
 	if participant, ok := workflowRunService.(interface {
 		SetCancelParticipant(services.WorkflowRunCancelParticipant)
 	}); ok {

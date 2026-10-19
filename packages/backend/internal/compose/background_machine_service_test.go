@@ -81,6 +81,7 @@ func TestBackgroundMachineServiceLifecycle(t *testing.T) {
 			})
 			t.Run("launcher classification", func(t *testing.T) {
 				invoked := services.NewInvokedFlowService(f.pool, nil, nil)
+				services.ScopeFlowHosts(true, false, invoked, nil)
 				manual, err := invoked.IsBackgroundFlowHost(ctx, row.ID)
 				require.NoError(t, err)
 				require.False(t, manual, "pinned background machines are not manual-main hosts")
@@ -194,6 +195,7 @@ func TestManualMainFlowHostClassification(t *testing.T) {
 	f := presenceInstall(t)
 	ctx := t.Context()
 	invoked := services.NewInvokedFlowService(f.pool, nil, nil)
+	services.ScopeFlowHosts(true, false, invoked, nil)
 	manual, err := invoked.IsBackgroundFlowHost(ctx, f.row.ID)
 	require.NoError(t, err)
 	require.False(t, manual, "an ordinary TODO is not an ephemeral main host")
