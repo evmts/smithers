@@ -290,6 +290,12 @@ export const CloudRepositorySchema = z.object({
    * Absent on the signed-in inventory.
    */
   catalog: z.boolean().optional(),
+  /**
+   * True while the account's own-repository list (GET /api/user/repos) names
+   * this repository: the account has it, whatever the public catalog says.
+   * Set by `repositories.loaded` and cleared by a later list that omits it.
+   */
+  inventory: z.literal(true).optional(),
   /** Account that directly read this repository; its own-repository list is not an access inventory. */
   documentOwner: z.string().optional(),
   /** Server admission for the fixed guest flow; the cookie stays HttpOnly. */

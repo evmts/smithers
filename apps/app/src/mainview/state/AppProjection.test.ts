@@ -225,6 +225,21 @@ describe("pure app event projection", () => {
     expect(state.frames.find(row => row.id === frameId)!.snapshot!.cards[0]!.payload).toMatchObject({ id: "computer" })
   })
 
+  test("the own-repository inventory marks its rows and unmarks a catalog row it no longer names", () => {
+    const hello = { id: "smithersai/hello-server", org: "smithersai", name: "hello-server", ownerKind: "user" as const, head: null }
+    const widgets = { id: "ada/widgets", org: "ada", name: "widgets", ownerKind: "user" as const, head: null }
+    let state = apply(boot(), { type: "repository.upserted", actor: "system", repository: { ...widgets, catalog: true } })
+    state = apply(state, { type: "repositories.loaded", actor: "system", repositories: [hello, widgets] })
+    const row = (id: string) => state.repositories.find(repository => repository.id === id)
+    expect(row("smithersai/hello-server")).toMatchObject({ inventory: true })
+    // A public row the account also has keeps its catalog authority and gains the account's.
+    expect(row("ada/widgets")).toMatchObject({ catalog: true, inventory: true })
+    state = apply(state, { type: "repositories.loaded", actor: "system", repositories: [hello] })
+    expect(row("ada/widgets")).toMatchObject({ catalog: true })
+    expect(row("ada/widgets")).not.toHaveProperty("inventory")
+    expect(row("smithersai/hello-server")).toMatchObject({ inventory: true })
+  })
+
   test("a repository can be selected through the shared grammar", () => {
     expect(parseRepoSelection("smithersai/hello-server")).toEqual({ repoId: "smithersai/hello-server" })
     expect(parseRepoSelection("practice:smithersai/hello-server")).toBeNull()

@@ -27,9 +27,11 @@ export function RepositoryMarkdown({ content }: { content: string }) {
 
 export const REPOSITORY_CLONE_HOST = "https://api.smithers.sh"
 
-export function CodeHome({ repo, branch, branches, headCommit, changes = [], onBranchesOpen, treeAvailable = true, treeCopyId, onRunCommand, tree, home }: {
+export function CodeHome({ repo, branch, branches, headCommit, changes = [], onBranchesOpen, treeAvailable = true, treeCopyId, onRunCommand, tree, home, member }: {
   repo: string; branch?: string; branches?: RepositoryBranches; headCommit?: string | null; changes?: ReadonlyArray<ChangeRow>
-  onBranchesOpen?: () => void; treeCopyId?: string; onRunCommand: RunDynamicCommand; treeAvailable?: boolean; tree?: RepoTreeRow; home?: RepositoryHomeAnswer; 
+  onBranchesOpen?: () => void; treeCopyId?: string; onRunCommand: RunDynamicCommand; treeAvailable?: boolean; tree?: RepoTreeRow; home?: RepositoryHomeAnswer
+  /** The viewer is a member of this repository; app blocks are offered only then (app-spec row 6). */
+  member?: boolean
 }) {
   const [filter, setFilter] = useState("")
   const names = branches?.state === "ready" ? branches.names : branch ? [branch] : []
@@ -46,7 +48,7 @@ export function CodeHome({ repo, branch, branches, headCommit, changes = [], onB
     .filter(block => block.type !== "markdown" || !/readme/i.test(block.path))
     .sort((left, right) => blockOrder[left.type] - blockOrder[right.type]) } : home?.kind === "error" ? home : undefined
   return <div className="repo-code-home-layout"><div className="repo-code-home-main">
-    <RepositoryHomeView repo={repo} home={declaredHome} treeCopyId={treeCopyId} onRunCommand={(flow, args) => { if (flow === "chat.open" && openAsk) openAsk(onRunCommand); else onRunCommand(flow, args) }}/>
+    <RepositoryHomeView repo={repo} home={declaredHome} treeCopyId={treeCopyId} member={member} onRunCommand={(flow, args) => { if (flow === "chat.open" && openAsk) openAsk(onRunCommand); else onRunCommand(flow, args) }}/>
     <div className="repo-code-home-toolbar">
       {branch && <details className="repo-ui-dropdown" onToggle={event => { if (event.currentTarget.open) onBranchesOpen?.() }}><summary className="repo-ui-btn"><GitBranch size={16}/>{branch}</summary><div className="repo-ui-menu repo-ui-branch-menu">
         <input className="repo-ui-input" aria-label="Filter branches or enter full SHA" placeholder="Find a branch or full SHA…" value={filter} onChange={event => setFilter(event.target.value)}/>

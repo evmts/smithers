@@ -785,7 +785,8 @@ function AppContent() {
       treeAvailable={homeTreeCopy !== undefined}
       treeCopyId={homeTreeCopy} onRunCommand={controller.runCommand}
       tree={repoTreeRows.find(row => row.copyId === homeTreeCopy && row.path === "")}
-      home={repositoryHome}/>}
+      home={repositoryHome}
+      member={identity?.state === "signed-in" && repository !== undefined && (repository.inventory === true || (identity.login != null && repository.documentOwner === identity.login))}/>}
   </RepoFrame>
 }
 

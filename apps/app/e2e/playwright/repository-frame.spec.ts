@@ -138,8 +138,16 @@ for (const member of [false, true]) for (const width of [1440, 1280, 390]) for (
   })
 }
 
-for (const width of [1280, 390]) for (const colorScheme of ["light", "dark"] as const) {
-  test(`declared repository home blocks ${width} ${colorScheme}`, async ({ page }) => {
+/*
+ * A declared home (app-spec row 6, repo-ui-spec view 1): text, prompt and
+ * links blocks for everyone; app blocks for members only, and only those
+ * whose flow this host serves. `issue.implement` needs the install's TODO
+ * door, which the hosted origin lacks, so it renders for nobody; `chat.open`
+ * is served here, so a member sees it and a visitor never does. No dead
+ * control, so no "This action is no longer available".
+ */
+for (const member of [false, true]) for (const width of [1280, 390]) for (const colorScheme of ["light", "dark"] as const) {
+  test(`declared repository home blocks ${member ? "member" : "signed-out"} ${width} ${colorScheme}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     await page.emulateMedia({ colorScheme })
     await signedOutVisitor(page)
@@ -147,11 +155,18 @@ for (const width of [1280, 390]) for (const colorScheme of ["light", "dark"] as 
     await page.route("**/api/repos/maya/tinyhttp", route => route.fulfill({ json: { is_public: true, default_bookmark: "main" } }))
     await page.route("**/api/repos/maya/tinyhttp/home", route => route.fulfill({ json: { kind: "blocks", blocks: [
       { type: "links", links: [{ label: "Documentation", url: "https://example.com/docs" }] },
+      { type: "app", flow: "issue.implement", title: "Fix an issue", picture: "issue" },
+      { type: "app", flow: "chat.open", title: "Ask the codebase", picture: "wiki" },
       { type: "prompt", placeholder: "Ask about this repository" },
       { type: "text", text: "Repository introduction" },
       { type: "markdown", path: "README.md", markdown: "# Project README" }
     ] } }))
     await page.route(/\/api\/repos\/maya\/tinyhttp\/contents(?:\?.*)?$/, route => route.fulfill({ json: [{ name: "README.md", path: "README.md", type: "file" }] }))
+    if (member) {
+      await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute())
+      await page.route("**/api/user/repos**", route => route.fulfill({ json: [{ owner: "maya", name: "tinyhttp", full_name: "maya/tinyhttp", default_bookmark: "main" }] }))
+      await page.route("**/api/user/orgs**", route => route.fulfill({ json: [] }))
+    }
     await page.goto("/maya/tinyhttp")
     const home = page.getByTestId("repository-home")
     await expect(home).toBeVisible()
@@ -164,5 +179,19 @@ for (const width of [1280, 390]) for (const colorScheme of ["light", "dark"] as 
     expect((await home.boundingBox())!.y).toBeLessThan((await files.boundingBox())!.y)
     expect((await files.boundingBox())!.y).toBeLessThan((await readme.boundingBox())!.y)
     await expect(home.getByText("Project README", { exact: true })).toHaveCount(0)
+    // The hosted origin has no door for issue.implement: nobody sees it.
+    await expect(home.locator('[data-flow="issue.implement"]')).toHaveCount(0)
+    await expect(home.getByRole("button", { name: "Fix an issue", exact: true })).toHaveCount(0)
+    if (member) {
+      const ask = home.getByRole("button", { name: "Ask the codebase", exact: true })
+      await expect(ask).toBeVisible()
+      await ask.focus(); await expect(ask).toBeFocused(); await page.keyboard.press("Enter")
+      await expect(page.getByRole("complementary", { name: "Ask", exact: true })).toBeVisible()
+      await expect(page.getByTestId("composer-input")).toBeVisible()
+    } else {
+      await expect(home.locator(".repository-home-app")).toHaveCount(0)
+      await expect(home.getByRole("button", { name: "Ask the codebase", exact: true })).toHaveCount(0)
+    }
+    await expect(page.getByText("This action is no longer available")).toHaveCount(0)
   })
 }

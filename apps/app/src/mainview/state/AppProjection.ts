@@ -3248,11 +3248,16 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           const stale = [...collections.repositories.values()].filter((repo) => !next.has(repo.id) && repo.catalog !== true &&
             !(identity?.state === "signed-in" && repo.documentOwner === identity.login)).map(repo => repo.id)
           if (stale.length > 0) collections.repositories.delete(stale)
+          // A surviving row this list no longer names is not the account's: its inventory mark goes.
+          for (const id of [...collections.repositories.values()].filter((repo) => !next.has(repo.id) && repo.inventory === true).map((repo) => repo.id)) {
+            collections.repositories.update(id, (draft) => { delete draft.inventory })
+          }
           for (const repository of transition.repositories) {
             const existing = collections.repositories.get(repository.id)
             const row: CloudRepository = {
               ...repository,
               documentOwner: undefined,
+              inventory: true,
               head: repository.head ?? existing?.head ?? null,
               updatedAt: createdAt,
               revision
