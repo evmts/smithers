@@ -195,8 +195,16 @@ func TestReleasesAndAJoinsAdmissionProgressOnAOneConnectionPool(t *testing.T) {
 	for got := range results {
 		require.NoError(t, got.err, got.name)
 		if got.name != "admission" {
-			require.Contains(t, []string{agentWorkspaceQuiesced, agentWorkspaceAlreadyReleased}, got.got.Outcome, got.name)
+			// A hosted release retires a running session box (g3b-2, Security d-am9s3m).
+			require.Contains(t, []string{agentWorkspaceQuiesced, agentWorkspaceAlreadyReleased, agentWorkspaceRetired}, got.got.Outcome, got.name)
 		}
+	}
+	// Whatever each release's outcome, it left no credential of its box live,
+	// read back as RevokeStoppedAgentBoxCredentials does (Security d-v2sbih).
+	for _, id := range append(running, stopped) {
+		live, err := f.q.AgentBoxCredentialsLive(f.ctx, id, workspaceChildrenTokenName(id))
+		require.NoError(t, err)
+		require.False(t, live, "release %s left a credential live", id)
 	}
 }
 

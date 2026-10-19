@@ -1,0 +1,2 @@
+bash packages/backend/scripts/with-test-postgres.sh go -C packages/backend test ./internal/services -run "TestTwoStartsAReleaseAndAJoinAdmissionNeverDeadlock" -count=1 -v -timeout 30m
+bash packages/backend/scripts/with-test-postgres.sh go -C packages/backend test ./internal/services -run "TestEveryReleasePathWaitsForAStartInsideItsTurn|TestATurnCannotEndBetweenAStartsDirtyCheckAndItsMint|TestReleasesAndAJoinsAdmissionProgressOnAOneConnectionPool|TestAgentBoxDirtyJoinsOnAOneConnectionPool|TestATurnsRetirementIsBoundedOnAnExhaustedPool" -count=1 -v
