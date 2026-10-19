@@ -75,6 +75,11 @@ type hostedBoxRuntime struct {
 	// exiting.
 	credentialCache      bool
 	credentialCacheStuck bool
+	// running are the services the guest runs now; a stop ends one unless
+	// stuck keeps it running, and stopErrs fails the named service's stop.
+	running  map[string]bool
+	stuck    map[string]bool
+	stopErrs map[string]error
 }
 
 // FencesGuests: the double honors workspaceapi.WithGuest as hosted's
@@ -146,7 +151,7 @@ func (r *hostedBoxRuntime) DeleteWorkspace(ctx context.Context, id string) error
 	if err := r.interruptedReleaseRuntime.DeleteWorkspace(ctx, id); err != nil {
 		return err
 	}
-	r.deleted, r.guest.state, r.processes = true, workspaceapi.WorkspaceStopped, map[string]bool{}
+	r.deleted, r.guest.state, r.processes, r.running = true, workspaceapi.WorkspaceStopped, map[string]bool{}, map[string]bool{}
 	// As hosted's placement store does, the delete clears the row's placement.
 	_, err := r.pool.Exec(ctx, `UPDATE workspaces SET vm_id='' WHERE id=$1`, id)
 	return err
@@ -158,6 +163,7 @@ func (r *hostedBoxRuntime) CreateWorkspace(ctx context.Context, spec workspaceap
 	r.creates++
 	r.deleted, r.fresh, r.hasGit, r.hasJJ, r.receipt = false, true, false, false, nil
 	r.processes = map[string]bool{"relay": true, "supervisor": true}
+	r.running = map[string]bool{}
 	r.guest.state = workspaceapi.WorkspaceRunning
 	if _, err := r.pool.Exec(ctx, `UPDATE workspaces SET vm_id=$2 WHERE id=$1`, spec.ID, fmt.Sprintf("msb_new_%d", r.creates)); err != nil {
 		return workspaceapi.Workspace{}, err
@@ -244,14 +250,24 @@ func (r *hostedBoxRuntime) StartService(_ context.Context, _ string, spec worksp
 		r.captured = append(r.captured, spec.Name)
 	}
 	r.started = append(r.started, spec.Name)
+	if r.running == nil {
+		r.running = map[string]bool{}
+	}
+	r.running[spec.Name] = true
 	if spec.Name == workspaceHeadReporterService {
 		r.credentialCache = true
 	}
 	return workspaceapi.Service{Name: spec.Name}, nil
 }
 
-func (*hostedBoxRuntime) InspectService(context.Context, string, string) (workspaceapi.ServiceObservation, error) {
-	return workspaceapi.ServiceObservation{State: workspaceapi.ServiceRunning}, nil
+func (r *hostedBoxRuntime) InspectService(ctx context.Context, id, name string) (workspaceapi.ServiceObservation, error) {
+	if r.guestGone(ctx, id) {
+		return workspaceapi.ServiceObservation{}, workspaceapi.ErrGuestGone
+	}
+	if r.running[name] {
+		return workspaceapi.ServiceObservation{Service: workspaceapi.Service{Name: name}, State: workspaceapi.ServiceRunning}, nil
+	}
+	return workspaceapi.ServiceObservation{Service: workspaceapi.Service{Name: name}, State: workspaceapi.ServiceStopped}, nil
 }
 
 func (r *hostedBoxRuntime) StopService(ctx context.Context, id string, name string) error {
@@ -261,7 +277,13 @@ func (r *hostedBoxRuntime) StopService(ctx context.Context, id string, name stri
 	if r.serviceErr != nil {
 		return r.serviceErr
 	}
+	if err := r.stopErrs[name]; err != nil {
+		return err
+	}
 	r.stopped = append(r.stopped, name)
+	if !r.stuck[name] {
+		delete(r.running, name)
+	}
 	return nil
 }
 
@@ -343,7 +365,9 @@ func newAgentBoxReleaseWith(t *testing.T, status string, reaper bool) *agentBoxR
 	}
 	f.runtime = &interruptedReleaseRuntime{guest: f.guest}
 	f.hosted = &hostedBoxRuntime{interruptedReleaseRuntime: f.runtime, pool: pool, bookmark: "main", repository: repo,
-		processes: map[string]bool{"relay": true, "supervisor": true}, credentialCache: true}
+		processes: map[string]bool{"relay": true, "supervisor": true}, credentialCache: true,
+		// The turn's head reporter, which holds the head token minted below.
+		running: map[string]bool{workspaceHeadReporterService: true}}
 	slug, err := q.GetRepoOwnerSlugAndNameByID(ctx, repo)
 	require.NoError(t, err)
 	f.hosted.cloneURL = testWorkspaceGitBaseURL + "/" + slug.OwnerSlug + "/" + slug.RepoName + ".git"
@@ -480,7 +504,8 @@ func TestAFinishedRunRetiresItsBoxAndRevokesEveryTokenMintedForIt(t *testing.T) 
 	require.Equal(t, db.AgentBoxRetiredStage, box.ProvisioningStage)
 	require.Equal(t, "vm-agent-box", box.AgentBoxDirtyVmID, "only a new guest clears the dirty mark")
 	require.False(t, box.HeadPushTokenID.Valid, "the row records no head token")
-	require.Equal(t, []string{"smithers-coding-host"}, f.hosted.stopped, "the coding host is stopped before its credentials are retired")
+	require.Equal(t, []string{"smithers-coding-host", workspaceHeadReporterService}, f.hosted.stopped,
+		"the coding host is stopped before its credentials are retired, then the head reporter")
 	f.requireRunTokensRevoked(t, "head", "landing", "cache", "api")
 	line := f.releaseLog(t)
 	require.Contains(t, line, "outcome=retired", "the log states what happened to the box")

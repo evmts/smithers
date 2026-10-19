@@ -218,8 +218,10 @@ func TestCodingTurnScriptTimesOutAndReapsLeftovers(t *testing.T) {
 // The script trusts only system binaries and runs no program a repository
 // or the developer's PATH names while it reads the working commit: a planted
 // jj or git earlier on PATH and a planted jj signing backend never run
-// (guardian s-fsoxj5, s-zlnaqt). In a jj checkout the working commit is jj's
-// snapshot, which moves with any edit.
+// (guardian s-fsoxj5, s-zlnaqt). In a jj checkout the working commit is that
+// of jj's last operation: the script writes neither .jj nor .git, which the
+// offline facet mounts read-only, and an edit not yet snapshotted leaves the
+// tree dirty.
 func TestCodingTurnScriptRunsOnlyTrustedBinaries(t *testing.T) {
 	repo := newCodingBoxRepo(t, map[string]string{"a.txt": "a\n"})
 	planted, marker := t.TempDir(), filepath.Join(t.TempDir(), "planted-ran")
@@ -251,10 +253,23 @@ func TestCodingTurnScriptRunsOnlyTrustedBinaries(t *testing.T) {
 	config := jjCmd("config", "path", "--repo")
 	require.NoError(t, os.MkdirAll(filepath.Dir(config), 0o755))
 	require.NoError(t, os.WriteFile(config, []byte("[signing]\nbehavior = \"force\"\nbackend = \"gpg\"\n[signing.backends.gpg]\nprogram = \""+signer+"\"\n"), 0o644))
-	require.Equal(t, 0, jjRepo.exec(t, working, time.Minute, []string{"true"}).ExitCode, "the working commit is head")
+	// As the offline facet mounts them (Security d-w8ycrp).
+	readOnly := func(mode string) {
+		t.Helper()
+		out, err := exec.Command("chmod", "-R", mode, filepath.Join(jjRepo.dir, ".jj"), filepath.Join(jjRepo.dir, ".git")).CombinedOutput()
+		require.NoError(t, err, string(out))
+	}
+	readOnly("a-w")
+	t.Cleanup(func() { readOnly("u+w") })
+	ran := jjRepo.exec(t, working, time.Minute, []string{"true"})
+	require.Empty(t, ran.Refusal, "the working commit reads from a read-only .jj and .git")
+	require.Equal(t, 0, ran.ExitCode, "the working commit is head")
 	require.NoError(t, os.WriteFile(filepath.Join(jjRepo.dir, "a.txt"), []byte("edited\n"), 0o644))
+	require.Equal(t, "tree dirty", jjRepo.exec(t, working, time.Minute, []string{"true"}).Refusal, "an edit jj has not snapshotted leaves the tree dirty")
+	readOnly("u+w")
+	jjCmd("log", "--no-graph", "-r", "@", "-T", "commit_id")
 	moved := jjRepo.exec(t, working, time.Minute, []string{"true"})
-	require.Regexp(t, `^[0-9a-f]{40}$`, moved.At, "an edit moves jj's working commit past head")
+	require.Regexp(t, `^[0-9a-f]{40}$`, moved.At, "a snapshotted edit moves jj's working commit past head")
 	require.NotEqual(t, working, moved.At)
 	_, err = os.Stat(marker)
 	require.ErrorIs(t, err, os.ErrNotExist, "the planted signing backend never runs")

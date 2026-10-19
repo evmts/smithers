@@ -517,6 +517,10 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceHeadReporter(ctx context.Contex
 		}
 	}
 	updated, err := s.installRuntimeWorkspaceHeadReporter(ctx, store, row, requesterID, observed)
+	if errors.Is(err, errAgentBoxGuestQuiesced) {
+		slog.Warn("workspace head reporter not started: the agent box is quiesced until it retires", "workspace_id", row.ID)
+		return updated
+	}
 	if err != nil {
 		// A cancelled request says nothing about the publisher; retry at once.
 		if retries != nil && ctx.Err() == nil {
@@ -562,6 +566,9 @@ func (s *WorkspaceService) installRuntimeWorkspaceHeadReporter(ctx context.Conte
 	current, err := s.q.GetWorkspace(ctx, row.ID)
 	if err != nil {
 		return row, err
+	}
+	if agentBoxGuestQuiesced(current) {
+		return row, errAgentBoxGuestQuiesced
 	}
 	expected := current.HeadPushTokenID
 	row.HeadPushTokenID = expected
@@ -637,6 +644,23 @@ func (s *WorkspaceService) installRuntimeWorkspaceHeadReporter(ctx context.Conte
 		row.HeadPushTokenID = latest.HeadPushTokenID
 	}
 	return row, nil
+}
+
+// errAgentBoxGuestQuiesced refuses to start a head reporter on a quiesced
+// agent box's guest.
+var errAgentBoxGuestQuiesced = errors.New("the agent box is quiesced until it retires; its head reporter stays stopped")
+
+// agentBoxGuestQuiesced reports an agent session box whose live guest is
+// marked dirty and names no head token: a quiesce or release revoked the
+// token and stopped the reporter (stopAgentBoxHeadReporter), and a test may
+// have run in its checkout since. No start, repair or coding host binding
+// starts a reporter there again, since it would run that checkout's jj and
+// git outside the offline facet: only a retirement's new guest, whose write
+// clears the mark (RecordAgentBoxGuest), gets one. A guest a turn is using
+// still names its head token, so its reporter can be repaired.
+func agentBoxGuestQuiesced(row db.Workspace) bool {
+	guest := strings.TrimSpace(row.VmID)
+	return row.AgentSessionID.Valid && guest != "" && row.AgentBoxDirtyVmID == guest && !row.HeadPushTokenID.Valid
 }
 
 // awaitRuntimeWorkspaceHeadSeed waits until the publisher holding tokenID has

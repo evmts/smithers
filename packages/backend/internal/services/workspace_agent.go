@@ -189,11 +189,12 @@ type AgentWorkspaceRelease struct {
 	Outcome string
 	// HeadTokenRevoked is true when the box holds no live head token.
 	HeadTokenRevoked bool
-	// Quiesced is true only when every coding host of the run is stopped and
-	// its head, landing and cache tokens, its hosts' control and model
-	// credentials and the guest's git credential cache socket are all read
-	// back as gone (QuiesceAgentBox). A quiesced release names nothing in
-	// Detail; a host left running is named there and Quiesced is false.
+	// Quiesced is true only when every coding host of the run and the guest's
+	// head reporter are stopped and its head, landing and cache tokens, its
+	// hosts' control and model credentials and the guest's git credential
+	// cache socket are all read back as gone (QuiesceAgentBox). A quiesced
+	// release names nothing in Detail; a host or reporter left running is
+	// named there and Quiesced is false.
 	Quiesced bool
 	// Detail names what keeps a box in use, for the operator log.
 	Detail string
@@ -240,7 +241,8 @@ type AgentBoxQuiesce = AgentWorkspaceRelease
 // QuiesceAgentBox revokes everything finishedRunID, a run of sessionID, was
 // given on its box, holding the box's lease, and touches nothing else: the
 // box's head token, its coding hosts and their landing and cache credentials,
-// and the guest's git credential cache, each read back as gone. It does not
+// the guest's head reporter and its git credential cache, each read back as
+// gone. It does not
 // retire the box. Its guest stays marked dirty whatever happens: only a
 // retirement's new guest clears the mark, so the box's next turn retires it.
 // A revocation that is not read back fails the quiesce and the sweep retries
@@ -397,7 +399,8 @@ func (s *WorkspaceService) releaseStoppedAgentBox(ctx context.Context, row db.Wo
 // quiesceAgentBoxLeased revokes everything a run was given on a box whose
 // lease guard holds: the head token (a CAS on the token read, read back), the
 // coding hosts and their landing and cache credentials (guarded, read back by
-// owner generation), and the guest's git credential cache, whose socket must
+// owner generation), the guest's head reporter, which must read back as not
+// running (guarded), and the guest's git credential cache, whose socket must
 // be gone (guarded). Unix sockets cross a network namespace, so a command
 // that runs in the guest after quiesce could otherwise read the cached
 // credential (Security s-j6ein4). It answers whether the head token is
@@ -413,6 +416,15 @@ func (s *WorkspaceService) quiesceAgentBoxLeased(ctx context.Context, row db.Wor
 	if err != nil {
 		return revoked, kept, err
 	}
+	// Before the credential cache, which a running reporter seeds again.
+	reporter, err := s.stopAgentBoxHeadReporter(operationCtx, row, guard)
+	if kept != "" && reporter != "" {
+		kept += "; "
+	}
+	kept += reporter
+	if err != nil {
+		return revoked, kept, err
+	}
 	if err := s.endAgentBoxCredentialCache(operationCtx, row, guard); err != nil {
 		return revoked, kept, err
 	}
@@ -420,6 +432,60 @@ func (s *WorkspaceService) quiesceAgentBoxLeased(ctx context.Context, row db.Wor
 		return revoked, kept, errAgentBoxHeadTokenLive
 	}
 	return revoked, kept, nil
+}
+
+// stopAgentBoxHeadReporter stops the guest's head reporter under guard and
+// reads it back as not running. The reporter runs jj and git in the checkout
+// as the developer, with the network, outside the offline facet the turn's
+// test runs in: a .git or .jj config the test planted would run there on its
+// next snapshot or push. A box with no guest, or a guest that no longer
+// exists, runs none. It answers the reporter it could not confirm stopped,
+// for the operator log, or "": the box is then not quiesced, and a
+// retirement deleting its guest ends it. errAgentBoxLost is a release that
+// lost the box. Nothing starts the reporter again on this guest
+// (agentBoxGuestQuiesced).
+func (s *WorkspaceService) stopAgentBoxHeadReporter(ctx context.Context, row db.Workspace, guard agentBoxGuard) (string, error) {
+	if strings.TrimSpace(guard.guest) == "" {
+		return "", nil
+	}
+	gone := func(err error) bool {
+		return errors.Is(err, workspaceapi.ErrWorkspaceNotFound) || errors.Is(err, workspaceapi.ErrWorkspaceStopped)
+	}
+	var unconfirmed error
+	ran, err := guard.run(ctx, agentBoxBeforeHeadReporterStop, false, func(ctx context.Context) error {
+		err := s.runtime.StopService(ctx, row.ID, workspaceHeadReporterService)
+		switch {
+		case errors.Is(err, workspaceapi.ErrGuestGone):
+			return err
+		case gone(err):
+			return nil
+		case err != nil:
+			unconfirmed = fmt.Errorf("stop: %w", err)
+			return nil
+		}
+		observed, err := s.runtime.InspectService(ctx, row.ID, workspaceHeadReporterService)
+		switch {
+		case errors.Is(err, workspaceapi.ErrGuestGone):
+			return err
+		case gone(err):
+		case err != nil:
+			unconfirmed = fmt.Errorf("read back: %w", err)
+		case observed.State == workspaceapi.ServiceRunning:
+			unconfirmed = errors.New("read back as running after its stop")
+		}
+		return nil
+	})
+	switch {
+	case !ran && err == nil:
+		return "", errAgentBoxLost
+	case err != nil:
+		return "", fmt.Errorf("stop the guest's head reporter: %w", err)
+	case unconfirmed != nil:
+		slog.WarnContext(ctx, "head reporter of a quiesced agent box not confirmed stopped; the box is not quiesced",
+			"workspace_id", row.ID, "error", unconfirmed)
+		return "head reporter " + workspaceHeadReporterService + " still running", nil
+	}
+	return "", nil
 }
 
 // agentBoxCredentialCacheEnd stops the guest's git credential cache daemon
