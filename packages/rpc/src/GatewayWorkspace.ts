@@ -24,12 +24,17 @@ export const isGatewayWorkspaceId = (value: unknown): value is string =>
  */
 export const GatewayWorkspaceIdSchema = z.string().refine(isGatewayWorkspaceId, "Invalid gateway workspace ID")
 
+/** A local gateway names its workspace by the first 16 hex digits of the root's SHA-256.
+ * @category schemas
+ * @since 1.0.0
+ */
+export const LocalGatewayWorkspaceIdSchema = z.string().regex(/^[0-9a-f]{16}$/, "Invalid local gateway workspace ID")
 
 /** Local hashes are accepted only by an explicitly local card payload.
  * @category schemas
  * @since 1.0.0
  */
-export const GatewayCardWorkspaceIdSchema = z.union([GatewayWorkspaceIdSchema, z.string().regex(/^[0-9a-f]{16}$/)])
+export const GatewayCardWorkspaceIdSchema = z.union([GatewayWorkspaceIdSchema, LocalGatewayWorkspaceIdSchema])
 
 /** Marked local payloads retain their transport across persistence.
  * @category schemas
@@ -41,7 +46,7 @@ export const gatewayCardPayload = <T extends z.ZodRawShape>(shape: T) =>
     const check = (value: unknown, path: Array<string | number>) => {
       if (!value || typeof value !== "object") return
       const id = (value as Record<string, unknown>).workspaceId
-      if (typeof id === "string" && /^[0-9a-f]{16}$/.test(id) && payload.localGateway !== true) {
+      if (typeof id === "string" && /^[0-9a-f]{16}$/.test(id) && bound.localGateway !== true) {
         context.addIssue({ code: "custom", message: "A local workspace requires a local gateway card.", path: [...path, "workspaceId"] })
       }
     }

@@ -685,3 +685,15 @@ test("gateway mode refuses all remote routes without backend, identity or cloud 
     expect(seen).toEqual([])
   } finally { await local.stop(); await fake.stop(true) }
 })
+
+test("gateway mode serves a bootstrap the client accepts, naming the local workspace", async () => {
+  const local = await startLocalServer({
+    port: 0, distDir: dist, cloudMode: "offline",
+    localGateway: { url: "http://127.0.0.1:9", repo: "local/project", workspaceId: "0123456789abcdef", gatewayId: "test", root: dist, operatorToken: "private" }
+  })
+  try {
+    const response = await fetch(local.origin + APP_BOOTSTRAP_PATH, { headers: { "x-smithers-local-session": local.sessionToken } })
+    expect(response.status).toBe(200)
+    expect(AppBootstrapSchema.parse(await response.json()).gateway).toEqual({ repo: "local/project", workspaceId: "0123456789abcdef" })
+  } finally { await local.stop() }
+})

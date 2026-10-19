@@ -43,6 +43,7 @@ test("RunsInbox answers a real parked HumanTask through the local gateway withou
     const child = spawn(command, args, { cwd: repository, env: { ...process.env, SMITHERS_TOKEN: "" }, stdio: ["ignore", "pipe", "pipe"] })
     child.stdout!.on("data", bytes => output.push(String(bytes)))
     child.stderr!.on("data", bytes => output.push(String(bytes)))
+    child.on("exit", (code, signal) => output.push(`[exit] ${args.slice(0, 3).join(" ")}: ${code ?? signal}\n`))
     children.push(child)
     return child
   }
@@ -51,16 +52,17 @@ test("RunsInbox answers a real parked HumanTask through the local gateway withou
     const [code] = await once(child, "exit")
     expect(code, output.join("")).toBe(0)
   }
+  let token = ""
   try {
     await symlink(join(repository, "node_modules"), join(root, "node_modules"), "dir")
     await run(["init", "local-gateway-question"])
     await writeFile(join(root, ".smithers/flows/local-gateway-question/flow.ts"), await readFile(join(__dirname, "HumanTask.fixture.ts"), "utf8"))
     launch(process.execPath, [cli, "flow", "start", "local-gateway-question", "--data", "{}", "--format", "json", "--root", root])
     const port = await freePort()
-    const tokenFile = join(root, "operator.token")
+    const tokenFile = join(root, "operator-token")
     launch(process.execPath, [cli, "serve", "--root", root, "--port", String(port), "--operator-token-file", tokenFile])
     await expect.poll(async () => fetch(`http://127.0.0.1:${port}/health`).then(r => r.status).catch(() => 0)).toBe(200)
-    const token = (await readFile(tokenFile, "utf8")).trim()
+    token = (await readFile(tokenFile, "utf8")).trim()
     expect((await stat(tokenFile)).mode & 0o777).toBe(0o600)
     expect(output.join("")).not.toContain(token)
     launch("bun", ["apps/app/src/bun/serve.ts", "--root", root, "--repo", "local/project", "--gateway", `http://127.0.0.1:${port}`, "--gateway-token-file", tokenFile, "--dist", resolve(repository, "apps/app/dist"), "--origin", "http://localhost:0"])
@@ -74,6 +76,10 @@ test("RunsInbox answers a real parked HumanTask through the local gateway withou
       expect(JSON.stringify(request.headers())).not.toContain(token)
     })
     page.on("websocket", socket => { if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(socket.url()).hostname)) external.push(socket.url()) })
+    // A shell that never boots must say why: browser errors, failed responses and server output.
+    page.on("console", message => { if (message.type() === "error") output.push(`[console] ${message.text()}\n`) })
+    page.on("pageerror", error => output.push(`[pageerror] ${error.message}\n`))
+    page.on("response", response => { if (response.status() >= 400) output.push(`[http ${response.status()}] ${response.request().method()} ${response.url()}\n`) })
     await page.addInitScript("globalThis.__name = value => value")
     await page.goto(origin)
     await expect(page.locator(".app-shell")).toBeVisible({ timeout: 60_000 })
@@ -98,6 +104,10 @@ test("RunsInbox answers a real parked HumanTask through the local gateway withou
     expect(external).toEqual([])
     expect(output.join("")).not.toContain(token)
     expect(await page.content()).not.toContain(token)
+  } catch (error) {
+    // A failing journey says why: page text, browser errors, failed responses, child exits and server output.
+    const report = `--- page text ---\n${await page.locator("body").innerText().catch(() => "")}\n--- output ---\n${output.join("")}`
+    throw new Error(`${(error as Error).message}\n${token ? report.replaceAll(token, "[operator token]") : report}`)
   } finally {
     for (const child of children.reverse()) await stop(child)
     await rm(root, { recursive: true, force: true })

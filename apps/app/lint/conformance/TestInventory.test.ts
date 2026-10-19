@@ -13,6 +13,7 @@ import playwrightLocal from "../../playwright.local.config"
 import playwrightProof from "../../playwright.proof.config"
 import playwrightGraph from "../../playwright.graph.config"
 import playwrightShowcase from "../../playwright.showcase.config"
+import playwrightGateway from "../../playwright.gateway.config"
 
 const app = fileURLToPath(new URL("../../", import.meta.url))
 const root = fileURLToPath(new URL("../../../../", import.meta.url))
@@ -147,6 +148,7 @@ const isolatedWrappers: Readonly<Record<string, string>> = {
   "e2e/fixtures/unit-entrypoints/AppIslandFallback.child.test.tsx": "src/mainview/AppEntrypoints.test.ts",
   "e2e/fixtures/unit-entrypoints/Main.child.test.tsx": "src/mainview/AppEntrypoints.test.ts",
   "e2e/fixtures/unit-entrypoints/Serve.child.test.ts": "src/bun/ServeEntrypoint.test.ts",
+  "e2e/fixtures/unit-entrypoints/Gateway.child.test.ts": "src/bun/ServeEntrypoint.test.ts",
 }
 
 // Only two declared wrapper shapes are admitted: a literal child URL, or a
@@ -317,6 +319,8 @@ const owners = (path: string): string[] => {
   if (realRunner && playwrightOwns(path, playwrightReal)) result.push("Playwright real")
   if (scripts["test:e2e:local"] === "playwright test --config playwright.local.config.ts" && playwrightOwns(path, playwrightLocal)) result.push("Playwright local")
   if (scripts["test:e2e:proof"] === "playwright test --config playwright.proof.config.ts" && playwrightOwns(path, playwrightProof)) result.push("Playwright proof")
+  // The local gateway tier spawns its own serve and app host over a built dist; no default run selects it.
+  if (scripts["test:e2e:gateway"] === "playwright test --config playwright.gateway.config.ts" && playwrightOwns(path, playwrightGateway)) result.push("Playwright gateway")
   if (runsStep(prSteps, graphStep) && playwrightOwns(path, playwrightGraph)) result.push("Playwright graph")
   if (runsStep(prSteps, showcaseStep) && playwrightOwns(path, playwrightShowcase)) result.push("Playwright showcase")
   if (exclusiveRunners.some(target => exclusiveOwns(path, target, read(target.runner.entry.path)))) result.push("exclusive Playwright")
@@ -366,6 +370,8 @@ test("every app test belongs to an executable runner", () => {
   expect(owners("e2e/real/chat-tools.spec.ts")).toEqual(["Playwright real"])
   expect(owners("e2e/real/models.spec.ts")).toEqual(["Playwright real"])
   expect(owners("e2e/local/setup-no-github.spec.ts")).toEqual(["Playwright local"])
+  expect(owners("e2e/gateway/local-gateway.spec.ts")).toEqual(["Playwright gateway"])
+  expect(owners("e2e/fixtures/unit-entrypoints/Gateway.child.test.ts")).toEqual(["isolated unit child"])
   // The proof tier records journeys on the real bundle; no default run selects it.
   expect(owners("e2e/proof/j1.spec.ts")).toEqual(["Playwright proof"])
   expect(owners("scripts/proof-install.test.ts")).toEqual(["unit"])
@@ -398,9 +404,11 @@ test("isolated child ownership follows executable selected wrappers", () => {
     expect(isolatedUnitOwns(child, wrapper, `// ${source.replaceAll("\n", "\n// ")}`)).toBe(false)
     expect(isolatedUnitOwns(child, wrapper, `const unused = ${JSON.stringify(name)}`)).toBe(false)
     expect(isolatedUnitOwns(child, wrapper, source.replaceAll("spawnSync(", "unused("))).toBe(false)
-    expect(isolatedUnitOwns(child, wrapper, source.replaceAll("test.each(", "test.skip.each("))).toBe(false)
-    expect(isolatedUnitOwns(child, wrapper, source.replaceAll("test.each(cases)", "test.each([])")
-      .replace("test.each([['visible'], ['hidden']] as const)", "test.each([])"))).toBe(false)
+    expect(isolatedUnitOwns(child, wrapper, source.replaceAll("test.each(", "test.skip.each(").replaceAll("test(", "test.skip("))).toBe(false)
+    // An empty table disarms a child drawn from test.each rows; a literal child URL has no table to empty.
+    if (!isolatedUnitOwns(child, wrapper, source.replaceAll("test.each(", "test.skip.each(")))
+      expect(isolatedUnitOwns(child, wrapper, source.replaceAll("test.each(cases)", "test.each([])")
+        .replace("test.each([['visible'], ['hidden']] as const)", "test.each([])"))).toBe(false)
   }
   expect(read("e2e/fixtures/unit-entrypoints/child.bunfig.toml").replace(/^\s*#.*$/gm, "").trim()).toBe("")
   expect(owners("e2e/fixtures/unit-entrypoints/Unregistered.child.test.ts")).toEqual([])
