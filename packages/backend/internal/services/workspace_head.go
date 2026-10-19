@@ -37,8 +37,14 @@ const (
 	workspaceCodingConfigPath       = "/etc/smithers/workspace-coding.json"
 	workspaceGitCredentialEnvPath   = "/etc/smithers/workspace-git.env"
 	workspaceGitCredentialSocket    = defaultWorkspaceHome + "/.cache/smithers/git-credential/socket"
-	workspaceHeadTokenTTL           = 7 * 24 * time.Hour
-	workspaceHeadInstallTimeout     = 60 * time.Second
+	// workspaceHeadTokenTTL bounds an install's workspace head token, and
+	// hostedWorkspaceHeadTokenTTL a hosted box's, where agent turns are
+	// untrusted and a copied token must not outlive the turn by days (CEO
+	// a-23ccly). The publisher renews its token once less than half its
+	// lifetime is left, at every start and join.
+	workspaceHeadTokenTTL       = 7 * 24 * time.Hour
+	hostedWorkspaceHeadTokenTTL = 2 * time.Hour
+	workspaceHeadInstallTimeout = 60 * time.Second
 )
 
 // workspaceHeadReporterProcessCheck defines is_head_reporter, which accepts a
@@ -400,7 +406,7 @@ func (s *WorkspaceService) rotateWorkspaceHeadToken(ctx context.Context, store w
 	s.revokeWorkspaceHeadToken(ctx, workspace)
 	workspace.HeadPushTokenID = pgtype.Int8{}
 	token, err := issueTemporaryRepoTokenWithTTL(ctx, s.q, workspace.UserID, "sandbox-workspace-"+workspace.ID,
-		scopes, workspaceHeadTokenTTL)
+		scopes, s.headTokenTTL())
 	if err != nil {
 		return workspace, temporaryRepoCloneToken{}, pkgerrors.Internal("mint workspace head token: " + err.Error())
 	}
@@ -429,7 +435,7 @@ func (s *WorkspaceService) workspaceHeadReporterEnvironment(workspace db.Workspa
 		"SMITHERS_API_BASE_URL":                             normalizePublicBaseURL(s.gitBaseURL),
 		"SMITHERS_WORKSPACE_GIT_URL":                        gitURL,
 		"SMITHERS_WORKSPACE_GIT_CREDENTIAL_SOCKET":          credentialSocket,
-		"SMITHERS_WORKSPACE_GIT_CREDENTIAL_TIMEOUT_SECONDS": fmt.Sprint(int64(workspaceHeadTokenTTL / time.Second)),
+		"SMITHERS_WORKSPACE_GIT_CREDENTIAL_TIMEOUT_SECONDS": fmt.Sprint(int64(s.headTokenTTL() / time.Second)),
 	}
 	for name, value := range extra {
 		environment[name] = value
@@ -453,6 +459,15 @@ const (
 	// workspaceHeadRetryDelay spaces repeated failed installs for one workspace.
 	workspaceHeadRetryDelay = time.Minute
 )
+
+// headTokenTTL is the lifetime of a workspace head token in this deployment:
+// two hours on hosted (no machine admission), seven days on an install.
+func (s *WorkspaceService) headTokenTTL() time.Duration {
+	if s.machineAdmission == nil {
+		return hostedWorkspaceHeadTokenTTL
+	}
+	return workspaceHeadTokenTTL
+}
 
 // workspaceHeadSwapStore records a publisher token only over the one the
 // caller read and revokes that one in the same statement, so neither a crash
@@ -529,7 +544,7 @@ func (s *WorkspaceService) installRuntimeWorkspaceHeadReporter(ctx context.Conte
 		return row, err
 	}
 	probe := func(tokenID int64) (bool, error) {
-		renewBefore := time.Now().Add(workspaceHeadTokenTTL / 2).Unix()
+		renewBefore := time.Now().Add(s.headTokenTTL() / 2).Unix()
 		result, err := s.runtime.ExecuteCommand(operationCtx, row.ID, workspaceapi.Command{
 			Args: []string{"/bin/sh", "-c", runtimeWorkspaceHeadReporterProbe},
 			Environment: map[string]string{
@@ -571,7 +586,7 @@ func (s *WorkspaceService) installRuntimeWorkspaceHeadReporter(ctx context.Conte
 		return row, err
 	}
 	token, err := issueTemporaryRepoTokenWithTTL(ctx, s.q, user, "sandbox-workspace-"+row.ID,
-		scopes, workspaceHeadTokenTTL)
+		scopes, s.headTokenTTL())
 	if err != nil {
 		return row, pkgerrors.Internal("mint workspace head token: " + err.Error())
 	}

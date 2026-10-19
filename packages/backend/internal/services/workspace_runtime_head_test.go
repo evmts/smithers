@@ -303,7 +303,7 @@ func TestRuntimeWorkspaceKeepsRepositoryCredentialWhileRunning(t *testing.T) {
 	firstRecordPID, firstRecordToken, firstExpires := reporterRecord(t, observed.Home)
 	require.Equal(t, firstPID, firstRecordPID)
 	require.Equal(t, firstToken, firstRecordToken)
-	require.Greater(t, firstExpires, time.Now().Add(workspaceHeadTokenTTL/2).Unix())
+	require.Greater(t, firstExpires, time.Now().Add(service.headTokenTTL()/2).Unix())
 
 	ensure := func() {
 		t.Helper()
@@ -336,10 +336,17 @@ func TestRuntimeWorkspaceKeepsRepositoryCredentialWhileRunning(t *testing.T) {
 		"the replacement retires the publisher holding the revoked token")
 	eventuallyListsMain(t, runtime, row.ID, mainCommit)
 
-	// A token past half its lifetime is renewed before it can expire.
+	// A token with more than half its lifetime left is kept; one past half
+	// its lifetime is renewed before it can expire. A hosted head token lives
+	// two hours (CEO a-23ccly).
+	require.Equal(t, hostedWorkspaceHeadTokenTTL, service.headTokenTTL())
 	thirdPID, _, _ := reporterRecord(t, observed.Home)
 	require.NoError(t, os.WriteFile(reporterPidfile(observed.Home),
-		[]byte(fmt.Sprintf("%d %d %d\n", thirdPID, thirdToken, time.Now().Add(time.Hour).Unix())), 0o600))
+		[]byte(fmt.Sprintf("%d %d %d\n", thirdPID, thirdToken, time.Now().Add(service.headTokenTTL()/2+10*time.Minute).Unix())), 0o600))
+	ensure()
+	require.Equal(t, thirdToken, queries.recordedHeadTokenID(), "a token with more than half its lifetime left is kept")
+	require.NoError(t, os.WriteFile(reporterPidfile(observed.Home),
+		[]byte(fmt.Sprintf("%d %d %d\n", thirdPID, thirdToken, time.Now().Add(service.headTokenTTL()/2-10*time.Minute).Unix())), 0o600))
 	ensure()
 	fourthToken := queries.recordedHeadTokenID()
 	require.NotEqual(t, thirdToken, fourthToken)
