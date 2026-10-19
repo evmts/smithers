@@ -201,7 +201,7 @@ func (d *agentDispatch) cleanup() {
 	}
 	if d.vmCreated && d.workspaceID != "" {
 		// RFD-004: the run's box is released and its row kept.
-		release, err := d.svc.workspaces.ReleaseAgentWorkspace(ctx, d.workspaceID, d.input.SessionID)
+		release, err := d.svc.workspaces.ReleaseAgentWorkspace(ctx, d.workspaceID, d.input.SessionID, d.run.ID)
 		logAgentWorkspaceRelease(middleware.LoggerWithAgentSessionAndWorkflowRun(ctx, d.input.SessionID, d.run.ID),
 			d.workspaceID, "dispatch_failed", release, err)
 	} else if d.vmCreated {
