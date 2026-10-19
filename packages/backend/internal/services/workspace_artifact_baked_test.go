@@ -118,7 +118,7 @@ func TestWorkspaceArtifactBakedExecutablePublication(t *testing.T) {
 			installed := filepath.Join(guest.root, "installed-host")
 			script := "#!/bin/sh\ncat '" + guest.root + "/current/smithers-workspace-coding-host.b64'.part* | base64 -d | gzip -dc > '" + installed + "'\nchmod 0755 '" + installed + "'\n'" + installed + "' > '" + guest.root + "/receipt'\n"
 			require.NoError(t, finishWorkspaceArtifacts(t.Context(), client, "fixture", script))
-			require.NoError(t, waitForWorkspaceArtifactBootstrap(t.Context(), client, "fixture"))
+			require.NoError(t, waitForWorkspaceArtifactBootstrap(artifactWaitContext(t), client, "fixture"))
 			receipt, err := os.ReadFile(filepath.Join(guest.root, "receipt"))
 			require.NoError(t, err)
 			require.Equal(t, "release-host-ok\n", string(receipt))
