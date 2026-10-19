@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The migration-only flow options now type `defaultFlowsDir` as `string` instead
+  of the literal `"flows"`; M-49 also updates the exported target-model path
+  contract. Accept a string and use the `.smithers/flows/` layout in migration
+  consumers.
+
 ### Fixed
 
 - Preserve missing and explicit-undefined decoding defaults, required output

@@ -41,18 +41,9 @@ const run = (payload: typeof Request.Type, executionId: string) =>
 const inCheckout = async (body: (root: string) => Promise<void>) => {
   const root = mkdtempSync(join(tmpdir(), "working-together-flow-"))
   const previous = { cwd: process.cwd(), path: process.env.PATH }
-  execFileSync("git", ["init", "--quiet"], { cwd: root })
-  execFileSync("git", [
-    "-c",
-    "user.name=fixture",
-    "-c",
-    "user.email=fixture@invalid",
-    "commit",
-    "--quiet",
-    "--allow-empty",
-    "-m",
-    "fixture"
-  ], { cwd: root })
+  execFileSync("jj", ["git", "init", "--colocate", root])
+  execFileSync("jj", ["describe", "-m", "fixture"], { cwd: root })
+  execFileSync("jj", ["new"], { cwd: root })
   process.chdir(root)
   try {
     await body(root)
@@ -100,6 +91,7 @@ test("component suites that pass with their kill hooks succeed and record compon
     const parent = join(root, ".artifacts/checks/C-DUR-04")
     const [directory] = readdirSync(parent)
     const summary = JSON.parse(readFileSync(join(parent, directory!, "summary.json"), "utf8"))
+    assert.equal(summary.commit, execFileSync("jj", ["log", "--no-graph", "-r", "@-", "-T", "commit_id"], { cwd: root, encoding: "utf8" }).trim())
     assert.equal(summary.componentStatus, "component-passed")
     assert.equal(summary.status, "incomplete")
     assert.ok(summary.points.every((point: { status: string }) => point.status === "blocked"))
