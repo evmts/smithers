@@ -1435,6 +1435,12 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       view: z.string().optional(),
       /** The saved issue views the repository's factory declares, in declaration order; absent when none. */
       views: z.array(z.object({ id: z.string(), title: z.string() })).optional(),
+      /**
+       * True when a read behind `issues` answered one page of a longer list
+       * (a `rel="next"` link, or a full page), so a count over `issues` is a
+       * floor ("30+"), never the repository's total. Absent: the rows are all.
+       */
+      partial: z.boolean().optional(),
       issues: z.array(
         z.object({
           number: z.number().int(),
@@ -1547,6 +1553,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     kind: z.literal("pr-list"),
     payload: z.object({
       repo: z.string(),
+      /** True when the list read answered one page of a longer list, as on the issue list: counts over `landings` are floors. */
+      partial: z.boolean().optional(),
       landings: z.array(
         z.object({
           number: z.number().int(),

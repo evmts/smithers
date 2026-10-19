@@ -141,11 +141,13 @@ export const LandingListCardBody = ({
 }: { readonly card: Extract<Card, { kind: "pr-list" }> } & LandingCardActions) => {
   const { repo, landings } = card.payload
   const open = landings.filter((landing) => isOpenPull(landing.state)).length
+  // One page of more: each count is a floor.
+  const more = card.payload.partial === true ? "+" : ""
   return (
     <div className="ghc ghc-box" data-testid="pr-list">
       <div className="ghc-toolbar">
-        <span className="ghc-count" data-active="true"><Octicon name="git-pull-request" /> {open} Open</span>
-        {landings.length - open > 0 ? <span className="ghc-count"><Octicon name="check" /> {landings.length - open} Other</span> : null}
+        <span className="ghc-count" data-active="true"><Octicon name="git-pull-request" /> {`${open}${more}`} Open</span>
+        {landings.length - open > 0 ? <span className="ghc-count"><Octicon name="check" /> {`${landings.length - open}${more}`} Other</span> : null}
         <span className="ghc-toolbar-repo">{repoLabel(repo)}</span>
       </div>
       {landings.length === 0 ?

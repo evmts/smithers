@@ -802,7 +802,7 @@ function AppContent() {
   const pullList = retainedLists.find(card => card.kind === "pr-list" && card.viewRepo?.toLowerCase() === bootRepository.toLowerCase() && card.viewKey?.toLowerCase() === `prs-${bootRepository}`.toLowerCase())
   // The file or folder at its ref on a code route: what the Ask is about (Design (K)) and the ref the view's latest-commit bar reads (Design (H)).
   const codeLocated = codeRoute && codeTarget?.subject && (codeTarget.subject.kind === "tree" || codeTarget.subject.kind === "blob") ? resolveRefLocation(codeTarget.subject.location, codeRefs) : undefined
-  return <RepoFrame onRunCommand={controller.runCommand} member={member} pullCount={pullList?.kind === "pr-list" ? pullList.payload.landings.filter(row => isOpenPull(row.state)).length : undefined} issueCount={issueList?.kind === "issue-list" ? issueList.payload.issues.filter(row => row.state === "open").length : undefined} repo={bootRepository} publicRepo={repository?.catalog === true}
+  return <RepoFrame onRunCommand={controller.runCommand} member={member} pullCount={pullList?.kind === "pr-list" ? pullList.payload.landings.filter(row => isOpenPull(row.state)).length : undefined} pullsPartial={pullList?.kind === "pr-list" && pullList.payload.partial} issueCount={issueList?.kind === "issue-list" ? issueList.payload.issues.filter(row => row.state === "open").length : undefined} issuesPartial={issueList?.kind === "issue-list" && issueList.payload.partial} repo={bootRepository} publicRepo={repository?.catalog === true}
     sync={bootEntry?.githubSync}
     login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
     guest={guestAdmission(session.guestConversation, bootRepository)}

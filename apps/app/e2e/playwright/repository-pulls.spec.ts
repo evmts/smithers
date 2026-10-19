@@ -142,3 +142,18 @@ for (const width of [1280, 390]) for (const colorScheme of ["light", "dark"] as 
     await expect(main.getByRole("link", { name: "Merge on GitHub ↗", exact: true })).toHaveCount(0)
   })
 }
+
+test("a full GitHub page that links a next page draws its pull request counts as floors", async ({ page }) => {
+  await signedOutVisitor(page)
+  // A 100-row page and a next link. Live it read "Open 3 Closed 97" as the repository's totals (PM d-i55b5a).
+  const pulls = Array.from({ length: 100 }, (_, i) => ({ number: 100 - i, title: `Paged pull ${100 - i}`, state: i < 3 ? "open" : "closed", user: { login: "maya" }, labels: [], created_at: "2026-10-17T12:00:00Z", updated_at: "2026-10-17T12:00:00Z" }))
+  await page.route(/\/api\/user\/github-repos\/maya\/tinyhttp\/pulls(?:\?.*)?$/, route => route.fulfill({ status: 401, json: { message: "authentication required" } }))
+  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "maya/tinyhttp" }] } }))
+  await page.route("**/api/repos/maya/tinyhttp", route => route.fulfill({ json: { full_name: "maya/tinyhttp", is_public: true, default_bookmark: "main", github_source: { owner: "maya", repo: "tinyhttp" } } }))
+  await page.route("**/api/repos/maya/tinyhttp/github/metadata/pulls?*", route => route.fulfill({ json: pulls, headers: { link: '<https://api.github.com/repositories/1/pulls?state=all&per_page=100&page=2>; rel="next"' } }))
+  await page.goto("/maya/tinyhttp/pulls")
+  const state = page.getByRole("main").getByRole("navigation", { name: "Pull request state", exact: true })
+  await expect(state.getByRole("link", { name: /Open 3\+$/ })).toBeVisible()
+  await expect(state.getByRole("link", { name: /Closed 97\+$/ })).toBeVisible()
+  await expect(page.getByRole("navigation", { name: "Repository", exact: true }).getByRole("link", { name: "Pull requests 3+", exact: true })).toBeVisible()
+})

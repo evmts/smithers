@@ -1398,6 +1398,8 @@ const FIXTURES: Record<
       kind: "issue",
       view: "bugs",
       views: [{ id: "bugs", title: "Open bugs" }],
+      // One page of a longer list: its counts are floors.
+      partial: true,
       issues: [{
         number: 1634,
         title: "rc0 CI green",
@@ -1517,6 +1519,7 @@ const FIXTURES: Record<
     minimal: { repo: "smithersai/smithers", landings: [] },
     full: {
       repo: "smithersai/smithers",
+      partial: true,
       landings: [{
         number: 12,
         title: "Serve repository files",
@@ -3021,6 +3024,14 @@ describe("every persisted card kind", () => {
       .toEqual(["commits", "checks", "files"])
     expect(CardSchema.safeParse(card("pr", { ...FIXTURES.pr.full, signInTabs: ["conversation"] })).success).toBe(false)
     expect(CardSchema.safeParse(card("pr", { ...FIXTURES.pr.full, signInTabs: "commits" })).success).toBe(false)
+
+    // A list that is one page of more says so with one boolean, never a count of its own.
+    for (const kind of ["issue-list", "pr-list"] as const) {
+      const partial = CardSchema.safeParse(card(kind, FIXTURES[kind].full))
+      expect(partial.success && (partial.data.kind === "issue-list" || partial.data.kind === "pr-list") ? partial.data.payload.partial : undefined).toBe(true)
+      expect(CardSchema.safeParse(card(kind, { ...FIXTURES[kind].full, partial: "30+" })).success).toBe(false)
+      expect(CardSchema.safeParse(card(kind, { ...FIXTURES[kind].full, partial: 30 })).success).toBe(false)
+    }
   })
 })
 

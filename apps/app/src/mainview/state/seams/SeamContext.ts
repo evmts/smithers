@@ -82,8 +82,17 @@ export class RepositorySignInRequired extends Data.TaggedError("RepositorySignIn
 export const signInRequired = (error: unknown): error is RepositorySignInRequired =>
   error instanceof RepositorySignInRequired
 
+/**
+ * Whether one page of a list read leaves rows unread: the answer links a
+ * `rel="next"` page, or it holds as many rows as `pageSize`, the page size
+ * asked for (GitHub and plue answer 30 when none is). A count over such a
+ * page is a floor, never the list's total.
+ */
+export const pageIsPartial = (response: Response, rows: number, pageSize = 30): boolean =>
+  /rel="?next"?/.test(response.headers.get("link") ?? "") || rows >= pageSize
+
 /** A bounded model-readable answer; the card retains the full parsed payload. */
-export const readResult = (value: string): { readonly value: string } => {
+export const readResult =(value: string): { readonly value: string } => {
   const cap = 16_000
   const suffix = "\n[truncated]"
   return { value: value.length <= cap ? value : value.slice(0, cap - suffix.length) + suffix }

@@ -168,3 +168,18 @@ test("signed-in New issue creates in the native repository tracker", async ({ pa
   await expect.poll(() => writes).toEqual([`/api/repos/${repo}/issues`])
   await expect(ask.getByRole("heading", {name: "Native creation #4", exact: true})).toBeVisible()
 })
+
+test("a full GitHub page that links a next page draws its issue counts as floors", async ({ page }) => {
+  await signedOutVisitor(page)
+  // GitHub's default page: 30 rows and a next link. Live it read "Open 29 Closed 1" as the repository's totals (PM d-i55b5a).
+  const issues = Array.from({ length: 30 }, (_, i) => ({ number: 30 - i, title: `Paged issue ${30 - i}`, state: i < 29 ? "open" : "closed", user: { login: "maya" }, labels: [], comments: 0, created_at: "2026-10-17T12:00:00Z" }))
+  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "maya/tinyhttp" }] } }))
+  await page.route("**/api/repos/maya/tinyhttp", route => route.fulfill({ json: { full_name: "maya/tinyhttp", is_public: true, default_bookmark: "main", github_source: { owner: "maya", repo: "tinyhttp" } } }))
+  await page.route(/\/api\/repos\/maya\/tinyhttp\/issues(?:\?.*)?$/, route => route.fulfill({ json: [] }))
+  await page.route("**/api/user/github-repos/maya/tinyhttp/issues?*", route => route.fulfill({ json: issues, headers: { link: '<https://api.github.com/repositories/1/issues?state=all&page=2>; rel="next"' } }))
+  await page.goto("/maya/tinyhttp/issues")
+  const state = page.getByRole("main").getByRole("navigation", { name: "Issue state", exact: true })
+  await expect(state.getByRole("link", { name: /Open 29\+$/ })).toBeVisible()
+  await expect(state.getByRole("link", { name: /Closed 1\+$/ })).toBeVisible()
+  await expect(page.getByRole("navigation", { name: "Repository", exact: true }).getByRole("link", { name: "Issues 29+", exact: true })).toBeVisible()
+})
