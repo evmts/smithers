@@ -5,7 +5,9 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/workspace"
 )
 
@@ -32,6 +34,33 @@ func TestTopologyResponsibilities(t *testing.T) {
 		if got.servesHTTP() != tc.serve || got.workers() != tc.workers || got.hosted() != tc.hosted {
 			t.Fatalf("%s: incorrect responsibilities %+v", tc.name, got)
 		}
+	}
+}
+
+// A hosted turn ends within services.HostedAgentTurnTimeout whatever the
+// install's agent runtime says, including when that runtime is unset; an
+// install keeps its configured runtime (G1, 2026-10-20 launch).
+func TestHostedAgentTurnsEndWithinTheHostedTurnTimeout(t *testing.T) {
+	cases := []struct {
+		name       string
+		role       topology
+		configured int64
+		want       time.Duration
+	}{
+		{"install keeps its configured runtime", localTopology, 1800, 30 * time.Minute},
+		{"install keeps its reaper off", localTopology, 0, 0},
+		{"hosted lowers a longer runtime", hostedWorkerTopology, 1800, services.HostedAgentTurnTimeout},
+		{"hosted reaps even with no runtime", topology{multitenant: true}, 0, services.HostedAgentTurnTimeout},
+		{"hosted keeps a shorter runtime", hostedWorkerTopology, 600, 10 * time.Minute},
+	}
+	for _, tc := range cases {
+		if got := agentTurnTimeout(tc.role, tc.configured); got != tc.want {
+			t.Errorf("%s: agentTurnTimeout = %s, want %s", tc.name, got, tc.want)
+		}
+	}
+	if services.HostedAgentTurnTimeout != 15*time.Minute || services.HostedToolCallTimeout != 5*time.Minute {
+		t.Fatalf("hosted bounds = %s turn, %s command; the launch requires 15m and 5m",
+			services.HostedAgentTurnTimeout, services.HostedToolCallTimeout)
 	}
 }
 

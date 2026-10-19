@@ -273,6 +273,24 @@ export const systemFlowsFromEnv = (
   return value
 }
 
+/**
+ * The bound on one bash or test command, in milliseconds, that the hosted
+ * composition sets (SMITHERS_CODING_TOOL_CALL_LIMIT_MS; services.HostedToolCallTimeout
+ * in packages/backend). Unset, every command keeps its own timeout. A command
+ * past it is killed with its process group and fails its turn. A malformed
+ * value refuses startup rather than running unbounded.
+ */
+export const toolCallLimitFromEnv = (
+  environment: Readonly<Record<string, string | undefined>>
+): number | undefined => {
+  const value = environment.SMITHERS_CODING_TOOL_CALL_LIMIT_MS
+  if (value === undefined) return undefined
+  if (!/^[1-9][0-9]{0,9}$/.test(value)) {
+    throw new Error("SMITHERS_CODING_TOOL_CALL_LIMIT_MS must be a positive whole number of milliseconds")
+  }
+  return Number(value)
+}
+
 const configured = (options: Options) => {
   if (
     options.draftVersion && (options.todoExecutionDigest !== undefined || options.sourcePublication !== "local-only")

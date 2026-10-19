@@ -137,7 +137,7 @@ func TestAgentSQL_H_SessionsMessagesAndPartsRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	timedOut, err := q.UpdateAgentSessionTimedOut(ctx, UpdateAgentSessionTimedOutParams{ID: timedOutID, FinishedAt: finishedAt})
 	require.NoError(t, err)
-	assert.Equal(t, "timed_out", timedOut.Status)
+	assert.Equal(t, "failed", timedOut.Status, "a turn past its bound fails")
 
 	missingSession := uuid.NewString()
 	count, err = q.CountAgentMessagesBySession(ctx, missingSession)

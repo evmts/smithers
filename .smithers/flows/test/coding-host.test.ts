@@ -530,6 +530,17 @@ test("host launch system names require a non-empty JSON string array and preserv
   }
 })
 
+test("a hosted host bounds every command by the composition's limit; unset keeps each command's own", () => {
+  assert.equal(CodingHost.toolCallLimitFromEnv({ SMITHERS_CODING_TOOL_CALL_LIMIT_MS: "300000" }), 300_000)
+  assert.equal(CodingHost.toolCallLimitFromEnv({}), undefined)
+  for (const text of ["", "0", "-1", "5m", "300000.5", " 300000", "01", "12345678901"]) {
+    assert.throws(
+      () => CodingHost.toolCallLimitFromEnv({ SMITHERS_CODING_TOOL_CALL_LIMIT_MS: text }),
+      /SMITHERS_CODING_TOOL_CALL_LIMIT_MS/
+    )
+  }
+})
+
 test("direct host composition refuses a missing system policy before opening services", () => {
   const options = {
     repositoryPath: "/unused",

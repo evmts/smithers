@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -433,12 +434,24 @@ func (store relayPlanStore) RelayPlanFlow(ctx context.Context, target flowruntim
 	return flowID, err == nil, err
 }
 
+// codingToolCallLimitEnv names the per-command bound, in milliseconds, a
+// coding host enforces on its shell and test commands
+// (.smithers/flows/coding/serve-host.ts reads it). Unset, a command keeps its
+// own timeout.
+const codingToolCallLimitEnv = "SMITHERS_CODING_TOOL_CALL_LIMIT_MS"
+
 // codingHostEnvironment carries no model credential or provider origin in
 // any topology: a host shares its workspace (and, in microVM mode, its guest
 // user) with repository commands, so its model seats come only from the
-// catalog's metered proxy with a per-binding credential (#2187).
-func codingHostEnvironment(_ topology) map[string]string {
-	return map[string]string{"SMITHERS_WORKSPACE_JJ_EXPORT_BINARY": services.WorkspaceJJExportGuestPath}
+// catalog's metered proxy with a per-binding credential (#2187). A hosted
+// host also bounds every shell and test command by
+// services.HostedToolCallTimeout.
+func codingHostEnvironment(role topology) map[string]string {
+	environment := map[string]string{"SMITHERS_WORKSPACE_JJ_EXPORT_BINARY": services.WorkspaceJJExportGuestPath}
+	if role.hosted() {
+		environment[codingToolCallLimitEnv] = strconv.FormatInt(services.HostedToolCallTimeout.Milliseconds(), 10)
+	}
+	return environment
 }
 
 // The install checks the durable owner setting on each pool request, so

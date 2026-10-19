@@ -61,6 +61,9 @@ type agentDispatch struct {
 	// triggerText is the exact text of the admitted message this run
 	// answers (TriggerMessageID), empty when the window does not hold it.
 	triggerText string
+	// acceptedAt is when that message was accepted, zero when the window does
+	// not hold it. The turn's wall clock starts here (turnStartedAt).
+	acceptedAt time.Time
 
 	// Egress-proxy state: secrets the guest must never hold. egressSecrets is
 	// handed to the provider once in createVM; egressNames lets the
@@ -533,6 +536,7 @@ func (d *agentDispatch) loadMessageHistory() error {
 	d.repositoryPath = ""
 	serializedHistory := serializeAgentTaskMessageHistory(messageHistory)
 	d.triggerText = agentTriggerMessageText(messageHistory, d.input.TriggerMessageID)
+	d.acceptedAt = agentTriggerMessageAcceptedAt(messageHistory, d.input.TriggerMessageID)
 
 	payload, err := agentDispatchJSONMarshal(agentTaskPayload{
 		Kind:           "agent",
@@ -1266,7 +1270,7 @@ func (d *agentDispatch) reserveFleetSlot() (retErr error) {
 	if d.svc.concurrencyCounter == nil || d.svc.concurrencyMax <= 0 {
 		return d.setSessionStartedAt()
 	}
-	reserved, err := d.svc.concurrencyCounter.ReserveAgentSessionVMSlot(d.ctx, d.input.SessionID, d.svc.concurrencyMax)
+	reserved, err := d.svc.concurrencyCounter.ReserveAgentSessionVMSlot(d.ctx, d.input.SessionID, d.svc.concurrencyMax, d.turnStartedAt())
 	if err != nil {
 		middleware.LoggerWithAgentSession(d.ctx, d.input.SessionID).
 			Error("agent fleet slot reservation failed; rejecting dispatch", "error", err)
@@ -1278,8 +1282,20 @@ func (d *agentDispatch) reserveFleetSlot() (retErr error) {
 	return nil
 }
 
+// turnStartedAt is when this turn's wall clock starts: the moment its message
+// was accepted (the confirm, or a typed /change), never when its box became
+// ready (PM d-kppoyr). The session reaper measures the turn bound from it. A
+// dispatch whose window does not hold the message starts the clock now.
+func (d *agentDispatch) turnStartedAt() time.Time {
+	now := time.Now().UTC()
+	if d.acceptedAt.IsZero() || d.acceptedAt.After(now) {
+		return now
+	}
+	return d.acceptedAt.UTC()
+}
+
 func (d *agentDispatch) setSessionStartedAt() error {
-	startedAt := time.Now().UTC()
+	startedAt := d.turnStartedAt()
 	if _, err := d.svc.dispatchQ.UpdateAgentSessionStartedAt(d.ctx, db.UpdateAgentSessionStartedAtParams{
 		ID:        d.input.SessionID,
 		StartedAt: pgtype.Timestamptz{Time: startedAt, Valid: true},

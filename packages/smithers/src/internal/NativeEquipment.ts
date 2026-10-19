@@ -22,6 +22,7 @@ import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import { ContainerSandbox } from "@smthrs/sandbox"
 import type * as Checkpoints from "@smthrs/std/Checkpoints"
 import * as Container from "@smthrs/std/Container"
+import * as TestRun from "@smthrs/std/TestRun"
 import * as TestRunner from "@smthrs/std/TestRunner"
 import { Clock, Context, Effect, FileSystem, Layer, Path, Redacted } from "effect"
 import type { Result, Scope } from "effect"
@@ -1041,14 +1042,25 @@ export const testFlows = (
     Evaluator.Evaluator | KernelChildProcessSpawner.ChildProcessSpawner | Path.Path
   >,
   container: Container.Container,
-  runner: TestRunner.Runner | undefined
+  runner: TestRunner.Runner | undefined,
+  callLimitMillis?: number | undefined
 ): ReadonlyArray<FlowBinding.Source> =>
   runner === undefined ? [] : [
     StandardFlows.tests(
       Context.add(
-        Context.add(services, TestRunner.TestRunner, TestRunner.make(runner)),
+        Context.add(
+          services,
+          TestRunner.TestRunner,
+          // The host's command bound also caps the suite's declared timeout.
+          TestRunner.make(
+            callLimitMillis === undefined
+              ? runner
+              : { ...runner, timeoutMs: Math.min(runner.timeoutMs ?? TestRun.DEFAULT_TIMEOUT_MS, callLimitMillis) }
+          )
+        ),
         Container.Container,
         container
-      )
+      ),
+      { callLimitMillis }
     )
   ]

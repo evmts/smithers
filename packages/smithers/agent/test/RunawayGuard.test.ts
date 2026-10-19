@@ -1106,6 +1106,37 @@ describe("a run parked on a timeout", () => {
   }, 180_000)
 })
 
+describe("a run whose command passes the host's command bound", () => {
+  // G1 (2026-10-20 launch): a hosted turn whose command never ends fails at
+  // the bound with the call-limit fault the product reads as turn_timed_out;
+  // the cell never sees the command again and the model is not asked again.
+  it("fails the run with the call-limit fault instead of answering the cell", async () => {
+    const shell = Effect.runSync(Effect.context<NodeServices.NodeServices>().pipe(Effect.provide(NodeServices.layer)))
+    const bounded: Guarded = { flows: () => [StandardFlows.shell(shell, undefined, { callLimitMillis: 300 })] }
+    script = (n) => ({
+      source: n === 0
+        ? `await ctx.call("bash", ${JSON.stringify({ command: "sleep 30" })})\nctx.done("ran")`
+        : `ctx.done("again")`,
+      delayMillis: 0
+    })
+    const root = makeRoot()
+    const started = Date.now()
+
+    const settled = await parkInFirstProcess(root, {}, bounded)
+
+    expect(settled.kind).toBe("control.run.failed")
+    expect(Date.now() - started).toBeLessThan(30_000)
+    const faultOf = (value: unknown): unknown =>
+      typeof value !== "object" || value === null
+        ? undefined
+        : "fault" in value
+        ? value.fault
+        : Object.values(value).map(faultOf).find((found) => found !== undefined)
+    expect(faultOf(settled.payload)).toEqual({ class: "policy", tag: RunawayGuard.callLimitTag })
+    expect(modelCalls).toEqual(["runaway-first"])
+  }, 60_000)
+})
+
 describe("the incident a tripped guard parks on", () => {
   const exceeded = (fields: Partial<ConstructorParameters<typeof Budget.BudgetExceeded>[0]>) =>
     new Budget.BudgetExceeded({
