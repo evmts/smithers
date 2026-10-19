@@ -380,7 +380,7 @@ func (s *AgentService) finishAgentWorkspace(ctx context.Context, session db.Agen
 			}
 		}
 	}
-	release, err := s.workspaces.ReleaseAgentWorkspace(ctx, workspaceID, session.ID)
+	release, err := s.workspaces.ReleaseAgentWorkspace(ctx, workspaceID, session.ID, workflowRunID)
 	logAgentWorkspaceRelease(logger, workspaceID, finalStatus, release, err)
 }
 

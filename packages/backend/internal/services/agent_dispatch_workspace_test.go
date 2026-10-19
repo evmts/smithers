@@ -26,7 +26,7 @@ func (s *agentWorkspaceBackendStub) CreateAgentWorkspace(ctx context.Context, in
 	}
 	return AgentWorkspaceResult{WorkspaceID: "ws-1", VMID: "vm-1"}, nil
 }
-func (s *agentWorkspaceBackendStub) ReleaseAgentWorkspace(_ context.Context, id, sessionID string) (AgentWorkspaceRelease, error) {
+func (s *agentWorkspaceBackendStub) ReleaseAgentWorkspace(_ context.Context, id, sessionID string, _ int64) (AgentWorkspaceRelease, error) {
 	s.released = append(s.released, id+"/"+sessionID)
 	return AgentWorkspaceRelease{Outcome: agentWorkspaceQuiesced, HeadTokenRevoked: true}, nil
 }
