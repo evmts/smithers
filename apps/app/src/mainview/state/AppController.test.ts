@@ -182,6 +182,7 @@ describe("the controller's command surface", () => {
       "sharedConversation",
       "installSnapshots",
       "todoList",
+      "watchHostedChange",
       "fileDocuments",
       "readRepositoryFilePage",
       "readRepositoryChange",
