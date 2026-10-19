@@ -8,7 +8,9 @@ import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Control } from "@smthrs/control"
 import * as Cell from "@smthrs/harness/Cell"
+import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
+import * as Workspace from "@smthrs/kernel/Workspace"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Executable from "@smthrs/registry/Executable"
 import * as ApplyPatch from "@smthrs/std/ApplyPatch"
@@ -17,21 +19,35 @@ import * as Ls from "@smthrs/std/Ls"
 import * as Read from "@smthrs/std/Read"
 import { StdError } from "@smthrs/std/StdError"
 import * as Write from "@smthrs/std/Write"
-import { Effect, FileSystem, Layer, Option, Path } from "effect"
+import { Effect, FileSystem, Layer, Option, Path, type PlatformError } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
-import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
-import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises"
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import {
+  chmod,
+  link,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  symlink,
+  unlink,
+  writeFile
+} from "node:fs/promises"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
 import * as Application from "../../../packages/smithers/src/Application.ts"
+import * as HostLanguageServers from "../../../packages/smithers/src/internal/HostLanguageServers.ts"
 import * as NativeControl from "../../../packages/smithers/src/internal/NativeControl.ts"
 import { platform } from "../../../packages/smithers/src/internal/NodeControlHost.ts"
 import * as CodingFileSystem from "../coding/filesystem.ts"
 import { nativePlatform, type Options } from "../coding/host.ts"
-import { hostedAdapters, hostedTeaching } from "../coding/serve-host.ts"
+import { hostedAdapters, hostedTeaching, hostedTools } from "../coding/serve-host.ts"
 
 const hash = (bytes: Uint8Array | string) => createHash("sha256").update(bytes).digest("hex")
 
@@ -136,6 +152,7 @@ test("the local provider refuses links, the outside and version-control metadata
     "elsewhere/profile",
     "elsewhere/new.txt",
     "../escape.txt",
+    ".git",
     ".git/config",
     ".git/hooks/post-checkout",
     ".jj/repo/store/extra",
@@ -536,4 +553,210 @@ test("a change made between the base check and the write is refused, not overwri
   assert.equal(exit._tag, "Failure")
   assert.match(JSON.stringify(exit), /stale_read/)
   assert.equal(await readFile(join(ws, "dir", "file"), "utf8"), "theirs")
+})
+
+/** The box's own read stack: the kernel guard over the descriptor-relative helper. */
+const helperFiles = (root: string) =>
+  KernelFileSystem.layer.pipe(
+    Layer.provideMerge(Layer.mergeAll(GrantStore.layerNoop, Workspace.layer(root))),
+    Layer.provideMerge(AtomicFileSystem.layer.pipe(Layer.provide(NodeServices.layer))),
+    Layer.provideMerge(NodeServices.layer)
+  )
+
+const canary = "CANARY-7f3a-hosted-instructions"
+
+test("a committed instruction link out of the tree never reaches the hosted agent", {
+  skip: helperMissing,
+  timeout: 120_000
+}, async (t) => {
+  const root = await workspace(t)
+  const outside = await workspace(t)
+  await writeFile(join(outside, "secret.md"), `${canary}\n`)
+  const workspaceRoot = join(root, "workspace")
+  await mkdir(workspaceRoot)
+  // AGENTS.md links out of the tree; CLAUDE.md links at the host's own environment.
+  await symlink(join(outside, "secret.md"), join(workspaceRoot, "AGENTS.md"))
+  await symlink("/proc/self/environ", join(workspaceRoot, "CLAUDE.md"))
+  const linked = await assembled(workspaceRoot, hostedOptions(workspaceRoot))
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      yield* Control.Control
+      const instructions = JSON.stringify(linked.host().instructions ?? [])
+      assert.ok(!instructions.includes(canary), instructions)
+      assert.ok(!instructions.includes("PATH="), instructions)
+      assert.deepEqual(linked.host().instructions ?? [], [])
+    }).pipe(Effect.provide(linked.application), Effect.scoped)
+  )
+  // The root's own file is still the agent's instruction.
+  await unlink(join(workspaceRoot, "AGENTS.md"))
+  await writeFile(join(workspaceRoot, "AGENTS.md"), "Use tabs.\n")
+  const plain = await assembled(workspaceRoot, hostedOptions(workspaceRoot))
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      yield* Control.Control
+      assert.deepEqual(plain.host().instructions, [{ path: join(workspaceRoot, "AGENTS.md"), text: "Use tabs.\n" }])
+    }).pipe(Effect.provide(plain.application), Effect.scoped)
+  )
+})
+
+test("an instruction file swapped for an outside link just before its read is refused", {
+  skip: helperMissing,
+  timeout: 120_000
+}, async (t) => {
+  const run = async (
+    files: (root: string) => Layer.Layer<NodeServices.NodeServices, PlatformError.PlatformError>
+  ) => {
+    const root = await workspace(t)
+    const outside = await workspace(t)
+    await writeFile(join(outside, "secret.md"), `${canary}\n`)
+    await writeFile(join(root, "AGENTS.md"), "Use tabs.\n")
+    return Effect.runPromise(
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const coding = CodingFileSystem.make(
+          { repositoryPath: root },
+          fs,
+          yield* ChildProcessSpawner.ChildProcessSpawner,
+          root,
+          CodingFileSystem.localProvider(root)
+        )
+        // The swap lands after the containment check and before the read.
+        const swapping: FileSystem.FileSystem = {
+          ...coding,
+          readFileString: (path, encoding) =>
+            Effect.andThen(
+              Effect.promise(async () => {
+                if (path === join(root, "AGENTS.md")) {
+                  await unlink(path)
+                  await symlink(join(outside, "secret.md"), path)
+                }
+              }),
+              coding.readFileString(path, encoding)
+            )
+        }
+        return yield* NativeControl.confinedInstructions(CodingFileSystem.confineReads(swapping, root), root)
+      }).pipe(Effect.provide(files(root)), Effect.provide(NodeServices.layer))
+    )
+  }
+  // The box's descriptor-relative read refuses the swapped link.
+  const anchoredRead = await run(helperFiles)
+  assert.ok(!JSON.stringify(anchoredRead).includes(canary), JSON.stringify(anchoredRead))
+  // The same swap over a plain path filesystem would have been followed: the test can see it.
+  const plain = await run(() => NodeServices.layer)
+  assert.ok(JSON.stringify(plain).includes(canary), JSON.stringify(plain))
+})
+
+test("hosted write and edit start no language server even with one on PATH", {
+  skip: helperMissing || anchored,
+  timeout: 120_000
+}, async (t) => {
+  const root = await workspace(t)
+  const workspaceRoot = join(root, "workspace")
+  await mkdir(workspaceRoot)
+  // A stand-in typescript-language-server that marks the moment it starts.
+  const modules = join(root, "host", "node_modules")
+  const cli = join(modules, "typescript-language-server", "lib", "cli.mjs")
+  const started = join(modules, "typescript-language-server", "lib", "started")
+  mkdirSync(join(modules, "typescript-language-server", "lib"), { recursive: true })
+  writeFileSync(join(modules, "typescript-language-server", "package.json"), JSON.stringify({ type: "module" }))
+  writeFileSync(
+    cli,
+    `#!/usr/bin/env node\nimport { writeFileSync } from "node:fs"\nwriteFileSync(${
+      JSON.stringify(started)
+    }, "started")\n`
+  )
+  await chmod(cli, 0o755)
+  mkdirSync(join(modules, "typescript", "lib"), { recursive: true })
+  writeFileSync(join(modules, "typescript", "package.json"), JSON.stringify({ name: "typescript" }))
+  writeFileSync(join(modules, "typescript", "lib", "tsserver.js"), "")
+  mkdirSync(join(modules, ".bin"), { recursive: true })
+  await symlink(cli, join(modules, ".bin", "typescript-language-server"))
+  const environment = { PATH: `${join(modules, ".bin")}:${process.env.PATH ?? ""}` }
+  // The server is installed: an unconfined host would select it.
+  assert.ok(HostLanguageServers.typescript(workspaceRoot, environment) !== undefined)
+  const { application, host } = await assembled(workspaceRoot, hostedOptions(workspaceRoot), environment)
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      yield* Control.Control
+      const offered = (yield* Effect.forEach(host().flows ?? [], (source) => source.bindings())).flat()
+      const bound = (name: string) => offered.find((binding) => binding.descriptor.name === name)!
+      const path = join(workspaceRoot, "a.ts")
+      const written = yield* bound("write").run(callOf("write", { path, content: "const a = 1\n" }))
+      assert.equal(written.outcome, "success", JSON.stringify(written))
+      const edited = yield* bound("edit").run(
+        callOf("edit", { path, oldString: "const a = 1", newString: "const a = 2" }, "hosted-run", 1)
+      )
+      assert.equal(edited.outcome, "success", JSON.stringify(edited))
+    }).pipe(Effect.provide(application), Effect.scoped)
+  )
+  assert.equal(readFileSync(join(workspaceRoot, "a.ts"), "utf8"), "const a = 2\n")
+  assert.equal(existsSync(started), false, "no language server process started")
+})
+
+test("a hosted host that would offer any tool beyond its allowlist does not start", {
+  skip: helperMissing,
+  timeout: 120_000
+}, async (t) => {
+  const root = await workspace(t)
+  // An execution alias arriving through a source: a terminal makes `bash` offered.
+  const { application } = await assembled(root, {
+    ...hostedOptions(root),
+    agentTerminal: () => ({
+      execute: async function*() {
+        yield { kind: "exit", code: 0 }
+      },
+      killRun: async () => {}
+    })
+  })
+  const exit = await Effect.runPromiseExit(
+    Effect.asVoid(Control.Control).pipe(Effect.provide(application), Effect.scoped)
+  )
+  assert.equal(exit._tag, "Failure")
+  assert.match(
+    JSON.stringify(exit) + String((exit as { cause?: unknown }).cause),
+    /Host self-check: bash is offered but this host allows only read, write/
+  )
+})
+
+test("the allowlist self-check names the first unlisted tool", () => {
+  const providers = { fileMutations: true, terminal: true }
+  assert.equal(NativeControl.offeredWithoutProvider([...hostedTools], providers, hostedTools), undefined)
+  assert.equal(
+    NativeControl.offeredWithoutProvider(["read", "shell_command"], providers, hostedTools)?.message,
+    `Host self-check: shell_command is offered but this host allows only ${hostedTools.join(", ")}`
+  )
+  assert.equal(NativeControl.offeredWithoutProvider(["read", "shell_command"], providers), undefined)
+})
+
+test("the provider refuses a hard-linked file for reads and writes", { skip: anchored }, async (t) => {
+  const root = await workspace(t)
+  const outside = await workspace(t)
+  await writeFile(join(outside, "secret"), "secret\n")
+  await link(join(outside, "secret"), join(root, "linked"))
+  const provider = hostedAdapters().fileMutationProvider!(root)
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      assert.equal((yield* Effect.flip(provider.read!("linked"))).code, "permission_denied")
+      const write = yield* Effect.flip(
+        provider.commit("hosted-run", [{
+          path: "linked",
+          base_digest: hash("secret\n"),
+          content: new TextEncoder().encode("x")
+        }])
+      )
+      assert.equal(write.code, "permission_denied")
+    })
+  )
+  assert.equal(await readFile(join(outside, "secret"), "utf8"), "secret\n")
+})
+
+test("the hosted glob refuses a root outside the workspace", async (t) => {
+  const root = await workspace(t)
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const { coding } = yield* hostedFiles(root)
+      const refused = yield* Effect.flip(coding.glob("**", { root: "/etc" }))
+      assert.equal(refused.reason._tag, "PermissionDenied")
+    }).pipe(Effect.provide(NodeServices.layer))
+  )
 })

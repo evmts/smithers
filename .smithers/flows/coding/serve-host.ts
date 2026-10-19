@@ -57,20 +57,43 @@ export const hostedTeaching = [
   "Never claim test results, approval, a merge or a landing."
 ] as const
 
+/** Every tool a hosted turn's agent may be offered. */
+export const hostedTools = [
+  "read",
+  "write",
+  "edit",
+  "apply_patch",
+  "ls",
+  "glob",
+  "grep",
+  "remember",
+  "recall",
+  "jev",
+  "memory"
+] as const
+
 /** The adapters a hosted developer box composes. It runs no machine broker, so
  * edits go through the workspace owner's local provider, no `bash` is offered,
  * and the agent reads nothing outside the workspace: the box's caches and the
- * host's own process files are readable by the same uid. */
-export const hostedAdapters = (): Pick<Options, "fileMutationProvider" | "withoutTerminal" | "confinedReads"> => ({
+ * host's own process files are readable by the same uid. The host offers
+ * nothing beyond {@link hostedTools}. */
+export const hostedAdapters = (): Pick<
+  Options,
+  "fileMutationProvider" | "withoutTerminal" | "confinedReads" | "toolAllowlist"
+> => ({
   fileMutationProvider: localProvider,
   withoutTerminal: hostedTeaching,
-  confinedReads: true
+  confinedReads: true,
+  toolAllowlist: hostedTools
 })
 
 /** Code-owned host adapters. The installed entry supplies none; a hosted
  * developer box's root selects {@link hostedAdapters}. */
 export const serve = async (
-  adapters: Pick<Options, "fileMutationProvider" | "agentTerminal" | "withoutTerminal" | "confinedReads"> = {}
+  adapters: Pick<
+    Options,
+    "fileMutationProvider" | "agentTerminal" | "withoutTerminal" | "confinedReads" | "toolAllowlist"
+  > = {}
 ) => {
   const parsed = parseArgs({
     args: process.argv.slice(2),
