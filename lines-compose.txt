@@ -1,0 +1,1 @@
+bash packages/backend/scripts/with-test-postgres.sh go -C packages/backend test ./internal/compose -count=1 -v -timeout 50m
