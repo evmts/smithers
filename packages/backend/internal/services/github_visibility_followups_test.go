@@ -176,4 +176,58 @@ func TestVisibilityFollowups(t *testing.T) {
 			require.NoError(t, err)
 		}
 	})
+	// Security d-dbk7c7 (3): every non-writer, signed out or signed in, sees a
+	// public source as GitHub and gets one answer for private, half-receipt
+	// (github_private=false without github_visibility, the 2026-10-19 rollout
+	// state) and absent sources.
+	t.Run("non-writers: public opens, private, half receipt and absent read alike", func(t *testing.T) {
+		_, err := f.pool.Exec(ctx, `INSERT INTO users(id,username,lower_username) VALUES(2002,'reader','reader')`)
+		require.NoError(t, err)
+		reader, err := db.New(f.pool).GetUserByID(ctx, 2002)
+		require.NoError(t, err)
+		for _, viewer := range []*db.User{nil, &reader} {
+			who := "signed out"
+			if viewer != nil {
+				who = "signed-in non-writer"
+			}
+			warm(t)
+			view, err := repos.GetRepoView(ctx, viewer, "door", "mirror")
+			require.NoError(t, err)
+			require.Equal(t, IssueTrackerGitHub, view.IssueTracker, who)
+			_, err = repos.ReadPublicRepositoryMetadata(ctx, viewer, "door", "mirror", "issues/7", nil)
+			require.NoError(t, err, who)
+			var first string
+			for _, state := range []string{"private", "half receipt", "absent"} {
+				warm(t)
+				switch state {
+				case "private":
+					_, err = f.pool.Exec(ctx, `UPDATE github_synced_repos SET github_private=true,github_visibility='private' WHERE id=$1`, f.row.ID)
+				case "half receipt":
+					_, err = f.pool.Exec(ctx, `UPDATE github_synced_repos SET github_visibility=NULL WHERE id=$1`, f.row.ID)
+				case "absent":
+					_, err = f.pool.Exec(ctx, `UPDATE import_jobs SET status='failed' WHERE repository_id=2001`)
+				}
+				require.NoError(t, err)
+				view, err := repos.GetRepoView(ctx, viewer, "door", "mirror")
+				require.NoError(t, err)
+				require.Equal(t, IssueTrackerSmithers, view.IssueTracker, who+"/"+state)
+				got, err := json.Marshal(view)
+				require.NoError(t, err)
+				_, err = repos.ReadPublicRepositoryMetadata(ctx, viewer, "door", "mirror", "issues/7", nil)
+				apiErr, ok := err.(*pkgerrors.APIError)
+				require.True(t, ok, who+"/"+state)
+				recorder := httptest.NewRecorder()
+				pkgerrors.WriteError(recorder, apiErr)
+				require.Equal(t, 404, recorder.Code, who+"/"+state)
+				answer := fmt.Sprintf("%s\n%d %v %s", got, recorder.Code, recorder.Header(), recorder.Body.String())
+				if first == "" {
+					first = answer
+				} else {
+					require.Equal(t, first, answer, who+"/"+state)
+				}
+				_, err = f.pool.Exec(ctx, `UPDATE import_jobs SET status='ready' WHERE repository_id=2001`)
+				require.NoError(t, err)
+			}
+		}
+	})
 }
