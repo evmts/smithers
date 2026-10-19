@@ -251,7 +251,9 @@ const walkSources = (dir, base = dir) =>
     ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
       if (!e.isDirectory()) return [relative(base, join(dir, e.name))]
       const flatRoot = dir === base && basename(base) !== "src" && basename(base) !== "src-vibe"
-      const skip = e.name.startsWith(".") || neverSources.has(e.name) || (flatRoot && rootOnlyNonSources.has(e.name))
+      // A folder with its own package.json is another package (.smithers/flows/coding, E-13).
+      const nestedPackage = existsSync(join(dir, e.name, "package.json"))
+      const skip = e.name.startsWith(".") || neverSources.has(e.name) || nestedPackage || (flatRoot && rootOnlyNonSources.has(e.name))
       return skip ? [] : walkSources(join(dir, e.name), base)
     })
     : []
@@ -336,8 +338,9 @@ export const splitTwinErrors = (errors) => {
   return { twin: errors.filter((l) => !inTypeScript(l)), typescript: errors.filter(inTypeScript) }
 }
 
-const vitest = (pkg, config, outputFile) => {
-  const args = ["run", "--root", pkg, "--reporter=json", `--outputFile=${outputFile}`, "--coverage.enabled=false"]
+const vitest = (pkg, config, outputFile, files = []) => {
+  // files: an affected-test subset (suites.json affectedOnly); empty runs the whole suite.
+  const args = ["run", ...files, "--root", pkg, "--reporter=json", `--outputFile=${outputFile}`, "--coverage.enabled=false"]
   if (config) args.push("--config", config)
   const vitestBin = bin(pkg, "vitest")
   if (!vitestBin) return { ran: false, pass: 0, fail: 0, skip: 0, failed: ["(no vitest in the package or the root)"] }
@@ -743,11 +746,16 @@ const withLock = (pkg, body) => {
       writeFileSync(join(lock, "pid"), String(process.pid))
       break
     } catch {
-      const holder = Number(existsSync(join(lock, "pid")) ? readFileSync(join(lock, "pid"), "utf8") : 0)
+      // The holder writes its pid just after mkdir: a lock without one is being taken right now,
+      // unless it is old (its holder died between the two steps). E-10 recurred through that gap.
+      const pidFile = join(lock, "pid")
+      const holder = Number(existsSync(pidFile) ? readFileSync(pidFile, "utf8") : 0)
       let alive = false
       try {
-        alive = holder > 0 && process.kill(holder, 0)
-      } catch {}
+        alive = holder > 0 ? process.kill(holder, 0) : Date.now() - statSync(lock).mtimeMs < 30_000
+      } catch {
+        alive = false
+      }
       if (!alive) {
         rmSync(lock, { recursive: true, force: true })
         continue
@@ -821,7 +829,9 @@ export default mergeConfig(base, {
     name: "vibe-twin",
     enforce: "pre",
     async resolveId(source, importer, options) {
-      if (!importer || importer.includes("/node_modules/") || !importer.startsWith(pkg)) return null
+      // Any importer outside node_modules gets the twin: a package's tests may live beside it
+      // (.smithers/flows/coding is tested from .smithers/flows/test).
+      if (!importer || importer.includes("/node_modules/")) return null
       if (importer.includes("/.vibe-twin/out/")) return fallbackFor(source, importer, pkg) ?? null
       const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
       return resolved && twinFor(resolved.id, pkg) ? twinFor(resolved.id, pkg) : null
@@ -877,7 +887,7 @@ registerHooks({
       const twin = resolved.url.startsWith("file:") ? twinFor(fileURLToPath(resolved.url), pkg) : undefined
       return twin ? { ...resolved, url: pathToFileURL(twin).href, shortCircuit: true } : resolved
     }
-    if (!parent.startsWith(pkg) || parent.includes("/node_modules/")) return next(specifier, context)
+    if (parent.includes("/node_modules/")) return next(specifier, context)
     if (parent.includes("/.vibe-twin/out/")) {
       const fallback = fallbackFor(specifier, parent, pkg)
       return fallback ? next(pathToFileURL(fallback).href, context) : next(specifier, context)
@@ -899,12 +909,16 @@ registerHooks({
   }
   const notRun = { ran: false, pass: 0, fail: 0, skip: 0, failed: [] }
   const runSuite = (suite, i, twinRun) => {
+    // An affected subset with no files would run the whole heavy suite: run nothing instead.
+    if (tests.affectedOnly && suite.args.filter((a) => !a.startsWith("-")).length === 0) {
+      return { ran: false, pass: 0, fail: 0, skip: 0, failed: ["(no affected tests yet: twin a module that tests import)"], passed: [], status: -1 }
+    }
     const out = join(work, `${twinRun ? "vibe" : "ts"}-${i}.${suite.kind === "vitest" ? "json" : "xml"}`)
     return suite.kind === "bun"
       ? bunTest(pkg, suite.args, twinRun ? preload : undefined, out)
       : suite.kind === "node"
       ? nodeTest(pkg, suite.args, twinRun ? register : undefined, out)
-      : vitest(pkg, twinRun ? config : undefined, out)
+      : vitest(pkg, twinRun ? config : undefined, out, suite.args)
   }
   const merge = (results) => ({
     ran: results.every((r) => r.ran),

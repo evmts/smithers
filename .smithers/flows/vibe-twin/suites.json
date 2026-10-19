@@ -47,5 +47,33 @@
         ]
       }
     ]
+  },
+  "packages/smithers/build/build-cli": {
+    "why": "Its tests run smthrs builds end to end; the whole suite runs past 10 minutes, twice per iteration. Both runs use the direct importers of twinned modules; the full suite runs once on a lane VM before cutover.",
+    "kind": "vitest",
+    "args": [
+      "test",
+      "src"
+    ],
+    "affectedOnly": "direct"
+  },
+  "packages/smithers/migrate": {
+    "why": "Its whole suite runs past 18 minutes, twice per iteration. Both runs use the direct importers of twinned modules; the full suite runs once on a lane VM before cutover.",
+    "kind": "vitest",
+    "args": [
+      "test",
+      "src"
+    ],
+    "affectedOnly": "direct"
+  },
+  ".smithers/flows/coding": {
+    "why": "A package of its own with no tests of its own: .smithers/flows/test exercises it through ../coding imports (E-13). Both runs use those test files.",
+    "kind": "node",
+    "args": [
+      "--experimental-strip-types",
+      "--test",
+      "../test"
+    ],
+    "affectedOnly": "direct"
   }
 }
