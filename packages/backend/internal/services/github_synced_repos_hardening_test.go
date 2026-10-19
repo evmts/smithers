@@ -133,7 +133,10 @@ func TestSyncedRepos_ReconcilerRespectsHeartbeatAndCredentialGaps(t *testing.T) 
 	require.NoError(t, err)
 	require.NoError(t, store.MarkGitHubSyncedRepoSynced(context.Background(), withApp.ID))
 	require.NoError(t, store.TouchGitHubSyncedRepoWebhook(context.Background(), withApp.ID))
-	store.repos[syncedRepoKey("octo", "widget")].GithubPrivate.Valid = true
+	// A complete visibility receipt: without github_visibility the row is due at once.
+	receipt := store.repos[syncedRepoKey("octo", "widget")]
+	receipt.GithubPrivate.Valid = true
+	receipt.GithubVisibility.String, receipt.GithubVisibility.Valid = "public", true
 	_, err = service.EnrollGitHubRepo(context.Background(), EnrollGitHubRepoInput{
 		Owner: "octo", Repo: "no-app", // no installation -> no reconciler credential
 	})

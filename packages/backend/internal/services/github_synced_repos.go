@@ -1405,7 +1405,9 @@ func (s *GitHubSyncedRepoService) reconcileInterval(row db.GithubSyncedRepo) tim
 }
 
 func (s *GitHubSyncedRepoService) reconcileDue(row db.GithubSyncedRepo) bool {
-	if !row.LastSyncedAt.Valid || !row.GithubPrivate.Valid {
+	// A visibility receipt without github_visibility (written by pre-0173 code)
+	// keeps the door closed until GitHub is read again, so it is due at once.
+	if !row.LastSyncedAt.Valid || !row.GithubPrivate.Valid || !row.GithubVisibility.Valid {
 		return true
 	}
 	return s.now().Sub(row.LastSyncedAt.Time) >= s.reconcileInterval(row)
