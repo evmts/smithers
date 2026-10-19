@@ -900,10 +900,7 @@ func (s *workflowArtifactService) deleteWorkflowArtifactBlobSet(ctx context.Cont
 }
 
 func (s *workflowArtifactService) requireRun(ctx context.Context, repositoryID, runID int64) (db.WorkflowRun, error) {
-	run, err := s.queries.GetWorkflowRun(ctx, db.GetWorkflowRunParams{
-		ID:           runID,
-		RepositoryID: repositoryID,
-	})
+	run, err := s.queries.GetWorkflowRun(ctx, workflowRunReadParams(ctx, repositoryID, runID))
 	if err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.WorkflowRun{}, pkgerrors.NotFound("workflow run not found")

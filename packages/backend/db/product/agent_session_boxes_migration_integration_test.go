@@ -15,7 +15,7 @@ func agentSessionBoxesVersion(t *testing.T) int {
 	require.NoError(t, err)
 	for _, m := range migrationRegistry {
 		if strings.HasSuffix(m.path, "_agent_session_boxes.sql") {
-			require.Equal(t, len(registered), m.version, "the per-session box migration is the head this test was written at or a later one")
+			require.GreaterOrEqual(t, len(registered), m.version, "the per-session box migration remains registered when later migrations are added")
 			return m.version - 1
 		}
 	}

@@ -16,7 +16,17 @@ WHERE user_id = $1
 	return count, err
 }
 
+// CountVisibleActiveWorkflowRunsForUser is the public count; capacity accounting
+// below intentionally keeps counting all runs on dispatchable repositories.
+func (q *Queries) CountVisibleActiveWorkflowRunsForUser(ctx context.Context, userID, viewerID int64) (int, error) {
+	return q.countActiveWorkflowRunsForUser(ctx, userID, viewerID, true)
+}
+
 func (q *Queries) CountActiveWorkflowRunsForUser(ctx context.Context, userID int64) (int, error) {
+	return q.countActiveWorkflowRunsForUser(ctx, userID, userID, false)
+}
+
+func (q *Queries) countActiveWorkflowRunsForUser(ctx context.Context, userID, viewerID int64, restrictVisibility bool) (int, error) {
 	// The per-user concurrent-run cap gates workflow dispatch on EVERY repo the
 	// user can dispatch to, so the footprint must cover org-member and
 	// collaborator repos too — counting only personally-owned repos made the
@@ -32,12 +42,13 @@ SELECT COUNT(*)
 FROM workflow_runs wr
 JOIN repositories r ON r.id = wr.repository_id
 WHERE wr.status IN ('queued', 'running')
+ AND (NOT $2::boolean OR may_view_workflow_run(wr.id, $3))
   AND (
     r.user_id = $1
     OR r.org_id IN (SELECT organization_id FROM org_members WHERE user_id = $1)
     OR r.id IN (SELECT repository_id FROM collaborators WHERE user_id = $1)
   )
-`, userID).Scan(&count)
+`, userID, restrictVisibility, viewerID).Scan(&count)
 	return count, err
 }
 
