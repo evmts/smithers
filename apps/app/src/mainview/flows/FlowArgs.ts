@@ -3,6 +3,7 @@ import { fileArgs } from "@smthrs/rpc/FileRead"
 
 /** The typed input of every flow a card raises with structured values. */
 export interface FlowInput {
+  readonly "bug.report": { readonly failureCode?: string; readonly correlationId?: string }
   readonly "chat.copy-message": { readonly text: string }
   readonly "code.view": { readonly pathname: string; readonly field: "raw" | "L"; readonly value: string }
   readonly "convert": import("../state/controller/conversion").ConversionRequest
@@ -163,6 +164,7 @@ const graphLine = (payload: Payload, target: string, value: string): string => {
  * of the line.
  */
 const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } = {
+  "bug.report": payload => JSON.stringify(payload),
   "chat.copy-message": payload => String(payload.text ?? ""),
   "code.view": payload => JSON.stringify(payload),
   "convert": payload => JSON.stringify(payload),

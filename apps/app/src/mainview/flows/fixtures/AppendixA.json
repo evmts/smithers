@@ -1409,5 +1409,21 @@
     "minimumRole": "member",
     "agent": "run",
     "http": null
+  },
+  {
+    "name": "bug.report",
+    "summary": "Report a bug on GitHub",
+    "slash": "/bug",
+    "cli": null,
+    "journey": [],
+    "group": "Ask",
+    "visibility": "core",
+    "actors": [
+      "person",
+      "app_agent"
+    ],
+    "minimumRole": "member",
+    "agent": "run",
+    "http": null
   }
 ]
