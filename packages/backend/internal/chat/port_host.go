@@ -17,6 +17,7 @@ var errCommandAPIUnavailable = errors.New("conversation credential issuer unavai
 
 type PortHost struct {
 	Host            ports.ChatHost
+	AppInstructions string
 	ProducerBaseURL string
 	InstallOrigin   func() string
 	// Sources names the mirrored repository a turn may read. Without one, or
@@ -102,6 +103,12 @@ func (h PortHost) RunTurn(ctx context.Context, grant ProducerGrant) (result erro
 		if instructions != "" {
 			grant.AgentInstructions += "\n\n" + instructions
 		}
+	}
+	if h.AppInstructions != "" {
+		if grant.AgentInstructions != "" {
+			grant.AgentInstructions += "\n\n"
+		}
+		grant.AgentInstructions += h.AppInstructions
 	}
 	err := h.Host.RunChatTurn(ctx, grant)
 	if err == nil && grant.API == nil {
