@@ -57,11 +57,68 @@ LIMIT 1;
 
 -- name: SetWorkspaceHeadPushTokenID :exec
 -- RFD-004: records (or clears) the scoped token the guest head reporter
--- pushes with, so suspend/destroy can revoke it.
+-- pushes with, so suspend/destroy can revoke it. Recording one on an agent
+-- session's box marks its guest dirty in the same write (plue#869).
 UPDATE workspaces
 SET head_push_token_id = sqlc.narg(head_push_token_id)::bigint,
+    agent_box_dirty_vm_id = CASE
+        WHEN sqlc.narg(head_push_token_id)::bigint IS NOT NULL AND agent_session_id IS NOT NULL AND vm_id <> '' THEN vm_id
+        ELSE agent_box_dirty_vm_id
+    END,
     updated_at = NOW()
 WHERE id = sqlc.arg(id);
+
+-- name: GetAgentSessionBox :one
+-- An agent session's own box (plue#869), whatever its status.
+SELECT * FROM workspaces
+WHERE agent_session_id = sqlc.arg(agent_session_id)::uuid
+  AND deleted_at IS NULL;
+
+-- name: MarkAgentBoxGuestDirty :exec
+-- A turn's join of a box that already has a guest marks that guest dirty,
+-- whether or not a token was recorded on it, so the join retires it.
+UPDATE workspaces
+SET agent_box_dirty_vm_id = vm_id, updated_at = NOW()
+WHERE id = sqlc.arg(id)
+  AND vm_id = sqlc.arg(vm_id)::text
+  AND vm_id <> ''
+  AND agent_box_dirty_vm_id <> vm_id
+  AND agent_session_id IS NOT NULL
+  AND deleted_at IS NULL;
+
+-- name: AgentBoxDirtyOutsideTurn :one
+-- Whether a start must be refused: the agent session box's live guest is
+-- marked dirty and no turn of its session is in progress. A start reads it on
+-- its own authorization transaction, never from the row it loaded before,
+-- after it took the session's advisory lock shared
+-- (LockAgentBoxSessionForStart): no release can run between this check and
+-- what the start mints. A box no session owns answers no row.
+SELECT (
+  w.vm_id <> ''
+  AND w.agent_box_dirty_vm_id = w.vm_id
+  AND NOT (s.status = 'active' AND s.deleted_at IS NULL)
+)::boolean AS refuse
+FROM workspaces w
+JOIN agent_sessions s ON s.id = w.agent_session_id
+WHERE w.id = sqlc.arg(id);
+
+-- name: RecordAgentBoxGuest :one
+-- Records the new guest of a retired agent box. It is the only write that
+-- clears the box's dirty mark (plue#869): a box is retired only after the
+-- guest the mark names is deleted, so a different guest holds nothing of it.
+UPDATE workspaces
+SET vm_id = sqlc.arg(vm_id)::text,
+    status = 'running',
+    started_at = COALESCE(started_at, NOW()),
+    suspended_at = NULL,
+    agent_box_dirty_vm_id = CASE
+        WHEN agent_box_dirty_vm_id = sqlc.arg(vm_id)::text THEN agent_box_dirty_vm_id
+        ELSE ''
+    END,
+    updated_at = NOW()
+WHERE id = sqlc.arg(id)
+  AND deleted_at IS NULL
+RETURNING *;
 
 
 -- name: ListRunningWorkspacesForUserRepoBookmark :many

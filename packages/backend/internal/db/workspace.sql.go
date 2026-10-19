@@ -13,6 +13,30 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const agentBoxDirtyOutsideTurn = `-- name: AgentBoxDirtyOutsideTurn :one
+SELECT (
+  w.vm_id <> ''
+  AND w.agent_box_dirty_vm_id = w.vm_id
+  AND NOT (s.status = 'active' AND s.deleted_at IS NULL)
+)::boolean AS refuse
+FROM workspaces w
+JOIN agent_sessions s ON s.id = w.agent_session_id
+WHERE w.id = $1
+`
+
+// Whether a start must be refused: the agent session box's live guest is
+// marked dirty and no turn of its session is in progress. A start reads it on
+// its own authorization transaction, never from the row it loaded before,
+// after it took the session's advisory lock shared
+// (LockAgentBoxSessionForStart): no release can run between this check and
+// what the start mints. A box no session owns answers no row.
+func (q *Queries) AgentBoxDirtyOutsideTurn(ctx context.Context, id string) (bool, error) {
+	row := q.db.QueryRow(ctx, agentBoxDirtyOutsideTurn, id)
+	var refuse bool
+	err := row.Scan(&refuse)
+	return refuse, err
+}
+
 const countActiveSessionsForUser = `-- name: CountActiveSessionsForUser :one
 SELECT COUNT(*)
 FROM workspace_sessions
@@ -944,6 +968,74 @@ type GetActiveWorkspaceForUserRepoKindParams struct {
 // permanently missing runtimes are retained as failed rows, never deleted.
 func (q *Queries) GetActiveWorkspaceForUserRepoKind(ctx context.Context, arg GetActiveWorkspaceForUserRepoKindParams) (Workspace, error) {
 	row := q.db.QueryRow(ctx, getActiveWorkspaceForUserRepoKind, arg.RepositoryID, arg.UserID, arg.Kind)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.UserID,
+		&i.Name,
+		&i.IsFork,
+		&i.ParentWorkspaceID,
+		&i.TargetBookmark,
+		&i.SourceSnapshotID,
+		&i.Kind,
+		&i.EnvironmentSource,
+		&i.EnvironmentRevision,
+		&i.EnvironmentClosureHash,
+		&i.AgentSessionID,
+		&i.HeadPushTokenID,
+		&i.EnvironmentImage,
+		&i.DesktopSessionID,
+		&i.DesktopSessionTokenHash,
+		&i.DesktopSessionExpiresAt,
+		&i.VmID,
+		&i.ProvisioningGeneration,
+		&i.Status,
+		&i.FailureCode,
+		&i.FailureMessage,
+		&i.ProvisioningStage,
+		&i.LastActivityAt,
+		&i.IdleTimeoutSecs,
+		&i.SuspendedAt,
+		&i.StartedAt,
+		&i.ResumedAt,
+		&i.HeadChangeID,
+		&i.HeadCommitID,
+		&i.Ahead,
+		&i.Behind,
+		&i.LastAccessedAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RebuildRequiredAt,
+		&i.ClientLeaseSecs,
+		&i.ClientLeaseExpiresAt,
+		&i.SourceCommit,
+		&i.VcpuCount,
+		&i.MemoryMb,
+		&i.DiskMb,
+		&i.ForkedFromItem,
+		&i.ForkedFromBase,
+		&i.CapturePending,
+		&i.MovedOff,
+		&i.BranchArchivedAt,
+		&i.CleanupPendingHead,
+		&i.CleanupPendingCaptureID,
+		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
+	)
+	return i, err
+}
+
+const getAgentSessionBox = `-- name: GetAgentSessionBox :one
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id FROM workspaces
+WHERE agent_session_id = $1::uuid
+  AND deleted_at IS NULL
+`
+
+// An agent session's own box (plue#869), whatever its status.
+func (q *Queries) GetAgentSessionBox(ctx context.Context, agentSessionID string) (Workspace, error) {
+	row := q.db.QueryRow(ctx, getAgentSessionBox, agentSessionID)
 	var i Workspace
 	err := row.Scan(
 		&i.ID,
@@ -2783,6 +2875,29 @@ func (q *Queries) ListWorkspacesByRepo(ctx context.Context, arg ListWorkspacesBy
 	return items, nil
 }
 
+const markAgentBoxGuestDirty = `-- name: MarkAgentBoxGuestDirty :exec
+UPDATE workspaces
+SET agent_box_dirty_vm_id = vm_id, updated_at = NOW()
+WHERE id = $1
+  AND vm_id = $2::text
+  AND vm_id <> ''
+  AND agent_box_dirty_vm_id <> vm_id
+  AND agent_session_id IS NOT NULL
+  AND deleted_at IS NULL
+`
+
+type MarkAgentBoxGuestDirtyParams struct {
+	ID   string `json:"id"`
+	VmID string `json:"vm_id"`
+}
+
+// A turn's join of a box that already has a guest marks that guest dirty,
+// whether or not a token was recorded on it, so the join retires it.
+func (q *Queries) MarkAgentBoxGuestDirty(ctx context.Context, arg MarkAgentBoxGuestDirtyParams) error {
+	_, err := q.db.Exec(ctx, markAgentBoxGuestDirty, arg.ID, arg.VmID)
+	return err
+}
+
 const markWorkspaceResumed = `-- name: MarkWorkspaceResumed :exec
 UPDATE workspaces
 SET started_at = COALESCE(started_at, $1::timestamptz),
@@ -2823,6 +2938,91 @@ type NotifyWorkspaceStatusParams struct {
 func (q *Queries) NotifyWorkspaceStatus(ctx context.Context, arg NotifyWorkspaceStatusParams) error {
 	_, err := q.db.Exec(ctx, notifyWorkspaceStatus, arg.SessionID, arg.Payload)
 	return err
+}
+
+const recordAgentBoxGuest = `-- name: RecordAgentBoxGuest :one
+UPDATE workspaces
+SET vm_id = $1::text,
+    status = 'running',
+    started_at = COALESCE(started_at, NOW()),
+    suspended_at = NULL,
+    agent_box_dirty_vm_id = CASE
+        WHEN agent_box_dirty_vm_id = $1::text THEN agent_box_dirty_vm_id
+        ELSE ''
+    END,
+    updated_at = NOW()
+WHERE id = $2
+  AND deleted_at IS NULL
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
+`
+
+type RecordAgentBoxGuestParams struct {
+	VmID string `json:"vm_id"`
+	ID   string `json:"id"`
+}
+
+// Records the new guest of a retired agent box. It is the only write that
+// clears the box's dirty mark (plue#869): a box is retired only after the
+// guest the mark names is deleted, so a different guest holds nothing of it.
+func (q *Queries) RecordAgentBoxGuest(ctx context.Context, arg RecordAgentBoxGuestParams) (Workspace, error) {
+	row := q.db.QueryRow(ctx, recordAgentBoxGuest, arg.VmID, arg.ID)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.UserID,
+		&i.Name,
+		&i.IsFork,
+		&i.ParentWorkspaceID,
+		&i.TargetBookmark,
+		&i.SourceSnapshotID,
+		&i.Kind,
+		&i.EnvironmentSource,
+		&i.EnvironmentRevision,
+		&i.EnvironmentClosureHash,
+		&i.AgentSessionID,
+		&i.HeadPushTokenID,
+		&i.EnvironmentImage,
+		&i.DesktopSessionID,
+		&i.DesktopSessionTokenHash,
+		&i.DesktopSessionExpiresAt,
+		&i.VmID,
+		&i.ProvisioningGeneration,
+		&i.Status,
+		&i.FailureCode,
+		&i.FailureMessage,
+		&i.ProvisioningStage,
+		&i.LastActivityAt,
+		&i.IdleTimeoutSecs,
+		&i.SuspendedAt,
+		&i.StartedAt,
+		&i.ResumedAt,
+		&i.HeadChangeID,
+		&i.HeadCommitID,
+		&i.Ahead,
+		&i.Behind,
+		&i.LastAccessedAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RebuildRequiredAt,
+		&i.ClientLeaseSecs,
+		&i.ClientLeaseExpiresAt,
+		&i.SourceCommit,
+		&i.VcpuCount,
+		&i.MemoryMb,
+		&i.DiskMb,
+		&i.ForkedFromItem,
+		&i.ForkedFromBase,
+		&i.CapturePending,
+		&i.MovedOff,
+		&i.BranchArchivedAt,
+		&i.CleanupPendingHead,
+		&i.CleanupPendingCaptureID,
+		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
+	)
+	return i, err
 }
 
 const registerWorkspaceVM = `-- name: RegisterWorkspaceVM :one
@@ -3277,6 +3477,10 @@ func (q *Queries) SetWorkspaceEnvironmentImage(ctx context.Context, arg SetWorks
 const setWorkspaceHeadPushTokenID = `-- name: SetWorkspaceHeadPushTokenID :exec
 UPDATE workspaces
 SET head_push_token_id = $1::bigint,
+    agent_box_dirty_vm_id = CASE
+        WHEN $1::bigint IS NOT NULL AND agent_session_id IS NOT NULL AND vm_id <> '' THEN vm_id
+        ELSE agent_box_dirty_vm_id
+    END,
     updated_at = NOW()
 WHERE id = $2
 `
@@ -3287,7 +3491,8 @@ type SetWorkspaceHeadPushTokenIDParams struct {
 }
 
 // RFD-004: records (or clears) the scoped token the guest head reporter
-// pushes with, so suspend/destroy can revoke it.
+// pushes with, so suspend/destroy can revoke it. Recording one on an agent
+// session's box marks its guest dirty in the same write (plue#869).
 func (q *Queries) SetWorkspaceHeadPushTokenID(ctx context.Context, arg SetWorkspaceHeadPushTokenIDParams) error {
 	_, err := q.db.Exec(ctx, setWorkspaceHeadPushTokenID, arg.HeadPushTokenID, arg.ID)
 	return err
