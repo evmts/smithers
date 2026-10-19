@@ -1,4 +1,4 @@
-import { RepoFrame } from "./repository/RepoFrame"
+import { guestAdmission, RepoFrame } from "./repository/RepoFrame"
 import { CodeHome } from "./repository/CodeHome"
 import { RepositoryCodeView } from "./repository/RepositoryCodeView"
 import { pathTarget as codePathTarget } from "./RepoLink"
@@ -459,7 +459,8 @@ function AppContent() {
     ? `${identity?.login ?? ""}:${session.branchNavigation?.selected_branch ?? "main"}`
     : `${conversationTabId ?? "main"}:${session.activeRepoKey ?? ""}`
 
-  const visibleEntries = entries.filter(entry => !controller.sharedConversation || entry.kind !== "message" || entry.message.id === authMessage?.id || entry.message.id === repositoryEntryMessage?.id || entry.message.origin === "external" || entry.message.action !== undefined || diagnosticVisible(entry.message, identityRows[0]?.login, session.branchNavigation?.selected_branch ?? "main"))
+  // An admitted guest's own prompt and answer are local rows in the guest conversation (`messages` above admits them the same way).
+  const visibleEntries = entries.filter(entry => !controller.sharedConversation || session.guestConversation !== undefined || entry.kind !== "message" || entry.message.id === authMessage?.id || entry.message.id === repositoryEntryMessage?.id || entry.message.origin === "external" || entry.message.action !== undefined || diagnosticVisible(entry.message, identityRows[0]?.login, session.branchNavigation?.selected_branch ?? "main"))
   // A requested local read can target a retained card earlier in the transcript.
   const latestEntry = visibleEntries.at(-1)
   /*
@@ -761,6 +762,7 @@ function AppContent() {
   if (!rootRoute && !codeRoute) return chat()
   return <RepoFrame onRunCommand={controller.runCommand} repo={bootRepository} publicRepo={repository?.catalog === true}
     login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
+    guest={guestAdmission(session.guestConversation, bootRepository)}
     ask={(visible: boolean) => chat(visible)}>
     {codeRoute ? <RepositoryCodeView onRunCommand={controller.runCommand} repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
       admitted={bootEntry?.phase === "ready"} requestId={bootEntry?.requestId} error={bootUnavailable ? bootEntry?.error : undefined} onAsk={text => controller.changeDraft(text)} /> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
