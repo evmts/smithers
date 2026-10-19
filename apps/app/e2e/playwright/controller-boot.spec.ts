@@ -20,6 +20,7 @@ for (const repo of ["nope/nope", "smithersai/smithres"]) {
     const signIn = welcome.getByRole("button", { name: "Sign in with GitHub", exact: true })
     await signIn.focus()
     await page.keyboard.press("Enter")
-    await expect(page).toHaveURL(url => url.pathname === APPLICATION_SIGN_IN_PATH && url.searchParams.get("return_to") === `/${repo}/`)
+    // ?design=off is the test-only fixture switch; since route.2 the page keeps it, so return_to carries it (#4367).
+    await expect(page).toHaveURL(url => url.pathname === APPLICATION_SIGN_IN_PATH && url.searchParams.get("return_to")?.replace(/\?design=off$/, "") === `/${repo}/`)
   })
 }
