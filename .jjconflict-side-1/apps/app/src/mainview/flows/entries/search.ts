@@ -1,0 +1,76 @@
+/*
+ * The `search` flows (Search and Command Palette Spec 2026-09-07 §6): one
+ * flow per palette prefix, each with its three doors. The palette is the
+ * button door and reads the same seam synchronously; the slash and agent
+ * doors run these handlers, which answer the items as data and embed the
+ * `search-results` card for whoever the act is FOR — the person at the
+ * palette, or the author whose screen a hosted turn asked (the handler's
+ * `origin`, ../CommandOrigin.ts). Only indexed modes are registered.
+ * Qualifiers (`section:`,
+ * `status:`, `is:`, `path:`) ride inside the query, as §1 writes them.
+ */
+import { Schema } from "effect"
+import type { PaletteMode } from "../SearchQuery"
+import { flow } from "./Declare"
+import type { FlowEntry, Namespace } from "../registry"
+import type { CommandActions } from "./Declare"
+
+/** The `search` namespace row: the slash tree lists it in registry.ts NAMESPACES order. */
+export const namespace: Namespace = {
+  id: "search",
+  label: "Search",
+  summary: "Find files, flows, targets, runs, changes, issues, boxes and secret names"
+}
+
+/** What every `search.*` flow takes: the query (qualifiers inside it), and the bounds a caller may set. */
+export interface SearchArgs {
+  readonly query: string
+  readonly limit?: number
+  /** `search` only: the kinds to keep, comma-separated in the slash form. */
+  readonly kinds?: ReadonlyArray<string>
+  readonly repo?: string
+}
+
+const Query = Schema.Struct({ query: Schema.String })
+const OptionalQuery = Schema.Struct({ query: Schema.optional(Schema.String), kinds: Schema.optional(Schema.String) })
+
+/** One `search.*` flow over one palette mode. */
+const search = (
+  actions: CommandActions,
+  name: string,
+  mode: PaletteMode,
+  summary: string,
+  args: string,
+  extra: { readonly requires?: ReadonlyArray<string>; readonly runtime?: ReadonlyArray<"cloud"> } = {}
+): FlowEntry =>
+  flow({
+    name,
+    summary,
+    args,
+    ...extra,
+    input: Query,
+    handler: ({ query }, _signal, _call, _gesture, origin) => actions.search(name, mode, { query }, origin)
+  })
+
+/** The `search.*` flows registered as one aggregator block. */
+export const searchFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+  flow({
+    name: "search",
+     slash: "/search", cli: ["search"], journey: ["J9"], group: "Ask", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: {"method":"GET","path":"/api/search/code",query:{q:"query"}}, summary: "Search code, wiki and runs",
+    args: "[query] [--kinds file,run,…]",
+    agent: "run", input: OptionalQuery,
+    handler: ({ query, kinds }, _signal, _call, _gesture, origin) =>
+      actions.search("search", "all", {
+        query: query ?? "",
+        ...(kinds === undefined ? {} : { kinds: kinds.split(",").map((kind) => kind.trim()).filter((kind) => kind !== "") })
+      }, origin)
+  }),
+  search(actions, "search.files", "path", "Find files by fuzzy path among the directories the app has listed", "<query> [path:… -path:…]"),
+  search(actions, "search.flows", "flows", "The slash tree as data: every flow this session may run", "<query>"),
+  search(actions, "search.issues", "issues", "Find issues by number or title", "<query> [is:open|closed]"),
+  search(actions, "search.wiki", "wiki", "Find wiki pages and notes by title", "<query>"),
+  search(actions, "search.history", "history", "Find changes in the history", "<query>"),
+  search(actions, "search.runs", "runs", "Find runs by id, flow or status", "<query> [status:…]"),
+  search(actions, "search.changes", "changes", "Find changes by id or title", "<query>"),
+  search(actions, "search.secrets", "secrets", "Find secret names and the hosts they bind to; values never exist on the wire", "<query>", { requires: ["signed-in"], runtime: ["cloud"] }),
+]

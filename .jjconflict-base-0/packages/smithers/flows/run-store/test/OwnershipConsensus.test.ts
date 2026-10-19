@@ -1,0 +1,602 @@
+/**
+ * The ownership contract over the injected consensus strategy.
+ *
+ * One shared body — Bazel `GraphTester` style — runs the claim, activation,
+ * steal, recovery, and release lifecycle against BOTH strategies: the
+ * in-memory `Consensus.layerLocal` and the database-backed
+ * `SqlConsensus.layer`. Each instantiation pins that the strategy's lease is
+ * what the journal's fence and the store's heartbeat answer from, and that it
+ * rolls back with the transaction that changed it.
+ *
+ * A second section pins the delegation seam itself: the strategy is
+ * authoritative, so when its lease disagrees with the run-row materialization
+ * — driven here by operating the strategy directly — the store reports the
+ * loss and reconverges the row.
+ */
+import { describe, expect, it } from "@effect/vitest"
+import type { DurableWriter } from "@smthrs/database"
+import { DatabaseError } from "@smthrs/database/DurableWriter"
+import * as TestDatabase from "@smthrs/database/test/TestDatabase"
+import * as Consensus from "@smthrs/journal/Consensus"
+import { Journal } from "@smthrs/journal/Journal"
+import * as JournalEvent from "@smthrs/journal/JournalEvent"
+import * as SqlConsensus from "@smthrs/journal/SqlConsensus"
+import * as SqlJournal from "@smthrs/journal/SqlJournal"
+import { Clock, Deferred, Duration, Effect, Fiber, Layer } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
+import { TestClock } from "effect/testing"
+import { heartbeatStaleAfter } from "../src/Heartbeat.ts"
+import * as Migrations from "../src/Migrations.ts"
+import { heartbeatInterval, heartbeatLoop, type LivenessEvidence, type OwnerId } from "../src/Ownership.ts"
+import { type RunSnapshot, RunStore } from "../src/RunStore.ts"
+import * as RunStoreLive from "../src/RunStore.ts"
+
+const ownerA: OwnerId = { hostId: "host-a", pid: 101, nonce: "owner-a" }
+const ownerB: OwnerId = { hostId: "host-b", pid: 202, nonce: "owner-b" }
+const observer: OwnerId = { hostId: "host-a", pid: 303, nonce: "observer" }
+
+const pending: RunSnapshot = { status: "pending", owner: null, heartbeatAtMs: null }
+
+const evidence = (
+  expectedOwner: OwnerId,
+  claimant: OwnerId,
+  checkedAtMs: number
+): LivenessEvidence => ({
+  expectedOwner,
+  checkedAtMs,
+  kind: expectedOwner.hostId === claimant.hostId ? "same-host-pid-dead" : "cross-host-unreachable-stale"
+})
+
+type Strategy = Layer.Layer<Consensus.Consensus, never, DurableWriter.DurableWriter | SqlClient.SqlClient>
+
+/** One strategy instance shared by the journal's fence and the store's arbitration. */
+const stackFor = (strategy: Strategy) =>
+  Layer.mergeAll(RunStoreLive.layerWith, SqlJournal.layerWith({ capacity: 64, overflow: "reject" })).pipe(
+    Layer.provideMerge(strategy),
+    Layer.provideMerge(Layer.provideMerge(Migrations.layer, TestDatabase.layer))
+  )
+
+type Services = Consensus.Consensus | Journal | RunStore | DurableWriter.DurableWriter | SqlClient.SqlClient
+
+const withStack = (strategy: Strategy) => <A, E>(body: Effect.Effect<A, E, Services>) =>
+  Effect.scoped(body.pipe(Effect.provide(stackFor(strategy)), Effect.provide(TestClock.layer())))
+
+/** Whether the shared strategy currently admits `owner`'s fenced writes on the run. */
+const holds = (runId: string, owner: OwnerId) =>
+  Effect.gen(function*() {
+    const consensus = yield* Consensus.Consensus
+    return yield* consensus.guard(runId, owner).pipe(
+      Effect.as(true),
+      Effect.catch((cause) => cause.code === "fence_lost" ? Effect.succeed(false) : Effect.fail(cause))
+    )
+  })
+
+const suite = (name: string, strategy: Strategy) => {
+  const run = withStack(strategy)
+
+  describe(`ownership over ${name}`, () => {
+    it.effect("grants the lease on activation and releases it on the owner's transition", () =>
+      run(Effect.gen(function*() {
+        const store = yield* RunStore
+        yield* store.create("run-lifecycle", "{}")
+        const nowMs = yield* Clock.currentTimeMillis
+        expect(yield* store.claim("run-lifecycle", pending, ownerA, nowMs)).toEqual({
+          _tag: "Claimed",
+          claimedAtMs: nowMs
+        })
+        // A claim is not ownership: the fence admits nobody until activation.
+        expect(yield* holds("run-lifecycle", ownerA)).toBe(false)
+        expect(yield* store.activate("run-lifecycle", ownerA, nowMs, pending)).toEqual({ _tag: "Activated" })
+        expect(yield* holds("run-lifecycle", ownerA)).toBe(true)
+        expect(yield* holds("run-lifecycle", ownerB)).toBe(false)
+        expect(yield* store.heartbeat("run-lifecycle", ownerA, nowMs + 5)).toEqual({ _tag: "Updated" })
+        expect((yield* store.get("run-lifecycle")).heartbeatAtMs).toBe(nowMs + 5)
+
+        expect(yield* store.transitionOwned("run-lifecycle", ownerA, "suspended")).toEqual({
+          _tag: "Transitioned"
+        })
+        expect(yield* holds("run-lifecycle", ownerA)).toBe(false)
+        // The released lease refuses further pulses.
+        expect(yield* store.heartbeat("run-lifecycle", ownerA, nowMs + 6)).toEqual({ _tag: "FenceLost" })
+      })))
+
+    it.effect("reconfirms and mirrors only an exclusively owned lease", () =>
+      run(Effect.gen(function*() {
+        const store = yield* RunStore
+        const consensus = yield* Consensus.Consensus
+        yield* store.create("reconfirm-store", "{}")
+        yield* store.claimAndOwn("reconfirm-store", pending, ownerA, 0)
+        yield* TestClock.adjust(Duration.toMillis(heartbeatStaleAfter) + 1)
+        const nowMs = yield* Clock.currentTimeMillis
+        expect(yield* store.reconfirm("reconfirm-store", ownerA, nowMs)).toEqual({ _tag: "Updated" })
+        expect((yield* store.get("reconfirm-store")).heartbeatAtMs).toBe(nowMs)
+        expect(yield* consensus.heartbeat("reconfirm-store", ownerA, 0)).toEqual({
+          _tag: "Renewed",
+          heartbeatAtMs: nowMs
+        })
+        expect(yield* store.reconfirm("reconfirm-store", ownerA, 0)).toEqual({ _tag: "Updated" })
+        expect((yield* store.get("reconfirm-store")).heartbeatAtMs).toBe(nowMs)
+        expect(yield* store.reconfirm("reconfirm-store", ownerB, nowMs)).toEqual({ _tag: "FenceLost" })
+        expect(yield* store.reconfirm("reconfirm-store-missing", ownerA, nowMs)).toEqual({ _tag: "NotFound" })
+        yield* TestClock.adjust(Duration.toMillis(heartbeatStaleAfter) + 1)
+        const later = yield* Clock.currentTimeMillis
+        expect((yield* consensus.steal("reconfirm-store", ownerB, later, evidence(ownerA, ownerB, later)))._tag).toBe(
+          "Claimed"
+        )
+        expect(yield* store.reconfirm("reconfirm-store", ownerA, later)).toEqual({ _tag: "FenceLost" })
+        expect((yield* store.get("reconfirm-store")).heartbeatAtMs).toBe(nowMs)
+      })))
+
+    it.effect("keeps a renewed SQL run alive until its delayed fenced receipt commits (#3411)", () =>
+      run(Effect.gen(function*() {
+        const store = yield* RunStore
+        const journal = yield* Journal
+        const baseClock = yield* Clock.Clock
+        const timers = yield* Deferred.make<void>()
+        const receiptStarted = yield* Deferred.make<void>()
+        const receiptCommitted = yield* Deferred.make<void>()
+        const runId = "delayed-fenced-reconfirm" as JournalEvent.RunId
+        let sleeps = 0
+        const clock: Clock.Clock = {
+          ...baseClock,
+          // Model a stopped host by holding its two initial timers. All
+          // persistence and later clock deadlines are the real services.
+          sleep: (duration) => ++sleeps <= 2 ? Deferred.await(timers) : baseClock.sleep(duration)
+        }
+        yield* store.create(runId, "{}")
+        yield* store.claimAndOwn(runId, pending, ownerA, 0)
+        const owning = yield* heartbeatLoop(runId, ownerA, {
+          onReconfirm: (unconfirmedMs) =>
+            Effect.gen(function*() {
+              yield* Deferred.succeed(receiptStarted, undefined)
+              yield* Effect.sleep(Duration.toMillis(heartbeatInterval) + 1)
+              const receipt = yield* journal.emitDurable(
+                new JournalEvent.Input({
+                  runId,
+                  sourceId: "driver" as JournalEvent.SourceId,
+                  sourceSeq: 0 as JournalEvent.SourceSeq,
+                  eventType: "flows.engine.run-decision",
+                  payload: { decision: "lease-reconfirmed", detail: { unconfirmedMs } }
+                }),
+                ownerA
+              ).pipe(Effect.orDie)
+              expect(receipt._tag).toBe("Accepted")
+              yield* Deferred.succeed(receiptCommitted, undefined)
+            })
+        }).pipe(
+          Effect.provideService(Clock.Clock, clock),
+          Effect.forkChild({ startImmediately: true })
+        )
+        yield* Effect.yieldNow
+        expect(sleeps).toBe(2)
+        const stoppedMs = Duration.toMillis(heartbeatStaleAfter) + 1
+        yield* TestClock.adjust(stoppedMs)
+        yield* Deferred.succeed(timers, undefined)
+        yield* Deferred.await(receiptStarted)
+        expect((yield* store.get(runId)).heartbeatAtMs).toBe(stoppedMs)
+        expect(yield* holds(runId, ownerA)).toBe(true)
+        expect((yield* journal.entries({ runId, limit: 10 })).entries).toEqual([])
+        yield* TestClock.adjust(Duration.toMillis(heartbeatInterval) + 1)
+        yield* Deferred.await(receiptCommitted)
+        const entries = (yield* journal.entries({ runId, limit: 10 })).entries
+        expect(entries).toHaveLength(1)
+        expect(entries[0]?.payload).toEqual({
+          decision: "lease-reconfirmed",
+          detail: { unconfirmedMs: stoppedMs }
+        })
+        expect(owning.pollUnsafe()).toBeUndefined()
+        yield* Fiber.interrupt(owning)
+      })))
+
+    it.effect("rejects invalid reconfirm inputs before touching the lease", () =>
+      run(Effect.gen(function*() {
+        const store = yield* RunStore
+        yield* store.create("reconfirm-invalid", "{}")
+        yield* store.claimAndOwn("reconfirm-invalid", pending, ownerA, 0)
+        for (const timestamp of [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER]) {
+          const error = yield* Effect.flip(store.reconfirm("reconfirm-invalid", ownerA, timestamp))
+          expect(error.code).toBe("invalid_run")
+          expect(error.method).toBe("reconfirm")
+        }
+        expect((yield* Effect.flip(store.reconfirm("", ownerA, 0))).code).toBe("invalid_run")
+        expect((yield* Effect.flip(store.reconfirm("reconfirm-invalid", { ...ownerA, pid: -1 }, 0))).code).toBe(
+          "invalid_run"
+        )
+        expect((yield* store.get("reconfirm-invalid")).heartbeatAtMs).toBe(0)
+      })))
+
+    it.effect("re-owns one's own stale run through release, re-claim, and activation", () =>
+      run(Effect.gen(function*() {
+        const store = yield* RunStore
+        yield* store.create("run-reown", "{}")
+        expect(yield* store.claimAndOwn("run-reown", pending, ownerA, 0)).toEqual({ _tag: "Activated" })
+        yield* TestClock.adjust(Duration.toMillis(heartbeatStaleAfter) + 1)
+        const nowMs = yield* Clock.currentTimeMillis
+        const stale: RunSnapshot = { status: "running", owner: ownerA, heartbeatAtMs: 0 }
+        expect(yield* store.claimAndOwn("run-reown", stale, ownerA, nowMs)).toEqual({ _tag: "Activated" })
+        const row = yield* store.get("run-reown")
+        expect(row.owner).toEqual(ownerA)
+        expect(row.heartbeatAtMs).toBe(nowMs)
+        expect(yield* holds("run-reown", ownerA)).toBe(true)
+        // The fresh generation renews; the fence holds for the same owner.
+        expect(yield* store.heartbeat("run-reown", ownerA, nowMs + 1)).toEqual({ _tag: "Updated" })
+      })))
+
+    it.effect("moves the lease to the claimant on a steal and on claimAndOwn over a stale rival", () =>
+      run(Effect.gen(function*() {
+        const store = yield* RunStore
+        yield* store.create("run-stolen", "{}")
+        expect(yield* store.claimAndOwn("run-stolen", pending, ownerA, 0)).toEqual({ _tag: "Activated" })
+        yield* TestClock.adjust(Duration.toMillis(heartbeatStaleAfter) + 1)
+        const nowMs = yield* Clock.currentTimeMillis
+        const stale: RunSnapshot = { status: "running", owner: ownerA, heartbeatAtMs: 0 }
+        expect(yield* store.steal("run-stolen", stale, ownerB, nowMs, evidence(ownerA, ownerB, nowMs))).toEqual({
+          _tag: "Claimed",
+          claimedAtMs: nowMs
+        })
+        // The stolen claim is not yet ownership: the stale owner keeps its
+        // fence until the claimant activates.
+        expect(yield* holds("run-stolen", ownerA)).toBe(true)
+        expect(yield* store.activate("run-stolen", ownerB, nowMs, stale)).toEqual({ _tag: "Activated" })
+        expect(yield* holds("run-stolen", ownerA)).toBe(false)
+        expect(yield* holds("run-stolen", ownerB)).toBe(true)
+        // The displaced owner's fence is gone; the successor's holds.
+        expect(yield* store.heartbeat("run-stolen", ownerA, nowMs + 1)).toEqual({ _tag: "FenceLost" })
+        expect(yield* store.heartbeat("run-stolen", ownerB, nowMs + 1)).toEqual({ _tag: "Updated" })
+
+        yield* store.create("run-taken-whole", "{}")
+        expect(yield* store.claimAndOwn("run-taken-whole", pending, ownerA, nowMs)).toEqual({ _tag: "Activated" })
+        yield* TestClock.adjust(Duration.toMillis(heartbeatStaleAfter) + 1)
+        const laterMs = yield* Clock.currentTimeMillis
+        const staleAgain: RunSnapshot = { status: "running", owner: ownerA, heartbeatAtMs: nowMs }
+        expect(
+          yield* store.claimAndOwn("run-taken-whole", staleAgain, ownerB, laterMs, evidence(ownerA, ownerB, laterMs))
+        ).toEqual({ _tag: "Activated" })
+        expect(yield* holds("run-taken-whole", ownerA)).toBe(false)
+        expect(yield* holds("run-taken-whole", ownerB)).toBe(true)
+      })))
+
+    it.effect("frees the lease claim when a claim is abandoned or recovered", () =>
+      run(Effect.gen(function*() {
+        const store = yield* RunStore
+        yield* store.create("run-claims", "{}")
+        const first = yield* store.claim("run-claims", pending, ownerA, 0)
+        expect(first).toEqual({ _tag: "Claimed", claimedAtMs: 0 })
+        expect(yield* store.abandonClaim("run-claims", ownerA, 0)).toEqual({ _tag: "Abandoned" })
+
+        const again = yield* store.claim("run-claims", pending, ownerA, 0)
+        expect(again).toEqual({ _tag: "Claimed", claimedAtMs: 0 })
+        yield* TestClock.adjust(Duration.toMillis(heartbeatStaleAfter) + 1)
+        const nowMs = yield* Clock.currentTimeMillis
+        expect(
+          yield* store.recoverClaim("run-claims", ownerA, 0, observer, nowMs, evidence(ownerA, observer, nowMs))
+        ).toEqual({ _tag: "Recovered" })
+        const row = yield* store.get("run-claims")
+        expect(row.claim).toBeNull()
+        // The recovered slot is free for the next claimant.
+        expect(yield* store.claim("run-claims", pending, ownerB, nowMs)).toEqual({
+          _tag: "Claimed",
+          claimedAtMs: nowMs
+        })
+      })))
+
+    it.effect("frees a pending steal claim when the stale owner settles the run first", () =>
+      run(Effect.gen(function*() {
+        const store = yield* RunStore
+        yield* store.create("run-settled-under-steal", "{}")
+        expect(yield* store.claimAndOwn("run-settled-under-steal", pending, ownerA, 0)).toEqual({
+          _tag: "Activated"
+        })
+        yield* TestClock.adjust(Duration.toMillis(heartbeatStaleAfter) + 1)
+        const nowMs = yield* Clock.currentTimeMillis
+        const stale: RunSnapshot = { status: "running", owner: ownerA, heartbeatAtMs: 0 }
+        expect(
+          yield* store.steal("run-settled-under-steal", stale, ownerB, nowMs, evidence(ownerA, ownerB, nowMs))
+        ).toEqual({ _tag: "Claimed", claimedAtMs: nowMs })
+        // The stale owner still holds its fence and suspends before the
+        // claimant activates: the claim it overtook must not outlive the row's.
+        expect(yield* store.transitionOwned("run-settled-under-steal", ownerA, "suspended")).toEqual({
+          _tag: "Transitioned"
+        })
+        expect((yield* store.get("run-settled-under-steal")).claim).toBeNull()
+        const journal = yield* Journal
+        const companion = JournalEvent.companionRunId("run-store", "run-settled-under-steal")
+        const facts = (yield* journal.entries({ runId: companion, limit: 100 })).entries
+        expect(facts.slice(-2).map((entry) => [entry.eventType, entry.payload])).toEqual([
+          ["flows.consensus.released", { runId: "run-settled-under-steal", owner: ownerA, grantedAtMs: null }],
+          ["flows.consensus.released", { runId: "run-settled-under-steal", owner: ownerB, grantedAtMs: nowMs }]
+        ])
+        expect(yield* store.activate("run-settled-under-steal", ownerB, nowMs, stale)).toEqual({ _tag: "ClaimLost" })
+        const suspended: RunSnapshot = { status: "suspended", owner: null, heartbeatAtMs: null }
+        expect(yield* store.claim("run-settled-under-steal", suspended, observer, nowMs)).toEqual({
+          _tag: "Claimed",
+          claimedAtMs: nowMs
+        })
+      })))
+
+    it.effect("frees a pending steal claim when the stale owner settles the run first", () =>
+      run(Effect.gen(function*() {
+        const store = yield* RunStore
+        yield* store.create("run-settled-under-steal", "{}")
+        expect(yield* store.claimAndOwn("run-settled-under-steal", pending, ownerA, 0)).toEqual({
+          _tag: "Activated"
+        })
+        yield* TestClock.adjust(Duration.toMillis(heartbeatStaleAfter) + 1)
+        const nowMs = yield* Clock.currentTimeMillis
+        const stale: RunSnapshot = { status: "running", owner: ownerA, heartbeatAtMs: 0 }
+        expect(
+          yield* store.steal("run-settled-under-steal", stale, ownerB, nowMs, evidence(ownerA, ownerB, nowMs))
+        ).toEqual({ _tag: "Claimed", claimedAtMs: nowMs })
+        // The stale owner still holds its fence and suspends before the
+        // claimant activates: the claim it overtook must not outlive the row's.
+        expect(yield* store.transitionOwned("run-settled-under-steal", ownerA, "suspended")).toEqual({
+          _tag: "Transitioned"
+        })
+        expect((yield* store.get("run-settled-under-steal")).claim).toBeNull()
+        const journal = yield* Journal
+        const companion = JournalEvent.companionRunId("run-store", "run-settled-under-steal")
+        const facts = (yield* journal.entries({ runId: companion, limit: 100 })).entries
+        expect(facts.slice(-2).map((entry) => [entry.eventType, entry.payload])).toEqual([
+          ["flows.consensus.released", { runId: "run-settled-under-steal", owner: ownerA, grantedAtMs: null }],
+          ["flows.consensus.released", { runId: "run-settled-under-steal", owner: ownerB, grantedAtMs: nowMs }]
+        ])
+        expect(yield* store.activate("run-settled-under-steal", ownerB, nowMs, stale)).toEqual({ _tag: "ClaimLost" })
+        const suspended: RunSnapshot = { status: "suspended", owner: null, heartbeatAtMs: null }
+        expect(yield* store.claim("run-settled-under-steal", suspended, observer, nowMs)).toEqual({
+          _tag: "Claimed",
+          claimedAtMs: nowMs
+        })
+      })))
+  })
+}
+
+suite("Consensus.layerLocal", Consensus.layerLocal)
+suite("SqlConsensus.layer", SqlConsensus.layer)
+
+describe("SqlConsensus leases share the ownership write's transaction", () => {
+  const run = withStack(SqlConsensus.layer)
+
+  it.effect("rolls back reconfirm lease and run-row stamps together", () =>
+    run(Effect.gen(function*() {
+      const store = yield* RunStore
+      const journal = yield* Journal
+      const consensus = yield* Consensus.Consensus
+      yield* store.create("reconfirm-rollback", "{}")
+      yield* store.claimAndOwn("reconfirm-rollback", pending, ownerA, 0)
+      yield* TestClock.adjust(100)
+      yield* Effect.flip(journal.transact(Effect.gen(function*() {
+        expect(yield* store.reconfirm("reconfirm-rollback", ownerA, 100)).toEqual({ _tag: "Updated" })
+        expect((yield* store.get("reconfirm-rollback")).heartbeatAtMs).toBe(100)
+        return yield* Effect.fail("rollback")
+      })))
+      expect((yield* store.get("reconfirm-rollback")).heartbeatAtMs).toBe(0)
+      expect(yield* consensus.heartbeat("reconfirm-rollback", ownerA, 0)).toEqual({
+        _tag: "Renewed",
+        heartbeatAtMs: 0
+      })
+    })))
+
+  it.effect("rolls an ownership transition back with the enclosing transaction", () =>
+    run(Effect.gen(function*() {
+      const store = yield* RunStore
+      const journal = yield* Journal
+      yield* store.create("run-rollback", "{}")
+      expect(yield* store.claimAndOwn("run-rollback", pending, ownerA, 0)).toEqual({ _tag: "Activated" })
+      const exit = yield* Effect.exit(journal.transact(Effect.gen(function*() {
+        expect(yield* store.transitionOwned("run-rollback", ownerA, "suspended")).toEqual({ _tag: "Transitioned" })
+        return yield* Effect.fail("rejected after the transition")
+      })))
+      expect(exit._tag).toBe("Failure")
+      expect((yield* store.get("run-rollback")).status).toBe("running")
+      expect(yield* holds("run-rollback", ownerA)).toBe(true)
+      // The lease rolled back with the row: the owner still holds the run.
+      expect(yield* store.heartbeat("run-rollback", ownerA, 1)).toEqual({ _tag: "Updated" })
+    })))
+})
+
+describe("the strategy is authoritative when the materialization disagrees", () => {
+  const run = withStack(Consensus.layerLocal)
+
+  it.effect("claim and claimAndOwn report the row-classified loss when the lease refuses the grant", () =>
+    run(Effect.gen(function*() {
+      const store = yield* RunStore
+      const consensus = yield* Consensus.Consensus
+      yield* store.create("run-lease-claimed", "{}")
+      // The lease is taken behind the store's back, so the row still admits
+      // the claim the strategy refuses.
+      expect((yield* consensus.claim("run-lease-claimed", ownerB, 0))._tag).toBe("Claimed")
+      expect(yield* store.claim("run-lease-claimed", pending, ownerA, 0)).toEqual({ _tag: "SnapshotChanged" })
+      expect(yield* store.claimAndOwn("run-lease-claimed", pending, ownerA, 0)).toEqual({
+        _tag: "SnapshotChanged"
+      })
+    })))
+
+  it.effect("claimAndOwn releases its fresh grant when the strategy revokes the activation", () =>
+    Effect.gen(function*() {
+      const revoked = Layer.effect(
+        Consensus.Consensus,
+        Effect.map(Consensus.makeLocal, (local) =>
+          Consensus.make({
+            ...local,
+            activate: () => Effect.succeed({ _tag: "Lost" })
+          }))
+      )
+      const outcome = yield* withStack(revoked)(Effect.gen(function*() {
+        const store = yield* RunStore
+        const consensus = yield* Consensus.Consensus
+        yield* store.create("run-revoked", "{}")
+        const result = yield* store.claimAndOwn("run-revoked", pending, ownerA, 0)
+        // The compensating release freed the lease for the next claimant.
+        expect((yield* consensus.claim("run-revoked", ownerB, 1))._tag).toBe("Claimed")
+        return result
+      }))
+      expect(outcome).toEqual({ _tag: "SnapshotChanged" })
+    }))
+
+  it.effect("activate reports ClaimLost and clears the stale claim columns when the lease moved on", () =>
+    run(Effect.gen(function*() {
+      const store = yield* RunStore
+      const consensus = yield* Consensus.Consensus
+      yield* store.create("run-lease-lost", "{}")
+      expect(yield* store.claim("run-lease-lost", pending, ownerA, 0)).toEqual({ _tag: "Claimed", claimedAtMs: 0 })
+      yield* consensus.release("run-lease-lost", ownerA)
+      expect(yield* store.activate("run-lease-lost", ownerA, 0, pending)).toEqual({ _tag: "ClaimLost" })
+      const row = yield* store.get("run-lease-lost")
+      expect(row.claim).toBeNull()
+    })))
+
+  it.effect("activate against a moved snapshot clears both the row claim and the lease claim", () =>
+    run(Effect.gen(function*() {
+      const store = yield* RunStore
+      const consensus = yield* Consensus.Consensus
+      yield* store.create("run-moved", "{}")
+      expect(yield* store.claim("run-moved", pending, ownerA, 0)).toEqual({ _tag: "Claimed", claimedAtMs: 0 })
+      const moved: RunSnapshot = { status: "suspended", owner: null, heartbeatAtMs: null }
+      expect(yield* store.activate("run-moved", ownerA, 0, moved)).toEqual({ _tag: "SnapshotChanged" })
+      expect((yield* store.get("run-moved")).claim).toBeNull()
+      expect((yield* consensus.claim("run-moved", ownerB, 1))._tag).toBe("Claimed")
+    })))
+
+  it.effect("steal reports the row-classified loss when the lease still records a live owner", () =>
+    run(Effect.gen(function*() {
+      const store = yield* RunStore
+      const consensus = yield* Consensus.Consensus
+      yield* store.create("run-live-lease", "{}")
+      expect(yield* store.claimAndOwn("run-live-lease", pending, ownerA, 0)).toEqual({ _tag: "Activated" })
+      yield* TestClock.adjust(Duration.toMillis(heartbeatStaleAfter) + 1)
+      const nowMs = yield* Clock.currentTimeMillis
+      // The lease renews behind the store's back, so the row looks stale
+      // while the strategy still records a live owner.
+      expect((yield* consensus.heartbeat("run-live-lease", ownerA, nowMs))._tag).toBe("Renewed")
+      const stale: RunSnapshot = { status: "running", owner: ownerA, heartbeatAtMs: 0 }
+      expect(yield* store.steal("run-live-lease", stale, ownerB, nowMs, evidence(ownerA, ownerB, nowMs))).toEqual({
+        _tag: "SnapshotChanged"
+      })
+      expect(
+        yield* store.claimAndOwn("run-live-lease", stale, ownerB, nowMs, evidence(ownerA, ownerB, nowMs))
+      ).toEqual({ _tag: "SnapshotChanged" })
+    })))
+
+  it.effect("recoverClaim reports ClaimChanged when the lease's claim moved on", () =>
+    run(Effect.gen(function*() {
+      const store = yield* RunStore
+      const consensus = yield* Consensus.Consensus
+      yield* store.create("run-claim-gone", "{}")
+      expect(yield* store.claim("run-claim-gone", pending, ownerA, 0)).toEqual({ _tag: "Claimed", claimedAtMs: 0 })
+      yield* consensus.release("run-claim-gone", ownerA)
+      yield* TestClock.adjust(Duration.toMillis(heartbeatStaleAfter) + 1)
+      const nowMs = yield* Clock.currentTimeMillis
+      expect(
+        yield* store.recoverClaim("run-claim-gone", ownerA, 0, observer, nowMs, evidence(ownerA, observer, nowMs))
+      ).toEqual({ _tag: "ClaimChanged" })
+    })))
+
+  it.effect("transitionOwned reports FenceLost when the row claims an owner the lease does not", () =>
+    run(Effect.gen(function*() {
+      const store = yield* RunStore
+      const sql = yield* Effect.service(SqlClient.SqlClient)
+      yield* sql`
+        INSERT INTO flows_runs (
+          run_id, status, created_at_ms, owner_host_id, owner_pid, owner_nonce, heartbeat_at_ms, state_json
+        ) VALUES ('run-row-only', 'running', 0, ${ownerA.hostId}, ${ownerA.pid}, ${ownerA.nonce}, 0, '{}')
+      `
+      expect(yield* store.transitionOwned("run-row-only", ownerA, "completed")).toEqual({ _tag: "FenceLost" })
+      expect((yield* store.get("run-row-only")).status).toBe("running")
+    })))
+
+  it.effect("heartbeat reports FenceLost when the lease renews but the row no longer records the owner", () =>
+    run(Effect.gen(function*() {
+      const store = yield* RunStore
+      const sql = yield* Effect.service(SqlClient.SqlClient)
+      yield* store.create("run-mirror-lost", "{}")
+      expect(yield* store.claimAndOwn("run-mirror-lost", pending, ownerA, 0)).toEqual({ _tag: "Activated" })
+      // The row moves on behind the mirror, so the lease still renews while
+      // the verified UPDATE matches nothing. A success here would report a
+      // liveness stamp that was never written.
+      yield* sql`
+        UPDATE flows_runs
+        SET status = 'suspended', owner_host_id = NULL, owner_pid = NULL, owner_nonce = NULL, heartbeat_at_ms = NULL
+        WHERE run_id = 'run-mirror-lost'
+      `
+      expect(yield* store.heartbeat("run-mirror-lost", ownerA, 1)).toEqual({ _tag: "FenceLost" })
+      expect(yield* store.reconfirm("run-mirror-lost", ownerA, 1)).toEqual({ _tag: "FenceLost" })
+    })))
+
+  it.effect("heartbeat reports NotFound when the lease renews but the run row is gone", () =>
+    run(Effect.gen(function*() {
+      const store = yield* RunStore
+      const sql = yield* Effect.service(SqlClient.SqlClient)
+      yield* store.create("run-mirror-gone", "{}")
+      expect(yield* store.claimAndOwn("run-mirror-gone", pending, ownerA, 0)).toEqual({ _tag: "Activated" })
+      yield* sql`DELETE FROM flows_runs WHERE run_id = 'run-mirror-gone'`
+      expect(yield* store.heartbeat("run-mirror-gone", ownerA, 1)).toEqual({ _tag: "NotFound" })
+      expect(yield* store.reconfirm("run-mirror-gone", ownerA, 1)).toEqual({ _tag: "NotFound" })
+    })))
+})
+
+describe("a failing strategy is a persistence failure, never a silent grant", () => {
+  const run = withStack(SqlConsensus.layer)
+
+  it.effect("claim and transitionOwned surface the strategy's storage failure", () =>
+    run(Effect.gen(function*() {
+      const store = yield* RunStore
+      const sql = yield* Effect.service(SqlClient.SqlClient)
+      yield* store.create("run-broken-lease", "{}")
+      yield* store.create("run-broken-claim", "{}")
+      expect(yield* store.claimAndOwn("run-broken-lease", pending, ownerA, 0)).toEqual({ _tag: "Activated" })
+      yield* sql`DROP TABLE flows_consensus_leases`
+      const claimFailure = yield* Effect.flip(store.claim("run-broken-claim", pending, ownerB, 1))
+      expect(claimFailure.code).toBe("persistence_failed")
+      const transitionFailure = yield* Effect.flip(store.transitionOwned("run-broken-lease", ownerA, "completed"))
+      expect(transitionFailure.code).toBe("persistence_failed")
+      // Nothing was recorded for the refused transition, and the run row
+      // still shows the owner the failed transition could not release.
+      expect((yield* store.get("run-broken-lease")).status).toBe("running")
+    })))
+})
+
+describe("strategy persistence classification through bounded cause chains", () => {
+  const wrap = (cause: unknown, depth: number): unknown => {
+    for (let index = 0; index < depth; index++) cause = { cause }
+    return cause
+  }
+  const secret = "SyntheticPrivateSqlValueZq7"
+  const constraint = () => new DatabaseError({ code: "constraint", cause: secret })
+  const cyclic: { cause?: unknown } = {}
+  cyclic.cause = cyclic
+  const cases = [
+    { name: "direct constraint", cause: constraint(), code: "constraint", category: "constraint" },
+    {
+      name: "wrapped io",
+      cause: wrap(new DatabaseError({ code: "io", cause: secret }), 1),
+      code: "persistence_failed",
+      category: "io"
+    },
+    { name: "last inspected wrapper", cause: wrap(constraint(), 7), code: "constraint", category: "constraint" },
+    { name: "beyond inspection bound", cause: wrap(constraint(), 8), code: "persistence_failed", category: "unknown" },
+    { name: "cyclic wrapper", cause: cyclic, code: "persistence_failed", category: "unknown" },
+    { name: "null cause", cause: null, code: "persistence_failed", category: "unknown" },
+    { name: "primitive cause", cause: secret, code: "persistence_failed", category: "unknown" }
+  ] as const
+  for (const row of cases) {
+    it.effect(`retains ${row.name} classification without driver details or a granted lease`, () =>
+      // A custom strategy may wrap storage failures; inject that public seam
+      // while keeping the run row and rollback on the real SQL backend.
+      withStack(Consensus.layerNoop({
+        claim: () =>
+          Effect.fail(new Consensus.ConsensusError({ code: "persistence_failed", message: secret, cause: row.cause }))
+      }))(Effect.gen(function*() {
+        const store = yield* RunStore
+        yield* store.create("run-classification", "{}")
+        const failure = yield* Effect.flip(store.claim("run-classification", pending, ownerA, 1))
+        expect(failure.code).toBe(row.code)
+        expect(failure.cause).toMatchObject({ cause: { _tag: "@smthrs/database/DatabaseError", code: row.category } })
+        expect(JSON.stringify(failure)).not.toContain(secret)
+        const saved = yield* store.get("run-classification")
+        expect(saved.status).toBe("pending")
+        expect(saved.owner).toBeNull()
+        expect(saved.claim).toBeNull()
+        expect(saved.heartbeatAtMs).toBeNull()
+      })))
+  }
+})
