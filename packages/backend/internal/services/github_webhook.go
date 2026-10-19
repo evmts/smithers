@@ -162,11 +162,13 @@ type gitHubWebhookAccountInfo struct {
 }
 
 type gitHubWebhookRepository struct {
-	ID       int64                  `json:"id"`
-	Name     string                 `json:"name"`
-	FullName string                 `json:"full_name"`
-	Private  bool                   `json:"private"`
-	Owner    gitHubWebhookRepoOwner `json:"owner"`
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	FullName string `json:"full_name"`
+	Private  bool   `json:"private"`
+	// Visibility is GitHub's "public", "private" or "internal".
+	Visibility string                 `json:"visibility"`
+	Owner      gitHubWebhookRepoOwner `json:"owner"`
 }
 
 type gitHubWebhookRepoOwner struct {
@@ -350,6 +352,16 @@ func (s *GitHubWebhookService) applySyncedRepoEvent(ctx context.Context, event, 
 	}
 
 	repoID := envelope.repositoryID()
+	// Only a sync confirms a public source. A delivery that does not show a
+	// public repository closes the anonymous metadata door before anything
+	// from it is stored; hosted deliveries write the shared cache directly.
+	if envelope.Repository.Private || envelope.Repository.Visibility != "public" {
+		if err := s.syncedRepos.CloseSourceVisibility(ctx, owner, name, repoID); err != nil {
+			slog.Warn("github synced metadata webhook could not close source visibility",
+				"event", event, "action", action, "owner", owner, "repo", name, "error", err)
+			return
+		}
+	}
 	var err error
 	switch event {
 	case "issues":

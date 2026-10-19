@@ -67,10 +67,14 @@ const (
 // GitHubSyncedRepoStore is the registry + metadata store surface, satisfied by
 // the generated *db.Queries.
 type GitHubSyncedRepoStore interface {
+	SetGitHubSyncedRepoVisibility(context.Context, db.SetGitHubSyncedRepoVisibilityParams) error
 	GetGitHubSyncedRepo(ctx context.Context, arg db.GetGitHubSyncedRepoParams) (db.GithubSyncedRepo, error)
 	GetGitHubSyncedRepoByGitHubID(ctx context.Context, githubRepositoryID pgtype.Int8) (db.GithubSyncedRepo, error)
 	AdoptGitHubSyncedRepoSlug(ctx context.Context, arg db.AdoptGitHubSyncedRepoSlugParams) (db.GithubSyncedRepo, error)
 	ListDueGitHubSyncedRepos(ctx context.Context, rowLimit int32) ([]db.GithubSyncedRepo, error)
+	DeferGitHubSyncedRepoSync(context.Context, db.DeferGitHubSyncedRepoSyncParams) error
+	BindGitHubSyncedRepoInstallation(context.Context, db.BindGitHubSyncedRepoInstallationParams) (db.GithubSyncedRepo, error)
+	ClaimGitHubSyncedRepoSkipLog(context.Context, int64) (int64, error)
 	EnrollGitHubSyncedRepo(ctx context.Context, arg db.EnrollGitHubSyncedRepoParams) (db.GithubSyncedRepo, error)
 	ListGitHubSyncedRepos(ctx context.Context, refsOnly bool) ([]db.GithubSyncedRepo, error)
 	SetGitHubSyncedRepoMirror(ctx context.Context, arg db.SetGitHubSyncedRepoMirrorParams) error
@@ -119,10 +123,11 @@ type gitHubSyncedRepoPageFetcher = GitHubSyncedRepoPageFetcher
 // metadata store: enrollment, webhook-driven freshness, backfill, and the
 // stale-while-revalidate read the metadata proxy serves from.
 type GitHubSyncedRepoService struct {
-	install  *gitHubInstallSync
-	store    GitHubSyncedRepoStore
-	mirrorer GitHubSyncedRepoMirrorer
-	now      func() time.Time
+	install              *gitHubInstallSync
+	store                GitHubSyncedRepoStore
+	mirrorer             GitHubSyncedRepoMirrorer
+	now                  func() time.Time
+	installationResolver GitHubSyncedRepoInstallationResolver
 	// fetcherFactory builds an installation-token-backed page fetcher for a
 	// registry row (R2: sync uses installation tokens, cached ~1h, never user
 	// tokens). When set it is preferred over any request-bound user fetcher;
@@ -1129,6 +1134,10 @@ func (s *GitHubSyncedRepoService) backfill(ctx context.Context, row db.GithubSyn
 		}
 		return s.backfillInstallStreams(ctx, row, fetch, plans)
 	}
+	if err := s.refreshSourceVisibility(ctx, row, fetch); err != nil {
+		s.recordSyncError(row.ID, err)
+		return err
+	}
 	for _, resource := range []string{GitHubRepoMetadataIssues, GitHubRepoMetadataPulls} {
 		if err := s.backfillResource(ctx, row, resource, fetch); err != nil {
 			s.recordSyncError(row.ID, err)
@@ -1370,12 +1379,7 @@ func (s *GitHubSyncedRepoService) allowBudget(row db.GithubSyncedRepo) bool {
 	if s.install != nil || s.budget == nil || s.budget.headers || !row.InstallationID.Valid {
 		return true
 	}
-	allowed, retryAfter := s.budget.Allow(row.InstallationID.Int64)
-	if !allowed {
-		slog.Warn("github synced repo sync deferred: installation budget exhausted",
-			"owner", row.OwnerLogin, "repo", row.RepoName,
-			"installation_id", row.InstallationID.Int64, "retry_after", retryAfter)
-	}
+	allowed, _ := s.budget.Allow(row.InstallationID.Int64)
 	return allowed
 }
 
@@ -1401,7 +1405,7 @@ func (s *GitHubSyncedRepoService) reconcileInterval(row db.GithubSyncedRepo) tim
 }
 
 func (s *GitHubSyncedRepoService) reconcileDue(row db.GithubSyncedRepo) bool {
-	if !row.LastSyncedAt.Valid {
+	if !row.LastSyncedAt.Valid || !row.GithubPrivate.Valid {
 		return true
 	}
 	return s.now().Sub(row.LastSyncedAt.Time) >= s.reconcileInterval(row)
@@ -1470,6 +1474,18 @@ func (s *GitHubSyncedRepoService) reconcileOnce(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		if s.install != nil && row.NextReconcileAt.Valid && s.now().Before(row.NextReconcileAt.Time) {
+			continue
+		}
+		// Discover before deciding that the source has no credential path.
+		bindCtx, cancelBind := context.WithTimeout(ctx, 30*time.Second)
+		bound, bindErr := s.bindReconcileInstallation(bindCtx, row)
+		cancelBind()
+		if bindErr != nil {
+			s.deferReconcile(ctx, row, s.now().Add(githubSyncedRepoSyncFreshness), "installation_lookup")
+			continue
+		}
+		row = bound
 		var plans []gitHubStreamPlan
 		if s.install != nil {
 			plans = s.dueInstallStreams(row)
@@ -1477,15 +1493,18 @@ func (s *GitHubSyncedRepoService) reconcileOnce(ctx context.Context) {
 				continue
 			}
 		} else if !s.reconcileDue(row) {
+			s.deferReconcile(ctx, row, row.LastSyncedAt.Time.Add(s.reconcileInterval(row)), "cadence")
 			continue
 		}
 		fetch := s.preferredFetcher(row, nil)
-		if fetch == nil && !s.hasConditionalFetcher() {
+		if fetch == nil && (!s.hasConditionalFetcher() || s.conditionalFetcherFactory(row) == nil) {
 			// No installation and no user in scope: this row can only be
 			// revalidated by the read path's user-token fetcher.
+			s.deferReconcile(ctx, row, s.now().Add(githubSyncedRepoSyncFreshness), "no_fetcher")
 			continue
 		}
 		if !s.allowBudget(row) {
+			s.deferReconcile(ctx, row, s.now().Add(githubSyncedRepoSyncFreshness), "installation_budget")
 			continue
 		}
 		claimCtx, cancelClaim := context.WithTimeout(ctx, 5*time.Second)
@@ -1788,4 +1807,16 @@ func nullableSyncedRepoInt64(value int64) pgtype.Int8 {
 		return pgtype.Int8{}
 	}
 	return pgtype.Int8{Int64: value, Valid: true}
+}
+
+// deferReconcile rotates skipped candidates out of the bounded hosted batch.
+// Neither credential gaps nor a cadence wait count as failed/successful syncs.
+func (s *GitHubSyncedRepoService) deferReconcile(ctx context.Context, row db.GithubSyncedRepo, next time.Time, reason string) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	err := s.store.DeferGitHubSyncedRepoSync(ctx, db.DeferGitHubSyncedRepoSyncParams{ID: row.ID, NextReconcileAt: pgtype.Timestamptz{Time: next, Valid: true}})
+	logged, logErr := s.store.ClaimGitHubSyncedRepoSkipLog(ctx, row.ID)
+	if logErr == nil && logged > 0 {
+		slog.Warn("github synced repo reconciliation skipped", "row_id", row.ID, "reason", reason, "next_attempt_at", next, "deferred", err == nil)
+	}
 }
