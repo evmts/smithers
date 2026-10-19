@@ -48,6 +48,9 @@ const (
 	agentFailureTurnFailed = "turn_failed"
 	// The turn ran past its time limit.
 	agentFailureTurnTimedOut = "turn_timed_out"
+	// The workspace service was too busy starting other boxes to start this
+	// turn's box in time.
+	agentFailureBoxBusy = "box_busy"
 	// The dispatch failed for any other reason before the turn ran.
 	agentFailureDispatchFailed = "dispatch_failed"
 	// This deployment runs no cloud agents.
@@ -60,7 +63,7 @@ var agentSessionFailureCodes = []string{
 	agentFailureBoxUnavailable, agentFailureBoxStarting, agentFailureBoxBootstrapTimeout,
 	agentFailureBoxMissing, agentFailureBoxFailed, agentFailureBoxStopped,
 	agentFailureModelUnavailable, agentFailureModelRateLimited, agentFailureOutOfCredit,
-	agentFailureTurnFailed, agentFailureTurnTimedOut,
+	agentFailureTurnFailed, agentFailureTurnTimedOut, agentFailureBoxBusy,
 	agentFailureDispatchFailed, agentFailureAgentsUnavailable,
 }
 
@@ -156,12 +159,14 @@ var (
 	agentSessionModelRateLimited    = agentSessionFailure{Code: agentFailureModelRateLimited, Reason: "The model is rate limited right now. Try again in a moment.", Retryable: true}
 	agentSessionTurnFailed          = agentSessionFailure{Code: agentFailureTurnFailed, Reason: "The agent stopped before it finished this turn. Try again.", Retryable: true}
 	agentSessionTurnTimedOut        = agentSessionFailure{Code: agentFailureTurnTimedOut, Reason: "The turn ran past its time limit and was stopped. Try again.", Retryable: true}
+	agentSessionBoxBusy             = agentSessionFailure{Code: agentFailureBoxBusy, Reason: "The workspace service is busy starting other boxes; try again in a moment.", Retryable: true}
 )
 
 // agentSessionFailureForError classifies a dispatch failure into the reason
 // the session shows. The distinguished causes are the ones a user acts on
-// differently: a pool with no room and a branch machine another request is
-// already starting are both worth waiting for; the three permanent losses (a
+// differently: a pool with no room, a service busy starting other boxes and a
+// branch machine another request is already starting are all worth waiting
+// for; the three permanent losses (a
 // machine that no longer exists, a snapshot the provider can no longer
 // restore, and a machine the branch retains after a failed provision) are
 // worth neither waiting nor retrying; and a machine the branch retains while
@@ -179,6 +184,9 @@ func agentSessionFailureForError(err error) agentSessionFailure {
 	}
 	if errors.Is(err, errBranchMachineStopped) {
 		return agentSessionBranchMachineStopped
+	}
+	if isWorkspaceMutationBusy(err) {
+		return agentSessionBoxBusy
 	}
 	var apiErr *pkgerrors.APIError
 	if errors.As(err, &apiErr) {
