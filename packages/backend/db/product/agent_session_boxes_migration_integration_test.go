@@ -8,14 +8,12 @@ import (
 )
 
 // agentSessionBoxesVersion is the version before the migration that gives
-// every agent session its own box, wherever it lands in the registry.
+// every agent session its own box, wherever it lands in the registry. Apply
+// then runs it and every later migration, as an upgrade does in production.
 func agentSessionBoxesVersion(t *testing.T) int {
 	t.Helper()
-	registered, err := registeredMigrations()
-	require.NoError(t, err)
 	for _, m := range migrationRegistry {
 		if strings.HasSuffix(m.path, "_agent_session_boxes.sql") {
-			require.Equal(t, len(registered), m.version, "the per-session box migration is the head this test was written at or a later one")
 			return m.version - 1
 		}
 	}
