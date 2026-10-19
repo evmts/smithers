@@ -111,6 +111,12 @@ export const factory = S.Factory({
 export const home = S.Factory.Home({
   blocks: [
     S.Home.Prompt({ title: "What should we work on?", placeholder: "Ask Smithers…" }),
+    S.Home.Links({ links: [
+      { label: "Install Smithers", url: "https://smithers.sh/" },
+      { label: "Docs", url: "https://smithers.sh/docs/" },
+      { label: "Report a bug", url: "https://smithers.sh/bug" }
+    ] }),
+    S.Home.Markdown({ title: "Fixed by agents", path: "docs/fixed-by-agents.md" }),
     S.Home.App({ flow: "issue.implement", title: "Fix an issue", picture: "issue" }),
     S.Home.App({ flow: "prs.triage", title: "Review a PR", picture: "review" }),
     S.Home.App({ flow: "wiki.ask", title: "Ask the codebase", picture: "wiki" }),
