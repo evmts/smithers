@@ -1,0 +1,216 @@
+/**
+ * POST /api/model/test on the local host: ONE real request against a
+ * configured model, on the real @smthrs/model stack. Generation goes through
+ * the record's Route over a RequestExecutor built with no retries; a decision
+ * model answers its questions through the real Evaluator and the answers are
+ * decoded by the real Classifier. The request is the fixed Test unless the
+ * caller composed one (the model-call card). One deadline covers the whole
+ * call and is echoed in the timeout it produces.
+ *
+ * `test` never throws and never returns provider text, except the generated
+ * words with the credential cut out of them.
+ *
+ * @since 1.0.0-rc.0
+ */
+
+import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import * as Classifier from "@smthrs/model/Classifier"
+import * as Evaluator from "@smthrs/model/Evaluator"
+import { ModelRequest, SystemPart } from "@smthrs/model/ModelRequest"
+import * as RequestExecutor from "@smthrs/model/RequestExecutor"
+import {
+  bindingOf,
+  cutModelCredential,
+  MODEL_CALL_TEXT_MAX,
+  MODEL_TEST_DEADLINE_MS,
+  modelStateOf
+} from "@smthrs/rpc/ConfiguredModel"
+import type {
+  ConfiguredModel,
+  ModelAnswer,
+  ModelCallInput,
+  ModelCallOutput,
+  ModelCatalog,
+  ModelCredentialEnv,
+  ModelPlanOptions,
+  ModelTestFailure,
+  ModelTestResult
+} from "@smthrs/rpc/ConfiguredModel"
+import { Effect, Redacted, Schema, Stream } from "effect"
+import type { Layer } from "effect"
+import type { HttpClient } from "effect/http/HttpClient"
+import { toEvaluatorLayer, toModel } from "./ConfiguredModelRoute.vibe"
+import { localModelCatalog, manualRedirects, modelFailureOf, planOnLocal } from "./LocalModel.vibe"
+import type { LocalPlanned, ModelCredentials } from "./LocalModel.vibe"
+import { probeTest } from "./modelProbeTest.ts"
+
+/**
+ * How a probe reads credentials, reaches providers and bounds a call.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface ModelProbeOptions {
+  readonly credentials?: ModelCredentials
+  /** The record credentials are read from. The host passes the one it was started with. */
+  readonly env: ModelCredentialEnv
+  /** False on the offline host, which may reach loopback only. */
+  readonly egress: boolean
+  /** The one deadline a test runs under. Defaults to MODEL_TEST_DEADLINE_MS. */
+  readonly deadlineMs?: number
+  /** Test override for the transport. */
+  readonly fetch?: typeof globalThis.fetch
+}
+
+/**
+ * The catalog this host reports and the one-call Test it runs.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface ModelProbe {
+  readonly catalog: () => ModelCatalog
+  /** One call. With no input, the fixed Test of the model's kind. */
+  readonly test: (model: ConfiguredModel, input?: ModelCallInput) => Promise<ModelTestResult>
+}
+
+type Outcome = { readonly output: ModelCallOutput } | { readonly failure: ModelTestFailure }
+
+const invalidProtocol: Outcome = { failure: { code: "invalid", field: "protocol" } }
+
+const decodeQuestion = Schema.decodeUnknownEffect(Evaluator.Question)
+
+/**
+ * The classifier's answers in the contract's shape: the classifier reads the
+ * type off the question, the wire states it on the answer.
+ *
+ * @category decoding
+ * @since 1.0.0-rc.0
+ */
+export const modelAnswersOf = (
+  questions: Readonly<Record<string, Evaluator.Question>>,
+  answers: Readonly<Record<string, Classifier.Answer>>
+): Record<string, ModelAnswer> =>
+  Object.fromEntries(
+    Object.entries(answers).map(([id, answer]) => {
+      const type = questions[id]?.type
+      return [
+        id,
+        type === "boolean" && "probability" in answer ?
+          { type, value: answer.value, probability: answer.probability }
+          : type === "choice" && "confidence" in answer && typeof answer.value === "string"
+          ? { type, value: answer.value, probabilities: answer.probabilities, confidence: answer.confidence }
+          : type === "score" && "label" in answer
+          ? {
+            type,
+            value: answer.value,
+            label: answer.label,
+            probabilities: answer.probabilities,
+            confidence: answer.confidence
+          }
+          : answer as never
+      ] as const
+    })
+  )
+
+const generation = (
+  planned: Extract<LocalPlanned, { ok: true }>,
+  input: Extract<ModelCallInput, { kind: "generation" }>,
+  bounded = true
+): Effect.Effect<Outcome, unknown, KernelHttpClient.HttpClient> => {
+  const http = KernelHttpClient.HttpClient()
+  const executor = RequestExecutor.makeWith(RequestExecutor.fixed(http), { maxRetries: 0 })
+  const model = do {
+    provide RequestExecutor.RequestExecutor = executor {
+      toModel(planned.plan, planned.apiKey)
+    }
+  }
+  const events = Array.from(
+    Stream.runCollect(model.stream(ModelRequest.make({
+      modelId: planned.plan.modelId,
+      system: input.system.trim() === "" ? [] : [SystemPart.make({ text: input.system })],
+      messages: [{ role: "user", content: [{ type: "text", text: input.prompt }] }],
+      tools: [],
+      params: {
+        ...(bounded ? { maxTokens: input.maxTokens } : {}),
+        ...(input.temperature === undefined ? {} : { temperature: input.temperature })
+      }
+    })))
+  )
+  // Reaching `settle` is the pass: a reasoning model may spend every token thinking and say nothing.
+  if (!events.some((event) => event.type === "settle")) return invalidProtocol
+  const text = events.flatMap((event) => event.type === "text-delta" ? [event.text] : []).join("")
+  const output: ModelCallOutput = {
+    kind: "generation",
+    text: cutModelCredential(text, Redacted.value(planned.apiKey)).slice(0, MODEL_CALL_TEXT_MAX)
+  }
+  return { output }
+}
+
+const decision = (
+  planned: Extract<LocalPlanned, { ok: true }>,
+  deadlineMs: number,
+  input: Extract<ModelCallInput, { kind: "decision" }>
+): Effect.Effect<Outcome, unknown, KernelHttpClient.HttpClient> => {
+  provide toEvaluatorLayer(planned.plan, planned.apiKey, deadlineMs) {
+    // The questions become the classes every host builds, so their construction limits hold here too.
+    const questions = Object.fromEntries(
+      forEach(Object.entries(input.questions), ([id, question]) => [id, decodeQuestion(question)] as const)
+    )
+    const evaluator = Evaluator.Evaluator()
+    const answer = evaluator.evaluate({ state: modelStateOf(input.state), questions })
+    const decoded = Effect.result(Classifier.decodeAnswers(questions, answer.answers))
+    if (decoded._tag !== "Success") {
+      return invalidProtocol
+    }
+    const output: ModelCallOutput = { kind: "decision", answers: modelAnswersOf(questions, decoded.success) }
+    return { output }
+  }
+}
+
+/**
+ * The one call a Test makes, under its deadline, on the call's own transport.
+ * A failure becomes the contract's union; a defect is left to the caller.
+ */
+const probeOutcome = (
+  planned: Extract<LocalPlanned, { ok: true }>,
+  request: ModelCallInput,
+  bounded: boolean,
+  deadlineMs: number,
+  transport: Layer.Layer<HttpClient>
+): Effect.Effect<Outcome, never, never> => {
+  const attempt = (): Effect.Effect<Outcome, never, KernelHttpClient.HttpClient> => {
+    try {
+      if (request.kind === "decision") return decision(planned, deadlineMs, request)
+      return generation(planned, request, bounded)
+    } catch (error) {
+      return { failure: modelFailureOf(error, deadlineMs) }
+    }
+  }
+  provide transport {
+    return Effect.timeoutOrElse(attempt(), {
+      duration: deadlineMs,
+      orElse: (): Outcome!! => ({ failure: { code: "timeout", deadlineMs } })
+    })
+  }
+}
+
+/**
+ * POST /api/model/test on this host: one bounded call that never throws.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const createModelProbe = (options: ModelProbeOptions): ModelProbe => {
+  const deadlineMs = options.deadlineMs ?? MODEL_TEST_DEADLINE_MS
+  /** One rule for what is listed and what is tested, so the catalog offers no row a Test would refuse to dial. */
+  const planOptions: ModelPlanOptions = options.egress ? {} : { egress: false }
+
+  const test = probeTest(options, {
+    plan: (model) => planOnLocal(bindingOf(model), options.env, planOptions, options.credentials),
+    transport: () => manualRedirects(options.fetch),
+    outcome: (planned, request, bounded, transport) => probeOutcome(planned, request, bounded, deadlineMs, transport)
+  })
+
+  return { catalog: () => localModelCatalog(options.env, planOptions, options.credentials), test }
+}
