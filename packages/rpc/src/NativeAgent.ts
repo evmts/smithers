@@ -268,8 +268,11 @@ export const AgentTurnFrameSchema = z.discriminatedUnion("type", [
      * are `stopProducerWith` (packages/backend/internal/chat/store.go), which
      * seals `credential_missing`, `credential_issuer_unavailable` and
      * `host_no_capacity`, and `authorRevokedFrame` (author.go).
+     * `chat_guests_busy` (the owner already has the most chats answering at
+     * once) is accepted ahead of its producer, so the backend can seal it once
+     * every client decodes it.
      */
-    code: z.enum(["credential_missing", "credential_issuer_unavailable", "author_revoked", "host_no_capacity"])
+    code: z.enum(["credential_missing", "credential_issuer_unavailable", "author_revoked", "host_no_capacity", "chat_guests_busy"])
       .optional(),
     error: z.string().optional(),
     usage: AgentTurnUsageSchema.optional()

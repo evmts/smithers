@@ -88,18 +88,20 @@ const renderShared = async (conversation: ReturnType<typeof SharedConversationSc
     return renderToStaticMarkup(<ControllerContext value={controller}><MessageScrollerProvider><SharedConversation source={source} /></MessageScrollerProvider></ControllerContext>)
   } finally { await store.dispose?.() }
 }
-const CAPACITY_WORDS = "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
+const CAPACITY_WORDS = "Chat is busy right now. Nothing here was lost; try again in a moment."
+const GUESTS_BUSY_WORDS = "You have 2 chats answering right now. Wait for one to finish, then try again."
 
-test("a turn with no committed output says it is waiting for a host, not working", async () => {
+test("a turn with no committed output says it is waiting for a free machine, not working", async () => {
   const waiting = await renderShared(turnOf({ state: "running", frames: [] }))
-  expect(waiting).toContain('data-turn-elapsed="waiting"')
-  expect(waiting).toContain("Waiting for a model host")
+  expect(waiting).toContain('data-turn-elapsed="waiting">Waiting for a free machine · ')
+  // "Model host" is the fleet's word, not the person's.
+  expect(waiting).not.toContain("model host")
   expect(waiting).not.toContain("Working for")
   // The same turn once a host answers: the honest line becomes the working one.
   const working = await renderShared(turnOf({ state: "running", frames: [{ runId: "run-capacity", type: "delta", kind: "text", text: "Here it is" }] }))
   expect(working).toContain('data-turn-elapsed="working"')
   expect(working).toContain("Working for")
-  expect(working).not.toContain("Waiting for a model host")
+  expect(working).not.toContain("Waiting for a free machine")
 })
 
 /*
@@ -113,21 +115,32 @@ test("another member's turn with nothing shared yet still says it is working", a
   const html = await renderShared(turnOf({ state: "running", frames: [] }), "maya")
   expect(html).toContain('data-turn-elapsed="working"')
   expect(html).toContain("Working for")
-  expect(html).not.toContain("Waiting for a model host")
+  expect(html).not.toContain("Waiting for a free machine")
 })
 
-test("a terminal capacity refusal names the busy fleet first and keeps the producer's words in Details", async () => {
-  const html = await renderShared(turnOf({ state: "failed", finishedAt: Date.now(), frames: [
-    { runId: "run-capacity", type: "done", code: "host_no_capacity", error: CAPACITY_WORDS }
-  ] }))
-  expect(html).toContain("Every model host is busy. Nothing here was lost; send it again in a moment.")
-  expect(html).toContain('data-failure="HostNoCapacity"')
+/*
+ * Both refusals ran nothing and succeed unchanged later, so each names its own
+ * cause and offers the turn's author Try again: the same words through the
+ * composer's chat.send flow. Anyone else watching reads the sentence alone.
+ */
+for (const ending of [
+  { code: "host_no_capacity", tag: "HostNoCapacity", fault: "infra", words: CAPACITY_WORDS },
+  { code: "chat_guests_busy", tag: "ChatGuestsBusy", fault: "wait", words: GUESTS_BUSY_WORDS }
+]) test(`a ${ending.code} ending says so once and offers its author Try again`, async () => {
+  const conversation = turnOf({ state: "failed", finishedAt: Date.now(), frames: [
+    { runId: "run-capacity", type: "done", code: ending.code, error: ending.words }
+  ] })
+  const html = await renderShared(conversation)
+  expect(html).toContain(`data-fault="${ending.fault}" data-failure="${ending.tag}"><p>${ending.words}</p>`)
   expect(html).not.toContain("Smithers could not finish that")
-  // The producer's sentence stays raw detail inside the disclosure, wrapped.
-  expect(html).toContain(CAPACITY_WORDS)
-  expect(html.indexOf("<details>")).toBeLessThan(html.indexOf(CAPACITY_WORDS))
-  expect(html).toContain('class="failure-detail"')
+  // The producer says the app's own sentence, so Details has nothing more to show.
+  expect(html.split(ending.words)).toHaveLength(2)
+  expect(html).not.toContain("<details>")
+  expect(html).toContain('data-flow="chat.send" data-flow-args="Short reply please">Try again</button>')
   expect(html).toContain('data-turn-elapsed="failed"')
+  const watcher = await renderShared(conversation, "maya")
+  expect(watcher).toContain(ending.words)
+  expect(watcher).not.toContain("Try again")
 })
 
 test("an outcome this build cannot classify keeps the generic sentence", async () => {
@@ -137,7 +150,9 @@ test("an outcome this build cannot classify keeps the generic sentence", async (
   ] }))
   expect(html).toContain("Smithers could not finish that. Not your fault.")
   expect(html).toContain('data-failure="SharedTurnFailed"')
-  expect(html).not.toContain("Every model host is busy")
+  expect(html).not.toContain("Chat is busy")
+  // Nothing says this one succeeds unchanged, so it offers no Try again.
+  expect(html).not.toContain("Try again")
   // Partial text a failed turn did produce is still the answer it gave.
   expect(html).toContain("Partial answer")
 })
@@ -149,5 +164,5 @@ test("a cancelled turn keeps its stop line and raises no failure", async () => {
   expect(html).toContain('data-turn-elapsed="cancelled"')
   expect(html).toContain("Stopped after")
   expect(html).not.toContain("failure-notice")
-  expect(html).not.toContain("Every model host is busy")
+  expect(html).not.toContain("Chat is busy")
 })
