@@ -1,0 +1,189 @@
+/**
+ * The process transport beneath the atomic filesystem: resolving the
+ * configured helper to a file the confined workspace cannot have
+ * supplied, and running one isolated, bounded helper process per framed
+ * request.
+ * @since 1.0.0
+ */
+
+import type * as KernelFileSystem from "@smthrs/kernel/FileSystem"
+import { Effect, type PlatformError } from "effect"
+import type { Limits } from "../AtomicFileSystem.vibe"
+import { convert, decode, failure, frameHeaderBytes, type HelperResult } from "./AtomicFileSystemProtocol.vibe"
+import { AtomicHelperError } from "./AtomicHelperError.vibe"
+import { atomicHelperFault } from "./AtomicHelperFault.vibe"
+import * as Helper from "./helperProcess.ts"
+import * as Platform from "./nodePlatform.ts"
+
+/**
+ * Process-local helper starts, including helpers later cancelled or refused.
+ * @private
+ * @since 1.0.0
+ */
+export const started = (): number => Helper.started()
+
+/**
+ * True when `target` is at or below `root`. Both are absolute and already
+ * canonical. A different Windows drive produces an absolute relative result.
+ * @private
+ * @since 1.0.0
+ */
+export const inside = (root: string, target: string): boolean => {
+  const path = Platform.relativePath(root, target)
+  return path === "" ||
+    (path !== ".." && !path.startsWith(`..${Platform.pathSeparator}`) && !Platform.isAbsolutePath(path))
+}
+
+/** Resolve symlinks without replacing a hard-linked executable's entry name. */
+const executablePath = (configured: string): string => {
+  let current = configured
+  for (let links = 0; links < 40; links++) {
+    if (current.endsWith("/") || current.endsWith(Platform.pathSeparator)) {
+      throw new AtomicHelperError({
+        code: "helper_path_invalid",
+        message: "atomic helper executable cannot end with a directory separator"
+      })
+    }
+    // Bun's macOS realpath can return another hard link to the final inode:
+    // A hard-linked executable can change its entry name during guarded reads.
+    // Directories cannot have those file aliases. Resolve the parent, preserve
+    // the leaf name, and explicitly follow only actual leaf symlinks.
+    const parent = Platform.realpathNative(Platform.dirnameOf(current))
+    const candidate = Platform.joinPath(parent, Platform.basenameOf(current))
+    if (!Platform.lstatOf(candidate).isSymbolicLink()) return candidate
+    const target = Platform.readlinkOf(candidate)
+    // Do not normalize `link/..` lexically; realpath must traverse it first.
+    current = Platform.isAbsolutePath(target) ? target : `${parent}/${target}`
+  }
+  throw new AtomicHelperError({
+    code: "helper_path_invalid",
+    message: "atomic helper executable has too many symbolic links"
+  })
+}
+
+/**
+ * Resolves the configured helper to an absolute, executable regular file
+ * that the confined workspace cannot have supplied. Every failure throws, and
+ * every throw becomes a fail-closed `PermissionDenied`, so a host without a
+ * usable helper performs no filesystem operation at all.
+ * @private
+ * @since 1.0.0
+ */
+export const usableExecutable = (configured: string, boundaryRoot: string | undefined): string => {
+  if (!Platform.isAbsolutePath(configured)) {
+    throw new AtomicHelperError({
+      code: "helper_path_invalid",
+      message: `atomic helper executable must be an absolute path, got ${JSON.stringify(configured)}`
+    })
+  }
+  // Resolved first: the checks below have to describe the file that will
+  // actually run, not the name that leads to it.
+  const resolved = executablePath(configured)
+  if (!Platform.statOf(resolved).isFile()) {
+    throw new AtomicHelperError({
+      code: "helper_not_regular_file",
+      message: `atomic helper executable is not a regular file: ${resolved}`
+    })
+  }
+  Platform.requireExecutable(resolved)
+  if (boundaryRoot !== undefined && inside(boundaryRoot, resolved)) {
+    throw new AtomicHelperError({
+      code: "helper_inside_workspace",
+      message: `atomic helper executable must live outside the confined workspace: ${resolved}`
+    })
+  }
+  return resolved
+}
+
+/**
+ * Runs one helper over one framed request and settles with its converted
+ * answer. Every exit path kills the child, releases its pipes, and waits for
+ * the operating system to report that the process has closed.
+ * @private
+ * @since 1.0.0
+ */
+export const spawnHelper = <A>(
+  request: KernelFileSystem.AtomicRequest,
+  executable: string,
+  payload: Buffer,
+  settings: { readonly limits: Limits; readonly timeoutMs: number }
+): Effect.Effect<A, PlatformError.PlatformError, never> => {
+  const limits = settings.limits
+  const exit = Helper.run(executable, payload, {
+    stdout: limits.response + frameHeaderBytes,
+    stderr: limits.stderr,
+    timeoutMs: settings.timeoutMs
+  })
+  const settled = settle(request, exit, settings)
+  if (settled._tag === "Failed") throw settled.error
+  // `convert` throws when the value does not have the operation's shape, and
+  // that throw is a fail-closed refusal of this request.
+  const converted = try(
+    (request, value, limits) => convert<A>(request, value, limits),
+    (cause) => failure(request, cause),
+    request,
+    settled.value,
+    limits
+  )
+  return converted()
+}
+
+/** What a finished helper run decides, before a successful value is converted. */
+type Settled =
+  | { readonly _tag: "Failed"; readonly error: PlatformError.PlatformError }
+  | { readonly _tag: "Converted"; readonly value: unknown }
+
+const settle = (
+  request: KernelFileSystem.AtomicRequest,
+  exit: Helper.HelperExit,
+  settings: { readonly limits: Limits; readonly timeoutMs: number }
+): Settled => {
+  const limits = settings.limits
+  const fail = (cause: unknown, rejection?: HelperResult): Settled => ({
+    _tag: "Failed",
+    error: failure(request, cause, rejection)
+  })
+  if (exit._tag === "SpawnThrew" || exit._tag === "Errored") return fail(exit.cause)
+  // A wall-clock backstop, independent of every byte ceiling. Those bound
+  // what a helper may SAY; nothing bounds how long it may take to say it, and
+  // a helper that never answers would otherwise hold the fiber until the run
+  // itself is interrupted.
+  if (exit._tag === "TimedOut") {
+    return fail(atomicHelperFault("helper_timeout", `atomic helper did not answer within ${settings.timeoutMs} ms`))
+  }
+  if (exit._tag === "Overflowed") {
+    return fail(
+      atomicHelperFault("response_limit_exceeded", `atomic helper wrote more than ${limits.response} response bytes`)
+    )
+  }
+  let envelope: HelperResult | undefined
+  let malformed: unknown
+  try {
+    envelope = decode(exit.stdout, limits)
+  } catch (cause) {
+    malformed = cause
+  }
+  if (envelope !== undefined && !envelope.ok) {
+    // The helper's own typed rejection outranks the exit status and any
+    // transport noise: it is the only thing that knows which errno the
+    // syscall produced.
+    return fail(
+      atomicHelperFault("helper_rejected", envelope.message ?? "atomic helper rejected the operation"),
+      envelope
+    )
+  }
+  if (envelope !== undefined && exit.code === 0) return { _tag: "Converted", value: envelope.value }
+  const text = exit.stderr
+  return fail(
+    text !== ""
+      ? atomicHelperFault(
+        "helper_exited",
+        `atomic helper exited ${exit.code}: ${text}${exit.truncated ? " (truncated)" : ""}`
+      )
+      : exit.writeFailure !== undefined
+      ? exit.writeFailure
+      : malformed !== undefined
+      ? malformed
+      : atomicHelperFault("helper_exited", `atomic helper exited ${exit.code}`)
+  )
+}
