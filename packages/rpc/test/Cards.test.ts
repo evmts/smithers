@@ -3397,10 +3397,12 @@ test("hosted-change persists only its subject reference", () => {
   expect(CardSchema.parse({ ...card, payload: { ...card.payload, model: "invented", stages: [] } }).payload).toEqual(card.payload)
 })
 
-
 describe("local gateway card identity", () => {
-  test.each(["approval", "run-trace", "workflow-list", "flow-plan", "trigger-list", "run-list", "approvals-inbox"] as const)(
-    "%s accepts a local hash only with an explicit local transport marker", kind => {
+  test.each(
+    ["approval", "run-trace", "workflow-list", "flow-plan", "trigger-list", "run-list", "approvals-inbox"] as const
+  )(
+    "%s accepts a local hash only with an explicit local transport marker",
+    (kind) => {
       const payload = structuredClone(FIXTURES[kind].full) as Record<string, unknown>
       if (kind === "trigger-list") {
         const preparations = payload.preparations as Array<Record<string, unknown>>

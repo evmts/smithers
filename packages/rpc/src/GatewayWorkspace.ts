@@ -14,7 +14,7 @@ import { z } from "zod"
  */
 export const isGatewayWorkspaceId = (value: unknown): value is string =>
   typeof value === "string" && (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value) &&
-  value !== "00000000-0000-0000-0000-000000000000")
+    value !== "00000000-0000-0000-0000-000000000000")
 
 /**
  * The persisted UI and Worker use the same workspace identity.
@@ -47,10 +47,16 @@ export const gatewayCardPayload = <T extends z.ZodRawShape>(shape: T) =>
       if (!value || typeof value !== "object") return
       const id = (value as Record<string, unknown>).workspaceId
       if (typeof id === "string" && /^[0-9a-f]{16}$/.test(id) && bound.localGateway !== true) {
-        context.addIssue({ code: "custom", message: "A local workspace requires a local gateway card.", path: [...path, "workspaceId"] })
+        context.addIssue({
+          code: "custom",
+          message: "A local workspace requires a local gateway card.",
+          path: [...path, "workspaceId"]
+        })
       }
     }
     check(bound, [])
     check(bound.listRequest, ["listRequest"])
-    if (Array.isArray(bound.preparations)) bound.preparations.forEach((row, index) => check(row, ["preparations", index]))
+    if (Array.isArray(bound.preparations)) {
+      bound.preparations.forEach((row, index) => check(row, ["preparations", index]))
+    }
   })

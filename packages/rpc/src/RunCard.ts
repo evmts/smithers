@@ -4,7 +4,7 @@
  */
 
 import { z } from "zod"
-import { GatewayCardWorkspaceIdSchema, gatewayCardPayload } from "./GatewayWorkspace.ts"
+import { gatewayCardPayload, GatewayCardWorkspaceIdSchema } from "./GatewayWorkspace.ts"
 import { StatusRollupSchema } from "./Health.ts"
 import { PLUE_FAULTS } from "./PlueFailureCodes.ts"
 
