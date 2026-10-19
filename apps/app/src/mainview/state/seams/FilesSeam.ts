@@ -206,15 +206,11 @@ export const createFilesSeam = (ctx: SeamContext, branchOptions?: BranchFileOpti
   }
 
 
-  // Contents and storage share not_found; storage and route failures are not path misses.
+  // A missing repository and a missing path share a code; never infer an import.
   const explain404 = async (response: Response, fallback: string): Promise<string> => {
     const body: unknown = await response.json().catch(() => null)
     const refusal = refusalOf({ body, status: response.status, message: refusalWords(body, fallback, response.status) })
-    if (refusal.rawCode !== null && refusal.code !== "not_found") return refusalLine(refusal, fallback)
-    const message = isRecord(body) && typeof body.message === "string" ? body.message : ""
-    if (message === "content not found" || message === "repository not found") return fallback
-    if (message.startsWith("Path not found:")) return refusal.rawCode === null ? refusalLine(refusal, fallback) : fallback
-    return "Couldn't read this branch's files. Not your fault."
+    return refusal.code === "not_found" ? fallback : refusalLine(refusal, fallback)
   }
 
   const readers: { listFiles: (path: string, repo?: string, ref?: string) => Promise<ViewResult>; readFile: (path: string, repo?: string, anchor?: FileAnchor, ref?: string, whole?: boolean) => Promise<ViewResult> } = {
@@ -225,7 +221,7 @@ export const createFilesSeam = (ctx: SeamContext, branchOptions?: BranchFileOpti
         : resolveFileTarget(ctx.store, pathArg, explicitRepoArg)
       if ("error" in target) return target.error
       const { repo, path: normalized } = target
-      const label = normalized === "" ? repo : normalized
+      const label = normalized === "" ? "/" : normalized
       const branch = explicitRepoArg ?? branchOptions?.scope()?.branch ?? "main"
       if (install && (!branch || unsafePath(branch) || branch.startsWith("/") || branch.endsWith("/"))) return "Choose a branch"
 
@@ -243,7 +239,9 @@ export const createFilesSeam = (ctx: SeamContext, branchOptions?: BranchFileOpti
           return unreachableSentence(`the backend to list ${label} in ${repo}`, error)
         }
         if (response.status === 404) {
-          return explain404(response, `Path not found: ${label} in ${repo}${ref === undefined ? "" : ` at ${ref}`}`)
+          return ref === undefined
+            ? explain404(response, `Path not found: ${label} in ${repo}`)
+            : `Path not found: ${label} in ${repo} at ${ref}`
         }
         if (!response.ok) {
           return readErrorMessage(response, `Listing ${label} in ${repo} failed (${response.status})`)
@@ -297,7 +295,9 @@ export const createFilesSeam = (ctx: SeamContext, branchOptions?: BranchFileOpti
         return unreachableSentence(`the backend to read ${normalized} in ${repo}`, error)
       }
       if (response.status === 404) {
-        return explain404(response, `Path not found: ${normalized} in ${repo}${ref === undefined ? "" : ` at ${ref}`}`)
+        return ref === undefined
+          ? explain404(response, `Path not found: ${normalized} in ${repo}`)
+          : `Path not found: ${normalized} in ${repo} at ${ref}`
       }
       if (!response.ok) {
         return readErrorMessage(
