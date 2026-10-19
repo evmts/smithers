@@ -11,7 +11,7 @@ test("challenge binds fixed run, wait, canonical answer and timestamp (golden)",
 })
 test("assertion evidence is versioned and all binary fields are unpadded base64url", () => {
   const bytes = new Uint8Array([251, 255]).buffer
-  expect(assertionEvidence({ rawId: bytes, response: { clientDataJSON: bytes, authenticatorData: bytes, signature: bytes, userHandle: null } } as PublicKeyCredential, "now"))
+  expect(assertionEvidence({ rawId: bytes, response: { clientDataJSON: bytes, authenticatorData: bytes, signature: bytes, userHandle: null } } as unknown as PublicKeyCredential, "now"))
     .toEqual({ kind: "webauthn", version: "smithers-answer/v1", issuedAt: "now", credentialId: "-_8", clientDataJSON: "-_8", authenticatorData: "-_8", signature: "-_8", userHandle: "" })
 })
 test("only the declared schema property requests signing; ambiguity fails closed", () => {
@@ -21,9 +21,11 @@ test("only the declared schema property requests signing; ambiguity fails closed
 })
 
 test("challenge changes with every bound component", async () => {
-  const input = ["run", "wait", "ask-1", { text: "yes" }, "time"] as const
+  type Bound = [waitRunId: string, waitName: string, askId: string, answer: unknown, issuedAt: string]
+  const input: Bound = ["run", "wait", "ask-1", { text: "yes" }, "time"]
   const baseline = base64url(await answerChallenge(...input))
-  for (const args of [ ["other", "wait", "ask-1", { text: "yes" }, "time"], ["run", "other", "ask-1", { text: "yes" }, "time"], ["run", "wait", "ask-1", { text: "no" }, "time"], ["run", "wait", "ask-1", { text: "yes" }, "later"] ] as const) {
+  const variants: Bound[] = [["other", "wait", "ask-1", { text: "yes" }, "time"], ["run", "other", "ask-1", { text: "yes" }, "time"], ["run", "wait", "ask-1", { text: "no" }, "time"], ["run", "wait", "ask-1", { text: "yes" }, "later"]]
+  for (const args of variants) {
     expect(base64url(await answerChallenge(...args))).not.toBe(baseline)
   }
 })

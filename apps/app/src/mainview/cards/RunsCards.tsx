@@ -462,7 +462,7 @@ export const ApprovalAnswerForm = ({
           </>
         )}
       {answerNote === undefined ? null : (
-        <p className="sui-approval-error" role="alert">
+        <p className="sui-approval-error" role="alert" data-testid="approval-answer-note">
           {answerNote}
         </p>
       )}
