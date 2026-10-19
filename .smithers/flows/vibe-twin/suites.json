@@ -92,5 +92,13 @@
       "--exclude",
       "test/CapabilityLiterals.test.ts"
     ]
+  },
+  "packages/smithers/agent/model": {
+    "why": "scripts/provider-live.test.mjs is a node:test file for the provider-live shell guard; PACKAGE.ts runs it as its own NodeTest target. vitest's default include picks it up and fails 'No test suite found' in both runs. It tests a shell script, not Effect code, so both runs exclude it.",
+    "kind": "vitest",
+    "args": [
+      "--exclude",
+      "scripts/**"
+    ]
   }
 }
