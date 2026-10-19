@@ -1310,8 +1310,11 @@ registerHooks({
     signal: results.find((r) => r.signal)?.signal ?? null,
     error: results.find((r) => r.error)?.error
   })
-  const baseline = merge(suiteList.map((suite, i) => runSuite(suite, i, false)))
-  const vibe = !compileOk || twin.errors.length > 0 ? notRun : merge(suiteList.map((suite, i) => runSuite(suite, i, true)))
+  // VIBE_TWIN_SKIP_TESTS=1: compile and API only, for a package whose suite needs a lane VM
+  // (packages/smithers runs past an hour). Without tests a run is never COMPLETE.
+  const skipTests = process.env.VIBE_TWIN_SKIP_TESTS === "1"
+  const baseline = skipTests ? notRun : merge(suiteList.map((suite, i) => runSuite(suite, i, false)))
+  const vibe = skipTests || !compileOk || twin.errors.length > 0 ? notRun : merge(suiteList.map((suite, i) => runSuite(suite, i, true)))
   // A regression is a test that passed on the TypeScript and did not pass on the
   // twin: it failed, or its file never loaded (Bun's JUnit report omits those).
   // The B-1 workaround (a held tagged template called by hand) hides a VibeLang bug: it fails.
