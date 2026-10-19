@@ -9,7 +9,7 @@ test("a signed-out visitor chats on an allowlisted repository and gets sign-in a
   await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute(null))
   // The requested repository is absent from the first catalog page.
   await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [] } }))
-  await page.route("**/api/repos/sponsor/public", route => route.fulfill({ json: { is_public: true, default_bookmark: "main" } }))
+  await page.route("**/api/repos/sponsor/public", route => route.fulfill({ json: { full_name: "sponsor/public", is_public: true, default_bookmark: "main" } }))
   await page.route("**/api/repos/sponsor/public/guest", route => route.fulfill({ json: {
     allowed: true, flow: "guest.chat", sessionId: "opaque-session", revision: "main-tip",
     landingId: "b0c8af15-f9cc-4325-b383-149c13144913"
@@ -25,9 +25,9 @@ test("a signed-out visitor chats on an allowlisted repository and gets sign-in a
     if (calls > 1) return route.fulfill({ status: 429, json: { code: "guest_daily_cap", signIn: true } })
     return route.fulfill({ contentType: "text/event-stream", body: 'data: {"choices":[{"delta":{"content":"A repository answer for this guest."}}]}\n\ndata: [DONE]\n\n' })
   })
-  await page.goto("/sponsor/public")
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
-  await page.keyboard.press("Control+k")
+  await page.goto("/sponsor/public?design=off")
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Ask", exact: true }).click()
   const composer = page.getByTestId("composer-input")
   await expect(composer).toBeVisible()
   await composer.fill("How does this repository work?")
