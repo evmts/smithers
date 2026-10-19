@@ -275,22 +275,28 @@ export const loadRepositoryFlows = (
 export const loadFlowsLayer = (
   repositoryPath: string,
   systemFlows: ReadonlyArray<string>,
-  environment?: Readonly<Record<string, string>>
+  environment?: Readonly<Record<string, string>>,
+  repositoryFlows = true
 ) =>
   Layer.unwrap(Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem, path = yield* Path.Path
     return LoadFlows.toLayer(({ base }) =>
-      Effect.gen(function*() {
-        const loaded = yield* loadRepositoryFlows(repositoryPath, systemFlows, environment).pipe(
-          Effect.provideService(FileSystem.FileSystem, fs),
-          Effect.provideService(Path.Path, path)
-        )
-        return { commitId: base.commitId, ...loaded }
-      }).pipe(Effect.mapError((cause) =>
-        new CodingError({
-          code: "source_unavailable",
-          message: `The flows at ${base.commitId} could not be read: ${String(cause)}`
-        })
-      ))
+      // A hosted host serving the live checkout installs and imports nothing from it.
+      !repositoryFlows ?
+        Effect.fail(
+          new CodingError({ code: "source_unavailable", message: "This hosted session loads no repository flows" })
+        ) :
+        Effect.gen(function*() {
+          const loaded = yield* loadRepositoryFlows(repositoryPath, systemFlows, environment).pipe(
+            Effect.provideService(FileSystem.FileSystem, fs),
+            Effect.provideService(Path.Path, path)
+          )
+          return { commitId: base.commitId, ...loaded }
+        }).pipe(Effect.mapError((cause) =>
+          new CodingError({
+            code: "source_unavailable",
+            message: `The flows at ${base.commitId} could not be read: ${String(cause)}`
+          })
+        ))
     )
   }))

@@ -1,4 +1,5 @@
 import { NodeServices } from "@effect/platform-node"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
@@ -19,15 +20,17 @@ import { Cause, Context, Effect, FileSystem, Layer, Path, Schema, Stream } from 
 import { ChildProcessSpawner } from "effect/process"
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
 import { conversation, DispatchInput, dispatchModels, noChange, seatFor } from "../coding/dispatch.ts"
 import Dispatch, { dispatchRegistration } from "../coding/dispatch/flow.ts"
 import * as CodingFileSystem from "../coding/filesystem.ts"
-import { roleResolver } from "../coding/host.ts"
+import * as HostRegistry from "../coding/host-registry.ts"
+import { repositoryFlowsServed, roleResolver } from "../coding/host.ts"
 import { NativeCoding } from "../coding/native.ts"
+import { composeRoot } from "../coding/serve-host.ts"
 
 const changeId = "k".repeat(32)
 const commitId = "a".repeat(40)
@@ -131,7 +134,10 @@ const scripted = (options: {
   })
 }
 
-const agentHost = (flows: ReadonlyArray<FlowBinding.Source> = []) =>
+const agentHost = (
+  flows: ReadonlyArray<FlowBinding.Source> = [],
+  registry: Layer.Layer<Registry.Registry> = Registry.layerFromDescriptors([]).pipe(Layer.provide(NodeServices.layer))
+) =>
   Layer.effect(
     AgentAction.Host,
     Effect.gen(function*() {
@@ -144,7 +150,7 @@ const agentHost = (flows: ReadonlyArray<FlowBinding.Source> = []) =>
         maxFrames: 6
       }
     })
-  ).pipe(Layer.provide(Registry.layerFromDescriptors([])), Layer.provide(NodeServices.layer))
+  ).pipe(Layer.provide(registry))
 
 /** The offline dispatch host judges recorded completion evidence. */
 const confidentEvaluator = ScriptedJudge.layer
@@ -156,10 +162,13 @@ const runTurn = async (
     readonly answer?: ReadonlyArray<string>
     readonly before?: (root: string) => string
     readonly flows?: (root: string) => ReadonlyArray<FlowBinding.Source>
+    /** The registry the agent is shown, over the turn's workspace. */
+    readonly registry?: (root: string) => Promise<Layer.Layer<Registry.Registry>>
   } = {}
 ) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "coding-dispatch-")))
   t.after(() => rm(root, { recursive: true, force: true }))
+  const registry = await options.registry?.(root)
   // A turn that edits runs under the engine's workspace snapshots.
   if (options.flows !== undefined) execFileSync("jj", ["git", "init", "--quiet"], { cwd: root })
   const seats: Array<string> = []
@@ -172,7 +181,7 @@ const runTurn = async (
     Layer.provideMerge(nativeStub(reads)),
     Layer.provideMerge(
       Layer.mergeAll(
-        agentHost(options.flows?.(root)),
+        agentHost(options.flows?.(root), registry),
         scripted({
           seats,
           prompts,
@@ -387,3 +396,65 @@ test("no change is decided from every settled call to change the workspace", () 
     "No change made: 1 call to change the workspace failed. First: edit: no_match"
   )
 })
+
+/** A committed repository flow; discovery reads its metadata without importing it. */
+const committedFlow = (name: string) => `
+import { Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Schema } from "effect"
+export default Flow.make(${JSON.stringify(name)}, {
+  description: ${JSON.stringify(`Committed ${name}`)}, capabilities: [],
+  payload: {}, success: Schema.String,
+  body: () => Node.succeed(${JSON.stringify(name)})
+})
+`
+
+for (const hosted of [false, true]) {
+  test(
+    `a${hosted ? " hosted" : "n install"} turn over a repository that commits flows completes and shows the model ${
+      hosted ? "none of them" : "them"
+    }`,
+    { timeout: 60_000 },
+    async (t) => {
+      const names = ["committed-evil", "committed-benign"]
+      let shown: ReadonlyArray<string> = []
+      const { exit, prompts } = await runTurn(t, baseInput as typeof DispatchInput.Type, {
+        // The registry the hosted entry composes for this root, as host.ts builds it.
+        registry: async (root) => {
+          for (const name of names) {
+            await mkdir(join(root, ".smithers", "flows", name), { recursive: true })
+            await writeFile(join(root, ".smithers", "flows", name, "flow.ts"), committedFlow(name))
+          }
+          const start = composeRoot(root, hosted ? root : join(root, "hosted"))
+          t.after(start.release)
+          const state = await realpath(await mkdtemp(join(tmpdir(), "coding-dispatch-state-")))
+          t.after(() => rm(state, { recursive: true, force: true }))
+          const services = Layer.merge(NodeServices.layer, NodeCrypto.layer)
+          const registry = HostRegistry.layer(
+            root,
+            state,
+            services,
+            repositoryFlowsServed({ repositoryPath: root, ...start.adapters })
+          ).pipe(Layer.provide(services))
+          shown = await Effect.runPromise(
+            Effect.scoped(
+              Effect.flatMap(Layer.build(registry), (context) => Context.get(context, Registry.Registry).visible())
+            )
+          ).then((entries) => entries.map((entry) => entry.name))
+          return registry
+        }
+      })
+      assert.equal(exit._tag, "Success", JSON.stringify(exit))
+      assert.deepEqual((exit as Extract<typeof exit, { _tag: "Success" }>).value.messages, [
+        { ordinal: 0, role: "assistant", content: "Read the greeting." },
+        { ordinal: 1, role: "assistant", content: "Done." }
+      ])
+      // The model's flow catalog is the registry's visible list.
+      assert.deepEqual(shown.filter((name) => names.includes(name)).sort(), hosted ? [] : [...names].sort())
+      // And what its prompt names: an install renders them, a hosted host has none.
+      for (const name of names) {
+        assert.equal(prompts.some((prompt) => prompt.includes(name)), !hosted, `${name} in the model's prompt`)
+      }
+    }
+  )
+}
