@@ -336,6 +336,10 @@
       "door": "app"
     },
     {
+      "command": "bug.report",
+      "door": "app"
+    },
+    {
       "command": "cache.tokens.create",
       "method": "POST",
       "path": "/api/repos/{owner}/{repo}/build-cache/tokens",
@@ -374,7 +378,15 @@
       "door": "app"
     },
     {
+      "command": "change.ask",
+      "door": "app"
+    },
+    {
       "command": "change.facet",
+      "door": "app"
+    },
+    {
+      "command": "change.open-pull",
       "door": "app"
     },
     {
@@ -383,6 +395,10 @@
     },
     {
       "command": "chat",
+      "door": "app"
+    },
+    {
+      "command": "chat.close",
       "door": "app"
     },
     {
@@ -443,6 +459,10 @@
     },
     {
       "command": "code.hover",
+      "door": "app"
+    },
+    {
+      "command": "code.view",
       "door": "app"
     },
     {
