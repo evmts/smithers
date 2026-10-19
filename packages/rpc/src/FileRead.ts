@@ -280,7 +280,7 @@ export const decodeFilePage = (value: unknown): FilePage => {
       const bytes = Uint8Array.from(atob(wire.content), (char) => char.charCodeAt(0))
       binary = bytes.includes(0)
       try {
-        content = binary ? null : new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+        content = binary ? null : new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes)
       } catch {
         binary = true
         content = null

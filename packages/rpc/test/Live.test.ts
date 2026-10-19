@@ -40,6 +40,6 @@ test("invalid discriminator, cursor and payload are refused", () => {
     const raw of [{ t: "other", id: 7 }, { t: "snap", id: 7, cursor: 1 }, { t: "delta", id: 7, cursor: -1, data: {} }]
   ) expect(LiveReplySchema.safeParse(raw).success).toBe(false)
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))
-  expect(pkg.exports["."]).toBeUndefined()
+  expect(pkg.exports["."].default).toBe("./src/index.ts")
   expect(pkg.exports["./*"].default).toBe("./src/*.ts")
 })

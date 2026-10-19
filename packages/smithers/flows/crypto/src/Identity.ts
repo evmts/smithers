@@ -143,7 +143,7 @@ const hex = (bytes: Uint8Array): string => [...bytes].map((byte) => byte.toStrin
 const nonce = (): string => {
   if (state.nonce === undefined) {
     const bytes = new Uint8Array(16)
-    globalThis.crypto.getRandomValues(bytes)
+    crypto.getRandomValues(bytes)
     state.nonce = hex(bytes)
   }
   return state.nonce

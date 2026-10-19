@@ -79,7 +79,7 @@ const snapshotBody = (body: HttpBody.HttpBody): HttpBody.HttpBody => {
     case "Uint8Array":
       return HttpBody.uint8Array(body.body.slice(), body.contentType)
     case "FormData": {
-      const formData = new globalThis.FormData()
+      const formData = new FormData()
       for (const [name, value] of body.formData.entries()) formData.append(name, value)
       return HttpBody.formData(formData)
     }
