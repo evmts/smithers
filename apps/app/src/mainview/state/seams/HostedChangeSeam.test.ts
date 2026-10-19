@@ -932,6 +932,29 @@ for (const payload of [
   await h.done()
   expect(h.store.session().hostedChanges![0]?.error).toBe(("reason" in payload ? payload.reason : payload.message)!)
 })
+// A full agent pool ends the session box_unavailable after ~16 s (8e d-xz0bfc). It is retryable but not box_busy:
+// no automatic retry, the backend's sentence, and the person's Try again starts a fresh session (PM d-dfapae).
+test("a full agent pool (box_unavailable) keeps its sentence, schedules no retry, and Try again starts again", async () => {
+  const clock = fakeScheduler()
+  const full = "The agent pool is full right now. Nothing ran; start the agent again in a moment."
+  let starts = 0
+  const h = await setup(async (url, init) => {
+    if (init?.method === "POST" && url.endsWith("/agent/sessions")) { starts++; return json({ id: `s${starts}` }) }
+    if (url.split("?")[0]!.endsWith("/messages")) return json([])
+    return json({ ...session, status: "failed", reason_code: "box_unavailable", reason: full, retryable: true })
+  }, clock)
+  const request = { repo: "maya/tinyhttp", request: "change" }
+  await h.seam.askHostedChange(request)
+  await h.done()
+  expect(clock.delays).toEqual([])
+  expect(starts).toBe(1)
+  expect(h.store.session().hostedChanges![0]).toMatchObject({ phase: "failed", busyWaiting: false, error: full,
+    session: { reason_code: "box_unavailable", retryable: true } })
+  expect(h.store.session().hostedChanges![0]?.busyRetries).toBeUndefined()
+  await h.seam.askHostedChange(request)
+  await h.done()
+  expect(starts).toBe(2)
+})
 test("a non-busy session failure after a busy retry retains its own retry behavior", async () => {
   const clock = fakeScheduler()
   let starts = 0
