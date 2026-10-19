@@ -188,6 +188,8 @@ export const chatCss = `
 .sui-chat-composer:focus-within { border-color:color-mix(in srgb, ${t.primary} 32%, ${t.border}); box-shadow:0 0 0 4px color-mix(in srgb, ${t.primary} 12%, transparent), 0 1px 2px rgb(${t.shadowRgb} / 0.05), 0 20px 48px rgb(${t.shadowRgb} / 0.14); }
 .sui-chat-composer[data-docked='true'] { position:fixed; right:24px; bottom:max(18px, env(safe-area-inset-bottom)); left:24px; z-index:40; }
 .sui-chat-composer-input { width:100%; min-width:0; min-height:28px; max-height:160px; padding:2px 4px; resize:none; overflow-y:auto; border:0; outline:0; background:transparent; color:${t.foreground}; font:inherit; font-size:16px; line-height:1.5; }
+/* The composer frame carries the focus ring (:focus-within); the page theme's textarea:focus-visible ring must not draw a second box inside it. */
+.sui-chat-composer-input:focus-visible { border-color:transparent; box-shadow:none; }
 .sui-chat-composer-input::placeholder { color:${t.placeholder}; }
 .sui-chat-composer-input:disabled { cursor:not-allowed; opacity:.55; }
 .sui-chat-composer-toolbar { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:12px; }
