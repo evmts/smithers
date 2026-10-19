@@ -312,7 +312,7 @@ type AgentConcurrencyCounter interface {
 	// ReserveAgentSessionVMSlot is the hard gate: an atomic, advisory-locked
 	// count+stamp of started_at run just before VM provisioning, so concurrent
 	// dispatches cannot all pass a stale count and overshoot the cap.
-	ReserveAgentSessionVMSlot(ctx context.Context, sessionID string, maxActive int) (bool, error)
+	ReserveAgentSessionVMSlot(ctx context.Context, sessionID string, maxActive int, startedAt time.Time) (bool, error)
 }
 
 var agentRandRead = rand.Read

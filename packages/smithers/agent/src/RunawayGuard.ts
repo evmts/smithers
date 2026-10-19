@@ -116,6 +116,34 @@ export const stoppedTag = "flows/agent/RunawayGuard/Stopped"
 Fault.register(stoppedTag, "policy")
 
 /**
+ * The tag a {@link callLimitExceeded} failure's cause carries, so the run's
+ * fault names the host's command bound rather than the model wrapper around
+ * it. A product reads it as "a command ran past the limit".
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const callLimitTag = "flows/agent/RunawayGuard/CallLimit"
+// The host's cap on one command: policy, so nothing retries past it.
+Fault.register(callLimitTag, "policy")
+
+/**
+ * The failure a host's command bound ends its run with: one shell or test
+ * command ran `limitMillis` and was killed with its process group. Unlike a
+ * command's own `timeoutMs`, which the cell reads and can work around, the
+ * host's bound ends the run, as a model failure the run cannot retry past.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const callLimitExceeded = (flow: string, limitMillis: number): HarnessError.HarnessError =>
+  new HarnessError.HarnessError({
+    code: "model_failed",
+    message: `A ${flow} command ran longer than ${limitMillis} ms and was stopped.`,
+    cause: { _tag: callLimitTag, source: "tool-call", subject: flow, limitMillis }
+  })
+
+/**
  * Bounds every drive of one registered flow by a tool-call limit.
  *
  * A module flow a host runs as a step, such as `coding/PreparePlan`, is not a

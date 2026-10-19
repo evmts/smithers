@@ -81,19 +81,54 @@ import * as ChildFlows from "./ChildFlows.ts"
 import * as FlowEngineLike from "./FlowEngineLike.ts"
 import * as AgentTerminal from "./internal/AgentTerminal.ts"
 import * as AgentTerminalCommand from "./internal/AgentTerminalCommand.ts"
+import * as RunawayGuard from "./RunawayGuard.ts"
 
 /** These refusal classes carry host-authored text separately from diagnostic causes. */
 const publicRefusal = (error: { readonly message: string }): string => error.message
 
-/** Shell/test execution failures may contain OS diagnostics. */
-const publicExecutionError = (error: StdError): string | undefined => {
+/**
+ * Shell/test execution failures may contain OS diagnostics. A command bound's
+ * harness failure ({@link withinCallLimit}) escalates before any binding
+ * reads its error, so it has no public text here.
+ */
+const publicExecutionError = (error: StdError | HarnessError): string | undefined => {
+  if (error instanceof HarnessError) return undefined
   if (error.code === "timeout") return "The command timed out."
   return error.code === "command_failed" || error.code === "request_failed" ? undefined : error.message
 }
 
 /** A command past its own limit (given or default) is a timeout; see `FlowBinding.Options.timedOut`. */
-const commandTimedOut = (error: StdError): { readonly limitMillis?: number | undefined } | undefined =>
-  error.code === "timeout" ? { limitMillis: error.limitMillis } : undefined
+const commandTimedOut = (error: StdError | HarnessError): { readonly limitMillis?: number | undefined } | undefined =>
+  !(error instanceof HarnessError) && error.code === "timeout" ? { limitMillis: error.limitMillis } : undefined
+
+/**
+ * A command handler under the host's command bound, `limitMillis`.
+ *
+ * The call's `timeoutMs` is lowered to the bound, and an absent one becomes
+ * `fallbackMillis` (the flow's own default) when that is lower than the bound
+ * or the bound otherwise; `fallbackMillis` undefined leaves an absent
+ * `timeoutMs` to the handler, which the host bounds itself. A command the
+ * bound stopped fails the call with {@link RunawayGuard.callLimitExceeded}, a
+ * harness failure that ends the run instead of answering the cell. A shorter
+ * `timeoutMs` the cell chose stays the cell's own timeout. The handler's own
+ * timeout kills the command with its process group: `Exec` closes a detached
+ * spawn's group, and the agent terminal's client kills its session's.
+ */
+const withinCallLimit = <I extends { readonly timeoutMs?: number | undefined }, O, R>(
+  flow: string,
+  limitMillis: number | undefined,
+  fallbackMillis: number | undefined,
+  handler: (input: I) => Effect.Effect<O, StdError, R>
+): (input: I) => Effect.Effect<O, StdError | HarnessError, R> =>
+  limitMillis === undefined ? handler : (input) => {
+    const requested = input.timeoutMs ?? fallbackMillis
+    const bounded = requested === undefined ? input : { ...input, timeoutMs: Math.min(requested, limitMillis) }
+    return handler(bounded).pipe(Effect.mapError((error) =>
+      error.code === "timeout" && error.limitMillis === limitMillis
+        ? RunawayGuard.callLimitExceeded(flow, limitMillis)
+        : error
+    ))
+  }
 
 /**
  * Native search may report raw stderr, so only the contract's own rejection,
@@ -293,6 +328,15 @@ export const shell = (
      * @since 1.0.0
      */
     readonly terminalPort?: TerminalPort | undefined
+    /**
+     * The host's bound on one command, in milliseconds: a longer or absent
+     * `timeoutMs` is lowered to it, and a command it stops ends the run with
+     * {@link RunawayGuard.callLimitExceeded}. Absent, a command keeps its own
+     * timeout and a timeout answers the cell.
+     *
+     * @since 1.0.0
+     */
+    readonly callLimitMillis?: number | undefined
   }
 ): FlowBinding.Source =>
   FlowBinding.source(shellSource, [
@@ -300,13 +344,18 @@ export const shell = (
       FlowBinding.make({
         flow: Bash.flow,
         // Never route the coding terminal binding through Exec or Container.
-        handler: options?.terminal === "agent"
-          ? options.terminalPort === undefined
-            ? () => Effect.fail(AgentTerminal.unavailable(options.terminalProviders))
-            : inAgentTerminal(options.terminalPort)
-          : options?.sealedTo === undefined
-          ? Bash.run
-          : Bash.sealed(options.sealedTo),
+        handler: withinCallLimit<Bash.Input, Bash.Output, ChildProcessSpawner.ChildProcessSpawner | Path.Path>(
+          Bash.name,
+          options?.callLimitMillis,
+          Bash.DEFAULT_TIMEOUT_MS,
+          options?.terminal === "agent"
+            ? options.terminalPort === undefined
+              ? () => Effect.fail(AgentTerminal.unavailable(options.terminalProviders))
+              : inAgentTerminal(options.terminalPort)
+            : options?.sealedTo === undefined
+            ? Bash.run
+            : Bash.sealed(options.sealedTo)
+        ),
         publicError: publicExecutionError,
         timedOut: commandTimedOut,
         presentation: Bash.presentation
@@ -366,13 +415,23 @@ const inAgentTerminal = (port: TerminalPort) => {
 export const tests = (
   services: Context.Context<
     ChildProcessSpawner.ChildProcessSpawner | Evaluator.Evaluator | TestRunner.TestRunner
-  >
+  >,
+  options?: {
+    /**
+     * The host's bound on one suite run, in milliseconds, as {@link shell}'s
+     * `callLimitMillis`. A given `timeoutMs` is lowered to it; the host
+     * lowers the declared runner's own timeout to it too.
+     *
+     * @since 1.0.0
+     */
+    readonly callLimitMillis?: number | undefined
+  }
 ): FlowBinding.Source =>
   FlowBinding.source(testsSource, [
     FlowBinding.provide(
       FlowBinding.make({
         flow: TestRun.flow,
-        handler: TestRun.run,
+        handler: withinCallLimit(TestRun.name, options?.callLimitMillis, undefined, TestRun.run),
         publicError: publicExecutionError,
         timedOut: commandTimedOut,
         activity: TestRun.activity,

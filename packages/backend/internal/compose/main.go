@@ -327,6 +327,18 @@ func (t topology) hosted() bool     { return t.multitenant }
 func (t topology) workers() bool    { return t.duties != DutiesHTTP }
 func (t topology) servesHTTP() bool { return t.duties != DutiesWorkers }
 
+// agentTurnTimeout is how long one agent turn may run before the session
+// reaper stops it: the configured agent runtime, and on hosted never longer
+// than services.HostedAgentTurnTimeout, so a hosted turn whose box never
+// reports again still ends.
+func agentTurnTimeout(role topology, configuredSeconds int64) time.Duration {
+	configured := time.Duration(configuredSeconds) * time.Second
+	if role.hosted() && (configured <= 0 || configured > services.HostedAgentTurnTimeout) {
+		return services.HostedAgentTurnTimeout
+	}
+	return configured
+}
+
 // selectPublicMirrors is a deployment's mirror list: the composer's names
 // (Options.PublicMirrors) and then SMITHERS_PUBLIC_MIRRORS's, each repository
 // once. An install wraps one repository whose import, not the GitHub pull,
@@ -2820,7 +2832,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		}
 		launchWorker(func() { gitHubSyncedRepoService.StartReconciler(workerCtx) })
 		launchWorker(func() { gitHubSyncedRepoService.StartSyncWebhookReconciler(workerCtx, 10*time.Minute) })
-		agentService.StartSessionReaper(workerCtx, time.Duration(cfg.Sandbox.AgentMaxRuntimeSecs)*time.Second)
+		agentService.StartSessionReaper(workerCtx, agentTurnTimeout(options.topology, cfg.Sandbox.AgentMaxRuntimeSecs))
 		authCleaner.Start(workerCtx)
 		buildCacheCleaner.Start(workerCtx, buildCacheService.Cleanup)
 		if authService.Members != nil {

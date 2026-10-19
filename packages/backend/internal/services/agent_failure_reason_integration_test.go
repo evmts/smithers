@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
@@ -125,10 +126,16 @@ func TestAFailedSessionSaysWhyAndEndsItsTurnWithTheSentence(t *testing.T) {
 		{"the turn ran past its time limit", func(t *testing.T, service *AgentService, update flowdispatch.ProjectionUpdate) {
 			var projection agentFlowProjection
 			require.NoError(t, json.Unmarshal(update.Checkpoint.Projection, &projection))
-			session, err := service.dispatchQ.(*db.Queries).GetAgentSession(context.Background(), projection.SessionID)
+			q := service.dispatchQ.(*db.Queries)
+			_, err := q.UpdateAgentSessionStartedAt(context.Background(), db.UpdateAgentSessionStartedAtParams{ID: projection.SessionID,
+				StartedAt: pgtype.Timestamptz{Time: time.Now().UTC().Add(-16*time.Minute - 5*time.Second), Valid: true}})
+			require.NoError(t, err)
+			session, err := q.GetAgentSession(context.Background(), projection.SessionID)
 			require.NoError(t, err)
 			require.NoError(t, service.reapExpiredSession(context.Background(), session))
-		}, expectation{"turn_timed_out", true, "The turn ran past its time limit and was stopped. Try again."}},
+		}, expectation{"turn_timed_out", true, "This turn stopped after 16 minutes without finishing."}},
+		{"the box stopped the turn at a time limit", flow(`{"run":{"runId":"host","flowId":"coding/dispatch","status":"failed","failureFault":"policy","failureTag":"flows/agent/Timeout"}}`),
+			expectation{"turn_timed_out", true, "This turn ran past a time limit and was stopped."}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			service, _, update := codingCompletionFixture(t)
