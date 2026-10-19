@@ -48,7 +48,7 @@ none of which the flow's author arranges.
 npm install @smthrs/flow@next effect
 ```
 
-Node.js 26.4.0 or later. `effect` is a peer at exactly `4.0.5`: two copies of
+Node.js 22.19.0 or later. `effect` is a peer at exactly `4.0.5`: two copies of
 `effect` in one program are two sets of service tags.
 
 Running a flow adds an engine and a platform crypto service.

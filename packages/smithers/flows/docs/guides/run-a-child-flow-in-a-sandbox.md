@@ -324,7 +324,7 @@ const host = NodeHost.layerContained().pipe(
 console.log(await Effect.runPromise(greet.pipe(Effect.provide(host), Effect.scoped)))
 ```
 
-The machine needs Node.js 26.4.0 or later and key-based SSH login;
+The machine needs Node.js 22.19.0 or later and key-based SSH login;
 `BatchMode=yes` makes a password prompt fail instead of hang. When `node` is not
 on the `PATH` a non-interactive SSH command sees, pass its absolute path:
 

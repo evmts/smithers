@@ -61,6 +61,7 @@ import { parse } from "yaml"
 export const releaseGates = [
   { name: "Workspace targets", verb: "ci", target: "//packages/...", jobs: 2 },
   { name: "Issue claims and check receipts", verb: "test", target: "//.smithers/flows:issueClaim" },
+  { name: "Coding host size", verb: "test", target: "//.smithers/flows:codingHostSize" },
   { name: "Check bindings", verb: "test", target: "//.smithers/flows:evidenceBindings" },
   { name: "Release rehearsal and gate inventory", verb: "test", target: "//.smithers/flows:releaseRehearsal" },
   { name: "Release version suite", verb: "test", target: "//.smithers/flows:releaseVersion" },

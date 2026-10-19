@@ -18,7 +18,7 @@ environment its results depend on. The program below does all three, and
 
 ## Prerequisites
 
-Node.js 26.4.0 or later; [Installation](../installation.md) has the details.
+Node.js 22.19.0 or later; [Installation](../installation.md) has the details.
 Create a project:
 
 ```bash

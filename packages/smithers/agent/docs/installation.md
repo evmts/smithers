@@ -13,7 +13,7 @@ npm install @smthrs/agent@next effect
 
 The `next` tag carries the 1.0 release candidates.
 
-The package requires Node.js 26.4.0 or later and ships as both ESM and CommonJS
+The package requires Node.js 22.19.0 or later and ships as both ESM and CommonJS
 with TypeScript declarations. Its runtime dependencies, including
 [`effect`](https://effect.website) and the `@smthrs/*` packages the agent
 composes, install with it.

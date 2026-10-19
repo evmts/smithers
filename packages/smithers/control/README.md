@@ -18,7 +18,7 @@ npm install @smthrs/control@next effect
 ```
 
 The package
-requires Node.js 26.4.0 or later and ships as both ESM and CommonJS with
+requires Node.js 22.19.0 or later and ships as both ESM and CommonJS with
 TypeScript declarations.
 
 It imports no `node:*` module, so the same modules run in Node.js and in a

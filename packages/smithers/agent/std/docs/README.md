@@ -48,7 +48,7 @@ npm install @smthrs/std@next effect
 
 The handlers
 ask the host for services such as `FileSystem`, `Path`, and
-`ChildProcessSpawner`. `@effect/platform-node` supplies them on Node.js 26.4.0 or later. For the browser-safe subset and the service each handler requires, see
+`ChildProcessSpawner`. `@effect/platform-node` supplies them on Node.js 22.19.0 or later. For the browser-safe subset and the service each handler requires, see
 [Installation](./installation.md).
 
 ## Read a file, bounded and disclosed

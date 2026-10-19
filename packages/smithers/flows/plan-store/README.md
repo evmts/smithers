@@ -26,7 +26,7 @@ no verb here rewrites or deletes a node, and a trigger refuses one anyway.
 npm install @smthrs/plan-store@next effect
 ```
 
-It needs Node.js 26.4.0 or later and `effect` `4.0.5`. The root names no
+It needs Node.js 22.19.0 or later and `effect` `4.0.5`. The root names no
 database driver, so it bundles for the browser; the driver layers a durable
 composition adds are on the
 [installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/docs/installation.md).

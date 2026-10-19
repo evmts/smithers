@@ -24,7 +24,7 @@ that fence still sees the bytes its own event recorded.
 npm install @smthrs/step-cache@next effect
 ```
 
-It needs Node.js 26.4.0 or later and `effect` `4.0.5`. The import forms
+It needs Node.js 22.19.0 or later and `effect` `4.0.5`. The import forms
 and the driver layers a durable composition adds are on the
 [installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/step-cache/docs/installation.md).
 
