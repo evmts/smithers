@@ -44,6 +44,20 @@ func TestFlowHostsCarryNoProviderKeyInAnyTopology(t *testing.T) {
 	}
 }
 
+// A hosted coding host bounds every shell and test command by
+// services.HostedToolCallTimeout; an install's commands keep their own
+// timeouts.
+func TestHostedCodingHostsBoundEveryCommand(t *testing.T) {
+	for _, role := range []topology{hostedAPITopology, hostedWorkerTopology, {multitenant: true}} {
+		if got := codingHostEnvironment(role)[codingToolCallLimitEnv]; got != "300000" {
+			t.Errorf("%+v %s = %q, want 300000", role, codingToolCallLimitEnv, got)
+		}
+	}
+	if got, ok := codingHostEnvironment(localTopology)[codingToolCallLimitEnv]; ok {
+		t.Errorf("install coding host carries %s=%q", codingToolCallLimitEnv, got)
+	}
+}
+
 func TestFlowHostProductAPIURLUsesRuntimeReachableOrigin(t *testing.T) {
 	cases := []struct {
 		name    string

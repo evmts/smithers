@@ -3,7 +3,9 @@ package services
 import (
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/flowhost"
@@ -155,8 +157,41 @@ var (
 	agentSessionModelUnrouted       = agentSessionFailure{Code: agentFailureModelUnavailable, Reason: "The model is not available on this deployment. Trying again will not help."}
 	agentSessionModelRateLimited    = agentSessionFailure{Code: agentFailureModelRateLimited, Reason: "The model is rate limited right now. Try again in a moment.", Retryable: true}
 	agentSessionTurnFailed          = agentSessionFailure{Code: agentFailureTurnFailed, Reason: "The agent stopped before it finished this turn. Try again.", Retryable: true}
-	agentSessionTurnTimedOut        = agentSessionFailure{Code: agentFailureTurnTimedOut, Reason: "The turn ran past its time limit and was stopped. Try again.", Retryable: true}
+	agentSessionTurnTimedOut        = agentSessionFailure{Code: agentFailureTurnTimedOut, Reason: "This turn ran past a time limit and was stopped.", Retryable: true}
+	// A shell or test command ran past the hosted per-command bound. The
+	// coding host killed its process group and failed the turn.
+	agentSessionCommandTimedOut = agentSessionFailure{Code: agentFailureTurnTimedOut,
+		Reason: "A command ran longer than " + spokenDuration(HostedToolCallTimeout) + " and was stopped.", Retryable: true}
 )
+
+// codingToolCallLimitTag is the fault tag a coding host stamps on a run it
+// failed because one shell or test command ran past the host's per-command
+// bound: RunawayGuard.callLimitTag in packages/smithers/agent/src/RunawayGuard.ts.
+const codingToolCallLimitTag = "flows/agent/RunawayGuard/CallLimit"
+
+// agentSessionTurnTimedOutAfter is what a session says when the session
+// reaper stopped its turn: the turn had been running for elapsed without the
+// box reporting an end, whether it hung or its end never arrived.
+func agentSessionTurnTimedOutAfter(elapsed time.Duration) agentSessionFailure {
+	return agentSessionFailure{Code: agentFailureTurnTimedOut,
+		Reason: "This turn stopped after " + spokenDuration(elapsed) + " without finishing.", Retryable: true}
+}
+
+// spokenDuration says a duration the way the session's sentence reads it,
+// rounded down to whole minutes, or to whole seconds under a minute.
+func spokenDuration(d time.Duration) string {
+	if d < time.Second {
+		return "less than a second"
+	}
+	n, unit := int64(d/time.Second), "second"
+	if d >= time.Minute {
+		n, unit = int64(d/time.Minute), "minute"
+	}
+	if n != 1 {
+		unit += "s"
+	}
+	return strconv.FormatInt(n, 10) + " " + unit
+}
 
 // agentSessionFailureForError classifies a dispatch failure into the reason
 // the session shows. The distinguished causes are the ones a user acts on
@@ -216,6 +251,9 @@ func agentSessionFailureForFlow(checkpoint flowdispatch.RuntimeCheckpoint) agent
 			default:
 				return agentSessionModelBusy
 			}
+		}
+		if tag == codingToolCallLimitTag {
+			return agentSessionCommandTimedOut
 		}
 		if tag == "flows/agent/Timeout" {
 			return agentSessionTurnTimedOut

@@ -20,6 +20,22 @@ import (
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
+// Hosted bounds on one agent turn. Neither is configuration: the composition
+// applies both on hosted, and tests inject shorter bounds where these are
+// read (StartSessionReaper's maxDuration, the coding host's call limit).
+const (
+	// HostedAgentTurnTimeout is the wall-clock bound on one hosted turn,
+	// counted from the turn's start. The session reaper stops a turn still
+	// active past it, with turn_timed_out, even when the box never reports
+	// again, then releases the turn's box through finalizeAgentSession.
+	HostedAgentTurnTimeout = 15 * time.Minute
+	// HostedToolCallTimeout is the bound on one shell or test command in a
+	// hosted turn. The coding host kills the command's process group and
+	// fails the turn (RunawayGuard.callLimitExceeded), which the session
+	// reads as turn_timed_out.
+	HostedToolCallTimeout = 5 * time.Minute
+)
+
 const (
 	agentSessionReaperInterval = time.Minute
 	// maxAgentTranscriptArchiveMessages is an explicit event-count guard for the
@@ -61,7 +77,9 @@ type agentTranscriptArchiveResult struct {
 
 var agentSessionReaperNewTicker = time.NewTicker
 
-// StartSessionReaper periodically times out stale agent sessions based on wall-clock duration.
+// StartSessionReaper periodically times out stale agent sessions based on
+// wall-clock duration: a session still active maxDuration after its turn
+// started is stopped with turn_timed_out.
 func (s *AgentService) StartSessionReaper(ctx context.Context, maxDuration time.Duration) {
 	if s == nil || s.dispatchQ == nil || maxDuration <= 0 {
 		return
@@ -161,6 +179,10 @@ func (s *AgentService) reapExpiredSessions(ctx context.Context, maxDuration time
 	return neverStartedErr
 }
 
+// reapExpiredSession fails a turn past its bound with turn_timed_out (the
+// session row says failed, as every failed turn does), cancels its Flow run,
+// and releases its box through finalizeAgentSession. The completion metric
+// keeps the timed_out outcome.
 func (s *AgentService) reapExpiredSession(ctx context.Context, session db.AgentSession) error {
 	if s == nil || s.dispatchQ == nil {
 		return nil
@@ -179,7 +201,13 @@ func (s *AgentService) reapExpiredSession(ctx context.Context, session db.AgentS
 
 	s.cancelAgentFlowRunBestEffort(ctx, timedOutSession, "timeout")
 	s.observeAgentSessionTimeout()
-	timedOutSession = s.recordAgentSessionFailure(ctx, timedOutSession, agentSessionTurnTimedOut)
+	// The sentence says how long the turn ran, counted from when its message
+	// was accepted (started_at); the reaper only selects a started session.
+	failure := agentSessionTurnTimedOut
+	if timedOutSession.StartedAt.Valid && timedOutSession.FinishedAt.Valid {
+		failure = agentSessionTurnTimedOutAfter(timedOutSession.FinishedAt.Time.Sub(timedOutSession.StartedAt.Time))
+	}
+	timedOutSession = s.recordAgentSessionFailure(ctx, timedOutSession, failure)
 	s.notifyAgentSessionStatus(ctx, timedOutSession)
 	s.finalizeAgentSession(ctx, timedOutSession, "timed_out", "agent session timed out")
 	return nil

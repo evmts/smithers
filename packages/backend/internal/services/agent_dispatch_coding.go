@@ -145,6 +145,17 @@ func agentTriggerMessageText(messages []AgentMessageResponse, messageID int64) s
 	return ""
 }
 
+// agentTriggerMessageAcceptedAt is when the user message with the given id
+// was accepted, zero when the window does not hold that user message.
+func agentTriggerMessageAcceptedAt(messages []AgentMessageResponse, messageID int64) time.Time {
+	for _, message := range messages {
+		if messageID > 0 && message.ID == messageID && message.Role == "user" {
+			return message.CreatedAt
+		}
+	}
+	return time.Time{}
+}
+
 // messageTrigger records the authenticated message a turn answers. A turn
 // with no authenticated author, or whose admitted message the loaded window
 // does not hold, records none.

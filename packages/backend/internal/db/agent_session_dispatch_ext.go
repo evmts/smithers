@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -89,6 +90,9 @@ WHERE id = $1 AND deleted_at IS NULL
 // ReserveAgentSessionVMSlot atomically checks the fleet-wide active-agent-VM
 // count against the cap and, if below it, stamps the session's started_at so
 // the session is counted immediately — BEFORE the slow Microsandbox CreateSandbox call.
+// startedAt is when the turn's message was accepted: the turn's wall clock,
+// which the session reaper bounds, starts there; the count reads only that
+// started_at is set.
 //
 // The count + stamp are serialized across the whole fleet with a transaction-
 // scoped advisory lock: concurrent reservers queue on the lock, and each
@@ -104,7 +108,7 @@ WHERE id = $1 AND deleted_at IS NULL
 //
 // Returns false when the fleet is at capacity; an error when the session is not
 // in a reservable state (missing, tombstoned, or not active).
-func (q *Queries) ReserveAgentSessionVMSlot(ctx context.Context, sessionID string, maxActive int) (bool, error) {
+func (q *Queries) ReserveAgentSessionVMSlot(ctx context.Context, sessionID string, maxActive int, startedAt time.Time) (bool, error) {
 	tx, err := q.BeginTx(ctx)
 	if err != nil {
 		return false, fmt.Errorf("reserve agent session vm slot: %w", err)
@@ -131,9 +135,9 @@ WHERE status = 'active'
 
 	tag, err := tx.Exec(ctx, `
 UPDATE agent_sessions
-SET started_at = NOW(), updated_at = NOW()
+SET started_at = $2, updated_at = NOW()
 WHERE id = $1 AND status = 'active' AND deleted_at IS NULL
-`, sessionID)
+`, sessionID, startedAt)
 	if err != nil {
 		return false, err
 	}

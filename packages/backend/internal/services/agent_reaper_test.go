@@ -104,7 +104,7 @@ func TestAgentService_ReapExpiredSessions_TimesOutSessionAndRecordsMetrics(t *te
 		},
 		updateAgentSessionTimedOutFn: func(ctx context.Context, arg db.UpdateAgentSessionTimedOutParams) (db.AgentSession, error) {
 			s := session
-			s.Status = "timed_out"
+			s.Status = "failed"
 			s.FinishedAt = arg.FinishedAt
 			return s, nil
 		},
@@ -162,7 +162,7 @@ func TestAgentService_ReapExpiredSessions_TimesOutSessionAndRecordsMetrics(t *te
 	require.NoError(t, json.Unmarshal([]byte(capturedStatusPayload), &payload))
 	assert.Equal(t, "sess-timeout", payload.SessionID)
 	assert.Equal(t, "status", payload.Action)
-	assert.Equal(t, "timed_out", payload.Status)
+	assert.Equal(t, "failed", payload.Status)
 }
 
 func TestAgentService_ReapExpiredSessions_ToleratesMissingSandboxVM(t *testing.T) {

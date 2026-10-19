@@ -15,11 +15,14 @@
  * context.
  */
 import * as NodePath from "@effect/platform-node/NodePath"
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Digest from "@smthrs/core/Digest"
 import type { FlowRuntime } from "@smthrs/flow"
+import * as Fault from "@smthrs/flow/Fault"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import type * as Cell from "@smthrs/harness/Cell"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
+import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
@@ -41,6 +44,7 @@ import { join } from "node:path"
 import type { TestContext } from "vitest"
 import { describe, expect, it } from "vitest"
 import * as ChildFlows from "../src/ChildFlows.ts"
+import * as RunawayGuard from "../src/RunawayGuard.ts"
 import * as StandardFlows from "../src/StandardFlows.ts"
 
 /** The native path service, materialized once so bindings can be given a context. */
@@ -337,6 +341,136 @@ describe("the coding agent's terminal binding (T-TRM-05)", () => {
     await Effect.runPromise(Fiber.interrupt(fiber))
     expect(aborted).toBe(true)
     expect(counter.spawns).toBe(0)
+  })
+})
+
+/**
+ * G1 (2026-10-20 launch): a hosted turn whose command never ends must end
+ * with turn_timed_out within the command bound (5 minutes on hosted), never
+ * an endless "Model working". The host's bound kills the command's whole
+ * process group, a command reads /dev/null rather than waiting on input, and
+ * the bound fails the run instead of answering the cell. These cases inject a
+ * short bound.
+ */
+describe("a host's command bound", () => {
+  const native = Effect.runSync(Effect.context<NodeServices.NodeServices>().pipe(Effect.provide(NodeServices.layer)))
+  const posix = process.platform === "win32" ? it.skip : it
+  const bashBinding = async (callLimitMillis?: number) => {
+    const [binding] = await Effect.runPromise(StandardFlows.shell(native, undefined, { callLimitMillis }).bindings())
+    return binding!
+  }
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+  const expectCallLimit = (error: unknown, flow: string, limitMillis: number) => {
+    expect(error).toBeInstanceOf(HarnessError)
+    expect(Fault.of(error)).toEqual({ class: "policy", tag: RunawayGuard.callLimitTag })
+    expect((error as HarnessError).cause).toMatchObject({ source: "tool-call", subject: flow, limitMillis })
+  }
+
+  posix("ends the run when a command blocks past it, killing its whole process group", async () => {
+    const root = await mkdtemp(join(tmpdir(), "call-limit-"))
+    try {
+      const pidFile = join(root, "grandchild.pid")
+      const binding = await bashBinding(300)
+      const started = Date.now()
+      const failure = await Effect.runPromise(Effect.flip(binding.run(callOf("bash", {
+        command: `sleep 30 & echo $! > '${pidFile}'; wait`,
+        mode: "unhermetic"
+      }))))
+      expect(Date.now() - started).toBeLessThan(5_000)
+      expectCallLimit(failure, "bash", 300)
+      const grandchild = Number(readFileSync(pidFile, "utf8").trim())
+      expect(grandchild).toBeGreaterThan(0)
+      const deadline = Date.now() + 5_000
+      while (alive(grandchild) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(alive(grandchild), "a background child of the command dies with it").toBe(false)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  posix("lowers a longer timeoutMs to the bound", async () => {
+    const binding = await bashBinding(300)
+    const started = Date.now()
+    const failure = await Effect.runPromise(
+      Effect.flip(binding.run(callOf("bash", { command: "sleep 30", timeoutMs: 600_000, mode: "unhermetic" })))
+    )
+    expect(Date.now() - started).toBeLessThan(5_000)
+    expectCallLimit(failure, "bash", 300)
+  })
+
+  posix("keeps a shorter timeoutMs the cell chose as the cell's own timeout", async () => {
+    const binding = await bashBinding(60_000)
+    const result = await Effect.runPromise(
+      binding.run(callOf("bash", { command: "sleep 30", timeoutMs: 200, mode: "unhermetic" }))
+    )
+    expect(result).toMatchObject({ outcome: "failure", code: "timeout", value: { limitMillis: 200 } })
+  })
+
+  posix("gives a command no standard input, so a read ends at once", async () => {
+    for (const binding of [await bashBinding(), await bashBinding(60_000)]) {
+      const started = Date.now()
+      const result = await Effect.runPromise(
+        binding.run(callOf("bash", { command: "cat; echo read-done", timeoutMs: 10_000, mode: "unhermetic" }))
+      )
+      expect(result).toMatchObject({ outcome: "success", value: { exitCode: 0, stdout: "read-done\n" } })
+      expect(Date.now() - started).toBeLessThan(5_000)
+    }
+  })
+
+  it("ends the run when the agent terminal's command blocks past it, and cancels that command", async () => {
+    let aborted = false
+    let killed = 0
+    const port: StandardFlows.TerminalPort = {
+      // eslint-disable-next-line require-yield
+      execute: async function*(_input, signal) {
+        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        aborted = signal.aborted
+      },
+      killRun: async () => {
+        killed++
+      }
+    }
+    const [binding] = await Effect.runPromise(
+      StandardFlows.shell(shellServices, undefined, { terminal: "agent", terminalPort: port, callLimitMillis: 200 })
+        .bindings()
+    )
+    const started = Date.now()
+    const failure = await Effect.runPromise(
+      Effect.flip(binding!.run(callOf("bash", { command: "read answer", mode: "unhermetic" })))
+    )
+    expect(Date.now() - started).toBeLessThan(5_000)
+    expectCallLimit(failure, "bash", 200)
+    expect(aborted).toBe(true)
+    expect(killed).toBe(1)
+  })
+
+  posix("ends the run when a test suite blocks past it", async () => {
+    for (const runner of [{ command: "sleep 30", timeoutMs: 300 }, { command: "sleep 30" }]) {
+      const services = Context.merge(native, evaluatorServices(Evaluator.layerUnavailable())).pipe(
+        Context.add(TestRunner.TestRunner, TestRunner.make(runner))
+      )
+      const [binding] = await Effect.runPromise(StandardFlows.tests(services, { callLimitMillis: 300 }).bindings())
+      const started = Date.now()
+      const input = runner.timeoutMs === undefined ? { timeoutMs: 600_000 } : {}
+      const failure = await Effect.runPromise(Effect.flip(binding!.run(callOf("test", input))))
+      expect(Date.now() - started).toBeLessThan(5_000)
+      expectCallLimit(failure, "test", 300)
+    }
+  })
+
+  posix("leaves a command without a bound to its own timeout, answering the cell", async () => {
+    const binding = await bashBinding()
+    const result = await Effect.runPromise(
+      binding.run(callOf("bash", { command: "sleep 30", timeoutMs: 200, mode: "unhermetic" }))
+    )
+    expect(result).toMatchObject({ outcome: "failure", code: "timeout" })
   })
 })
 

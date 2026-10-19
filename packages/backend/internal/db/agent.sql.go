@@ -1049,7 +1049,7 @@ func (q *Queries) UpdateAgentSessionTerminalStatusForFlow(ctx context.Context, a
 
 const updateAgentSessionTimedOut = `-- name: UpdateAgentSessionTimedOut :one
 UPDATE agent_sessions
-SET status = 'timed_out', finished_at = $2, updated_at = NOW()
+SET status = 'failed', finished_at = $2, updated_at = NOW()
 WHERE id = $1 AND status = 'active' AND deleted_at IS NULL
 RETURNING id, repository_id, user_id, workflow_run_id, title, status, metadata, workspace_id, started_at, finished_at, created_at, updated_at, deleted_at
 `
@@ -1059,6 +1059,7 @@ type UpdateAgentSessionTimedOutParams struct {
 	FinishedAt pgtype.Timestamptz `json:"finished_at"`
 }
 
+// A turn past its wall-clock bound fails; its reason_code says it timed out.
 func (q *Queries) UpdateAgentSessionTimedOut(ctx context.Context, arg UpdateAgentSessionTimedOutParams) (AgentSession, error) {
 	row := q.db.QueryRow(ctx, updateAgentSessionTimedOut, arg.ID, arg.FinishedAt)
 	var i AgentSession

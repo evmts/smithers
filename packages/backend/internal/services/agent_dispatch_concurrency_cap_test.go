@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,7 +27,7 @@ func (m *mockAgentConcurrencyCounter) CountActiveAgentSessionVMs(_ context.Conte
 	return m.count, m.err
 }
 
-func (m *mockAgentConcurrencyCounter) ReserveAgentSessionVMSlot(_ context.Context, sessionID string, maxActive int) (bool, error) {
+func (m *mockAgentConcurrencyCounter) ReserveAgentSessionVMSlot(_ context.Context, sessionID string, maxActive int, _ time.Time) (bool, error) {
 	m.reserveCalls++
 	if m.reserveFn != nil {
 		return m.reserveFn(sessionID, maxActive)

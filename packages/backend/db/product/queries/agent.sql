@@ -97,8 +97,9 @@ WHERE session.id = sqlc.arg(session_id)
 RETURNING session.*;
 
 -- name: UpdateAgentSessionTimedOut :one
+-- A turn past its wall-clock bound fails; its reason_code says it timed out.
 UPDATE agent_sessions
-SET status = 'timed_out', finished_at = $2, updated_at = NOW()
+SET status = 'failed', finished_at = $2, updated_at = NOW()
 WHERE id = $1 AND status = 'active' AND deleted_at IS NULL
 RETURNING *;
 
