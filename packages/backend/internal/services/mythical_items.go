@@ -586,28 +586,7 @@ func (s *MythicalService) submitLane(ctx context.Context, repositoryID, userID i
 
 // refCommit reads one ref of the repository from repo-host's advertisement.
 func (s *MythicalService) refCommit(ctx context.Context, owner, repo, ref string) (string, error) {
-	var out bytes.Buffer
-	if _, err := s.host.InfoRefs(ctx, owner, repo, "git-upload-pack", &out); err != nil {
-		return "", err
-	}
-	for _, line := range strings.Split(out.String(), "\n") {
-		line = strings.TrimSuffix(line, "\r")
-		if i := strings.IndexByte(line, 0); i >= 0 {
-			line = line[:i]
-		}
-		fields := strings.Fields(line)
-		if len(fields) != 2 || fields[1] != ref {
-			continue
-		}
-		sha := fields[0]
-		if len(sha) > 40 {
-			sha = sha[len(sha)-40:] // strip the pkt-line length prefix
-		}
-		if mythicalSHA.MatchString(sha) {
-			return sha, nil
-		}
-	}
-	return "", nil
+	return advertisedRefCommit(ctx, s.host, owner, repo, ref)
 }
 
 // mythicalProjection correlates a Flow run with one item phase.
