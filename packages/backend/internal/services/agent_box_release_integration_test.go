@@ -62,6 +62,32 @@ type hostedBoxRuntime struct {
 	bookmark   string
 	repository int64
 	head       string
+	// processes are the guest's live processes: the box's own relay and
+	// supervisor, and any a run started. A live "reader" captures the name
+	// of every service a credential is minted for.
+	processes map[string]bool
+	captured  []string
+}
+
+// reapingBoxRuntime is hosted's runtime once it confirms a run's processes
+// ended (WorkspaceRunProcessReaper): it ends every process but the box's own.
+type reapingBoxRuntime struct {
+	*hostedBoxRuntime
+	reaped  int
+	reapErr error
+}
+
+func (r *reapingBoxRuntime) ReapRunProcesses(context.Context, string) error {
+	if r.reapErr != nil {
+		return r.reapErr
+	}
+	r.reaped++
+	for name := range r.processes {
+		if name != "relay" && name != "supervisor" {
+			delete(r.processes, name)
+		}
+	}
+	return nil
 }
 
 func (*hostedBoxRuntime) Capabilities() workspaceapi.WorkspaceCapabilities {
@@ -87,7 +113,7 @@ func (r *hostedBoxRuntime) DeleteWorkspace(ctx context.Context, id string) error
 	if err := r.interruptedReleaseRuntime.DeleteWorkspace(ctx, id); err != nil {
 		return err
 	}
-	r.deleted, r.guest.state = true, workspaceapi.WorkspaceStopped
+	r.deleted, r.guest.state, r.processes = true, workspaceapi.WorkspaceStopped, map[string]bool{}
 	// As hosted's placement store does, the delete clears the row's placement.
 	_, err := r.pool.Exec(ctx, `UPDATE workspaces SET vm_id='' WHERE id=$1`, id)
 	return err
@@ -98,6 +124,7 @@ func (r *hostedBoxRuntime) DeleteWorkspace(ctx context.Context, id string) error
 func (r *hostedBoxRuntime) CreateWorkspace(ctx context.Context, spec workspaceapi.WorkspaceSpec) (workspaceapi.Workspace, error) {
 	r.creates++
 	r.deleted, r.fresh, r.hasGit, r.hasJJ, r.receipt = false, true, false, false, nil
+	r.processes = map[string]bool{"relay": true, "supervisor": true}
 	r.guest.state = workspaceapi.WorkspaceRunning
 	if _, err := r.pool.Exec(ctx, `UPDATE workspaces SET vm_id=$2 WHERE id=$1`, spec.ID, fmt.Sprintf("msb_new_%d", r.creates)); err != nil {
 		return workspaceapi.Workspace{}, err
@@ -170,6 +197,9 @@ func (r *hostedBoxRuntime) ExecuteCommand(_ context.Context, _ string, command w
 }
 
 func (r *hostedBoxRuntime) StartService(_ context.Context, _ string, spec workspaceapi.ServiceSpec) (workspaceapi.Service, error) {
+	if r.processes["reader"] {
+		r.captured = append(r.captured, spec.Name)
+	}
 	r.started = append(r.started, spec.Name)
 	return workspaceapi.Service{Name: spec.Name}, nil
 }
@@ -194,6 +224,7 @@ type agentBoxRelease struct {
 	boxes     *WorkspaceService
 	runtime   *interruptedReleaseRuntime
 	hosted    *hostedBoxRuntime
+	reaper    *reapingBoxRuntime
 	guest     *interruptedReleaseGuest
 	workspace string
 	session   string
@@ -207,6 +238,13 @@ type agentBoxRelease struct {
 }
 
 func newAgentBoxRelease(t *testing.T, status string) *agentBoxRelease {
+	t.Helper()
+	return newAgentBoxReleaseWith(t, status, true)
+}
+
+// newAgentBoxReleaseWith builds the fixture over a runtime that confirms a
+// run's processes ended (reaper) or one that cannot.
+func newAgentBoxReleaseWith(t *testing.T, status string, reaper bool) *agentBoxRelease {
 	t.Helper()
 	pool := newProductTestPool(t)
 	q := db.New(pool)
@@ -255,15 +293,21 @@ func newAgentBoxRelease(t *testing.T, status string) *agentBoxRelease {
 		f.guest.state = workspaceapi.WorkspaceStopped
 	}
 	f.runtime = &interruptedReleaseRuntime{guest: f.guest}
-	f.hosted = &hostedBoxRuntime{interruptedReleaseRuntime: f.runtime, pool: pool, bookmark: "main", repository: repo}
+	f.hosted = &hostedBoxRuntime{interruptedReleaseRuntime: f.runtime, pool: pool, bookmark: "main", repository: repo,
+		processes: map[string]bool{"relay": true, "supervisor": true}}
 	slug, err := q.GetRepoOwnerSlugAndNameByID(ctx, repo)
 	require.NoError(t, err)
 	f.hosted.cloneURL = testWorkspaceGitBaseURL + "/" + slug.OwnerSlug + "/" + slug.RepoName + ".git"
+	var runtime workspaceapi.WorkspaceRuntime = f.hosted
+	if reaper {
+		f.reaper = &reapingBoxRuntime{hostedBoxRuntime: f.hosted}
+		runtime = f.reaper
+	}
 	// Hosted supplies its workspace store as productstore.Product, never as
 	// *db.Queries, so a release capability Product lacks would leave every
 	// token live there. The fixture runs on that shape.
 	f.boxes = newWorkspaceServiceForTests(hostedProductStore{Product: productstore.New(pool)},
-		WithWorkspaceRuntime(f.hosted), WithWorkspaceTransactions(pool), WithWorkspaceSandboxMetrics(newCorePoolDutyRecorder()))
+		WithWorkspaceRuntime(runtime), WithWorkspaceTransactions(pool), WithWorkspaceSandboxMetrics(newCorePoolDutyRecorder()))
 	f.boxes.gitBaseURL = testWorkspaceGitBaseURL
 	f.boxes.branchMachineProviders = BranchMachineProviders{
 		Membership:      func(context.Context, pgx.Tx, int64, int64) error { return nil },

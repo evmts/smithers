@@ -141,6 +141,14 @@ const (
 	// retired. The next turn's join mints a fresh head token and starts a
 	// fresh host.
 	agentWorkspaceQuiesced = "quiesced"
+	// The runtime could not confirm the run's processes ended, so the box was
+	// retired: its guest and disk are deleted and the next turn rebuilds it
+	// from the recorded head (plue#866).
+	agentWorkspaceRetired = "retired"
+	// The run's processes are unconfirmed and the recorded head is not
+	// published, so the box is kept but mints nothing: its next turn is
+	// refused until the box is reaped or retired.
+	agentWorkspaceUnreaped = "quiesced_unreaped"
 	// Already asleep, stopped or failed; any head token it kept is revoked.
 	agentWorkspaceAlreadyReleased = "already_released"
 	// Another session, a terminal or a stack lane still uses it.
@@ -230,10 +238,33 @@ func (s *WorkspaceService) ReleaseAgentWorkspace(ctx context.Context, workspaceI
 	if err != nil {
 		return AgentWorkspaceRelease{Outcome: agentWorkspaceReleaseFailed, HeadTokenRevoked: revoked}, err
 	}
-	if kept := s.stopAgentWorkspaceHosts(operationCtx, row); kept != "" {
+	kept := s.stopAgentWorkspaceHosts(operationCtx, row)
+	// A process the run left must not survive into the next turn, where it
+	// could read that turn's fresh credentials (plue#866). A box is kept warm
+	// only when the runtime confirms every run process ended.
+	reapErr := errors.New("the workspace runtime cannot confirm a run's processes ended")
+	if reaper, ok := s.runtime.(workspaceapi.WorkspaceRunProcessReaper); ok {
+		reapErr = reaper.ReapRunProcesses(operationCtx, row.ID)
+	}
+	if reapErr == nil {
 		return AgentWorkspaceRelease{Outcome: agentWorkspaceQuiesced, HeadTokenRevoked: revoked, Detail: kept}, nil
 	}
-	return AgentWorkspaceRelease{Outcome: agentWorkspaceQuiesced, HeadTokenRevoked: revoked}, nil
+	retireStore, ok := s.q.(agentBoxIdleCapStore)
+	if !ok {
+		return AgentWorkspaceRelease{Outcome: agentWorkspaceReleaseFailed, HeadTokenRevoked: revoked, Detail: kept}, reapErr
+	}
+	retired, err := s.retireAgentBoxLocked(ctx, retireStore, row, "unreaped", agentBoxHeadVerifyAttempts)
+	if err != nil {
+		return AgentWorkspaceRelease{Outcome: agentWorkspaceReleaseFailed, HeadTokenRevoked: revoked, Detail: kept}, err
+	}
+	if retired {
+		return AgentWorkspaceRelease{Outcome: agentWorkspaceRetired, HeadTokenRevoked: true, Detail: kept}, nil
+	}
+	// Neither reaped nor retired: the box mints nothing until it is.
+	if err := retireStore.MarkAgentBoxUnreaped(context.WithoutCancel(ctx), row.ID, true); err != nil {
+		return AgentWorkspaceRelease{Outcome: agentWorkspaceReleaseFailed, HeadTokenRevoked: revoked, Detail: kept}, err
+	}
+	return AgentWorkspaceRelease{Outcome: agentWorkspaceUnreaped, HeadTokenRevoked: revoked, Detail: "run processes unconfirmed: " + reapErr.Error()}, nil
 }
 
 // revokeAgentWorkspaceHeadToken revokes the box's head token (and the

@@ -147,3 +147,22 @@ WHERE id = $1::uuid AND status = 'running' AND deleted_at IS NULL`, workspaceID,
 	}
 	return tag.RowsAffected() == 1, nil
 }
+
+// AgentBoxUnreapedStage marks a running agent box whose run processes could
+// not be confirmed ended and which could not be retired either. Its next turn
+// is refused until the box is reaped or retired, so no credential is minted
+// beside a process the last run left.
+const AgentBoxUnreapedStage = "agent_box_unreaped"
+
+// MarkAgentBoxUnreaped records, or clears, that a running agent box still owes
+// the reap of its last run's processes.
+func (q *Queries) MarkAgentBoxUnreaped(ctx context.Context, workspaceID string, unreaped bool) error {
+	if unreaped {
+		_, err := q.db.Exec(ctx, `UPDATE workspaces SET provisioning_stage = $2, updated_at = NOW()
+WHERE id = $1::uuid AND status = 'running' AND deleted_at IS NULL`, workspaceID, AgentBoxUnreapedStage)
+		return err
+	}
+	_, err := q.db.Exec(ctx, `UPDATE workspaces SET provisioning_stage = '', updated_at = NOW()
+WHERE id = $1::uuid AND provisioning_stage = $2`, workspaceID, AgentBoxUnreapedStage)
+	return err
+}

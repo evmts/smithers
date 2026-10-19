@@ -161,6 +161,7 @@ type Product interface {
 	ListWorkspacesByRepo(ctx context.Context, arg db.ListWorkspacesByRepoParams) ([]db.Workspace, error)
 	MarkWorkflowTaskTerminalByID(ctx context.Context, arg db.MarkWorkflowTaskTerminalByIDParams) (int64, error)
 	MarkWorkflowTaskVMRunning(ctx context.Context, arg db.MarkWorkflowTaskVMRunningParams) (int64, error)
+	MarkAgentBoxUnreaped(ctx context.Context, workspaceID string, unreaped bool) error
 	MarkFlowHostStopPending(ctx context.Context, bindingID string, ownerGeneration int64, pending bool) error
 	MarkOutsiderWorkspace(ctx context.Context, repositoryID int64, workspaceID string) error
 	MarkWorkspaceResumed(ctx context.Context, arg db.MarkWorkspaceResumedParams) error
