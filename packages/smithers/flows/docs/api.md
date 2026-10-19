@@ -23,7 +23,7 @@ import * as SandboxedFlow from "@smthrs/flows/SandboxedFlow"
 `@smthrs/flows/internal/*` and `@smthrs/flows/*/index` are blocked in the export
 map and are not public.
 
-Durable execution is tested on Node.js 26.4+ and Bun 1.4+; `engines` requires Node `>=26.4.0`.
+Durable execution is tested on Node.js 22.19+ and Bun 1.4+; `engines` requires Node `>=22.19.0`.
 The root entry point bundles for browsers, which buys authoring and inspection;
 it does not make a browser a durable host, and supplying another SQL client does
 not change that.

@@ -15,7 +15,7 @@ The `next` tag carries the 1.0 release candidates.
 
 ## Requirements
 
-- Node.js 26.4.0 or later.
+- Node.js 22.19.0 or later.
 - [`effect`](https://effect.website) `4.0.5`, which supplies the `Effect`,
   `Schema`, `Layer`, `Metric`, and SQL client types this package's signatures
   use.

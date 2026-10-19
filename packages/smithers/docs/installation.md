@@ -8,7 +8,7 @@ sidebar:
 ## Install the CLI
 
 The CLI is on npm under the `next` tag, which carries the 1.0 release
-candidates; `latest` still points at 0.35.0. Use Node.js 26.4.0 or later.
+candidates; `latest` still points at 0.35.0. Use Node.js 22.19.0 or later.
 Install Node from [the official downloads](https://nodejs.org/en/download).
 On an Apple Silicon Mac, select macOS and ARM64, then open a new terminal and
 check `node --version` before installing Smithers.
@@ -78,7 +78,7 @@ downgrade to a 0.x `latest`.
 
 ## Requirements
 
-- Node 26.4.0 or later. The durable engine requires it, `smthrs doctor`
+- Node 22.19.0 or later. The durable engine requires it, `smthrs doctor`
   reports a `fail` outside this range. `Doctor.supportedNodeRange` matches the
   published manifest.
 - A project directory. Commands that touch durable state resolve a project

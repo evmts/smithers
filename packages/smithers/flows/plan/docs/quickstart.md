@@ -16,7 +16,7 @@ Nothing here executes a node or writes a row. A plan is inert: persisting one is
 
 ## Prerequisites
 
-- Node.js 26.4.0 or later.
+- Node.js 22.19.0 or later.
 - A project with the packages installed: `npm install @smthrs/plan@next @effect/platform-node effect`.
 
 `@effect/platform-node` supplies Effect's `Crypto` service, which is the only

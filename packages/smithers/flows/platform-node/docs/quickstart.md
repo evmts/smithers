@@ -12,7 +12,7 @@ which layer is responsible for each.
 
 ## Prerequisites
 
-- Node.js 26.4.0 or later, on a POSIX host.
+- Node.js 22.19.0 or later, on a POSIX host.
 - A project with the packages installed:
   `npm install @smthrs/platform-node@next @smthrs/kernel@next effect`. The
   package ships the `smithers-jj-export` helper the filesystem runs.

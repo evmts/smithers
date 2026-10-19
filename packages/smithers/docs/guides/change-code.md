@@ -4,7 +4,7 @@ Run a coding agent on your subscription, inspect its changes, then commit and pu
 
 ## Install
 
-Use Node 26.4.0 or later and install jj as described in [Installation](../installation.md).
+Use Node 22.19.0 or later and install jj as described in [Installation](../installation.md).
 
 ```bash
 npm install -g smthrs@next
