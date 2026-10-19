@@ -199,7 +199,7 @@ Replace the example remote path with your own remote. Skip `remote add` when `or
 # Welcome to Smithers
 https://smithers.sh/docs/
 
-Smithers is a web app for working on a GitHub repository with people and coding agents. On smithers.sh, you open a repository at the path it has on GitHub and read it. On your own Mac, the `smthrs` CLI runs Claude Code or Codex on your repository.
+Smithers is a web app for working on a GitHub repository with people and coding agents. On smithers.sh, you open a repository at the path it has on GitHub and read it. On your own Mac, the `smthrs` CLI runs a coding agent on your project on your own subscription.
 
 ![The smithers.sh home page: Sign in at the top right (1) and the command that adds a coding flow to a repository (2)](https://smithers.sh/images/docs/welcome-home.light.webp)
 
@@ -215,12 +215,12 @@ Every action in Smithers is a flow: a typed, durable program. A button, a slash 
 | --- | --- | --- |
 | Where it runs | Hosted at smithers.sh | On your Mac, with the `smthrs` CLI |
 | Sign in | With GitHub | Not needed for the CLI |
-| Start here | [Quickstart](https://smithers.sh/docs/quickstart/) | [Change your code with a flow](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md) |
+| Start here | [Quickstart](https://smithers.sh/docs/quickstart/) | [Run agents on your Mac](https://smithers.sh/docs/local-quickstart/) |
 
 ## Next steps
 
 - [Quickstart](https://smithers.sh/docs/quickstart/): open a repository on smithers.sh and sign in with GitHub.
-- [Change your code with a flow](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md): have Claude Code or Codex make a change on your own subscription.
+- [Run agents on your Mac](https://smithers.sh/docs/local-quickstart/): have a coding agent change a project on your own Codex subscription.
 - [What a flow is](https://smithers.sh/docs/flows/): how Smithers' actions are built, and how to change them.
 
 ---
@@ -266,8 +266,121 @@ You opened a repository on smithers.sh, read a file, and started signing in with
 
 ## Next steps
 
-- [Change your code with a flow](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md): have a coding agent make a change on your own subscription.
+- [Run agents on your Mac](https://smithers.sh/docs/local-quickstart/): have a coding agent change a project on your own Codex subscription.
 - [What a flow is](https://smithers.sh/docs/flows/): how every action in Smithers is built.
+
+---
+
+# Run agents on your Mac
+https://smithers.sh/docs/local-quickstart/
+
+This page has a coding agent change a small project on your Mac, on your own Codex subscription. You check the change and push it with your own tools. Smithers doesn't land it.
+
+**Before you start:**
+
+- Node.js at the version [Install Smithers](https://smithers.sh/docs/installation/) names. Check yours with `node --version`.
+- Jujutsu (`jj`) and `jq`. On macOS with Homebrew: `brew install jj jq`.
+- A Codex login on this Mac.
+
+## 1. Install smthrs
+
+```sh
+npm install -g smthrs@next
+smthrs --version
+smthrs doctor
+```
+
+`smthrs --version` prints `1.0.0-rc.15` or later. `smthrs doctor` checks project discovery, providers and tools.
+
+## 2. Create a project
+
+Tell Jujutsu who you are, with your own name and email:
+
+```sh
+jj config set --user user.name 'Your Name'
+jj config set --user user.email you@example.com
+```
+
+Then create a small project:
+
+```sh
+mkdir slug
+cd slug
+printf '{"name":"slug","type":"module","scripts":{"test":"node --test"}}\n' > package.json
+printf 'export const name = "slug"\n' > index.js
+jj git init .
+jj describe -m 'Initial tiny project'
+jj new
+```
+
+## 3. Add the coding flow
+
+```sh
+smthrs generate flow coding
+```
+
+Open `.smithers/flows/coding/flow.ts` and set both `seat` and `model` to `"openai:gpt-6.1-sol"`. Keep credentials out of the file.
+
+Use your Codex login instead of an API key:
+
+```sh
+export SMITHERS_OPENAI_AUTH=chatgpt
+unset ANTHROPIC_API_KEY OPENAI_API_KEY AI_GATEWAY_API_KEY
+```
+
+## 4. Ask for a change
+
+```sh
+smthrs flow start coding --data '{"args":"Add an exported slugify(text) function to index.js with tests in index.test.js using node:test and node:assert/strict. Lowercase text, replace spaces with hyphens, remove punctuation, trim hyphens. Actually write code and tests, run node --test. Do not commit, approve, merge, land or move main."}'
+```
+
+The command waits while the coding agent works, about a minute for this change, then prints the run's ID:
+
+```text
+_tag: Accepted
+receiptId: "approve:plan-1"
+runId: run-1
+```
+
+Follow the run with the ID your command printed:
+
+```sh
+smthrs runs show run-1
+```
+
+Continue when it shows `status: completed`. If the run failed or stopped, `smthrs runs show run-1` says why. If the process running the flow dies, `smthrs runs resume run-1` continues the same run.
+
+## 5. Check the change
+
+```sh
+smthrs change diff
+node --test
+```
+
+The diff includes the files `smthrs generate flow coding` added (`.gitignore` and `.smithers/flows/coding/`), the new `index.test.js` and the change to `index.js`. Read all of it. Your agent may write different code and a different number of tests.
+
+## 6. Commit and push yourself
+
+Replace the path with your repository's remote. Skip `jj git remote add` when `origin` already exists.
+
+```sh
+jj git remote add origin /path/to/your/origin.git
+jj describe -m 'Add slugify'
+jj bookmark set main -r @
+jj new
+jj git push --remote origin --bookmark main --allow-new
+```
+
+Follow your repository's branch and pull request policy when it requires review before `main`.
+
+## Result
+
+A coding agent changed your project on your Codex subscription, and you checked the change and pushed it yourself.
+
+## Next steps
+
+- [What a flow is](https://smithers.sh/docs/flows/): change how the coding flow works.
+- [Quickstart](https://smithers.sh/docs/quickstart/): open a repository on smithers.sh.
 
 ---
 
@@ -276,7 +389,7 @@ https://smithers.sh/docs/self-host/
 
 This page sets up Smithers as one install on your own Mac for your team: install the host, finish setup, merge your first TODO and invite teammates.
 
-**Planned.** The Homebrew host package is not released yet; the steps below apply once it ships. To use Smithers on your Mac today, [install the CLI](https://smithers.sh/docs/installation/).
+**Planned.** The Homebrew host package is not released yet; the steps below apply once it ships. To use Smithers on your Mac today, see [Run agents on your Mac](https://smithers.sh/docs/local-quickstart/).
 
 ## Install and setup
 
@@ -41980,13 +42093,16 @@ npm install -g smthrs@next
 | [`api`](#api) | Make raw API calls to the Smithers server |
 | [`branch`](#branch) | Branches and machines |
 | [`branches`](#branches) | List branches with presence |
+| [`change`](#change) | Inspect local jj changes |
 | [`cp`](#cp) | Copy files or directories between the local machine and a workspace |
 | [`diff`](#diff) | Show a branch's changes |
+| [`doctor`](#doctor) | Check project discovery, providers, tools, and durable-state compatibility |
 | [`exec`](#exec) | Run a workspace command with a durable receipt and bounded output |
 | [`file`](#file) | Open and co-edit a file |
 | [`files`](#files) | Browse a branch's files |
 | [`flow`](#flow) | Discover, plan, and start durable flows |
 | [`flows`](#flows) | List the repository's flows |
+| [`generate`](#generate) | Scaffold flows, packages, and CI configuration |
 | [`github`](#github) | Show sync status and retry |
 | [`host`](#host) | Operate this installation’s host |
 | [`issue`](#issue) | Manage repository issues |
@@ -42192,6 +42308,31 @@ smthrs branches [options]
 | --- | --- | --- | --- | --- |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
+## `change`
+
+Inspect local jj changes
+
+```text
+smthrs change <command>
+```
+
+### `change diff`
+
+Show diff for a change
+
+```text
+smthrs change diff [id] [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `id` | string |  | no | Change ID (defaults to working copy) |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
 ## `cp`
 
 Copy files or directories between the local machine and a workspace
@@ -42224,6 +42365,22 @@ smthrs diff [options]
 | --- | --- | --- | --- | --- |
 | `--branch` | string |  | no |  |
 | `--entry` | string |  | no |  |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+## `doctor`
+
+Check project discovery, providers, tools, and durable-state compatibility
+
+```text
+smthrs doctor [options]
+```
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--root` | string |  | no | Project directory; defaults to the nearest Smithers project |
+| `--remote` | string |  | no | Remote control plane URL; defaults to SMITHERS_REMOTE |
+| `--mcp-config` | string |  | no | Path to the configured MCP servers |
+| `--quiet` | boolean | `false` | no | Suppress progress messages |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
 ## `exec`
@@ -42404,6 +42561,38 @@ smthrs flow source <name> [options]
 | --- | --- | --- | --- | --- |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
+### `flow start`
+
+Plan, approve, and start one flow; optionally detach after durable admission
+
+```text
+smthrs flow start <flow> [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `flow` | string, min length 1 |  | yes | Discovered flow name |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--input` | array of string | `[]` | no | Input key=value pairs (can be repeated) |
+| `--ref` | string | `main` | no | Git ref to run against |
+| `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
+| `--root` | string |  | no | Project directory; defaults to the nearest Smithers project |
+| `--remote` | string |  | no | Remote control plane URL; defaults to SMITHERS_REMOTE |
+| `--mcp-config` | string |  | no | Path to the configured MCP servers |
+| `--quiet` | boolean | `false` | no | Suppress progress messages |
+| `--data` | string |  | no |  |
+| `--detached`, `-d` | boolean | `false` | no |  |
+| `--wait` | boolean | `false` | no | Wait for the run's status before exiting |
+| `--budget-tokens` | integer, greater than 0 |  | no | Token ceiling for this run |
+| `--budget-ms` | integer, greater than 0 |  | no | Wall-clock ceiling in milliseconds for this run |
+| `--budget-usd` | number, greater than 0 |  | no | Dollar ceiling for this run |
+| `--on-exceeded` | one of `fail`, `warn`, `skip-remaining`, `park` |  | no | What the run does at a ceiling |
+| `--deadline` | string |  | no | Wall-clock time the run may take from its first start, as a duration (30 minutes) or milliseconds |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+| `--cloud` | boolean | `false` | no | Use repository flows and runs on the backend |
+
 ## `flows`
 
 List the repository's flows
@@ -42414,6 +42603,31 @@ smthrs flows [options]
 
 | Option | Type | Default | Required | Description |
 | --- | --- | --- | --- | --- |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+## `generate`
+
+Scaffold flows, packages, and CI configuration
+
+```text
+smthrs generate <command>
+```
+
+### `generate flow`
+
+Create a tagged TypeScript flow without replacing an existing flow
+
+```text
+smthrs generate flow <name> [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `name` | string, min length 1 |  | yes |  |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--root` | string |  | no | Project directory |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
 ## `github`
@@ -42736,6 +42950,27 @@ smthrs runs list [options]
 | `--cursor` | string |  | no | Continue from the nextCursor a previous page printed |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 | `--cloud` | boolean | `false` | no | Use repository flows and runs on the backend |
+
+### `runs resume`
+
+Resume a parked durable run
+
+```text
+smthrs runs resume <run> [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `run` | string, min length 1 |  | yes | Durable run ID |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--root` | string |  | no | Project directory; defaults to the nearest Smithers project |
+| `--remote` | string |  | no | Remote control plane URL; defaults to SMITHERS_REMOTE |
+| `--mcp-config` | string |  | no | Path to the configured MCP servers |
+| `--quiet` | boolean | `false` | no | Suppress progress messages |
+| `--allow-code-drift` | boolean | `false` | no | Resume even though the run's flow changed since it started |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
 ### `runs show`
 

@@ -3,7 +3,7 @@ title: "Welcome to Smithers"
 summary: "What Smithers is, and the two ways to use it."
 ---
 
-Smithers is a web app for working on a GitHub repository with people and coding agents. On smithers.sh, you open a repository at the path it has on GitHub and read it. On your own Mac, the `smthrs` CLI runs Claude Code or Codex on your repository.
+Smithers is a web app for working on a GitHub repository with people and coding agents. On smithers.sh, you open a repository at the path it has on GitHub and read it. On your own Mac, the `smthrs` CLI runs a coding agent on your project on your own subscription.
 
 ![The smithers.sh home page: Sign in at the top right (1) and the command that adds a coding flow to a repository (2)](images/welcome-home.webp)
 
@@ -19,10 +19,10 @@ Every action in Smithers is a flow: a typed, durable program. A button, a slash 
 | --- | --- | --- |
 | Where it runs | Hosted at smithers.sh | On your Mac, with the `smthrs` CLI |
 | Sign in | With GitHub | Not needed for the CLI |
-| Start here | [Quickstart](quickstart.md) | [Change your code with a flow](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md) |
+| Start here | [Quickstart](quickstart.md) | [Run agents on your Mac](local-quickstart.md) |
 
 ## Next steps
 
 - [Quickstart](quickstart.md): open a repository on smithers.sh and sign in with GitHub.
-- [Change your code with a flow](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md): have Claude Code or Codex make a change on your own subscription.
+- [Run agents on your Mac](local-quickstart.md): have a coding agent change a project on your own Codex subscription.
 - [What a flow is](flows.md): how Smithers' actions are built, and how to change them.

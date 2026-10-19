@@ -41,5 +41,5 @@ You opened a repository on smithers.sh, read a file, and started signing in with
 
 ## Next steps
 
-- [Change your code with a flow](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md): have a coding agent make a change on your own subscription.
+- [Run agents on your Mac](local-quickstart.md): have a coding agent change a project on your own Codex subscription.
 - [What a flow is](flows.md): how every action in Smithers is built.

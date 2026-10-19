@@ -119,11 +119,12 @@ test("slash references resolve against the generated MVP catalog and source regi
 
 
 test("the docs index and release links are exact", () => {
-  expect([...pages.keys()].sort()).toEqual(["flows.md", "quickstart.md", "self-host.md", "welcome.md"])
+  expect([...pages.keys()].sort()).toEqual(["flows.md", "local-quickstart.md", "quickstart.md", "self-host.md", "welcome.md"])
   expect(pages.get("welcome.md")).toMatch(/^---\ntitle: "Welcome to Smithers"/ )
   expect(pages.get("quickstart.md")).toMatch(/^---\ntitle: "Quickstart"/ )
   expect(pages.get("self-host.md")).toMatch(/^---\ntitle: "Self-host Smithers"/ )
   expect(pages.get("flows.md")).toMatch(/^---\ntitle: "Flows reference"/ )
+  expect(pages.get("local-quickstart.md")).toMatch(/^---\ntitle: "Run agents on your Mac"/ )
   const selfHost = pages.get("self-host.md")!
   const https = selfHost.split("## Put HTTPS in front\n")[1]!.split("\n## ")[0]!
   expect(https).toContain("Tailscale")

@@ -5,7 +5,7 @@ summary: "Run your own install on a Mac, merge your first TODO and invite your t
 
 This page sets up Smithers as one install on your own Mac for your team: install the host, finish setup, merge your first TODO and invite teammates.
 
-**Planned.** The Homebrew host package is not released yet; the steps below apply once it ships. To use Smithers on your Mac today, [install the CLI](https://smithers.sh/docs/installation/).
+**Planned.** The Homebrew host package is not released yet; the steps below apply once it ships. To use Smithers on your Mac today, see [Run agents on your Mac](local-quickstart.md).
 
 ## Install and setup
 

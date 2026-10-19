@@ -17,13 +17,16 @@ npm install -g smthrs@next
 | [`api`](#api) | Make raw API calls to the Smithers server |
 | [`branch`](#branch) | Branches and machines |
 | [`branches`](#branches) | List branches with presence |
+| [`change`](#change) | Inspect local jj changes |
 | [`cp`](#cp) | Copy files or directories between the local machine and a workspace |
 | [`diff`](#diff) | Show a branch's changes |
+| [`doctor`](#doctor) | Check project discovery, providers, tools, and durable-state compatibility |
 | [`exec`](#exec) | Run a workspace command with a durable receipt and bounded output |
 | [`file`](#file) | Open and co-edit a file |
 | [`files`](#files) | Browse a branch's files |
 | [`flow`](#flow) | Discover, plan, and start durable flows |
 | [`flows`](#flows) | List the repository's flows |
+| [`generate`](#generate) | Scaffold flows, packages, and CI configuration |
 | [`github`](#github) | Show sync status and retry |
 | [`host`](#host) | Operate this installation’s host |
 | [`issue`](#issue) | Manage repository issues |
@@ -229,6 +232,31 @@ smthrs branches [options]
 | --- | --- | --- | --- | --- |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
+## `change`
+
+Inspect local jj changes
+
+```text
+smthrs change <command>
+```
+
+### `change diff`
+
+Show diff for a change
+
+```text
+smthrs change diff [id] [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `id` | string |  | no | Change ID (defaults to working copy) |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
 ## `cp`
 
 Copy files or directories between the local machine and a workspace
@@ -261,6 +289,22 @@ smthrs diff [options]
 | --- | --- | --- | --- | --- |
 | `--branch` | string |  | no |  |
 | `--entry` | string |  | no |  |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+## `doctor`
+
+Check project discovery, providers, tools, and durable-state compatibility
+
+```text
+smthrs doctor [options]
+```
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--root` | string |  | no | Project directory; defaults to the nearest Smithers project |
+| `--remote` | string |  | no | Remote control plane URL; defaults to SMITHERS_REMOTE |
+| `--mcp-config` | string |  | no | Path to the configured MCP servers |
+| `--quiet` | boolean | `false` | no | Suppress progress messages |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
 ## `exec`
@@ -441,6 +485,38 @@ smthrs flow source <name> [options]
 | --- | --- | --- | --- | --- |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
+### `flow start`
+
+Plan, approve, and start one flow; optionally detach after durable admission
+
+```text
+smthrs flow start <flow> [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `flow` | string, min length 1 |  | yes | Discovered flow name |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--input` | array of string | `[]` | no | Input key=value pairs (can be repeated) |
+| `--ref` | string | `main` | no | Git ref to run against |
+| `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
+| `--root` | string |  | no | Project directory; defaults to the nearest Smithers project |
+| `--remote` | string |  | no | Remote control plane URL; defaults to SMITHERS_REMOTE |
+| `--mcp-config` | string |  | no | Path to the configured MCP servers |
+| `--quiet` | boolean | `false` | no | Suppress progress messages |
+| `--data` | string |  | no |  |
+| `--detached`, `-d` | boolean | `false` | no |  |
+| `--wait` | boolean | `false` | no | Wait for the run's status before exiting |
+| `--budget-tokens` | integer, greater than 0 |  | no | Token ceiling for this run |
+| `--budget-ms` | integer, greater than 0 |  | no | Wall-clock ceiling in milliseconds for this run |
+| `--budget-usd` | number, greater than 0 |  | no | Dollar ceiling for this run |
+| `--on-exceeded` | one of `fail`, `warn`, `skip-remaining`, `park` |  | no | What the run does at a ceiling |
+| `--deadline` | string |  | no | Wall-clock time the run may take from its first start, as a duration (30 minutes) or milliseconds |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+| `--cloud` | boolean | `false` | no | Use repository flows and runs on the backend |
+
 ## `flows`
 
 List the repository's flows
@@ -451,6 +527,31 @@ smthrs flows [options]
 
 | Option | Type | Default | Required | Description |
 | --- | --- | --- | --- | --- |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+## `generate`
+
+Scaffold flows, packages, and CI configuration
+
+```text
+smthrs generate <command>
+```
+
+### `generate flow`
+
+Create a tagged TypeScript flow without replacing an existing flow
+
+```text
+smthrs generate flow <name> [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `name` | string, min length 1 |  | yes |  |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--root` | string |  | no | Project directory |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
 ## `github`
@@ -773,6 +874,27 @@ smthrs runs list [options]
 | `--cursor` | string |  | no | Continue from the nextCursor a previous page printed |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 | `--cloud` | boolean | `false` | no | Use repository flows and runs on the backend |
+
+### `runs resume`
+
+Resume a parked durable run
+
+```text
+smthrs runs resume <run> [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `run` | string, min length 1 |  | yes | Durable run ID |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--root` | string |  | no | Project directory; defaults to the nearest Smithers project |
+| `--remote` | string |  | no | Remote control plane URL; defaults to SMITHERS_REMOTE |
+| `--mcp-config` | string |  | no | Path to the configured MCP servers |
+| `--quiet` | boolean | `false` | no | Suppress progress messages |
+| `--allow-code-drift` | boolean | `false` | no | Resume even though the run's flow changed since it started |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
 ### `runs show`
 

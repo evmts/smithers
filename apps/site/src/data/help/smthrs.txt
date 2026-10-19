@@ -8,13 +8,16 @@ Commands:
   api        Make raw API calls to the Smithers server
   branch     Branches and machines
   branches   List branches with presence
+  change     Inspect local jj changes
   cp         Copy files or directories between the local machine and a workspace
   diff       Show a branch's changes
+  doctor     Check project discovery, providers, tools, and durable-state compatibility
   exec       Run a workspace command with a durable receipt and bounded output
   file       Open and co-edit a file
   files      Browse a branch's files
   flow       Discover, plan, and start durable flows
   flows      List the repository's flows
+  generate   Scaffold flows, packages, and CI configuration
   github     Show sync status and retry
   host       Operate this installation’s host
   issue      Manage repository issues

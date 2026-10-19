@@ -9,6 +9,7 @@ Commands:
   run     Run a flow with typed input
   show    Show a flow's steps and versions
   source  Co-edit a flow's source
+  start   Plan, approve, and start one flow; optionally detach after durable admission
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)

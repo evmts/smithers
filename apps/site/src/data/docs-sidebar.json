@@ -14,6 +14,9 @@
     "label": "On your own Mac",
     "items": [
       {
+        "slug": "docs/local-quickstart"
+      },
+      {
         "slug": "docs/self-host"
       },
       {
