@@ -67,8 +67,8 @@ test("metadata is a declared static literal, never a nested field, comment or ex
   expect(flowDescription('Flow.make("x", { description: `Hello ${run()}` })')).toBeUndefined()
   expect(flowDescription('Flow.make("x", { description: "part" + run() })')).toBeUndefined()
   expect(flowDescription('Flow.make("x", { body: () => { const description = "other" } })')).toBeUndefined()
-  expect(flowCommand("review")).toBe("smthrs flow start review")
-  expect(flowCommand("x;echo")).toBe("smthrs flow start 'x;echo'")
+  expect(flowCommand("review")).toBe("npx smthrs@next flow start review")
+  expect(flowCommand("x;echo")).toBe("npx smthrs@next flow start 'x;echo'")
 })
 
 test("flows list has source links and held state, without run-only surfaces", () => {
@@ -109,7 +109,7 @@ test("detail renders source as text and copies only the local command through th
   const copy = host.querySelector<HTMLButtonElement>("button")!
   expect(copy.getAttribute("data-flow")).toBe("chat.copy-message")
   act(() => copy.click())
-  expect(commands).toEqual([["chat.copy-message", "smthrs flow start review"]])
+  expect(commands).toEqual([["chat.copy-message", "npx smthrs@next flow start review"]])
 })
 
 test("Settings: sign-in for visitors, not-found for readers, and only the two member sections", () => {
