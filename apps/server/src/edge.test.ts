@@ -1,6 +1,11 @@
 import { DEFAULT_APP_DOCUMENT_PATH } from "./appDocument"
 import { afterEach, expect, test } from "bun:test"
-import edge from "./edge"
+import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
+import * as Layer from "effect/Layer"
+import * as TestClock from "effect/testing/TestClock"
+import edge, { edgeAssets, handleEdgeRequest } from "./edge"
+import { DEFAULT_UPSTREAM_TIMEOUT_MS, GIT_UPSTREAM_TIMEOUT_MS, Transport, transportFrom } from "./Http"
 
 const servers: Array<ReturnType<typeof Bun.serve>> = []
 afterEach(() => { for (const server of servers.splice(0)) server.stop(true) })
@@ -345,4 +350,158 @@ test("Monday paths serve the app document and legacy subjects redirect with quer
     expect(response.status).toBe(301)
     expect(response.headers.get("location")).toBe(`https://smithers.sh/any/repo/${to}?q=a%2Fb`)
   }
+})
+
+/*
+ * #4299, reproduced in production on 2026-10-18: `git clone
+ * https://smithers.sh/wallet-ae96a38b/qa-walk.git` answered its first request,
+ * `info/refs?service=git-upload-pack`, with the site's 404 page, because only
+ * /api reached the backend. The backend serves git's smart HTTP at the root
+ * (`/{owner}/{repo}.git/...`), so these three endings, and nothing near them,
+ * go to it through the same forwarder.
+ */
+const basic = `Basic ${btoa("x-access-token:smithers_token")}`
+
+test("git discovery reaches the backend with its query and Basic credentials", async () => {
+  for (const service of ["git-upload-pack", "git-receive-pack"]) {
+    let received: { url: string; method: string; headers: Headers } | undefined
+    const origin = backend(request => {
+      received = { url: request.url, method: request.method, headers: request.headers }
+      return new Response(`# service=${service}\n`, { headers: { "content-type": `application/x-${service}-advertisement` } })
+    })
+    const response = await edge.fetch(new Request(`https://smithers.sh/wallet-ae96a38b/qa-walk.git/info/refs?service=${service}`, {
+      headers: { authorization: basic, "git-protocol": "version=2" }
+    }), { ASSETS: assets, SMITHERS_BACKEND_ORIGIN: origin })
+    expect(received?.url).toBe(`${origin}/wallet-ae96a38b/qa-walk.git/info/refs?service=${service}`)
+    expect(received?.method).toBe("GET")
+    expect(received?.headers.get("authorization")).toBe(basic)
+    expect(received?.headers.get("git-protocol")).toBe("version=2")
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toBe(`application/x-${service}-advertisement`)
+    expect(await response.text()).toBe(`# service=${service}\n`)
+  }
+})
+
+test("an upload-pack request streams up, gzip intact, and its pack streams back", async () => {
+  const pack = Bun.gzipSync(new TextEncoder().encode("0032want 0123456789abcdef0123456789abcdef01234567\n00000009done\n"))
+  let sawFirstChunk!: () => void
+  const firstChunkArrived = new Promise<void>(resolve => { sawFirstChunk = resolve })
+  let finish!: () => void
+  let received: { headers: Headers; body: Uint8Array } | undefined
+  const origin = backend(async request => {
+    const reader = request.body!.getReader()
+    const chunks: Uint8Array[] = []
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+      sawFirstChunk()
+    }
+    received = { headers: request.headers, body: new Uint8Array(Bun.concatArrayBuffers(chunks)) }
+    return new Response(new ReadableStream({ start(controller) {
+      controller.enqueue(new TextEncoder().encode("0008NAK\n"))
+      finish = () => { controller.enqueue(new TextEncoder().encode("0000")); controller.close() }
+    } }), { headers: { "content-type": "application/x-git-upload-pack-result" } })
+  })
+  // The second half is sent only once the backend holds the first: an edge
+  // that buffered the request would never deliver it, and this would time out.
+  const body = new ReadableStream<Uint8Array>({ async start(controller) {
+    controller.enqueue(pack.slice(0, 8))
+    await firstChunkArrived
+    controller.enqueue(pack.slice(8))
+    controller.close()
+  } })
+  const response = await edge.fetch(new Request("https://smithers.sh/wallet-ae96a38b/qa-walk.git/git-upload-pack", {
+    method: "POST", body, duplex: "half",
+    headers: { authorization: basic, "content-type": "application/x-git-upload-pack-request", "content-encoding": "gzip", "git-protocol": "version=2" }
+  } as RequestInit), { ASSETS: assets, SMITHERS_BACKEND_ORIGIN: origin })
+  expect(received?.headers.get("content-encoding")).toBe("gzip")
+  expect(received?.headers.get("content-type")).toBe("application/x-git-upload-pack-request")
+  expect(received?.headers.get("git-protocol")).toBe("version=2")
+  expect(received?.body).toEqual(pack)
+  expect(response.status).toBe(200)
+  expect(response.headers.get("content-type")).toBe("application/x-git-upload-pack-result")
+  const reader = response.body!.getReader()
+  expect(new TextDecoder().decode((await reader.read()).value)).toBe("0008NAK\n")
+  finish()
+  expect(new TextDecoder().decode((await reader.read()).value)).toBe("0000")
+  expect((await reader.read()).done).toBe(true)
+})
+
+test("the backend's 401 and its Basic challenge reach git unchanged, with no page in their place", async () => {
+  let assetReads = 0
+  const ASSETS = { fetch: async () => { assetReads++; return new Response("<h1>Page not found</h1>", { status: 404, headers: { "content-type": "text/html" } }) } }
+  for (const [status, challenge] of [[401, 'Basic realm="Smithers Git"'], [404, null]] as const) {
+    const origin = backend(() => new Response(status === 401 ? "authentication required\n" : "repository not found\n", {
+      status, headers: { "content-type": "text/plain; charset=utf-8", ...(challenge === null ? {} : { "www-authenticate": challenge }) }
+    }))
+    const response = await edge.fetch(new Request("https://smithers.sh/alice/private.git/git-receive-pack", {
+      method: "POST", body: "0000", headers: { "content-type": "application/x-git-receive-pack-request" }
+    }), { ASSETS, SMITHERS_BACKEND_ORIGIN: origin })
+    expect(response.status).toBe(status)
+    expect(response.headers.get("www-authenticate")).toBe(challenge)
+    expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8")
+    expect(response.headers.has("cross-origin-embedder-policy")).toBe(false)
+    expect(await response.text()).toBe(status === 401 ? "authentication required\n" : "repository not found\n")
+  }
+  expect(assetReads).toBe(0)
+})
+
+test("a git request leaves the browser session and forged proxy identity behind", async () => {
+  let received: Headers | undefined
+  const origin = backend(request => { received = request.headers; return new Response("0000") })
+  await edge.fetch(new Request("https://smithers.sh/alice/demo.git/git-receive-pack", {
+    method: "POST", body: "0000",
+    headers: { cookie: "__Host-smithers_session=session; smithers_csrf=csrf", authorization: basic, "x-user-id": "999", "x-forwarded-for": "1.2.3.4" }
+  }), { ASSETS: assets, SMITHERS_BACKEND_ORIGIN: origin })
+  expect(received?.has("cookie")).toBe(false)
+  expect(received?.get("authorization")).toBe(basic)
+  for (const key of ["x-user-id", "x-forwarded-for"]) expect(received?.has(key)).toBe(false)
+})
+
+test("only the smart-HTTP endings are forwarded; the repository page and every near miss are not", async () => {
+  let calls = 0
+  const origin = backend(() => { calls++; return new Response("backend") })
+  const { ASSETS, seen } = appDocumentProbe()
+  const page = await edge.fetch(new Request("https://smithers.sh/roninjin10/e2e-verify"), { ASSETS, SMITHERS_BACKEND_ORIGIN: origin })
+  expect(page.status).toBe(200)
+  expect(seen.at(-1)).toBe("/smithersai/smithers/")
+  for (const [method, path] of [
+    ["GET", "/alice/demo.git/other"],
+    ["GET", "/alice/demo.git/info/refs"],
+    ["GET", "/alice/demo.git/info/refs?service=git-upload-archive"],
+    ["GET", "/alice/demo.git/info/refs/?service=git-upload-pack"],
+    ["GET", "/alice/demo/info/refs?service=git-upload-pack"],
+    ["GET", "/org/alice/demo.git/info/refs?service=git-upload-pack"],
+    ["GET", "/alice/.git/info/refs?service=git-upload-pack"],
+    ["POST", "/alice/demo.git/info/refs?service=git-upload-pack"],
+    ["GET", "/alice/demo.git/git-upload-pack"],
+    ["PUT", "/alice/demo.git/git-receive-pack"],
+    ["POST", "/alice/demo.git/git-receive-pack/x"]
+  ] as const) {
+    const response = await edge.fetch(new Request(`https://smithers.sh${path}`, { method }), { ASSETS: assets, SMITHERS_BACKEND_ORIGIN: origin })
+    expect({ method, path, status: response.status }).toEqual({ method, path, status: 404 })
+  }
+  expect(calls).toBe(0)
+})
+
+/*
+ * The backend answers a push only after it has read and run the whole pack,
+ * and bounds that itself. The API's wait for headers would cut every push that
+ * takes longer, so a git request waits past it; the edge's own deadline is a
+ * backstop that still answers 504.
+ */
+test("a push outlasts the API's header deadline and still has a backstop", async () => {
+  const pending = Layer.succeed(Transport, transportFrom(() => new Promise<Response>(() => {})))
+  const run = (path: string) => Effect.runPromise(Effect.gen(function* () {
+    const fiber = yield* handleEdgeRequest(new Request(`https://smithers.sh${path}`, { method: "POST", body: "0000" }), "https://backend.test")
+      .pipe(Effect.provide(Layer.mergeAll(pending, edgeAssets(assets))), Effect.forkChild)
+    yield* TestClock.adjust(DEFAULT_UPSTREAM_TIMEOUT_MS + 1)
+    const afterApiDeadline = fiber.pollUnsafe()
+    yield* TestClock.adjust(GIT_UPSTREAM_TIMEOUT_MS)
+    const response = yield* Fiber.join(fiber)
+    return { settledAtApiDeadline: afterApiDeadline !== undefined, status: response.status }
+  }).pipe(Effect.provide(TestClock.layer())))
+  expect(await run("/api/agent/turn")).toEqual({ settledAtApiDeadline: true, status: 504 })
+  expect(await run("/alice/demo.git/git-receive-pack")).toEqual({ settledAtApiDeadline: false, status: 504 })
 })

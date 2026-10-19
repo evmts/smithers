@@ -106,12 +106,13 @@ const securityReview = Smithers.SecurityReview({
   checks: [
     {
       id: "edge-forwarding",
-      title: "The edge forwards /api unchanged to the pinned backend and forges no identity",
+      title: "The edge forwards /api and git smart HTTP unchanged to the pinned backend and forges no identity",
       threat: "A browser injects identity or forwarding headers, or steers the backend origin, so the backend attributes a request to another user or origin.",
       lookFor: [
         "A forwarded request that keeps a client-sent x-user-*, x-smithers-user-*, x-forwarded-*, forwarded, x-real-ip, x-smithers-service-token or x-smithers-token-id header.",
         "A backend origin taken from the request (Host, a header, a path or query) instead of the SMITHERS_BACKEND_ORIGIN binding, or one that equals the incoming origin or carries credentials, a path or a query.",
-        "An upstream fetch that follows a redirect, mints or attaches a credential, or rebuilds an upgrade the backend answered."
+        "An upstream fetch that follows a redirect, mints or attaches a credential, or rebuilds an upgrade the backend answered.",
+        "A git smart-HTTP request forwarded with the browser's Cookie, or a git match wider than GET /<owner>/<repo>.git/info/refs?service=git-upload-pack|git-receive-pack and POST /<owner>/<repo>.git/git-upload-pack|git-receive-pack, which would hand a site or app path to the backend."
       ],
       paths: ["src/edge.ts", "src/Http.ts", "src/Boundary.ts"]
     },

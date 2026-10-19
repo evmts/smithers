@@ -61,6 +61,15 @@ export const TransportLive: Layer.Layer<Transport> = Layer.succeed(Transport, tr
 export const DEFAULT_UPSTREAM_TIMEOUT_MS = 20_000
 
 /**
+ * Git's deadline, in ms. A push is answered only after the backend has read
+ * and run the whole pack, which it bounds itself (repohost.ReceivePackMaxDuration:
+ * 10 minutes by default, for the wait for the repository and again for the
+ * push). The default would cut every push that takes longer, so git waits past
+ * the backend's bound and this is only a backstop.
+ */
+export const GIT_UPSTREAM_TIMEOUT_MS = 30 * 60_000
+
+/**
  * `fetch` under a deadline. The timer covers the headers only, so a streaming
  * answer is never cut off mid-body; when it wins, the underlying request is
  * interrupted (and so aborted) before the failure is raised.

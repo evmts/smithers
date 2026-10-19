@@ -2,7 +2,7 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { runRequest } from "./Boundary"
-import { DEFAULT_UPSTREAM_TIMEOUT_MS, discardBody, fetchWithDeadline, TransportLive, transportFrom } from "./Http"
+import { DEFAULT_UPSTREAM_TIMEOUT_MS, discardBody, fetchWithDeadline, GIT_UPSTREAM_TIMEOUT_MS, TransportLive, transportFrom } from "./Http"
 import type { Transport, TransportShape } from "./Http"
 import { catalogDocumentPath, DEFAULT_APP_DOCUMENT_PATH, isFramePath, isRepositoryPath, repositoryRedirectPath, repositorySubjectRoot } from "./appDocument"
 import { withIsolationHeaders } from "./Responses"
@@ -18,6 +18,29 @@ export interface EdgeEnv {
 
 class EdgeAssets extends Context.Service<EdgeAssets, TransportShape>()("smithers-edge/Assets") {}
 
+/** The site assets binding as the edge's asset transport. */
+export const edgeAssets = (assets: EdgeEnv["ASSETS"]): Layer.Layer<EdgeAssets> =>
+  Layer.succeed(EdgeAssets, transportFrom(input => assets.fetch(input instanceof Request ? input : new Request(input))))
+
+/*
+ * Git's smart HTTP, which the backend serves at the root rather than under
+ * /api (`git clone https://smithers.sh/<owner>/<repo>.git`, #4299): discovery
+ * and the two pack exchanges, nothing else. Owner and repository use the
+ * backend's own name rule (packages/backend/internal/services/repo.go), and the
+ * backend answers only the `.git` spelling, so a `.git`-less form, a third
+ * segment, another ending or another method stays the site's.
+ */
+const GIT_TRANSPORT = /^\/[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*\.git\/(info\/refs|git-upload-pack|git-receive-pack)$/
+
+const isGitTransport = (method: string, url: URL): boolean => {
+  const ending = GIT_TRANSPORT.exec(url.pathname)?.[1]
+  if (ending === "info/refs") {
+    const service = url.searchParams.get("service")
+    return method === "GET" && (service === "git-upload-pack" || service === "git-receive-pack")
+  }
+  return ending !== undefined && method === "POST"
+}
+
 const refusal = (status: number, code: string): Response => Response.json({ status: "error", code }, { status })
 
 /** A deployment origin, never a caller-selected proxy destination. */
@@ -32,7 +55,7 @@ const backendOrigin = (raw: string | undefined, incoming: URL): string | undefin
   } catch { return undefined }
 }
 
-const proxy = (request: Request, url: URL, origin: string): Effect.Effect<Response, never, Transport> => {
+const proxy = (request: Request, url: URL, origin: string, route: "api" | "git"): Effect.Effect<Response, never, Transport> => {
   const upstream = new URL(origin)
   // Assign fields rather than resolve an arbitrary path: // cannot change host.
   upstream.pathname = url.pathname
@@ -42,6 +65,9 @@ const proxy = (request: Request, url: URL, origin: string): Effect.Effect<Respon
     if (name.startsWith("x-user-") || name.startsWith("x-smithers-user-") || name.startsWith("x-forwarded-") ||
       ["host", "forwarded", "x-real-ip", "x-smithers-service-token", "x-smithers-token-id"].includes(name)) headers.delete(name)
   }
+  // Git authenticates with Basic auth or a token alone; the backend reads no
+  // session on these routes, and a browser's cookie has no business there.
+  if (route === "git") headers.delete("cookie")
   headers.set("x-forwarded-host", url.host)
   headers.set("x-forwarded-proto", url.protocol.slice(0, -1))
   const clientIP = request.headers.get("cf-connecting-ip")
@@ -49,7 +75,7 @@ const proxy = (request: Request, url: URL, origin: string): Effect.Effect<Respon
   const forwarded = new Request(upstream, request)
   // The shared host owns authentication, CSRF, capabilities and errors. Do not
   // mint a bearer, interpret a body, follow OAuth redirects, or rebuild a 101.
-  return fetchWithDeadline("shared backend", forwarded, { headers }, DEFAULT_UPSTREAM_TIMEOUT_MS).pipe(
+  return fetchWithDeadline("shared backend", forwarded, { headers }, route === "git" ? GIT_UPSTREAM_TIMEOUT_MS : DEFAULT_UPSTREAM_TIMEOUT_MS).pipe(
     Effect.catch(failure => Effect.succeed(refusal(failure._tag === "UpstreamTimeout" ? 504 : 502,
       failure._tag === "UpstreamTimeout" ? "upstream_timeout" : "upstream_unreachable")))
   )
@@ -77,9 +103,11 @@ export const handleEdgeRequest = (request: Request, configuredOrigin: string | u
       if (url.hostname === "www.smithers.sh") url.hostname = "smithers.sh"
       return Response.redirect(url.toString(), 301)
     }
-    if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
+    const route = url.pathname === "/api" || url.pathname.startsWith("/api/") ? "api"
+      : isGitTransport(request.method, url) ? "git" : undefined
+    if (route !== undefined) {
       const origin = backendOrigin(configuredOrigin, url)
-      return origin === undefined ? refusal(503, "backend_not_configured") : yield* proxy(request, url, origin)
+      return origin === undefined ? refusal(503, "backend_not_configured") : yield* proxy(request, url, origin, route)
     }
     /*
      * A GitHub-shaped subject below a repository root is that repository's
@@ -134,8 +162,7 @@ export const handleEdgeRequest = (request: Request, configuredOrigin: string | u
 
 export default {
   fetch: (request: Request, env: EdgeEnv): Promise<Response> => runRequest(
-    handleEdgeRequest(request, env.SMITHERS_BACKEND_ORIGIN).pipe(Effect.provide(Layer.mergeAll(
-      TransportLive, Layer.succeed(EdgeAssets, transportFrom(input => env.ASSETS.fetch(input instanceof Request ? input : new Request(input))))
-    ))), request.signal
+    handleEdgeRequest(request, env.SMITHERS_BACKEND_ORIGIN).pipe(Effect.provide(Layer.mergeAll(TransportLive, edgeAssets(env.ASSETS)))),
+    request.signal
   )
 }
