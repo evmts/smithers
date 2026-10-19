@@ -313,8 +313,19 @@ const isModule = (rel) =>
 /** A tool from the package's own node_modules, else the workspace root's. */
 const bin = (pkg, name) => [join(pkg, "node_modules", ".bin", name), join(root, "node_modules", ".bin", name)].find(existsSync)
 
+/** The package's tsconfig.json, or the nearest one above it (.smithers/flows/coding has none, E-15). */
+const nearestTsconfig = (pkg) => {
+  for (let dir = pkg; dir !== dirname(dir); dir = dirname(dir)) {
+    if (existsSync(join(dir, "tsconfig.json"))) return join(dir, "tsconfig.json")
+    if (existsSync(join(dir, "pnpm-workspace.yaml"))) return undefined
+  }
+  return undefined
+}
+
 const tsconfig = (pkg, file, compilerOptions, include, exclude = []) => {
-  const base = existsSync(join(pkg, "tsconfig.json")) ? "../tsconfig.json" : undefined
+  // The twin compiles with the same options as the TypeScript it mirrors (E-15).
+  const found = nearestTsconfig(pkg)
+  const base = found === undefined ? undefined : relative(dirname(file), found)
   writeFileSync(
     file,
     JSON.stringify({ ...(base ? { extends: base } : {}), compilerOptions, include, exclude }, null, 2) + "\n"
