@@ -362,6 +362,7 @@ export const RESERVED_SITE_SEGMENTS: ReadonlyArray<string> = [
   "_astro",
   "api",
   "blog",
+  "bug",
   "changelogs",
   "demo",
   "docs",

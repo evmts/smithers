@@ -60,6 +60,7 @@ export const UNSCENARIOED_ACTIONS: Readonly<Record<Deferral, readonly string[]>>
   "deferred: mvp.md §8/§16": [...billing, ...repo, ...repos, ...triggers],
   /** Acts only on this browser's UI or storage; no host contract to break. */
   browser: [
+    "bug.report", // Opens an external GitHub draft; no Smithers host action or issue write.
     "app.hint.dismiss", "card.history.back", "card.history.forward",
     "chat", "chat.close", "code.view",
     "chat.queue", "chat.queue.edit", "chat.queue.remove", "chat.queue.restore", "chat.reload", "cloud.prompt", "flow.plan.select",
