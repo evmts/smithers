@@ -57,7 +57,9 @@ func completedCodingMessages(update flowdispatch.ProjectionUpdate, projection ag
 // completeCodingTurn uses the existing terminal transition as the exactly-once
 // fence. Replies, parts and completion commit together under the session row
 // lock; a failed write rolls everything back and a replay appends nothing.
-func (service *AgentService) completeCodingTurn(ctx context.Context, update flowdispatch.ProjectionUpdate, terminal db.UpdateAgentSessionTerminalStatusForFlowParams, messages []string) (db.AgentSession, []AgentMessageResponse, error) {
+// A non-nil result, observed before this transaction began, is the last
+// reply's coding_result part: the only writer of that part.
+func (service *AgentService) completeCodingTurn(ctx context.Context, update flowdispatch.ProjectionUpdate, terminal db.UpdateAgentSessionTerminalStatusForFlowParams, messages []string, result *CodingResult) (db.AgentSession, []AgentMessageResponse, error) {
 	beginner, ok := service.dispatchQ.(workflowQueryTxStarter)
 	if !ok {
 		return db.AgentSession{}, nil, errors.New("coding completion transactions unavailable")
@@ -75,8 +77,14 @@ func (service *AgentService) completeCodingTurn(ctx context.Context, update flow
 	if update.Scope != agentFlowScope(session.RepositoryID, session.UserID) {
 		return db.AgentSession{}, nil, errors.New("coding completion scope does not own the session")
 	}
+	var codingResult json.RawMessage
+	if result != nil {
+		if codingResult, err = codingResultPartContent(*result); err != nil {
+			return db.AgentSession{}, nil, err
+		}
+	}
 	responses := make([]AgentMessageResponse, 0, len(messages))
-	for _, text := range messages {
+	for i, text := range messages {
 		message, err := q.CreateAgentMessageWithNextSequence(ctx, db.CreateAgentMessageWithNextSequenceParams{SessionID: session.ID, Role: "assistant"})
 		if err != nil {
 			return db.AgentSession{}, nil, err
@@ -87,6 +95,13 @@ func (service *AgentService) completeCodingTurn(ctx context.Context, update flow
 			return db.AgentSession{}, nil, err
 		}
 		response := AgentMessageResponse{ID: message.ID, SessionID: session.ID, Role: message.Role, Sequence: message.Sequence, CreatedAt: message.CreatedAt, Parts: []AgentPartResponse{{PartIndex: part.PartIndex, Type: part.PartType, Content: part.Content}}}
+		if codingResult != nil && i == len(messages)-1 {
+			part, err := q.CreateAgentPart(ctx, db.CreateAgentPartParams{MessageID: message.ID, RepositoryID: session.RepositoryID, SessionID: session.ID, PartIndex: 1, PartType: "coding_result", Content: codingResult})
+			if err != nil {
+				return db.AgentSession{}, nil, err
+			}
+			response.Parts = append(response.Parts, AgentPartResponse{PartIndex: part.PartIndex, Type: part.PartType, Content: part.Content})
+		}
 		responses = append(responses, response)
 	}
 	if err := tx.Commit(ctx); err != nil {
