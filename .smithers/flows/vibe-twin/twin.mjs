@@ -581,14 +581,20 @@ export const sourceExports = (text) => {
   return out
 }
 
-const apiCheck = (pkg, work, twinned = []) => {
+const apiCheck = (pkg, work, twinned = [], privates = { ts: new Map(), twin: new Map() }) => {
   const twinOut = twinOutDir(pkg)
   const twinDts = new Set(walk(twinOut).filter((f) => f.endsWith(".d.ts")))
   const api = {
     modules: 0, identicalFiles: 0, checked: 0, missingModules: [], missingExports: [], extraExports: [],
-    typeDiffers: [], valueDiffers: [], nominal: [], assignable: [], errors: []
+    typeDiffers: [], valueDiffers: [], nominal: [], assignable: [], errors: [], privateProjection: []
   }
-  const lines = ["type Eq<A, B> = (<G>() => G extends A ? 1 : 2) extends (<G>() => G extends B ? 1 : 2) ? true : false"]
+  const lines = [
+    "type Eq<A, B> = (<G>() => G extends A ? 1 : 2) extends (<G>() => G extends B ? 1 : 2) ? true : false",
+    // A class with private members is nominal per declaration, so no twin of it is ever identical.
+    // Pub keeps what a caller can reach: call and construct signatures, public members (E-6, S9-1).
+    "type Pub<X> = X extends abstract new (...args: infer A) => infer I ? (abstract new (...args: A) => { [K in keyof I]: I[K] }) : X extends (...args: infer A) => infer R ? (...args: A) => Pub<R> : X"
+  ]
+  const projected = []
   const checks = new Map()
   const pairs = new Map()
   const check = (label, left, right) => {
@@ -676,6 +682,19 @@ const apiCheck = (pkg, work, twinned = []) => {
         else check(`${rel} (source): type ${name}`, `T${i}.${name}`, `V${i}.${name}`)
         continue
       }
+      if (privates.ts.get(rel)?.exports.includes(name)) {
+        // TypeScript can't declare this export (TS4094). The twin must report the same private
+        // members, and match every member a caller can reach.
+        const tsNames = privates.ts.get(rel).members.join(", "), twinNames = (privates.twin.get(rel)?.members ?? []).join(", ")
+        if (tsNames !== twinNames) {
+          api.valueDiffers.push(`${rel} (source): ${name} (private members: TypeScript ${tsNames}; twin ${twinNames || "none"})`)
+          continue
+        }
+        const label = `${rel} (source): ${name} (public projection; private ${tsNames})`
+        check(label, `Pub<typeof T${i}.${name}>`, `Pub<typeof V${i}.${name}>`)
+        projected.push(label)
+        continue
+      }
       check(`${rel} (source): ${name}`, `typeof T${i}.${name}`, `typeof V${i}.${name}`)
       if (e.kind === "class") check(`${rel} (source): instances of ${name}`, `(typeof T${i}.${name})["prototype"]`, `(typeof V${i}.${name})["prototype"]`)
     }
@@ -706,6 +725,7 @@ const apiCheck = (pkg, work, twinned = []) => {
       else api.valueDiffers.push(label)
     }
   }
+  api.privateProjection = projected.filter((label) => !api.valueDiffers.includes(label))
   return api
 }
 
@@ -722,6 +742,33 @@ const apiCheck = (pkg, work, twinned = []) => {
  * CI's machine when it is set (migrate: "the native helper is present wherever CI runs"), and
  * those judge the host, not the twin.
  */
+/**
+ * The private members TS4094 names, per module relative to `dir` (the source root, or
+ * src-vibe): TypeScript emits no declaration for an exported anonymous class with private
+ * members (E-6, S9-1).
+ */
+export const privateMembers = (errors, pkg, dir) => {
+  const out = new Map()
+  for (const e of errors) {
+    const m = e.match(/^(.+?\.(?:tsx?|vibe))\((\d+),(\d+)\): error TS4094: Property '([^']+)'/)
+    if (!m) continue
+    const rel = relative(join(pkg, dir), resolve(pkg, m[1])).replace(/\.(?:tsx?|vibe)$/, "")
+    if (rel.startsWith("..")) continue
+    // The error points at the export's name: the projection applies to that export only.
+    const line = existsSync(resolve(pkg, m[1])) ? readFileSync(resolve(pkg, m[1]), "utf8").split("\n")[Number(m[2]) - 1] ?? "" : ""
+    const name = line.slice(Number(m[3]) - 1).match(/^[A-Za-z_$][\w$]*/)?.[0]
+    const entry = out.get(rel) ?? { members: [], exports: [] }
+    out.set(rel, {
+      members: [...new Set([...entry.members, m[4]])].sort(),
+      exports: name === undefined ? entry.exports : [...new Set([...entry.exports, name])].sort()
+    })
+  }
+  return out
+}
+
+/** The modules, relative to the source root, for which TypeScript reported TS4094. */
+export const undeclarableModules = (tsErrors, pkg) => new Set(privateMembers(tsErrors, pkg, sourceRoot(pkg)).keys())
+
 export const suiteEnv = (extra = {}) => {
   const env = { ...process.env, ...extra }
   delete env.CI
@@ -1022,7 +1069,19 @@ const runUnlocked = (pkgArg) => {
   const ownDts = join(work, "ts-dts-root", relative(repoRoot(pkg), join(pkg, sourceRoot(pkg))))
   mkdirSync(ownDts, { recursive: true })
   symlinkSync(ownDts, join(work, "ts-dts"), "dir")
-  const missingOutputs = twinned.flatMap((rel) => ["js", "d.ts"].map((ext) => join(twinOutDir(pkg), `${rel}.${ext}`))).filter((file) => !existsSync(file))
+  // TypeScript reports TS4094 and emits no .d.ts for a module whose exported anonymous class has
+  // private members (E-6). A faithful twin reproduces exactly that: its TS4094 is not a twin
+  // error, and its missing .d.ts is not a missing output (S9-1). The .js is still required.
+  const undeclarable = undeclarableModules(ts.errors, pkg)
+  const privates = { ts: privateMembers(ts.errors, pkg, sourceRoot(pkg)), twin: privateMembers(twin.errors, pkg, "src-vibe") }
+  twin.errors = twin.errors.filter((e) => {
+    const m = e.match(/^src-vibe\/(.+)\.vibe\(\d+,\d+\): error TS4094:/)
+    return !(m && undeclarable.has(m[1]))
+  })
+  const missingOutputs = twinned.flatMap((rel) => [
+    join(twinOutDir(pkg), `${rel}.js`),
+    ...(undeclarable.has(rel) ? [] : [join(twinOutDir(pkg), `${rel}.d.ts`)])
+  ]).filter((file) => !existsSync(file))
   const missingDeclarations = srcModules(pkg).map(({ rel }) => join(work, "ts-dts", `${rel}.d.ts`)).filter((file) => !existsSync(file))
   // C-3: a VibeLang error in unchanged TypeScript exits non-zero but is a finding; a crash
   // or a missing output is not.
@@ -1030,7 +1089,7 @@ const runUnlocked = (pkgArg) => {
   // private fields). Their API can't be compared; the tests still run, and the receipt lists them.
   const compileOk = !compiled.crash && !ts.crash && missingOutputs.length === 0
 
-  const api = apiCheck(pkg, work, twinned)
+  const api = apiCheck(pkg, work, twinned, privates)
 
   const baseConfig = ["vitest.config.ts", "vitest.config.mts", "vitest.config.js", "vitest.config.mjs"]
     .map((f) => join(pkg, f)).find(existsSync)

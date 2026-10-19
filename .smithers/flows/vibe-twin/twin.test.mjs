@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { affectedTests, dropDefaultNever, suiteEnv, exactPathPattern, fallbackFor, localNames, sourceExports, normalizeDts, parseDts, quality, sameReferencedLocals, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
+import { affectedTests, dropDefaultNever, privateMembers, suiteEnv, undeclarableModules, exactPathPattern, fallbackFor, localNames, sourceExports, normalizeDts, parseDts, quality, sameReferencedLocals, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
 
 test("declarations that differ only in relative import extensions are equal", () => {
   const ts = `import { type A } from "./ErrorCode.ts";\nexport { B } from "../x/y.ts";\nexport declare const c: import("./z.ts").Z;\n`
@@ -234,4 +234,27 @@ test("suites run without CI, whatever the caller's environment says", () => {
   } finally {
     delete process.env.CI
   }
+})
+
+test("modules TypeScript reports TS4094 for are undeclarable on both sides (S9-1)", () => {
+  const pkg = mkdtempSync(join(tmpdir(), "vibe-twin-"))
+  mkdirSync(join(pkg, "src"), { recursive: true })
+  const set = undeclarableModules([
+    "src/MaintenanceExport.ts(157,14): error TS4094: Property 'x' of exported anonymous class type may not be private or protected.",
+    "src/a/Other.ts(1,1): error TS2322: nope",
+    "../sibling/src/X.ts(3,3): error TS4094: elsewhere"
+  ], pkg)
+  assert.deepEqual([...set], ["MaintenanceExport"])
+})
+
+test("TS4094 private members group per module on either side (S9-1)", () => {
+  const pkg = mkdtempSync(join(tmpdir(), "vibe-twin-"))
+  mkdirSync(join(pkg, "src-vibe"), { recursive: true })
+  writeFileSync(join(pkg, "src-vibe", "MaintenanceExport.vibe"), "\n".repeat(156) + "export const withSealedExport = 1\n")
+  const m = privateMembers([
+    "src-vibe/MaintenanceExport.vibe(157,14): error TS4094: Property 'snapshotContext' of exported anonymous class type may not be private or protected.",
+    "src-vibe/MaintenanceExport.vibe(157,14): error TS4094: Property 'exportEnv' of exported anonymous class type may not be private or protected.",
+    "src-vibe/MaintenanceExport.vibe(160,1): error TS4094: Property 'exportEnv' of exported anonymous class type may not be private or protected."
+  ], pkg, "src-vibe")
+  assert.deepEqual([...m], [["MaintenanceExport", { members: ["exportEnv", "snapshotContext"], exports: ["withSealedExport"] }]])
 })
