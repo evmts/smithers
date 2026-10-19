@@ -264,7 +264,7 @@ test("a HumanTask request id takes precedence over the ask time", () => {
   expect(questionOf({ runId: "run", requestId: "wait#1", title: "Ask", payload: {} as never, requestedAt: 42, status: "pending", waitRunId: "run", request: { kind: "json", schema: {}, requestId: "turn-2" } })?.askId).toBe("turn-2")
 })
 
-test("repeated same-named asks retain distinct snapshot times", () => {
+test("the fallback ask identity follows each ask's snapshot time", () => {
   const row = { runId: "run", requestId: "answer#1", title: "Ask", payload: {} as never, requestedAt: 42, status: "pending" as const, waitRunId: "run", request: { kind: "json", name: "answer", schema: {} } }
   expect(questionOf(row)?.askId).not.toBe(questionOf({ ...row, requestedAt: 43 })?.askId)
 })
