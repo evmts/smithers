@@ -124,7 +124,7 @@ func TestAgentRunEndKeepsAMachineItCannotProveFree(t *testing.T) {
 			return db.Workspace{ID: "shared", Status: "running", VmID: "vm-shared"}, nil
 		},
 	})
-	release, err := svc.ReleaseAgentWorkspace(context.Background(), "shared", "finished")
+	release, err := svc.ReleaseAgentWorkspace(context.Background(), "shared", "finished", 0)
 	require.NoError(t, err)
 	require.Equal(t, agentWorkspaceKeptWithoutRuntime, release.Outcome)
 	require.False(t, release.HeadTokenRevoked)
