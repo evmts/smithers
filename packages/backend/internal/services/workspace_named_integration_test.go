@@ -79,13 +79,16 @@ func TestCreateWorkspaceConcurrentNamedIdentity(t *testing.T) {
 	require.NotEqual(t, ben, owner)
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM workspace_shares WHERE workspace_id=$1 AND level='write'`, rows[0].ID).Scan(&count))
 	require.EqualValues(t, 2, count)
+	// No agent session binds the branch's machine: each has its own box
+	// (plue#869).
 	for _, id := range []string{"11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"} {
 		_, err := db.New(pool).CreateAgentSession(ctx, db.CreateAgentSessionParams{ID: id, RepositoryID: repo, UserID: alice, Status: "active"})
 		require.NoError(t, err)
-		require.NoError(t, svc.attachBranchMachineSession(ctx, rows[0].ID, CreateAgentWorkspaceInput{RepositoryID: repo, UserID: alice, SessionID: id}))
+		require.ErrorContains(t, svc.attachBranchMachineSession(ctx, rows[0].ID, CreateAgentWorkspaceInput{RepositoryID: repo, UserID: alice, SessionID: id}),
+			"agent session binding denied")
 	}
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM agent_sessions WHERE workspace_id=$1`, rows[0].ID).Scan(&count))
-	require.EqualValues(t, 2, count)
+	require.Zero(t, count)
 	// Erasure query must not select a non-owner joiner's branch machine.
 	erased, err := db.New(pool).AdminListErasureWorkspaces(ctx, ben)
 	require.NoError(t, err)

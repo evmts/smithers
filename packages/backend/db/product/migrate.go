@@ -207,6 +207,7 @@ var migrationRegistry = []migrationSpec{
 	{169, "migrations/0169_guest_conversions.sql"},
 	{170, "migrations/0170_github_source_visibility_and_schedule.sql"},
 	{171, "migrations/0171_workspace_provisioning_leases.sql"},
+	{172, "migrations/0172_agent_session_boxes.sql"},
 }
 
 type migration struct {

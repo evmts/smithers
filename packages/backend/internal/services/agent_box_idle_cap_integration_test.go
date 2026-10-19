@@ -100,9 +100,10 @@ func TestAnAgentBoxIdlePastItsCapIsRetiredAndStopsAccruing(t *testing.T) {
 	require.Equal(t, total, again, "no usage interval after retirement")
 }
 
-// The next change on the repository, in the same session or a new one, gets a
-// new box through the session path, rebuilt from the previous head, and its
-// turn reaches the coding host. Nothing is refused.
+// The next change on the repository gets a working box through the session
+// path and its turn reaches the coding host: the same session's box rebuilt
+// from the previous head, a new session's box of its own (plue#869). Nothing
+// is refused.
 func TestTheNextChangeAfterRetirementGetsANewBoxAtThePreviousHead(t *testing.T) {
 	f := idleBox(t, true)
 	require.NoError(t, f.boxes.RetireIdleAgentBoxes(f.ctx))
@@ -130,10 +131,15 @@ func TestTheNextChangeAfterRetirementGetsANewBoxAtThePreviousHead(t *testing.T) 
 			joined, err := f.boxes.CreateAgentWorkspace(f.ctx, CreateAgentWorkspaceInput{RepositoryID: box.RepositoryID, UserID: f.person,
 				SessionID: sessionID, RepoOwner: slug.OwnerSlug, RepoName: slug.RepoName})
 			require.NoError(t, err, "the dispatch gets a working box, never a refusal")
-			require.Equal(t, box.ID, joined.WorkspaceID)
-			require.Equal(t, 1, f.hosted.creates, "one new guest serves both turns after retirement")
+			if i == 0 {
+				require.Equal(t, box.ID, joined.WorkspaceID, "the session's own box")
+			} else {
+				require.NotEqual(t, box.ID, joined.WorkspaceID, "a new session's box of its own")
+			}
+			require.Equal(t, i+1, f.hosted.creates, "each turn after retirement gets a new guest")
 			require.Zero(t, f.hosted.starts, "the new box is created, not woken")
-			current := f.box(t)
+			current, err := f.q.GetWorkspace(f.ctx, joined.WorkspaceID)
+			require.NoError(t, err)
 			require.Equal(t, "running", current.Status)
 			require.NotEmpty(t, current.VmID)
 			require.False(t, current.DiskReclaimedAt.Valid, "the rebuild is complete")

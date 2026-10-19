@@ -208,7 +208,7 @@ VALUES (
     $20::uuid,
     $21::text
 )
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 type CreateWorkspaceParams struct {
@@ -314,6 +314,7 @@ func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -478,7 +479,7 @@ WHERE id = $4::uuid
       OR updated_at = $7::timestamptz
   )
   AND deleted_at IS NULL
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 type FailProvisioningWorkspaceIfCurrentParams struct {
@@ -560,6 +561,7 @@ func (q *Queries) FailProvisioningWorkspaceIfCurrent(ctx context.Context, arg Fa
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -572,7 +574,7 @@ WHERE id = $1
   AND status = 'starting'
   AND deleted_at IS NULL
   AND updated_at < NOW() - make_interval(secs => $2::int)
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 type FailStaleStartingWorkspaceParams struct {
@@ -639,6 +641,7 @@ func (q *Queries) FailStaleStartingWorkspace(ctx context.Context, arg FailStaleS
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -654,7 +657,7 @@ WHERE id = $3::uuid
   AND vm_id = $5::text
   AND updated_at = $6::timestamptz
   AND deleted_at IS NULL
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 type FailWorkspaceIfUnchangedParams struct {
@@ -732,12 +735,13 @@ func (q *Queries) FailWorkspaceIfUnchanged(ctx context.Context, arg FailWorkspac
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
 
 const getActiveWorkspaceForIdentity = `-- name: GetActiveWorkspaceForIdentity :one
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 FROM workspaces
 WHERE repository_id = $1
   AND user_id = $2
@@ -825,12 +829,13 @@ func (q *Queries) GetActiveWorkspaceForIdentity(ctx context.Context, arg GetActi
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
 
 const getActiveWorkspaceForUserRepo = `-- name: GetActiveWorkspaceForUserRepo :one
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 FROM workspaces
 WHERE repository_id = $1
   AND user_id = $2
@@ -908,12 +913,13 @@ func (q *Queries) GetActiveWorkspaceForUserRepo(ctx context.Context, arg GetActi
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
 
 const getActiveWorkspaceForUserRepoKind = `-- name: GetActiveWorkspaceForUserRepoKind :one
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 FROM workspaces
 WHERE repository_id = $1
   AND user_id = $2
@@ -992,6 +998,7 @@ func (q *Queries) GetActiveWorkspaceForUserRepoKind(ctx context.Context, arg Get
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -1009,9 +1016,10 @@ func (q *Queries) GetBranchMachineOwner(ctx context.Context) (int64, error) {
 }
 
 const getBranchWorkspace = `-- name: GetBranchWorkspace :one
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at FROM workspaces
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id FROM workspaces
 WHERE repository_id = $1
   AND target_bookmark = $2::text
+  AND agent_session_id IS NULL
   AND deleted_at IS NULL
 FOR NO KEY UPDATE
 `
@@ -1024,6 +1032,7 @@ type GetBranchWorkspaceParams struct {
 // Includes excluded-index sources and retained failures; none permit replacement.
 // Canonical creation holds the branch advisory lock. A no-key update lock
 // protects metadata without waiting for a launch's long-lived key-share grant.
+// An agent session's own box is never the branch's machine.
 func (q *Queries) GetBranchWorkspace(ctx context.Context, arg GetBranchWorkspaceParams) (Workspace, error) {
 	row := q.db.QueryRow(ctx, getBranchWorkspace, arg.RepositoryID, arg.TargetBookmark)
 	var i Workspace
@@ -1080,12 +1089,13 @@ func (q *Queries) GetBranchWorkspace(ctx context.Context, arg GetBranchWorkspace
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
 
 const getFlowWorkspaceForUserRepo = `-- name: GetFlowWorkspaceForUserRepo :one
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 FROM workspaces w
 WHERE w.id = $1
   AND w.repository_id = $2
@@ -1174,6 +1184,7 @@ func (q *Queries) GetFlowWorkspaceForUserRepo(ctx context.Context, arg GetFlowWo
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -1221,7 +1232,7 @@ func (q *Queries) GetWorkflowTaskBillingOwner(ctx context.Context, taskID int64)
 }
 
 const getWorkspace = `-- name: GetWorkspace :one
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 FROM workspaces
 WHERE id = $1
   AND deleted_at IS NULL
@@ -1286,6 +1297,7 @@ func (q *Queries) GetWorkspace(ctx context.Context, id string) (Workspace, error
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -1309,7 +1321,7 @@ func (q *Queries) GetWorkspaceBillingOwner(ctx context.Context, workspaceID stri
 }
 
 const getWorkspaceByAgentSession = `-- name: GetWorkspaceByAgentSession :one
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 FROM workspaces
 WHERE id = (SELECT workspace_id FROM agent_sessions WHERE id = $1::uuid)
   AND deleted_at IS NULL
@@ -1373,12 +1385,13 @@ func (q *Queries) GetWorkspaceByAgentSession(ctx context.Context, agentSessionID
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
 
 const getWorkspaceByRepo = `-- name: GetWorkspaceByRepo :one
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 FROM workspaces
 WHERE id = $1
   AND repository_id = $2
@@ -1448,12 +1461,13 @@ func (q *Queries) GetWorkspaceByRepo(ctx context.Context, arg GetWorkspaceByRepo
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
 
 const getWorkspaceForUserRepo = `-- name: GetWorkspaceForUserRepo :one
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 FROM workspaces
 WHERE id = $1
   AND repository_id = $2
@@ -1523,12 +1537,13 @@ func (q *Queries) GetWorkspaceForUserRepo(ctx context.Context, arg GetWorkspaceF
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
 
 const getWorkspaceIncludingDeleted = `-- name: GetWorkspaceIncludingDeleted :one
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 FROM workspaces
 WHERE id = $1
 `
@@ -1589,6 +1604,7 @@ func (q *Queries) GetWorkspaceIncludingDeleted(ctx context.Context, id string) (
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -1853,7 +1869,7 @@ func (q *Queries) ListIdleWorkspaceSessions(ctx context.Context) ([]WorkspaceSes
 }
 
 const listIdleWorkspaces = `-- name: ListIdleWorkspaces :many
-SELECT w.id, w.repository_id, w.user_id, w.name, w.is_fork, w.parent_workspace_id, w.target_bookmark, w.source_snapshot_id, w.kind, w.environment_source, w.environment_revision, w.environment_closure_hash, w.agent_session_id, w.head_push_token_id, w.environment_image, w.desktop_session_id, w.desktop_session_token_hash, w.desktop_session_expires_at, w.vm_id, w.provisioning_generation, w.status, w.failure_code, w.failure_message, w.provisioning_stage, w.last_activity_at, w.idle_timeout_secs, w.suspended_at, w.started_at, w.resumed_at, w.head_change_id, w.head_commit_id, w.ahead, w.behind, w.last_accessed_at, w.deleted_at, w.created_at, w.updated_at, w.rebuild_required_at, w.client_lease_secs, w.client_lease_expires_at, w.source_commit, w.vcpu_count, w.memory_mb, w.disk_mb, w.forked_from_item, w.forked_from_base, w.capture_pending, w.moved_off, w.branch_archived_at, w.cleanup_pending_head, w.cleanup_pending_capture_id, w.disk_reclaimed_at
+SELECT w.id, w.repository_id, w.user_id, w.name, w.is_fork, w.parent_workspace_id, w.target_bookmark, w.source_snapshot_id, w.kind, w.environment_source, w.environment_revision, w.environment_closure_hash, w.agent_session_id, w.head_push_token_id, w.environment_image, w.desktop_session_id, w.desktop_session_token_hash, w.desktop_session_expires_at, w.vm_id, w.provisioning_generation, w.status, w.failure_code, w.failure_message, w.provisioning_stage, w.last_activity_at, w.idle_timeout_secs, w.suspended_at, w.started_at, w.resumed_at, w.head_change_id, w.head_commit_id, w.ahead, w.behind, w.last_accessed_at, w.deleted_at, w.created_at, w.updated_at, w.rebuild_required_at, w.client_lease_secs, w.client_lease_expires_at, w.source_commit, w.vcpu_count, w.memory_mb, w.disk_mb, w.forked_from_item, w.forked_from_base, w.capture_pending, w.moved_off, w.branch_archived_at, w.cleanup_pending_head, w.cleanup_pending_capture_id, w.disk_reclaimed_at, w.agent_box_dirty_vm_id
 FROM workspaces w
 WHERE w.status = 'running'
   AND w.deleted_at IS NULL
@@ -1935,6 +1951,7 @@ func (q *Queries) ListIdleWorkspaces(ctx context.Context) ([]Workspace, error) {
 			&i.CleanupPendingHead,
 			&i.CleanupPendingCaptureID,
 			&i.DiskReclaimedAt,
+			&i.AgentBoxDirtyVmID,
 		); err != nil {
 			return nil, err
 		}
@@ -1947,7 +1964,7 @@ func (q *Queries) ListIdleWorkspaces(ctx context.Context) ([]Workspace, error) {
 }
 
 const listLapsedLeaseWorkspaces = `-- name: ListLapsedLeaseWorkspaces :many
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 FROM workspaces
 WHERE client_lease_expires_at < NOW()
   AND deleted_at IS NULL
@@ -2019,6 +2036,7 @@ func (q *Queries) ListLapsedLeaseWorkspaces(ctx context.Context, maxRows int32) 
 			&i.CleanupPendingHead,
 			&i.CleanupPendingCaptureID,
 			&i.DiskReclaimedAt,
+			&i.AgentBoxDirtyVmID,
 		); err != nil {
 			return nil, err
 		}
@@ -2073,7 +2091,7 @@ func (q *Queries) ListPendingSessionsForWorkspace(ctx context.Context, workspace
 }
 
 const listRunningWorkspaces = `-- name: ListRunningWorkspaces :many
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at FROM workspaces
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id FROM workspaces
 WHERE status = 'running' AND deleted_at IS NULL
 ORDER BY user_id, id
 `
@@ -2141,6 +2159,7 @@ func (q *Queries) ListRunningWorkspaces(ctx context.Context) ([]Workspace, error
 			&i.CleanupPendingHead,
 			&i.CleanupPendingCaptureID,
 			&i.DiskReclaimedAt,
+			&i.AgentBoxDirtyVmID,
 		); err != nil {
 			return nil, err
 		}
@@ -2153,7 +2172,7 @@ func (q *Queries) ListRunningWorkspaces(ctx context.Context) ([]Workspace, error
 }
 
 const listRunningWorkspacesForUserRepoBookmark = `-- name: ListRunningWorkspacesForUserRepoBookmark :many
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 FROM workspaces
 WHERE repository_id = $1
   AND user_id = $2
@@ -2238,6 +2257,7 @@ func (q *Queries) ListRunningWorkspacesForUserRepoBookmark(ctx context.Context, 
 			&i.CleanupPendingHead,
 			&i.CleanupPendingCaptureID,
 			&i.DiskReclaimedAt,
+			&i.AgentBoxDirtyVmID,
 		); err != nil {
 			return nil, err
 		}
@@ -2250,7 +2270,7 @@ func (q *Queries) ListRunningWorkspacesForUserRepoBookmark(ctx context.Context, 
 }
 
 const listStalePendingWorkspaces = `-- name: ListStalePendingWorkspaces :many
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 FROM workspaces
 WHERE status IN ('pending', 'starting')
   AND vm_id = ''
@@ -2322,6 +2342,7 @@ func (q *Queries) ListStalePendingWorkspaces(ctx context.Context, staleAfterSecs
 			&i.CleanupPendingHead,
 			&i.CleanupPendingCaptureID,
 			&i.DiskReclaimedAt,
+			&i.AgentBoxDirtyVmID,
 		); err != nil {
 			return nil, err
 		}
@@ -2334,7 +2355,7 @@ func (q *Queries) ListStalePendingWorkspaces(ctx context.Context, staleAfterSecs
 }
 
 const listStaleStartingWorkspacesWithVM = `-- name: ListStaleStartingWorkspacesWithVM :many
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 FROM workspaces
 WHERE status = 'starting'
   AND vm_id <> ''
@@ -2408,6 +2429,7 @@ func (q *Queries) ListStaleStartingWorkspacesWithVM(ctx context.Context, staleAf
 			&i.CleanupPendingHead,
 			&i.CleanupPendingCaptureID,
 			&i.DiskReclaimedAt,
+			&i.AgentBoxDirtyVmID,
 		); err != nil {
 			return nil, err
 		}
@@ -2666,7 +2688,7 @@ func (q *Queries) ListWorkspaceSnapshotsByRepo(ctx context.Context, arg ListWork
 }
 
 const listWorkspacesByRepo = `-- name: ListWorkspacesByRepo :many
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 FROM workspaces
 WHERE repository_id = $1
   AND user_id = $2
@@ -2749,6 +2771,7 @@ func (q *Queries) ListWorkspacesByRepo(ctx context.Context, arg ListWorkspacesBy
 			&i.CleanupPendingHead,
 			&i.CleanupPendingCaptureID,
 			&i.DiskReclaimedAt,
+			&i.AgentBoxDirtyVmID,
 		); err != nil {
 			return nil, err
 		}
@@ -2820,7 +2843,7 @@ WHERE id = $1
   AND vm_id = ''
   AND status IN ('pending', 'starting', 'failed')
   AND deleted_at IS NULL
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 type RegisterWorkspaceVMParams struct {
@@ -2891,6 +2914,7 @@ func (q *Queries) RegisterWorkspaceVM(ctx context.Context, arg RegisterWorkspace
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -2899,7 +2923,7 @@ const renewWorkspaceClientLease = `-- name: RenewWorkspaceClientLease :one
 UPDATE workspaces
 SET client_lease_expires_at = NOW() + make_interval(secs => client_lease_secs)
 WHERE id = $1 AND deleted_at IS NULL AND client_lease_secs IS NOT NULL
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 // #2457: extends a leased workspace by its own lease length.
@@ -2959,6 +2983,7 @@ func (q *Queries) RenewWorkspaceClientLease(ctx context.Context, id string) (Wor
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -2971,7 +2996,7 @@ SET vm_id = '',
     updated_at = NOW()
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 // Reset a workspace whose VM is gone so a replacement can be created and
@@ -3039,6 +3064,7 @@ func (q *Queries) ResetWorkspaceForReprovision(ctx context.Context, id string) (
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -3051,7 +3077,7 @@ SET status = 'running',
 WHERE id = $1
   AND status <> 'running'
   AND deleted_at IS NULL
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 // CAS into running from any non-running, non-deleted state. Exactly one of N
@@ -3113,6 +3139,7 @@ func (q *Queries) ResumeWorkspaceToRunning(ctx context.Context, id string) (Work
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -3122,7 +3149,7 @@ UPDATE workspaces
 SET client_lease_secs = $1::integer,
     client_lease_expires_at = NOW() + make_interval(secs => $1::integer)
 WHERE id = $2 AND deleted_at IS NULL
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 type SetWorkspaceClientLeaseParams struct {
@@ -3188,6 +3215,7 @@ func (q *Queries) SetWorkspaceClientLease(ctx context.Context, arg SetWorkspaceC
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -3269,7 +3297,7 @@ const setWorkspaceIdleTimeout = `-- name: SetWorkspaceIdleTimeout :one
 UPDATE workspaces
 SET idle_timeout_secs = $1, updated_at = NOW()
 WHERE id = $2 AND deleted_at IS NULL
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 type SetWorkspaceIdleTimeoutParams struct {
@@ -3333,6 +3361,7 @@ func (q *Queries) SetWorkspaceIdleTimeout(ctx context.Context, arg SetWorkspaceI
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -3343,7 +3372,7 @@ SET deleted_at = COALESCE(deleted_at, NOW()),
     status = 'stopped',
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 // Ticket 0105: tombstones a workspace. Sets deleted_at = NOW() and forces
@@ -3408,6 +3437,7 @@ func (q *Queries) SoftDeleteWorkspace(ctx context.Context, id string) (Workspace
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -3416,13 +3446,13 @@ const stopWorkspaceRetainingRow = `-- name: StopWorkspaceRetainingRow :one
 WITH stopped AS (
     UPDATE workspaces w SET status = 'stopped', updated_at = now()
     WHERE w.id = $1 AND w.deleted_at IS NULL
-    RETURNING w.id, w.repository_id, w.user_id, w.name, w.is_fork, w.parent_workspace_id, w.target_bookmark, w.source_snapshot_id, w.kind, w.environment_source, w.environment_revision, w.environment_closure_hash, w.agent_session_id, w.head_push_token_id, w.environment_image, w.desktop_session_id, w.desktop_session_token_hash, w.desktop_session_expires_at, w.vm_id, w.provisioning_generation, w.status, w.failure_code, w.failure_message, w.provisioning_stage, w.last_activity_at, w.idle_timeout_secs, w.suspended_at, w.started_at, w.resumed_at, w.head_change_id, w.head_commit_id, w.ahead, w.behind, w.last_accessed_at, w.deleted_at, w.created_at, w.updated_at, w.rebuild_required_at, w.client_lease_secs, w.client_lease_expires_at, w.source_commit, w.vcpu_count, w.memory_mb, w.disk_mb, w.forked_from_item, w.forked_from_base, w.capture_pending, w.moved_off, w.branch_archived_at, w.cleanup_pending_head, w.cleanup_pending_capture_id, w.disk_reclaimed_at
+    RETURNING w.id, w.repository_id, w.user_id, w.name, w.is_fork, w.parent_workspace_id, w.target_bookmark, w.source_snapshot_id, w.kind, w.environment_source, w.environment_revision, w.environment_closure_hash, w.agent_session_id, w.head_push_token_id, w.environment_image, w.desktop_session_id, w.desktop_session_token_hash, w.desktop_session_expires_at, w.vm_id, w.provisioning_generation, w.status, w.failure_code, w.failure_message, w.provisioning_stage, w.last_activity_at, w.idle_timeout_secs, w.suspended_at, w.started_at, w.resumed_at, w.head_change_id, w.head_commit_id, w.ahead, w.behind, w.last_accessed_at, w.deleted_at, w.created_at, w.updated_at, w.rebuild_required_at, w.client_lease_secs, w.client_lease_expires_at, w.source_commit, w.vcpu_count, w.memory_mb, w.disk_mb, w.forked_from_item, w.forked_from_base, w.capture_pending, w.moved_off, w.branch_archived_at, w.cleanup_pending_head, w.cleanup_pending_capture_id, w.disk_reclaimed_at, w.agent_box_dirty_vm_id
 ), stopped_sessions AS (
     UPDATE workspace_sessions s SET status = 'stopped', updated_at = now()
     WHERE s.workspace_id IN (SELECT stopped.id FROM stopped)
       AND s.status IN ('pending', 'starting', 'running')
 )
-SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at FROM stopped
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id FROM stopped
 `
 
 type StopWorkspaceRetainingRowRow struct {
@@ -3478,6 +3508,7 @@ type StopWorkspaceRetainingRowRow struct {
 	CleanupPendingHead      string             `json:"cleanup_pending_head"`
 	CleanupPendingCaptureID string             `json:"cleanup_pending_capture_id"`
 	DiskReclaimedAt         pgtype.Timestamptz `json:"disk_reclaimed_at"`
+	AgentBoxDirtyVmID       string             `json:"agent_box_dirty_vm_id"`
 }
 
 // Stop the retained workspace and its live sessions atomically. The owner has
@@ -3538,6 +3569,7 @@ func (q *Queries) StopWorkspaceRetainingRow(ctx context.Context, id string) (Sto
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -3550,7 +3582,7 @@ SET status = 'suspended',
 WHERE id = $1
   AND status = 'running'
   AND deleted_at IS NULL
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 // CAS on the running->suspended transition. Only the caller that actually flips
@@ -3614,6 +3646,7 @@ func (q *Queries) SuspendRunningWorkspace(ctx context.Context, id string) (Works
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -3632,7 +3665,7 @@ WHERE w.id = $1
       WHERE s.workspace_id = w.id
         AND s.status IN ('pending', 'starting', 'running')
   )
-RETURNING w.id, w.repository_id, w.user_id, w.name, w.is_fork, w.parent_workspace_id, w.target_bookmark, w.source_snapshot_id, w.kind, w.environment_source, w.environment_revision, w.environment_closure_hash, w.agent_session_id, w.head_push_token_id, w.environment_image, w.desktop_session_id, w.desktop_session_token_hash, w.desktop_session_expires_at, w.vm_id, w.provisioning_generation, w.status, w.failure_code, w.failure_message, w.provisioning_stage, w.last_activity_at, w.idle_timeout_secs, w.suspended_at, w.started_at, w.resumed_at, w.head_change_id, w.head_commit_id, w.ahead, w.behind, w.last_accessed_at, w.deleted_at, w.created_at, w.updated_at, w.rebuild_required_at, w.client_lease_secs, w.client_lease_expires_at, w.source_commit, w.vcpu_count, w.memory_mb, w.disk_mb, w.forked_from_item, w.forked_from_base, w.capture_pending, w.moved_off, w.branch_archived_at, w.cleanup_pending_head, w.cleanup_pending_capture_id, w.disk_reclaimed_at
+RETURNING w.id, w.repository_id, w.user_id, w.name, w.is_fork, w.parent_workspace_id, w.target_bookmark, w.source_snapshot_id, w.kind, w.environment_source, w.environment_revision, w.environment_closure_hash, w.agent_session_id, w.head_push_token_id, w.environment_image, w.desktop_session_id, w.desktop_session_token_hash, w.desktop_session_expires_at, w.vm_id, w.provisioning_generation, w.status, w.failure_code, w.failure_message, w.provisioning_stage, w.last_activity_at, w.idle_timeout_secs, w.suspended_at, w.started_at, w.resumed_at, w.head_change_id, w.head_commit_id, w.ahead, w.behind, w.last_accessed_at, w.deleted_at, w.created_at, w.updated_at, w.rebuild_required_at, w.client_lease_secs, w.client_lease_expires_at, w.source_commit, w.vcpu_count, w.memory_mb, w.disk_mb, w.forked_from_item, w.forked_from_base, w.capture_pending, w.moved_off, w.branch_archived_at, w.cleanup_pending_head, w.cleanup_pending_capture_id, w.disk_reclaimed_at, w.agent_box_dirty_vm_id
 `
 
 // CAS from running to suspended while the workspace has no active session.
@@ -3695,6 +3728,7 @@ func (q *Queries) SuspendRunningWorkspaceIfSessionless(ctx context.Context, id s
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -3758,7 +3792,7 @@ SET vm_id = $2,
     updated_at = NOW()
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 type UpdateWorkspaceExecutionInfoParams struct {
@@ -3823,6 +3857,7 @@ func (q *Queries) UpdateWorkspaceExecutionInfo(ctx context.Context, arg UpdateWo
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -3837,7 +3872,7 @@ SET head_change_id = $1::text,
     updated_at = NOW()
 WHERE id = $5
   AND deleted_at IS NULL
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 type UpdateWorkspaceHeadParams struct {
@@ -3910,6 +3945,7 @@ func (q *Queries) UpdateWorkspaceHead(ctx context.Context, arg UpdateWorkspaceHe
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -3920,7 +3956,7 @@ SET provisioning_stage = $1::text,
     updated_at = NOW()
 WHERE id = $2
   AND deleted_at IS NULL
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 type UpdateWorkspaceProvisioningStageParams struct {
@@ -3984,6 +4020,7 @@ func (q *Queries) UpdateWorkspaceProvisioningStage(ctx context.Context, arg Upda
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -4075,7 +4112,7 @@ SET status = $2::text,
     updated_at = NOW()
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 type UpdateWorkspaceStatusParams struct {
@@ -4139,6 +4176,7 @@ func (q *Queries) UpdateWorkspaceStatus(ctx context.Context, arg UpdateWorkspace
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }
@@ -4149,7 +4187,7 @@ SET target_bookmark = $1::text,
     updated_at = NOW()
 WHERE id = $2
   AND deleted_at IS NULL
-RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at, agent_box_dirty_vm_id
 `
 
 type UpdateWorkspaceTargetBookmarkParams struct {
@@ -4213,6 +4251,7 @@ func (q *Queries) UpdateWorkspaceTargetBookmark(ctx context.Context, arg UpdateW
 		&i.CleanupPendingHead,
 		&i.CleanupPendingCaptureID,
 		&i.DiskReclaimedAt,
+		&i.AgentBoxDirtyVmID,
 	)
 	return i, err
 }

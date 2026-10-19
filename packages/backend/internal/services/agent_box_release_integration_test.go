@@ -320,6 +320,9 @@ func newAgentBoxReleaseWith(t *testing.T, status string, reaper bool) *agentBoxR
 	f.agent = NewAgentServiceWithPool(q, pool, WithAgentDispatchQuerier(q))
 	f.agent.SetWorkspaceBackend(f.boxes)
 	f.session = f.attachSession(t, repo)
+	// The box is the session's own (plue#869).
+	_, err = pool.Exec(ctx, `UPDATE workspaces SET agent_session_id=$2 WHERE id=$1`, f.workspace, f.session)
+	require.NoError(t, err)
 
 	// The run's own credentials: its callback token and its repository API token.
 	definition, err := q.UpsertAgentWorkflowDefinition(ctx, repo)
@@ -543,12 +546,12 @@ func TestReleasingAFailedFlowHostMachineRevokesItsHeadToken(t *testing.T) {
 	require.False(t, f.box(t).HeadPushTokenID.Valid)
 }
 
-// TWO CONSECUTIVE CHANGE REQUESTS ON ONE REPO BOTH GET A WORKING BOX (PM
+// TWO CONSECUTIVE CHANGE REQUESTS ON ONE SESSION BOTH GET A WORKING BOX (PM
 // d-qhgqyv). A person cannot start a box the payer account owns, so after the
-// first turn releases its box, a second message on the same session and a
-// new session on the same repository must each get a running box through the
-// session path, with fresh credentials, and their turns must be admitted to
-// the coding host. Nothing may be refused.
+// first turn releases its box, a second message on the same session must get
+// its running box through the session path, with fresh credentials, and its
+// turn must be admitted to the coding host. Nothing may be refused. A new
+// session gets a box of its own (plue#869, TestAgentBoxTwoUsersSequential).
 func TestTwoConsecutiveChangeRequestsOnOneRepoBothGetAWorkingBox(t *testing.T) {
 	f := newAgentBoxRelease(t, "running")
 	box := f.box(t)
@@ -573,7 +576,7 @@ func TestTwoConsecutiveChangeRequestsOnOneRepoBothGetAWorkingBox(t *testing.T) {
 		joined, err := f.boxes.CreateAgentWorkspace(ctx, CreateAgentWorkspaceInput{RepositoryID: box.RepositoryID, UserID: f.person,
 			SessionID: sessionID, RepoOwner: slug.OwnerSlug, RepoName: slug.RepoName})
 		require.NoError(t, err, "the dispatch gets a working box, never a refusal")
-		require.Equal(t, box.ID, joined.WorkspaceID, "the branch's own box serves the turn")
+		require.Equal(t, box.ID, joined.WorkspaceID, "the session's own box serves the turn")
 		require.Zero(t, f.hosted.starts, "the quiesced box is still running: no wake, no refusal")
 		current := f.box(t)
 		require.Equal(t, "running", current.Status)
@@ -593,12 +596,5 @@ func TestTwoConsecutiveChangeRequestsOnOneRepoBothGetAWorkingBox(t *testing.T) {
 		f.agent.flowDispatcher = nil
 	}
 
-	t.Run("a second message on the same session", func(t *testing.T) {
-		request(t, f.session)
-	})
-	t.Run("a new session on the same repository", func(t *testing.T) {
-		session, err := f.agent.CreateSession(f.ctx, CreateAgentSessionInput{RepositoryID: box.RepositoryID, UserID: f.person, Title: "second"})
-		require.NoError(t, err)
-		request(t, session.ID)
-	})
+	request(t, f.session)
 }

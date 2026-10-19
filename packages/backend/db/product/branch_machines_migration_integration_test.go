@@ -80,10 +80,13 @@ func TestBranchMachineMigration(t *testing.T) {
 			require.Equal(t, 5, count)
 			require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM workspace_shares WHERE owner_user_id=$1`, owner).Scan(&count))
 			require.Equal(t, 5, count)
-			var workspace string
+			// 0108 bound the session to the shared machine; the per-session box
+			// migration (plue#869) unbinds it, so its next turn gets its own box.
+			var workspace *string
 			require.NoError(t, pool.QueryRow(ctx, `SELECT workspace_id FROM agent_sessions WHERE id='11111111-1111-4111-8111-111111111111'`).Scan(&workspace))
-			require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM workspaces WHERE id=$1 AND agent_session_id IS NULL`, workspace).Scan(&count))
-			require.Equal(t, 1, count)
+			require.Nil(t, workspace)
+			require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM workspaces WHERE agent_session_id IS NOT NULL`).Scan(&count))
+			require.Zero(t, count)
 			for i := 0; i < 101; i++ {
 				_, err = pool.Exec(ctx, `INSERT INTO workspaces(repository_id,user_id,name,target_bookmark,kind,status) VALUES($1,$2,$3,$3,'container','starting')`, repo, owner, fmt.Sprintf("scratch/system/%d", i))
 				require.NoError(t, err)
