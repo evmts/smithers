@@ -723,7 +723,6 @@ export const make: Effect.Effect<Service, TimeTravelError, Requirements | Scope.
  * ```ts
  * import { Engine, TimeTravel } from "@smthrs/flows"
  * import * as Effect from "effect/Effect"
-import * as Exit from "effect/Exit"
  *
  * const program = Effect.gen(function*() {
  *   const timeTravel = yield* TimeTravel

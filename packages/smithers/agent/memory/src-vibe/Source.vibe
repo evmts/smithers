@@ -287,6 +287,14 @@ export const declared = (
  */
 type RecallCost = (row: Recall.Result) => number
 
+/**
+ * Selects whole recalled rows for a host preflight. The existing recall service
+ * still enforces its public byte budget and namespace policy. The caller's
+ * tokenizer (or conservative UTF-8 bound) supplies a separate context budget.
+ * Choices are indexes into that frozen recall result, in model-ranked order.
+ * @category constructors
+ * @since 1.0.0
+ */
 export const selectRecall = <E>(
   input: Recall.Input,
   choose: (rows: Recall.Output) => Effect.Effect<ReadonlyArray<number>, E>,
