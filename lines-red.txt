@@ -1,0 +1,1 @@
+bash packages/backend/scripts/with-test-postgres.sh go -C packages/backend test ./internal/services -run "TestABoxsPoolCredentialIsRevokedOnReleaseRetireAndDelete" -count=1 -v 2>&1 | grep -E "^\s*--- |^(ok|FAIL)|Error:|Messages:|pool_token_integration_test.go:[0-9]+: $"
