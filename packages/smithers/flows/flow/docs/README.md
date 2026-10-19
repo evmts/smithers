@@ -40,7 +40,7 @@ restarted. Skip it when a plain `Effect` retry loop covers the whole problem.
 npm install @smthrs/flow@next effect
 ```
 
-Node.js 26.4.0 or later. [Installation](./installation.md) covers the import
+Node.js 22.19.0 or later. [Installation](./installation.md) covers the import
 forms, and what each companion package supplies.
 
 ## Declare a flow and run it

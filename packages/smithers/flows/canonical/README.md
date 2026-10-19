@@ -20,7 +20,7 @@ RFC 8785 canonical JSON for TypeScript, as a plain function and as an Effect `Sc
 npm install @smthrs/canonical@next effect
 ```
 
-`effect` is a peer dependency at exactly `4.0.5`. Node.js 26.4.0 or later. Ships as ESM and CommonJS with TypeScript declarations.
+`effect` is a peer dependency at exactly `4.0.5`. Node.js 22.19.0 or later. Ships as ESM and CommonJS with TypeScript declarations.
 
 ## Use it
 

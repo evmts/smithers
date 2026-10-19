@@ -13,7 +13,7 @@ npm install @smthrs/journal@next effect
 
 The `next` tag carries the 1.0 release candidates.
 
-The package requires Node.js 26.4.0 or later and ships as both ESM and
+The package requires Node.js 22.19.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. Its only runtime dependencies are
 [`effect`](https://effect.website) and [`@smthrs/database`](/api/database).
 Composing a journal layer imports from both of them by name, so install them as

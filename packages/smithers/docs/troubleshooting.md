@@ -255,14 +255,14 @@ terminal, or unset `CI`, if you want the prompts.
 
 ## The installation is wrong
 
-### `v<version> is unsupported; use Node 26.4+`
+### `v<version> is unsupported; use Node 22.19+`
 
 **Symptom.** `smthrs doctor` reports a `fail` on the `node` check, and exits 1.
 
 **Cause.** The running Node does not satisfy `Doctor.supportedNodeRange`.
 This includes Node 22, Node 24, and Node 26.0 through 26.3.
 
-**Fix.** Install Node 26.4.0 or later. The CLI's shebang pins Node for every
+**Fix.** Install Node 22.19.0 or later. The CLI's shebang pins Node for every
 installation path, so this is about the Node on your `PATH`, not about the
 runner you typed.
 
