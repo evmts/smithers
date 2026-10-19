@@ -40,13 +40,13 @@ func TestOAuthStateVerifierFromRequest_Matrix(t *testing.T) {
 
 	t.Run("missing_cookie", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		assert.Equal(t, "", oauthStateVerifierFromRequest(req))
+		assert.Equal(t, "", oauthStateVerifierFromRequest(req, true))
 	})
 
 	t.Run("trimmed_cookie_value", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.AddCookie(&http.Cookie{Name: oauthStateCookieName, Value: "  verifier  "})
-		assert.Equal(t, "verifier", oauthStateVerifierFromRequest(req))
+		assert.Equal(t, "verifier", oauthStateVerifierFromRequest(req, true))
 	})
 }
 
@@ -77,7 +77,7 @@ func TestAuthCookieHelpers(t *testing.T) {
 		cookies := rec.Result().Cookies()
 		require.Len(t, cookies, 1)
 		cookie := cookies[0]
-		assert.Equal(t, oauthStateCookieName, cookie.Name)
+		assert.Equal(t, isolatedAuthCookieName(oauthStateCookieName, false), cookie.Name)
 		assert.Equal(t, "verifier", cookie.Value)
 		assert.True(t, cookie.HttpOnly)
 		assert.False(t, cookie.Secure)

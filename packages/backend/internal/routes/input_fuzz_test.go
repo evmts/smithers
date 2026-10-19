@@ -49,7 +49,7 @@ func FuzzOAuthStateVerifierFromRequest(f *testing.F) {
 			Value: cookieValue,
 		})
 		// Must never panic.
-		_ = oauthStateVerifierFromRequest(req)
+		_ = oauthStateVerifierFromRequest(req, true)
 	})
 }
 

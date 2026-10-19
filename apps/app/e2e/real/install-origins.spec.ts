@@ -363,7 +363,7 @@ test("C-INS-01 the install works at loopback and at each origin the owner sets, 
       const sent = (lines: readonly string[], name: string) => cookieAttributes(lines, name)?.filter(attribute => ["httponly", "secure", "domain"].includes(attribute) || attribute.startsWith("samesite")).sort()
       expect(sent(visitor.callback.cookies, https(origin) ? install.sessionCookie : "smithers_local_session"), "session Set-Cookie").toEqual(expected(true))
       expect(sent(visitor.callback.cookies, https(origin) ? "__Host-smithers_csrf" : "smithers_local_csrf"), "CSRF Set-Cookie").toEqual(expected(false))
-      expect(sent(visitor.start.cookies, "smithers_oauth_state"), "OAuth state Set-Cookie").toEqual(expected(true))
+      expect(sent(visitor.start.cookies, https(origin) ? "__Host-smithers_oauth_state" : "smithers_local_oauth_state"), "OAuth state Set-Cookie").toEqual(expected(true))
       const stored = Object.fromEntries((await visitor.context.cookies(origin)).map(cookie => [cookie.name, { domain: cookie.domain, httpOnly: cookie.httpOnly, secure: cookie.secure, sameSite: cookie.sameSite }]))
       const host = new URL(origin).hostname
       expect(stored[https(origin) ? install.sessionCookie : "smithers_local_session"]).toEqual({ domain: host, httpOnly: true, secure: https(origin), sameSite: "Lax" })

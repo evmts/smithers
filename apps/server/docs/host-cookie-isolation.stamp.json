@@ -5,11 +5,11 @@
     "path": "apps/server/docs/host-cookie-isolation.md",
     "digest": "61958044604f3681afb566a8935c471ca422bfb7c340ad4e0f56798a1282f52e"
   },
-  "closure": "a3ecaae4e01a3166fe842ece360ba800100d0c1e067f752f0276f49ac301304b",
+  "closure": "7b9b70e371081f1a8d64c49c4ee0bbb0d805d0b562004d2ed3a84fe675a21463",
   "inputs": [
     {
       "path": "apps/server/scripts/cutover/host-cookie-workerd.mjs",
-      "digest": "443d7e5b52bd871039fe93b27f0fc80908701e7b257f4cc340a2e064a35cbee3"
+      "digest": "22f72a47bf43c146b24585ddc15edab75c36f76b0faac9fe87d017ed4476aa4d"
     },
     {
       "path": "packages/backend/internal/config/browser_cookies.go",
@@ -25,7 +25,7 @@
     },
     {
       "path": "packages/backend/internal/routes/auth.go",
-      "digest": "62dc13b1dddebd73a91151740d628045666a9dbdf00779248416117472ce54cb"
+      "digest": "73dcae5e693a1e8b72de166cd07779d7a33253db2dde9ec4dc31149c0da1e080"
     },
     {
       "path": "packages/rpc/src/ApplicationAuth.ts",
