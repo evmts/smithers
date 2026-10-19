@@ -328,7 +328,10 @@ const CANARY_README = [
   "# Read me from the tree",
   "",
   "Open the repository in your browser.",
-  "Explore its files."
+  "Explore its files.",
+  "",
+  "> [!TIP]",
+  "> Ask your agent to help you figure out how Smithers can help you and your project, based on everything it knows about you."
 ].join("\n")
 
 /*
@@ -388,6 +391,21 @@ for (const member of [false, true]) for (const width of [1280, 390]) for (const 
       return { mono: /mono/i.test(style.fontFamily), overflowX: style.overflowX, whiteSpace: style.whiteSpace, text: node.textContent,
         rows: Math.round(code.getBoundingClientRect().height / parseFloat(getComputedStyle(code).lineHeight)), scrolls: node.scrollWidth > node.clientWidth }
     })).toEqual({ mono: true, overflowX: "auto", whiteSpace: "pre", text: CANARY_BANNER.join("\n"), rows: CANARY_BANNER.length, scrolls: width === 390 })
+    // The README's `> [!TIP]` block is the mock's Tip alert (smithers-site-home): a success-colored rule and label, never quote markup as text.
+    const tip = readme.locator(".sui-md-alert")
+    await expect(tip).toHaveCount(1)
+    await expect(tip).toHaveAttribute("data-kind", "tip")
+    await expect(tip.locator(".sui-md-alert-label")).toHaveText("Tip")
+    await expect(tip.locator("p")).toHaveText("Ask your agent to help you figure out how Smithers can help you and your project, based on everything it knows about you.")
+    expect(await readme.textContent()).not.toContain("[!TIP]")
+    expect(await readme.textContent()).not.toContain(">")
+    expect(await tip.evaluate(node => {
+      const probe = document.createElement("span"); node.append(probe); probe.style.color = "var(--success)"
+      const success = getComputedStyle(probe).color; probe.remove()
+      const style = getComputedStyle(node), label = node.querySelector(".sui-md-alert-label")!
+      return { rule: [style.borderLeftStyle, style.borderLeftWidth, style.borderLeftColor === success], label: getComputedStyle(label).color === success,
+        icon: label.querySelector("svg")?.getAttribute("aria-hidden") }
+    })).toEqual({ rule: ["solid", "1px", true], label: true, icon: "true" })
     expect((await home.boundingBox())!.y).toBeLessThan((await files.boundingBox())!.y)
     expect((await files.boundingBox())!.y).toBeLessThan((await readme.boundingBox())!.y)
     expect(readmeReads.map(url => new URL(url).search)).toEqual(["?ref=main"])
