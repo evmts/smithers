@@ -1,0 +1,451 @@
+/**
+ * A cross-process lease on one lock file.
+ *
+ * The lock is a file created with `wx` (exclusive create) that holds a unique
+ * owner token. The holder refreshes its mtime every `heartbeatEvery`; a lock
+ * whose mtime is older than `staleAfterMs` belongs to a crashed or hard-killed
+ * owner and is reclaimed. Reclaimers of one lock generation race for a `wx`
+ * claim file first, so a stale generation is moved away at most once and a
+ * fresh lock is never displaced. Acquisition is bounded by `acquireWithin`,
+ * so a waiter fails with a typed error instead of waiting forever on a lock
+ * nothing will release.
+ *
+ * | Setting          | Default     |
+ * | ---------------- | ----------- |
+ * | `heartbeatEvery` | 10 seconds  |
+ * | `staleAfterMs`   | 60 000 ms   |
+ * | `acquireWithin`  | 2 minutes   |
+ * | `retryEvery`     | 25 millis   |
+ *
+ * The fence is bounded, not absolute: a holder stalled past `staleAfterMs`
+ * (a suspended laptop, a stopped debugger) is reaped while it still runs. Its
+ * heartbeat then logs `<label> was reclaimed while its holder was still
+ * running`, and the protected effect continues unfenced.
+ *
+ * A directory at the lock path, left by a release that used an exclusive
+ * `makeDirectory` as its lock, is treated as a lock with no readable owner:
+ * it is reclaimed once its mtime is past `staleAfterMs`, and waited on
+ * before that.
+ *
+ * The host needs exclusive `wx` file creation, `readFileString`, `stat` with
+ * an mtime, `utimes`, `rename`, and `remove`. The claim file and the tombstone
+ * a reclaim renames the stale lock to are siblings of the lock:
+ * `<lockPath>.reclaim-<token>` and `<lockPath>.stale-<token>`.
+ *
+ * @since 1.0.0-rc.1
+ */
+
+import * as Clock from "effect/Clock"
+import * as Deferred from "effect/Deferred"
+import * as Duration from "effect/Duration"
+import * as Effect from "effect/Effect"
+import type * as FileSystem from "effect/FileSystem"
+import * as Option from "effect/Option"
+import * as PlatformError from "effect/PlatformError"
+import * as Random from "effect/Random"
+
+/**
+ * Tuning for one lease.
+ *
+ * @category models
+ * @since 1.0.0-rc.1
+ */
+export interface Options {
+  /** Names the lock in the reclaimed-holder warning. Defaults to `"File lease"`. */
+  readonly label?: string | undefined
+  /** Extra fields logged with the reclaimed-holder warning. */
+  readonly annotations?: Readonly<Record<string, unknown>> | undefined
+  /** How often the holder refreshes the lock's mtime. Defaults to 10 seconds. */
+  readonly heartbeatEvery?: Duration.Input | undefined
+  /**
+   * Age past which a lock or claim is stale. Defaults to 60 000 ms. Must be a
+   * finite positive number longer than `heartbeatEvery`; anything else fails
+   * the lease through `failure` before the lock is touched.
+   */
+  readonly staleAfterMs?: number | undefined
+  /** How long acquisition may wait. Defaults to 2 minutes. */
+  readonly acquireWithin?: Duration.Input | undefined
+  /** How long a waiter sleeps between attempts. Defaults to 25 millis. */
+  readonly retryEvery?: Duration.Input | undefined
+}
+
+/**
+ * {@link Options} for {@link hold}, which leaves the deadline to its caller.
+ *
+ * @category models
+ * @since 1.0.0-rc.1
+ */
+export interface HoldOptions extends Omit<Options, "acquireWithin"> {
+  /** Runs once, the moment the lease is held and before `effect` starts. */
+  readonly onAcquired?: Effect.Effect<void> | undefined
+  /**
+   * Runs before every create, heartbeat, rename, and remove of the lock, its
+   * claim, or its tombstone. A failure refuses that step through `failure`,
+   * so a caller can re-check that the lock directory was not replaced (for
+   * example by a symlink) after it was created.
+   */
+  readonly guard?: Effect.Effect<void, unknown> | undefined
+}
+
+/**
+ * The default acquisition deadline.
+ *
+ * @category constants
+ * @since 1.0.0-rc.1
+ */
+export const defaultAcquireWithin: Duration.Input = "2 minutes"
+
+/**
+ * The default stale bound, in milliseconds.
+ *
+ * @category constants
+ * @since 1.0.0-rc.1
+ */
+export const defaultStaleAfterMs = 60_000
+
+/** A host-refusal mapper: plain code, kept plain by its named type (D-4). */
+type Failure<E2> = (cause: unknown) => E2
+
+const isReason = (cause: unknown, tag: PlatformError.SystemErrorTag): boolean =>
+  cause instanceof PlatformError.PlatformError && cause.reason._tag === tag
+
+/** The generation name of a lock with no readable owner: a directory. */
+const directoryGeneration = "legacy-directory"
+
+function token(): string!! {
+  const first = Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER, { halfOpen: true })
+  const second = Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER, { halfOpen: true })
+  return `${first.toString(36)}-${second.toString(36)}-${Clock.currentTimeMillis()}`
+}
+
+/**
+ * Runs `effect` while holding the lease at `lockPath`, with no acquisition
+ * deadline. Use it when the caller already bounds a wider wait (an
+ * in-process semaphore plus this lease) with its own deadline; otherwise use
+ * {@link withLease}.
+ *
+ * @category combinators
+ * @since 1.0.0-rc.1
+ */
+export const hold = <A, E, R, E2>(
+  fs: FileSystem.FileSystem,
+  lockPath: string,
+  effect: Effect.Effect<A, E, R>,
+  failure: Failure<E2>,
+  options: HoldOptions = {}
+): Effect.Effect<A, E | E2, R> => {
+  const label = options.label ?? "File lease"
+  const heartbeatEvery = options.heartbeatEvery ?? "10 seconds"
+  const staleAfterMs = options.staleAfterMs ?? defaultStaleAfterMs
+  const retryEvery = options.retryEvery ?? "25 millis"
+  // A holder heartbeats its lock to stay fresh, so a stale bound at or below
+  // the heartbeat, or one that is not a positive finite number, would let a
+  // contender read a live holder's lock as abandoned and move it, or would
+  // never reclaim a dead holder's lock at all.
+  const heartbeatMs = Option.map(Duration.fromInput(heartbeatEvery), Duration.toMillis)
+  if (
+    typeof staleAfterMs !== "number" || !Number.isFinite(staleAfterMs) || staleAfterMs <= 0 ||
+    Option.isNone(heartbeatMs) || !(heartbeatMs.value > 0 && heartbeatMs.value < staleAfterMs)
+  ) {
+    throw failure(new RangeError(`${label} needs 0 < heartbeatEvery < staleAfterMs, with a finite staleAfterMs`))
+  }
+  const owner = token()
+  /**
+   * Whether this call created the lock file, and therefore owes a release.
+   * It is set in the same uninterruptible step that creates the file, so
+   * interruption striking between the two cannot leak a lock nothing
+   * releases — the only party that would ever reclaim it is a later
+   * acquirer of the same path, which may never come.
+   */
+  let acquired = false
+
+  /** Runs the caller's guard before a mutation, refusing it through `failure`. */
+  function guard(): void!E2 {
+    if (options.guard === undefined) return
+    try {
+      options.guard()
+    } catch (cause) {
+      throw failure(cause)
+    }
+  }
+
+  function statIfPresent(path: string): Option.Option<FileSystem.File.Info>!E2 {
+    try {
+      return Option.some(fs.stat(path))
+    } catch (cause) {
+      if (isReason(cause, "NotFound")) return Option.none()
+      throw failure(cause)
+    }
+  }
+
+  function refuse(cause: unknown): never!E2 {
+    throw failure(cause)
+  }
+
+  function readOwner(
+    path: string,
+    onRefused: (cause: unknown) => Effect.Effect<Option.Option<string>, E2> = refuse
+  ): Option.Option<string>!E2 {
+    try {
+      return Option.some(fs.readFileString(path))
+    } catch (cause) {
+      if (isReason(cause, "NotFound")) return Option.none()
+      return onRefused(cause)
+    }
+  }
+
+  /**
+   * Names the lock generation at `path`: its owner token, or
+   * `directoryGeneration` for a directory, which has no readable owner.
+   * A read refused for any other reason is propagated, not guessed at.
+   */
+  function observe(path: string): Option.Option<string>!E2 {
+    return readOwner(path, (cause) => {
+      let info: FileSystem.File.Info
+      try {
+        info = fs.stat(path)
+      } catch (_) {
+        return refuse(cause)
+      }
+      if (info.type === "Directory") return Option.some(directoryGeneration)
+      return refuse(cause)
+    })
+  }
+
+  function isStale(path: string): boolean!E2 {
+    const info = statIfPresent(path)
+    const modified = Option.isSome(info) ? Option.getOrUndefined(info.value.mtime) : undefined
+    return modified !== undefined && Clock.currentTimeMillis() - modified.getTime() > staleAfterMs
+  }
+
+  function removeIfOwnedBy(path: string, expected: string): void!! {
+    try {
+      const found = fs.readFileString(path)
+      if (found === expected) {
+        guard()
+        fs.remove(path)
+      }
+    } catch (_) {
+      return
+    }
+  }
+
+  function acquire(): void!E2 {
+    while (true) {
+      const created = Effect.uninterruptible(() => {
+        try {
+          guard()
+          fs.writeFileString(lockPath, owner, { flag: "wx", mode: 0o600 })
+          acquired = true
+          return true
+        } catch (cause) {
+          if (isReason(cause, "AlreadyExists")) return false
+          throw failure(cause)
+        }
+      })
+      if (created) return
+
+      // The owner is read before the age, so a stale verdict always
+      // belongs to the lock generation this read named.
+      const observed = observe(lockPath)
+      if (Option.isNone(observed)) continue
+      if (isStale(lockPath)) {
+        const reclaimed = reclaim(observed.value)
+        if (reclaimed) continue
+      }
+      sleep(retryEvery)
+    }
+  }
+
+  /**
+   * Moves away the stale lock generation `observed` names, at most once.
+   *
+   * Measuring a lock and renaming it are two steps, so two contenders
+   * that both measure the same generation as stale would otherwise both
+   * rename, and the second would move away the fresh lock the first just
+   * took. Reclaimers of one generation therefore race for a `wx` claim
+   * named after its owner token first. Only the winner renames, and only
+   * after re-reading that the path still holds that stale generation. A
+   * loser, or a winner whose generation is already gone, moves nothing.
+   * Owner tokens are unique per acquisition, so a claim never outlives
+   * the generation it names in any way that matters.
+   */
+  function reclaim(observed: string): boolean!E2 {
+    const claimPath = `${lockPath}.reclaim-${observed.replace(/[^0-9A-Za-z-]/g, "_").slice(0, 96)}`
+    return Effect.acquireUseRelease(
+      () => {
+        try {
+          guard()
+          fs.writeFileString(claimPath, owner, { flag: "wx", mode: 0o600 })
+          return true
+        } catch (cause) {
+          if (isReason(cause, "AlreadyExists")) return false
+          throw failure(cause)
+        }
+      },
+      (claimed) => {
+        if (!claimed) {
+          // A claimant that died mid-reclaim leaves its claim behind.
+          // It ages out on the same bound as a lock.
+          const holder = readOwner(claimPath)
+          if (Option.isSome(holder) && isStale(claimPath)) {
+            removeIfOwnedBy(claimPath, holder.value)
+          }
+          return false
+        }
+        const current = observe(lockPath)
+        if (Option.isNone(current) || current.value !== observed || !isStale(lockPath)) return true
+        const tombstone = `${lockPath}.stale-${owner}`
+        let moved: boolean
+        try {
+          guard()
+          fs.rename(lockPath, tombstone)
+          moved = true
+        } catch (cause) {
+          if (!isReason(cause, "NotFound")) throw failure(cause)
+          moved = false
+        }
+        if (!moved) return true
+        // Only a stalled owner releasing between the re-read and the
+        // rename, and a new owner acquiring in that gap, puts a live
+        // lock here. Hand it back with an atomic create, which cannot
+        // displace anyone who took the path since.
+        const displaced = observe(tombstone)
+        if (
+          Option.isSome(displaced) && displaced.value !== observed && displaced.value !== directoryGeneration
+        ) {
+          try {
+            guard()
+            fs.writeFileString(lockPath, displaced.value, { flag: "wx", mode: 0o600 })
+          } catch (_) {
+            // Ignored: the hand-back is best-effort.
+          }
+        }
+        try {
+          guard()
+          fs.remove(tombstone, { recursive: true })
+        } catch (_) {
+          // Ignored: the tombstone removal is best-effort.
+        }
+        return true
+      },
+      (claimed) => {
+        if (claimed) removeIfOwnedBy(claimPath, owner)
+      }
+    )
+  }
+
+  function release(): void!E2 {
+    try {
+      const found = fs.readFileString(lockPath)
+      if (found === owner) {
+        guard()
+        fs.remove(lockPath)
+      }
+    } catch (cause) {
+      // A concurrent stale-lock reaper can win release. `NotFound`
+      // means no lock remains for this owner to release or leak.
+      if (isReason(cause, "NotFound")) return
+      throw failure(cause)
+    }
+  }
+
+  function heartbeat(): void!! {
+    while (true) {
+      sleep(heartbeatEvery)
+      // Freshen only a lock this call still owns, the same comparison
+      // the release below makes. A holder stalled past the stale
+      // bound has already been reaped and replaced, and touching that
+      // pathname anyway would hold a stranger's lock fresh forever: a
+      // replacement that is then hard-killed could never be judged
+      // stale while this zombie ran, so every later acquirer would
+      // burn the full acquisition deadline and fail.
+      let beat: "own" | "foreign" | "gone" | "unreadable"
+      try {
+        const found = fs.readFileString(lockPath)
+        beat = found === owner ? "own" : "foreign"
+      } catch (cause) {
+        beat = isReason(cause, "NotFound") ? "gone" : "unreadable"
+      }
+      if (beat === "own") {
+        const timestamp = new Date(Clock.currentTimeMillis())
+        try {
+          guard()
+          fs.utimes(lockPath, timestamp, timestamp)
+        } catch (_) {
+          // Ignored: the next beat retries.
+        }
+        continue
+      }
+      // A read the host refused for any other reason is no evidence
+      // either way, so this beat is skipped and the next one retries.
+      // Ending the heartbeat on it would retire a lock this call
+      // still holds: the file goes stale within the minute, another
+      // process reaps it, and this holder keeps working unfenced.
+      if (beat === "unreadable") continue
+      // `gone` and `foreign` are the two states worth an operator
+      // signal: this call's lock was reaped, and possibly already
+      // replaced, while the effect it fences is still running, so
+      // the rest of that effect proceeds unfenced against every other
+      // process. The heartbeat is the only party that ever observes
+      // it — the protected effect is not interrupted and the caller
+      // is not failed — so retiring the fiber silently would leave no
+      // trace at all.
+      Effect.logWarning(
+        `${label} was reclaimed while its holder was still running`,
+        { ...options.annotations, state: beat }
+      )
+      return
+    }
+  }
+
+  // The finalizer is attached around acquisition itself, not just around
+  // the protected effect, so a lock created moments before an interruption
+  // is still released. A call that never created one owes nothing and must
+  // not touch a file another owner holds.
+  try {
+    acquire()
+    if (options.onAcquired !== undefined) options.onAcquired()
+    return Effect.scoped(() => {
+      Effect.forkScoped(heartbeat())
+      return effect()
+    })
+  } finally {
+    if (acquired) release()
+  }
+}
+
+/**
+ * Runs `effect` while holding the lease at `lockPath`.
+ *
+ * Acquisition fails with `failure(TimeoutError)` once `acquireWithin` passes
+ * without the lease; every other host refusal reaches `failure` with the
+ * refusing `PlatformError`. The deadline ends when the lease is held: the
+ * protected effect and its release are never timed out.
+ *
+ * @category combinators
+ * @since 1.0.0-rc.1
+ */
+export const withLease = <A, E, R, E2>(
+  fs: FileSystem.FileSystem,
+  lockPath: string,
+  effect: Effect.Effect<A, E, R>,
+  failure: Failure<E2>,
+  options: Options = {}
+): Effect.Effect<A, E | E2, R> => {
+  const ready = Deferred.makeUnsafe<void>()
+  const onAcquired: Effect.Effect<void, never, never> = () => {
+    Deferred.succeed(ready, undefined)
+  }
+  return await.race [
+    hold(fs, lockPath, effect, failure, { ...options, onAcquired }),
+    do {
+      try {
+        timeout(ready.await(), options.acquireWithin ?? defaultAcquireWithin)
+      } catch (cause) {
+        throw failure(cause)
+      }
+      Effect.never()
+    }
+  ]
+}

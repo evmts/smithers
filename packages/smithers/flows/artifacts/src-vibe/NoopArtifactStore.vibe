@@ -1,0 +1,39 @@
+/**
+ * The no-op artifact store: the honest refusal a composition gets when it has
+ * no artifact store at all, with per-method overrides.
+ *
+ * @since 1.0.0-rc.0
+ */
+
+import * as Effect from "effect/Effect"
+import type { Service } from "./ArtifactStore.vibe"
+import { ArtifactStoreError } from "./ArtifactStoreError.vibe"
+
+/**
+ * Builds an artifact store whose every operation fails as unavailable, with
+ * per-method overrides.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ * @slop
+ */
+export const makeNoop = (overrides: Partial<Service> = {}): Service => {
+  function unavailable(method: string): never!ArtifactStoreError {
+    throw new ArtifactStoreError({ code: "unavailable", message: `${method} is unavailable` })
+  }
+  return {
+    put: () => {
+      return withSpan("ArtifactStore.put") { return unavailable("put") }
+    },
+    get: () => {
+      return withSpan("ArtifactStore.get") { return unavailable("get") }
+    },
+    has: () => {
+      return withSpan("ArtifactStore.has") { return unavailable("has") }
+    },
+    findMissing: () => {
+      return withSpan("ArtifactStore.findMissing") { return unavailable("findMissing") }
+    },
+    ...overrides
+  }
+}

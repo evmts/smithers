@@ -1,0 +1,84 @@
+/**
+ * Path checks for the portable filesystem adapter. These detect symlinks and
+ * observed replacements, but cannot make pathname mutations atomic with the
+ * check. Effect's FileSystem has no descriptor-relative rename or unlink.
+ *
+ * @since 1.0.0-rc.0
+ */
+
+import * as Effect from "effect/Effect"
+import type * as FileSystem from "effect/FileSystem"
+import * as Option from "effect/Option"
+import * as PlatformError from "effect/PlatformError"
+
+/**
+ * Checks one entry without accepting a symbolic link and returns a check that
+ * also refuses a changed identity. Missing entries are allowed for creation.
+ *
+ * @category utilities
+ * @since 1.0.0-rc.0
+ */
+export const guard = (
+  fs: FileSystem.FileSystem,
+  path: string,
+  type: "Directory" | "File" = "Directory",
+  expected?: FileSystem.File.Info
+): Effect.Effect<Effect.Effect<void, PlatformError.PlatformError>, PlatformError.PlatformError, never> => {
+  const refused = () =>
+    PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "ArtifactPath",
+      method: "guard",
+      pathOrDescriptor: path,
+      description: "artifact path is a symlink, has the wrong type, or was replaced"
+    })
+  function inspect(): Option.Option<FileSystem.File.Info>!PlatformError.PlatformError {
+    let linked: boolean
+    try {
+      fs.readLink(path)
+      linked = true
+    } catch (cause) {
+      // Node readlink uses EINVAL for an existing entry that is not a link.
+      // Other failures, including an unsupported host capability, fail closed.
+      const underlying = cause.cause
+      if (
+        cause.reason._tag === "NotFound" ||
+        (typeof underlying === "object" && underlying !== null && "code" in underlying &&
+          underlying.code === "EINVAL")
+      ) {
+        linked = false
+      } else {
+        throw cause
+      }
+    }
+    if (linked) throw refused()
+    let info: Option.Option<FileSystem.File.Info>
+    try {
+      info = Option.some(fs.stat(path))
+    } catch (cause) {
+      if (cause.reason._tag !== "NotFound") throw cause
+      info = Option.none()
+    }
+    if (Option.isSome(info) && info.value.type !== type) throw refused()
+    return info
+  }
+  function unchanged(
+    before: Option.Option<FileSystem.File.Info>,
+    after: Option.Option<FileSystem.File.Info>
+  ): void!PlatformError.PlatformError {
+    if (Option.isNone(before)) return
+    if (
+      Option.isNone(after) || before.value.dev !== after.value.dev ||
+      Option.getOrUndefined(before.value.ino) !== Option.getOrUndefined(after.value.ino)
+    ) {
+      throw refused()
+    }
+  }
+  const before = inspect()
+  unchanged(Option.fromUndefinedOr(expected), before)
+  const check: Effect.Effect<void, PlatformError.PlatformError> = () => {
+    const after = inspect()
+    unchanged(before, after)
+  }
+  return check
+}
