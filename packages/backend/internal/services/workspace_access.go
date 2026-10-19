@@ -173,6 +173,11 @@ func (s *WorkspaceService) withWorkspaceMutationAuthority(ctx context.Context, r
 		}
 		return fn(held)
 	}
+	ctx, release, err := s.acquireMutationSlot(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	tx, err := s.transactions.Begin(ctx)
 	if err != nil {
 		return pkgerrors.Internal("begin workspace mutation authority").WithCause(err)
