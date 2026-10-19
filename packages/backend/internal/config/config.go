@@ -62,9 +62,15 @@ type ChatConfig struct {
 	LeaseSeconds int `mapstructure:"lease_seconds"`
 }
 
-// AgentsConfig controls agent session provisioning health.
+// AgentsConfig controls agent session provisioning health and who may run
+// hosted coding turns.
 type AgentsConfig struct {
 	NeverStartedTimeout string `mapstructure:"never_started_timeout"`
+	// HostedCodingUsers is parsed by Load from agents.hosted_coding_user_ids
+	// (SMITHERS_HOSTED_CODING_USER_IDS): empty, the default, admits nobody; a
+	// comma-separated list of user IDs admits those users; exactly "*" admits
+	// everyone.
+	HostedCodingUsers HostedCodingUsers `mapstructure:"-"`
 }
 
 // RateLimitConfig controls the per-user rate limits and active-connection
@@ -593,6 +599,7 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("webhook.github_sync_url", "")
 	v.SetDefault("webhook.github_sync_secret", "")
 	v.SetDefault("agents.never_started_timeout", "1h")
+	v.SetDefault("agents.hosted_coding_user_ids", "")
 	v.SetDefault("cleanup.auth_interval", "5m")
 	v.SetDefault("cleanup.workflow_cache_interval", "1h")
 	v.SetDefault("cleanup.sandbox_egress_audit_retention_days", 30)
@@ -783,6 +790,7 @@ func Load(configFile string) (*Config, error) {
 		{"webhook.github_sync_url", "SMITHERS_WEBHOOK_GITHUB_SYNC_URL"},
 		{"webhook.github_sync_secret", "SMITHERS_WEBHOOK_GITHUB_SYNC_SECRET"},
 		{"agents.never_started_timeout", "SMITHERS_AGENT_NEVER_STARTED_TIMEOUT"},
+		{"agents.hosted_coding_user_ids", "SMITHERS_HOSTED_CODING_USER_IDS"},
 		{"cleanup.auth_interval", "SMITHERS_CLEANUP_AUTH_INTERVAL"},
 		{"cleanup.workflow_cache_interval", "SMITHERS_CLEANUP_WORKFLOW_CACHE_INTERVAL"},
 		{"cleanup.sandbox_egress_audit_retention_days", "SMITHERS_CLEANUP_SANDBOX_EGRESS_AUDIT_RETENTION_DAYS"},
@@ -966,6 +974,13 @@ func Load(configFile string) (*Config, error) {
 		return nil, fmt.Errorf("billing.service_payer_org_ids: %w", err)
 	}
 	cfg.Billing.ServicePayerOrgIDs = servicePayerOrgIDs
+	// A malformed allowlist refuses startup too: a guessed list could open
+	// hosted coding to accounts the operator did not name.
+	hostedCodingUsers, err := ParseHostedCodingUserIDs(hostedCodingUserIDsValue(v.Get("agents.hosted_coding_user_ids"), v.GetString("agents.hosted_coding_user_ids")))
+	if err != nil {
+		return nil, fmt.Errorf("agents.hosted_coding_user_ids: %w", err)
+	}
+	cfg.Agents.HostedCodingUsers = hostedCodingUsers
 	if err := normalizeAgentAvailability(&cfg); err != nil {
 		return nil, err
 	}

@@ -120,6 +120,7 @@ func (d *agentDispatch) execute() (DispatchAgentRunResult, error) {
 	steps := []func() error{
 		d.authorize,
 		d.ensureNoActiveRun,
+		d.refuseUnlistedCodingUser,
 		d.enforceConcurrencyCap,
 		d.upsertWorkflowDefinition,
 		d.createWorkflowRun,

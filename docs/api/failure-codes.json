@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:1944d0e96e0ebb3e5532d85f86357b697f7c62ff91c1795ed0fc98fabe1e896a",
+  "digest": "sha256:003358281b71b33583dc0f2e3c709573ac2277f5fae65a038989aa2ed70f085b",
   "faults": [
     "user",
     "wait",
@@ -339,6 +339,13 @@
       "status": 503,
       "retry_after": 0,
       "doc": "The controller's lease on a sandbox host has expired, so the host is no longer the controller's to act on."
+    },
+    {
+      "code": "hosted_coding_not_open",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "This deployment runs hosted coding only for the accounts its operator lists, and the caller's account is not one of them yet."
     },
     {
       "code": "idempotency_conflict",

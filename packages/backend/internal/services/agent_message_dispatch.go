@@ -178,6 +178,10 @@ func (s *AgentService) handleMessageDispatch(ctx context.Context, lease *jobs.Le
 			}
 			return errors.New("message dispatch waiting for capacity")
 		}
+		var apiErr *pkgerrors.APIError
+		if errors.As(err, &apiErr) && apiErr.Code == pkgerrors.CodeHostedCodingNotOpen {
+			return fail(string(pkgerrors.CodeHostedCodingNotOpen))
+		}
 		return fail("dispatch_failed")
 	}
 	// DispatchAgentRunResult also contains a plaintext token: never serialize it.
