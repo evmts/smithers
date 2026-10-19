@@ -38,3 +38,18 @@ test("permalinks use resolved commits, full SHA routes, or read branch commits o
   expect(permalinkCommit("main")).toBeUndefined()
   expect(permalinkCommit("main", null, { main: "not-a-commit" })).toBeUndefined()
 })
+
+test("page receipts retain full content and clear bytes on retry or failure", async () => {
+  const { repositoryCodeReads, setCodeRead } = await import("./RepositoryCodeRead")
+  const content = "// line\n".repeat(14000) + "// last"
+  const page = { content, size: new TextEncoder().encode(content).length, binary: false, tooLarge: false, commitSha: "c".repeat(40), rawUrl: "/api/repos/a/b/contents/x?raw=1" }
+  setCodeRead("whole-page", "ready", undefined, page)
+  expect(repositoryCodeReads.get("whole-page")?.page?.content?.endsWith("// last")).toBe(true)
+  expect(repositoryCodeReads.get("whole-page")?.page?.content).toHaveLength(content.length)
+  setCodeRead("whole-page", "loading")
+  expect(repositoryCodeReads.get("whole-page")?.page).toBeUndefined()
+  setCodeRead("whole-page", "ready", undefined, { ...page, content: null, size: 524289, tooLarge: true })
+  expect(repositoryCodeReads.get("whole-page")?.page).toMatchObject({ content: null, size: 524289, tooLarge: true })
+  setCodeRead("whole-page", "failed", "Could not read file.")
+  expect(repositoryCodeReads.get("whole-page")?.page).toBeUndefined()
+})

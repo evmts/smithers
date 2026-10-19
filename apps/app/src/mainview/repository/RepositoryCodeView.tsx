@@ -48,7 +48,8 @@ export function RepositoryCodeView({ repo, cards, refs, commits, admitted, reque
     && item.kind === (subject.kind === "blob" ? "file" : "file-list")) : undefined
   const path = located?.path ?? "", revision = located?.ref ?? ""
   const route = (kind: "tree" | "blob", path: string, ref = revision) => sourceRoute(repo, kind, ref, path)
-  const payload = card?.kind === "file" ? card.payload : undefined
+  const page = admitted && read?.state === "ready" ? read.page : undefined
+  const payload = page ? { content: page.content ?? "", binary: page.binary, originalSize: page.size } : undefined
   const tokens = payload ? tokenize(payload.content) : []
   const selected = readSelection(address.split("?")[1] ?? "", tokens.length)
   const raw = new URLSearchParams(address.split("?")[1]).get("raw") === "1"
@@ -58,7 +59,7 @@ export function RepositoryCodeView({ repo, cards, refs, commits, admitted, reque
     if (!extend) anchor.current = line
     query("L", first === line ? String(line) : `${Math.min(first, line)}-${Math.max(first, line)}`)
   }
-  const commit = permalinkCommit(revision, payload?.readAt?.commitId, commits)
+  const commit = permalinkCommit(revision, page?.commitSha, commits)
   const failure = error ?? (read?.state === "failed" ? read.error : undefined)
   const permalink = () => {
     if (!commit) return
@@ -76,15 +77,14 @@ export function RepositoryCodeView({ repo, cards, refs, commits, admitted, reque
       </nav>
       {located && commit && <button className="repo-ui-btn repo-ui-btn-primary repo-code-permalink" {...flowAction(onRunCommand, "chat.copy-message", flowArgs("chat.copy-message", { text: permalink() ?? "" }))}>Copy permalink</button>}
     </div>
-    {failure ? <FailureNotice failure={unavailableFailure("repository.file", "Couldn’t load this file.", failure)} /> : !card ? <p role="status">Loading…</p> : card.kind === "file-list" ? <div className="repository-code-box">
+    {failure ? <FailureNotice failure={unavailableFailure("repository.file", "Couldn’t load this file.", failure)} /> : !card && !page ? <p role="status">Loading…</p> : card?.kind === "file-list" ? <div className="repository-code-box">
       {card.payload.entries.length === 0 ? <p>This folder is empty.</p> : <div role="table" aria-label={path ? `Files in ${path}` : "Repository files"}>
         {path && <div role="row" className="repo-code-file-row"><span role="cell"><a href={route("tree", path.split("/").slice(0, -1).join("/"))} aria-label="Parent directory">..</a></span></div>}
         {card.payload.entries.map(entry => <div className="repo-code-file-row" role="row" key={entry.name}><span role="cell"><a href={route(entry.kind === "dir" ? "tree" : "blob", [path, entry.name].filter(Boolean).join("/"))}>{entry.kind === "dir" ? <Folder size={17} aria-hidden="true" /> : <File size={17} aria-hidden="true" />}{entry.name}</a></span></div>)}
       </div>}{card.payload.truncated && <p>Truncated</p>}
     </div> : payload && <div className="repository-code-box">
-      <div className="repo-code-file-toolbar"><strong>Code</strong><span className="repo-code-file-stats">{tokens.length} lines · {(payload.originalSize ?? new TextEncoder().encode(payload.content).length).toLocaleString("en-US")} B{payload.truncated && payload.originalSize === undefined ? " shown" : ""}</span><span className="repo-code-toolbar-spacer" /><button {...flowAction(onRunCommand, "code.view", flowArgs("code.view", { pathname: window.location.pathname, field: "raw", value: raw ? "0" : "1" }))}>{raw ? "Exit raw" : "Raw"}</button><button aria-label="Copy file contents" {...flowAction(onRunCommand, "chat.copy-message", flowArgs("chat.copy-message", { text: payload.content }))}>Copy</button></div>
-      {payload.truncated && <p role="status">Truncated</p>}
-      {payload.binary ? <p>Binary file</p> : !payload.content ? <p>This file is empty.</p> : raw ? <pre className="repo-code-raw" aria-label={`Raw ${path}`}>{payload.content}</pre> : <>
+      <div className="repo-code-file-toolbar"><strong>Code</strong><span className="repo-code-file-stats">{!page?.tooLarge && <>{tokens.length} lines · </>}{payload.originalSize.toLocaleString("en-US")} B</span><span className="repo-code-toolbar-spacer" />{page?.tooLarge ? <a href={page.rawUrl}>Raw</a> : <><button {...flowAction(onRunCommand, "code.view", flowArgs("code.view", { pathname: window.location.pathname, field: "raw", value: raw ? "0" : "1" }))}>{raw ? "Exit raw" : "Raw"}</button><button aria-label="Copy file contents" {...flowAction(onRunCommand, "chat.copy-message", flowArgs("chat.copy-message", { text: payload.content }))}>Copy</button></>}</div>
+      {page?.tooLarge ? null : payload.binary ? <p>Binary file</p> : !payload.content ? <p>This file is empty.</p> : raw ? <pre className="repo-code-raw" aria-label={`Raw ${path}`}>{payload.content}</pre> : <>
         {selected && <div className="repo-code-selection" aria-label="Selected line actions"><span>lines {selected.start}-{selected.end}</span><button {...flowProps("chat.open")} onClick={() => { onAsk(`Explain lines ${selected.start}-${selected.end} of ${path} at ${revision}`); if (openAsk) openAsk(onRunCommand); else onRunCommand("chat.open") }}>Ask about lines</button>{commit && <button {...flowAction(onRunCommand, "chat.copy-message", flowArgs("chat.copy-message", { text: permalink() ?? "" }))}>Copy link</button>}</div>}
         <div className="repo-code-source" role="region" aria-label={`Source of ${path}`} style={{ "--repo-code-number-width": `calc(${String(tokens.length).length}ch + 12px)` } as CSSProperties}><div className="repo-code-source-scroll"><pre>{tokens.map((line, index) => <span className="repo-code-source-line" key={index} data-line={index + 1} data-selected={selected && index + 1 >= selected.start && index + 1 <= selected.end || undefined}><a className="repo-code-line-number" href={`?L=${index + 1}`} aria-label={`Select line ${index + 1}`} onKeyDown={event => { if (event.key === "Enter" && event.shiftKey) { event.preventDefault(); selectLine(index + 1, true) } }} {...flowProps("code.view")} onClick={event => { event.preventDefault(); const first = event.shiftKey ? anchor.current ?? selected?.start ?? index + 1 : index + 1; if (!event.shiftKey) anchor.current = index + 1; onRunCommand("code.view", flowArgs("code.view", { pathname: window.location.pathname, field: "L", value: first === index + 1 ? String(first) : `${Math.min(first, index + 1)}-${Math.max(first, index + 1)}` })) }}>{index + 1}</a><span className="repo-code-diagnostic-gutter" /><code>{line.length ? line.map((token, i) => <span key={i} className={`repo-code-token-${token.kind}`}>{token.text}</span>) : " "}</code></span>)}</pre></div></div>
       </>}
