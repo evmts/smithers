@@ -134,7 +134,7 @@ func TestSandboxUsageWorkspaceStarts(t *testing.T) {
 }
 
 func TestSandboxUsageWorkspaceStopsAndSweep(t *testing.T) {
-	for _, point := range []string{"suspend", "sessionless suspend", "stop/delete teardown", "delete", "fail", "provision failed", "admission refused", "agent failed", "agent suspend", "pod stopped", "pod failed", "idle sweep", "sweep list failure"} {
+	for _, point := range []string{"suspend", "sessionless suspend", "stop/delete teardown", "delete", "fail", "provision failed", "admission refused", "agent release", "pod stopped", "pod failed", "idle sweep", "sweep list failure"} {
 		t.Run(point, func(t *testing.T) {
 			ctx := context.Background()
 			w := sampleDBWorkspace("meter-close")
@@ -160,10 +160,10 @@ func TestSandboxUsageWorkspaceStopsAndSweep(t *testing.T) {
 				svc.markWorkspaceProvisionFailed(ctx, w, errors.New("VM failed"))
 			case "admission refused":
 				svc.markWorkspaceProvisionFailed(ctx, w, errBranchMachineAdmission)
-			case "agent failed":
-				err = svc.FailAgentWorkspace(ctx, w.ID)
-			case "agent suspend":
-				err = svc.SuspendAgentWorkspace(ctx, w.ID)
+			case "agent release":
+				var release AgentWorkspaceRelease
+				release, err = svc.ReleaseAgentWorkspace(ctx, w.ID, "")
+				require.Equal(t, agentWorkspaceKeptWithoutRuntime, release.Outcome, "a box this service cannot stop is kept")
 			case "pod stopped":
 				err = svc.UpdateWorkspacePodStatus(ctx, UpdateWorkspacePodStatusInput{WorkspaceID: w.ID, Status: "stopped"})
 			case "pod failed":
@@ -185,7 +185,7 @@ func TestSandboxUsageWorkspaceStopsAndSweep(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			if point == "agent failed" || point == "agent suspend" || point == "idle sweep" || point == "admission refused" {
+			if point == "agent release" || point == "idle sweep" || point == "admission refused" {
 				require.Empty(t, q.closes)
 				return
 			}
