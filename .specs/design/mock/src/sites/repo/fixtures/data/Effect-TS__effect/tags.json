@@ -1,0 +1,26 @@
+[
+  {
+    "name": "4.0.0-rc.118",
+    "sha": "7a13bb72e79ff883e62ca95f69eae180a242d6dd",
+    "date": "2026-10-17T04:20:00Z",
+    "release": true
+  },
+  {
+    "name": "4.0.0-rc.117",
+    "sha": "2418b0c28e599673691fb85350fbf8a1f4674058",
+    "date": "2026-10-11T04:20:00Z",
+    "release": true
+  },
+  {
+    "name": "4.0.0-rc.116",
+    "sha": "b47fc3770dfafbefeb713cfe751270d9463ab91f",
+    "date": "2026-10-04T04:20:00Z",
+    "release": true
+  },
+  {
+    "name": "4.0.0-rc.115",
+    "sha": "5aff24425ff2ea03ef758c688c383e766a402237",
+    "date": "2026-09-27T04:20:00Z",
+    "release": true
+  }
+]

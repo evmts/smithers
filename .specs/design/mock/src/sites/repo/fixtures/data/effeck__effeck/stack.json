@@ -1,0 +1,105 @@
+[
+  {
+    "id": "todo-33",
+    "order": 1,
+    "title": "Show inferred types inside docs code blocks",
+    "state": "working",
+    "owner": "maya",
+    "issue": 33,
+    "updated": "2026-10-18T04:57:00Z",
+    "pull": 103,
+    "run": "run-doc-hovers-live"
+  },
+  {
+    "id": "todo-34",
+    "order": 2,
+    "title": "Repack skipped platform optional dependencies",
+    "state": "ready",
+    "owner": "maya",
+    "issue": 34,
+    "updated": "2026-10-18T04:57:00Z",
+    "pull": 104,
+    "run": "run-release-review"
+  },
+  {
+    "id": "todo-35",
+    "order": 3,
+    "title": "Resolve lambda and by-name forms through the forms table",
+    "state": "working",
+    "owner": "maya",
+    "issue": 35,
+    "updated": "2026-10-18T04:57:00Z",
+    "pull": 108,
+    "run": "run-followup-108"
+  },
+  {
+    "id": "todo-40",
+    "order": 4,
+    "title": "Check using, interruption regions and finally exits in the mapper",
+    "state": "working",
+    "owner": "maya",
+    "issue": 40,
+    "updated": "2026-10-18T04:57:00Z",
+    "pull": 107,
+    "run": "run-followup-107"
+  },
+  {
+    "id": "todo-32",
+    "order": 5,
+    "title": "Keep golden cases out of the converter prompt",
+    "state": "queued",
+    "owner": "maya",
+    "issue": 32,
+    "updated": "2026-10-18T04:57:00Z",
+    "pull": 102,
+    "run": "run-followup-102"
+  },
+  {
+    "id": "todo-42",
+    "order": 6,
+    "title": "Scaffold with npm create effeck and exact package versions",
+    "state": "failed",
+    "owner": "maya",
+    "issue": 42,
+    "updated": "2026-10-18T04:57:00Z",
+    "run": "run-scaffold-failed",
+    "failure": "The lockfile omits the platform compiler. Repack optional packages and retry."
+  },
+  {
+    "id": "todo-47",
+    "order": 7,
+    "title": "Track mapper parity separately from executable output",
+    "state": "needs-answer",
+    "owner": "maya",
+    "issue": 47,
+    "updated": "2026-10-18T04:57:00Z",
+    "question": {
+      "text": "Which parity differences should the next pass address?",
+      "options": [
+        "Clean declarations first",
+        "Negative cases first"
+      ]
+    }
+  },
+  {
+    "id": "todo-31",
+    "order": 8,
+    "title": "Hover on an Effeck form crashes the language server",
+    "state": "merged",
+    "owner": "maya",
+    "issue": 31,
+    "updated": "2026-10-18T04:57:00Z",
+    "pull": 101,
+    "run": "run-8fadacb5"
+  },
+  {
+    "id": "review-example",
+    "order": 9,
+    "title": "Add a review example",
+    "state": "ready",
+    "owner": "maya",
+    "pull": 9001,
+    "run": "run-review-example",
+    "updated": "2026-10-18T04:59:00Z"
+  }
+]

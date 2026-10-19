@@ -1,0 +1,399 @@
+{
+  "subject": {
+    "_comment": "The pinned subject the fixture wave ran. A real one is written by ./preflight.sh from lib/subject.mjs; this one is fixed so verify.sh reports the same preconditions on every machine.",
+    "stamp": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "head": "0000000000000000000000000000000000000000",
+    "headSubject": "the recorded 2026-08-19 wave",
+    "node": "v24.0.0",
+    "platform": "fixture",
+    "marker": {
+      "path": "packages/harness/src/CellTurn.ts",
+      "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "resolvedBy": "packages/harness/src/CellTurn.ts"
+    },
+    "cliDist": {
+      "directory": "packages/cli/dist/esm",
+      "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "files": 11
+    },
+    "cliSrc": {
+      "directory": "packages/cli/src",
+      "hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "files": 11
+    },
+    "refusals": [],
+    "instances": {
+      "astropy__astropy-8707": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "django__django-16612": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "pydata__xarray-7393": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "pytest-dev__pytest-6197": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "sphinx-doc__sphinx-11445": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "agreement": "one subject, pinned and stamped by every instance"
+  },
+  "aggregate": {
+    "instances": 5,
+    "flowsResolved": 1,
+    "codexResolved": 5,
+    "flowsWins": 0,
+    "codexWins": 4,
+    "bothPass": 1,
+    "bothFail": 0,
+    "flowsWallClockSeconds": 3796,
+    "codexWallClockSeconds": 529,
+    "flowsTokens": 1243683,
+    "codexTokens": 195987,
+    "flowsUsd": 9.045,
+    "flowsJevReadings": 10,
+    "flowsJevTokens": 7500,
+    "flowsJevUsd": 0.0005,
+    "flowsJevInterrupted": 5,
+    "flowsSupervisorUnjudged": 5,
+    "flowsSupervisorMemoryFailures": 5,
+    "flowsTotalUsd": 9.0455,
+    "codexUsdFloor": 0.7841,
+    "perCallLatency": "journaled"
+  },
+  "instances": [
+    {
+      "instanceId": "astropy__astropy-8707",
+      "quality": {
+        "verdict": "empty patch",
+        "patchBytes": 0,
+        "status": "failed",
+        "editsAttempted": 0,
+        "editsSucceeded": 0
+      },
+      "speed": {
+        "wallClockSeconds": 430,
+        "journalSeconds": 437,
+        "budgetSeconds": 1200,
+        "turns": 45,
+        "modelCalls": 45,
+        "flowCalls": 53,
+        "flowCallsRefused": 22,
+        "meanCallLatencyMs": 4022,
+        "perCallLatency": "journaled"
+      },
+      "cost": {
+        "model": "openai:gpt-5.6-sol",
+        "inputTokens": 211519,
+        "cachedInputTokens": 0,
+        "outputTokens": 12455,
+        "usd": 1.0952,
+        "priceSource": "modelprice Go rate card",
+        "jevCellCalls": 0,
+        "jevCellQuestions": 0,
+        "jevCellQuestionsUnknown": 0,
+        "jevBrakeReadings": 1,
+        "jevSupervisorReadings": 1,
+        "jevGateReadings": 0,
+        "cellsWithJev": 0,
+        "cells": 0,
+        "jevUnjudged": 1,
+        "jevInputTokens": 1500,
+        "jevOutputTokens": 0,
+        "jevUsd": 0.0001,
+        "jevPriceSource": "modelprice Go rate card",
+        "jevInterrupted": 1,
+        "supervisorUnjudged": {
+          "interrupted": 1
+        },
+        "supervisorMemoryFailures": 1,
+        "totalUsd": 1.0953
+      },
+      "baseline": {
+        "verdict": "resolved",
+        "seconds": 101,
+        "tokens": 37867,
+        "patchBytes": 1777,
+        "usd": 0.1515,
+        "priceSource": "modelprice Go rate card"
+      },
+      "gates": {
+        "relevanceWithheld": {},
+        "relevanceRestored": 0,
+        "monitorsDelivered": {},
+        "memoryDelivered": 0,
+        "compactionRemoved": 0
+      },
+      "subject": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "callout": "codex win",
+      "runIds": [
+        "run-astropy__astropy-8707"
+      ]
+    },
+    {
+      "instanceId": "django__django-16612",
+      "quality": {
+        "verdict": "resolved",
+        "patchBytes": 643,
+        "status": "failed",
+        "editsAttempted": 1,
+        "editsSucceeded": 0
+      },
+      "speed": {
+        "wallClockSeconds": 644,
+        "journalSeconds": 656,
+        "budgetSeconds": 1200,
+        "turns": 37,
+        "modelCalls": 37,
+        "flowCalls": 46,
+        "flowCallsRefused": 10,
+        "meanCallLatencyMs": 4018,
+        "perCallLatency": "journaled"
+      },
+      "cost": {
+        "model": "openai:gpt-5.6-sol",
+        "inputTokens": 143056,
+        "cachedInputTokens": 0,
+        "outputTokens": 10506,
+        "usd": 0.7823,
+        "priceSource": "modelprice Go rate card",
+        "jevCellCalls": 0,
+        "jevCellQuestions": 0,
+        "jevCellQuestionsUnknown": 0,
+        "jevBrakeReadings": 1,
+        "jevSupervisorReadings": 1,
+        "jevGateReadings": 0,
+        "cellsWithJev": 0,
+        "cells": 0,
+        "jevUnjudged": 1,
+        "jevInputTokens": 1500,
+        "jevOutputTokens": 0,
+        "jevUsd": 0.0001,
+        "jevPriceSource": "modelprice Go rate card",
+        "jevInterrupted": 1,
+        "supervisorUnjudged": {
+          "interrupted": 1
+        },
+        "supervisorMemoryFailures": 1,
+        "totalUsd": 0.7824
+      },
+      "baseline": {
+        "verdict": "resolved",
+        "seconds": 82,
+        "tokens": 30840,
+        "patchBytes": 643,
+        "usd": 0.1234,
+        "priceSource": "modelprice Go rate card"
+      },
+      "gates": {
+        "relevanceWithheld": {},
+        "relevanceRestored": 0,
+        "monitorsDelivered": {},
+        "memoryDelivered": 0,
+        "compactionRemoved": 0
+      },
+      "subject": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "callout": "both pass",
+      "runIds": [
+        "run-django__django-16612"
+      ]
+    },
+    {
+      "instanceId": "pydata__xarray-7393",
+      "quality": {
+        "verdict": "empty patch",
+        "patchBytes": 0,
+        "status": "failed",
+        "editsAttempted": 0,
+        "editsSucceeded": 0
+      },
+      "speed": {
+        "wallClockSeconds": 1505,
+        "journalSeconds": 1515,
+        "budgetSeconds": 1200,
+        "turns": 95,
+        "modelCalls": 95,
+        "flowCalls": 141,
+        "flowCallsRefused": 16,
+        "meanCallLatencyMs": 4047,
+        "perCallLatency": "journaled"
+      },
+      "cost": {
+        "model": "openai:gpt-5.6-sol",
+        "inputTokens": 356978,
+        "cachedInputTokens": 0,
+        "outputTokens": 20687,
+        "usd": 3.4764,
+        "priceSource": "modelprice Go rate card",
+        "jevCellCalls": 0,
+        "jevCellQuestions": 0,
+        "jevCellQuestionsUnknown": 0,
+        "jevBrakeReadings": 1,
+        "jevSupervisorReadings": 1,
+        "jevGateReadings": 0,
+        "cellsWithJev": 0,
+        "cells": 0,
+        "jevUnjudged": 1,
+        "jevInputTokens": 1500,
+        "jevOutputTokens": 0,
+        "jevUsd": 0.0001,
+        "jevPriceSource": "modelprice Go rate card",
+        "jevInterrupted": 1,
+        "supervisorUnjudged": {
+          "interrupted": 1
+        },
+        "supervisorMemoryFailures": 1,
+        "totalUsd": 3.4765
+      },
+      "baseline": {
+        "verdict": "resolved",
+        "seconds": 81,
+        "tokens": 34894,
+        "patchBytes": 658,
+        "usd": 0.1396,
+        "priceSource": "modelprice Go rate card"
+      },
+      "gates": {
+        "relevanceWithheld": {},
+        "relevanceRestored": 0,
+        "monitorsDelivered": {},
+        "memoryDelivered": 0,
+        "compactionRemoved": 0
+      },
+      "subject": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "callout": "codex win",
+      "runIds": [
+        "run-pydata__xarray-7393"
+      ]
+    },
+    {
+      "instanceId": "pytest-dev__pytest-6197",
+      "quality": {
+        "verdict": "unresolved",
+        "patchBytes": 386,
+        "status": "completed",
+        "editsAttempted": 1,
+        "editsSucceeded": 1
+      },
+      "speed": {
+        "wallClockSeconds": 690,
+        "journalSeconds": 697,
+        "budgetSeconds": 1200,
+        "turns": 68,
+        "modelCalls": 68,
+        "flowCalls": 82,
+        "flowCallsRefused": 13,
+        "meanCallLatencyMs": 4034,
+        "perCallLatency": "journaled"
+      },
+      "cost": {
+        "model": "openai:gpt-5.6-sol",
+        "inputTokens": 277964,
+        "cachedInputTokens": 0,
+        "outputTokens": 16190,
+        "usd": 2.7094,
+        "priceSource": "modelprice Go rate card",
+        "jevCellCalls": 0,
+        "jevCellQuestions": 0,
+        "jevCellQuestionsUnknown": 0,
+        "jevBrakeReadings": 1,
+        "jevSupervisorReadings": 1,
+        "jevGateReadings": 0,
+        "cellsWithJev": 0,
+        "cells": 0,
+        "jevUnjudged": 1,
+        "jevInputTokens": 1500,
+        "jevOutputTokens": 0,
+        "jevUsd": 0.0001,
+        "jevPriceSource": "modelprice Go rate card",
+        "jevInterrupted": 1,
+        "supervisorUnjudged": {
+          "interrupted": 1
+        },
+        "supervisorMemoryFailures": 1,
+        "totalUsd": 2.7095
+      },
+      "baseline": {
+        "verdict": "resolved",
+        "seconds": 183,
+        "tokens": 64398,
+        "patchBytes": 1005,
+        "usd": 0.2576,
+        "priceSource": "modelprice Go rate card"
+      },
+      "gates": {
+        "relevanceWithheld": {},
+        "relevanceRestored": 0,
+        "monitorsDelivered": {},
+        "memoryDelivered": 0,
+        "compactionRemoved": 0
+      },
+      "subject": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "callout": "codex win",
+      "runIds": [
+        "run-pytest-dev__pytest-6197"
+      ]
+    },
+    {
+      "instanceId": "sphinx-doc__sphinx-11445",
+      "quality": {
+        "verdict": "unresolved",
+        "patchBytes": 2373,
+        "status": "completed",
+        "editsAttempted": 1,
+        "editsSucceeded": 1
+      },
+      "speed": {
+        "wallClockSeconds": 527,
+        "journalSeconds": 535,
+        "budgetSeconds": 1200,
+        "turns": 46,
+        "modelCalls": 46,
+        "flowCalls": 53,
+        "flowCallsRefused": 13,
+        "meanCallLatencyMs": 4023,
+        "perCallLatency": "journaled"
+      },
+      "cost": {
+        "model": "openai:gpt-5.6-sol",
+        "inputTokens": 181556,
+        "cachedInputTokens": 0,
+        "outputTokens": 12772,
+        "usd": 0.9817,
+        "priceSource": "modelprice Go rate card",
+        "jevCellCalls": 0,
+        "jevCellQuestions": 0,
+        "jevCellQuestionsUnknown": 0,
+        "jevBrakeReadings": 1,
+        "jevSupervisorReadings": 1,
+        "jevGateReadings": 0,
+        "cellsWithJev": 0,
+        "cells": 0,
+        "jevUnjudged": 1,
+        "jevInputTokens": 1500,
+        "jevOutputTokens": 0,
+        "jevUsd": 0.0001,
+        "jevPriceSource": "modelprice Go rate card",
+        "jevInterrupted": 1,
+        "supervisorUnjudged": {
+          "interrupted": 1
+        },
+        "supervisorMemoryFailures": 1,
+        "totalUsd": 0.9818
+      },
+      "baseline": {
+        "verdict": "resolved",
+        "seconds": 82,
+        "tokens": 27988,
+        "patchBytes": 439,
+        "usd": 0.112,
+        "priceSource": "modelprice Go rate card"
+      },
+      "gates": {
+        "relevanceWithheld": {},
+        "relevanceRestored": 0,
+        "monitorsDelivered": {},
+        "memoryDelivered": 0,
+        "compactionRemoved": 0
+      },
+      "subject": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "callout": "codex win",
+      "runIds": [
+        "run-sphinx-doc__sphinx-11445"
+      ]
+    }
+  ]
+}

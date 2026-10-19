@@ -11,17 +11,32 @@
  * so every rule there is a candidate to port into the app.
  */
 import { createRequire } from "node:module"
-import { mkdirSync, readdirSync, readFileSync, watch, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync, watch, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, "../../..")
 const APP = join(ROOT, "apps/app")
 const MAINVIEW = join(APP, "src/mainview")
 const UI = join(ROOT, "packages/smithers/ui/src")
+/* --site=<name> builds a clickable site mock (src/sites) instead of the reel player: dist-<name>-app by default. */
+const SITE = process.argv.find(arg => arg.startsWith("--site="))?.slice(7)
+const SITES = join(HERE, "src/sites")
+/* --entry=<path under src/sites> builds that entry with --site's screen filter, e.g. a preview entry before it is wired in. */
+const ENTRY = process.argv.find(arg => arg.startsWith("--entry="))?.slice(8)
 /* --out=<dir> lets parallel authors build without overwriting each other's page. */
-const OUT = resolve(HERE, process.argv.find(arg => arg.startsWith("--out="))?.slice(6) ?? "dist")
+/* UI Mock Program sites keep their own dist names (default repo UI, Effect monorepo); the rest are dist-<site>-app. */
+const DISTS = { default: "dist-default-ui", effect: "dist-effect-monorepo", "smithers-site": "dist-smithers-site", "effeck-site": "dist-effeck-site" }
+const OUT = resolve(HERE, process.argv.find(arg => arg.startsWith("--out="))?.slice(6) ?? (SITE ? DISTS[SITE] ?? `dist-${SITE}-app` : "dist"))
+const TITLES = { effeck: "VibeLang app mock", smithers: "Smithers app mock", default: "smithers.sh default repo UI mock", effect: "Effect monorepo on smithers.sh mock", "smithers-site": "Smithers site mock", "effeck-site": "VibeLang site mock" }
+
+/* Every .css file under a directory, depth first, sorted, so a site's stylesheet order is stable. */
+const cssUnder = dir => readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).flatMap(entry => {
+  const path = join(dir, entry.name)
+  if (entry.isDirectory()) return cssUnder(path)
+  return entry.name.endsWith(".css") ? [readFileSync(path, "utf8")] : []
+})
 
 const requireApp = createRequire(join(APP, "package.json"))
 const esbuild = requireApp("esbuild")
@@ -80,7 +95,9 @@ const appCss = async () => {
 
 const bundle = async () => {
   const result = await esbuild.build({
-    entryPoints: [join(HERE, "src/main.tsx")],
+    /* A site with its own entry (sites/<site>-main.tsx) registers only its routes, so one site's work in progress
+       never breaks another's build. */
+    entryPoints: [ENTRY ? join(SITES, ENTRY) : SITE ? (existsSync(join(SITES, `${SITE}-main.tsx`)) ? join(SITES, `${SITE}-main.tsx`) : join(SITES, "main.tsx")) : join(HERE, "src/main.tsx")],
     bundle: true,
     write: false,
     format: "esm",
@@ -92,10 +109,47 @@ const bundle = async () => {
     nodePaths: [join(APP, "node_modules"), join(ROOT, "node_modules")],
     alias: { "@smthrs/ui": join(UI, "index.ts") },
     loader: { ".css": "text" },
-    define: { "process.env.NODE_ENV": '"production"' },
+    define: { "process.env.NODE_ENV": '"production"', __SITE__: JSON.stringify(SITE ?? "") },
     logLevel: "warning"
   })
   return result.outputFiles[0].text
+}
+
+/*
+ * A site's first screen must read without JavaScript (journey L1): render the start route once in a headless
+ * browser and write its markup and title into the page. With JavaScript, React replaces it on load.
+ */
+/* The head set mirrors main's apps/site/src/layouts/Base.astro. effeck.dev ships no share image, so its card is "summary". */
+const META = {
+  effeck: { title: "VibeLang: Effect, as a language", description: "VibeLang gives Effect.ts a simple, readable syntax that compiles to TypeScript." },
+  smithers: { title: "Smithers: durable agent coding on your own subscription", description: "Smithers runs Claude Code or Codex on your repository as a durable flow, on your machine and your own subscription. If the run is killed mid-way, smthrs runs resume continues it where it stopped.", image: "https://smithers.sh/media/og.png" }
+}
+const headTags = ({ title, description, image }) => [
+  `<title>${title}</title>`,
+  `<meta name="description" content="${description}">`,
+  `<meta property="og:title" content="${title}">`,
+  `<meta property="og:description" content="${description}">`,
+  `<meta property="og:type" content="website">`,
+  ...(image ? [`<meta property="og:image" content="${image}">`] : []),
+  `<meta name="twitter:card" content="${image ? "summary_large_image" : "summary"}">`,
+  `<meta name="twitter:title" content="${title}">`,
+  `<meta name="twitter:description" content="${description}">`,
+  ...(image ? [`<meta name="twitter:image" content="${image}">`] : [])
+].join("\n")
+const prerender = async file => {
+  const { chromium } = requireApp("@playwright/test")
+  const browser = await chromium.launch()
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+    await page.goto(`${pathToFileURL(file).href}?still=1&theme=light`)
+    await page.waitForTimeout(600)
+    const { markup, title } = await page.evaluate(() => ({ markup: document.getElementById("root").innerHTML, title: document.title }))
+    const meta = META[SITE?.replace(/-site$/, "")]
+    let html = readFileSync(file, "utf8").replace('<div id="root"></div>', () => `<div id="root">${markup}</div>`)
+    if (meta) html = html.replace(/<title>[^<]*<\/title>/, () => headTags(meta))
+    else if (title) html = html.replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
+    writeFileSync(file, html)
+  } finally { await browser.close() }
 }
 
 const build = async () => {
@@ -103,13 +157,14 @@ const build = async () => {
   const [css, js] = await Promise.all([appCss(), bundle()])
   const areaCss = readdirSync(join(HERE, "src/css")).filter(file => file.endsWith(".css")).sort()
     .map(file => readFileSync(join(HERE, "src/css", file), "utf8")).join("\n")
-  const mockCss = scopeDark(`${readFileSync(join(HERE, "src/mock.css"), "utf8")}\n${areaCss}`)
+  /* A site mock carries only the app's stylesheet and its own CSS: the reel harness's mock.css stays out. */
+  const mockCss = SITE ? cssUnder(SITES).join("\n") : scopeDark(`${readFileSync(join(HERE, "src/mock.css"), "utf8")}\n${areaCss}`)
   const html = `<!doctype html>
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Smithers MVP design</title>
+<title>${SITE ? TITLES[SITE] ?? SITE : "Smithers MVP design"}</title>
 <style>${fontFaces()}</style>
 <style>${css}</style>
 <style>${mockCss}</style>
@@ -122,6 +177,7 @@ const build = async () => {
 `
   mkdirSync(OUT, { recursive: true })
   writeFileSync(join(OUT, "index.html"), html)
+  if (SITE && !process.argv.includes("--no-prerender")) await prerender(join(OUT, "index.html"))
   console.log(`built ${join(OUT, "index.html")} (${(html.length / 1024).toFixed(0)} KiB) in ${Date.now() - started} ms`)
 }
 

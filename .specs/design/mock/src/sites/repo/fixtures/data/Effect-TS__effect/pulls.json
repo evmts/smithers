@@ -1,0 +1,1140 @@
+[
+  {
+    "n": 101,
+    "title": "Fail aborted PostgreSQL commits",
+    "state": "open",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "base": "main",
+    "head": "fix/pg-aborted-commit",
+    "opened": "2026-10-18T01:26:00Z",
+    "updated": "2026-10-18T03:20:00Z",
+    "body": "Fixes #42.\n\nFail `@effect/sql-pg` transactions when PostgreSQL returns `ROLLBACK` for `COMMIT` after a caught statement error. `SqlClient.make` accepts a commit effect so drivers can inspect the result.\n\nIncludes a focused regression and package checks.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [
+      {
+        "author": "maya",
+        "date": "2026-10-18T03:20:00Z",
+        "state": "changes_requested",
+        "body": "Keep the PostgreSQL command-tag check. Roll back the failed SQLite COMMIT before the connection is reused; the Bun matrix result links the regression."
+      }
+    ],
+    "reviewComments": [
+      {
+        "path": "packages/effect/src/sql/SqlClient.ts",
+        "line": 214,
+        "author": "maya",
+        "date": "2026-10-18T03:20:00Z",
+        "body": "The custom commit effect must preserve cleanup when a driver leaves the transaction open. Please cover the Bun deferred-constraint case.",
+        "resolved": false
+      }
+    ],
+    "comments": [
+      {
+        "author": "smithers-agent",
+        "date": "2026-10-18T02:50:00Z",
+        "body": "Bun failed in `packages/sql/sqlite-bun/test/Client.test.ts`. Node and Deno passed their eligible projects; they do not exercise Bun SQLite.",
+        "agent": {
+          "run": "run-4801",
+          "flow": "implement-issue",
+          "harness": "Codex · gpt-6.1-sol",
+          "for": "cora"
+        }
+      }
+    ],
+    "checks": [
+      {
+        "name": "Static",
+        "state": "success",
+        "detail": "Lint and circular dependency checks passed.",
+        "run": "run-4802"
+      },
+      {
+        "name": "Types",
+        "state": "success",
+        "detail": "TypeScript and Deno type checks passed.",
+        "run": "run-4802"
+      },
+      {
+        "name": "Build",
+        "state": "success",
+        "detail": "Distribution types passed.",
+        "run": "run-4802"
+      },
+      {
+        "name": "Bundle",
+        "state": "success",
+        "detail": "Bundle comparison completed.",
+        "run": "run-4802"
+      },
+      {
+        "name": "Test (Node)",
+        "state": "success",
+        "detail": "Mapped projects passed.",
+        "run": "run-4802"
+      },
+      {
+        "name": "Test (Deno)",
+        "state": "success",
+        "detail": "Eligible projects passed; runtime exclusions recorded.",
+        "run": "run-4802"
+      },
+      {
+        "name": "Test (Bun)",
+        "state": "failure",
+        "detail": "@effect/sql-sqlite-bun: cannot start a transaction within a transaction.",
+        "run": "run-4802"
+      },
+      {
+        "name": "Test (Documentation)",
+        "state": "success",
+        "detail": "Source examples passed.",
+        "run": "run-4802"
+      }
+    ],
+    "commits": [
+      "399df09b4bf4102f7e5be8feceffa9e5a33c8a8b"
+    ],
+    "files": [
+      {
+        "path": "packages/sql/pg/src/PgClient.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -237,6 +237,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "      // Postgres prepares transaction control like anything else, and a client",
+            "old": 237,
+            "new": 237
+          },
+          {
+            "kind": "ctx",
+            "text": "      // with preparation turned off falls back to the unnamed path anyway.",
+            "old": 238,
+            "new": 238
+          },
+          {
+            "kind": "ctx",
+            "text": "      prepareTransactionControls: true,",
+            "old": 239,
+            "new": 239
+          },
+          {
+            "kind": "add",
+            "text": "      commit,",
+            "new": 240
+          },
+          {
+            "kind": "ctx",
+            "text": "      releaseSavepoint: (name) => `RELEASE SAVEPOINT ${name}`,",
+            "old": 240,
+            "new": 241
+          },
+          {
+            "kind": "ctx",
+            "text": "      transactionAcquirer: options.transactionAcquirer,",
+            "old": 241,
+            "new": 242
+          },
+          {
+            "kind": "ctx",
+            "text": "      compiler,",
+            "old": 242,
+            "new": 243
+          }
+        ]
+      },
+      {
+        "path": "packages/effect/src/sql/SqlClient.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -186,6 +186,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "  )",
+            "old": 186,
+            "new": 186
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 187,
+            "new": 187
+          },
+          {
+            "kind": "ctx",
+            "text": "  const beginTransaction = options.beginTransaction ?? \"BEGIN\"",
+            "old": 188,
+            "new": 188
+          },
+          {
+            "kind": "add",
+            "text": "  const commit = options.commit ?? \"COMMIT\"",
+            "new": 189
+          },
+          {
+            "kind": "ctx",
+            "text": "  const savepoint = options.savepoint ?? ((name: string) => `SAVEPOINT ${name}`)",
+            "old": 189,
+            "new": 190
+          },
+          {
+            "kind": "ctx",
+            "text": "  const releaseSavepoint = options.releaseSavepoint",
+            "old": 190,
+            "new": 191
+          },
+          {
+            "kind": "ctx",
+            "text": "  const rollback = options.rollback ?? \"ROLLBACK\"",
+            "old": 191,
+            "new": 192
+          }
+        ]
+      },
+      {
+        "path": "packages/sql/pg/test/Client.integration.test.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -357,6 +357,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "      assert.deepStrictEqual(rows, [{ value: \"first\" }])",
+            "old": 357,
+            "new": 357
+          },
+          {
+            "kind": "ctx",
+            "text": "    }).pipe(TestClock.withLive))",
+            "old": 358,
+            "new": 358
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 359,
+            "new": 359
+          },
+          {
+            "kind": "add",
+            "text": "  it.effect(\"fails a transaction whose COMMIT rolls back after a caught error\", () =>",
+            "new": 360
+          },
+          {
+            "kind": "ctx",
+            "text": "    Effect.gen(function*() {",
+            "old": 360,
+            "new": 361
+          },
+          {
+            "kind": "ctx",
+            "text": "      const sql = yield* PgClient.PgClient",
+            "old": 361,
+            "new": 362
+          },
+          {
+            "kind": "ctx",
+            "text": "      const cause = yield* sql.withTransaction(Effect.gen(function*() {",
+            "old": 362,
+            "new": 363
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      42
+    ],
+    "labels": [
+      "bug",
+      "sql"
+    ],
+    "agent": {
+      "run": "run-4801",
+      "flow": "implement-issue",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "cora"
+    }
+  },
+  {
+    "n": 102,
+    "title": "AtomRegistry drops updates from a stale dependency",
+    "state": "open",
+    "kind": "pull",
+    "author": "dev-ahn",
+    "base": "main",
+    "head": "fix/atom-stale-dependencies",
+    "opened": "2026-10-17T01:20:00Z",
+    "updated": "2026-10-17T02:20:00Z",
+    "body": "Fixes #43.\n\nFix missed updates through stale `AtomRegistry` nodes, premature dependency release, leaked superseded builds, and failed observed builds that never recover.\n\nIncludes a focused regression and package checks.",
+    "reviewers": [
+      "cora"
+    ],
+    "reviews": [],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Check",
+        "state": "success",
+        "detail": "Required checks passed."
+      }
+    ],
+    "commits": [
+      "88cd29ba6767f6aa6b8dd50d926847a906fa353e"
+    ],
+    "files": [
+      {
+        "path": "packages/effect/src/reactivity/AtomRegistry.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -42,6 +42,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": " * @category type IDs",
+            "old": 42,
+            "new": 42
+          },
+          {
+            "kind": "ctx",
+            "text": " * @since 4.0.0",
+            "old": 43,
+            "new": 43
+          },
+          {
+            "kind": "ctx",
+            "text": " */",
+            "old": 44,
+            "new": 44
+          },
+          {
+            "kind": "add",
+            "text": "export const TypeId: TypeId = \"~effect/reactivity/AtomRegistry\"",
+            "new": 45
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 45,
+            "new": 46
+          },
+          {
+            "kind": "ctx",
+            "text": "/**",
+            "old": 46,
+            "new": 47
+          },
+          {
+            "kind": "ctx",
+            "text": " * Returns `true` when the value has the `AtomRegistry` type id.",
+            "old": 47,
+            "new": 48
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      43
+    ],
+    "labels": [
+      "bug"
+    ]
+  },
+  {
+    "n": 103,
+    "title": "Bun SQLite connection remains in a transaction after failed COMMIT",
+    "state": "open",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "base": "main",
+    "head": "fix/sqlite-failed-commit",
+    "opened": "2026-10-16T12:20:00Z",
+    "updated": "2026-10-16T13:20:00Z",
+    "body": "Fixes #44.\n\nRoll back SQLite transactions left open by a failed COMMIT, such as a deferred foreign key violation, so the connection can be reused.\n\nIncludes a focused regression and package checks.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Check",
+        "state": "success",
+        "detail": "Required checks passed."
+      }
+    ],
+    "commits": [
+      "6bedb2254a0072eb3fa23826573da32c7790d31d"
+    ],
+    "files": [
+      {
+        "path": "packages/effect/src/sql/SqlClient.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -212,6 +212,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "      ? (conn, id) => control(conn, releaseSavepoint(`effect_sql_${id}`))",
+            "old": 212,
+            "new": 212
+          },
+          {
+            "kind": "ctx",
+            "text": "      : undefined,",
+            "old": 213,
+            "new": 213
+          },
+          {
+            "kind": "ctx",
+            "text": "    commit: typeof commit === \"string\" ? (conn) => control(conn, commit) : commit,",
+            "old": 214,
+            "new": 214
+          },
+          {
+            "kind": "add",
+            "text": "    onCommitFailure: options.onCommitFailure,",
+            "new": 215
+          },
+          {
+            "kind": "ctx",
+            "text": "    rollback: (conn) => control(conn, rollback),",
+            "old": 215,
+            "new": 216
+          },
+          {
+            "kind": "ctx",
+            "text": "    rollbackSavepoint: (conn, id) => control(conn, rollbackSavepoint(`effect_sql_${id}`))",
+            "old": 216,
+            "new": 217
+          },
+          {
+            "kind": "ctx",
+            "text": "  })",
+            "old": 217,
+            "new": 218
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      44
+    ],
+    "labels": [
+      "bug",
+      "sql",
+      "runtime"
+    ],
+    "agent": {
+      "run": "run-4809",
+      "flow": "implement-issue",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "cora"
+    }
+  },
+  {
+    "n": 104,
+    "title": "awaitAllChildren cannot be interrupted while a child waits",
+    "state": "merged",
+    "kind": "pull",
+    "author": "cora",
+    "base": "main",
+    "head": "fix/await-children",
+    "opened": "2026-10-15T23:20:00Z",
+    "updated": "2026-10-16T00:20:00Z",
+    "body": "Fixes #45.\n\nMake `Effect.awaitAllChildren` interruptible while it waits for child fibers.\n\nIncludes a focused regression and package checks.",
+    "reviewers": [
+      "cora"
+    ],
+    "reviews": [
+      {
+        "author": "maya",
+        "date": "2026-10-16T00:14:00Z",
+        "state": "approved",
+        "body": "Regression and package checks passed. Reviewed."
+      }
+    ],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Check",
+        "state": "success",
+        "detail": "Required checks passed."
+      }
+    ],
+    "commits": [
+      "6e80deace8bd2909c86e711cc2adf991fcfa6ba3"
+    ],
+    "files": [
+      {
+        "path": "packages/effect/src/Effect.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -8746,6 +8746,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": " * @category forking",
+            "old": 8746,
+            "new": 8746
+          },
+          {
+            "kind": "ctx",
+            "text": " * @since 2.0.0",
+            "old": 8747,
+            "new": 8747
+          },
+          {
+            "kind": "ctx",
+            "text": " */",
+            "old": 8748,
+            "new": 8748
+          },
+          {
+            "kind": "add",
+            "text": "export const awaitAllChildren: <A, E, R>(self: Effect<A, E, R>) => Effect<A, E, R> = internal.awaitAllChildren",
+            "new": 8749
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 8749,
+            "new": 8750
+          },
+          {
+            "kind": "ctx",
+            "text": "/**",
+            "old": 8750,
+            "new": 8751
+          },
+          {
+            "kind": "ctx",
+            "text": " * Accesses the fiber currently executing the effect.",
+            "old": 8751,
+            "new": 8752
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      45
+    ],
+    "labels": [
+      "bug"
+    ],
+    "merged": {
+      "by": "maya",
+      "date": "2026-10-16T00:20:00Z",
+      "sha": "6e80deace8bd2909c86e711cc2adf991fcfa6ba3"
+    }
+  },
+  {
+    "n": 105,
+    "title": "Move SQL imports to the current module exports",
+    "state": "draft",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "base": "main",
+    "head": "refactor/module-paths",
+    "opened": "2026-10-14T08:20:00Z",
+    "updated": "2026-10-14T09:20:00Z",
+    "body": "Fixes #46.\n\nMove unstable modules from `effect/unstable/*` to `effect/*` and remove the old export paths. Drop the `unstable` segment from imports. These APIs remain `@stability unstable`.\n\nMove `Arbitrary` to the top level and update `@effect/vitest` to use the new entrypoint. Replace imports from `effect/arbitrary` or `effect/arbitrary/Arbitrary` with `import { Arbitrary } from \"effect\"` or `import * as Arbitrary from \"effect/Arbitrary\"`.\n\nIncludes a focused regression and package checks.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Check",
+        "state": "success",
+        "detail": "Required checks passed."
+      }
+    ],
+    "commits": [
+      "747533f391a40e1b11be2c7f4a3d4d5d401f0a3b"
+    ],
+    "files": [
+      {
+        "path": "packages/effect/package.json",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -1,3 +1,4 @@"
+          },
+          {
+            "kind": "add",
+            "text": "{",
+            "new": 1
+          },
+          {
+            "kind": "ctx",
+            "text": "  \"name\": \"effect\",",
+            "old": 1,
+            "new": 2
+          },
+          {
+            "kind": "ctx",
+            "text": "  \"type\": \"module\",",
+            "old": 2,
+            "new": 3
+          },
+          {
+            "kind": "ctx",
+            "text": "  \"version\": \"4.0.0-rc.118\",",
+            "old": 3,
+            "new": 4
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      46
+    ],
+    "labels": [
+      "enhancement",
+      "sql"
+    ],
+    "agent": {
+      "run": "run-4810",
+      "flow": "implement-issue",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "cora"
+    }
+  },
+  {
+    "n": 106,
+    "title": "Scope close skips later finalizers after a synchronous throw",
+    "state": "draft",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "base": "main",
+    "head": "fix/scope-close",
+    "opened": "2026-10-12T04:20:00Z",
+    "updated": "2026-10-12T05:20:00Z",
+    "body": "Fixes #47.\n\nRun `Scope.close` finalizers uninterruptibly so interruption cannot abandon remaining cleanup, including when closing a `ManagedRuntime`.\n\nIncludes a focused regression and package checks.",
+    "reviewers": [
+      "cora"
+    ],
+    "reviews": [],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Check",
+        "state": "success",
+        "detail": "Required checks passed."
+      }
+    ],
+    "commits": [
+      "d6f5fe56cae946bb69695c9a9abbfa497761dd9a"
+    ],
+    "files": [
+      {
+        "path": "packages/effect/src/Scope.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -211,6 +211,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": " * @category services",
+            "old": 211,
+            "new": 211
+          },
+          {
+            "kind": "ctx",
+            "text": " * @since 2.0.0",
+            "old": 212,
+            "new": 212
+          },
+          {
+            "kind": "ctx",
+            "text": " */",
+            "old": 213,
+            "new": 213
+          },
+          {
+            "kind": "add",
+            "text": "export const Scope: Context.Service<Scope, Scope> = effect.scopeTag",
+            "new": 214
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 214,
+            "new": 215
+          },
+          {
+            "kind": "ctx",
+            "text": "/**",
+            "old": 215,
+            "new": 216
+          },
+          {
+            "kind": "ctx",
+            "text": " * Creates a new `Scope` with the specified finalizer strategy.",
+            "old": 216,
+            "new": 217
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      47
+    ],
+    "labels": [
+      "bug"
+    ],
+    "agent": {
+      "run": "run-4811",
+      "flow": "implement-issue",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "cora"
+    }
+  },
+  {
+    "n": 107,
+    "title": "Queue taker can miss an offer during registration",
+    "state": "merged",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "base": "main",
+    "head": "fix/queue-wakeup",
+    "opened": "2026-10-08T22:20:00Z",
+    "updated": "2026-10-08T23:20:00Z",
+    "body": "Fixes #48.\n\nFix Queue takers missing offers that arrive while they are registering.\n\nIncludes a focused regression and package checks.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [
+      {
+        "author": "maya",
+        "date": "2026-10-08T23:14:00Z",
+        "state": "approved",
+        "body": "Regression and package checks passed. Reviewed."
+      }
+    ],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Check",
+        "state": "success",
+        "detail": "Required checks passed."
+      }
+    ],
+    "commits": [
+      "ea2466ebdff386990eb7fcc4a56be720dd58bda0"
+    ],
+    "files": [
+      {
+        "path": "packages/effect/src/Queue.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -43,6 +43,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": " * @category guards",
+            "old": 43,
+            "new": 43
+          },
+          {
+            "kind": "ctx",
+            "text": " * @since 2.0.0",
+            "old": 44,
+            "new": 44
+          },
+          {
+            "kind": "ctx",
+            "text": " */",
+            "old": 45,
+            "new": 45
+          },
+          {
+            "kind": "add",
+            "text": "export const isQueue = <A = unknown, E = unknown>(",
+            "new": 46
+          },
+          {
+            "kind": "ctx",
+            "text": "  u: unknown",
+            "old": 46,
+            "new": 47
+          },
+          {
+            "kind": "ctx",
+            "text": "): u is Queue<A, E> => hasProperty(u, TypeId)",
+            "old": 47,
+            "new": 48
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 48,
+            "new": 49
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      48
+    ],
+    "labels": [
+      "bug"
+    ],
+    "agent": {
+      "run": "run-4812",
+      "flow": "implement-issue",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    },
+    "merged": {
+      "by": "maya",
+      "date": "2026-10-08T23:20:00Z",
+      "sha": "ea2466ebdff386990eb7fcc4a56be720dd58bda0"
+    }
+  },
+  {
+    "n": 108,
+    "title": "Document Unicode string constraints",
+    "state": "draft",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "base": "main",
+    "head": "docs/schema-brand",
+    "opened": "2026-10-05T03:20:00Z",
+    "updated": "2026-10-05T04:20:00Z",
+    "body": "Fixes #49.\n\nAdd `Schema.isMinCodePoints`, `Schema.isMaxCodePoints`, and `Schema.isBetweenCodePoints` to validate string lengths by Unicode code point count, with JSON Schema export, representation revivers, and arbitrary generation support.\n\nIncludes a focused regression and package checks.",
+    "reviewers": [
+      "cora"
+    ],
+    "reviews": [],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Check",
+        "state": "success",
+        "detail": "Required checks passed."
+      }
+    ],
+    "commits": [
+      "8029bf27825c324af71956b7db404efb93b894c5"
+    ],
+    "files": [
+      {
+        "path": "packages/effect/src/Schema.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -90,6 +90,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": " * @category models",
+            "old": 90,
+            "new": 90
+          },
+          {
+            "kind": "ctx",
+            "text": " * @since 4.0.0",
+            "old": 91,
+            "new": 91
+          },
+          {
+            "kind": "ctx",
+            "text": " */",
+            "old": 92,
+            "new": 92
+          },
+          {
+            "kind": "add",
+            "text": "export type Optionality = \"required\" | \"optional\"",
+            "new": 93
+          },
+          {
+            "kind": "ctx",
+            "text": "/**",
+            "old": 93,
+            "new": 94
+          },
+          {
+            "kind": "ctx",
+            "text": " * Whether a schema field is readonly or mutable within a struct.",
+            "old": 94,
+            "new": 95
+          },
+          {
+            "kind": "ctx",
+            "text": " *",
+            "old": 95,
+            "new": 96
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      49
+    ],
+    "labels": [
+      "documentation",
+      "schema"
+    ],
+    "agent": {
+      "run": "run-4813",
+      "flow": "implement-issue",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    }
+  },
+  {
+    "n": 109,
+    "title": "Layer memo waiters hang after the initial build is interrupted",
+    "state": "merged",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "base": "main",
+    "head": "fix/layer-memo",
+    "opened": "2026-09-30T06:20:00Z",
+    "updated": "2026-09-30T07:20:00Z",
+    "body": "Fixes #50.\n\nFix interrupted `Layer` memoization so waiting and later requesters receive the interrupted build's exit instead of hanging, and shared layers are released when scopes close. Correct `MemoMap.get` observer accounting for effects run twice or never run.\n\nIncludes a focused regression and package checks.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [
+      {
+        "author": "maya",
+        "date": "2026-09-30T07:14:00Z",
+        "state": "approved",
+        "body": "Regression and package checks passed. Reviewed."
+      }
+    ],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Check",
+        "state": "success",
+        "detail": "Required checks passed."
+      }
+    ],
+    "commits": [
+      "a7284fdef41d8680bcc8d3b2a580dd191f137e32"
+    ],
+    "files": [
+      {
+        "path": "packages/effect/src/Layer.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -288,6 +288,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": " * @category guards",
+            "old": 288,
+            "new": 288
+          },
+          {
+            "kind": "ctx",
+            "text": " * @since 2.0.0",
+            "old": 289,
+            "new": 289
+          },
+          {
+            "kind": "ctx",
+            "text": " */",
+            "old": 290,
+            "new": 290
+          },
+          {
+            "kind": "add",
+            "text": "export const isLayer = (u: unknown): u is Layer<unknown, unknown, unknown> => hasProperty(u, TypeId)",
+            "new": 291
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 291,
+            "new": 292
+          },
+          {
+            "kind": "ctx",
+            "text": "const LayerProto = {",
+            "old": 292,
+            "new": 293
+          },
+          {
+            "kind": "ctx",
+            "text": "  [TypeId]: {",
+            "old": 293,
+            "new": 294
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      50
+    ],
+    "labels": [
+      "bug"
+    ],
+    "agent": {
+      "run": "run-4814",
+      "flow": "implement-issue",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    },
+    "merged": {
+      "by": "maya",
+      "date": "2026-09-30T06:23:36Z",
+      "sha": "a7284fdef41d8680bcc8d3b2a580dd191f137e32"
+    }
+  },
+  {
+    "n": 110,
+    "title": "MCP tool parameter failures omit later invalid fields",
+    "state": "closed",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "base": "main",
+    "head": "fix/mcp-tool-errors",
+    "opened": "2026-09-25T09:20:00Z",
+    "updated": "2026-09-25T10:20:00Z",
+    "body": "Fixes #51.\n\nReport all parameter validation errors for MCP tools in a single response, including missing or invalid fields and, for strict tools, unknown keys.\n\nIncludes a focused regression and package checks.",
+    "reviewers": [
+      "cora"
+    ],
+    "reviews": [],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Check",
+        "state": "success",
+        "detail": "Required checks passed."
+      }
+    ],
+    "commits": [
+      "d76482f6eb53670e397915f9f8d60a94eb33f8dc"
+    ],
+    "files": [
+      {
+        "path": "packages/effect/src/Effect.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -87,6 +87,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": " * @category type IDs",
+            "old": 87,
+            "new": 87
+          },
+          {
+            "kind": "ctx",
+            "text": " * @since 4.0.0",
+            "old": 88,
+            "new": 88
+          },
+          {
+            "kind": "ctx",
+            "text": " */",
+            "old": 89,
+            "new": 89
+          },
+          {
+            "kind": "add",
+            "text": "export const TypeId: TypeId = core.EffectTypeId",
+            "new": 90
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 90,
+            "new": 91
+          },
+          {
+            "kind": "ctx",
+            "text": "/**",
+            "old": 91,
+            "new": 92
+          },
+          {
+            "kind": "ctx",
+            "text": " * The `Effect` interface defines a value that lazily describes a workflow or",
+            "old": 92,
+            "new": 93
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      51
+    ],
+    "labels": [
+      "bug"
+    ],
+    "agent": {
+      "run": "run-4815",
+      "flow": "implement-issue",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "cora"
+    }
+  }
+]

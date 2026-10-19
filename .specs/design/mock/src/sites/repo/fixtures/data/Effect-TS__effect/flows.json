@@ -1,0 +1,399 @@
+[
+  {
+    "name": "check",
+    "file": ".github/workflows/check.yml",
+    "description": "Check source, types, builds and runtime projects.",
+    "inputs": [
+      {
+        "name": "ref",
+        "type": "string",
+        "required": true,
+        "description": "Revision to inspect."
+      },
+      {
+        "name": "package",
+        "type": "string",
+        "required": false,
+        "description": "Package scope; shared checks remain visible."
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "manual",
+        "spec": "/check",
+        "enabled": true
+      },
+      {
+        "kind": "push",
+        "spec": "main, v4/next-minor, v4/next-major",
+        "enabled": true
+      },
+      {
+        "kind": "pull",
+        "spec": "main, v4/next-minor, v4/next-major",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "author",
+        "agent": "implementer"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "static",
+          "label": "Static",
+          "kind": "check"
+        },
+        {
+          "id": "types",
+          "label": "Types",
+          "kind": "check"
+        },
+        {
+          "id": "test",
+          "label": "Node · Deno · Bun",
+          "kind": "check"
+        }
+      ],
+      "edges": [
+        [
+          "static",
+          "types"
+        ],
+        [
+          "types",
+          "test"
+        ]
+      ]
+    },
+    "runs": [
+      "run-4805",
+      "run-4802",
+      "run-4807",
+      "run-4806"
+    ]
+  },
+  {
+    "name": "affected",
+    "file": ".smithers/flows/affected/flow.ts",
+    "description": "Resolve changed paths and run affected projects.",
+    "inputs": [
+      {
+        "name": "ref",
+        "type": "string",
+        "required": true,
+        "description": "Revision to inspect."
+      },
+      {
+        "name": "package",
+        "type": "string",
+        "required": false,
+        "description": "Package scope; shared checks remain visible."
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "manual",
+        "spec": "/affected",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "author",
+        "agent": "implementer"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "resolve",
+          "label": "Resolve packages",
+          "kind": "step"
+        },
+        {
+          "id": "check",
+          "label": "Run affected",
+          "kind": "check"
+        }
+      ],
+      "edges": [
+        [
+          "resolve",
+          "check"
+        ]
+      ]
+    },
+    "runs": [
+      "run-4808"
+    ]
+  },
+  {
+    "name": "implement-issue",
+    "file": ".smithers/flows/implement-issue/flow.ts",
+    "description": "Reproduce an issue and open a change for human review.",
+    "inputs": [
+      {
+        "name": "ref",
+        "type": "string",
+        "required": true,
+        "description": "Revision to inspect."
+      },
+      {
+        "name": "issue",
+        "type": "number",
+        "required": true,
+        "description": "Issue number."
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "manual",
+        "spec": "/implement-issue",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "author",
+        "agent": "implementer"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "reproduce",
+          "label": "Reproduce",
+          "kind": "agent"
+        },
+        {
+          "id": "implement",
+          "label": "Implement",
+          "kind": "agent"
+        },
+        {
+          "id": "verify",
+          "label": "Verify",
+          "kind": "check"
+        },
+        {
+          "id": "review",
+          "label": "Human review",
+          "kind": "approval"
+        }
+      ],
+      "edges": [
+        [
+          "reproduce",
+          "implement"
+        ],
+        [
+          "implement",
+          "verify"
+        ],
+        [
+          "verify",
+          "review"
+        ]
+      ]
+    },
+    "runs": [
+      "run-4801",
+      "run-4809",
+      "run-4810",
+      "run-4811",
+      "run-4812",
+      "run-4813",
+      "run-4814",
+      "run-4815"
+    ]
+  },
+  {
+    "name": "docs-generate",
+    "file": ".smithers/flows/docs-generate/flow.ts",
+    "description": "Generate source-linked API docs and AI guides.",
+    "inputs": [
+      {
+        "name": "ref",
+        "type": "string",
+        "required": true,
+        "description": "Revision to inspect."
+      },
+      {
+        "name": "package",
+        "type": "string",
+        "required": false,
+        "description": "Package scope; shared checks remain visible."
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "manual",
+        "spec": "/docs-generate",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "author",
+        "agent": "docs"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "source",
+          "label": "Pin sources",
+          "kind": "step"
+        },
+        {
+          "id": "generate",
+          "label": "Generate preview",
+          "kind": "agent"
+        },
+        {
+          "id": "accept",
+          "label": "Accept preview",
+          "kind": "approval"
+        }
+      ],
+      "edges": [
+        [
+          "source",
+          "generate"
+        ],
+        [
+          "generate",
+          "accept"
+        ]
+      ]
+    },
+    "runs": [
+      "run-4804"
+    ]
+  },
+  {
+    "name": "release-plan",
+    "file": ".smithers/flows/release-plan/flow.ts",
+    "description": "Preview Changesets impact and prepare a version PR.",
+    "inputs": [
+      {
+        "name": "ref",
+        "type": "string",
+        "required": true,
+        "description": "Revision to inspect."
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "manual",
+        "spec": "/release-plan",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "author",
+        "agent": "release"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "inputs",
+          "label": "Read pending changesets",
+          "kind": "step"
+        },
+        {
+          "id": "preview",
+          "label": "Compute versions",
+          "kind": "step"
+        },
+        {
+          "id": "approve",
+          "label": "Human approval",
+          "kind": "approval"
+        },
+        {
+          "id": "prepare",
+          "label": "Prepare version PR",
+          "kind": "step"
+        }
+      ],
+      "edges": [
+        [
+          "inputs",
+          "preview"
+        ],
+        [
+          "preview",
+          "approve"
+        ],
+        [
+          "approve",
+          "prepare"
+        ]
+      ]
+    },
+    "runs": [
+      "run-4803"
+    ]
+  },
+  {
+    "name": "triage",
+    "file": ".smithers/flows/triage/flow.ts",
+    "description": "Associate reports with packages and owners.",
+    "inputs": [
+      {
+        "name": "ref",
+        "type": "string",
+        "required": true,
+        "description": "Revision to inspect."
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "manual",
+        "spec": "/triage",
+        "enabled": true
+      },
+      {
+        "kind": "issue-label",
+        "spec": "bug",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "author",
+        "agent": "triage"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "read",
+          "label": "Read report",
+          "kind": "agent"
+        },
+        {
+          "id": "associate",
+          "label": "Associate packages",
+          "kind": "step"
+        }
+      ],
+      "edges": [
+        [
+          "read",
+          "associate"
+        ]
+      ]
+    },
+    "runs": [
+      "run-4816"
+    ]
+  }
+]

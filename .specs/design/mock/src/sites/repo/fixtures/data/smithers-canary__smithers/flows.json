@@ -1,0 +1,438 @@
+[
+  {
+    "name": "issue-triage",
+    "file": ".smithers/flows/issue-triage/flow.mdx",
+    "description": "Reproduce one GitHub issue and write a structured maintainer handoff without a GitHub write token.",
+    "inputs": [
+      {
+        "name": "context",
+        "type": "string",
+        "required": true,
+        "description": "Path to the quoted GitHub event context JSON."
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "manual",
+        "spec": "Issue context JSON",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "Triage",
+        "agent": "smithers-agent"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "classify",
+          "label": "Classify",
+          "kind": "agent"
+        },
+        {
+          "id": "reproduce",
+          "label": "Reproduce",
+          "kind": "check"
+        },
+        {
+          "id": "handoff",
+          "label": "Write handoff",
+          "kind": "step"
+        }
+      ],
+      "edges": [
+        [
+          "classify",
+          "reproduce"
+        ],
+        [
+          "reproduce",
+          "handoff"
+        ]
+      ]
+    },
+    "runs": []
+  },
+  {
+    "name": "land",
+    "file": ".smithers/flows/land/flow.ts",
+    "description": "You land; the queue runs your submitted tests and gates first.",
+    "inputs": [
+      {
+        "name": "message",
+        "type": "string",
+        "required": false,
+        "description": "Commit message."
+      },
+      {
+        "name": "push",
+        "type": "boolean",
+        "required": false,
+        "description": "Publish after gates."
+      },
+      {
+        "name": "tests",
+        "type": "string[]",
+        "required": false,
+        "description": "Commands proving the change."
+      },
+      {
+        "name": "noTest",
+        "type": "string",
+        "required": false,
+        "description": "Reason no test command applies; mandatory gates still run."
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "manual",
+        "spec": "Landing queue · person only",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "Checks",
+        "agent": "checks-agent"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "tests",
+          "label": "Tests",
+          "kind": "check"
+        },
+        {
+          "id": "gates",
+          "label": "Landing gates",
+          "kind": "check"
+        },
+        {
+          "id": "land",
+          "label": "Person lands",
+          "kind": "step"
+        }
+      ],
+      "edges": [
+        [
+          "tests",
+          "gates"
+        ],
+        [
+          "gates",
+          "land"
+        ]
+      ]
+    },
+    "runs": [
+      "run-land-queued",
+      "run-land-landing",
+      "run-land-lint-refused",
+      "run-land-358846054559",
+      "run-land-d38d44b92821",
+      "run-land-037d43ef5a2f",
+      "run-land-28986e29bafb",
+      "run-land-e75952e77560",
+      "run-land-556158785a18",
+      "run-land-68f1d8946ed3",
+      "run-land-065cdd316d8a",
+      "run-land-7ce5c49675b8",
+      "run-land-24015c927059",
+      "run-land-f53d5abfd8a4",
+      "run-land-a37342fe6da5",
+      "run-land-a8831c3ea907",
+      "run-land-6ee0078981a7",
+      "run-land-acee35be8bf2",
+      "run-land-a18b6c3bc911",
+      "run-land-62de1621dee5",
+      "run-land-4307a1cca325",
+      "run-land-6ba607221b33",
+      "run-land-a7407dfe7c55",
+      "run-land-0f43eff054d4",
+      "run-land-642f333139d7",
+      "run-land-ee29a966d973",
+      "run-land-f74a0f5a58c4",
+      "run-land-34b7d521fa0f",
+      "run-land-b4cd6382a4a1",
+      "run-land-a0668ee9e0b4",
+      "run-land-1da732093958",
+      "run-land-eeb09c91c419",
+      "run-land-be196ebd1025",
+      "run-land-8e3276cde761",
+      "run-land-da413d0c96f9",
+      "run-land-5be81944af2c",
+      "run-land-7df5f685fc84",
+      "run-land-14feaf3811ea",
+      "run-land-5d43ac6b7d11",
+      "run-land-71c8f035f6ed",
+      "run-land-38470a2970be",
+      "run-land-94b44ed69352"
+    ]
+  },
+  {
+    "name": "docs-sync",
+    "file": ".smithers/flows/docs-sync/flow.ts",
+    "description": "Regenerate or check the documentation redirect map and published package tarballs.",
+    "inputs": [
+      {
+        "name": "mode",
+        "type": "\"print\" | \"write\" | \"check\"",
+        "required": true,
+        "description": "Print, regenerate, or verify package documentation."
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "manual",
+        "spec": "mode=check",
+        "enabled": true
+      },
+      {
+        "kind": "schedule",
+        "spec": "0 4 * * *",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "Documentation",
+        "agent": "smithers-agent"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "redirects",
+          "label": "Check redirects",
+          "kind": "check"
+        },
+        {
+          "id": "tarballs",
+          "label": "Check tarballs",
+          "kind": "check"
+        }
+      ],
+      "edges": [
+        [
+          "redirects",
+          "tarballs"
+        ]
+      ]
+    },
+    "runs": [
+      "run-docs-sync-check",
+      "run-review-example"
+    ]
+  },
+  {
+    "name": "release",
+    "file": ".smithers/flows/release/flow.ts",
+    "description": "Prepare a release, or validate, build, pack and smoke-test its exact tarballs before a person approves publication.",
+    "inputs": [
+      {
+        "name": "version",
+        "type": "string",
+        "required": true,
+        "description": "Release candidate version."
+      },
+      {
+        "name": "phase",
+        "type": "\"prepare\" | \"publish\"",
+        "required": true,
+        "description": "Prepare evidence or publish a verified candidate."
+      },
+      {
+        "name": "dryRun",
+        "type": "boolean",
+        "required": false,
+        "description": "Produce a preview without writing or publishing."
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "manual",
+        "spec": "1.0.0-rc.13 · next cut",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "Release",
+        "agent": "smithers-agent"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "collect",
+          "label": "Collect changes",
+          "kind": "step"
+        },
+        {
+          "id": "audit",
+          "label": "Audit docs",
+          "kind": "check"
+        },
+        {
+          "id": "prepare",
+          "label": "Approve preparation",
+          "kind": "approval"
+        },
+        {
+          "id": "write",
+          "label": "Write preparation",
+          "kind": "step"
+        },
+        {
+          "id": "validate",
+          "label": "Validate",
+          "kind": "check"
+        },
+        {
+          "id": "checks",
+          "label": "Checks",
+          "kind": "check"
+        },
+        {
+          "id": "build",
+          "label": "Build",
+          "kind": "step"
+        },
+        {
+          "id": "pack",
+          "label": "Pack",
+          "kind": "step"
+        },
+        {
+          "id": "smoke",
+          "label": "Smoke",
+          "kind": "check"
+        },
+        {
+          "id": "verify",
+          "label": "Verify candidate",
+          "kind": "check"
+        },
+        {
+          "id": "approve",
+          "label": "Approve publication",
+          "kind": "approval"
+        },
+        {
+          "id": "publish",
+          "label": "Publish to next",
+          "kind": "step"
+        }
+      ],
+      "edges": [
+        [
+          "collect",
+          "audit"
+        ],
+        [
+          "audit",
+          "prepare"
+        ],
+        [
+          "prepare",
+          "write"
+        ],
+        [
+          "write",
+          "validate"
+        ],
+        [
+          "validate",
+          "checks"
+        ],
+        [
+          "checks",
+          "build"
+        ],
+        [
+          "build",
+          "pack"
+        ],
+        [
+          "pack",
+          "smoke"
+        ],
+        [
+          "smoke",
+          "verify"
+        ],
+        [
+          "verify",
+          "approve"
+        ],
+        [
+          "approve",
+          "publish"
+        ]
+      ]
+    },
+    "runs": [
+      "run-release-rc13"
+    ]
+  },
+  {
+    "name": "eval.run",
+    "file": "packages/smithers/src/evaluation/EvalCli.ts",
+    "description": "Run a fixed eval suite with its declared scorers. Snapshot runs in this mock import recorded fixtures.",
+    "inputs": [
+      {
+        "name": "file",
+        "type": "string",
+        "required": true,
+        "description": "Eval suite module path."
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "manual",
+        "spec": "Suite module",
+        "enabled": true
+      }
+    ],
+    "roles": [],
+    "graph": {
+      "nodes": [
+        {
+          "id": "execute",
+          "label": "Execute cases",
+          "kind": "check"
+        },
+        {
+          "id": "score",
+          "label": "Score",
+          "kind": "check"
+        },
+        {
+          "id": "compare",
+          "label": "Compare baseline",
+          "kind": "check"
+        }
+      ],
+      "edges": [
+        [
+          "execute",
+          "score"
+        ],
+        [
+          "score",
+          "compare"
+        ]
+      ]
+    },
+    "runs": [
+      "run-eval-snapshot-review-seeded-bugs",
+      "run-eval-snapshot-authoring",
+      "run-eval-snapshot-recommend",
+      "run-eval-snapshot-swebench",
+      "run-eval-snapshot-agent"
+    ]
+  }
+]

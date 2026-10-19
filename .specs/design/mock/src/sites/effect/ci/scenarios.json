@@ -1,0 +1,66 @@
+{
+  "setupFailure": {
+    "id": "run-ci-setup",
+    "flow": "check",
+    "title": "Check PostgreSQL commit handling",
+    "state": "failed",
+    "trigger": {
+      "kind": "pull",
+      "by": "cora",
+      "ref": "101"
+    },
+    "harness": "GitHub Actions \u00b7 Check",
+    "started": "2026-10-18T03:20:00Z",
+    "finished": "2026-10-18T03:20:19Z",
+    "duration": "19s",
+    "cost": {
+      "usd": 0,
+      "tokens": 0
+    },
+    "branch": "fix/pg-aborted-commit",
+    "pull": 101,
+    "stages": [
+      {
+        "id": "setup-bun",
+        "label": "Install (Bun)",
+        "state": "failed",
+        "duration": "19s",
+        "summary": "Install failed on Bun: frozen lockfile is out of date.",
+        "log": [
+          "pnpm install",
+          "ERR_PNPM_OUTDATED_LOCKFILE Cannot install with frozen-lockfile",
+          "pnpm-lock.yaml is not up to date with packages/sql/sqlite-bun/package.json",
+          "Install failed on Bun. No tests started."
+        ]
+      }
+    ],
+    "approvals": [],
+    "failure": {
+      "stage": "setup-bun",
+      "reason": "Install failed on Bun: frozen lockfile is out of date."
+    },
+    "trace": [
+      {
+        "at": "2026-10-18T03:20:19Z",
+        "stage": "setup-bun",
+        "kind": "error",
+        "text": "Frozen lockfile install failed before tests started."
+      }
+    ]
+  },
+  "missingResult": {
+    "package": "@effect/sql-pg",
+    "runtime": "Deno",
+    "reason": "The Deno job ended without a project result for @effect/sql-pg."
+  },
+  "sharedInputRef": {
+    "name": "chore/refresh-lockfile",
+    "relationRun": "run-4808",
+    "head": "f6d10ae23f7ec8eb2ef4720ebbe34a3c9723ab67"
+  },
+  "pendingResult": {
+    "package": "@effect/sql-pg",
+    "runtime": "Bun",
+    "reason": "Waiting for an available Bun project worker."
+  }
+}

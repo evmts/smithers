@@ -1,0 +1,2798 @@
+[
+  {
+    "sha": "b2d9a112a0f119620e002c06cabe9ffbaa978e62",
+    "title": "Add a review example",
+    "body": "Mock review scenario.",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-review-example",
+      "flow": "docs-sync",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    },
+    "date": "2026-10-18T04:59:00Z",
+    "parents": [
+      "3588460545591ad7470c82095cb84434ced94aba"
+    ],
+    "branches": [
+      "mock/review-example"
+    ],
+    "pull": 9001,
+    "checks": [
+      {
+        "name": "Example content",
+        "state": "success",
+        "duration": "1 s",
+        "detail": "Mock scenario: the example contains one nonempty line.",
+        "run": "run-review-example"
+      }
+    ],
+    "verified": true,
+    "files": [
+      {
+        "path": "review-example.md",
+        "status": "added",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -0,0 +1 @@"
+          },
+          {
+            "kind": "add",
+            "text": "A small example for human review.",
+            "new": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "sha": "3588460545591ad7470c82095cb84434ced94aba",
+    "title": "🎨 style: format the eight packages whose dprint check fails on main",
+    "body": "The rc.13 cut runs every package formatter; these eight had drifted on main from unformatted pushes. Formatting only, from the repository dprint config.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\nLanding-Tests: pnpm exec smthrs lint //...:fmt\n",
+    "author": "maya",
+    "date": "2026-10-18T04:18:39Z",
+    "parents": [
+      "d38d44b92821d35ef6fcac121d9fd84476a871a4"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/smithers/migrate/docs/api.md",
+        "status": "modified",
+        "additions": 2,
+        "deletions": 2,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -484,3 +484,3 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "| `outputs.<key>`                          | `The planned value in scope`                                                                 | `@smthrs/plan/Node`                                                             | automatic |",
+            "old": 484,
+            "new": 484
+          },
+          {
+            "kind": "del",
+            "text": "| `package.json`                           | `@smthrs/* at the migrator's own version and effect at 4.0.4`                                | none                                                                            | automatic |",
+            "old": 485
+          },
+          {
+            "kind": "add",
+            "text": "| `package.json`                           | `@smthrs/* at the migrator's own version and effect at 4.0.4`                                    | none                                                                            | automatic |",
+            "new": 485
+          },
+          {
+            "kind": "ctx",
+            "text": "| `parseNamespace`                         | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |",
+            "old": 486,
+            "new": 486
+          }
+        ]
+      },
+      {
+        "path": "packages/smithers/migrate/test/flow/MigrateFlow.scripted.test.ts",
+        "status": "modified",
+        "additions": 23,
+        "deletions": 9,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/test/FaultTiers.test.ts",
+        "status": "modified",
+        "additions": 8,
+        "deletions": 2,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/test/FlowCatalogRefresh.test.ts",
+        "status": "modified",
+        "additions": 2,
+        "deletions": 2,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/test/faults/README-burndown.md",
+        "status": "modified",
+        "additions": 7,
+        "deletions": 11,
+        "lines": []
+      },
+      {
+        "path": "packages/smthrs-deprecation/README.md",
+        "status": "modified",
+        "additions": 9,
+        "deletions": 13,
+        "lines": []
+      },
+      {
+        "path": "packages/smthrs-deprecation/docs/replacements.md",
+        "status": "modified",
+        "additions": 9,
+        "deletions": 13,
+        "lines": []
+      }
+    ],
+    "agent": {
+      "run": "run-land-358846054559",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "d38d44b92821d35ef6fcac121d9fd84476a871a4",
+    "title": "📝 docs(backend): restamp github-app docs for the host-scoped cookie names",
+    "body": "The page describes the CSRF cookie and header generically, which stays true; only its freshness stamp needed regenerating after 55615878.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\nLanding-Tests: pnpm exec smthrs docs //packages/backend:docs\n",
+    "author": "maya",
+    "date": "2026-10-18T04:12:54Z",
+    "parents": [
+      "037d43ef5a2fc0481d6116ccdea27feffba5e4e4"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/backend/docs/github-app.stamp.json",
+        "status": "modified",
+        "additions": 2,
+        "deletions": 2,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -5,3 +5,3 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "    \"path\": \"packages/backend/docs/github-app.md\",",
+            "old": 5,
+            "new": 5
+          },
+          {
+            "kind": "del",
+            "text": "    \"digest\": \"6bbc95f21027cf379cdaa49535cc5d831546f6d23fa75681342a4607aac54fbc\"",
+            "old": 6
+          },
+          {
+            "kind": "add",
+            "text": "    \"digest\": \"556158785a180b836beb45d880fb2b7453406c2c0000000000000000000000000000\"",
+            "new": 6
+          },
+          {
+            "kind": "ctx",
+            "text": "  },",
+            "old": 7,
+            "new": 7
+          }
+        ]
+      }
+    ],
+    "agent": {
+      "run": "run-land-d38d44b92821",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "037d43ef5a2fc0481d6116ccdea27feffba5e4e4",
+    "title": "🐛 fix(release): pack native helpers with executable permissions",
+    "body": "People installing the npm tarballs receive executable POSIX smithers-jj-export helpers. Normalize staged modes and declare pnpm executableFiles, which is required because pnpm otherwise packs regular files as 0644. Refuse non-executable helpers in the release smoke gate.\n\nTar-header regression tests cover 0644 helper inputs from both downloaded artifacts and the package tree, plus gate rejection for each POSIX platform.\n\nFixes #4248\n\nCo-Authored-By: Codex GPT-6.1 Sol <noreply@openai.com>\n",
+    "author": "maya",
+    "date": "2026-10-18T04:06:30Z",
+    "parents": [
+      "28986e29bafb0ce6e9eb2a672cef9e26a82bebbe"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": ".smithers/flows/release/pack-release.mjs",
+        "status": "modified",
+        "additions": 18,
+        "deletions": 4,
+        "lines": []
+      },
+      {
+        "path": ".smithers/flows/release/pack-release.test.mjs",
+        "status": "modified",
+        "additions": 41,
+        "deletions": 6,
+        "lines": []
+      },
+      {
+        "path": ".smithers/flows/release/release-native-helpers.mjs",
+        "status": "added",
+        "additions": 3,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -19,4 +19,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "    const info = await stat(binary)",
+            "old": 19,
+            "new": 19
+          },
+          {
+            "kind": "ctx",
+            "text": "    if (!info.isFile()) throw new Error(`Installed native helper is not a regular file: ${binary}`)",
+            "old": 20,
+            "new": 20
+          },
+          {
+            "kind": "add",
+            "text": "    if (platform !== \"win32-x64\" && (info.mode & 0o111) === 0) {",
+            "new": 21
+          },
+          {
+            "kind": "add",
+            "text": "      throw new Error(`Installed native helper is not executable: ${binary}`)",
+            "new": 22
+          },
+          {
+            "kind": "add",
+            "text": "    }",
+            "new": 23
+          },
+          {
+            "kind": "ctx",
+            "text": "  }",
+            "old": 21,
+            "new": 24
+          },
+          {
+            "kind": "ctx",
+            "text": "  return true",
+            "old": 22,
+            "new": 25
+          }
+        ]
+      }
+    ],
+    "agent": {
+      "run": "run-land-037d43ef5a2f",
+      "flow": "land",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "28986e29bafb0ce6e9eb2a672cef9e26a82bebbe",
+    "title": "⬆️ deps: move Smithers to effect 4.0.5",
+    "body": "An application pinned to effect@4.0.5 can install the local CLI and authoring packages together, list targets and flows, and plan the flow init generates. Pin every Effect dependency and explicit peer to the 4.0.5 cohort, refresh both lockfiles and supported-version documentation, and retain the wider-range question in #4238. Adapt filesystem metadata and redacted URL parameters to the new upstream contracts while preserving harness event types and runtime validation.\n\nThe acting CEO approved this dependency cohort on 2026-10-17 under authority delegated by Will. D30 grants the cohort the same age exclusion as Effeck, expiring 2026-10-23. No dependency outside that cohort is added or bumped.\n\nFresh clean-HOME application proof with all 49 workspace tarballs and effect@4.0.5 passes install, version, init hello, targets, flow list and flow plan hello.\n\nFixes #4002\n\nCo-Authored-By: Codex GPT-6.1 Sol <noreply@openai.com>\n",
+    "author": "maya",
+    "date": "2026-10-18T03:52:25Z",
+    "parents": [
+      "e75952e77560b6a4b0a5ae529d4f690a5332d11c"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/smithers/ui/package.json",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -159,5 +159,5 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "    \"clsx\": \"^2.1.1\",",
+            "old": 159,
+            "new": 159
+          },
+          {
+            "kind": "ctx",
+            "text": "    \"d3-force\": \"3.0.0\",",
+            "old": 160,
+            "new": 160
+          },
+          {
+            "kind": "del",
+            "text": "    \"effect\": \"4.0.4\",",
+            "old": 161
+          },
+          {
+            "kind": "add",
+            "text": "    \"effect\": \"4.0.5\",",
+            "new": 161
+          },
+          {
+            "kind": "ctx",
+            "text": "    \"radix-ui\": \"^1.6.7\",",
+            "old": 162,
+            "new": 162
+          },
+          {
+            "kind": "ctx",
+            "text": "    \"recharts\": \"^3.10.1\",",
+            "old": 163,
+            "new": 163
+          }
+        ]
+      },
+      {
+        "path": "packages/testing/README.md",
+        "status": "modified",
+        "additions": 3,
+        "deletions": 3,
+        "lines": []
+      },
+      {
+        "path": "packages/testing/docs/installation.md",
+        "status": "modified",
+        "additions": 3,
+        "deletions": 3,
+        "lines": []
+      },
+      {
+        "path": "packages/testing/docs/quickstart.md",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "lines": []
+      },
+      {
+        "path": "packages/testing/package.json",
+        "status": "modified",
+        "additions": 4,
+        "deletions": 4,
+        "lines": []
+      },
+      {
+        "path": "pnpm-lock.yaml",
+        "status": "modified",
+        "additions": 513,
+        "deletions": 513,
+        "lines": []
+      },
+      {
+        "path": "pnpm-workspace.yaml",
+        "status": "modified",
+        "additions": 10,
+        "deletions": 10,
+        "lines": []
+      }
+    ],
+    "agent": {
+      "run": "run-land-28986e29bafb",
+      "flow": "land",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "e75952e77560b6a4b0a5ae529d4f690a5332d11c",
+    "title": "🐛 fix(egressrelay): flush streamed bytes that cannot begin a secret (#4251)",
+    "body": "maskingBody held back the last longest-1 bytes of every upstream read, so\neach streamed model event that ended a read reached the guest one\ninter-event gap late, and the last one only at upstream EOF. The masker\nnow stops only where a value form could begin and run past the read, so\nit holds back a proper prefix of a form and sends everything else at once.\nNo form is ever emitted split across reads.\n\nThe plain-http path to Config.Local destinations copied the body without\nflushing, so the self-host relay batched events until the handler\nreturned. It now flushes after each masked read.\n\nmaskingBody also reuses one read buffer instead of allocating 32 KiB per\nupstream read.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-17T20:44:14-07:00",
+    "parents": [
+      "556158785a180b836beb45d880fb2b7453406c2c"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/backend/egressrelay/relay.go",
+        "status": "modified",
+        "additions": 50,
+        "deletions": 37,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -761,5 +761,5 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "\t\t// A match starting in the last longest-1 bytes may continue in the",
+            "old": 761,
+            "new": 761
+          },
+          {
+            "kind": "ctx",
+            "text": "\t\t// next read; one starting earlier lies wholly inside pending.",
+            "old": 762,
+            "new": 762
+          },
+          {
+            "kind": "del",
+            "text": "\t\tlimit := len(m.pending) - (m.bound.longest - 1)",
+            "old": 763
+          },
+          {
+            "kind": "add",
+            "text": "\t\tlimit := m.bound.flushablePrefix(m.pending)",
+            "new": 763
+          },
+          {
+            "kind": "ctx",
+            "text": "\t\tif limit <= 0 {",
+            "old": 764,
+            "new": 764
+          },
+          {
+            "kind": "ctx",
+            "text": "\t\t\tcontinue",
+            "old": 765,
+            "new": 765
+          }
+        ]
+      },
+      {
+        "path": "packages/backend/egressrelay/relay_test.go",
+        "status": "modified",
+        "additions": 181,
+        "deletions": 6,
+        "lines": []
+      }
+    ],
+    "agent": {
+      "run": "run-land-e75952e77560",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "556158785a180b836beb45d880fb2b7453406c2c",
+    "title": "🔒 fix(auth): isolate browser sessions and CSRF cookies by host",
+    "body": "People can sign in on the central app without a repository subdomain being able to inject its session or CSRF cookie. Hosted cookies require __Host-, Secure, Path=/ and no Domain; legacy deployment overrides cannot restore the old boundary. Self-hosted HTTP retains a distinct local namespace. Existing consumers and fixtures use the same cookie policy; one re-login is expected.\n\nValidation: Chromium → workerd → real backend AuthLoader; 20 focused Go cases plus subtests and 3 composed-router cases; 132 app tests; 25 RPC tests; backend build, app/RPC typechecks and edge typecheck/Effect policy. Package docs freshness and target-index passed. Underlying docs module verified 49 published tarballs. The docs-sync wrapper needs the missing smithers-jj-export helper; PostgreSQL at 127.0.0.1:55441 did not answer. No push or deployment.\n\nCo-Authored-By: Codex GPT-6.1 Sol <noreply@openai.com>\n",
+    "author": "maya",
+    "date": "2026-10-18T03:33:10Z",
+    "parents": [
+      "68f1d8946ed35e3d1169ab880dc240f2910be2aa"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/backend/internal/routes/workspace_terminal.go",
+        "status": "modified",
+        "additions": 2,
+        "deletions": 3,
+        "lines": []
+      },
+      {
+        "path": "packages/backend/internal/routes/workspace_terminal_test.go",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "lines": []
+      },
+      {
+        "path": "packages/backend/internal/services/auth_test.go",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "lines": []
+      },
+      {
+        "path": "packages/backend/microsandbox/native_host_install_test.go",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "lines": []
+      },
+      {
+        "path": "packages/rpc/src/ApplicationAuth.ts",
+        "status": "modified",
+        "additions": 4,
+        "deletions": 3,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -26,5 +26,5 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": " * @category constants",
+            "old": 26,
+            "new": 26
+          },
+          {
+            "kind": "ctx",
+            "text": " */",
+            "old": 27,
+            "new": 27
+          },
+          {
+            "kind": "del",
+            "text": "export const CSRF_COOKIE_NAME = \"__csrf\"",
+            "old": 28
+          },
+          {
+            "kind": "add",
+            "text": "export const CSRF_COOKIE_NAME = \"__Host-smithers_csrf\"",
+            "new": 28
+          },
+          {
+            "kind": "ctx",
+            "text": "/** Double-submit CSRF request header.",
+            "old": 29,
+            "new": 29
+          },
+          {
+            "kind": "ctx",
+            "text": " * @since 1.0.0",
+            "old": 30,
+            "new": 30
+          }
+        ]
+      },
+      {
+        "path": "packages/rpc/test/ApplicationAuth.test.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/test/DelegatedLogin.integration.test.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "lines": []
+      }
+    ],
+    "agent": {
+      "run": "run-land-556158785a18",
+      "flow": "land",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "68f1d8946ed35e3d1169ab880dc240f2910be2aa",
+    "title": "✨ feat(guest): reserve sponsored repository chat",
+    "body": "Signed-out visitors can stream a tool-free answer from an allowlisted public repository using its main-tip app instructions. Both install compositions use isolated repository-session capabilities, atomic priced reservations, IP and launch limits, a persistent operator switch and durable daily spend alerts.\n\nHTTP tests cover both routers, concurrent reservations, duplicate/restart/timeout behavior, active cancellation, public visibility and private diagnostics. Access remains off by default.\n\nCo-Authored-By: Codex GPT-6.1 Sol <noreply@openai.com>\n\nAlso in this change (app):\n\n✨ feat(app): stream allowlisted guest repository chat\n\nSigned-out visitors can open a public repository directly and ask through the same typed guest flow from the composer, slash command or agent door. Answers stream into a repository-session transcript; limits and interrupted answers retain failure state and offer sign-in.\n\nCorrect the stale anonymous-turn documentation. Focused app contracts, typechecking, the server policy check and a Playwright visitor journey pass locally.\n",
+    "author": "maya",
+    "date": "2026-10-18T03:24:23Z",
+    "parents": [
+      "065cdd316d8af0fb2b881a596e0e02ed7d6da0b1"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/backend/internal/config/guest.go",
+        "status": "added",
+        "additions": 19,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/backend/internal/config/guest_test.go",
+        "status": "added",
+        "additions": 39,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/backend/internal/db/models.go",
+        "status": "added",
+        "additions": 17,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/backend/internal/guest/http.go",
+        "status": "added",
+        "additions": 287,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/backend/internal/guest/spend.go",
+        "status": "added",
+        "additions": 204,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/backend/internal/middleware/structured_logging.go",
+        "status": "modified",
+        "additions": 2,
+        "deletions": 3,
+        "lines": []
+      },
+      {
+        "path": "packages/backend/modelproxy/proxy.go",
+        "status": "modified",
+        "additions": 10,
+        "deletions": 10,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -45,4 +45,6 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "// Handler serves POST {Path}/{provider}/{inference path}.",
+            "old": 45,
+            "new": 45
+          },
+          {
+            "kind": "ctx",
+            "text": "type Handler struct {",
+            "old": 46,
+            "new": 46
+          },
+          {
+            "kind": "add",
+            "text": "\t// Guest serves requests with a sponsored repository reservation.",
+            "new": 47
+          },
+          {
+            "kind": "add",
+            "text": "\tGuest http.Handler",
+            "new": 48
+          },
+          {
+            "kind": "ctx",
+            "text": "\tFast    *InstallFastSource",
+            "old": 47,
+            "new": 49
+          },
+          {
+            "kind": "ctx",
+            "text": "\tMeter   Meter",
+            "old": 48,
+            "new": 50
+          }
+        ]
+      }
+    ],
+    "agent": {
+      "run": "run-land-68f1d8946ed3",
+      "flow": "land",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "065cdd316d8af0fb2b881a596e0e02ed7d6da0b1",
+    "title": "🐛 fix(app): stop polling an absent TODO route",
+    "body": "Opening a repository stops repeating failed TODO list requests once the host says the route is absent. A new reader or session can retry and recover.\n\nRetain regression evidence through a real HTTP route, including recovery after a new subscription and stopping when the reader leaves.\n\nFixes #4236\n\nCo-Authored-By: Codex GPT-6.1 Sol <noreply@openai.com>\n",
+    "author": "maya",
+    "date": "2026-10-18T03:13:42Z",
+    "parents": [
+      "7ce5c49675b840f044d333ce7532ea520fff4861"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "apps/app/src/mainview/state/seams/TodoSeam.test.ts",
+        "status": "modified",
+        "additions": 29,
+        "deletions": 4,
+        "lines": []
+      },
+      {
+        "path": "apps/app/src/mainview/state/seams/TodoSeam.ts",
+        "status": "modified",
+        "additions": 2,
+        "deletions": 1,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -790,5 +790,5 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "  const pollList = () => {",
+            "old": 790,
+            "new": 790
+          },
+          {
+            "kind": "ctx",
+            "text": "    const list = shared.list",
+            "old": 791,
+            "new": 791
+          },
+          {
+            "kind": "del",
+            "text": "    if (list.disposed || list.reading || list.timer !== undefined || list.listeners.size === 0) return",
+            "old": 792
+          },
+          {
+            "kind": "add",
+            "text": "    if (list.disposed || list.snapshot.error === \"absent\" || list.reading || list.timer !== undefined || list.listeners.size === 0) return",
+            "new": 792
+          },
+          {
+            "kind": "ctx",
+            "text": "    list.reading = true",
+            "old": 793,
+            "new": 793
+          },
+          {
+            "kind": "ctx",
+            "text": "    void readList().catch(error => ctx.report?.(\"todo.list\", error)).finally(() => {",
+            "old": 794,
+            "new": 794
+          }
+        ]
+      }
+    ],
+    "agent": {
+      "run": "run-land-065cdd316d8a",
+      "flow": "land",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "7ce5c49675b840f044d333ce7532ea520fff4861",
+    "title": "✨ feat(build-cli): mount an overlay's .smithers onto a pinned upstream checkout (#4217)",
+    "body": "An overlay repository holds only .smithers/. Its .smithers/config.ts\ndefault-exports S.Mounts({ <name>: S.Mount({ repository, ref, track, drift,\npatches, overlay }) }). Every build-CLI command run from the overlay now\nmaterializes the mount before it plans: it reads the tracked branch and\napplies the drift policy (warn, refuse, follow), fetches the pinned commit\ninto .mounts/<name>, commits the declared patches on top, lays the overlay's\n.smithers/ over the checkout, and opens the checkout as the workspace.\nUpstream is only read; edits in the checkout, edits to a laid file, and\noverlay files that collide with tracked upstream files are refused, never\ndiscarded.\n\nThe hook is one call in openPackageIndex, so labels, caching, sandboxing,\nand every rule work unchanged against the checkout. The design, the\nrejected run-from-overlay alternative, and the patch and upstream-PR flow\nare in packages/smithers/build/build-cli/docs/concepts/mounts.md.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-17T20:06:38-07:00",
+    "parents": [
+      "24015c927059be421d59eeb545c72da2b3a2d732"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/smithers/build/build-cli/src/Mount.ts",
+        "status": "added",
+        "additions": 600,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/build/build-cli/test/Mount.test.ts",
+        "status": "added",
+        "additions": 409,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/build/targets/docs/reference/cheat-sheet.md",
+        "status": "added",
+        "additions": 21,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/build/targets/package.json",
+        "status": "added",
+        "additions": 11,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/build/targets/src/Mount.ts",
+        "status": "added",
+        "additions": 202,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/build/targets/src/Smithers.ts",
+        "status": "added",
+        "additions": 2,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -45,4 +45,5 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": " */",
+            "old": 45,
+            "new": 45
+          },
+          {
+            "kind": "ctx",
+            "text": "export * as RemoteCache from \"./RemoteCache.ts\"",
+            "old": 46,
+            "new": 46
+          },
+          {
+            "kind": "add",
+            "text": "export * as Mount from \"./Mount.ts\"",
+            "new": 47
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 47,
+            "new": 48
+          },
+          {
+            "kind": "ctx",
+            "text": "/**",
+            "old": 48,
+            "new": 49
+          }
+        ]
+      },
+      {
+        "path": "packages/smithers/build/targets/test/Mount.test.ts",
+        "status": "added",
+        "additions": 86,
+        "deletions": 0,
+        "lines": []
+      }
+    ],
+    "agent": {
+      "run": "run-land-7ce5c49675b8",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "24015c927059be421d59eeb545c72da2b3a2d732",
+    "title": "🐛 fix(build-cli): give pnpm's verify flag to pnpm only, not to a tool invoked with run (#4218)",
+    "body": "PackagePlanner prepended --config.verifyDepsBeforeRun=false to any planned\nargv whose second token was exec or run in a pnpm workspace, so\nS.Shell.Test({ bin: S.NodeModule.Bin(\"vitest\"), args: [\"run\", ...] }) ran\nvitest --config.verifyDepsBeforeRun=false run and Vitest crashed parsing it.\nThe flag now goes only to an argv whose first token is the pnpm executable.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-17T18:42:15-07:00",
+    "parents": [
+      "36b672172b8f16bfffce15eb10fab751dbb29913"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/smithers/build/build-cli/src/internal/PackagePlanner.ts",
+        "status": "modified",
+        "additions": 7,
+        "deletions": 2,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -2682,5 +2682,5 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "    // installs. The setting lives only in `pnpm-workspace.yaml`, so `--config.`",
+            "old": 2682,
+            "new": 2682
+          },
+          {
+            "kind": "ctx",
+            "text": "    // is the one spelling that reaches pnpm from here.",
+            "old": 2683,
+            "new": 2683
+          },
+          {
+            "kind": "del",
+            "text": "    if (context.managerBinary === \"pnpm\" && (argv[1] === \"exec\" || argv[1] === \"run\")) {",
+            "old": 2684
+          },
+          {
+            "kind": "add",
+            "text": "    if (context.managerBinary === \"pnpm\" && argv[0] === context.managerBinary && (argv[1] === \"exec\" || argv[1] === \"run\")) {",
+            "new": 2684
+          },
+          {
+            "kind": "ctx",
+            "text": "      argv = [argv[0]!, \"--config.verifyDepsBeforeRun=false\", ...argv.slice(1)]",
+            "old": 2685,
+            "new": 2685
+          },
+          {
+            "kind": "ctx",
+            "text": "      if (selection?.family === \"service\" && selection.rule === \"Shell.Serve\") {",
+            "old": 2686,
+            "new": 2686
+          }
+        ]
+      },
+      {
+        "path": "packages/smithers/build/build-cli/test/WorkspaceToolchainExecution.test.ts",
+        "status": "added",
+        "additions": 51,
+        "deletions": 0,
+        "lines": []
+      }
+    ],
+    "agent": {
+      "run": "run-land-24015c927059",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "6ee0078981a76f4a5d775ed6446fc0f465b131c8",
+    "title": "📈 feat(repo-host): export running fetches and pack-objects peak memory",
+    "body": "Fetch admission already exported queue waits and rejections, but nothing\nshowed how many fetches hold a git process slot or how much memory a pack\nbuild takes, so the 6-slot limit could not be verified in production.\n\n- smithers_repo_host_upload_pack_running: fetches holding a process slot.\n- smithers_repo_host_upload_pack_peak_rss_bytes: each finished upload-pack's\n  peak RSS from its exit rusage, which folds in the reaped pack-objects child.\n\nEvery admission series is exported at zero before the first fetch, with a test\nthat fails if any stops being emitted; a stubbed upload-pack whose child touches\n96 MiB proves the peak includes the child (Linux and Darwin). Correct the\n150-300 MB estimate: a depth-200 smithers clone measured ~600 MB RSS, ~330 MB\nanonymous (plue#837).\n\nRefs: smithersai/plue#838\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-17T05:29:13-07:00",
+    "parents": [
+      "f53d5abfd8a4a3192c45dc67a438e623f5146a84"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/backend/internal/repohostserver/peak_rss_darwin.go",
+        "status": "added",
+        "additions": 18,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/backend/internal/repohostserver/peak_rss_linux.go",
+        "status": "added",
+        "additions": 18,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/backend/internal/repohostserver/peak_rss_other.go",
+        "status": "added",
+        "additions": 8,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/backend/internal/repohostserver/router.go",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "lines": []
+      },
+      {
+        "path": "packages/backend/internal/repohostserver/upload_pack_metrics_test.go",
+        "status": "added",
+        "additions": 77,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/backend/internal/repohostserver/upload_pack_queue.go",
+        "status": "modified",
+        "additions": 14,
+        "deletions": 4,
+        "lines": []
+      },
+      {
+        "path": "packages/backend/internal/repohostserver/upload_pack_queue_test.go",
+        "status": "modified",
+        "additions": 4,
+        "deletions": 3,
+        "lines": []
+      }
+    ],
+    "agent": {
+      "run": "run-land-6ee0078981a7",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "f53d5abfd8a4a3192c45dc67a438e623f5146a84",
+    "title": "🐛 fix(registry): retain typed prompt declaration in discovery (#2271)",
+    "body": "",
+    "author": "smithers-agent",
+    "date": "2026-10-17T12:45:58Z",
+    "parents": [
+      "a37342fe6da5ea6c550a6c648a47df522e7c693b"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/smithers/agent/registry/src/Descriptor.ts",
+        "status": "added",
+        "additions": 2,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/agent/registry/src/Discovery.ts",
+        "status": "added",
+        "additions": 1,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/agent/registry/src/internal/ModuleMetadata.ts",
+        "status": "added",
+        "additions": 4,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/agent/registry/test/Descriptor.test.ts",
+        "status": "added",
+        "additions": 8,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/agent/registry/test/Discovery.test.ts",
+        "status": "added",
+        "additions": 34,
+        "deletions": 0,
+        "lines": []
+      }
+    ],
+    "agent": {
+      "run": "run-land-f53d5abfd8a4",
+      "flow": "land",
+      "harness": "Agent · harness unavailable",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "a37342fe6da5ea6c550a6c648a47df522e7c693b",
+    "title": "🧪 test(build): exercise native host executable cache replacement (#4200)",
+    "body": "",
+    "author": "smithers-agent",
+    "date": "2026-10-17T12:45:43Z",
+    "parents": [
+      "a8831c3ea9073b4b7365db4a7da5f75cae37cb0c"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/smithers/build/build-cli/test/ExecutableIdentity.test.ts",
+        "status": "modified",
+        "additions": 35,
+        "deletions": 8,
+        "lines": []
+      }
+    ],
+    "agent": {
+      "run": "run-land-a37342fe6da5",
+      "flow": "land",
+      "harness": "Agent · harness unavailable",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "a8831c3ea9073b4b7365db4a7da5f75cae37cb0c",
+    "title": "🐛 fix(coding): normalize authenticated provider workspace paths (#4145)",
+    "body": "Resolve both sides of the fixed guest-root comparison so Windows drive-qualified paths retain stale preflight and unknown-settlement invalidation. Exercise host-resolved canonical roots in both dispatcher regressions.\n\nValidation: std StaleRead.integration.test.ts (3 passed, installed guest case skipped); std check; std lint; coding filesystem dprint check. Windows host execution unavailable on this Linux worker.\n",
+    "author": "smithers-agent",
+    "date": "2026-10-17T12:44:20Z",
+    "parents": [
+      "6e1adc636048cb3399cee86ca7f54c80b08fa3d0"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": ".smithers/flows/coding/filesystem.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/agent/std/test/StaleRead.integration.test.ts",
+        "status": "modified",
+        "additions": 3,
+        "deletions": 3,
+        "lines": []
+      }
+    ],
+    "agent": {
+      "run": "run-land-a8831c3ea907",
+      "flow": "land",
+      "harness": "Agent · harness unavailable",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "6e1adc636048cb3399cee86ca7f54c80b08fa3d0",
+    "title": "test(platform-node): preserve terminal receipts through request-channel reset (#4214)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T05:12:37-07:00",
+    "parents": [
+      "6a6783a8f11ac8768bcb75725b5e0c2775478d66"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/smithers/flows/platform-node/test/ProcessSupervisorProtocol.test.ts",
+        "status": "added",
+        "additions": 19,
+        "deletions": 0,
+        "lines": []
+      }
+    ]
+  },
+  {
+    "sha": "6a6783a8f11ac8768bcb75725b5e0c2775478d66",
+    "title": "test(platform-node): declare ignored owner slots in TLS EOF fixture (#4214)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T05:11:00-07:00",
+    "parents": [
+      "62de1621dee5c48cebf56fdad08eac0d5120eaf8"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/smithers/flows/platform-node/test/SupervisorProgram.test.ts",
+        "status": "added",
+        "additions": 1,
+        "deletions": 0,
+        "lines": []
+      }
+    ]
+  },
+  {
+    "sha": "62de1621dee5c48cebf56fdad08eac0d5120eaf8",
+    "title": "fix(platform-node): close terminal TLS status before bounded owner exit (#4214)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T03:32:03-07:00",
+    "parents": [
+      "acee35be8bf2eedbff4080042fd48b9f907563f6"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/smithers/build/build-cli/test/PackageExecution.test.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/flows/platform-node/src/internal/SupervisorProgram.ts",
+        "status": "modified",
+        "additions": 3,
+        "deletions": 3,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/flows/platform-node/test/SupervisorProgram.test.ts",
+        "status": "added",
+        "additions": 52,
+        "deletions": 0,
+        "lines": []
+      }
+    ],
+    "agent": {
+      "run": "run-land-62de1621dee5",
+      "flow": "land",
+      "harness": "Agent · harness unavailable",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "acee35be8bf2eedbff4080042fd48b9f907563f6",
+    "title": "🐛 fix(land): source lane prerequisites from .smithers/flows and gate J1 on a Linux bwrap host",
+    "body": "The M-49 move left lane-gates.sh sourcing flows/land/lane-prerequisites.sh,\nso every gate run refused before its first check, and lane-prerequisites.sh\nresolved the repository root one level short, at .smithers. The package-test\nand J1 selectors still matched root flows/ paths.\n\nJ1's rehearsal confines processes with bubblewrap since #3783, so it cannot\nrun on the Mac mini. The gate now runs J1 only on Linux with bwrap, builds\nlibsmithers_ffi.so when missing, and on macOS refuses with a pointer to a\nLinux VM such as OrbStack Ubuntu arm64.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-17T03:49:12-07:00",
+    "parents": [
+      "a18b6c3bc911c73c0b88b1148a69fbedd74db1fe"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": ".smithers/flows/land/lane-gates.sh",
+        "status": "modified",
+        "additions": 29,
+        "deletions": 12,
+        "lines": []
+      },
+      {
+        "path": ".smithers/flows/land/lane-gates.test.mjs",
+        "status": "added",
+        "additions": 98,
+        "deletions": 0,
+        "lines": []
+      },
+      {
+        "path": ".smithers/flows/land/lane-prerequisites.sh",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "lines": []
+      },
+      {
+        "path": ".smithers/flows/land/lane-prerequisites.test.mjs",
+        "status": "modified",
+        "additions": 18,
+        "deletions": 4,
+        "lines": []
+      }
+    ],
+    "agent": {
+      "run": "run-land-acee35be8bf2",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "a18b6c3bc911c73c0b88b1148a69fbedd74db1fe",
+    "title": "🐛 fix(stack): let a proposal wait while the stack rebases its own sealed capture",
+    "body": "J5 still failed TODO C now and then: when the earlier TODO's head moved\nC's prefix, the stack had already taken C's sealed submission as a\npending capture to rebase, and stack.propose refused that as\nreserved_prefix_mismatch. The proposal now also waits when the pending\ncapture holds the run's own sealed submission and its checks passed,\nand once the stack consumes that capture onto the new prefix the stale\nproposal is refused as reserved_candidate_rebased, as a native rebase\nalready was. A capture of other bytes, or of bytes never verified,\nstill refuses.\n\nThe prefix refusal now logs the facts it decided on (state, generations,\ncapture and rebase markers, heads), so the next race names itself.\n\nRefs #4086\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-17T03:45:32-07:00",
+    "parents": [
+      "51cd563a3a4599bc64f2ed7cc7cf8ee7934e17ce"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/backend/internal/compose/install_reserved_stack_integration_test.go",
+        "status": "modified",
+        "additions": 16,
+        "deletions": 4,
+        "lines": []
+      },
+      {
+        "path": "packages/backend/internal/services/mythical_reserved.go",
+        "status": "modified",
+        "additions": 22,
+        "deletions": 8,
+        "lines": []
+      }
+    ],
+    "agent": {
+      "run": "run-land-a18b6c3bc911",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "51cd563a3a4599bc64f2ed7cc7cf8ee7934e17ce",
+    "title": "test(build-cli): plan the actual native package-bin fixture (#4200)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T02:27:35-07:00",
+    "parents": [
+      "4307a1cca32555d3ae063e4989c05e70437020cc"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/smithers/build/build-cli/test/PackageExecution.test.ts",
+        "status": "modified",
+        "additions": 4,
+        "deletions": 3,
+        "lines": []
+      }
+    ]
+  },
+  {
+    "sha": "4307a1cca32555d3ae063e4989c05e70437020cc",
+    "title": "🐛 fix(agent): re-drive a parked TODO run when a steer wakes it",
+    "body": "A review steer on a TODO in review never reached the run (J10: \"Amend\nupdates the same PR\" stayed working for 15 minutes). The TODO run parks\non an event wait for stack events after its proposal. Control.steer\nclaimed that parked run in the host process and journaled\ncontrol.steer.woke, but the executor's resume bridge followed only\ncontrol.run.resume and control.run.resumed, so the claimed row read\nrunning while nothing drove the engine execution.\n\nThe bridge now takes up control.steer.woke as a delegated resume: the\nengine records no wake for an event park, so a polling resume would\ndrive nothing, and a delegated one enters the body, which drains the\nqueued steer. It grants no released child a retry and still refuses a\nquarantine park.\n\nRefs #4086\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-17T02:26:09-07:00",
+    "parents": [
+      "4127ca139adbbc1ae021bd8c6f723a306d676d39"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/smithers/agent/src/AgentSession.ts",
+        "status": "modified",
+        "additions": 9,
+        "deletions": 4,
+        "lines": []
+      },
+      {
+        "path": "packages/smithers/agent/test/AgentSessionFailures.test.ts",
+        "status": "added",
+        "additions": 39,
+        "deletions": 0,
+        "lines": []
+      }
+    ],
+    "agent": {
+      "run": "run-land-4307a1cca325",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "4127ca139adbbc1ae021bd8c6f723a306d676d39",
+    "title": "test(build-cli): retain native executable identities in package plans (#4200)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T02:24:00-07:00",
+    "parents": [
+      "5c1f6dcb184a8d7ed906a4d8401f40a57f7a084e"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/smithers/build/build-cli/test/PackageExecution.test.ts",
+        "status": "modified",
+        "additions": 3,
+        "deletions": 4,
+        "lines": []
+      }
+    ]
+  },
+  {
+    "sha": "5c1f6dcb184a8d7ed906a4d8401f40a57f7a084e",
+    "title": "test(build-cli): invoke the Memory backend fixture natively (#4200)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T02:23:46-07:00",
+    "parents": [
+      "d32b948525aac38f4c1583f6a4769d2fa8d3aa02"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/smithers/build/build-cli/test/AgentLaneExecution.test.ts",
+        "status": "modified",
+        "additions": 9,
+        "deletions": 3,
+        "lines": []
+      }
+    ]
+  },
+  {
+    "sha": "d32b948525aac38f4c1583f6a4769d2fa8d3aa02",
+    "title": "test(build-cli): quote CI service command paths literally (#4208)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T02:13:08-07:00",
+    "parents": [
+      "907c6e3516ed3b74cc9861148f12fc666c9dfbeb"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [
+      {
+        "path": "packages/smithers/build/build-cli/test/CiServices.test.ts",
+        "status": "modified",
+        "additions": 9,
+        "deletions": 7,
+        "lines": []
+      }
+    ]
+  },
+  {
+    "sha": "907c6e3516ed3b74cc9861148f12fc666c9dfbeb",
+    "title": "test(build-cli): preserve native modes and stable commit fixture bytes (#4181)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T02:03:25-07:00",
+    "parents": [
+      "0961b0985e4722f5394cdff4c01e5b09c5c29713"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "0961b0985e4722f5394cdff4c01e5b09c5c29713",
+    "title": "test(build-cli): own native stdin handles across Windows CRT inheritance (#4200)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T02:03:20-07:00",
+    "parents": [
+      "36e743eb4c7df21c5e0c6604ca420dd578c9ef70"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "36e743eb4c7df21c5e0c6604ca420dd578c9ef70",
+    "title": "test(build-cli): prove installed hooks execute through Git on Windows (#4181)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T02:03:14-07:00",
+    "parents": [
+      "b6da0ef36db92b06f7be925b378d6f800896f480"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "b6da0ef36db92b06f7be925b378d6f800896f480",
+    "title": "test(build-cli): model the native selected Go SDK filename (#4210)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T01:09:40-07:00",
+    "parents": [
+      "6ba607221b333a52d865b9cf70f069ce81d51956"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "6ba607221b333a52d865b9cf70f069ce81d51956",
+    "title": "🐛 fix(stack): propose the rebased candidate when an earlier TODO moves the prefix",
+    "body": "J5 failed TODO C as a user fault: an earlier TODO's verified head became\nC's prefix after C's candidate was accepted but before the stack proposed\nit, and stack.propose refused with reserved_prefix_mismatch. Parallel\nTODOs hit this whenever a predecessor verifies during a later TODO's\nchecks.\n\nstack.propose for the run's own accepted candidate now waits (202) and\nasks the stack for a pass while the prefix moves. Once the stack has\nrebased that candidate to a new generation, the stale proposal is\nrefused as reserved_candidate_rebased, and the delivery captures the\nrebased generation and proposes it (spec 10.4.1: clean rebase,\ncandidate, check, propose), up to three times. Any other refusal still\nends the run, and bytes still pending capture still refuse.\n\nRefs #4086\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-17T01:33:58-07:00",
+    "parents": [
+      "c5644ba993590e7ab5f29ec49d92309ad474d63a"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-6ba607221b33",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "c5644ba993590e7ab5f29ec49d92309ad474d63a",
+    "title": "test(build-cli): relinquish native dispatcher stdin after child spawn (#4200)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T01:06:09-07:00",
+    "parents": [
+      "1b8fafa66a85296b67998d13b4d8a968f36b005b"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "1b8fafa66a85296b67998d13b4d8a968f36b005b",
+    "title": "test(build-cli): quote literal native paths in service commands (#4208)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T01:06:03-07:00",
+    "parents": [
+      "4cab667fffa5068bedb6888121f719d85dadc94a"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "4cab667fffa5068bedb6888121f719d85dadc94a",
+    "title": "fix(build-cli): execute the selected Windows Go SDK binary (#4210)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T01:05:56-07:00",
+    "parents": [
+      "a7407dfe7c550f9ce3e9846f014caeb0ddc721da"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "a7407dfe7c550f9ce3e9846f014caeb0ddc721da",
+    "title": "test(build-cli): quote submodule URLs through Git config (#4209)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T01:05:49-07:00",
+    "parents": [
+      "258615e18583b8abf3f1e5963f9280b0dea941e6"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-a7407dfe7c55",
+      "flow": "land",
+      "harness": "Agent · harness unavailable",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "258615e18583b8abf3f1e5963f9280b0dea941e6",
+    "title": "test(build-cli): preserve native public artifact mode checks (#4181)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T01:05:31-07:00",
+    "parents": [
+      "de2af19500904b5e68420acc6ca5ad8e4da49759"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "de2af19500904b5e68420acc6ca5ad8e4da49759",
+    "title": "test(build-cli): use native fixture launch boundaries for hooks, models and tools (#4200)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T00:54:31-07:00",
+    "parents": [
+      "0f43eff054d406bf18b771879a0edd2a75b42ebe"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "0f43eff054d406bf18b771879a0edd2a75b42ebe",
+    "title": "✅ test(backend): read the J2 review verdict from the first line of its summary",
+    "body": "TODO evidence keeps the review's whole text since 9fc78a4ae3, so the J2\nrehearsal's review row compared \"approve\" with the full summary and\nfailed after the PR body already carried it.\n\nRefs #4086\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-17T00:50:45-07:00",
+    "parents": [
+      "642f333139d711366ff5153ef812f0318d9ad1a1"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-0f43eff054d4",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "642f333139d711366ff5153ef812f0318d9ad1a1",
+    "title": "🐛 fix(flows): capture every TODO plan callback so a parked TODO resumes",
+    "body": "A TODO that asked a question failed the moment it resumed: \"The rebuilt\nplan differs from the recorded plan\" (plan_changed, #3906). The durable\ninterpreter records the plan digest, and an inline callback has a\nprocess-local identity that changes on every body build, so the rebuilt\ntodo plan never matched, even in the same process. J2, J3 and J4 all\nstopped at Needs you.\n\nWrap every plan callback in the TODO flow and the coding step flows in\nNode.capture, as LandVibe already does (d7455524e9). The TODO flow's\ndigest moves, so builtin_flows.json pins the new one, and the\ncoding-request wiki page excerpts request-flow.ts to stay inside the\n30 kB review budget.\n\nA typed catch's error-schema filter is still a process-local identity,\nso a resume after a host restart still refuses; that is the plan\npackage's, tracked separately.\n\nRefs #4086\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-17T00:32:07-07:00",
+    "parents": [
+      "1cf19fd4f4650a6f93721a5c97418bf9395cedf6"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-642f333139d7",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "1cf19fd4f4650a6f93721a5c97418bf9395cedf6",
+    "title": "test(build-cli): seed Docker executor plans with their Node-only tool (#4207)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T00:33:15-07:00",
+    "parents": [
+      "d53d772fcb4412d90d4fb364d91b19e708c4fbf1"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "d53d772fcb4412d90d4fb364d91b19e708c4fbf1",
+    "title": "test(build-cli): read Windows tar archives without remote-host parsing (#4205)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T00:33:08-07:00",
+    "parents": [
+      "dcdc4cc2b17a357bd52d310983998ff71155e805"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "dcdc4cc2b17a357bd52d310983998ff71155e805",
+    "title": "test(build-cli): execute Docker planning stubs natively on Windows (#4200)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T00:32:59-07:00",
+    "parents": [
+      "63a9cae71ebd582a77a2a075500c768c5d7ad80b"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "63a9cae71ebd582a77a2a075500c768c5d7ad80b",
+    "title": "test(build-cli): retain native path and mode assertions on Windows (#4171, #4181, #4193)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T00:32:11-07:00",
+    "parents": [
+      "cab0fc7903ff22d948c1681496655799519c9ece"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "cab0fc7903ff22d948c1681496655799519c9ece",
+    "title": "fix(build-cli): retry transient Windows atomic publication conflicts (#4204)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T00:29:28-07:00",
+    "parents": [
+      "4f521e3a67df639f2e5107bcfbf7cfdaa228055c"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "4f521e3a67df639f2e5107bcfbf7cfdaa228055c",
+    "title": "test(build-cli): assert native Windows service stop and EPERM contracts (#4192)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T00:28:52-07:00",
+    "parents": [
+      "14c231e1772a08e1b61432aaf65839897e0ec0d0"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "14c231e1772a08e1b61432aaf65839897e0ec0d0",
+    "title": "test(build-cli): use native engine fixtures and pin Git fixture line endings (#4200, #4181)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T00:28:33-07:00",
+    "parents": [
+      "573223fa6d0eb174c28ddc2b393938bd11a96710"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "573223fa6d0eb174c28ddc2b393938bd11a96710",
+    "title": "fix(build-cli): keep native directory limits inside the cache IO adapter (#4203)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T00:28:02-07:00",
+    "parents": [
+      "948d0d5a93ac40f527307607b905388e28cad6c0"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "948d0d5a93ac40f527307607b905388e28cad6c0",
+    "title": "fix(build-cli): normalize stored executable paths before revalidation (#4202)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T00:27:43-07:00",
+    "parents": [
+      "9720d15c256d34b0ca3b20776b2eb6046a9ef495"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "9720d15c256d34b0ca3b20776b2eb6046a9ef495",
+    "title": "test(testing): cover process group syscalls and reparent observations on Windows (#4201)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-17T00:25:46-07:00",
+    "parents": [
+      "e788093692fc398de995bb644e1de360ad6832ec"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "e788093692fc398de995bb644e1de360ad6832ec",
+    "title": "test(build-cli): preserve literal arguments through Windows MSYS fixtures (#4200)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:37:02-07:00",
+    "parents": [
+      "ee29a966d97378c705c44dad3ed84008613eda4d"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "ee29a966d97378c705c44dad3ed84008613eda4d",
+    "title": "🐛 fix(app): keep an Add refusal through background roster reads",
+    "body": "A refused Add says why no row was stored, but any committed members read\npublished the bare roster and erased it. The live channel rereads the roster\nat any moment, so on a slow runner the needs-access link vanished\nmilliseconds after the 403 and C-ACC-04 failed (Deploy apps run\n39009312134, browser e2e shard 2). Reads now keep an Add refusal, a failed\nreread reports itself instead of posing as the refusal, and the next\nmutation clears it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-16T23:38:42-07:00",
+    "parents": [
+      "c39794e61f250ba9e1ab598072e234effa0eec95"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-ee29a966d973",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "c39794e61f250ba9e1ab598072e234effa0eec95",
+    "title": "style(build): match generated index Unicode encoding (#4200)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:37:46-07:00",
+    "parents": [
+      "f7d35d9fcf3dcb2b3d9f3698b3aeeb379f0921e6"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "f7d35d9fcf3dcb2b3d9f3698b3aeeb379f0921e6",
+    "title": "style(build): preserve generated index Unicode formatting (#4200)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:28:50-07:00",
+    "parents": [
+      "f74a0f5a58c4417456b0c2f5343939a2bd1af6d2"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "f74a0f5a58c4417456b0c2f5343939a2bd1af6d2",
+    "title": "🐛 fix(flows): repair coding-vibe-landing test imports after the flows move",
+    "body": "The test lives one directory deeper under .smithers/flows/test, so its\nrelative imports of the jj and step-cache packages need three parent hops.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-16T23:36:18-07:00",
+    "parents": [
+      "a1547ae37ae4710ba070a85e2df3a9fa8c791dc1"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-f74a0f5a58c4",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "a1547ae37ae4710ba070a85e2df3a9fa8c791dc1",
+    "title": "test(build): declare native fixture inputs (#4200)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:34:14-07:00",
+    "parents": [
+      "a0668ee9e0b448a839f2397d9e0f79b9ee0072b3"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "a0668ee9e0b448a839f2397d9e0f79b9ee0072b3",
+    "title": "🔥 test: serve the journey rehearsals from @smthrs/testing and delete distribution/",
+    "body": "The journey rehearsals start smthrs-model-server --script builtin instead of\ndistribution/fake-todo-provider.mjs: the J10 review finding, the TODO flow\nfor [FLOWEDIT] and TODO_HOLD_STEP go in a script config, TRACE_MESSAGES maps\nto --trace-messages, and TODO_RELAY_URL records the real model's turns. The\ncontrol routes move to /__testing/{turns,held,release}; trace entries name\ntheir messages and stamp `at`. [OBSERVEUID] carries its uid, and the review\nboundary probe is the [PROBEREVIEW] directive.\n\nThe app's loopback provider and the wiki reviewer suite answer from\nBuiltinScript, and a flows test pins every teaching the script matches.\nC-SPK-06's approval moves beside its check. distribution/ is gone, and the\ndistribution contract refuses its return.\n\nRefs #4086\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-16T23:00:02-07:00",
+    "parents": [
+      "1da732093958eb7cab318afa2a7211e9eb59839e"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-a0668ee9e0b4",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "1da732093958eb7cab318afa2a7211e9eb59839e",
+    "title": "✨ feat(testing): add ScriptedModel, BuiltinScript and TurnLog",
+    "body": "Record and replay stays the default double. ScriptedModel answers the turns a\nrecording cannot make (a question on cue, a build broken once, a held turn)\nand hands the rest to a fallback such as CachedModel. BuiltinScript is the\nscript for Smithers' built-in flows, steered by typed Directives rendered as\nprompt tags (BuiltinScript.tag). TurnLog counts and traces served turns.\n\nsmthrs-model-server gains --script builtin, --script-config, --trace and\n--trace-messages, and serves GET /__testing/turns. ModelServer reads\nmax_completion_tokens, which the metered proxy adds, as max_tokens.\n\nRefs #4086\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-16T23:00:02-07:00",
+    "parents": [
+      "404e94ee177fa97ae2931b6c5a83bdbf8d591241"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-1da732093958",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "404e94ee177fa97ae2931b6c5a83bdbf8d591241",
+    "title": "test(build): use native Windows executables for tool fixtures (#4200)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:21:51-07:00",
+    "parents": [
+      "65ef3f034e75a9979e75e2cb02c62b7fd759ad3d"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "65ef3f034e75a9979e75e2cb02c62b7fd759ad3d",
+    "title": "test(build): type shared process probes and signal observations (#4192, #4198)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:18:30-07:00",
+    "parents": [
+      "5183d4972c4c4ede291e84f24c9eeb1825142a03"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "5183d4972c4c4ede291e84f24c9eeb1825142a03",
+    "title": "🧪 fix(backend): verify closed candidate replay as a read-only receipt (#3564)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:12:37-07:00",
+    "parents": [
+      "34b7d521fa0f2cccc5bc3867cb8d3d0b3f1fc3a5"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "34b7d521fa0f2cccc5bc3867cb8d3d0b3f1fc3a5",
+    "title": "✅ test(app): hold C-PRC-03 to the recorder tests check-receipts still declares",
+    "body": "27381adab9 moved issue closure out of the check-receipts suite, deleting the\nclose-variant tests C-PRC-03 pinned by name, so browser e2e shard 3 failed\nin Deploy apps run 39007595030. Pin three recorder-boundary tests the suite\nstill runs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-16T23:16:16-07:00",
+    "parents": [
+      "98a052b029f2a43fdee7ff31683431044d1ce230"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-34b7d521fa0f",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "98a052b029f2a43fdee7ff31683431044d1ce230",
+    "title": "fix(build): launch Windows module CLIs with literal Node argv (#4165)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:12:20-07:00",
+    "parents": [
+      "5967f6b4529f02b612c61c47a4f37699236127de"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "5967f6b4529f02b612c61c47a4f37699236127de",
+    "title": "fix(build): use the shared process owner on Windows (#4196)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:11:12-07:00",
+    "parents": [
+      "5598cc3c7e2ec52738c85d36e6331527a6876e88"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "5598cc3c7e2ec52738c85d36e6331527a6876e88",
+    "title": "test(build): use native child repository and approval socket paths (#4193)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:11:05-07:00",
+    "parents": [
+      "3d8b217176472e8cbdc1cf154d23c66325d7c4f4"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "3d8b217176472e8cbdc1cf154d23c66325d7c4f4",
+    "title": "fix(build): require clean service exit in sweep receipts (#4192, #4193)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:10:58-07:00",
+    "parents": [
+      "2b1d420755373a95086fda0d02de3bd7173c1ede"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "2b1d420755373a95086fda0d02de3bd7173c1ede",
+    "title": "test(build): query Windows process tables without pgrep or ps (#4198)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:10:45-07:00",
+    "parents": [
+      "318579d2e2fb1140321856d3a150e9f4c26dcd88"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "318579d2e2fb1140321856d3a150e9f4c26dcd88",
+    "title": "test(testing): use a file URL for the Windows signal preload (#4192)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:09:45-07:00",
+    "parents": [
+      "83efbe7b96f2ae6731e9d1604612645c3c740b23"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "83efbe7b96f2ae6731e9d1604612645c3c740b23",
+    "title": "test(build): preserve native modes in Fetch golden assertions (#4181)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:07:52-07:00",
+    "parents": [
+      "e45b2c379faf4754a2a27b6bec4cbba81e209ac2"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "e45b2c379faf4754a2a27b6bec4cbba81e209ac2",
+    "title": "test(review): model native Windows permission and FIFO failures (#4191, #4195)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:07:27-07:00",
+    "parents": [
+      "a6989b29162421cd0231e9f06b19c803e5effa1f"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "a6989b29162421cd0231e9f06b19c803e5effa1f",
+    "title": "test(targets): select git protocol fixtures with literal Node argv (#4165)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:07:07-07:00",
+    "parents": [
+      "ce867adf612d7a272eb5f644197c51cd24786cd3"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "ce867adf612d7a272eb5f644197c51cd24786cd3",
+    "title": "test(targets): retain confinement checks across Windows directory swaps (#4171)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:05:34-07:00",
+    "parents": [
+      "b4cd6382a4a1b353a2ec05997789167c49a4f619"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "b4cd6382a4a1b353a2ec05997789167c49a4f619",
+    "title": "✅ test(app): scope the repository home stack toggle as presentation in launch parity",
+    "body": "The stack bound (#4085) added a Show all / Show fewer button whose handler\nonly flips local render state, so the launch-law parity suite flagged it as\nan unrouted affordance and miscounted the file. Scope the exception to\nRepositoryHomeView.tsx and record its fifth handler.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-16T23:06:59-07:00",
+    "parents": [
+      "cd1575495a51d85643f247090db40f1fca107427"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-b4cd6382a4a1",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "cd1575495a51d85643f247090db40f1fca107427",
+    "title": "fix(targets): avoid fchmod when rollback mode already matches (#4197)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:05:25-07:00",
+    "parents": [
+      "13ffcd650b3635e06450ed99d7335693cbe6c100"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "13ffcd650b3635e06450ed99d7335693cbe6c100",
+    "title": "test(targets): preserve native signal and helper environment contracts (#4192, #4194)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T23:03:18-07:00",
+    "parents": [
+      "2d314f473348fec5c53e0f6846198a5779115859"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "2d314f473348fec5c53e0f6846198a5779115859",
+    "title": "fix(review): retain refusal status when Windows closes stdin with EOF (#4165)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T22:59:25-07:00",
+    "parents": [
+      "eeb09c91c4191609768c13c243c30aa649955ea1"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "eeb09c91c4191609768c13c243c30aa649955ea1",
+    "title": "✅ test(app): excuse the literals the moved catalog and flow-host scripts carry",
+    "body": "Moving the catalog generator and the flow-host manifest into apps/app/scripts\nput them under the LiteralPin conformance scan, which failed on three\nliterals: the write-only form field kind from @smthrs/rpc and two\ntest-owned filenames. Excuse each with the reason it resolves elsewhere.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-16T22:59:41-07:00",
+    "parents": [
+      "c7e0ad91fd0e8482f261a4da53ded7d941e5a0b8"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-eeb09c91c419",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "c7e0ad91fd0e8482f261a4da53ded7d941e5a0b8",
+    "title": "fix(review): verify record identity without O_NOFOLLOW (#4191, #4193)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T22:57:50-07:00",
+    "parents": [
+      "375edff9df9b50037a2fc47cb42e04844cc37254"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "375edff9df9b50037a2fc47cb42e04844cc37254",
+    "title": "test(testing): deliver graceful Windows shutdown to the real CLI (#4192)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T22:57:30-07:00",
+    "parents": [
+      "1dda0de4a5db17765b522b8e2cb3c02169ed2473"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "1dda0de4a5db17765b522b8e2cb3c02169ed2473",
+    "title": "test(targets): execute the model fixture without a shell shim (#4165)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T22:57:18-07:00",
+    "parents": [
+      "4989288bd5a42a41396db189bd8bbfaffc62483a"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "4989288bd5a42a41396db189bd8bbfaffc62483a",
+    "title": "🐛 fix(backend): acquire TODO credential locks before the stack (#4190)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T22:56:38-07:00",
+    "parents": [
+      "be196ebd10259e8921edacf11eea6945d8ee30d3"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "be196ebd10259e8921edacf11eea6945d8ee30d3",
+    "title": "✅ test(rpc): pass each refused flow view as one array argument",
+    "body": "test.each spreads an array row into arguments, so the row [] passed no\nview and the other rows passed a lone block, which the schema refuses for\nnot being an array. tsc rejected the empty row and broke //packages/rpc:check\nin the apps gates (Deploy apps run 39007595030). Wrap each row so the\nrefusals grade the empty view, the unresolved file and the nested view.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-16T22:56:39-07:00",
+    "parents": [
+      "e8264cdb8863adcbc01ffbc040169b17456d24cb"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-be196ebd1025",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "e8264cdb8863adcbc01ffbc040169b17456d24cb",
+    "title": "test(build): pin rollback fixture line endings (#4181)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T22:56:07-07:00",
+    "parents": [
+      "5d7c812e572cd2d8444ceb307ce248b098f35119"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "5d7c812e572cd2d8444ceb307ce248b098f35119",
+    "title": "test(targets): canonicalize permission fixture roots on Windows (#4171)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T22:30:13-07:00",
+    "parents": [
+      "8e3276cde761d5bc2f94d5f053e0d8191f73326f"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "8e3276cde761d5bc2f94d5f053e0d8191f73326f",
+    "title": "✅ test: link the moved flows package's node_modules in the pinned-closure and TUI review tests",
+    "body": "Both tests symlinked `flows/node_modules`, which moved with the flows to\n`.smithers/flows/node_modules`.\n\nRefs #4092\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-16T22:45:18-07:00",
+    "parents": [
+      "da413d0c96f9b3125a4ac22362693264d2653b47"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-8e3276cde761",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "da413d0c96f9b3125a4ac22362693264d2653b47",
+    "title": "📝 docs: document settlementSuccess and regenerate the site's API page and llms-full",
+    "body": "The agent API page and llms-full.txt follow the package docs, and the two\nmoved contract suites name their own run command.\n\nRefs #4092, #4094\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-16T22:35:11-07:00",
+    "parents": [
+      "5be81944af2c85852f21ce6b5e15e5f974130fbb"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-da413d0c96f9",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "5be81944af2c85852f21ce6b5e15e5f974130fbb",
+    "title": "👷 ci(drift): re-pin trusted drift to the commit that moved the flows labels",
+    "body": "7df5f685fc carries the trusted-drift.yml that names `//.smithers/flows:apiBaseline`;\nthe pinned 6fe01e9c16 still named `//flows:apiBaseline`.\n\nRefs #4092\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-16T22:33:18-07:00",
+    "parents": [
+      "7df5f685fc8495bd32c05b192e10f1b8270f016a"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-5be81944af2c",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "7df5f685fc8495bd32c05b192e10f1b8270f016a",
+    "title": "🚚 refactor(repo): move this repository's flows to .smithers/flows (M-49)",
+    "body": "The repository's own flows, automation modules and their package move from\na root flows/ to .smithers/flows/, the location the product discovers\n(mvp.md M-49). `smthrs flow list` now lists them: 82 flows.\n\n- Workspace members `.smithers/flows`, `.smithers/flows/coding` and\n  `.smithers/flows/review/seeded-bugs`; labels become `//.smithers/flows:*`\n  in PACKAGE.ts, ci.yml, the drift workflows, release.yml, release-gates,\n  cloud.sh, the check inventory and every test that pins them. Relative\n  imports in and into the moved tree gain the extra level.\n- `pnpm docs:check` and `pnpm docs:sync` start the docs-sync flow, and the\n  release job's changelog, build, API-baseline, restore and publish steps\n  start their release flows (`smthrs flow start ... --wait`). Pack and smoke\n  stay plain `node` so the Node-floor step proves the tarballs on that\n  runtime. The release gate scanner treats a literal flow start as a flow\n  step, not a target-graph gate, as it treated the `node` steps it replaced.\n- The Cloud CI bootstrap moves to .github/scripts/ci/ beside the\n  reference-host hooks: `.smithers/` keeps only what 1.0 owns there. Each\n  CI command gets its own cloud gate again, and its contract suite reads\n  the drift steps from trusted-drift.yml.\n- The wiki flow admits `.smithers/flows/` sources, and docs-sync declares\n  the irreversible tier discovery already assigned it.\n- Retired-root fixtures (`flows/todo/flow.ts` as a stale root), persisted\n  tags (`flows/memory/MemoryError`), workflow-definition paths and the\n  shipped todo flow's bytes keep their old spelling, so recorded identities\n  and digests do not move.\n- The check inventory reader also tries `flows/evidence/check-commands.json`,\n  so receipts for commits landed before this move still verify.\n\nRefs #4092\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-16T22:19:35-07:00",
+    "parents": [
+      "14feaf3811ea73f2308a634d3d2247fba59a8fb4"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-7df5f685fc84",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "14feaf3811ea73f2308a634d3d2247fba59a8fb4",
+    "title": "🐛 fix(smithers): read .smithers/wiki as 1.0 state, not a 0.x marker",
+    "body": "Agent memory writes `.smithers/wiki/decisions/<item>.md`, so a repository the\nproduct manages printed the Smithers 0.x notice for its own wiki pages.\n`wiki/` joins `flows/` as a `.smithers` directory 1.0 owns.\n\nRefs #4091\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-16T22:19:35-07:00",
+    "parents": [
+      "5d43ac6b7d11d8039e23d466c7757981a5de29f6"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-14feaf3811ea",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "5d43ac6b7d11d8039e23d466c7757981a5de29f6",
+    "title": "🐛 fix(targets): accept a hidden-directory package in generated CI patterns",
+    "body": "A repository's flows live under `.smithers/flows` (M-49), so a CI step names\n`//.smithers/flows:pack`. A pattern component may now start with one `.`\nbefore its first letter, digit or `_`; `.`, `..` and option-like words stay\nrefused.\n\nRefs #4092\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-16T22:19:34-07:00",
+    "parents": [
+      "94b44ed693526a7232f627d9034f34382d445a36"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-5d43ac6b7d11",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "94b44ed693526a7232f627d9034f34382d445a36",
+    "title": "🐛 fix(agent): settle a void flow's completion as null so its run completes",
+    "body": "`agent/run` declares `success: Schema.Unknown`, which the JSON codec reads as\nany JSON value. A flow whose success is `Schema.Void` completes with\n`undefined`, so engine-store degraded the settlement into\n`UnencodableResult` and `smthrs flow start --wait` reported the run failed\nthough its flow completed (the docs-sync and issue-claim flows).\n`settlementSuccess` settles absence as `null` and every JSON value unchanged.\n\nRefs #4092\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n",
+    "author": "maya",
+    "date": "2026-10-16T20:30:25-07:00",
+    "parents": [
+      "c930f6e2f51ace0d07cd37e6fa6ac9e33f66d758"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-94b44ed69352",
+      "flow": "land",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "c930f6e2f51ace0d07cd37e6fa6ac9e33f66d758",
+    "title": "fix(review): limit module interpreter routing to Windows (#4165, #4180)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T22:21:47-07:00",
+    "parents": [
+      "71c8f035f6ed200133bfcfa837940ffe45d9b082"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "71c8f035f6ed200133bfcfa837940ffe45d9b082",
+    "title": "🧪 fix(ci): provision the real uv backend fixture dependency (#4186)",
+    "body": "",
+    "author": "smithers-agent",
+    "date": "2026-10-16T22:16:47-07:00",
+    "parents": [
+      "7fb6196fc896e77c2133f063bb7d38b72fee3c86"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-71c8f035f6ed",
+      "flow": "land",
+      "harness": "Gemini",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "7fb6196fc896e77c2133f063bb7d38b72fee3c86",
+    "title": "🧪 fix(backend): wait for the persisted Scratch rebase completion (#4188)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T22:19:29-07:00",
+    "parents": [
+      "025f41e12a0bf580dd0dec61706191d9a59d90d6"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "025f41e12a0bf580dd0dec61706191d9a59d90d6",
+    "title": "🧪 fix(backend): seed byte watcher fixtures after pinned jj initialization (#4187)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T22:17:41-07:00",
+    "parents": [
+      "0e58f7325e1645ec232b84a02b525cfdbed89021"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "0e58f7325e1645ec232b84a02b525cfdbed89021",
+    "title": "test(build-cli): enable Git long paths for the full-size argv fixtures (#4189)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T22:13:13-07:00",
+    "parents": [
+      "38470a2970be2af1fc99530e780822f25a65a2b7"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "38470a2970be2af1fc99530e780822f25a65a2b7",
+    "title": "📝 fix(site): regenerate bounded-loop LLM documentation (#4163)",
+    "body": "",
+    "author": "smithers-agent",
+    "date": "2026-10-17T05:12:50Z",
+    "parents": [
+      "221e868926df745dbb90f243b855344dc1e999f1"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": [],
+    "agent": {
+      "run": "run-land-38470a2970be",
+      "flow": "land",
+      "harness": "Agent · harness unavailable",
+      "for": "maya"
+    }
+  },
+  {
+    "sha": "221e868926df745dbb90f243b855344dc1e999f1",
+    "title": "🐛 fix(backend): retain shared machine bindings through product stores (#4185)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T22:09:22-07:00",
+    "parents": [
+      "5248f54ffef082c42a7f8ac5a5e94050ab7f21a3"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "5248f54ffef082c42a7f8ac5a5e94050ab7f21a3",
+    "title": "test(agent): assert typed prompt text reaches host instructions (#4179)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T22:04:08-07:00",
+    "parents": [
+      "957591f4a9ad433811d8cfc3f15b75f79e1dc4ee"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "957591f4a9ad433811d8cfc3f15b75f79e1dc4ee",
+    "title": "test(agent): resolve mythical-note Git from the host PATH (#4182)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T22:03:52-07:00",
+    "parents": [
+      "0abd5c318268552bbe0b51a5a3b407eb7013d3be"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "0abd5c318268552bbe0b51a5a3b407eb7013d3be",
+    "title": "🧪 fix(backend): isolate confirmation ordering from background work (#4152)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T22:03:06-07:00",
+    "parents": [
+      "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  },
+  {
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "title": "test(build-cli): assert representable Windows modes and native link targets (#4181)",
+    "body": "",
+    "author": "maya",
+    "date": "2026-10-16T22:02:58-07:00",
+    "parents": [
+      "70c185de561e268c95991e1cab42e0011d2d40fd"
+    ],
+    "branches": [
+      "main"
+    ],
+    "checks": [],
+    "verified": false,
+    "files": []
+  }
+]
