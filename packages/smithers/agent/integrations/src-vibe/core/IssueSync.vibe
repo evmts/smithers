@@ -1,0 +1,100 @@
+/** Shared issue sync transport: PostgreSQL owns claims, identities and receipts.
+ * @since 1.0.0
+ */
+
+import { isRecord } from "@smthrs/canonical/Record"
+import type { FlowRuntime } from "@smthrs/flow"
+import { Schema } from "effect"
+import { IntegrationFailure } from "./ActionFailure.vibe"
+import type { ExternalEvent } from "./ExternalEvent.vibe"
+import * as Runner from "./issueSyncRunner.ts"
+
+/** Persisted connector routing.
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Mapping = Schema.Struct({
+  provider: Schema.String,
+  connection_id: Schema.String,
+  scope_id: Schema.String,
+  conversation_id: Schema.String,
+  thread_id: Schema.String
+})
+/** A committed issue event awaiting a provider receipt.
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Delivery = Schema.Struct({
+  id: Schema.Int,
+  key: Schema.String,
+  issue_id: Schema.Int,
+  state: Schema.String,
+  event: Schema.String,
+  payload: Schema.Struct({
+    comment: Schema.Struct({
+      id: Schema.Int,
+      body: Schema.optional(Schema.String),
+      persona: Schema.optional(Schema.Unknown)
+    }),
+    reaction: Schema.optional(Schema.Struct({ name: Schema.String, active: Schema.Boolean }))
+  }),
+  message_id: Schema.String,
+  /** The claim fencing a `dispatching` row; its execution identity survives a lost receipt. */
+  claim_token: Schema.optional(Schema.String),
+  mapping: Mapping
+})
+/** The connector implements only provider admission and durable action calls.
+ * `deliver` must run on a durable Flow runtime whose journal outlives the host:
+ * a lapsed claim is recovered by re-executing its original execution id.
+ * @category models
+ * @since 1.0.0
+ */
+export interface Connector {
+  readonly accepts: (mapping: typeof Mapping.Type) => boolean
+  readonly deliver: (
+    delivery: typeof Delivery.Type,
+    executionId: string
+  ) => Promise<{ mutable messageId: string; mutable unsupported?: string }>
+  readonly reconcile: (delivery: typeof Delivery.Type, executionId: string) => Promise<string | undefined>
+}
+/** Host ports; the host owns scheduling and durable signal admission.
+ * @category models
+ * @since 1.0.0
+ */
+export interface Options {
+  readonly owner: string
+  readonly repo: string
+  readonly request: (path: string, init?: RequestInit) => Promise<Response>
+  readonly connector: Connector
+  readonly onMessage?:
+    | ((receipt: { readonly issueId: number; readonly event: ExternalEvent }) => Promise<void>)
+    | undefined
+}
+/** Refuse volatile runtimes before intake or outbound claims can be acknowledged.
+ * @category guards
+ * @since 1.0.0
+ */
+export const requireDurableRuntime = (runtime: FlowRuntime.FlowRuntime["Service"]): void => {
+  if (runtime?.durability !== "durable") {
+    throw new Error("Issue sync requires a durable engine store; FlowEngine.layerMemory cannot replay after restart")
+  }
+}
+const failureOf = (value: unknown): IntegrationFailure | undefined => {
+  const pending = [value]
+  const seen = new Set<unknown>()
+  while (pending.length > 0 && seen.size < 20) {
+    const next = pending.shift()
+    if (seen.has(next)) continue
+    seen.add(next)
+    if (Schema.is(IntegrationFailure)(next)) return next
+    if (isRecord(next)) pending.push(next["cause"], next["error"])
+  }
+  return undefined
+}
+const decodeDeliveries = Schema.decodeUnknownSync(Schema.Array(Delivery))
+
+/** Build the one claim/execute/settle mechanism used by every connector.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const make = (options: Options) => Runner.make(options, decodeDeliveries, failureOf)
