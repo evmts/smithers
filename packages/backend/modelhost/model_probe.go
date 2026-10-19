@@ -152,6 +152,17 @@ func (s OwnerModels) runModelTest(ctx context.Context, owner int64, body json.Ra
 	if errors.Is(err, ErrModelTestInvalid) {
 		return json.RawMessage(`{"code":"request_invalid"}`), http.StatusBadRequest
 	}
+	// The owner's model host cap refused before any host existed (G3i): the
+	// key was not tested, so say so and when to try again.
+	if busy := (*ports.ModelHostsBusy)(nil); errors.As(err, &busy) {
+		raw, _ := json.Marshal(modelTestFailed("chat_guests_busy", map[string]any{"message": busy.Error()}, "capacity"))
+		return raw, http.StatusTooManyRequests
+	}
+	// Every model host the fleet allows is running: the key was not tested.
+	if errors.Is(err, ports.ErrModelHostsFull) {
+		raw, _ := json.Marshal(modelTestFailed("no_capacity", map[string]any{}, "capacity"))
+		return raw, http.StatusServiceUnavailable
+	}
 	if errors.Is(err, ports.ErrModelCredentialMissing) {
 		var input struct {
 			Model struct {
@@ -197,7 +208,7 @@ func (host *Host) RunModelTest(ctx context.Context, ownerID int64, request json.
 		return nil, err
 	}
 	grant := ports.ChatTurnGrant{OwnerID: ownerID, TurnID: "model-test", ProducerBaseURL: "http://127.0.0.1"}
-	lease, err := host.launcher.LaunchChatHost(ctx, grant, binding)
+	lease, err := host.launch(ctx, grant, binding)
 	if err != nil {
 		return nil, err
 	}

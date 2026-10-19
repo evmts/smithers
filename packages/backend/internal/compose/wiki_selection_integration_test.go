@@ -21,6 +21,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/ports"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 	"github.com/stretchr/testify/require"
 )
 
@@ -304,6 +305,26 @@ func TestWikiPlanningSelectionComposedRoutePostgres(t *testing.T) {
 		}
 		out, _ := call(router(false, selector), "own", "POST", "/selection", `{"prompt":"Retry"}`)
 		require.NotEqual(t, 200, out.Code, "a disabled wiki gate is not an empty vault")
+	})
+	t.Run("the owner's model host cap refuses retryably, not as unavailable", func(t *testing.T) {
+		out, _ := call(router(true, &recordedSelector{err: &ports.ModelHostsBusy{Limit: 2}}), "own", "POST", "/selection", `{"prompt":"Retry"}`)
+		require.Equal(t, http.StatusTooManyRequests, out.Code, out.Body.String())
+		require.Equal(t, "5", out.Header().Get("Retry-After"))
+		var refusal map[string]any
+		require.NoError(t, json.Unmarshal(out.Body.Bytes(), &refusal), out.Body.String())
+		require.Equal(t, "chat_guests_busy", refusal["code"])
+		require.Equal(t, "capacity", refusal["class"])
+		require.Equal(t, "You have 2 chats answering right now. Wait for one to finish, then try again.", refusal["message"])
+	})
+	t.Run("a full model host fleet refuses retryably as no_capacity", func(t *testing.T) {
+		full := fmt.Errorf("%w: %w", ports.ErrModelHostsFull, &sandbox.StatusError{StatusCode: 503, Code: sandbox.NoCapacityCode, Message: "full"})
+		out, _ := call(router(true, &recordedSelector{err: full}), "own", "POST", "/selection", `{"prompt":"Retry"}`)
+		require.Equal(t, http.StatusServiceUnavailable, out.Code, out.Body.String())
+		require.Equal(t, "5", out.Header().Get("Retry-After"))
+		var refusal map[string]any
+		require.NoError(t, json.Unmarshal(out.Body.Bytes(), &refusal), out.Body.String())
+		require.Equal(t, "no_capacity", refusal["code"])
+		require.Equal(t, "capacity", refusal["class"])
 	})
 
 	t.Run("selection then person edit binds the read to the edited revision", func(t *testing.T) {

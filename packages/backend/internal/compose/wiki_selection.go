@@ -3,6 +3,7 @@ package compose
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -104,6 +105,18 @@ func (h wikiSelection) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	raw, err := h.selector.SelectContext(ctx, ports.ContextSelectionGrant{OwnerID: info.User.ID, RepositoryID: repository.ID, Input: input})
+	if busy := (*ports.ModelHostsBusy)(nil); errors.As(err, &busy) {
+		// The owner's model host cap refused before any host existed (G3i).
+		w.Header().Set("Retry-After", "5")
+		writeConfirmationDispatchError(w, &services.AccessError{Status: http.StatusTooManyRequests, Class: "capacity", Code: "chat_guests_busy", Message: busy.Error()})
+		return
+	}
+	if errors.Is(err, ports.ErrModelHostsFull) {
+		// Every model host the fleet allows is running; nothing ran.
+		w.Header().Set("Retry-After", "5")
+		writeConfirmationDispatchError(w, &services.AccessError{Status: http.StatusServiceUnavailable, Class: "capacity", Code: "no_capacity", Message: "Wiki selection is unavailable"})
+		return
+	}
 	if err != nil {
 		writeConfirmationDispatchError(w, wikiSelectionUnavailable())
 		return

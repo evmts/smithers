@@ -65,6 +65,13 @@ const chatTurnResourceKind = "chat_turn"
 // a fault of the host, the provider or the request.
 const codeHostNoCapacity = "host_no_capacity"
 
+// codeChatGuestsBusy names a turn refused because its owner already runs as
+// many model hosts as one owner may (G3i, PM d-ic6hp3). It ends the turn with
+// the refusal's own sentence instead of deferring: the owner's other hosts
+// are what it waits on, and the person can see and end those. It labels the
+// failure metric; the receipt carries only the sentence (see RefuseHostsBusy).
+const codeChatGuestsBusy = "chat_guests_busy"
+
 // capacityRefusalDelay backs off a rerun of a turn the fleet had no room for.
 //
 // A full fleet is a transient deferral the product already answers that way
@@ -228,6 +235,8 @@ func (d *Dispatcher) fail(ctx context.Context, grant ProducerGrant, code string,
 	var err error
 	if refusal := (*ProviderRefusal)(nil); errors.As(cause, &refusal) {
 		err = d.store.RefuseProducer(ctx, grant, refusal)
+	} else if busy := (*ports.ModelHostsBusy)(nil); errors.As(cause, &busy) {
+		err = d.store.RefuseHostsBusy(ctx, grant, busy)
 	} else {
 		err = d.store.FailProducer(ctx, grant, code)
 	}
@@ -357,6 +366,12 @@ func (d *Dispatcher) runOne(parent context.Context, candidate Candidate) {
 		// The provider answered with a refusal: a rerun meets the same one.
 		if refusal := (*ProviderRefusal)(nil); errors.As(err, &refusal) {
 			d.fail(detached, grant, refusal.Code, err)
+			return
+		}
+		// The owner's model host cap refused the launch before any host
+		// existed: the turn ends typed and retryable with the cap's sentence.
+		if errors.Is(err, ports.ErrModelHostsBusy) {
+			d.fail(detached, grant, codeChatGuestsBusy, err)
 			return
 		}
 		if progress.silent() {

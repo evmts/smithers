@@ -3,6 +3,7 @@ package chat
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/smithersai/smithers/packages/backend/ports"
 )
@@ -21,7 +22,19 @@ var (
 	ErrLimit          = errors.New("chat journal limit reached")
 	ErrCorrupt        = errors.New("chat journal is corrupt")
 	ErrUncertain      = errors.New("chat provider outcome is uncertain")
+	ErrPendingFull    = errors.New("chat turns pending for this owner are full")
 )
+
+// PendingFull refuses a new turn while its owner already has Limit turns not
+// yet answered (G3i, Security d-kmefmv). Its Error is the sentence the person
+// reads (PM d-l4flq2); it names no plan.
+type PendingFull struct{ Limit int }
+
+func (full *PendingFull) Error() string {
+	return fmt.Sprintf("You have %d messages waiting for an answer. Wait for one to be answered, then try again.", full.Limit)
+}
+
+func (full *PendingFull) Unwrap() error { return ErrPendingFull }
 
 type State string
 
@@ -87,6 +100,9 @@ type AdmitInput struct {
 	RunID   string
 	Journal JournalRequest
 	Request json.RawMessage
+	// PendingLimit refuses a new turn while the owner already has this many
+	// turns not yet answered; 0 admits without a limit.
+	PendingLimit int
 }
 
 type AdmitResult struct {

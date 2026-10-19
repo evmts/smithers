@@ -430,6 +430,13 @@ type ChatArchive struct {
 	ArchivedAt           time.Time       `json:"archived_at"`
 }
 
+type ChatGuestSlot struct {
+	LeaseID   string    `json:"lease_id"`
+	OwnerID   int64     `json:"owner_id"`
+	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type ChatTurn struct {
 	ID                     string             `json:"id"`
 	RepositoryID           int64              `json:"repository_id"`

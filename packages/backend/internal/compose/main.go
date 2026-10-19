@@ -1835,6 +1835,15 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if err != nil {
 		return fmt.Errorf("initialize chat runtime: %w", err)
 	}
+	// Every hosted model host is a sandbox on the fleet the workspaces share,
+	// so the deployment's Host takes a durable slot before each launch (G3i).
+	if host, ok := options.ChatHost.(*modelhost.Host); ok && options.topology.hosted() {
+		slots, err := modelhost.NewChatGuestSlots(pool, cfg.Chat.GuestsPerOwner, cfg.Chat.GuestsFleet)
+		if err != nil {
+			return fmt.Errorf("initialize model host slots: %w", err)
+		}
+		host.SetGuestSlots(slots)
+	}
 	chatSizing.InstallOrigin = func() string {
 		if installAddress != nil {
 			return installAddress.Public()
@@ -2545,7 +2554,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		github:       gitHubImportHandler != nil && githubClient != nil,
 		// A configured model turn is available only when the durable journal
 		// routes are mounted; it does not imply a separate agent executor.
-		modelTurn:        modelStreamHandler != nil && options.topology.servesHTTP(),
+		modelTurn:        modelTurnAdvertised(modelStreamHandler != nil, options.topology),
 		recommend:        recommendationHandler != nil && options.topology.servesHTTP(),
 		workspace:        options.Workspace != nil && options.topology.servesHTTP(),
 		terminal:         options.Workspace != nil && options.topology.servesHTTP(),

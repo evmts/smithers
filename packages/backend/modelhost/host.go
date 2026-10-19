@@ -83,10 +83,21 @@ type Launcher interface {
 	LaunchChatHost(context.Context, ports.ChatTurnGrant, Binding) (Lease, error)
 }
 
+// GuestSlots bounds how many model hosts run at once, per owner and in all
+// (G3i, CEO a-94ge9y). Acquire takes one slot before a host is launched, or
+// refuses: over the owner's cap with ports.ModelHostsBusy, over the fleet
+// ceiling with ports.ErrModelHostsFull (also a sandbox no-capacity error, so a
+// chat turn defers). The returned release frees the slot; until then the
+// store keeps the slot alive.
+type GuestSlots interface {
+	Acquire(ctx context.Context, ownerID int64) (release func(context.Context), err error)
+}
+
 type Host struct {
 	resolver Resolver
 	launcher Launcher
 	standIn  providerStandIn
+	slots    GuestSlots
 
 	// transcripts is the one credential-free host that normalizes external
 	// transcripts. It is launched at the first record and kept: a process per
@@ -184,6 +195,43 @@ func New(resolver Resolver, launcher Launcher, options ...HostOption) (*Host, er
 	return host, nil
 }
 
+// SetGuestSlots installs the model host cap. The deployment builds the Host
+// and the product composition owns the store, so it is set after New and
+// before the Host serves.
+func (host *Host) SetGuestSlots(slots GuestSlots) { host.slots = slots }
+
+// launch is the only way a Host starts a model host: it takes the owner's
+// slot first, so a refused launch creates no sandbox, and the slot is freed
+// when the lease closes or the launch fails.
+func (host *Host) launch(ctx context.Context, grant ports.ChatTurnGrant, binding Binding) (Lease, error) {
+	if host.slots == nil {
+		return host.launcher.LaunchChatHost(ctx, grant, binding)
+	}
+	release, err := host.slots.Acquire(ctx, grant.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+	lease, err := host.launcher.LaunchChatHost(ctx, grant, binding)
+	if err != nil {
+		release(context.WithoutCancel(ctx))
+		return nil, err
+	}
+	return &slottedLease{Lease: lease, release: release}, nil
+}
+
+// slottedLease frees its slot once, after the host it holds is closed.
+type slottedLease struct {
+	Lease
+	once    sync.Once
+	release func(context.Context)
+}
+
+func (lease *slottedLease) Close(ctx context.Context) error {
+	err := lease.Lease.Close(ctx)
+	lease.once.Do(func() { lease.release(context.WithoutCancel(ctx)) })
+	return err
+}
+
 func (host *Host) RunChatTurn(ctx context.Context, grant ports.ChatTurnGrant) (runErr error) {
 	if grant.OwnerID <= 0 {
 		return errors.New("model host grant has no authenticated owner")
@@ -208,7 +256,7 @@ func (host *Host) RunChatTurn(ctx context.Context, grant ports.ChatTurnGrant) (r
 	if binding.Managed {
 		binding.CredentialValue = turncredential.Mint(grant.TurnID, grant.Generation, grant.Token)
 	}
-	lease, err := host.launcher.LaunchChatHost(ctx, grant, binding)
+	lease, err := host.launch(ctx, grant, binding)
 	if err != nil {
 		return fmt.Errorf("launch owner model host: %w", err)
 	}
@@ -291,7 +339,7 @@ func (host *Host) RunModelStream(ctx context.Context, grant ports.ModelStreamGra
 		chatGrant = *grant.Metered
 		chatGrant.Request = requestBody
 	}
-	lease, err := host.launcher.LaunchChatHost(ctx, chatGrant, binding)
+	lease, err := host.launch(ctx, chatGrant, binding)
 	if err != nil {
 		// A launcher that named the branch which refused keeps its own
 		// answer. A launcher that named none is labelled sandbox_create: the
@@ -384,7 +432,7 @@ func (host *Host) SelectContext(ctx context.Context, grant ports.ContextSelectio
 		RunID: runID, LegID: runID, Generation: 1, Token: "context-selection",
 		ExpiresAt: time.Now().Add(15 * time.Minute), Request: requestBody, ProducerBaseURL: "http://127.0.0.1",
 	}
-	lease, err := host.launcher.LaunchChatHost(ctx, chatGrant, binding)
+	lease, err := host.launch(ctx, chatGrant, binding)
 	if err != nil {
 		return nil, fmt.Errorf("launch owner model host: %w", err)
 	}

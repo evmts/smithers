@@ -34,8 +34,8 @@ const (
 // chatRuntimeOptions sizes the dispatcher from configuration, falling back to
 // the default for the deployment role.
 func chatRuntimeOptions(cfg config.ChatConfig, hosted bool, logger *slog.Logger) (chat.RuntimeOptions, error) {
-	if cfg.Concurrency < 0 || cfg.QueueSize < 0 || cfg.LeaseSeconds < 0 {
-		return chat.RuntimeOptions{}, errors.New("chat concurrency, queue size and lease must not be negative")
+	if cfg.Concurrency < 0 || cfg.QueueSize < 0 || cfg.LeaseSeconds < 0 || cfg.PendingPerOwner < 0 {
+		return chat.RuntimeOptions{}, errors.New("chat concurrency, queue size, lease and pending limit must not be negative")
 	}
 	options := chat.RuntimeOptions{Concurrency: cfg.Concurrency, QueueSize: cfg.QueueSize, Lease: time.Duration(cfg.LeaseSeconds) * time.Second, Logger: logger}
 	if hosted {
@@ -45,6 +45,7 @@ func chatRuntimeOptions(cfg config.ChatConfig, hosted bool, logger *slog.Logger)
 		if options.QueueSize == 0 {
 			options.QueueSize = hostedChatQueueSize
 		}
+		options.PendingPerOwner = cfg.PendingPerOwner
 	}
 	return options, nil
 }

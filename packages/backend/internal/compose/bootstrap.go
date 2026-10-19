@@ -58,6 +58,15 @@ type bootstrapFeatures struct {
 	codeIntelligence bool
 }
 
+// modelTurnAdvertised says whether bootstrap offers model.turn. Its one app
+// consumer titles each folded timeline line with a model stream, and on
+// hosted every stream is a chat guest on a fleet of four, so hosted keeps
+// the lines' fallback titles (PM d-dr660k). The route stays mounted for its
+// other callers, under the G3i caps.
+func modelTurnAdvertised(stream bool, role topology) bool {
+	return stream && role.servesHTTP() && !role.hosted()
+}
+
 func newAppBootstrap(features bootstrapFeatures) appBootstrap {
 	version, sha := buildIdentity()
 	result := appBootstrap{APIVersion: 1, Host: "cloud", Version: version, BuildSHA: sha,

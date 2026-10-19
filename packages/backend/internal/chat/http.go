@@ -31,7 +31,9 @@ type Handler struct {
 	// PrivateConversations permits authenticated hosted accounts to use their
 	// own main conversation before an install or repository exists.
 	PrivateConversations bool
-	ContextRepository    ContextRepository
+	// PendingPerOwner bounds an owner's turns not yet answered; 0 is no bound.
+	PendingPerOwner   int
+	ContextRepository ContextRepository
 	// ResolveBranch authorizes and resolves branch aliases at the install boundary.
 	ResolveBranch func(context.Context, Scope, string) (string, error)
 	Store         *Store

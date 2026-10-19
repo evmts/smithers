@@ -265,6 +265,10 @@ func writeRecommendationError(w http.ResponseWriter, status int, code string) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"status": "error", "code": code})
 }
 
+// modelHostsBusyRetryAfter is how long a refused model stream waits: a chat
+// answers in about six seconds, which frees its model host.
+const modelHostsBusyRetryAfter = "5"
+
 type ModelStreamHandler struct{ Host ports.ModelStreamHost }
 
 func NewModelStreamHandler(host ports.ModelStreamHost) *ModelStreamHandler {
@@ -296,10 +300,21 @@ func (h *ModelStreamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	stream, err := h.Host.RunModelStream(r.Context(), ports.ModelStreamGrant{OwnerID: user.ID, Request: body})
 	if err != nil {
+		var busy *ports.ModelHostsBusy
 		if errors.Is(err, ports.ErrModelRequestInvalid) {
 			writeRecommendationError(w, http.StatusBadRequest, "request_invalid")
 		} else if errors.Is(err, ports.ErrModelCredentialMissing) {
 			writeRecommendationError(w, http.StatusServiceUnavailable, "credential_missing")
+		} else if errors.As(err, &busy) {
+			// The owner's model host cap refused before any host existed (G3i).
+			w.Header().Set("Retry-After", modelHostsBusyRetryAfter)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "error", "code": "chat_guests_busy", "message": busy.Error()})
+		} else if errors.Is(err, ports.ErrModelHostsFull) {
+			// Every model host the fleet allows is running; nothing ran.
+			w.Header().Set("Retry-After", modelHostsBusyRetryAfter)
+			writeRecommendationError(w, http.StatusServiceUnavailable, "no_capacity")
 		} else {
 			// model_unavailable is one public code for every cause nobody
 			// mapped, so the answer alone cannot say which branch refused.

@@ -60,6 +60,16 @@ type ChatConfig struct {
 	// turn runs, so it bounds recovery after a crash, not turn length.
 	// Env: SMITHERS_CHAT_LEASE_SECONDS.
 	LeaseSeconds int `mapstructure:"lease_seconds"`
+	// GuestsPerOwner caps the model hosts one owner runs at once on a hosted
+	// deployment: chat turns, model streams, wiki selections and model tests
+	// together (G3i). Env: SMITHERS_CHAT_GUESTS_PER_OWNER.
+	GuestsPerOwner int `mapstructure:"guests_per_owner"`
+	// GuestsFleet caps the model hosts all owners run at once, so chat leaves
+	// the sandbox fleet to workspaces. Env: SMITHERS_CHAT_GUESTS_FLEET.
+	GuestsFleet int `mapstructure:"guests_fleet"`
+	// PendingPerOwner caps one owner's chat turns not yet answered on a hosted
+	// deployment (G3i). Env: SMITHERS_CHAT_PENDING_PER_OWNER.
+	PendingPerOwner int `mapstructure:"pending_per_owner"`
 }
 
 // AgentsConfig controls agent session provisioning health and who may run
@@ -653,6 +663,10 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("chat.concurrency", 0)
 	v.SetDefault("chat.queue_size", 0)
 	v.SetDefault("chat.lease_seconds", 0)
+	// G3i: 2 per owner (CEO a-94ge9y), 4 in all (PM d-ic6hp3).
+	v.SetDefault("chat.guests_per_owner", 2)
+	v.SetDefault("chat.guests_fleet", 4)
+	v.SetDefault("chat.pending_per_owner", 5)
 	for key, value := range map[string]any{
 		"repositories": []string{}, "provider": "", "model": "", "sponsor_id": 0,
 		"ip_secret": "", "disabled": false, "request_nanos": int64(100_000_000),
@@ -881,6 +895,9 @@ func Load(configFile string) (*Config, error) {
 		{"chat.concurrency", "SMITHERS_CHAT_CONCURRENCY"},
 		{"chat.queue_size", "SMITHERS_CHAT_QUEUE_SIZE"},
 		{"chat.lease_seconds", "SMITHERS_CHAT_LEASE_SECONDS"},
+		{"chat.guests_per_owner", "SMITHERS_CHAT_GUESTS_PER_OWNER"},
+		{"chat.guests_fleet", "SMITHERS_CHAT_GUESTS_FLEET"},
+		{"chat.pending_per_owner", "SMITHERS_CHAT_PENDING_PER_OWNER"},
 	} {
 		_ = v.BindEnv(b[0], b[1])
 	}
