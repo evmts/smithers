@@ -117,6 +117,9 @@ type BillingServiceConfig struct {
 	TeamAnnualPriceID        string
 	EnterpriseMonthlyPriceID string
 	EnterpriseAnnualPriceID  string
+	// PlansOpen offers plans, checkout and the subscription portal; closed,
+	// a deployment keeps only the overview and the credit balance.
+	PlansOpen bool
 }
 
 type BillingAccountSummary struct {

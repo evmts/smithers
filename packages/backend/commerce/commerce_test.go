@@ -90,6 +90,7 @@ func TestNewConfiguresCheckoutAndExactSignupLedgerWithoutDatabaseIO(t *testing.T
 	cfg := validConfig()
 	cfg.SignupCreditGrantCents = 1_234
 	cfg.Prices = admission.Prices{ProMonthly: "price_pro"}
+	cfg.PlansOpen = true
 	service, err := commerce.New(pool, client, cfg)
 	require.NoError(t, err)
 	require.True(t, service.Capabilities().Checkout)
@@ -102,6 +103,34 @@ func TestNewConfiguresCheckoutAndExactSignupLedgerWithoutDatabaseIO(t *testing.T
 	require.NoError(t, err)
 	require.False(t, withoutCheckout.Capabilities().Checkout)
 	require.True(t, withoutCheckout.Capabilities().Webhook)
+}
+
+// Plans, checkout and the portal stay closed unless the deployment opens them,
+// even with a live price configured (G7b lever 2); the overview, which serves
+// the credit balance, and the webhook stay.
+func TestPlansStayClosedUntilTheDeploymentOpensThem(t *testing.T) {
+	cfg := validConfig()
+	cfg.Prices = admission.Prices{ProMonthly: "price_pro", MaxMonthly: "price_max"}
+	closed, err := commerce.New(&pgxpool.Pool{}, &inertPaymentClient{}, cfg)
+	require.NoError(t, err)
+	cfg.PlansOpen = true
+	open, err := commerce.New(&pgxpool.Pool{}, &inertPaymentClient{}, cfg)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		capability   string
+		closed, open func(commerce.Capabilities) bool
+	}{
+		{"overview and balance", func(c commerce.Capabilities) bool { return c.Overview }, func(c commerce.Capabilities) bool { return c.Overview }},
+		{"plans", func(c commerce.Capabilities) bool { return !c.Plans }, func(c commerce.Capabilities) bool { return c.Plans }},
+		{"checkout", func(c commerce.Capabilities) bool { return !c.Checkout }, func(c commerce.Capabilities) bool { return c.Checkout }},
+		{"portal", func(c commerce.Capabilities) bool { return !c.Portal }, func(c commerce.Capabilities) bool { return c.Portal }},
+		{"webhook", func(c commerce.Capabilities) bool { return c.Webhook }, func(c commerce.Capabilities) bool { return c.Webhook }},
+	} {
+		t.Run(tc.capability, func(t *testing.T) {
+			require.True(t, tc.closed(closed.Capabilities()), "closed by default")
+			require.True(t, tc.open(open.Capabilities()), "opened by the deployment")
+		})
+	}
 }
 
 func TestNewRejectsGrantsThatCannotConvertToNanos(t *testing.T) {

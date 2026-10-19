@@ -70,7 +70,7 @@ func TestCommerceProjectionChangesExistingKeyFreeWorkerPolicy(t *testing.T) {
 	require.Equal(t, int64(1), before.ConcurrentSandboxes)
 	transport := &payment{status: "active"}
 	const secret = "test-only-api-webhook-secret"
-	api, err := commerce.New(pool, transport, commerce.Config{Usage: admission.ProductUsage, Prices: prices, WebhookSecret: secret})
+	api, err := commerce.New(pool, transport, commerce.Config{Usage: admission.ProductUsage, Prices: prices, WebhookSecret: secret, PlansOpen: true})
 	require.NoError(t, err)
 	require.True(t, api.Capabilities().Checkout)
 	deliver := func(event string) {

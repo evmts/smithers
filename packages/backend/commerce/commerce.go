@@ -82,6 +82,10 @@ type Config struct {
 	// user's credit account is created, once per login identity
 	// (credits.Ledger.SignupGrantNanos). Zero grants nothing.
 	SignupCreditGrantCents int64
+	// PlansOpen offers plans, checkout and the subscription portal. They stay
+	// closed unless the deployment opens them: the 2026-09-29 pricing has no
+	// plans (G7b lever 2). Open them only on Will's word.
+	PlansOpen bool
 }
 
 // New constructs API commerce over the same ledger, metering, and transactional
@@ -125,6 +129,7 @@ func New(pool *pgxpool.Pool, client Client, cfg Config) (Service, error) {
 		TeamMonthlyPriceID: p.TeamMonthly, TeamAnnualPriceID: p.TeamAnnual,
 		EnterpriseMonthlyPriceID: p.EnterpriseMonthly, EnterpriseAnnualPriceID: p.EnterpriseAnnual,
 		MonthlyCreditGrantCents: cfg.MonthlyCreditGrantCents,
+		PlansOpen:               cfg.PlansOpen,
 	}, services.WithBillingEmailSender(cfg.EmailSender), services.WithBillingCreditLedger(ledger))
 	return &authority{BillingService: service, emailSender: cfg.EmailSender, ledger: ledger}, nil
 }
