@@ -117,13 +117,13 @@ const fixture = (
   const layer = Layer.mergeAll(
     requestRegistration,
     Interpreter.layer(InlineRequest),
+    // Interpreter.layer registers the built-in human task; a fake approval replaces it.
     approval === undefined ? HumanTask.layer : HumanTask.action.toLayer(({ name, prompt }) =>
       Effect.promise(() => {
         assert.equal(name, "coding-plan-approval")
         approval.prompts.push(prompt)
         return approval.decision
-      })
-    ),
+      }), { override: true }),
     todoLayers(Evaluator.layerScripted(() => ({ route: { choice: "implement" } }))),
     InstallDependencyPages.toLayer(() => Effect.void),
     prototypeRegistration,

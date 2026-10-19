@@ -1098,11 +1098,11 @@ test(
               return { explanation: "Which helper?", clarification }
             })
           ),
+          // Interpreter.layer registers the built-in human task; this fake answers in its place.
           HumanTask.action.toLayer(() =>
             Effect.promise(
               async () => (await steer(`${label}-steer`, "Keep the max at 5"), "Use the existing retry helper")
-            )
-          ),
+            ), { override: true }),
           DraftPlan.toLayer((payload) => Effect.sync(() => (drafts.push(planningPrompt(payload)), draft)))
         ).pipe(
           Layer.provideMerge(Action.layerImplementations),
