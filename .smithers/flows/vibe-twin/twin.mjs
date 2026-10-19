@@ -737,7 +737,9 @@ export const quality = (pkg) => {
     hatchShare: vibeLines + hatchLines === 0 ? 0 : Math.round((1000 * hatchLines) / (vibeLines + hatchLines)) / 1000,
     castsAdded: count(twin, casts, /\.(?:vibe|ts|tsx)$/) - count(src, casts, anyTs),
     suppressionsAdded: count(twin, suppress, /\.(?:vibe|ts|tsx)$/) - count(src, suppress, anyTs),
-    heldCalls: count(twin, /`\s*\)\s*\(\s*\)/g, /\.vibe$/),
+    // Only a parenthesized tagged template called by hand, (sql`...`)(); a statement built by a
+    // call and run with D267's call, sql.unsafe(`...`)(), is the correct form (S7-2).
+    heldCalls: count(twin, /\(\s*[A-Za-z_$][\w$.]*\s*`(?:[^`\\]|\\.)*`\s*\)\s*\(\s*\)/g, /\.vibe$/),
     constantConditionsAdded: count(twin, constant, /\.(?:vibe|ts|tsx)$/) - count(src, constant, anyTs)
   }
 }
