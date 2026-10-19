@@ -4,6 +4,7 @@ import { readFile, writeFile, rm, stat, symlink } from "node:fs/promises"
 import { once } from "node:events"
 import { resolve, join } from "node:path"
 import { createServer } from "node:net"
+import { tmpdir } from "node:os"
 
 const repository = resolve(__dirname, "../../../..")
 const cli = join(repository, "packages/smithers/bin/smithers.mjs")
@@ -36,7 +37,7 @@ const stop = async (child: ChildProcess | undefined) => {
 }
 
 test("RunsInbox answers a real parked HumanTask through the local gateway without external requests", async ({ page }) => {
-  const root = execFileSync("mktemp", ["-d", join(repository, ".gateway-fixture.XXXXXX")], { encoding: "utf8" }).trim()
+  const root = execFileSync("mktemp", ["-d", join(tmpdir(), "smithers-gateway.XXXXXX")], { encoding: "utf8" }).trim()
   const children: ChildProcess[] = []
   const output: string[] = []
   const launch = (command: string, args: string[]) => {

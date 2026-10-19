@@ -121,7 +121,7 @@ export const createLocalWorkflowRelay = (
 export const localGatewayApi = async (_config: LocalWorkflowGateway, request: Request): Promise<Response> => {
   const path = new URL(request.url).pathname
   if (request.method === "GET") {
-    if (path === "/api/user") return json({ id: 0, username: "local-operator", display_name: "Local operator", is_admin: false })
+    if (path === "/api/user") return json({ username: "local-operator", display_name: "Local operator", is_admin: false })
   }
   return json({ message: "Not available in local mode." }, 409)
 }

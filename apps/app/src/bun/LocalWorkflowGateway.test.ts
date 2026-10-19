@@ -95,6 +95,11 @@ test("local API identifies an operator and synthesizes no inventory or catalog",
   try {
     await mkdir(join(directory, ".smithers"))
     await writeFile(join(directory, ".smithers/factory.json"), '{"flows":[]}')
+    const { createApplicationClient } = await import("../mainview/runtime/ApplicationClient")
+    const { resolveApplicationTarget } = await import("@smthrs/rpc/ApplicationTarget")
+    const target = resolveApplicationTarget({ apiVersion: 1, mode: "web-selfhost", apiOrigin: "", auth: { kind: "session" }, cors: "same-origin", developerExternal: false }, "http://localhost")
+    const client = createApplicationClient(target, { pageOrigin: "http://localhost", fetchImpl: async input => api(new URL(String(input), "http://localhost").pathname) })
+    await expect(client.identity.current()).resolves.toEqual({ username: "local-operator", displayName: "Local operator", admin: false, scopes: null })
     expect(await (await api("/api/user")).json()).toMatchObject({ username: "local-operator", display_name: "Local operator", is_admin: false })
     for (const path of ["/api/user/repos", "/api/user/orgs", "/api/user/workspaces", "/api/conversations/main/view-state", `/api/repos/${config.repo}/home`]) expect((await api(path)).status).toBe(409)
     expect((await api(`/api/repos/${config.repo}/contents/.smithers/factory.json`)).status).toBe(409)
