@@ -44,13 +44,23 @@ func (h publishedHeads) GetChange(_ context.Context, _, _, commit string) (repoh
 
 const idleCapTestHead = "0123456789abcdef0123456789abcdef01234567"
 
-// idleBox is the release fixture after one finished turn whose head was
-// published, left idle past the cap.
+// idleBox is the release fixture after one finished turn whose head was not
+// yet published when it ended, so its release revoked its credentials and
+// kept its guest, left idle past the cap. Its dirty mark is cleared, as a box
+// from before the mark has none: the dirty sweep leaves it to the idle cap.
+// published says whether the head has published since.
 func idleBox(t *testing.T, published bool) *agentBoxRelease {
 	t.Helper()
+	attempts := agentBoxHeadVerifyAttempts
+	agentBoxHeadVerifyAttempts = 1
+	t.Cleanup(func() { agentBoxHeadVerifyAttempts = attempts })
 	f := newAgentBoxRelease(t, "running")
+	_, err := f.pool.Exec(f.ctx, `UPDATE workspaces SET head_commit_id=$2 WHERE id=$1`, f.workspace, idleCapTestHead)
+	require.NoError(t, err)
+	f.boxes.branchHeads = publishedHeads{heads: map[string]string{}}
 	f.finish(t)
-	_, err := f.pool.Exec(f.ctx, `UPDATE workspaces SET head_commit_id=$2, last_activity_at=NOW()-interval '20 minutes' WHERE id=$1`, f.workspace, idleCapTestHead)
+	require.Contains(t, f.releaseLog(t), "outcome=kept_dirty")
+	_, err = f.pool.Exec(f.ctx, `UPDATE workspaces SET agent_box_dirty_vm_id='', last_activity_at=NOW()-interval '20 minutes' WHERE id=$1`, f.workspace)
 	require.NoError(t, err)
 	_, err = f.pool.Exec(f.ctx, `UPDATE agent_sessions SET finished_at=NOW()-interval '20 minutes' WHERE workspace_id=$1`, f.workspace)
 	require.NoError(t, err)

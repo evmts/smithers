@@ -84,3 +84,21 @@ func TestWorkspaceEgressAuditRouteChecksWorkspaceAndPaginates(t *testing.T) {
 	assert.Contains(t, rec.Header().Get("Link"), "cursor=next-workspace")
 	assert.JSONEq(t, `[]`, rec.Body.String())
 }
+
+// An agent session's box traffic is its person's alone (plue#869): another
+// repository reader is answered as if the session did not exist, and the
+// audit is never read.
+func TestAgentSessionEgressAuditRefusesAnotherPerson(t *testing.T) {
+	audit := &fakeSandboxEgressAuditRouteService{}
+	handler := &AgentSessionHandler{Service: &mockAgentSessionRouteService{getSessionFn: func(_ context.Context, id string) (services.AgentSessionResponse, error) {
+		return services.AgentSessionResponse{ID: id, UserID: 8}, nil
+	}}, EgressAudit: audit}
+	req := httptest.NewRequest(http.MethodGet, "/api/repos/alice/demo/agent-sessions/session-one/egress", nil)
+	req = withAuth(req, 7, "alice")
+	req = withRepoCtx(req, 101, "alice", "demo")
+	req = withChiParams(req, map[string]string{"id": "session-one"})
+	rec := httptest.NewRecorder()
+	handler.ListEgressAudit(rec, req)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Empty(t, audit.kind, "another person's audit is never read")
+}
