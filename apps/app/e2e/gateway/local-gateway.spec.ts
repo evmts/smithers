@@ -8,6 +8,7 @@ import { createServer as createHttpServer } from "node:http"
 import { tmpdir } from "node:os"
 
 const repository = resolve(__dirname, "../../../..")
+const observer = join(__dirname, "observe-egress.mjs")
 const cli = join(repository, "packages/smithers/bin/smithers.mjs")
 const freePort = async () => {
   const socket = createServer()
@@ -53,7 +54,7 @@ test("RunsInbox answers a real parked HumanTask through the local gateway withou
     socket.end("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n")
   })
   const launch = (command: string, args: string[]) => {
-    const child = spawn(command, args, { cwd: repository, env: childEnv, stdio: ["ignore", "pipe", "pipe"] })
+    const child = spawn(command, command === "bun" ? ["--preload", observer, ...args] : args, { cwd: repository, env: childEnv, stdio: ["ignore", "pipe", "pipe"] })
     child.stdout!.on("data", bytes => output.push(String(bytes)))
     child.stderr!.on("data", bytes => output.push(String(bytes)))
     child.on("exit", (code, signal) => output.push(`[exit] ${args.slice(0, 3).join(" ")}: ${code ?? signal}\n`))
@@ -66,11 +67,17 @@ test("RunsInbox answers a real parked HumanTask through the local gateway withou
     expect(code, output.join("")).toBe(0)
   }
   let token = ""
-  const childEnv = { ...process.env, SMITHERS_TOKEN: "" }
+  const records = join(root, "host-egress")
+  // userns is denied on lane VMs; native subprocess egress remains unobserved.
+  const childEnv = { ...process.env, SMITHERS_TOKEN: "",
+    SMITHERS_EGRESS_RECORDS: records,
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${observer}` }
+  const hostEgress = () => readFile(records, "utf8")
   const responseChecks: Promise<void>[] = []
   const responseLeaks: string[] = []
   const responseErrors: string[] = []
   try {
+    await writeFile(records, "")
     tripwire.listen(0, "127.0.0.1")
     await once(tripwire, "listening")
     const upstream = `http://127.0.0.1:${(tripwire.address() as { port: number }).port}`
@@ -162,6 +169,8 @@ test("RunsInbox answers a real parked HumanTask through the local gateway withou
     }
     expect(responseErrors, "Every browser response was inspected").toEqual([])
     expect(responseLeaks, "Operator token in browser responses").toEqual([])
+    for (const child of [...children].reverse()) await stop(child)
+    expect(await hostEgress(), "Host connection attempts (API, host, port)").toBe("")
     expect(upstreamRequests, "Host/CLI/flow upstream requests").toEqual([])
     expect(external).toEqual([])
     expect(output.join("")).not.toContain(token)
@@ -169,7 +178,7 @@ test("RunsInbox answers a real parked HumanTask through the local gateway withou
   } catch (error) {
     // A failing journey says why: page text, browser errors, failed responses, child exits and server output.
     const report = `--- page text ---\n${await page.locator("body").innerText().catch(() => "")}\n--- output ---\n${output.join("")}`
-    const failure = `${(error as Error).message}\n${report}`
+    const failure = `${(error as Error).message}\n--- host connection attempts ---\n${await hostEgress().catch(() => "observer file unavailable")}\n${report}`
     throw new Error(token ? failure.replaceAll(token, "[operator token]") : failure)
   } finally {
     for (const child of children.reverse()) await stop(child)
