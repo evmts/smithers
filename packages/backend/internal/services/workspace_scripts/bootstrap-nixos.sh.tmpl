@@ -79,8 +79,14 @@ if [ -s {{printf "%q" .CLIPackageB64Path}}.part00000000 ]; then
   if cat {{printf "%q" .CLIPackageB64Path}}.part* | base64 -d | tar -xzf - -C {{printf "%q" .CLIPackageDir}}; then
     ln -sfn {{printf "%q" (printf "%s/node_modules/@smthrs/cli/bin/smithers.mjs" .CLIPackageDir)}} {{.LocalBinDir}}/smithers
     ln -sfn smithers {{.LocalBinDir}}/smthrs
-    PATH={{.LocalBinDir}}:$PATH {{.LocalBinDir}}/smithers --help >/tmp/smithers-workspace-cli-help.log 2>&1 || \
+    # Diagnostic only, as the developer with the developer's PATH, so it runs
+    # on the ~/.local/bin/node they get. A failure copies the CLI's own words
+    # into bootstrap.log (prod 2026-10-19 msb_f11acdd6 needed an exec to read
+    # "smthrs needs Node 26.4.0 or later; ... is Node 24.19.0").
+    if ! runuser -u {{.User}} -- env HOME={{.Home}} USER={{.User}} LOGNAME={{.User}} PATH={{.LocalBinDir}}:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin {{.LocalBinDir}}/smithers --help >/tmp/smithers-workspace-cli-help.log 2>&1; then
       echo "smithers workspace bootstrap: npm CLI smoke failed; see /tmp/smithers-workspace-cli-help.log" >&2
+      sed -e "s|^|smithers workspace bootstrap: cli smoke: |" /tmp/smithers-workspace-cli-help.log >&2 || true
+    fi
   else
     echo "smithers workspace bootstrap: npm CLI package extraction failed" >&2
   fi
