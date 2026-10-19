@@ -123,7 +123,23 @@ the inventory started.
 
 On installs, issue, pull-request and comment webhooks wake the existing metadata
 reconciler. Their payloads cannot update cached objects, rename the registry row
-or establish freshness. Hosted webhook/cache behavior is unchanged.
+or establish freshness. Hosted deliveries still write their payloads to the
+cache, but a delivery whose repository is private, internal or carries no
+visibility first clears the source's visibility receipt (below), so the
+anonymous metadata read closes before anything from it is stored.
+
+## Source visibility
+
+The anonymous public metadata read (`GET /api/repos/{owner}/{repo}/github/metadata/*`)
+serves only while the local repository is public and the registry row's
+`github_private` is `false`. Only a sync sets `false`: before any discussion
+read, each sync passes the same fetched-state authorization as the streams and
+reads `GET /repos/{owner}/{repo}` with the installation token, storing `private`
+when the immutable repository id matches. A refused, failed, malformed or
+identity-changed answer clears the receipt to NULL, which counts as private; a
+rate limit or a cancelled sync keeps it, and the stream's pause applies.
+Rebinding the source also clears it. Discussion streams do not write while the
+visibility is unconfirmed, and an unknown visibility is due on the next sweep.
 
 Fetched issue and pull-request batches commit their cache rows and consumer
 requests together in the existing product jobs store. Each request identifies
