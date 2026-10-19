@@ -47,6 +47,9 @@ export type AgentSessionRead = {
   updated_at: string
   metadata: AnyJSON
   workspace_id?: string
+  stage?: "queued" | "started"
+  queued_at?: string
+  queue_position?: number
   workspace: null | {
     id: string
     name: string

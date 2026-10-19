@@ -121,7 +121,7 @@ func TestSessionReadLaneBFailureCodes(t *testing.T) {
 	s, pool, update := codingCompletionFixture(t)
 	var projection agentFlowProjection
 	require.NoError(t, json.Unmarshal(update.Checkpoint.Projection, &projection))
-	for _, code := range []string{"flow_host_too_large", "flow_host_unavailable", "box_unavailable", "box_starting", "box_bootstrap_timeout", "box_missing", "box_failed", "box_stopped", "model_unavailable", "model_rate_limited", "out_of_credit", "turn_failed", "turn_timed_out", "dispatch_failed", "agents_unavailable"} {
+	for _, code := range []string{"box_busy", "flow_host_too_large", "flow_host_unavailable", "box_unavailable", "box_starting", "box_bootstrap_timeout", "box_missing", "box_failed", "box_stopped", "model_unavailable", "model_rate_limited", "out_of_credit", "turn_failed", "turn_timed_out", "dispatch_failed", "agents_unavailable"} {
 		metadata, err := json.Marshal(map[string]any{"failure_reason_code": code, "failure_reason": "Try again.", "failure_retryable": true, "model": "provider:model"})
 		require.NoError(t, err)
 		_, err = pool.Exec(t.Context(), `UPDATE agent_sessions SET metadata=$1,status='failed' WHERE id=$2`, metadata, projection.SessionID)

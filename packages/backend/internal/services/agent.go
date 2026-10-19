@@ -29,17 +29,20 @@ import (
 
 // AgentSessionResponse is the API representation of an agent session.
 type AgentSessionResponse struct {
-	Workspace    *AgentSessionWorkspace `json:"workspace"`
-	Run          *AgentSessionRun       `json:"run"`
-	ID           string                 `json:"id"`
-	RepositoryID int64                  `json:"repository_id"`
-	UserID       int64                  `json:"user_id"`
-	Title        string                 `json:"title"`
-	Status       string                 `json:"status"`
-	MessageCount int64                  `json:"message_count"`
-	CreatedAt    time.Time              `json:"created_at"`
-	UpdatedAt    time.Time              `json:"updated_at"`
-	Metadata     json.RawMessage        `json:"metadata"`
+	Stage         string                 `json:"stage,omitempty"`
+	QueuedAt      *time.Time             `json:"queued_at,omitempty"`
+	QueuePosition *int64                 `json:"queue_position,omitempty"`
+	Workspace     *AgentSessionWorkspace `json:"workspace"`
+	Run           *AgentSessionRun       `json:"run"`
+	ID            string                 `json:"id"`
+	RepositoryID  int64                  `json:"repository_id"`
+	UserID        int64                  `json:"user_id"`
+	Title         string                 `json:"title"`
+	Status        string                 `json:"status"`
+	MessageCount  int64                  `json:"message_count"`
+	CreatedAt     time.Time              `json:"created_at"`
+	UpdatedAt     time.Time              `json:"updated_at"`
+	Metadata      json.RawMessage        `json:"metadata"`
 	// WorkspaceID is the kind=agent workspace this run executes in (RFD-004).
 	WorkspaceID string `json:"workspace_id,omitempty"`
 	// ReasonCode, Reason and Retryable state why the session failed: a code

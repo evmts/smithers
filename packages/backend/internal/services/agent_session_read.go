@@ -3,6 +3,9 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/jackc/pgx/v5"
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
@@ -30,6 +33,9 @@ type agentSessionReadStore interface {
 }
 
 func (s *AgentService) enrichSessionRead(ctx context.Context, row db.GetAgentSessionWithMessageCountRow, result *AgentSessionResponse) error {
+	if err := s.enrichSessionStage(ctx, row, result); err != nil {
+		return err
+	}
 	store, ok := s.q.(agentSessionReadStore)
 	if !ok {
 		return nil
@@ -63,6 +69,50 @@ func (s *AgentService) enrichSessionRead(ctx context.Context, row db.GetAgentSes
 				result.Run.Model = &model
 			}
 		}
+	}
+	return nil
+}
+
+// Read the latest user message through the session/sequence index, then its
+// scoped request through the same unique key as jobs.Store.GetByRequest. One
+// snapshot keeps a concurrent claim from mixing queued stage and started state.
+func (s *AgentService) enrichSessionStage(ctx context.Context, row db.GetAgentSessionWithMessageCountRow, result *AgentSessionResponse) error {
+	if s.messagePool == nil {
+		return nil
+	}
+	var state string
+	var accepted time.Time
+	var position *int64
+	err := s.messagePool.QueryRow(ctx, `
+ WITH turn AS (
+  SELECT id, created_at FROM agent_messages
+  WHERE session_id=$1 AND role='user' ORDER BY sequence DESC LIMIT 1
+ )
+ SELECT request.state, turn.created_at,
+  CASE WHEN request.state='accepted' AND dispatch.status='ready' THEN (
+   SELECT count(*) FROM product_job_dispatches ahead
+   WHERE ahead.status='ready'
+    AND (ahead.next_attempt_at, ahead.operation_id) <= (dispatch.next_attempt_at, dispatch.operation_id)
+  ) END
+ FROM turn
+ JOIN product_job_requests request
+  ON request.tenant_id=$2 AND request.principal_id=$3
+  AND request.operation=$4 AND request.request_id='agent-message:' || turn.id::text
+ LEFT JOIN product_job_dispatches dispatch ON dispatch.operation_id=request.id
+ WHERE request.state IN ('accepted','dispatching')`, row.ID,
+		fmt.Sprintf("repository:%d", row.RepositoryID), fmt.Sprintf("user:%d", row.UserID), agentMessageDispatchOperation).Scan(&state, &accepted, &position)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if state == "accepted" {
+		result.Stage = "queued"
+		result.QueuedAt = &accepted
+		result.QueuePosition = position
+	} else {
+		result.Stage = "started"
 	}
 	return nil
 }

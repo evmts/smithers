@@ -169,21 +169,24 @@ type SessionLanding struct {
 
 // AgentSessionRead is generated from docs/api/openapi.yaml.
 type AgentSessionRead struct {
-	ID           string          `json:"id"`
-	RepositoryID int64           `json:"repository_id"`
-	UserID       int64           `json:"user_id"`
-	Title        string          `json:"title"`
-	Status       string          `json:"status"`
-	MessageCount int64           `json:"message_count"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
-	Metadata     AnyJSON         `json:"metadata"`
-	WorkspaceID  *string         `json:"workspace_id,omitempty"`
-	Workspace    json.RawMessage `json:"workspace"`
-	Run          json.RawMessage `json:"run"`
-	ReasonCode   *string         `json:"reason_code"`
-	Reason       *string         `json:"reason"`
-	Retryable    bool            `json:"retryable"`
+	ID            string          `json:"id"`
+	RepositoryID  int64           `json:"repository_id"`
+	UserID        int64           `json:"user_id"`
+	Title         string          `json:"title"`
+	Status        string          `json:"status"`
+	MessageCount  int64           `json:"message_count"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
+	Metadata      AnyJSON         `json:"metadata"`
+	WorkspaceID   *string         `json:"workspace_id,omitempty"`
+	Stage         *string         `json:"stage,omitempty"`
+	QueuedAt      *time.Time      `json:"queued_at,omitempty"`
+	QueuePosition *int64          `json:"queue_position,omitempty"`
+	Workspace     json.RawMessage `json:"workspace"`
+	Run           json.RawMessage `json:"run"`
+	ReasonCode    *string         `json:"reason_code"`
+	Reason        *string         `json:"reason"`
+	Retryable     bool            `json:"retryable"`
 }
 
 // AppBootstrap is generated from docs/api/openapi.yaml.
