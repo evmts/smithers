@@ -1,0 +1,7 @@
+out=$(gofmt -l packages/backend/internal/services packages/backend/internal/compose); echo "GOFMT:$out"; test -z "$out"
+go -C packages/backend vet ./...
+bash packages/backend/scripts/with-test-postgres.sh go -C packages/backend test ./internal/compose -run "TestHostedInvokeAnswers503AndStartsNoHost|TestAQueuedInvokeOnHostedFailsOnceAndNeverRetries|TestRunCredentialCannotStartCacheSavingWorkflowRunsPostgres|TestTrustedMain" -count=1 -v
+bash packages/backend/scripts/with-test-postgres.sh go -C packages/backend test ./internal/services -run "TestHostedPushToMainStartsNoFlowLoadWhateverItsFlag|TestFlowLoad|TestInvokedFlow|TestHomeBackground|TestWorkflowInvoke" -count=1 -v
+bash packages/backend/scripts/with-test-postgres.sh go -C packages/backend test ./internal/compose -run "TestHomeBackground|TestBackgroundMachine|TestTrustedMain|TestRunCredential" -count=1
+bash packages/backend/scripts/with-test-postgres.sh go -C packages/backend test ./internal/services -run "TestBilling|TestInvoke|TestWorkflowInvoke|TestInvokedFlow" -count=1
+pnpm exec smthrs docs //packages/backend:docs --write 2>&1 | tail -5; echo STAMP_BEGIN; cat packages/backend/docs/github-app.stamp.json; echo STAMP_END; pnpm exec smthrs docs //packages/backend:docs //apps/server:docs 2>&1 | tail -3
