@@ -75,5 +75,14 @@
       "../test"
     ],
     "affectedOnly": "direct"
+  },
+  "packages/smithers": {
+    "why": "Its whole Vitest suite runs past 10 minutes, twice per iteration (lane A). Both runs use the direct importers of twinned modules; the full suite runs once on a lane VM before cutover.",
+    "kind": "vitest",
+    "args": [
+      "test",
+      "src"
+    ],
+    "affectedOnly": "direct"
   }
 }
