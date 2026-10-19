@@ -29,6 +29,7 @@ type bootstrapEvidenceClient struct {
 	cause       error
 	exitCode    *int32
 	missingExit bool
+	stderr      string
 }
 
 func (c *bootstrapEvidenceClient) Execute(ctx context.Context, id string, req sandbox.ExecRequest) (sandbox.ExecResult, error) {
@@ -42,7 +43,11 @@ func (c *bootstrapEvidenceClient) Execute(ctx context.Context, id string, req sa
 			return sandbox.ExecResult{}, c.cause
 		}
 		if c.exitCode != nil || c.missingExit {
-			return sandbox.ExecResult{StatusCode: c.exitCode, Stderr: leakSentence}, nil
+			stderr := leakSentence
+			if c.stderr != "" {
+				stderr = c.stderr
+			}
+			return sandbox.ExecResult{StatusCode: c.exitCode, Stderr: stderr}, nil
 		}
 	}
 	if strings.HasPrefix(command, "tail -c 4096 ") {
@@ -142,6 +147,32 @@ func TestRuntimeBootstrapEvidenceKeepsExitWithoutGuestOutput(t *testing.T) {
 			assertBootstrapEvidence(t, records, row, test.operation, test.reason, test.code, "active")
 		})
 	}
+}
+
+// Canary cleanup deletes the row whose failure message holds the CLI's
+// stderr; the log line keeps its masked tail with the ids to find it.
+func TestRuntimeCLICheckFailureLogsMaskedOutputTail(t *testing.T) {
+	svc, row, client, records := bootstrapEvidenceFixture(t, workspaceArtifactVerifyCLI)
+	exit := int32(1)
+	client.exitCode = &exit
+	client.stderr = strings.Repeat("node:internal/modules/cjs/loader:1228 frame\n", 200) +
+		"Error: Cannot find module '/home/developer/.local/lib/smithers/cli.js'\n" + leakToken + "\n"
+	require.Error(t, svc.ensureRuntimeWorkspaceArtifacts(t.Context(), row, row.UserID))
+	entries := warnings(records, "workspace runtime CLI check output")
+	require.Len(t, entries, 1)
+	entry := entries[0]
+	require.Equal(t, row.ID, entry.attrs["workspace_id"])
+	require.Equal(t, row.VmID, entry.attrs["sandbox_id"])
+	require.Equal(t, workspaceCorrelationToken(row.ID), entry.attrs["workspace"])
+	require.Equal(t, string(workspaceArtifactVerifyCLI), entry.attrs["operation"])
+	require.Equal(t, "1", entry.attrs["exit_code"])
+	tail := entry.attrs["output_tail"]
+	require.Contains(t, tail, "Error: Cannot find module '/home/developer/.local/lib/smithers/cli.js'")
+	require.Contains(t, tail, "Bearer [redacted]")
+	require.NotContains(t, tail, "sk-live-c0ffee-DO-NOT-LOG")
+	require.LessOrEqual(t, len(tail), 4<<10)
+	// The finite bootstrap record still carries no guest output.
+	assertBootstrapEvidence(t, records, row, workspaceArtifactVerifyCLI, "command_exit", "1", "active")
 }
 
 func TestRuntimeBootstrapEvidenceKeepsActualCancellationAndProviderStatus(t *testing.T) {
