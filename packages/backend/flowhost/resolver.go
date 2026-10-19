@@ -521,7 +521,16 @@ func (resolver *Resolver) rebind(ctx context.Context, lease BindingLease, supers
 	return binding, nil
 }
 
-func (resolver *Resolver) verifiedClient(ctx context.Context, connection Connection, credential string, binding Binding) (*runtimebridge.Client, error) {
+// Embed the concrete bridge to retain its optional RPC, monitor and completion
+// capabilities while carrying the authorized binding into dispatch checkpoints.
+type boundRuntime struct {
+	*runtimebridge.Client
+	workspaceID string
+}
+
+func (r *boundRuntime) RuntimeWorkspaceID() string { return r.workspaceID }
+
+func (resolver *Resolver) verifiedClient(ctx context.Context, connection Connection, credential string, binding Binding) (*boundRuntime, error) {
 	client, err := runtimebridge.New(runtimebridge.Config{
 		Endpoint: connection.Endpoint, Credential: credential, HTTPClient: connection.HTTPClient,
 	})
@@ -539,7 +548,7 @@ func (resolver *Resolver) verifiedClient(ctx context.Context, connection Connect
 			"want_artifact", binding.RuntimeArtifactDigest, "got_artifact", identity.RuntimeArtifactDigest)
 		return nil, failure{code: "runtime_identity_conflict"}
 	}
-	return client, nil
+	return &boundRuntime{Client: client, workspaceID: binding.WorkspaceID}, nil
 }
 
 // startFailed durably records a failed start so the next start bumps the
