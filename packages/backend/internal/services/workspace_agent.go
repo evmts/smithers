@@ -2,16 +2,20 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
+	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 )
 
 // CreateAgentWorkspaceInput describes a run attaching to its branch machine.
@@ -129,13 +133,174 @@ func (s *WorkspaceService) runForkedWorkspaceCommand(ctx context.Context, vmID s
 	return nil
 }
 
-// A run ending or failing does not stop or delete a machine shared by members.
-// Branch release and confirmed-stop accounting belong to T-MCH-06.
-func (s *WorkspaceService) SuspendAgentWorkspace(ctx context.Context, workspaceID string) error {
-	return nil
+// What ending a run did to its box. The run's own callback and repository
+// API tokens are revoked by the session's finalize whatever happens here.
+const (
+	// The box keeps running with no credential minted for the run: its head
+	// token is revoked and its coding hosts are stopped with their tokens
+	// retired. The next turn's join mints a fresh head token and starts a
+	// fresh host.
+	agentWorkspaceQuiesced = "quiesced"
+	// Already asleep, stopped or failed; any head token it kept is revoked.
+	agentWorkspaceAlreadyReleased = "already_released"
+	// Another session, a terminal or a stack lane still uses it.
+	agentWorkspaceKeptInUse = "kept_in_use"
+	// An install releases idle branches itself, after a verified capture.
+	agentWorkspaceKeptForMachineLifecycle = "kept_for_machine_lifecycle"
+	// No workspace runtime or branch providers here to act on it with.
+	agentWorkspaceKeptWithoutRuntime = "kept_without_runtime"
+	// No such box.
+	agentWorkspaceAbsent = "absent"
+	// The release could not complete; whatever it revoked is reported.
+	agentWorkspaceReleaseFailed = "release_failed"
+)
+
+// AgentWorkspaceRelease is what ReleaseAgentWorkspace did to a box.
+type AgentWorkspaceRelease struct {
+	Outcome string
+	// HeadTokenRevoked is true when the box holds no live head token.
+	HeadTokenRevoked bool
+	// Detail names what keeps a box in use, for the operator log.
+	Detail string
 }
-func (s *WorkspaceService) FailAgentWorkspace(ctx context.Context, workspaceID string) error {
-	return nil
+
+// agentWorkspaceReleaseStore reads what a release must know about a box.
+type agentWorkspaceReleaseStore interface {
+	AgentWorkspaceUse(ctx context.Context, workspaceID, finishedSessionID string) (db.AgentWorkspaceUse, error)
+	ListFlowHostBindingHolders(ctx context.Context, workspaceID string) ([]db.FlowHostBindingHolder, error)
+	MarkFlowHostStopPending(ctx context.Context, bindingID string, ownerGeneration int64, pending bool) error
+}
+
+// ReleaseAgentWorkspace ends a finished run's hold on its box.
+//
+// A box another agent session, a terminal or a stack lane still uses keeps
+// running with its credentials: it is a branch machine members share. An
+// install leaves the box to its machine lifecycle, which sleeps an idle branch
+// after a verified capture. Anywhere else the box is quiesced, not stopped: a
+// stopped box can only be woken under machine admission, which only an install
+// composes (authorizeWorkspaceResume), so stopping it here would refuse every
+// later turn on the branch, and a person cannot start a box the payer account
+// owns (PM d-qhgqyv). Quiescing revokes the head token and stops the coding
+// hosts before retiring their credentials, so nothing minted for the run stays
+// live; the next turn's join mints a fresh head token and starts a fresh host.
+func (s *WorkspaceService) ReleaseAgentWorkspace(ctx context.Context, workspaceID, sessionID string) (AgentWorkspaceRelease, error) {
+	if s.q == nil {
+		return AgentWorkspaceRelease{Outcome: agentWorkspaceReleaseFailed}, pkgerrors.Internal("workspace store unavailable")
+	}
+	row, err := s.q.GetWorkspace(ctx, strings.TrimSpace(workspaceID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return AgentWorkspaceRelease{Outcome: agentWorkspaceAbsent}, nil
+	}
+	if err != nil {
+		return AgentWorkspaceRelease{Outcome: agentWorkspaceReleaseFailed}, pkgerrors.Internal("load agent workspace: " + err.Error())
+	}
+	if row.DeletedAt.Valid {
+		return AgentWorkspaceRelease{Outcome: agentWorkspaceAbsent}, nil
+	}
+	switch row.Status {
+	case "suspended", "stopped", "failed":
+		// Whatever stopped it ended its coding hosts; a head token can outlive
+		// a stop (ReleaseFailedFlowHostMachine before this change).
+		return AgentWorkspaceRelease{Outcome: agentWorkspaceAlreadyReleased, HeadTokenRevoked: s.revokeAgentWorkspaceHeadToken(ctx, row)}, nil
+	case "running":
+	default:
+		// Another request owns this box's start or release.
+		return AgentWorkspaceRelease{Outcome: agentWorkspaceKeptInUse, Detail: "box is " + row.Status}, nil
+	}
+	if s.machineAdmission != nil {
+		return AgentWorkspaceRelease{Outcome: agentWorkspaceKeptForMachineLifecycle}, nil
+	}
+	store, ok := s.q.(agentWorkspaceReleaseStore)
+	if !ok || !s.hasWorkspaceRuntime() || s.requireBranchMachineProviders() != nil {
+		return AgentWorkspaceRelease{Outcome: agentWorkspaceKeptWithoutRuntime}, nil
+	}
+	// The same lock a join's start takes: a turn joining now either finds the
+	// box quiesced and re-mints, or quiesces after it and is counted as use.
+	unlock := s.lockRuntimeWorkspace(row.ID)
+	defer unlock()
+	use, err := store.AgentWorkspaceUse(ctx, row.ID, sessionID)
+	if err != nil {
+		return AgentWorkspaceRelease{Outcome: agentWorkspaceReleaseFailed}, err
+	}
+	if use.InUse() {
+		return AgentWorkspaceRelease{Outcome: agentWorkspaceKeptInUse, Detail: agentWorkspaceUseDetail(use)}, nil
+	}
+	revoked := s.revokeAgentWorkspaceHeadToken(ctx, row)
+	operationCtx, err := s.workspaceRuntimeContext(ctx, row, row.UserID, workspaceLifecycleOperation(row, "agent-release"))
+	if err != nil {
+		return AgentWorkspaceRelease{Outcome: agentWorkspaceReleaseFailed, HeadTokenRevoked: revoked}, err
+	}
+	if kept := s.stopAgentWorkspaceHosts(operationCtx, row); kept != "" {
+		return AgentWorkspaceRelease{Outcome: agentWorkspaceQuiesced, HeadTokenRevoked: revoked, Detail: kept}, nil
+	}
+	return AgentWorkspaceRelease{Outcome: agentWorkspaceQuiesced, HeadTokenRevoked: revoked}, nil
+}
+
+// revokeAgentWorkspaceHeadToken revokes the box's head token (and the
+// children credential with it) and reports whether the box holds no live head
+// token. The next start mints a fresh one.
+func (s *WorkspaceService) revokeAgentWorkspaceHeadToken(ctx context.Context, row db.Workspace) bool {
+	ctx = context.WithoutCancel(ctx)
+	s.revokeWorkspaceHeadToken(ctx, row)
+	current, err := s.q.GetWorkspace(ctx, row.ID)
+	return err == nil && !current.HeadPushTokenID.Valid
+}
+
+// stopAgentWorkspaceHosts stops every coding host bound to the box and
+// retires the landing and cache credentials it was started with. The run is
+// over, so its credentials are retired whether or not the stop succeeds: a
+// host still running only fails its next call. A host the runtime did not
+// stop is marked so the next release retries the stop; a retry that succeeds
+// clears the mark. A stopped host is started afresh, with new credentials, by
+// the next turn.
+//
+// It answers what it left running, for the operator log, or "".
+func (s *WorkspaceService) stopAgentWorkspaceHosts(ctx context.Context, row db.Workspace) string {
+	store, ok := s.q.(agentWorkspaceReleaseStore)
+	if !ok {
+		return ""
+	}
+	detached := context.WithoutCancel(ctx)
+	holders, err := store.ListFlowHostBindingHolders(detached, row.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "list coding hosts of a released agent workspace failed", "workspace_id", row.ID, "error", err)
+		return "coding hosts unread"
+	}
+	var kept []string
+	for _, holder := range holders {
+		stopErr := s.runtime.StopService(ctx, row.ID, holder.ServiceName)
+		stopped := stopErr == nil || errors.Is(stopErr, workspaceapi.ErrWorkspaceNotFound) || errors.Is(stopErr, workspaceapi.ErrWorkspaceStopped)
+		s.RetireBoxHostCredential(detached, holder.ID, holder.UserID)
+		if !stopped {
+			slog.WarnContext(ctx, "stop coding host of a released agent workspace failed; the next release retries it",
+				"workspace_id", row.ID, "binding_id", holder.ID, "error", stopErr)
+			if err := store.MarkFlowHostStopPending(detached, holder.ID, holder.OwnerGeneration, true); err != nil {
+				slog.WarnContext(ctx, "record a pending coding host stop failed", "workspace_id", row.ID, "binding_id", holder.ID, "error", err)
+			}
+			kept = append(kept, "coding host "+holder.ID+" still running, credentials retired, stop retried on the next release")
+			continue
+		}
+		if holder.StopPending {
+			if err := store.MarkFlowHostStopPending(detached, holder.ID, holder.OwnerGeneration, false); err != nil {
+				slog.WarnContext(ctx, "clear a pending coding host stop failed", "workspace_id", row.ID, "binding_id", holder.ID, "error", err)
+			}
+		}
+	}
+	return strings.Join(kept, "; ")
+}
+
+func agentWorkspaceUseDetail(use db.AgentWorkspaceUse) string {
+	var parts []string
+	if len(use.Sessions) > 0 {
+		parts = append(parts, "agent sessions "+strings.Join(use.Sessions, ","))
+	}
+	if use.Terminals > 0 {
+		parts = append(parts, fmt.Sprintf("%d terminal sessions", use.Terminals))
+	}
+	if use.StackLane {
+		parts = append(parts, "a stack lane")
+	}
+	return strings.Join(parts, "; ")
 }
 
 // SnapshotAgentWorkspace snapshots a finished run's computer and returns the

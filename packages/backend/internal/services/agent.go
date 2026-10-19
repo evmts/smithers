@@ -423,6 +423,9 @@ type AgentService struct {
 	// canonical TypeScript host. Deployment composition supplies either the
 	// trusted owner or isolated Plue runtime resolver behind it.
 	flowDispatcher AgentFlowDispatcher
+	// codingTurns observes a completed coding turn's head and test receipt
+	// for its coding_result part. nil writes no part.
+	codingTurns CodingTurnObserver
 	// concurrencyCounter + concurrencyMax cap how many agent sandbox provider VMs may be
 	// allocated fleet-wide; enforced ONLY on the dispatch (VM-provision) path.
 	// A nil counter or max <= 0 disables the cap.
@@ -440,8 +443,10 @@ type AgentServiceOption func(*AgentService)
 type AgentWorkspaceBackend interface {
 	CheckAgentWorkspaceQuota(ctx context.Context, userID int64) error
 	CreateAgentWorkspace(ctx context.Context, input CreateAgentWorkspaceInput) (AgentWorkspaceResult, error)
-	SuspendAgentWorkspace(ctx context.Context, workspaceID string) error
-	FailAgentWorkspace(ctx context.Context, workspaceID string) error
+	// ReleaseAgentWorkspace ends a finished run's hold on its box and reports
+	// what that did: suspended, stopped, kept running for another user, or
+	// failed with its credentials revoked all the same.
+	ReleaseAgentWorkspace(ctx context.Context, workspaceID, sessionID string) (AgentWorkspaceRelease, error)
 	SnapshotAgentWorkspace(ctx context.Context, workspaceID, name string) (string, error)
 }
 
@@ -1559,15 +1564,11 @@ func (s *AgentService) startAgentRuntimeWatchdog(sessionID, vmID string, workflo
 			// until its TTL. Best-effort on a detached context.
 			s.revokeAgentSessionJJHubToken(deleteCtx, userID, pgtype.Int8{Int64: workflowRunID, Valid: workflowRunID > 0})
 			logger := middleware.LoggerWithAgentSessionAndWorkflowRun(context.Background(), sessionID, workflowRunID)
-			// RFD-004: a run executing in a workspace is suspended, never
-			// deleted; the computer stays for the human to inspect.
+			// RFD-004: a run executing in a workspace releases it, never
+			// deletes it; the disk stays for the human to inspect.
 			if workspaceID := s.agentSessionWorkspaceID(deleteCtx, sessionID); workspaceID != "" {
-				if err := s.workspaces.SuspendAgentWorkspace(deleteCtx, workspaceID); err != nil {
-					logger.Error("agent runtime watchdog failed to suspend workspace", "workspace_id", workspaceID, "error", err)
-					return
-				}
-				logger.Warn("agent runtime watchdog suspended workspace after max runtime",
-					"workspace_id", workspaceID, "max_runtime_seconds", int64(maxRuntime.Seconds()))
+				release, err := s.workspaces.ReleaseAgentWorkspace(deleteCtx, workspaceID, sessionID)
+				logAgentWorkspaceRelease(logger, workspaceID, "max_runtime", release, err)
 				return
 			}
 

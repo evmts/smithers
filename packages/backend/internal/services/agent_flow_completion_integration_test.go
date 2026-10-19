@@ -63,6 +63,10 @@ func TestCodingCompletionRollbackRetryAndConcurrentReplay(t *testing.T) {
 	session, err := q.GetAgentSession(ctx, projection.SessionID)
 	require.NoError(t, err)
 
+	// The coding_result is written with the replies, in their transaction.
+	head := strings.Repeat("a", 40)
+	observer := fixedCodingTurns{result: CodingResult{HeadCommit: &head, TestNotRun: &CodingTestNotRun{ReasonCode: codingTestNotRunNoDeclaredTest, Reason: "the repository declares no test"}}}
+	service.SetCodingTurnObserver(observer)
 	_, err = pool.Exec(ctx, `CREATE FUNCTION refuse_second_reply() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.content->>'value'='two' THEN RAISE EXCEPTION 'test interrupted second reply'; END IF; RETURN NEW; END $$`)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `CREATE TRIGGER refuse_second_reply BEFORE INSERT ON agent_parts FOR EACH ROW EXECUTE FUNCTION refuse_second_reply()`)
@@ -77,6 +81,17 @@ func TestCodingCompletionRollbackRetryAndConcurrentReplay(t *testing.T) {
 	require.False(t, current.FinishedAt.Valid)
 	_, err = pool.Exec(ctx, `DROP TRIGGER refuse_second_reply ON agent_parts`)
 	require.NoError(t, err)
+	// A refused coding_result rolls back every reply and the completion.
+	_, err = pool.Exec(ctx, `CREATE FUNCTION refuse_coding_result() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.part_type='coding_result' THEN RAISE EXCEPTION 'test interrupted coding result'; END IF; RETURN NEW; END $$`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `CREATE TRIGGER refuse_coding_result BEFORE INSERT ON agent_parts FOR EACH ROW EXECUTE FUNCTION refuse_coding_result()`)
+	require.NoError(t, err)
+	require.ErrorContains(t, service.ProjectFlowRuntime(ctx, update), "test interrupted coding result")
+	messages, err = service.ListMessages(ctx, session.ID, 1, 100)
+	require.NoError(t, err)
+	require.Len(t, messages, 1, "replies roll back with their coding_result")
+	_, err = pool.Exec(ctx, `DROP TRIGGER refuse_coding_result ON agent_parts`)
+	require.NoError(t, err)
 	// Concurrent completions use PostgreSQL's row lock, not process memory.
 	var wg sync.WaitGroup
 	errs := make(chan error, 8)
@@ -86,6 +101,7 @@ func TestCodingCompletionRollbackRetryAndConcurrentReplay(t *testing.T) {
 			defer wg.Done()
 			fresh := NewAgentServiceWithPool(db.New(pool), pool, WithAgentDispatchQuerier(db.New(pool)))
 			fresh.SetWorkspaceBackend(stubAgentWorkspaceBackend{})
+			fresh.SetCodingTurnObserver(observer)
 			errs <- fresh.ProjectFlowRuntime(context.Background(), update)
 		}()
 	}
@@ -100,6 +116,11 @@ func TestCodingCompletionRollbackRetryAndConcurrentReplay(t *testing.T) {
 	for i, m := range messages {
 		require.EqualValues(t, i, m.Sequence)
 	}
+	var results int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM agent_parts WHERE session_id=$1 AND part_type='coding_result'`, session.ID).Scan(&results))
+	require.Equal(t, 1, results, "eight concurrent completions write exactly one coding_result")
+	require.Len(t, messages[2].Parts, 2)
+	require.Equal(t, "coding_result", messages[2].Parts[1].Type)
 	// Replacing the current turn fences delayed replay without rewriting history.
 	_, err = q.UpdateAgentSessionWorkflowRun(ctx, db.UpdateAgentSessionWorkflowRunParams{ID: session.ID, WorkflowRunID: pgtype.Int8{}})
 	require.NoError(t, err)
@@ -107,6 +128,12 @@ func TestCodingCompletionRollbackRetryAndConcurrentReplay(t *testing.T) {
 	messages, err = service.ListMessages(ctx, session.ID, 1, 100)
 	require.NoError(t, err)
 	require.Len(t, messages, 3)
+}
+
+type fixedCodingTurns struct{ result CodingResult }
+
+func (o fixedCodingTurns) ObserveCodingTurn(context.Context, CodingTurn) CodingResult {
+	return o.result
 }
 
 func TestCodingCompletionRefusesInvalidOutputAndOwnership(t *testing.T) {
