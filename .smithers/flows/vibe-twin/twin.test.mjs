@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { exactPathPattern, fallbackFor, localNames, normalizeDts, parseDts, quality, sameReferencedLocals, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
+import { exactPathPattern, fallbackFor, localNames, sourceExports, normalizeDts, parseDts, quality, sameReferencedLocals, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
 
 test("declarations that differ only in relative import extensions are equal", () => {
   const ts = `import { type A } from "./ErrorCode.ts";\nexport { B } from "../x/y.ts";\nexport declare const c: import("./z.ts").Z;\n`
@@ -168,4 +168,23 @@ test("the Bun twin filter matches exactly the twinned paths", () => {
   assert.ok(re.test("/a/(y)+.tsx"))
   assert.ok(!re.test("/a/bXc/x.ts"), "a dot is literal")
   assert.ok(!re.test("/a/b.c/x.ts.bak"))
+})
+
+test("source exports list values, classes and types of a module TypeScript can't declare", () => {
+  const src = `/** doc */
+export const answer = new class { #secret = 1; value = 42 }()
+export function run() {}
+export abstract class Base {}
+export interface Shape { readonly x: number }
+export type Box<A> = { a: A }
+const local = 1
+export { local as renamed, type Shape as ShapeAlias }
+export * from "./other.ts"
+// export const commented = 1
+`
+  const e = sourceExports(src)
+  assert.deepEqual([...e.values()].map((x) => [x.name, x.kind, x.generic]), [
+    ["Base", "class", false], ["run", "value", false], ["answer", "value", false],
+    ["Shape", "type", false], ["Box", "type", true], ["renamed", "value", false], ["ShapeAlias", "type", false]
+  ])
 })

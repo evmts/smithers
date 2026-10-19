@@ -117,9 +117,19 @@ export const localNames = (text) => {
 
 /** Whether every private name an export's text mentions means the same in both modules. */
 export const sameReferencedLocals = (exportText, tsLocals, vbLocals) => {
-  for (const name of new Set([...tsLocals.keys(), ...vbLocals.keys()])) {
-    if (!new RegExp(`(?<![\\w$.])${name.replaceAll("$", "\\$")}(?![\\w$])`).test(exportText)) continue
-    if (tsLocals.get(name) !== vbLocals.get(name)) return false
+  const names = new Set([...tsLocals.keys(), ...vbLocals.keys()])
+  const visited = new Set()
+  const pending = [exportText]
+  while (pending.length > 0) {
+    const text = pending.pop()
+    for (const name of names) {
+      if (visited.has(name)) continue
+      if (!new RegExp(`(?<![\\w$.])${name.replaceAll("$", "\\$")}(?![\\w$])`).test(text)) continue
+      visited.add(name)
+      const left = tsLocals.get(name)
+      if (left !== vbLocals.get(name)) return false
+      if (left !== undefined) pending.push(left)
+    }
   }
   return true
 }
@@ -363,12 +373,6 @@ const vitest = (pkg, config, outputFile, files = []) => {
   }
 }
 
-const NOMINAL = [
-  "Two different types with this name exist, but they are unrelated",
-  "separate declarations of a private property",
-  "separate declarations of a protected property"
-]
-
 /**
  * For labels whose identity check failed: "assignable" when the types are assignable both
  * ways, "nominal" when they differ only by same-named nominal declarations; absent otherwise.
@@ -389,7 +393,9 @@ const nominalOnly = (pkg, work, imports, failed) => {
     ...common, noEmit: true, rootDir: "..", rootDirs: [join("..", sourceRoot(pkg)), "../src-vibe"], allowImportingTsExtensions: true,
     declaration: false, emitDeclarationOnly: false
   }, ["api-detail.ts"])
-  const { output } = compile(join(work, "tsconfig.detail.json"), pkg)
+  const detail = compile(join(work, "tsconfig.detail.json"), pkg)
+  if (detail.crash) return new Map()
+  const { output } = detail
   const blocks = new Map()
   let label
   for (const line of output.split("\n")) {
@@ -400,12 +406,12 @@ const nominalOnly = (pkg, work, imports, failed) => {
     } else if (label !== undefined && /^\s/.test(line)) blocks.get(label).push(line)
     else label = undefined
   }
-  // No error either way: the two types are mutually assignable. Identity (Eq) is stricter
-  // than any caller can observe (optional vs undefined, overload order); that is equivalent.
+  // A failed Eq check is not discharged by mutual assignability: any is assignable
+  // both ways while erasing the original API. Only proven nominal differences qualify.
   return new Map(failed.map(([l]) => {
     const text = (blocks.get(l) ?? []).join("\n")
-    const kind = text === "" ? "assignable"
-      : NOMINAL.some((phrase) => text.includes(phrase)) || sameNamedPair(pkg, work, text) ? "nominal"
+    const kind = text === "" ? undefined
+      : sameNamedPair(pkg, work, text) ? "nominal"
       : undefined
     return [l, kind]
   }).filter(([, kind]) => kind !== undefined))
@@ -444,7 +450,31 @@ const sameNamedPair = (pkg, work, text) => {
  * generic, be the identical type. A value's type, and a class's constructor and
  * instance types, must be identical (checked by the compiler).
  */
-const apiCheck = (pkg, work) => {
+/**
+ * The exports a source file declares, for a module TypeScript can't emit a .d.ts for (E-6):
+ * values, classes and types, with generic types marked. Re-exports from other modules are
+ * listed separately; they are checked where they are declared.
+ */
+export const sourceExports = (text) => {
+  const out = new Map()
+  const add = (name, kind, generic = false) => out.set(name, { name, kind, generic })
+  const body = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")
+  for (const m of body.matchAll(/^export\s+(?:declare\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/gm)) add(m[1], "class")
+  for (const m of body.matchAll(/^export\s+(?:declare\s+)?(?:async\s+)?function\*?\s+([A-Za-z_$][\w$]*)/gm)) add(m[1], "value")
+  for (const m of body.matchAll(/^export\s+(?:declare\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)/gm)) add(m[1], "value")
+  for (const m of body.matchAll(/^export\s+(?:declare\s+)?(?:const\s+)?enum\s+([A-Za-z_$][\w$]*)/gm)) add(m[1], "value")
+  for (const m of body.matchAll(/^export\s+(?:declare\s+)?(?:interface|type)\s+([A-Za-z_$][\w$]*)(\s*<)?/gm)) add(m[1], "type", Boolean(m[2]))
+  if (/^export\s+default\b/m.test(body)) add("default", "value")
+  for (const m of body.matchAll(/^export\s+(type\s+)?\{([^}]*)\}(?!\s*from)/gm)) {
+    for (const part of m[2].split(",").map((p) => p.trim()).filter(Boolean)) {
+      const t = part.match(/^(type\s+)?([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$/)
+      if (t) add(t[3] ?? t[2], m[1] || t[1] ? "type" : "value")
+    }
+  }
+  return out
+}
+
+const apiCheck = (pkg, work, twinned = []) => {
   const twinOut = twinOutDir(pkg)
   const twinDts = new Set(walk(twinOut).filter((f) => f.endsWith(".d.ts")))
   const api = {
@@ -495,7 +525,11 @@ const apiCheck = (pkg, work) => {
       // Equal export text may refer to different private aliases or imports (guardian-review):
       // it is proof only when the module's private context matches too.
       const sameLocals = sameReferencedLocals(e.text, tsLocals, vbLocals)
-      if (normalizeDts(e.text) === normalizeDts(v.text) && (sameLocals || e.kind === "reexport")) continue
+      if (normalizeDts(e.text) === normalizeDts(v.text) && sameLocals) continue
+      if (e.kind === "reexport") {
+        api.errors.push(`${file}: ${name} (changed export context requires semantic verification)`)
+        continue
+      }
       if (e.kind === "type") {
         if (e.generic) api.typeDiffers.push(`${file}: ${name} (generic: keep its text${sameLocals ? "" : " and its module's private declarations"})`)
         else {
@@ -508,6 +542,37 @@ const apiCheck = (pkg, work) => {
       check(`${file}: ${name}`, `typeof T${i}.${name}`, `typeof V${i}.${name}`)
       if (e.kind === "class") check(`${file}: instances of ${name}`, `(typeof T${i}.${name})["prototype"]`, `(typeof V${i}.${name})["prototype"]`)
     }
+  })
+  // Modules TypeScript can't declare: compare the exports both sources declare (E-6, b-3ksbt4).
+  api.sourceChecked = []
+  twinned.forEach((rel, j) => {
+    if (existsSync(join(work, "ts-dts", `${rel}.d.ts`))) return
+    const srcFile = ["ts", "tsx", "mts"].map((x) => `${rel}.${x}`).find((f) => existsSync(join(pkg, sourceRoot(pkg), f)))
+    const vbFile = ["vibe", "ts", "tsx"].map((x) => `${rel}.${x}`).find((f) => existsSync(join(pkg, "src-vibe", f)))
+    if (srcFile === undefined || vbFile === undefined) return
+    const ts = sourceExports(readFileSync(join(pkg, sourceRoot(pkg), srcFile), "utf8"))
+    const vbDts = join(twinOut, `${rel}.d.ts`)
+    const vb = existsSync(vbDts)
+      ? new Map(parseDts(readFileSync(vbDts, "utf8")).filter((e) => e.kind !== "reexport").map((e) => [e.name, e]))
+      : sourceExports(readFileSync(join(pkg, "src-vibe", vbFile), "utf8"))
+    const i = `S${j}`
+    lines.push(`import type * as T${i} from ${JSON.stringify(`../${join(sourceRoot(pkg), srcFile)}`)}`)
+    lines.push(`import type * as V${i} from ${JSON.stringify(`../src-vibe/${vbFile}`)}`)
+    for (const name of vb.keys()) if (!ts.has(name)) api.extraExports.push(`${rel} (source): ${name}`)
+    for (const [name, e] of ts) {
+      if (!vb.has(name)) {
+        api.missingExports.push(`${rel} (source): ${name}`)
+        continue
+      }
+      if (e.kind === "type") {
+        if (e.generic) api.typeDiffers.push(`${rel} (source): ${name} (generic, and TypeScript emits no declaration: review)`)
+        else check(`${rel} (source): type ${name}`, `T${i}.${name}`, `V${i}.${name}`)
+        continue
+      }
+      check(`${rel} (source): ${name}`, `typeof T${i}.${name}`, `typeof V${i}.${name}`)
+      if (e.kind === "class") check(`${rel} (source): instances of ${name}`, `(typeof T${i}.${name})["prototype"]`, `(typeof V${i}.${name})["prototype"]`)
+    }
+    api.sourceChecked.push(rel)
   })
   api.checked = checks.size
   if (checks.size > 0) {
@@ -812,7 +877,7 @@ const runUnlocked = (pkgArg) => {
   // private fields). Their API can't be compared; the tests still run, and the receipt lists them.
   const compileOk = !compiled.crash && !ts.crash && missingOutputs.length === 0
 
-  const api = apiCheck(pkg, work)
+  const api = apiCheck(pkg, work, twinned)
 
   const baseConfig = ["vitest.config.ts", "vitest.config.mts", "vitest.config.js", "vitest.config.mjs"]
     .map((f) => join(pkg, f)).find(existsSync)
@@ -955,7 +1020,8 @@ registerHooks({
     api,
     tests: { ts: { ...baseline, failed: undefined, passed: undefined }, vibe: { ...vibe, failed: undefined, passed: undefined } },
     regressions,
-    unverifiableApi: missingDeclarations.map((file) => relative(join(work, "ts-dts"), file)),
+    // A twinned module whose API could be compared neither by declaration nor by source.
+    unverifiableApi: twinned.filter((rel) => !existsSync(join(work, "ts-dts", `${rel}.d.ts`)) && !(api.sourceChecked ?? []).includes(rel)).map((rel) => `${rel}.d.ts`),
     quality: quality(pkg),
     unverifiable: tests.unverifiable,
     ok: tests.unverifiable === undefined && compileOk && twin.errors.length === 0 && apiOk(api) && baseline.ran && baseline.pass > 0 && !baseline.signal && !baseline.error && vibe.ran
@@ -972,7 +1038,7 @@ registerHooks({
   // A suite whose own process fails (an unhandled rejection, a crash) verifies nothing, even
   // when the twin matches it (guardian-review): COMPLETE needs a clean TypeScript run.
   receipt.baselineClean = baseline.ran && baseline.status === 0 && !baseline.signal && !baseline.error
-  receipt.complete = receipt.ok && receipt.baselineClean && receipt.api.missingEffectModules.length === 0
+  receipt.complete = receipt.ok && receipt.baselineClean && receipt.api.missingEffectModules.length === 0 && receipt.unverifiableApi.length === 0
   writeFileSync(join(work, "receipt.json"), JSON.stringify(receipt, null, 2) + "\n")
   return receipt
 }
