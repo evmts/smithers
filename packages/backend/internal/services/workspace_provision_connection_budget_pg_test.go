@@ -387,7 +387,12 @@ func TestRetainedGuestStopProgressesAtShippedConnectionBudget(t *testing.T) {
 		t.Fatal("the concurrent provisioning claim neither ran nor refused: it parked a core-pool connection forever")
 	}
 
-	require.Positive(t, q.nested.Load(), "the reproduction never reached the nested acquire it is about")
+	// Since #4294 a claim holds no transaction while its callback reads, so
+	// the nested acquire this case first reproduced is gone by construction:
+	// the reads happen, and none of them waits while its own claim holds a
+	// connection. A read can still overlap another claimant's brief lease
+	// statement, which the bounds below cover.
+	require.Positive(t, q.reads.Load(), "the claims' callbacks never read through the shared pool")
 	servable := int(pool.Stat().MaxConns()) - shippedWorkerLongLivedPooledConnections
 	require.LessOrEqual(t, barrier.concurrentNestedHolds(), servable,
 		"more claims held a transaction while reaching for a second connection than the pool could ever serve")
@@ -838,9 +843,9 @@ func TestShutdownIsNeverReportedAsACorePoolStall(t *testing.T) {
 	held := make(chan error, svc.provisionTasks.limit)
 
 	// REGISTERED BEFORE THE FILL, and before any branch that can fail: a
-	// holder parked in its callback is holding a core-pool connection, so a
-	// test that returns without closing this channel hangs the pool's own
-	// cleanup instead of reporting anything.
+	// holder parked in its callback holds its gate slot and its lease, so a
+	// test that returns without closing this channel leaves both behind
+	// instead of reporting anything.
 	var releaseOnce sync.Once
 	release := func() {
 		releaseOnce.Do(func() {
@@ -858,9 +863,9 @@ func TestShutdownIsNeverReportedAsACorePoolStall(t *testing.T) {
 	t.Cleanup(release)
 
 	// ONE AT A TIME, waiting for each holder to be parked in its callback
-	// before the next one asks for admission. A claim that is parked holds
-	// exactly its transaction's connection and nothing transient, so the next
-	// claim's measured admission is deterministic. Starting them together
+	// before the next one asks for admission. A claim that is parked holds no
+	// connection and nothing transient (#4294), so the next claim's measured
+	// admission is deterministic. Starting them together
 	// would race the in-flight fenced read of the one before it, and a
 	// reservation that correctly declines to over-commit the pool would then
 	// refuse a holder this case needs — a flake in the arrangement, not in the
@@ -888,6 +893,11 @@ func TestShutdownIsNeverReportedAsACorePoolStall(t *testing.T) {
 				slot+1, svc.provisionTasks.limit, len(held))
 		}
 	}
+
+	// The full gate is claims parked in their work, and none of them holds a
+	// core-pool connection: each one's lease is a committed row.
+	require.Zero(t, recorder.heldNow(corePoolDutyWorkspaceProvisionClaim),
+		"a claim parked in its callback still holds a core-pool connection")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	waiting := make(chan error, 1)
@@ -923,6 +933,4 @@ func TestShutdownIsNeverReportedAsACorePoolStall(t *testing.T) {
 	release()
 	require.Zero(t, recorder.heldNow(corePoolDutyWorkspaceProvisionClaim),
 		"the held gauge leaked, so a redeployed worker reads as a stuck one")
-	require.Equal(t, float64(svc.provisionTasks.limit), recorder.peakHeld(corePoolDutyWorkspaceProvisionClaim),
-		"the gate admitted a different number of claims than its published budget")
 }

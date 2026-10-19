@@ -63,12 +63,19 @@ func TestHostedWorkerPublishesDatabaseHealth(t *testing.T) {
 		require.NoError(t, err)
 		return string(body)
 	}
+	// Refresh publishes its reads one after another (xmin, lock waits, table
+	// tuples), so a scrape can land between them. Wait for every family the
+	// worker must publish, not only the first, and then assert on that body.
+	families := []string{`smithers_db_lock_wait_oldest_seconds{locktype="advisory"}`, "\nsmithers_db_oldest_xmin_age_seconds ", "\nsmithers_db_oldest_xmin_transactions ", `smithers_db_table_live_tuples{table="workspaces"}`, `smithers_db_table_dead_tuples{table="workspaces"}`}
+	var body string
 	require.Eventually(t, func() bool {
-		return strings.Contains(scrape(), `smithers_db_lock_wait_oldest_seconds{locktype="advisory"}`)
-	}, 20*time.Second, 50*time.Millisecond, "the worker publishes no database health")
-	body := scrape()
-	for _, family := range []string{"\nsmithers_db_oldest_xmin_age_seconds ", "\nsmithers_db_oldest_xmin_transactions ", `smithers_db_table_live_tuples{table="workspaces"}`, `smithers_db_table_dead_tuples{table="workspaces"}`} {
-		require.Contains(t, body, family)
-	}
+		body = scrape()
+		for _, family := range families {
+			if !strings.Contains(body, family) {
+				return false
+			}
+		}
+		return true
+	}, 20*time.Second, 50*time.Millisecond, "the worker did not publish every database health family")
 	require.NotContains(t, body, `smithers_runtime_metrics_collection_failures_total{collector="db_health"}`, "a health read failed")
 }

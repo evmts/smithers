@@ -7,7 +7,56 @@ package db
 
 import (
 	"context"
+	"time"
 )
+
+const claimWorkspaceProvisioningLease = `-- name: ClaimWorkspaceProvisioningLease :one
+INSERT INTO workspace_provisioning_leases AS lease (workspace_id, claim_token, claim_kind, claimed_at, expires_at)
+SELECT $1::text, gen_random_uuid(), $2::text, now(),
+       now() + make_interval(secs => $3::double precision)
+WHERE pg_try_advisory_xact_lock(hashtextextended('workspace-provision:' || $1::text, 0))
+ON CONFLICT (workspace_id) DO UPDATE
+SET claim_token = EXCLUDED.claim_token,
+    claim_kind = EXCLUDED.claim_kind,
+    claimed_at = EXCLUDED.claimed_at,
+    expires_at = EXCLUDED.expires_at
+WHERE lease.expires_at <= now()
+   OR lease.claim_token::text = $4::text
+RETURNING lease.claim_token, lease.expires_at
+`
+
+type ClaimWorkspaceProvisioningLeaseParams struct {
+	WorkspaceID  string  `json:"workspace_id"`
+	ClaimKind    string  `json:"claim_kind"`
+	LeaseSeconds float64 `json:"lease_seconds"`
+	ReclaimToken string  `json:"reclaim_token"`
+}
+
+type ClaimWorkspaceProvisioningLeaseRow struct {
+	ClaimToken string    `json:"claim_token"`
+	ExpiresAt  time.Time `json:"expires_at"`
+}
+
+// A provisioning claim is a committed lease (#4294). The caller commits this
+// statement's transaction at once and renews the lease while its work runs.
+// No row means another claimant owns the workspace: its lease is live, or a
+// transaction holds the provisioning advisory lock (a claim made under a
+// caller's held transaction keeps that lock until the caller commits). A
+// lease past expires_at belongs to a holder that stopped renewing and is
+// taken over with a new token. reclaim_token is a lease this process's own
+// ended claim could not delete; it is taken over at once. An empty
+// reclaim_token names none.
+func (q *Queries) ClaimWorkspaceProvisioningLease(ctx context.Context, arg ClaimWorkspaceProvisioningLeaseParams) (ClaimWorkspaceProvisioningLeaseRow, error) {
+	row := q.db.QueryRow(ctx, claimWorkspaceProvisioningLease,
+		arg.WorkspaceID,
+		arg.ClaimKind,
+		arg.LeaseSeconds,
+		arg.ReclaimToken,
+	)
+	var i ClaimWorkspaceProvisioningLeaseRow
+	err := row.Scan(&i.ClaimToken, &i.ExpiresAt)
+	return i, err
+}
 
 const completePendingWorkspaceSessions = `-- name: CompletePendingWorkspaceSessions :many
 UPDATE workspace_sessions s SET status='running', updated_at=now()
@@ -155,11 +204,54 @@ func (q *Queries) ListWorkspaceProvisioningRecovery(ctx context.Context) ([]List
 	return items, nil
 }
 
+const releaseWorkspaceProvisioningLease = `-- name: ReleaseWorkspaceProvisioningLease :exec
+DELETE FROM workspace_provisioning_leases
+WHERE workspace_id = $1::text
+  AND claim_token = $2::uuid
+`
+
+type ReleaseWorkspaceProvisioningLeaseParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	ClaimToken  string `json:"claim_token"`
+}
+
+// Ends the token's lease. A lease another claimant took is left alone.
+func (q *Queries) ReleaseWorkspaceProvisioningLease(ctx context.Context, arg ReleaseWorkspaceProvisioningLeaseParams) error {
+	_, err := q.db.Exec(ctx, releaseWorkspaceProvisioningLease, arg.WorkspaceID, arg.ClaimToken)
+	return err
+}
+
+const renewWorkspaceProvisioningLease = `-- name: RenewWorkspaceProvisioningLease :one
+UPDATE workspace_provisioning_leases
+SET expires_at = now() + make_interval(secs => $1::double precision)
+WHERE workspace_id = $2::text
+  AND claim_token = $3::uuid
+  AND expires_at > now()
+RETURNING expires_at
+`
+
+type RenewWorkspaceProvisioningLeaseParams struct {
+	LeaseSeconds float64 `json:"lease_seconds"`
+	WorkspaceID  string  `json:"workspace_id"`
+	ClaimToken   string  `json:"claim_token"`
+}
+
+// Extends a live lease the token still owns. No row means the lease expired
+// or another claimant took it: ownership ended and is never revived.
+func (q *Queries) RenewWorkspaceProvisioningLease(ctx context.Context, arg RenewWorkspaceProvisioningLeaseParams) (time.Time, error) {
+	row := q.db.QueryRow(ctx, renewWorkspaceProvisioningLease, arg.LeaseSeconds, arg.WorkspaceID, arg.ClaimToken)
+	var expires_at time.Time
+	err := row.Scan(&expires_at)
+	return expires_at, err
+}
+
 const tryLockWorkspaceProvisioning = `-- name: TryLockWorkspaceProvisioning :one
 SELECT pg_try_advisory_xact_lock(hashtextextended('workspace-provision:' || $1::text, 0))::boolean AS acquired
 `
 
-// Transaction-scoped ownership is released on an API crash, not on row age.
+// The provisioning advisory lock on a caller's held transaction, kept until
+// that transaction ends. Every lease claim checks it, so a claim made under a
+// held transaction excludes the next claimant until its writes are visible.
 func (q *Queries) TryLockWorkspaceProvisioning(ctx context.Context, workspaceID string) (bool, error) {
 	row := q.db.QueryRow(ctx, tryLockWorkspaceProvisioning, workspaceID)
 	var acquired bool

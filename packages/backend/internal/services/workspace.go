@@ -585,9 +585,14 @@ type WorkspaceService struct {
 	// branchHeads reads a scratch branch's head (WithBranchHeads).
 	branchHeads BranchHeadReader
 	q           WorkspaceQuerier
-	// transactions holds each workspace's provisioning lock (a transaction-
-	// scoped advisory lock).
-	transactions                 RepositoryJobTransactions
+	// transactions writes each workspace's provisioning lease, one short
+	// transaction per statement (#4294).
+	transactions RepositoryJobTransactions
+	// provisionLeaseTTL and provisionLeaseHeartbeat override the provisioning
+	// lease's length and renewal interval; zero uses the defaults. See
+	// provisionLease.
+	provisionLeaseTTL            time.Duration
+	provisionLeaseHeartbeat      time.Duration
 	branchMachineProviders       BranchMachineProviders
 	branchCapture                BranchCapture
 	machineAdmission             *microsandbox.AdmissionProviders
