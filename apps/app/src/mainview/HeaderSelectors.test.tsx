@@ -324,21 +324,29 @@ const repositoryCommit: ChangeRow = {
 }
 
 describe("repository Code home metadata", () => {
-  test("only the exact repository head supplies latest-commit metadata", () => {
+  // repo-ui-spec view 1: the latest commit is its message, author and age; a commit id alone is not a latest commit.
+  test("the exact repository head's change record supplies message, author and age, never a bare commit id", () => {
     const host = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="main" headCommit={repositoryCommit.commitId} changes={[repositoryCommit]}/>)
-    expect(host.querySelector('[aria-label="Latest commit"]')?.textContent).toContain("Maya")
-    expect(host.textContent).toContain("Fix parser")
+    const latest = host.querySelector('[aria-label="Latest commit"]')!
+    expect(latest.querySelector("strong")?.textContent).toBe("Maya")
+    expect(latest.querySelector(".repo-code-home-latest-title")?.textContent).toBe("Fix parser")
     expect(host.textContent).not.toContain("Private body")
-    expect(host.querySelector("time")?.dateTime).toBe(repositoryCommit.timestamp!)
-    expect(host.querySelector('[aria-label="Latest commit"] code')?.textContent).toBe("a".repeat(40))
+    expect(latest.querySelector("time")?.dateTime).toBe(repositoryCommit.timestamp!)
+    expect(latest.querySelector("time")?.textContent).toMatch(/ago$|^just now$|^\d{4}-|:/)
+    expect(latest.textContent).not.toMatch(/[0-9a-f]{40}/i)
+    expect(latest.querySelector("code")).toBeNull()
+  })
+  test("the bookmark list's head is the one the record is matched against", () => {
+    const host = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="main" changes={[repositoryCommit]}
+      branches={{ id:"maya/tinyhttp", state:"ready", names:["main"], commits:{ main: repositoryCommit.commitId! } }}/>)
+    expect(host.querySelector('[aria-label="Latest commit"] strong')?.textContent).toBe("Maya")
   })
   for (const [name, repo, head] of [["another repository", "other/repo", "a".repeat(40)], ["old head", "maya/tinyhttp", "b".repeat(40)], ["unloaded head", "maya/tinyhttp", null]] as const) {
-    test(`does not label ${name} as latest`, () => {
+    test(`shows no latest-commit row for ${name}: no record, no row, no commit id`, () => {
       const host = mount(<CodeHome onRunCommand={() => false} repo={repo} headCommit={head} changes={[repositoryCommit]}/>)
-      expect(host.querySelector('[aria-label="Latest commit"] strong')).toBeNull()
-      expect(host.querySelector('[aria-label="Latest commit"] time')).toBeNull()
+      expect(host.querySelector('[aria-label="Latest commit"]')).toBeNull()
       expect(host.textContent).not.toContain("Fix parser")
-      expect(host.querySelector('[aria-label="Latest commit"] code')?.textContent).toBe(head ?? undefined)
+      expect(host.textContent).not.toMatch(/[0-9a-f]{40}/i)
     })
   }
   test("a complete bookmark read supplies names and branch count; failures stay visible", () => {
@@ -361,6 +369,7 @@ test("Code home uses a fresh default-branch head instead of older inventory meta
     changes={[repositoryCommit,fresh]} branches={{ id:"maya/tinyhttp", state:"ready", names:["main"], commits:{main:fresh.commitId} }}/>)
   const latest = host.querySelector('[aria-label="Latest commit"]')!
   expect(latest.textContent).toContain("Fresh head")
+  expect(latest.querySelector("strong")?.textContent).toBe("New author")
   expect(latest.textContent).not.toContain("Fix parser")
-  expect(latest.querySelector("code")?.textContent).toBe(fresh.commitId)
+  expect(latest.textContent).not.toMatch(/[0-9a-f]{40}/i)
 })

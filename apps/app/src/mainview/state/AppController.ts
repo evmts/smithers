@@ -128,7 +128,7 @@ import { bundledDocs } from "../../docs/bundled"
 import { createBranchNavigationSeam, sessionBranchIndex } from "./seams/BranchNavigationSeam"
 import { createRepositoryBranchesSeam, type RepositoryBranchPicks, type RepositoryBranchRows } from "./seams/RepositoryBranchesSeam"
 import type { ChangeSeam } from "./seams/ChangeSeam"
-import { createChangeSeam } from "./seams/ChangeSeam"
+import { createChangeSeam, readRepositoryChange } from "./seams/ChangeSeam"
 import type { CloudSeam } from "./seams/CloudSeam"
 import { createCloudSeam } from "./seams/CloudSeam"
 import type { CodeIntelSeam } from "./seams/CodeIntelSeam"
@@ -587,6 +587,8 @@ export interface AppController extends IssueFlowsController {
   readonly selectConversationBranch: (name: string) => Promise<void>
   /** Complete repository file page, separate from the bounded transcript read. */
   readonly readRepositoryFilePage: (repo: string, path: string, ref?: string) => ReturnType<typeof readFilePage>
+  /** One change's record for a page (the Code home's latest commit), landed in the changes collection; the server decides the reader. */
+  readonly readRepositoryChange: (repo: string, changeId: string) => ReturnType<typeof readRepositoryChange>
   /** A Cloud repository's branch names as last read and the branch picked in each (RepositoryBranchesSeam): the header's branch selector reads both and asks for a read when it opens. */
   readonly repositoryBranches: { readonly rows: RepositoryBranchRows; readonly picks: RepositoryBranchPicks; readonly load: (repo: string) => Promise<unknown>; readonly pickOf: (repo: string) => string | undefined }
   readonly setBranchNavigationView: (patch: { selected_branch?: string; selected_archive?: string; previous_branch?: string; open?: boolean }) => Promise<void>
@@ -3155,6 +3157,7 @@ export const createAppController = (
     observeReviewConfirmation: issueFlows.observeReviewConfirmation,
     fileDocuments,
     readRepositoryFilePage: (repo, path, ref) => readFilePage(seamCtx, repo, path, ref),
+    readRepositoryChange: (repo, changeId) => readRepositoryChange(seamCtx, repo, changeId),
     repositoryBranches: { rows: repositoryBranches.rows, picks: repositoryBranches.picks, load: repositoryBranches.load, pickOf: repositoryBranches.pickOf },
     store,
     privacyNotices: privacyActions.notices,

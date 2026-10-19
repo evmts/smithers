@@ -25,6 +25,11 @@ for (const member of [false, true]) for (const width of [1440, 1280, 390]) for (
       { name:"main", target_change_id:"main-change", target_commit_id:"a".repeat(40) },
       { name:"docs/ui", target_change_id:"docs-change", target_commit_id:"b".repeat(40) }
     ], next_cursor:"" } }))
+    // The head's change record: what the latest-commit row shows (message, author, age), never the commit id.
+    await page.route("**/api/repos/maya/tinyhttp/changes/main-change", route => route.fulfill({ json: {
+      change_id: "main-change", commit_id: "a".repeat(40), description: "Fix the parser\n\nPrivate body.", author_name: "Maya",
+      timestamp: new Date(Date.now() - 3 * 3600 * 1000).toISOString(), has_conflict: false, parent_change_ids: []
+    } }))
     if (member) {
       await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute())
       await page.route("**/api/user/repos", route => route.fulfill({ json: [{ owner: "maya", name: "tinyhttp", full_name: "maya/tinyhttp", default_bookmark: "main" }] }))
@@ -54,6 +59,13 @@ for (const member of [false, true]) for (const width of [1440, 1280, 390]) for (
     await expect(page.getByText("Waiting on you", { exact: true })).toHaveCount(0)
     await expect(page.getByRole("region", { name: "README", exact: true }).getByRole("heading", { name: "tinyhttp", level: 1 })).toBeVisible()
     await expect(page.getByRole("region", { name: "Files", exact: true }).getByRole("link", { name: "src", exact: true })).toBeVisible()
+    const latest = page.getByLabel("Latest commit", { exact: true })
+    await expect(latest).toContainText("Maya")
+    await expect(latest).toContainText("Fix the parser")
+    await expect(latest).toContainText("3 h ago")
+    await expect(latest).not.toContainText("Private body")
+    await expect(latest).not.toContainText("a".repeat(40))
+    await expect(page.getByRole("region", { name: "Files", exact: true }).getByText(/\b[0-9a-f]{40}\b/)).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
     expect(await page.locator(".repo-code-home-file-row > span").first().evaluate(element => getComputedStyle(element).textAlign)).toBe("left")
     await expect(page.locator(".repo-ui-btn-primary:visible")).toHaveCount(1)
@@ -162,6 +174,9 @@ for (const member of [false, true]) for (const width of [1280, 390]) for (const 
       { type: "markdown", path: "README.md", markdown: "# Project README" }
     ] } }))
     await page.route(/\/api\/repos\/maya\/tinyhttp\/contents(?:\?.*)?$/, route => route.fulfill({ json: [{ name: "README.md", path: "README.md", type: "file" }] }))
+    // The head is known from the bookmark list, but nobody may read its change record here.
+    await page.route("**/api/repos/maya/tinyhttp/bookmarks**", route => route.fulfill({ json: { items: [{ name: "main", target_change_id: "main-change", target_commit_id: "a".repeat(40) }], next_cursor: "" } }))
+    await page.route("**/api/repos/maya/tinyhttp/changes/main-change", route => route.fulfill({ status: 401, json: { message: "authentication required" } }))
     if (member) {
       await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute())
       await page.route("**/api/user/repos**", route => route.fulfill({ json: [{ owner: "maya", name: "tinyhttp", full_name: "maya/tinyhttp", default_bookmark: "main" }] }))
@@ -172,6 +187,10 @@ for (const member of [false, true]) for (const width of [1280, 390]) for (const 
     await expect(home).toBeVisible()
     const blocks = await home.locator(".repository-home-block").allTextContents()
     expect(blocks).toEqual(["Repository introduction", "Ask about this repository", "Documentation"])
+    // No record read for this viewer: no latest-commit row, and never a bare commit id.
+    await expect(page.getByRole("region", { name: "Files", exact: true }).getByRole("link", { name: "README.md", exact: true })).toBeVisible()
+    await expect(page.getByLabel("Latest commit", { exact: true })).toHaveCount(0)
+    await expect(page.getByRole("region", { name: "Files", exact: true }).getByText(/\b[0-9a-f]{40}\b/)).toHaveCount(0)
     const files = page.getByRole("region", { name: "Files", exact: true })
     const readme = page.getByRole("region", { name: "README", exact: true })
     await expect(home.getByRole("button", { name: "Files", exact: true })).toBeVisible()

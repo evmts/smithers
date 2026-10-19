@@ -68,9 +68,10 @@ export function CodeHome({ repo, branch, branches, headCommit, changes = [], onB
       <details className="repo-ui-dropdown repo-code-home-code-menu"><summary className="repo-ui-btn">Code</summary><div className="repo-ui-menu"><h3>Clone</h3><div className="repo-code-home-command"><code>{`git clone ${REPOSITORY_CLONE_HOST}/${repo}.git`}</code><button className="repo-ui-btn" aria-label="Copy clone URL" {...flowAction(onRunCommand, "chat.copy-message", flowArgs("chat.copy-message", { text: `git clone ${REPOSITORY_CLONE_HOST}/${repo}.git` }))}>Copy</button></div></div></details>
     </div>
     <section className="repo-ui-box repo-code-home-files" aria-label="Files">
-      {latestSha && <div className="repo-code-home-latest" aria-label="Latest commit">
-        {commit?.authorName && <strong>{commit.authorName}</strong>}{commit?.description && <span>{commit.description.split("\n")[0]}</span>}
-        {commit?.timestamp && <time dateTime={commit.timestamp}>{ageLabel(commit.timestamp)}</time>}<code>{latestSha}</code>
+      {/* The head's own change record: message, author and age. No record read for this viewer, no row: never a bare commit id, and no commit route to link one to. */}
+      {commit && <div className="repo-code-home-latest" aria-label="Latest commit">
+        {commit.authorName && <strong>{commit.authorName}</strong>}{commit.description.split("\n")[0] && <span className="repo-code-home-latest-title">{commit.description.split("\n")[0]}</span>}
+        {commit.timestamp && <time className="repo-ui-time" dateTime={commit.timestamp}>{ageLabel(commit.timestamp)}</time>}
       </div>}
       {!treeAvailable ? <div className="repo-frame-state" role="alert"><h2>Couldn't load repository files.</h2></div> : tree === undefined || tree.state === "loading" ? <div className="repo-frame-state" role="status">Loading…</div> : tree.state === "failed" ? <FailureNotice className="repo-frame-state" failure={unavailableFailure("repository.files", "Couldn’t load repository files.", tree.error ?? "")} /> : tree.entries.length === 0 ? <div className="repo-frame-state"><h2>This repository is empty.</h2></div> : <div role="table" aria-label="Repository files"><div className="repo-ui-sr" role="row"><span role="columnheader">Name</span></div>{tree.entries.map(entry => <div className="repo-code-home-file-row" role="row" key={entry.name}><span role="cell">{ref ? <a href={`${base}/${entry.kind === "dir" ? "tree" : "blob"}/${ref}/${encodeURIComponent(entry.name)}`}>{entry.kind === "dir" ? <Folder size={16}/> : <FileText size={16}/>} {entry.name}</a> : <>{entry.kind === "dir" ? <Folder size={16}/> : <FileText size={16}/>} {entry.name}</>}</span></div>)}</div>}
     </section>

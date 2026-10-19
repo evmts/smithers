@@ -307,6 +307,29 @@ export const readmeToRead = (
 }
 
 /**
+ * The latest-commit row's record (repo-ui-spec view 1): the default
+ * bookmark's change, named by the bookmark list the branch selector already
+ * reads (`target_change_id`), else by the repository row's head, read as one
+ * change DTO (message, author, timestamp). A read nobody can make for this
+ * viewer leaves no row behind: the home then shows no latest-commit row,
+ * never a bare commit id.
+ */
+const readHeadChange = async (
+  controller: Pick<AppController, "store" | "repositoryBranches" | "readRepositoryChange">,
+  repo: string,
+  target: string,
+  owner: string | null | undefined,
+  options: SubjectEntryOptions
+): Promise<void> => {
+  try { await controller.repositoryBranches.load(target) } catch { /* the branch read's own refusal stays on its row */ }
+  if (options.signal?.aborted || !admitted(controller.store, repo, options.requestId, owner)) return
+  const head = controller.store.collections.repositories.get(target)?.head
+  const changeId = (head?.bookmark === undefined ? undefined : controller.repositoryBranches.rows.get(target)?.changeIds?.[head.bookmark]) ?? head?.changeId ?? undefined
+  if (changeId === undefined) return
+  await controller.readRepositoryChange(target, changeId).catch(() => undefined)
+}
+
+/**
  * The root route's own read: the repository README below Files when the
  * declared home carries none (repo-ui-spec view 1). It waits on the two
  * reads the home already makes, the homepage (`repositoryFlows`) and the root
@@ -315,13 +338,14 @@ export const readmeToRead = (
  * the home or the tree says there is nothing to read.
  */
 const openRequestedHome = (
-  controller: Pick<AppController, "store" | "readRepositoryFilePage">,
+  controller: Pick<AppController, "store" | "readRepositoryFilePage" | "repositoryBranches" | "readRepositoryChange">,
   repo: string,
   owner: string | null | undefined,
   options: SubjectEntryOptions
 ): void => {
   const target = selectedRepoId(controller.store, repo)
   const key = readmeReadKey(repo, options.requestId)
+  void readHeadChange(controller, repo, target, owner, options)
   /** True once there is nothing left to wait for: the read started, or there is none, or this entry is no longer the page's. */
   const settled = (): boolean => {
     if (!admitted(controller.store, repo, options.requestId, owner)) return true
@@ -361,7 +385,7 @@ const openRequestedHome = (
  * when the URL named no subject or when the admission is not this request's.
  */
 export const openRequestedSubject = async (
-  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches" | "readRepositoryFilePage">,
+  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches" | "readRepositoryFilePage" | "readRepositoryChange">,
   repo: string,
   subject: RepositorySubject | undefined,
   options: SubjectEntryOptions

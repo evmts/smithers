@@ -295,4 +295,8 @@ test("branch reads expose only full commit IDs for permalinks", async () => {
     state: "ready", commits: { trunk: full, upper }
   })
   expect(Object.keys(h.controller.repositoryBranches.rows.get("acme/api")!.commits!)).toEqual(["trunk", "upper"])
+  // Every bookmark names its change: the Code home reads the head's record by it (repo-ui-spec view 1).
+  expect(h.controller.repositoryBranches.rows.get("acme/api")!.changeIds).toEqual({
+    trunk: "change-trunk", upper: "change-upper", short: "change-short", invalid: "change-invalid", missing: "change-missing"
+  })
 })
