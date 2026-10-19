@@ -110,7 +110,7 @@ export const factory = S.Factory({
 // form, then the run card. Other repositories declare their own.
 export const home = S.Factory.Home({
   blocks: [
-    S.Home.Prompt({ title: "What should we work on?", placeholder: "Ask Smithers…" }),
+    S.Home.Prompt({ title: "Ask about Smithers", placeholder: "Ask Smithers…" }),
     S.Home.Links({ links: [
       { label: "Install Smithers", url: "https://smithers.sh/" },
       { label: "Docs", url: "https://smithers.sh/docs/" },

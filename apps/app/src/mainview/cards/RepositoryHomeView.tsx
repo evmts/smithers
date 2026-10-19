@@ -206,7 +206,7 @@ const DeclaredBlocks = ({ repo, blocks, onRunCommand }: {
       case "markdown":
         return <div className="repository-home-block" key={key}>
           {block.title === undefined ? null : <h2>{block.title}</h2>}
-          <Markdown content={block.markdown} />
+          <Markdown content={block.markdown} variant="document" />
         </div>
       case "text":
         return <div className="repository-home-block" key={key}>

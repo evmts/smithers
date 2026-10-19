@@ -19,18 +19,56 @@ const LINK = /^\[([^\]]+)\]\(([^)]+)\)$/;
 export type MarkdownLinkClick = (href: string, event: MouseEvent<HTMLAnchorElement>) => void;
 
 /**
+ * How the source is read. `chat`, the default, is what a model emits: a single
+ * newline is a line break and HTML is shown as the text it is. `document` reads
+ * a repository file the way GitHub renders it: HTML comments are dropped, a
+ * `<pre>` keeps its spacing, other HTML tags render only their text (keeping
+ * bold, italic, code, line breaks and scheme-safe links), and a single newline
+ * inside a paragraph is a space.
+ */
+export type MarkdownVariant = "chat" | "document";
+
+/** A link with a scheme-filtered href; an unsafe href leaves an anchor without one. */
+const linkNode = (href: string | undefined, label: ReactNode, key: string, onLinkClick?: MarkdownLinkClick) => (
+  <a
+    className="sui-md-link"
+    key={key}
+    href={href}
+    onClick={
+      onLinkClick
+        ? (event) => {
+            event.preventDefault();
+            if (href !== undefined) onLinkClick(href, event);
+          }
+        : undefined
+    }
+  >
+    {label}
+  </a>
+);
+
+const keep = (text: string) => text;
+
+/**
  * Everything renders through React children (never `innerHTML`), so model
  * output can't inject markup -- this lightweight renderer is XSS-safe by
- * construction, and link hrefs are additionally scheme-filtered.
+ * construction, and link hrefs are additionally scheme-filtered. `text` maps
+ * every run of prose (document mode decodes its HTML entities); code spans
+ * stay verbatim.
  */
-function renderInline(text: string, keyPrefix: string, onLinkClick?: MarkdownLinkClick): ReactNode[] {
+function renderInline(
+  text: string,
+  keyPrefix: string,
+  onLinkClick?: MarkdownLinkClick,
+  prose: (text: string) => string = keep,
+): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   let i = 0;
   for (const match of text.matchAll(INLINE)) {
     const idx = match.index ?? 0;
     if (idx > last) {
-      out.push(text.slice(last, idx));
+      out.push(prose(text.slice(last, idx)));
     }
     const token = match[0];
     const key = `${keyPrefix}.${i++}`;
@@ -41,38 +79,203 @@ function renderInline(text: string, keyPrefix: string, onLinkClick?: MarkdownLin
         </code>,
       );
     } else if (token.startsWith("**")) {
-      out.push(<strong key={key}>{token.slice(2, -2)}</strong>);
+      out.push(<strong key={key}>{prose(token.slice(2, -2))}</strong>);
     } else if (token.startsWith("[")) {
       const link = LINK.exec(token)!;
-      const label = link[1]!;
-      const href = safeHref(link[2]!);
-      out.push(
-        <a
-          className="sui-md-link"
-          key={key}
-          href={href}
-          onClick={
-            onLinkClick
-              ? (event) => {
-                  event.preventDefault();
-                  if (href !== undefined) onLinkClick(href, event);
-                }
-              : undefined
-          }
-        >
-          {label}
-        </a>,
-      );
+      out.push(linkNode(safeHref(link[2]!), prose(link[1]!), key, onLinkClick));
     } else {
-      out.push(<em key={key}>{token.slice(1, -1)}</em>);
+      out.push(<em key={key}>{prose(token.slice(1, -1))}</em>);
     }
     last = idx + token.length;
   }
   if (last < text.length) {
-    out.push(text.slice(last));
+    out.push(prose(text.slice(last)));
   }
   return out;
 }
+
+/*
+ * Document mode's HTML: a repository README is written for GitHub, which
+ * renders a small set of HTML. None of it reaches the page as markup. Tags are
+ * read only to decide what their text looks like, and every node is built as a
+ * React child, so no attribute (an `onclick`, a `style`) or element (a
+ * `<script>`) the source names is ever created.
+ */
+
+/** One HTML tag, attributes quoted or bare (`<p align="center">`, `</p>`, `<br/>`). */
+const TAG = /<\/?[a-z][\w:-]*(?=[\s/>])(?:[^<>"']|"[^"]*"|'[^']*')*>/gi;
+/** A Markdown autolink, `<https://smithers.sh>`, which is a link and not a tag. */
+const AUTOLINK = /<(?:https?|mailto):[^\s<>]*>/;
+/** An HTML comment, closed or running to the end of the source. */
+const COMMENT = /<!--[\s\S]*?(?:-->|$)/g;
+
+/** Tags with no content of their own. */
+const VOID_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+/** Tags that start a new paragraph; `h1`-`h6` make it a heading. */
+const BLOCK_TAGS = new Set([
+  "address", "article", "aside", "blockquote", "center", "dd", "details", "dialog", "div", "dl", "dt", "fieldset",
+  "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li", "main", "nav",
+  "ol", "p", "section", "summary", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "ul",
+]);
+
+const ENTITIES: Record<string, string> = {
+  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0",
+  copy: "©", reg: "®", trade: "™", hellip: "…", ndash: "–", mdash: "—",
+};
+
+/** Decode HTML character references; an unknown name stays as written. */
+const decodeEntities = (text: string): string =>
+  text.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (entity, name: string) => {
+    if (!name.startsWith("#")) return ENTITIES[name.toLowerCase()] ?? entity;
+    const point = name[1] === "x" || name[1] === "X" ? parseInt(name.slice(2), 16) : Number(name.slice(1));
+    return point > 0 && point <= 0x10ffff && !(point >= 0xd800 && point <= 0xdfff) ? String.fromCodePoint(point) : "\ufffd";
+  });
+
+type Tag = { readonly name: string; readonly closing: boolean; readonly empty: boolean; readonly attrs: Readonly<Record<string, string>> };
+
+const parseTag = (token: string): Tag => {
+  const name = /^<\/?([\w:-]+)/.exec(token)![1]!.toLowerCase();
+  const attrs: Record<string, string> = {};
+  for (const attr of token.slice(name.length + 1).matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g)) {
+    attrs[attr[1]!.toLowerCase()] = decodeEntities(attr[2] ?? attr[3] ?? attr[4] ?? "");
+  }
+  return { name, closing: token.startsWith("</"), empty: VOID_TAGS.has(name) || /\/\s*>$/.test(token), attrs };
+};
+
+/** `align="center"` is the one presentational attribute a README relies on. */
+const centered = (attrs: Readonly<Record<string, string>>) => attrs.align?.toLowerCase() === "center";
+
+/** One paragraph (or heading) an HTML flow produced. */
+type FlowBlock = { readonly level?: number; readonly center: boolean; readonly nodes: ReactNode[] };
+type Frame = { readonly tag: Tag; readonly children: ReactNode[] };
+
+const isBlank = (nodes: ReadonlyArray<ReactNode>) => nodes.every((node) => typeof node === "string" && node.trim() === "");
+
+/** Trim the whitespace an HTML source leaves at a paragraph's edges. */
+const trimEdges = (nodes: ReactNode[]): ReactNode[] => {
+  const out = [...nodes];
+  const first = out[0];
+  if (typeof first === "string") out[0] = first.trimStart();
+  const last = out[out.length - 1];
+  if (typeof last === "string") out[out.length - 1] = last.trimEnd();
+  return out;
+};
+
+/**
+ * Read text that may carry HTML into paragraphs. `markdown` says whether the
+ * text between tags is Markdown (a paragraph that uses inline HTML) or plain
+ * text (an HTML block, which GitHub does not read as Markdown).
+ *
+ * Bold, italic, code and safe links keep their meaning; `<br>` breaks the line;
+ * `<img>` leaves its alt text; a block tag (`<p>`, `<div>`, `<h1>`) starts a new
+ * paragraph; every other tag is dropped and its text kept.
+ */
+function renderFlow(source: string, keyPrefix: string, onLinkClick: MarkdownLinkClick | undefined, markdown: boolean): FlowBlock[] {
+  const blocks: FlowBlock[] = [];
+  const open: Tag[] = [];
+  const stack: Frame[] = [];
+  let root: ReactNode[] = [];
+  let n = 0;
+  const key = () => `${keyPrefix}.${n++}`;
+  const top = () => stack[stack.length - 1]?.children ?? root;
+
+  const materialize = ({ tag, children }: Frame): ReactNode => {
+    switch (tag.name) {
+      case "strong":
+      case "b":
+        return <strong key={key()}>{children}</strong>;
+      case "em":
+      case "i":
+        return <em key={key()}>{children}</em>;
+      case "code":
+        return <code className="sui-md-inline-code" key={key()}>{children}</code>;
+      default: {
+        // `a`: a link only when its URL passes the renderer's link rules; otherwise its text.
+        const href = tag.attrs.href === undefined ? undefined : safeHref(tag.attrs.href);
+        return href === undefined ? <Fragment key={key()}>{children}</Fragment> : linkNode(href, children, key(), onLinkClick);
+      }
+    }
+  };
+  const closeTo = (depth: number) => {
+    while (stack.length > depth) {
+      const frame = stack.pop()!;
+      top().push(materialize(frame));
+    }
+  };
+  const flush = () => {
+    closeTo(0);
+    if (!isBlank(root)) {
+      const heading = [...open].reverse().find((tag) => /^h[1-6]$/.test(tag.name));
+      blocks.push({ level: heading ? Number(heading.name[1]) : undefined, center: open.some((tag) => centered(tag.attrs)), nodes: trimEdges(root) });
+    }
+    root = [];
+  };
+  const text = (run: string) => {
+    if (run === "") return;
+    const spaced = run.replace(/[ \t\r\n]+/g, " ");
+    if (markdown && !stack.some((frame) => frame.tag.name === "code")) top().push(...renderInline(spaced, key(), onLinkClick, decodeEntities));
+    else top().push(decodeEntities(spaced));
+  };
+  const tag = (token: string) => {
+    const parsed = parseTag(token);
+    if (BLOCK_TAGS.has(parsed.name)) {
+      flush();
+      if (parsed.closing) {
+        const at = open.map((tag) => tag.name).lastIndexOf(parsed.name);
+        if (at !== -1) open.length = at;
+      } else if (!parsed.empty) open.push(parsed);
+      return;
+    }
+    if (parsed.closing) {
+      const at = stack.map((frame) => frame.tag.name).lastIndexOf(parsed.name);
+      if (at !== -1) closeTo(at);
+      return;
+    }
+    if (parsed.name === "br") top().push(<br key={key()} />);
+    else if (parsed.name === "img" && parsed.attrs.alt) top().push(parsed.attrs.alt);
+    else if (!parsed.empty && ["strong", "b", "em", "i", "code", "a"].includes(parsed.name)) stack.push({ tag: parsed, children: [] });
+  };
+
+  // Code spans stay whole so a tag inside one is text; an autolink is a link; comments are dropped.
+  const tokens = new RegExp(`${markdown ? `\`[^\`]+\`|${AUTOLINK.source}|` : ""}${COMMENT.source}|${TAG.source}`, "gi");
+  let last = 0;
+  for (const match of source.matchAll(tokens)) {
+    const token = match[0];
+    if (token.startsWith("`")) continue;
+    const at = match.index ?? 0;
+    text(source.slice(last, at));
+    last = at + token.length;
+    if (new RegExp(`^${AUTOLINK.source}$`, "i").test(token)) {
+      const url = token.slice(1, -1);
+      top().push(linkNode(safeHref(url), url, key(), onLinkClick));
+    } else if (!token.startsWith("<!--")) tag(token);
+  }
+  text(source.slice(last));
+  flush();
+  return blocks;
+}
+
+/** A document's inline content (a heading, list item or table cell): its flow's paragraphs, side by side. */
+const flowInline = (text: string, keyPrefix: string, onLinkClick?: MarkdownLinkClick): ReactNode[] =>
+  renderFlow(text, keyPrefix, onLinkClick, true).flatMap((block, index) => (index > 0 ? [" ", ...block.nodes] : block.nodes));
+
+/** Render a flow's paragraphs, a heading where an `h1`-`h6` asked for one. */
+const flowBlocks = (blocks: ReadonlyArray<FlowBlock>, key: number): ReactNode => (
+  <Fragment key={key}>
+    {blocks.map((block, index) => {
+      const style = block.center ? { textAlign: "center" as const } : undefined;
+      return block.level === undefined ? (
+        <p className="sui-md-p" key={index} style={style}>
+          {block.nodes}
+        </p>
+      ) : (
+        <div className={`sui-md-heading sui-md-h${block.level}`} key={index} style={style}>
+          {block.nodes}
+        </div>
+      );
+    })}
+  </Fragment>
+);
 
 const isBullet = (line: string) => /^\s*[-*]\s+/.test(line);
 const isOrdered = (line: string) => /^\s*\d+\.\s+/.test(line);
@@ -128,8 +331,26 @@ const tableAt = (lines: ReadonlyArray<string>, index: number): number | undefine
   return rowCells(header).length === cells.length ? cells.length : undefined;
 };
 
-/** The block kinds the scanner recognizes. */
-type BlockKind = "fence" | "table" | "heading" | "bullet" | "ordered" | "paragraph";
+/** The block kinds the scanner recognizes; `comment`, `pre` and `html` exist only in document mode. */
+type BlockKind = "fence" | "table" | "heading" | "bullet" | "ordered" | "paragraph" | "comment" | "pre" | "html";
+
+/*
+ * Document mode's HTML blocks, after CommonMark: a comment runs to its `-->`,
+ * a `<pre>` to its `</pre>`, and a line that opens with a block tag (or is one
+ * whole tag) to the next blank line. Only the first two and a block tag may
+ * interrupt a paragraph.
+ */
+const isCommentStart = (line: string) => /^ {0,3}<!--/.test(line);
+const isPreStart = (line: string) => /^ {0,3}<pre(?=[\s>]|$)/i.test(line);
+const isBlockTagStart = (line: string) => {
+  const name = /^ {0,3}<\/?([a-z][\w-]*)(?=[\s/>]|$)/i.exec(line)?.[1];
+  return name !== undefined && BLOCK_TAGS.has(name.toLowerCase());
+};
+const isWholeTagLine = (line: string) => {
+  const trimmed = line.trim();
+  return trimmed.startsWith("<") && new RegExp(`^${TAG.source}$`, "i").test(trimmed);
+};
+const interruptsParagraph = (line: string) => isCommentStart(line) || isPreStart(line) || isBlockTagStart(line);
 
 /**
  * One block of source, tagged with the kind that claimed it. `text` is the
@@ -149,10 +370,18 @@ type BlockSpan = { readonly kind: BlockKind; readonly lines: ReadonlyArray<strin
  * The final span may still grow while content streams; every earlier span is
  * stable, which is what makes it safe to cache.
  */
-function scanBlocks(content: string): BlockSpan[] {
+function scanBlocks(content: string, variant: MarkdownVariant = "chat"): BlockSpan[] {
   const lines = content.split("\n");
   const spans: BlockSpan[] = [];
+  const document = variant === "document";
   let i = 0;
+
+  /** Advance past the line that ends a block, or off the end of the source. */
+  const through = (ends: (line: string, first: boolean) => boolean) => {
+    const first = i;
+    while (i < lines.length && !ends(lines[i]!, i === first)) i += 1;
+    i = Math.min(i + 1, lines.length);
+  };
 
   while (i < lines.length) {
     if (lines[i]!.trim() === "") {
@@ -167,6 +396,15 @@ function scanBlocks(content: string): BlockSpan[] {
       i += 1;
       while (i < lines.length && !isFence(lines[i]!)) i += 1;
       if (i < lines.length) i += 1; // consume the closing fence (or run off the end)
+    } else if (document && isCommentStart(lines[i]!)) {
+      kind = "comment";
+      through((line, first) => (first ? line.slice(line.indexOf("<!--") + 4) : line).includes("-->"));
+    } else if (document && isPreStart(lines[i]!)) {
+      kind = "pre";
+      through((line) => /<\/pre>/i.test(line));
+    } else if (document && (isBlockTagStart(lines[i]!) || isWholeTagLine(lines[i]!))) {
+      kind = "html";
+      while (i < lines.length && lines[i]!.trim() !== "") i += 1;
     } else if (tableAt(lines, i) !== undefined) {
       kind = "table";
       i += 2;
@@ -189,7 +427,8 @@ function scanBlocks(content: string): BlockSpan[] {
         !isHeading(lines[i]!) &&
         !isBullet(lines[i]!) &&
         !isOrdered(lines[i]!) &&
-        tableAt(lines, i) === undefined
+        tableAt(lines, i) === undefined &&
+        !(document && interruptsParagraph(lines[i]!))
       ) {
         i += 1;
       }
@@ -202,11 +441,41 @@ function scanBlocks(content: string): BlockSpan[] {
   return spans;
 }
 
+/** A `<pre>` block's text: tags dropped (`<br>` a newline), entities decoded, spacing kept. */
+const preText = (body: string) =>
+  decodeEntities(body.replace(COMMENT, "").replace(/<br\s*\/?>/gi, "\n").replace(TAG, ""))
+    .replace(/^\r?\n/, "")
+    .replace(/\r?\n$/, "");
+
+/** A document paragraph's source: lines joined by spaces, a trailing two spaces or `\` a hard break. */
+const documentParagraph = (lines: ReadonlyArray<string>) =>
+  lines.map((line, index) => (index < lines.length - 1 ? line.replace(/(?: {2,}|\\)$/, "<br>") : line).trim()).join(" ");
+
 /** Render one scanned span, dispatching on the kind the scanner gave it. */
-function renderSpan(span: BlockSpan, key: number, onLinkClick?: MarkdownLinkClick): ReactNode {
+function renderSpan(span: BlockSpan, key: number, onLinkClick?: MarkdownLinkClick, variant: MarkdownVariant = "chat"): ReactNode {
   const lines = span.lines;
+  const inline =
+    variant === "document"
+      ? (text: string, keyPrefix: string) => flowInline(text, keyPrefix, onLinkClick)
+      : (text: string, keyPrefix: string) => renderInline(text, keyPrefix, onLinkClick);
 
   switch (span.kind) {
+    case "comment":
+      return null;
+
+    case "pre": {
+      const open = new RegExp(TAG.source, "i").exec(span.text)!;
+      const body = span.text.slice(open.index + open[0].length).replace(/<\/pre>[\s\S]*$/i, "");
+      return (
+        <pre className="sui-md-pre" data-align={centered(parseTag(open[0]).attrs) ? "center" : undefined} key={key}>
+          <code>{preText(body)}</code>
+        </pre>
+      );
+    }
+
+    case "html":
+      return flowBlocks(renderFlow(span.text, `html${key}`, onLinkClick, false), key);
+
     case "fence": {
       const info = lines[0]!.trimStart().slice(3).trim();
       const language = info ? info.split(/\s+/, 1)[0]!.toLowerCase() : undefined;
@@ -227,7 +496,7 @@ function renderSpan(span: BlockSpan, key: number, onLinkClick?: MarkdownLinkClic
             <TableRow>
               {header.map((cell, column) => (
                 <TableHead key={column} style={{ textAlign: alignments[column] ?? "left" }}>
-                  {renderInline(cell, `th${key}.${column}`, onLinkClick)}
+                  {inline(cell, `th${key}.${column}`)}
                 </TableHead>
               ))}
             </TableRow>
@@ -241,7 +510,7 @@ function renderSpan(span: BlockSpan, key: number, onLinkClick?: MarkdownLinkClic
                 */}
                 {Array.from({ length: columns }, (_unused, column) => (
                   <TableCell key={column} style={{ textAlign: alignments[column] ?? "left" }}>
-                    {renderInline(cells[column] ?? "", `td${key}.${row}.${column}`, onLinkClick)}
+                    {inline(cells[column] ?? "", `td${key}.${row}.${column}`)}
                   </TableCell>
                 ))}
               </TableRow>
@@ -256,7 +525,7 @@ function renderSpan(span: BlockSpan, key: number, onLinkClick?: MarkdownLinkClic
       const level = heading[1]!.length;
       return (
         <div className={`sui-md-heading sui-md-h${level}`} key={key}>
-          {renderInline(heading[2]!, `h${key}`, onLinkClick)}
+          {inline(heading[2]!, `h${key}`)}
         </div>
       );
     }
@@ -265,7 +534,7 @@ function renderSpan(span: BlockSpan, key: number, onLinkClick?: MarkdownLinkClic
       return (
         <ul className="sui-md-list" key={key}>
           {lines.map((line, item) => (
-            <li key={item}>{renderInline(line.replace(/^\s*[-*]\s+/, ""), `ul${key}.${item}`, onLinkClick)}</li>
+            <li key={item}>{inline(line.replace(/^\s*[-*]\s+/, ""), `ul${key}.${item}`)}</li>
           ))}
         </ul>
       );
@@ -274,12 +543,14 @@ function renderSpan(span: BlockSpan, key: number, onLinkClick?: MarkdownLinkClic
       return (
         <ol className="sui-md-list" key={key}>
           {lines.map((line, item) => (
-            <li key={item}>{renderInline(line.replace(/^\s*\d+\.\s+/, ""), `ol${key}.${item}`, onLinkClick)}</li>
+            <li key={item}>{inline(line.replace(/^\s*\d+\.\s+/, ""), `ol${key}.${item}`)}</li>
           ))}
         </ol>
       );
 
     case "paragraph":
+      // A document joins its lines (GitHub's soft break); chat keeps each line on its own.
+      if (variant === "document") return flowBlocks(renderFlow(documentParagraph(lines), `p${key}`, onLinkClick, true), key);
       return (
         <p className="sui-md-p" key={key}>
           {lines.map((text, idx) => (
@@ -294,8 +565,8 @@ function renderSpan(span: BlockSpan, key: number, onLinkClick?: MarkdownLinkClic
 }
 
 /** Parse the source into block-level React nodes. */
-function renderBlocks(content: string, onLinkClick?: MarkdownLinkClick): ReactNode[] {
-  return scanBlocks(content).map((span, index) => renderSpan(span, index, onLinkClick));
+function renderBlocks(content: string, onLinkClick?: MarkdownLinkClick, variant: MarkdownVariant = "chat"): ReactNode[] {
+  return scanBlocks(content, variant).map((span, index) => renderSpan(span, index, onLinkClick, variant));
 }
 
 /** @internal Exposed so parser reuse can be verified without mocking Markdown output. */
@@ -309,29 +580,32 @@ export type MarkdownProps = Omit<ComponentProps<"div">, "children" | "onClick"> 
    * href and the click event, with `preventDefault()` already called.
    */
   onLinkClick?: MarkdownLinkClick;
+  /** `chat` (default) for model output; `document` for a repository file such as a README. */
+  variant?: MarkdownVariant;
 };
 
 /**
  * A small, dependency-free Markdown renderer covering what a chat model
  * actually emits: fenced code blocks, headings, ordered/unordered lists,
  * GitHub-flavored tables, inline code, bold, italics, and links. Anything else
- * falls through as plain paragraphs.
+ * falls through as plain paragraphs. `variant="document"` reads a repository
+ * file instead (see {@link MarkdownVariant}).
  *
  * Wrapped in `React.memo`, with completed blocks cached by source so streaming
  * updates only re-parse the trailing block.
  */
-function MarkdownImpl({ content, onLinkClick, className, ...props }: MarkdownProps) {
+function MarkdownImpl({ content, onLinkClick, variant = "chat", className, ...props }: MarkdownProps) {
   useInjectUiCss();
-  const completedBlocks = useMemo(() => new Map<string, ReactNode[]>(), [onLinkClick]);
-  const spans = scanBlocks(content);
+  const completedBlocks = useMemo(() => new Map<string, ReactNode[]>(), [onLinkClick, variant]);
+  const spans = scanBlocks(content, variant);
   const live = new Set<string>();
   const rendered = spans.map((span, index) => {
-    if (index === spans.length - 1) return markdownBlockParser.render(span.text, onLinkClick);
+    if (index === spans.length - 1) return markdownBlockParser.render(span.text, onLinkClick, variant);
 
     live.add(span.text);
     let block = completedBlocks.get(span.text);
     if (!block) {
-      block = markdownBlockParser.render(span.text, onLinkClick);
+      block = markdownBlockParser.render(span.text, onLinkClick, variant);
       completedBlocks.set(span.text, block);
     }
     return block;

@@ -63,10 +63,9 @@ ${description}
 ## Open Smithers
 
 Open [the Smithers repository](https://smithers.sh/smithersai/smithers) in your browser.
-Explore its files, ask for work in chat, and inspect runs and changes in the conversation.
-Sign in with GitHub when you are ready to contribute. See
-[Pricing](https://smithers.sh/docs/pricing/) for Free and Pro plans and deployment
-availability. Follow the [app quickstart](https://smithers.sh/docs/quickstart/).
+Explore its files, ask questions in chat, and inspect runs and changes in the conversation.
+Sign in with GitHub when you are ready to contribute.
+Follow the [app quickstart](https://smithers.sh/docs/quickstart/).
 
 For local execution and authoring, use the CLI and libraries described below.
 

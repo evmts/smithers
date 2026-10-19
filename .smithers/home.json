@@ -2,7 +2,7 @@
   "blocks": [
     {
       "type": "prompt",
-      "title": "What should we work on?",
+      "title": "Ask about Smithers",
       "placeholder": "Ask Smithers…"
     },
     {

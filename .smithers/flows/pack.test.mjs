@@ -593,17 +593,19 @@ describe("the repository homepage", () => {
     }
   })
 
-  it("opens with the question and the composer, then the four apps", () => {
-    assert.deepEqual(home.blocks.map((block) => block.type), ["prompt", "app", "app", "app", "app"])
-    assert.equal(home.blocks[0].title, "What should we work on?")
+  it("opens with the question and the composer, then the links, Fixed by agents and the four apps", () => {
+    assert.deepEqual(home.blocks.map((block) => block.type), ["prompt", "links", "markdown", "app", "app", "app", "app"])
+    assert.equal(home.blocks[0].title, "Ask about Smithers")
     assert.equal(home.blocks[0].placeholder, "Ask Smithers…")
-    assert.deepEqual(home.blocks.slice(1).map((block) => [block.title, block.picture]), [
+    assert.deepEqual([home.blocks[2].title, home.blocks[2].path], ["Fixed by agents", "docs/fixed-by-agents.md"])
+    const apps = home.blocks.filter((block) => block.type === "app")
+    assert.deepEqual(apps.map((block) => [block.title, block.picture]), [
       ["Fix an issue", "issue"],
       ["Review a PR", "review"],
       ["Ask the codebase", "wiki"],
       ["Run it every night", "schedule"]
     ])
-    for (const block of home.blocks.slice(1)) assert.ok(typeof block.flow === "string" && block.flow.length > 0)
+    for (const block of apps) assert.ok(typeof block.flow === "string" && block.flow.length > 0)
   })
 })
 

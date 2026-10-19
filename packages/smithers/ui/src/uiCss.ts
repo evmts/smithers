@@ -549,6 +549,9 @@ export const markdownCss = `
 .sui-md-inline-code { padding:2px 6px; border-radius:${t.radiusControl}; background:color-mix(in srgb, ${t.foreground} 7%, transparent); font-family:${t.fontMono}; font-size:.9em; }
 .sui-md-link { color:${t.primary}; text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
 .sui-md-link:hover { text-decoration-thickness:2px; }
+.sui-md-pre { margin:8px 0; padding:12px 14px; border-radius:${t.radius}; background:${t.codeBg}; color:${t.codeText}; font-family:${t.fontMono}; font-size:12px; line-height:1.5; white-space:pre; overflow-wrap:normal; overflow-x:auto; tab-size:4; }
+.sui-md-pre > code { display:block; width:max-content; font:inherit; color:inherit; white-space:inherit; }
+.sui-md-pre[data-align='center'] > code { margin-inline:auto; }
 `;
 
 export const agenticResponseCss = `
