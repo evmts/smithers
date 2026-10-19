@@ -378,6 +378,8 @@ func runtimeOperationError(operation string, err error) error {
 }
 
 func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Context, row db.Workspace, requesterID int64) (result db.Workspace, resultErr error) {
+	// stage names the step a failed start stopped at, for its one log line.
+	stage := "prepare"
 	// Settle errors before releasing this start's runtime/provisioning ownership.
 	// Admission updates the stage/updated_at before vm_id is published; the
 	// caller's pre-admission snapshot cannot fence the failure write.
@@ -394,7 +396,10 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Conte
 		if err != nil || current.ProvisioningGeneration != row.ProvisioningGeneration || (current.Status != "pending" && current.Status != "starting") {
 			return
 		}
-		failure := workspaceFailureDetailsFor(resultErr)
+		// Record why before the reap: a reap whose stop times out, and a
+		// controller that forgets the guest, must not take the reason along.
+		failure := workspaceStartFailureDetails(resultErr)
+		logWorkspaceStartFailure(current, stage, failure)
 		failed, transitioned, err := s.failProvisioningWorkspaceIfCurrent(cleanup, current, failure, workspaceStartCleanupPending)
 		if err != nil || !transitioned {
 			return
@@ -449,7 +454,9 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Conte
 		return row, pkgerrors.Conflict("workspace provisioning failed; create a fresh workspace")
 	}
 	create := row.Status == "pending" || row.Status == "starting" && row.VmID == ""
+	stage = "inspect"
 	if create {
+		stage = "create"
 		createCtx, contextErr := s.workspaceStartContext(ctx, row, requesterID, workspaceLifecycleOperation(row, "create"))
 		if contextErr != nil {
 			return row, contextErr
@@ -492,6 +499,7 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Conte
 		reattach = runtime.NeedsWorkspaceReattachment(row.ID)
 	}
 	if observed.State == workspaceapi.WorkspaceStopped || reattach {
+		stage = "start"
 		// Creation already holds the admission made before the product row was
 		// inserted. A later resume must recheck the common billing policy.
 		if !create {
@@ -557,6 +565,7 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Conte
 	// Repository materialization is part of the common product transition to
 	// running. Both trusted process and isolated runtimes execute the same
 	// authorized, receipt-backed checkout before the durable row is activated.
+	stage = "repository"
 	if err := s.ensureRuntimeWorkspaceRepository(ctx, row, requesterID); err != nil {
 		return row, err
 	}
@@ -566,6 +575,7 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Conte
 	// caller's own tenant-fenced row, and that read is admitted the same way
 	// every other door into this box is. Asked without the operation it can
 	// only refuse, and the start fails after the guest is already awake.
+	stage = "activate"
 	machine, err := s.runtimeMachineIdentity(operationCtx, row, observed)
 	if err != nil {
 		return row, err

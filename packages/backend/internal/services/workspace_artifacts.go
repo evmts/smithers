@@ -495,15 +495,12 @@ func workspaceBootstrapDiagnostic(log string) string {
 		}
 	}
 	slices.Reverse(kept)
-	text := strings.Join(kept, " | ")
-	if subscriptiontoken.Holds("", text) {
-		text = subscriptiontoken.Redact(text)
-		if text == "" {
-			return "[log withheld: it holds a credential]"
-		}
+	if len(kept) == 0 {
+		return ""
 	}
-	for _, rule := range workspaceBootstrapSecretPatterns {
-		text = rule.pattern.ReplaceAllString(text, rule.replacement)
+	text := maskWorkspaceFailureText(strings.Join(kept, " | "))
+	if text == "" {
+		return "[log withheld: it holds a credential]"
 	}
 	if len(text) > workspaceBootstrapDiagnosticBytes {
 		cut := len(text) - workspaceBootstrapDiagnosticBytes
@@ -511,6 +508,23 @@ func workspaceBootstrapDiagnostic(log string) string {
 			cut++
 		}
 		text = "…" + text[cut:]
+	}
+	return text
+}
+
+// maskWorkspaceFailureText replaces anything credential-shaped in a failure
+// sentence: subscription tokens, URL credentials, authorization values,
+// secret-named assignments, well-known token prefixes and long opaque strings.
+// It answers "" when the whole text is a credential.
+func maskWorkspaceFailureText(text string) string {
+	if subscriptiontoken.Holds("", text) {
+		text = subscriptiontoken.Redact(text)
+		if text == "" {
+			return ""
+		}
+	}
+	for _, rule := range workspaceBootstrapSecretPatterns {
+		text = rule.pattern.ReplaceAllString(text, rule.replacement)
 	}
 	return text
 }
