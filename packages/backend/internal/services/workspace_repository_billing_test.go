@@ -253,7 +253,7 @@ func TestServicePayerBillsOnlyListedOrganizations(t *testing.T) {
 			// The free organization plan allows one running sandbox; the
 			// service user's max plan does not lift it.
 			err = svc.enforceWorkspaceQuota(ctx, actor, outsideRepo)
-			require.ErrorContains(t, err, "1 running sandbox", "a second machine on the outside organization is refused under its own plan")
+			require.ErrorContains(t, err, "This organization can run one machine at a time", "a second machine on the outside organization is refused under its own plan")
 		})
 	}
 

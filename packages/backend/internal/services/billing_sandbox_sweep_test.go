@@ -154,7 +154,7 @@ func TestSandboxHoursSweep_SuspendsAtTheDailyCapAndResumesAfterReset(t *testing.
 	assert.Equal(t, BillingPlanPro, metadata["upgrade_plan_key"])
 	assert.EqualValues(t, 4, metadata["limit"])
 	assert.Equal(t, "vm-hours", metadata["vm_id"])
-	assert.Contains(t, metadata["message"], "try again after 2026-09-16T00:00:00Z")
+	assert.Contains(t, metadata["message"], "Try again after 2026-09-16T00:00:00Z")
 
 	// Resuming before reset_at returns the same plan-limit error.
 	f.now = f.started.Add(3 * time.Hour)

@@ -327,12 +327,17 @@ func (d *agentDispatch) refuseRetiredAgentLoop() error {
 
 // --- Step methods ---
 
+// errAgentSandboxUnconfigured marks a deployment that wires neither a sandbox
+// provider nor coding dispatch: no agent can start here, and retrying never
+// helps (agents_unavailable).
+var errAgentSandboxUnconfigured = errors.New("no sandbox provider or coding dispatch is configured")
+
 func (d *agentDispatch) authorize() error {
 	if d.svc.dispatchQ == nil {
 		return pkgerrors.Internal("agent dispatch querier unavailable")
 	}
 	if d.svc.sandbox == nil && !d.codingDispatchEnabled() {
-		return pkgerrors.Internal("sandbox provider unavailable")
+		return pkgerrors.Internal("sandbox provider unavailable").WithCause(errAgentSandboxUnconfigured)
 	}
 	if len(d.input.AllowedPaths) > 1024 {
 		return pkgerrors.BadRequest("allowed_paths exceeds the maximum of 1024 entries")

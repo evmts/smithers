@@ -93,10 +93,14 @@ func TestBillingService_AuthorizeSandboxStart(t *testing.T) {
 			require.NotNil(t, api.Remaining)
 			assert.Zero(t, *api.Remaining)
 			if tc.name == "free at cap" {
-				assert.Equal(t, "Your Free plan allows 1 running sandbox. Upgrade to Pro for 3, or suspend one to continue.", api.Message)
+				assert.Equal(t, "You can run one machine at a time. Wait for your other change to finish, then try again.", api.Message)
 			}
 			if tc.name == "hours exhausted" {
-				assert.Equal(t, "Your Free plan includes 4 sandbox-hours per day; you have used them. Upgrade to Pro for unlimited hours, or try again after 2026-09-16T00:00:00Z.", api.Message)
+				assert.Equal(t, "You have used today's 4 machine hours. Try again after 2026-09-16T00:00:00Z.", api.Message)
+			}
+			// Pricing is pure usage (2026-09-29): visitor copy names no plan.
+			for _, word := range []string{"Free", "Pro", "Max", "plan", "Upgrade"} {
+				assert.NotContains(t, api.Message, word)
 			}
 		})
 	}

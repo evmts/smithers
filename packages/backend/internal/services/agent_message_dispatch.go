@@ -112,40 +112,47 @@ func (s *AgentService) handleMessageDispatch(ctx context.Context, lease *jobs.Le
 	if err != nil || session.RepositoryID != input.RepositoryID || session.UserID != input.UserID || session.Status != "active" {
 		return fail("chat_unavailable")
 	}
+	// From here the session is the active one this turn belongs to: every
+	// refusal also ends that turn with its typed reason, so no session waits
+	// 'active' for a run that will never exist (QA b-4vf5ge, PM d-azsvyx).
+	refuse := func(code string, failure agentSessionFailure) error {
+		s.endUndispatchedTurn(ctx, session, failure)
+		return fail(code)
+	}
 	actor, err := q.GetUserByIDNotDeleted(ctx, input.UserID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return errors.New("message dispatch authority unavailable")
 	}
 	if err != nil || !actor.IsActive || actor.ProhibitLogin {
-		return fail("dispatch_permission_denied")
+		return refuse("dispatch_permission_denied", agentSessionDispatchNotPermitted)
 	}
 	repo, err := q.GetRepoByID(ctx, input.RepositoryID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return errors.New("message dispatch authority unavailable")
 	}
 	if err != nil || repo.IsArchived {
-		return fail("repository_unavailable")
+		return refuse("repository_unavailable", agentSessionRepositoryGone)
 	}
 	allowed, err := canWriteRepo(ctx, q, repo, input.UserID)
 	if err != nil {
 		return errors.New("message dispatch authority unavailable")
 	}
 	if !allowed {
-		return fail("dispatch_permission_denied")
+		return refuse("dispatch_permission_denied", agentSessionDispatchNotPermitted)
 	}
 	namedRepo, err := q.GetRepoByOwnerAndLowerName(ctx, db.GetRepoByOwnerAndLowerNameParams{Owner: strings.ToLower(input.RepoOwner), LowerName: strings.ToLower(input.RepoName)})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return errors.New("message dispatch authority unavailable")
 	}
 	if err != nil || namedRepo.ID != input.RepositoryID {
-		return fail("repository_changed")
+		return refuse("repository_changed", agentSessionRepositoryGone)
 	}
 	var messageExists bool
 	if err := s.messagePool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM agent_messages WHERE id=$1 AND session_id=$2 AND role='user')`, input.TriggerMessageID, input.SessionID).Scan(&messageExists); err != nil {
 		return errors.New("message dispatch authority unavailable")
 	}
 	if !messageExists {
-		return fail("message_unavailable")
+		return refuse("message_unavailable", agentSessionNeverStarted)
 	}
 	// Honor shutdown, requested cancellation, and lost leases during dispatch.
 	// Receipt writes below have a separate bounded context.
@@ -180,13 +187,42 @@ func (s *AgentService) handleMessageDispatch(ctx context.Context, lease *jobs.Le
 		}
 		var apiErr *pkgerrors.APIError
 		if errors.As(err, &apiErr) && apiErr.Code == pkgerrors.CodeHostedCodingNotOpen {
-			return fail(string(pkgerrors.CodeHostedCodingNotOpen))
+			// refuseUnlistedCodingUser has already failed the session with
+			// this reason; the guarded end below then changes nothing.
+			return refuse(string(pkgerrors.CodeHostedCodingNotOpen), agentSessionHostedCodingNotOpen)
 		}
-		return fail("dispatch_failed")
+		return refuse("dispatch_failed", agentSessionFailureForError(err))
 	}
 	// DispatchAgentRunResult also contains a plaintext token: never serialize it.
 	receipt, _ := json.Marshal(map[string]any{"messageId": input.TriggerMessageID, "workflowRunId": result.WorkflowRunID, "workflowTaskId": result.WorkflowTaskID, "operationId": result.OperationID})
 	return settleMessageDispatch(ctx, func(receiptCtx context.Context) error { return lease.Complete(receiptCtx, receipt) })
+}
+
+// endUndispatchedTurn fails a session whose turn its dispatch refused before
+// any run existed, with the typed reason and final reply the session read and
+// the card show. It changes the session only while it is still active and
+// still has the run it had when the dispatch read it: a run that attached
+// since (another turn, or this dispatch's own cleanup) owns the session and
+// ends it itself. The status, reason and reply commit together through
+// failAgentSession (8e d-sbxese). A failure here is logged and swallowed: the
+// message's failure receipt is still written.
+func (s *AgentService) endUndispatchedTurn(ctx context.Context, session db.AgentSession, failure agentSessionFailure) {
+	if s.dispatchQ == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	ended, err := s.failAgentSession(ctx, func(ctx context.Context, w db.AgentSessionEnds) (db.AgentSession, error) {
+		return w.EndUndispatchedAgentSession(ctx, session.ID, session.WorkflowRunID)
+	}, failingWith(failure))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return
+	}
+	if err != nil {
+		middleware.LoggerWithAgentSession(ctx, session.ID).Error("end undispatched agent turn", "reason_code", failure.Code, "error", err)
+		return
+	}
+	s.notifyAgentSessionStatus(ctx, ended)
 }
 
 // Receipt settlement must survive a shutdown between dispatch and persistence.
