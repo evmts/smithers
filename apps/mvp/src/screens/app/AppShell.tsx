@@ -1,6 +1,16 @@
+import { Composer } from "../../features/chat/components/Composer"
+import { Conversation } from "../../features/chat/components/Conversation"
 import "./app-shell.css"
 
-// The app, empty until its first feature.
 export function AppShell() {
-  return <main className="app-shell" aria-label="App" />
+  return (
+    <main className="app-shell" aria-label="App">
+      <section className="app-shell-conversation" aria-label="Conversation">
+        <Conversation />
+      </section>
+      <div className="app-shell-composer">
+        <Composer />
+      </div>
+    </main>
+  )
 }

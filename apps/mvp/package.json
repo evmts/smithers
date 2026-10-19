@@ -5,22 +5,27 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 5190 --strictPort",
+    "dev:worker": "vite build && env -i PATH=\"$PATH\" HOME=\"$HOME\" CEREBRAS_API_KEY=\"$CEREBRAS_API_KEY\" CLOUDFLARE_INCLUDE_PROCESS_ENV=true wrangler dev --port 8790",
     "build": "vite build",
+    "deploy": "vite build && wrangler deploy",
     "e2e": "playwright test"
   },
   "dependencies": {
     "@fontsource/inter": "5.3.0",
     "@smthrs/ui": "workspace:*",
+    "@tanstack/react-db": "0.5.8",
     "@tanstack/react-router": "1.170.42",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20260903.1",
     "@playwright/test": "1.62.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",
     "@vitejs/plugin-react": "6.1.1",
     "typescript": "^5.9.3",
-    "vite": "8.2.2"
+    "vite": "8.2.2",
+    "wrangler": "4.149.0"
   }
 }
