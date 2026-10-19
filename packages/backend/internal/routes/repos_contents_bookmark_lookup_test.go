@@ -2,6 +2,7 @@ package routes
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
+	"github.com/smithersai/smithers/packages/backend/internal/repohostserver"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/stretchr/testify/require"
 )
@@ -109,5 +111,54 @@ func TestContentsPageThroughStorageClient(t *testing.T) {
 		router.ServeHTTP(response, httptest.NewRequest("GET", body.RawURL, nil))
 		require.Equal(t, 404, response.Code)
 		host.Close()
+	}
+}
+
+// Only the database row and native storage calls are substituted. Exercise the
+// real API, contents service, storage client and storage HTTP router together.
+// Native calls are substituted because this regression concerns HTTP routing,
+// not the platform-specific dlopen library. A proxy may forward the decoded
+// URL path without the optional RawPath hint.
+type slashContentsFFI struct {
+	repohostserver.FFIClient
+	t *testing.T
+}
+
+func (f slashContentsFFI) GetBookmark(_, name string) (*repohost.Bookmark, error) {
+	require.Equal(f.t, "poc/pre-withdrawal-checkpoint", name)
+	return &repohost.Bookmark{Name: name, TargetCommitID: strings.Repeat("b", 40)}, nil
+}
+func (f slashContentsFFI) ListDirectory(_, commit, prefix, after string, limit uint32) ([]repohost.TreeEntry, error) {
+	require.Equal(f.t, strings.Repeat("b", 40), commit)
+	require.Empty(f.t, prefix)
+	require.Empty(f.t, after)
+	return []repohost.TreeEntry{{Path: "README.md", Kind: "file"}}, nil
+}
+func TestContentsNonDefaultSlashBranchRoot(t *testing.T) {
+	for _, decoded := range []bool{false, true} {
+		t.Run(fmt.Sprint("decoded-path=", decoded), func(t *testing.T) {
+			cfg := repohostserver.Config{StoragePath: t.TempDir(), AuthToken: "slash-test"}
+			storage, err := repohostserver.NewWithFFI(cfg, slashContentsFFI{t: t})
+			require.NoError(t, err)
+			handler := storage.Handler()
+			host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if decoded {
+					r.URL.RawPath = ""
+				}
+				handler.ServeHTTP(w, r)
+			}))
+			defer host.Close()
+			client := repohost.NewClient(&repohost.StaticStorageSetResolver{URL: host.URL}, cfg.AuthToken)
+			q := &notesIntegrationQueries{repository: db.Repository{ID: 1, Name: "demo", IsPublic: true, DefaultBookmark: "main"}}
+			h := RepoHandler{Service: services.NewRepoService(q, client, "s1")}
+			router := chi.NewRouter()
+			router.Get("/api/repos/{owner}/{repo}/contents", h.GetRepoContents)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/repos/alice/demo/contents?ref=poc%2Fpre-withdrawal-checkpoint", nil))
+			require.Equal(t, 200, response.Code, response.Body.String())
+			var entries []services.RepoContent
+			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &entries))
+			require.Equal(t, []services.RepoContent{{Name: "README.md", Path: "README.md", Type: "file"}}, entries)
+		})
 	}
 }

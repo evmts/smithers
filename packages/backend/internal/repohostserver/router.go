@@ -244,7 +244,7 @@ func (s *Server) Handler() http.Handler {
 			r.Method(http.MethodPost, "/repos/{id}/bookmarks", s.withAppError(s.createBookmark))
 			r.Method(http.MethodPut, "/repos/{id}/default-bookmark", s.withAppError(s.setDefaultBookmark))
 			r.Method(http.MethodPost, "/repos/{id}/ref-case-collisions/repair", s.withAppError(s.repairRefCaseCollisions))
-			r.Method(http.MethodGet, "/repos/{id}/bookmarks/{name}", s.withAppError(s.getBookmark))
+			r.Method(http.MethodGet, "/repos/{id}/bookmarks/*", s.withAppError(s.getBookmark))
 			r.Method(http.MethodDelete, "/repos/{id}/bookmarks/{name}", s.withAppError(s.deleteBookmark))
 			r.Method(http.MethodGet, "/repos/{id}/changes", s.withAppError(s.listChanges))
 			r.Method(http.MethodGet, "/repos/{id}/commits/ancestry", s.withAppError(s.commitAncestry))
@@ -1538,7 +1538,7 @@ func (s *Server) listBookmarks(w http.ResponseWriter, r *http.Request) error {
 	return writeJSON(w, http.StatusOK, result)
 }
 
-// getBookmark serves GET /repos/{id}/bookmarks/{name}: one bookmark by exact
+// getBookmark serves GET /repos/{id}/bookmarks/*: one bookmark by exact
 // name, or 404. Product callers resolve refs (contents, landing, changesets)
 // through this route; without it they received 405 and every repository
 // contents read failed with 500.
@@ -1550,7 +1550,8 @@ func (s *Server) getBookmark(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	name := chi.URLParam(r, "name")
+	// Capture the whole name even when an upstream has decoded its slashes.
+	name := chi.URLParam(r, "*")
 	// chi matches RawPath when the request carries escapes such as %2F in
 	// "feature%2Fx" and then leaves the parameter escaped.
 	if r.URL.RawPath != "" {
