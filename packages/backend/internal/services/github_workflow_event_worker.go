@@ -27,6 +27,11 @@ const (
 	gitHubWebhookJobRetryBaseBackoff = 5 * time.Second
 	gitHubWebhookJobRetryMaxBackoff  = 10 * time.Minute
 
+	// An admission this deployment has not configured does not appear on a
+	// retry: its hint waits a day per claim, kept for a later admission to
+	// replay, instead of being claimed every 10 minutes forever (#4388).
+	gitHubWebhookJobUnconfiguredBackoff = 24 * time.Hour
+
 	// Jobs claimed by a worker that crashed before marking them done/failed
 	// stay 'processing'; after this lease they are re-pended for re-dispatch.
 	gitHubWebhookJobStalledAfter = 5 * time.Minute
@@ -165,7 +170,8 @@ func (w *GitHubWebhookEventWorker) PollOnce(ctx context.Context) error {
 
 		var permanent *permanentGitHubWebhookJobError
 		var unavailable *gitHubTodoUnavailableError
-		if errors.As(err, &permanent) || job.Attempts >= gitHubWebhookJobMaxAttempts && !errors.As(err, &unavailable) {
+		unconfigured := errors.As(err, &unavailable)
+		if errors.As(err, &permanent) || job.Attempts >= gitHubWebhookJobMaxAttempts && !unconfigured {
 			marked, markErr := w.queries.MarkGitHubWebhookJobFailed(ctx, db.MarkGitHubWebhookJobFailedParams{
 				ID:               job.ID,
 				ExpectedAttempts: job.Attempts,
@@ -183,6 +189,9 @@ func (w *GitHubWebhookEventWorker) PollOnce(ctx context.Context) error {
 		}
 
 		backoff := gitHubWebhookJobRetryBackoff(job.Attempts)
+		if unconfigured {
+			backoff = gitHubWebhookJobUnconfiguredBackoff
+		}
 		retried, retryErr := w.queries.RetryGitHubWebhookJob(ctx, db.RetryGitHubWebhookJobParams{
 			ID:               job.ID,
 			ExpectedAttempts: job.Attempts,
@@ -194,6 +203,10 @@ func (w *GitHubWebhookEventWorker) PollOnce(ctx context.Context) error {
 			w.logger.Error("failed to re-pend github webhook job", "job_id", job.ID, "error", retryErr)
 		} else if retried == 0 {
 			w.logLostClaim(job, "retry")
+			continue
+		}
+		if unconfigured {
+			w.logger.Info("github webhook job waits for admission", "job_id", job.ID, "event", job.EventType, "attempts", job.Attempts, "backoff", backoff.String(), "reason", "admission_unconfigured", "error", err)
 			continue
 		}
 		w.logger.Warn("github webhook job failed, will retry", "job_id", job.ID, "attempts", job.Attempts, "backoff", backoff.String(), "error", err)

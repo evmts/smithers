@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -25,6 +26,7 @@ func TestReviewHintsRemainRetryableWithoutProviders(t *testing.T) {
 				require.Len(t, queries.retried, 1, "%s observer=%t attempts=%d", event, observer, attempts)
 				require.Equal(t, attempts, queries.retried[0].ExpectedAttempts)
 				require.Contains(t, queries.retried[0].Error, "GitHub review admission is not configured")
+				require.Equal(t, (24 * time.Hour).Seconds(), queries.retried[0].BackoffSeconds)
 				require.Empty(t, queries.markFailed)
 				require.Empty(t, queries.markDone)
 				require.Empty(t, dispatcher.calls)

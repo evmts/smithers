@@ -1,9 +1,14 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"log/slog"
 	"net/http"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -73,6 +78,8 @@ func TestFileTodoNeverCreatesAnIssueWithoutAdmission(t *testing.T) {
 
 // This exercises the production poll/retry path. The mock stores only observe
 // receipts; real database admission is unavailable and must never be attempted.
+// The hint waits a day per claim for a later admission to replay it, with one
+// Info line, instead of being claimed every 10 minutes (#4388).
 func TestIssueAdmissionUnavailableNeverExhaustsWebhookDelivery(t *testing.T) {
 	for _, event := range []string{"issues", "issue_comment"} {
 		for _, attempts := range []int32{1, gitHubWebhookJobMaxAttempts, gitHubWebhookJobMaxAttempts + 1, 1000} {
@@ -81,14 +88,26 @@ func TestIssueAdmissionUnavailableNeverExhaustsWebhookDelivery(t *testing.T) {
 			queries := pushJobQuerier(job)
 			dispatcher := &mockGitHubWebhookEventRunDispatcher{}
 			worker := NewGitHubWebhookEventWorker(queries, dispatcher)
+			var logs bytes.Buffer
+			worker.logger = slog.New(slog.NewJSONHandler(&logs, nil))
 			worker.SetMythical(&MythicalService{})
 			require.NoError(t, worker.PollOnce(context.Background()))
 			require.Len(t, queries.retried, 1)
 			require.Equal(t, attempts, queries.retried[0].ExpectedAttempts)
 			require.Contains(t, queries.retried[0].Error, "Issue TODO admission is not configured")
+			require.Equal(t, (24 * time.Hour).Seconds(), queries.retried[0].BackoffSeconds)
 			require.Empty(t, queries.markFailed)
 			require.Empty(t, queries.markDone)
 			require.Empty(t, dispatcher.calls)
+
+			lines := strings.Split(strings.TrimSpace(logs.String()), "\n")
+			require.Len(t, lines, 1, logs.String())
+			var record struct{ Level, Msg, Event, Reason string }
+			require.NoError(t, json.Unmarshal([]byte(lines[0]), &record))
+			require.Equal(t, "INFO", record.Level)
+			require.Equal(t, "github webhook job waits for admission", record.Msg)
+			require.Equal(t, event, record.Event)
+			require.Equal(t, "admission_unconfigured", record.Reason)
 		}
 	}
 }
