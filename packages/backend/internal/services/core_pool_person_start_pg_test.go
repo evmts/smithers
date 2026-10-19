@@ -32,7 +32,8 @@ import (
 // from 10-17 01:19Z.
 //
 // The claim now takes its advisory lock on the transaction the start already
-// holds, so it needs only the connection for its fenced read.
+// holds, and writes its lease (#4294) in a short transaction before its fenced
+// read, so beside the start's transaction it needs one connection at a time.
 
 // incidentSeriesRecorder is the duty recorder plus the plue#839 series, each
 // keyed by its labels joined with "/": the claims by kind and outcome, the
@@ -149,7 +150,8 @@ func TestAPersonStartOfAMachineOwnedBranchIsAdmittedAtTheShippedCorePool(t *test
 				"the start waited out an acquire bound, so something parked on the pool")
 
 			// Nothing the start took is still held: the advisory lock went
-			// with the mutation transaction, and no reservation is left.
+			// with the mutation transaction, the lease was released, and no
+			// reservation is left.
 			require.Eventually(t, func() bool {
 				return core.Stat().AcquiredConns() == residentCorePoolConnections
 			}, corePoolObserveBound, 10*time.Millisecond, "the start left a core connection behind")
