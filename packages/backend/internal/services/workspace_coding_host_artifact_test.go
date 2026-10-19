@@ -6,7 +6,6 @@ import (
 	"compress/gzip"
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -241,7 +240,9 @@ func TestWorkspaceNpmCLIPackageSplitsGuestFrames(t *testing.T) {
 
 func TestWorkspaceNpmCLIStagingExecutes(t *testing.T) {
 	for _, nix := range []bool{false, true} {
-		t.Run(fmt.Sprintf("nix=%t", nix), func(t *testing.T) {
+		// t.TempDir embeds the subtest name, and env reads a path holding "="
+		// as an assignment, so the name must not contain one.
+		t.Run(map[bool]string{false: "container", true: "nixos"}[nix], func(t *testing.T) {
 			dir := t.TempDir()
 			var archive bytes.Buffer
 			writer := tar.NewWriter(&archive)
@@ -273,7 +274,14 @@ func TestWorkspaceNpmCLIStagingExecutes(t *testing.T) {
 			bootstrap = strings.ReplaceAll(bootstrap, workspaceCLIPackageDir, filepath.Join(dir, "installed"))
 			bootstrap = strings.ReplaceAll(bootstrap, defaultWorkspaceGuestLayout.localBinDir(), bin)
 			bootstrap = strings.ReplaceAll(bootstrap, "/tmp/smithers-workspace-cli-help.log", filepath.Join(dir, "help.log"))
-			output, err := exec.Command("bash", "-c", bootstrap).CombinedOutput()
+			// The smoke runs as the developer; a test cannot switch users, so
+			// this runuser runs the command after "--" as the caller.
+			shims := filepath.Join(dir, "shims")
+			require.NoError(t, os.Mkdir(shims, 0755))
+			require.NoError(t, os.WriteFile(filepath.Join(shims, "runuser"), []byte("#!/bin/sh\nwhile [ \"$1\" != -- ]; do shift; done\nshift\nexec \"$@\"\n"), 0755))
+			cmd := exec.Command("bash", "-c", bootstrap)
+			cmd.Env = append(os.Environ(), "PATH="+shims+":"+os.Getenv("PATH"))
+			output, err := cmd.CombinedOutput()
 			require.NoError(t, err, string(output))
 			require.NotContains(t, string(output), "failed")
 			target, err := os.Readlink(filepath.Join(bin, "smithers"))

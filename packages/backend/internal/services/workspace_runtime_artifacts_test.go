@@ -179,6 +179,33 @@ func TestRuntimeWorkspaceCLIProbeExecutesGuestBinary(t *testing.T) {
 	require.Contains(t, string(output), "guest-smoke-failed")
 }
 
+// The controller runs the probe as root. Root must hand the developer's CLI to
+// the developer with an explicit PATH, never run it from ~/.local/bin itself.
+func TestRuntimeWorkspaceCLIProbeDropsToDeveloperAsRoot(t *testing.T) {
+	layout := defaultWorkspaceGuestLayout
+	bin, fake := t.TempDir(), t.TempDir()
+	ranAsCaller := filepath.Join(t.TempDir(), "ran-as-caller")
+	argsFile := filepath.Join(t.TempDir(), "runuser-args")
+	command := strings.ReplaceAll(workspaceRuntimeCLIProbe(layout), layout.localBinDir(), bin)
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "smithers"), []byte("#!/bin/sh\ntouch "+ranAsCaller+"\n"), 0755))
+	require.NoError(t, os.Symlink("smithers", filepath.Join(bin, "smthrs")))
+	require.NoError(t, os.WriteFile(filepath.Join(fake, "id"), []byte("#!/bin/sh\necho 0\n"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(fake, "runuser"), []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" >"+argsFile+"\n"), 0755))
+	probe := exec.Command("/bin/sh", "-c", command)
+	probe.Env = append(os.Environ(), "PATH="+fake+":/usr/bin:/bin")
+	output, err := probe.CombinedOutput()
+	require.NoError(t, err, string(output))
+	require.NoFileExists(t, ranAsCaller, "root ran the developer's CLI itself")
+	raw, err := os.ReadFile(argsFile)
+	require.NoError(t, err)
+	args := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	require.Equal(t, []string{"-u", layout.User, "--", "env", "-i"}, args[:5])
+	require.Contains(t, args, "PATH="+bin+":/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin")
+	for _, arg := range args {
+		require.NotContains(t, arg, "$PATH", "the developer's PATH must not inherit root's")
+	}
+}
+
 func (*artifactRuntime) Isolation() workspaceapi.IsolationLevel {
 	return workspaceapi.IsolationSandboxed
 }
