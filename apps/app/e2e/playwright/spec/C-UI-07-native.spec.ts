@@ -23,7 +23,7 @@ test("C-UI-07: native shared preflight survives tab closure and opens four sourc
         const url = new URL(request.url())
         if (url.pathname.endsWith("/prompt")) prompts.push(request.postDataJSON())
         try {
-          const response = await route.fetch({ url: origin + url.pathname + url.search, headers: { ...request.headers(), cookie: "context_session=composed-context-session" } })
+          const response = await route.fetch({ url: origin + url.pathname + url.search, headers: { ...request.headers(), cookie: process.env.SMITHERS_API_COOKIE! } })
           if (url.pathname.endsWith("/prompt") && response.status() === 202) admission = await response.json()
           await route.fulfill({ response })
         } catch (error) {

@@ -163,7 +163,13 @@ func testLocalSharedPreflight(t *testing.T, browser, fullInstall bool) {
 	branches := services.NewWorkspaceService(q, services.WithWorkspaceTransactions(local.pool), services.WithBranchMachineProviders(services.InstallBranchMachineProviders(identity.NewMemberBoundary(q), nil)))
 	local.composition.runtime.Handler.ResolveBranch = conversationBranchResolver(branches)
 	router := chi.NewRouter()
-	router.Use(middleware.AuthLoader(q, config.AuthConfig{SessionCookieName: "context_session"}))
+	// Name the cookie production reads: hosted __Host-* by default, the
+	// self-host HTTP name when the full install composition serves the request.
+	sessionCookie := config.DefaultSessionCookieName
+	if fullInstall {
+		sessionCookie = config.LocalSessionCookieName
+	}
+	router.Use(middleware.AuthLoader(q, config.AuthConfig{SessionCookieName: config.DefaultSessionCookieName}))
 	local.composition.runtime.MountPublic(router)
 	if browser {
 		files := &routes.BranchFileHandler{Source: contextReader.Source, Branches: branches}
@@ -182,7 +188,6 @@ func testLocalSharedPreflight(t *testing.T, browser, fullInstall bool) {
 	if fullInstall {
 		cfg := testConfigAllFlagsOn()
 		cfg.Auth.Mode = "selfhost"
-		cfg.Auth.SessionCookieName = "context_session"
 		cfg.Server.PublicURL = "http://" + public.Listener.Addr().String()
 		cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
 		// The parent mounts real install auth, membership and CSRF. Unrelated
@@ -197,7 +202,7 @@ func testLocalSharedPreflight(t *testing.T, browser, fullInstall bool) {
 	require.NoError(t, err)
 	origin, err := url.Parse(public.URL)
 	require.NoError(t, err)
-	jar.SetCookies(origin, []*http.Cookie{{Name: "context_session", Value: "composed-context-session"}, {Name: "smithers_local_csrf", Value: "preflight-csrf"}})
+	jar.SetCookies(origin, []*http.Cookie{{Name: sessionCookie, Value: "composed-context-session"}, {Name: "smithers_local_csrf", Value: "preflight-csrf"}})
 	client := &http.Client{Jar: jar, Timeout: 30 * time.Second}
 	postContext := func(target, contentType string, body io.Reader) (*http.Response, error) {
 		req, err := http.NewRequestWithContext(local.ctx, http.MethodPost, target, body)
@@ -246,7 +251,7 @@ func testLocalSharedPreflight(t *testing.T, browser, fullInstall bool) {
 		root := filepath.Clean(filepath.Join(filepath.Dir(source), "../../../.."))
 		command := exec.CommandContext(local.ctx, "pnpm", "exec", "playwright", "test", "e2e/playwright/spec/C-UI-07-native.spec.ts", "--workers", "1")
 		command.Dir = filepath.Join(root, "apps/app")
-		command.Env = append(os.Environ(), "SMITHERS_CONTEXT_ORIGIN="+public.URL, "SMITHERS_CONTEXT_REVISION="+revision, "SMITHERS_CONTEXT_MEMBER="+fmt.Sprint(memberID), "SMITHERS_CONTEXT_RUN="+runRef)
+		command.Env = append(os.Environ(), "SMITHERS_CONTEXT_ORIGIN="+public.URL, "SMITHERS_API_COOKIE="+sessionCookie+"=composed-context-session", "SMITHERS_CONTEXT_REVISION="+revision, "SMITHERS_CONTEXT_MEMBER="+fmt.Sprint(memberID), "SMITHERS_CONTEXT_RUN="+runRef)
 		output, err := command.CombinedOutput()
 		require.NoError(t, err, string(output))
 		t.Log(string(output))
@@ -287,7 +292,7 @@ func testLocalSharedPreflight(t *testing.T, browser, fullInstall bool) {
 		// admits ordinary Chat. The provider below sees the actual host context.
 		command := exec.CommandContext(local.ctx, "bun", "e2e/playwright/debug-api/model-context.ts")
 		command.Dir = "../../../../apps/app"
-		command.Env = append(os.Environ(), "SMITHERS_API_ORIGIN="+public.URL)
+		command.Env = append(os.Environ(), "SMITHERS_API_ORIGIN="+public.URL, "SMITHERS_API_COOKIE="+sessionCookie+"=composed-context-session")
 		var output []byte
 		if fullInstall {
 			response, err := client.Get(public.URL + "/api/user")

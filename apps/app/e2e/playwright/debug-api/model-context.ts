@@ -19,7 +19,8 @@ const controller = createAppController(store, silentAgent, {
   debugApiGates: () => ({ view: true, catalog: true, authorizer: true }),
   fetchImpl: (input, init) => {
     const headers = new Headers(init?.headers)
-    headers.set("Cookie", "context_session=composed-context-session")
+    // The Go fixture names the session cookie its composed AuthLoader reads.
+    headers.set("Cookie", process.env.SMITHERS_API_COOKIE!)
     return fetch(input, { ...init, headers })
   }
 })
