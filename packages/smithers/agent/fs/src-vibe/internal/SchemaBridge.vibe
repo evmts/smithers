@@ -1,0 +1,392 @@
+/**
+ * Bridges loaded Effect schemas to command-line shaped input.
+ *
+ * @private
+ * @since 0.1.0
+ */
+
+import type * as Descriptor from "@smthrs/registry/Descriptor"
+import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
+import { z } from "incur"
+import { FsError } from "../FsError.vibe"
+import * as Boundary from "./Boundary.ts"
+
+/**
+ * Positional values collected by the agent parser or Incur.
+ *
+ * @private
+ * @since 0.1.0
+ */
+export type Positional = ReadonlyArray<string> | Readonly<Record<string, unknown>>
+
+/**
+ * Input assembled before authoritative Effect schema decoding.
+ *
+ * @private
+ * @since 0.1.0
+ */
+export interface Assembly {
+  readonly value: unknown
+}
+
+/**
+ * Declarative Incur descriptors plus the authoritative Effect decoder.
+ *
+ * @private
+ * @since 0.1.0
+ */
+export interface CommandSchema {
+  readonly args: z.ZodObject<any> | undefined
+  readonly options: z.ZodObject<any> | undefined
+  readonly assemble: (args: Positional, options: Readonly<Record<string, unknown>>) => Assembly
+  readonly decode: (assembly: Assembly) => Effect.Effect<unknown, FsError>
+}
+
+type JsonSchema = Readonly<Record<string, unknown>>
+
+const schemaFailure = (code: "decode_failed" | "encode_failed", method: string): FsError =>
+  new FsError({
+    code,
+    method,
+    description: code === "encode_failed"
+      ? "The flow output did not satisfy its schema"
+      : "The command input did not satisfy the flow schema"
+  })
+
+function recoverSchema<A>(
+  effect: Effect.Effect<A, unknown, unknown>,
+  code: "decode_failed" | "encode_failed",
+  method: string
+): A!FsError {
+  const outcome = exit(effect as Effect.Effect<A, unknown>)
+  if (outcome is Exit.Failure) throw schemaFailure(code, method)
+  return outcome.value
+}
+
+const jsonValue = (value: unknown): unknown => {
+  if (typeof value !== "string") return value
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}
+
+const record = (input: unknown): JsonSchema | undefined =>
+  typeof input === "object" && input !== null && !Array.isArray(input)
+    ? input as JsonSchema
+    : undefined
+
+const unsupportedSchema = (): FsError =>
+  new FsError({
+    code: "unsupported_schema",
+    method: "SchemaBridge.toCommandSchema",
+    description: "The flow input schema cannot be projected into command input"
+  })
+
+const resolveReference = (
+  input: unknown,
+  definitions: JsonSchema,
+  seen = new Set<unknown>()
+): JsonSchema => {
+  const schema = record(input)
+  if (schema === undefined || seen.has(schema)) throw unsupportedSchema()
+  if (schema.$ref === undefined) return schema
+  const reference = schema.$ref
+  if (typeof reference !== "string" || !reference.startsWith("#/$defs/")) throw unsupportedSchema()
+  seen.add(schema)
+  const name = reference.slice("#/$defs/".length).replace(/~1/g, "/").replace(/~0/g, "~")
+  return resolveReference(Object.hasOwn(definitions, name) ? definitions[name] : undefined, definitions, seen)
+}
+
+const objectFor = (
+  schema: JsonSchema,
+  definitions: JsonSchema,
+  ancestors: ReadonlySet<JsonSchema>
+): z.ZodObject<any> => {
+  const properties = record(schema.properties) ?? {}
+  const required = new Set(Array.isArray(schema.required) ? schema.required : [])
+  const shape: Record<string, z.ZodType> = Object.create(null) as Record<string, z.ZodType>
+  for (const [name, property] of Object.entries(properties)) {
+    const field = zodFor(property, definitions, ancestors)
+    shape[name] = required.has(name) ? field : field.optional()
+  }
+  const object = z.object(shape)
+  return schema.additionalProperties === false
+    ? object.strict()
+    : object.catchall(zodFor(schema.additionalProperties ?? true, definitions, ancestors))
+}
+
+const zodFor = (
+  input: unknown,
+  definitions: JsonSchema,
+  ancestors: ReadonlySet<JsonSchema> = new Set()
+): z.ZodType => {
+  if (input === true) return z.unknown()
+  if (input === false) return z.never()
+  const schema = resolveReference(input, definitions)
+  // Recursive definitions cannot be expanded into finite command descriptors.
+  // Refuse them here rather than overflowing during discovery.
+  if (ancestors.has(schema)) throw unsupportedSchema()
+  const next = new Set(ancestors).add(schema)
+  const project = (node: unknown): z.ZodType => zodFor(node, definitions, next)
+  const variants = schema.anyOf ?? schema.oneOf
+  if (Array.isArray(variants)) return z.union(variants.map(project))
+  if (Object.hasOwn(schema, "const")) {
+    const literal = z.literal(schema.const as string | number | boolean | null)
+    return typeof schema.const === "string" ? literal : z.preprocess(jsonValue, literal)
+  }
+  if (Array.isArray(schema.enum)) {
+    const values = schema.enum
+    return values.every((value) => typeof value === "string")
+      ? z.enum(values as [string, ...Array<string>])
+      : z.union(values.map((value) => project({ const: value })))
+  }
+  const type = schema.type
+  if (Array.isArray(type)) return z.union(type.map((type) => project({ ...schema, type })))
+  if (type === "string") return z.string()
+  if (type === "integer") return z.preprocess(jsonValue, z.int())
+  // `jsonValue` rather than `z.coerce`: coercion turns `""`, `null`, and `[]`
+  // into `0`, which would silently invent input for a durable run.
+  if (type === "number") return z.preprocess(jsonValue, z.number())
+  if (type === "boolean") return z.preprocess(jsonValue, z.boolean())
+  if (type === "null") return z.preprocess(jsonValue, z.null())
+  if (type === "array") {
+    if (Array.isArray(schema.prefixItems)) {
+      const items = schema.prefixItems.map((item, index) => {
+        const field = project(item)
+        return index < Number(schema.minItems ?? 0) ? field : field.optional()
+      })
+      const tuple = z.tuple(items as [z.ZodType, ...Array<z.ZodType>])
+      // Effect omits `items` even for an unconstrained rest. A fixed tuple
+      // instead carries `maxItems`, so that bound decides whether to add rest.
+      return schema.items === false || Number(schema.maxItems) <= items.length
+        ? tuple
+        : tuple.rest(project(schema.items ?? true))
+    }
+    return z.array(project(schema.items ?? true))
+  }
+  if (type === "object") return z.preprocess(jsonValue, objectFor(schema, definitions, next))
+  if (type !== undefined || schema.allOf !== undefined || schema.not !== undefined) throw unsupportedSchema()
+  return z.preprocess(jsonValue, z.unknown())
+}
+
+const documentOf = (schema: Schema.Top): {
+  readonly root: JsonSchema
+  readonly definitions: JsonSchema
+} => {
+  // Objects are advertised closed. Effect's default (`"ignore"`) leaves every
+  // struct open, which `objectFor` would project as `catchall(unknown)`; an
+  // unknown flag or nested key would then pass the projection and be dropped
+  // by the authoritative decoder instead of refused. Index signatures keep
+  // their typed `additionalProperties` either way.
+  const document = Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" })
+  return {
+    root: document.schema,
+    definitions: document.definitions
+  }
+}
+
+const objectDescriptors = (
+  root: JsonSchema,
+  definitions: JsonSchema
+): {
+  readonly args: z.ZodObject<any> | undefined
+  readonly options: z.ZodObject<any>
+} => {
+  const options = objectFor(root, definitions, new Set([root]))
+  const shape = options.shape
+  // Positionals are advertised only when the flow schema really has an `args`
+  // field. Mounting one anywhere else would publish a parameter that the strict
+  // options object is guaranteed to refuse.
+  return {
+    args: Object.hasOwn(shape, "args") ? z.object({ args: shape.args! }) : undefined,
+    options
+  }
+}
+
+const positionalRecord = (args: Positional): Readonly<Record<string, unknown>> => {
+  if (!Array.isArray(args)) return args as Readonly<Record<string, unknown>>
+  return args.length === 0 ? {} : { args }
+}
+
+/**
+ * Joins positional tokens into the single argument string Markdown flows take.
+ *
+ * Incur delivers positionals as the record `{ args: ["a", "b"] }`, so the
+ * tokens have to be read out of that key rather than off the record's values.
+ * Anything that is not a list of strings is returned unchanged so the
+ * authoritative `args: string` decode refuses it: `String(value)` would invoke
+ * a caller-supplied `toString` and turn `["a", "b"]` into `"a,b"`.
+ */
+const positionalText = (args: Positional): unknown => {
+  const values: unknown = Array.isArray(args) ? args : (args as Readonly<Record<string, unknown>>).args
+  if (values === undefined) return ""
+  if (!Array.isArray(values)) return values
+  return values.every((value) => typeof value === "string") ? values.join(" ") : values
+}
+
+/**
+ * Merges a scalar command's tokens into the one object its strict schema checks.
+ *
+ * A scalar flow takes its value from the first positional or the named
+ * `input`, and every other token has to reach the strict `{ input }` object so
+ * it is refused rather than dropped: a surplus positional is kept under
+ * `args`, an unknown flag under its own name, and a positional beside a named
+ * input is kept as a second `input` entry under `--input`, because keeping
+ * either one alone would silently invoke the flow with half the input. Only
+ * `undefined` counts as absent, so an explicit `null` reaches the flow schema,
+ * which decides whether it is accepted.
+ */
+const scalarRecord = (args: Positional, options: Readonly<Record<string, unknown>>): Record<string, unknown> => {
+  const positional: Readonly<Record<string, unknown>> = Array.isArray(args)
+    ? args.length === 0 ? {} : { input: args[0], ...(args.length > 1 ? { args: args.slice(1) } : {}) }
+    : args as Readonly<Record<string, unknown>>
+  const merged: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(positional)) {
+    if (value !== undefined) merged[key] = value
+  }
+  for (const [key, value] of Object.entries(options)) {
+    if (value !== undefined) merged[Object.hasOwn(merged, key) ? `--${key}` : key] = value
+  }
+  return merged
+}
+
+function decodeWith(
+  schema: Schema.Top,
+  zodSchema: z.ZodType,
+  assembly: Assembly
+): unknown!FsError {
+  const parsed = sync((zodSchema, value) => zodSchema.safeParse(value), zodSchema, assembly.value)
+  if (!parsed.success) throw schemaFailure("decode_failed", "SchemaBridge.decodeInput")
+  return decodeInput(schema, parsed.data)
+}
+
+/**
+ * Authoritatively decodes and snapshots one loaded flow input.
+ *
+ * @private
+ * @since 0.1.0
+ */
+export function decodeInput(schema: Schema.Top, value: unknown): unknown!FsError {
+  const decoded = recoverSchema(Schema.decodeUnknownEffect(schema)(value), "decode_failed", "SchemaBridge.decodeInput")
+  if (decoded === undefined) return undefined
+  const admitted = Boundary.admitJson(decoded)
+  if (!admitted.ok) throw schemaFailure("decode_failed", "SchemaBridge.decodeInput")
+  return admitted.value
+}
+
+/** The command a schema-free route takes: nothing, so it advertises no positionals. */
+const emptyCommand = (schema: Schema.Top): CommandSchema => {
+  const empty = z.object({}).strict()
+  return Object.freeze({
+    // A schema-free command takes nothing, so it advertises no positionals.
+    args: undefined,
+    options: empty,
+    assemble: (args: Positional, options: Readonly<Record<string, unknown>>) =>
+      Object.freeze({ value: { ...positionalRecord(args), ...options } }),
+    decode: (assembly: Assembly): unknown!FsError => {
+      if (Object.keys(assembly.value as Record<string, unknown>).length !== 0) {
+        throw schemaFailure("decode_failed", "SchemaBridge.decodeInput")
+      }
+      return recoverSchema(Schema.decodeUnknownEffect(schema)(undefined), "decode_failed", "SchemaBridge.decodeInput")
+    }
+  })
+}
+
+/** The command a Markdown flow takes: one argument string joined from the positionals. */
+const markdownCommand = (schema: Schema.Top): CommandSchema => {
+  const command = z.object({ args: z.string() }).strict()
+  return Object.freeze({
+    args: z.object({ args: z.array(z.string()).optional() }),
+    options: z.object({}).strict(),
+    assemble: (args: Positional, options: Readonly<Record<string, unknown>>) =>
+      Object.freeze({ value: { args: positionalText(args), ...options } }),
+    decode: (assembly: Assembly) => decodeWith(schema, command, assembly)
+  })
+}
+
+/** The command a typed flow takes, or `undefined` when its schema cannot be projected. */
+const projectedCommand = (schema: Schema.Top): CommandSchema | undefined => {
+  try {
+    const { definitions, root } = documentOf(schema)
+    const resolved = resolveReference(root, definitions)
+    if (record(resolved.properties) !== undefined) {
+      const descriptors = objectDescriptors(resolved, definitions)
+      const command = descriptors.options
+      return Object.freeze({
+        args: descriptors.args,
+        options: descriptors.options,
+        assemble: (args: Positional, options: Readonly<Record<string, unknown>>) =>
+          Object.freeze({ value: { ...positionalRecord(args), ...options } }),
+        decode: (assembly: Assembly) => decodeWith(schema, command, assembly)
+      })
+    }
+
+    const value = zodFor(resolved, definitions)
+    const command = z.object({ input: value }).strict()
+    return Object.freeze({
+      args: z.object({ input: value.optional() }),
+      options: z.object({ input: value.optional() }).strict(),
+      assemble: (args: Positional, options: Readonly<Record<string, unknown>>) =>
+        Object.freeze({ value: scalarRecord(args, options) }),
+      decode: (assembly: Assembly): unknown!FsError => {
+        const parsed = sync((command, value) => command.safeParse(value), command, assembly.value)
+        if (!parsed.success) throw schemaFailure("decode_failed", "SchemaBridge.decodeInput")
+        return decodeInput(schema, parsed.data.input)
+      }
+    })
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Projects a loaded route input schema onto command-line args and options.
+ *
+ * @private
+ * @since 0.1.0
+ */
+export function toCommandSchema(
+  ref: Descriptor.SchemaRef,
+  schema: Schema.Top
+): CommandSchema!FsError {
+  if (ref._tag === "MarkdownOutput") {
+    throw new FsError({
+      code: "unsupported_schema",
+      method: "SchemaBridge.toCommandSchema",
+      description: "An output locator cannot describe command input"
+    })
+  }
+  if (ref._tag === "None") return emptyCommand(schema)
+  if (ref._tag === "MarkdownArgs") return markdownCommand(schema)
+  return projectedCommand(schema) ?? throw unsupportedSchema()
+}
+
+/**
+ * Encodes and snapshots a flow output through its declared schema.
+ *
+ * @private
+ * @since 0.1.0
+ */
+export function encodeOutput(schema: Schema.Top, value: unknown): unknown!FsError {
+  const encoded = recoverSchema(Schema.encodeUnknownEffect(schema)(value), "encode_failed", "SchemaBridge.encodeOutput")
+  if (encoded === undefined) return undefined
+  const admitted = Boundary.admitJson(encoded)
+  if (!admitted.ok) throw schemaFailure("encode_failed", "SchemaBridge.encodeOutput")
+  return admitted.value
+}
+
+/**
+ * Snapshots programmatic input before any module-loading await.
+ *
+ * @private
+ * @since 0.1.0
+ */
+export function snapshotInput(input: unknown): (Boundary.Json | undefined)!FsError {
+  if (input === undefined) return undefined
+  const admitted = Boundary.admitJson(input)
+  if (!admitted.ok) throw schemaFailure("decode_failed", "SchemaBridge.snapshotInput")
+  return admitted.value
+}
