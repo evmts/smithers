@@ -465,6 +465,12 @@ func (r *lockedReaper) ReapRunProcesses(ctx context.Context, id string) error {
 	return r.reapingBoxRuntime.ReapRunProcesses(ctx, id)
 }
 
+func (r *lockedReaper) ExecuteCommand(ctx context.Context, id string, command workspaceapi.Command) (workspaceapi.CommandResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.reapingBoxRuntime.ExecuteCommand(ctx, id, command)
+}
+
 // addBox adds another running agent box on its own branch of the box's
 // repository, with its own guest and head token.
 func (f *agentBoxRelease) addBox(t *testing.T, i int) string {

@@ -20,6 +20,7 @@ const agentBoxIdleRetireBatch = 50
 type agentBoxIdleCapStore interface {
 	ListIdleAgentBoxes(ctx context.Context, idleSeconds int64, limit int32) ([]string, error)
 	ListDirtyAgentBoxes(ctx context.Context, limit int32) ([]string, error)
+	ListStoppedAgentBoxesWithLiveCredentials(ctx context.Context, childrenTokenPrefix string, limit int32) ([]string, error)
 	RetireAgentBox(ctx context.Context, workspaceID, lease string) (bool, error)
 }
 
@@ -54,7 +55,11 @@ func (s *WorkspaceService) RetireIdleAgentBoxes(ctx context.Context) error {
 	if !ok {
 		return nil
 	}
-	dirty := s.cleanDirtyAgentBoxes(ctx, store)
+	// A real deadline before the first pool acquisition (Security G4
+	// finding 5).
+	ctx, cancel := context.WithTimeout(ctx, agentBoxSweepBudget)
+	defer cancel()
+	dirty := errors.Join(s.cleanDirtyAgentBoxes(ctx, store), s.revokeStoppedAgentBoxes(ctx, store))
 	if s.agentBoxIdleCap <= 0 {
 		return dirty
 	}
@@ -129,6 +134,34 @@ func (s *WorkspaceService) retireIdleAgentBox(ctx context.Context, store agentBo
 		return nil
 	}
 	return err
+}
+
+// revokeStoppedAgentBoxes retries the revocation of every credential a box
+// that is not running still holds: the durable retry of a release that
+// failed on such a box (Security G4 finding 2).
+func (s *WorkspaceService) revokeStoppedAgentBoxes(ctx context.Context, store agentBoxIdleCapStore) error {
+	fence, ok := s.q.(agentWorkspaceReleaseStore)
+	if !ok {
+		return nil
+	}
+	ids, err := store.ListStoppedAgentBoxesWithLiveCredentials(ctx, workspaceChildrenTokenName(""), agentBoxIdleRetireBatch)
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for _, id := range ids {
+		got, err := fence.RevokeStoppedAgentBoxCredentials(ctx, db.RevokeStoppedAgentBoxCredentialsParams{WorkspaceID: id, CheckUse: true,
+			ChildrenTokenName: workspaceChildrenTokenName(id)})
+		if err != nil {
+			slog.Warn("credentials of an agent box that is not running are still live; the next sweep retries", "workspace_id", id, "error", err)
+			failures = append(failures, err)
+			continue
+		}
+		if got.Revoked {
+			slog.Info("credentials of an agent box that is not running revoked", "workspace_id", id)
+		}
+	}
+	return errors.Join(failures...)
 }
 
 // cleanDirtyAgentBoxes retries the cleaning of every box of unknown state
