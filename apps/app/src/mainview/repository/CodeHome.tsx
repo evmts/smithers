@@ -27,11 +27,13 @@ export function RepositoryMarkdown({ content }: { content: string }) {
 
 export const REPOSITORY_CLONE_HOST = "https://api.smithers.sh"
 
-export function CodeHome({ repo, branch, branches, headCommit, changes = [], onBranchesOpen, treeAvailable = true, treeCopyId, onRunCommand, tree, home, member }: {
+export function CodeHome({ repo, branch, branches, headCommit, changes = [], onBranchesOpen, treeAvailable = true, treeCopyId, onRunCommand, tree, home, member, readme: readmeRead }: {
   repo: string; branch?: string; branches?: RepositoryBranches; headCommit?: string | null; changes?: ReadonlyArray<ChangeRow>
   onBranchesOpen?: () => void; treeCopyId?: string; onRunCommand: RunDynamicCommand; treeAvailable?: boolean; tree?: RepoTreeRow; home?: RepositoryHomeAnswer
   /** The viewer is a member of this repository; app blocks are offered only then (app-spec row 6). */
   member?: boolean
+  /** The repository README read from the tree, for a declared home that carries none (RepositorySubjectEntry). */
+  readme?: { readonly name: string; readonly markdown: string }
 }) {
   const [filter, setFilter] = useState("")
   const names = branches?.state === "ready" ? branches.names : branch ? [branch] : []
@@ -42,7 +44,10 @@ export function CodeHome({ repo, branch, branches, headCommit, changes = [], onB
   const openAsk = useContext(RepositoryAskContext)
   const base = `/${repo}`
   const ref = branch === undefined ? undefined : branch.split("/").map(encodeURIComponent).join("/")
-  const readme = home?.kind === "readme" ? home.markdown : home?.kind === "blocks" ? home.blocks.flatMap(block => block.type === "markdown" && /readme/i.test(block.path) ? [block.markdown] : [])[0] : undefined
+  // The server's README answer first, then the declared home's README block, then the tree's own README for a declared home without one.
+  const readme = home?.kind === "readme" ? { name: "README.md", markdown: home.markdown }
+    : home?.kind === "blocks" ? home.blocks.flatMap(block => block.type === "markdown" && /readme/i.test(block.path) ? [{ name: block.path.split("/").at(-1) ?? block.path, markdown: block.markdown }] : [])[0] ?? readmeRead
+    : undefined
   const blockOrder = { text: 0, prompt: 1, links: 2, stack: 3, markdown: 4, app: 5, flows: 6, view: 7 }
   const declaredHome = home?.kind === "blocks" ? { ...home, blocks: home.blocks
     .filter(block => block.type !== "markdown" || !/readme/i.test(block.path))
@@ -69,6 +74,6 @@ export function CodeHome({ repo, branch, branches, headCommit, changes = [], onB
       </div>}
       {!treeAvailable ? <div className="repo-frame-state" role="alert"><h2>Couldn't load repository files.</h2></div> : tree === undefined || tree.state === "loading" ? <div className="repo-frame-state" role="status">Loading…</div> : tree.state === "failed" ? <FailureNotice className="repo-frame-state" failure={unavailableFailure("repository.files", "Couldn’t load repository files.", tree.error ?? "")} /> : tree.entries.length === 0 ? <div className="repo-frame-state"><h2>This repository is empty.</h2></div> : <div role="table" aria-label="Repository files"><div className="repo-ui-sr" role="row"><span role="columnheader">Name</span></div>{tree.entries.map(entry => <div className="repo-code-home-file-row" role="row" key={entry.name}><span role="cell">{ref ? <a href={`${base}/${entry.kind === "dir" ? "tree" : "blob"}/${ref}/${encodeURIComponent(entry.name)}`}>{entry.kind === "dir" ? <Folder size={16}/> : <FileText size={16}/>} {entry.name}</a> : <>{entry.kind === "dir" ? <Folder size={16}/> : <FileText size={16}/>} {entry.name}</>}</span></div>)}</div>}
     </section>
-    {readme !== undefined && <section className="repo-ui-box" aria-label="README"><div className="repo-ui-box-header">README.md</div><div className="repo-code-home-readme"><RepositoryMarkdown content={readme}/></div></section>}
+    {readme !== undefined && <section className="repo-ui-box" aria-label="README"><div className="repo-ui-box-header">{readme.name}</div><div className="repo-code-home-readme"><RepositoryMarkdown content={readme.markdown}/></div></section>}
   </div></div>
 }

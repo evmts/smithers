@@ -586,7 +586,7 @@ export interface AppController extends IssueFlowsController {
   /** branch.fork on an install: POST /api/branches {from, name?} (spec §8.5); its value is the new scratch branch. A string is the refusal. Absent off an install, where the flow acts on the seeded world. */
   readonly selectConversationBranch: (name: string) => Promise<void>
   /** Complete repository file page, separate from the bounded transcript read. */
-  readonly readRepositoryFilePage: (repo: string, path: string, ref: string) => ReturnType<typeof readFilePage>
+  readonly readRepositoryFilePage: (repo: string, path: string, ref?: string) => ReturnType<typeof readFilePage>
   /** A Cloud repository's branch names as last read and the branch picked in each (RepositoryBranchesSeam): the header's branch selector reads both and asks for a read when it opens. */
   readonly repositoryBranches: { readonly rows: RepositoryBranchRows; readonly picks: RepositoryBranchPicks; readonly load: (repo: string) => Promise<unknown>; readonly pickOf: (repo: string) => string | undefined }
   readonly setBranchNavigationView: (patch: { selected_branch?: string; selected_archive?: string; previous_branch?: string; open?: boolean }) => Promise<void>

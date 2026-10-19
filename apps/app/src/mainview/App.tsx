@@ -3,6 +3,7 @@ import { PullViews } from "./repository/PullViews"
 import { IssueViews, matchesIssueReadKey } from "./repository/IssueViews"
 import { guestAdmission, RepoFrame } from "./repository/RepoFrame"
 import { CodeHome } from "./repository/CodeHome"
+import { readmeReadKey, repositoryReadmeReads } from "./repository/RepositoryCodeRead"
 import { RepositoryCodeView } from "./repository/RepositoryCodeView"
 import { pathTarget as codePathTarget } from "./RepoLink"
 import { rememberComposerFocus, restoreComposerFocus } from "./runtime/ComposerFocus"
@@ -136,6 +137,7 @@ function AppContent() {
   const { data: connectorRows } = useLiveQuery(collections.connectors)
   const { data: repositoryChanges } = useLiveQuery(collections.changes)
   const { data: repoTreeRows } = useLiveQuery(collections.repoTree)
+  const { data: readmeReads } = useLiveQuery(repositoryReadmeReads)
   const { data: repositoryRows } = useLiveQuery(collections.repositories)
   const { data: repositoryFlowRows } = useLiveQuery(collections.repositoryFlows)
   /* The GitHub App's coverage of the URL's repository, when the entry read it. */
@@ -786,6 +788,7 @@ function AppContent() {
       treeCopyId={homeTreeCopy} onRunCommand={controller.runCommand}
       tree={repoTreeRows.find(row => row.copyId === homeTreeCopy && row.path === "")}
       home={repositoryHome}
+      readme={(() => { const read = readmeReads.find(row => row.id === readmeReadKey(bootRepository, bootEntry?.requestId)); return read?.state === "ready" && read.markdown !== undefined ? { name: read.name, markdown: read.markdown } : undefined })()}
       member={identity?.state === "signed-in" && repository !== undefined && (repository.inventory === true || (identity.login != null && repository.documentOwner === identity.login))}/>}
   </RepoFrame>
 }

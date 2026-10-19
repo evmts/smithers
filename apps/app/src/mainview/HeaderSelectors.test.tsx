@@ -292,6 +292,28 @@ test("declared home blocks stay above Files in spec order and README stays below
   expect(readme.querySelector("h1")?.textContent).toBe("Project README")
 })
 
+// A declared home without a README block shows the tree's README below Files, in its own region, named by its file.
+test("a declared home without a README block renders the repository README read from the tree below Files", () => {
+  const home = { kind:"blocks" as const, blocks:[{ type:"text" as const, text:"Repository introduction" }] }
+  const tree = { id:"copy:", copyId:"copy", path:"", state:"loaded" as const, entries:[{ name:"README.md", kind:"file" as const }], expanded:true, loadedAt:1 }
+  const read = mount(<CodeHome repo="maya/tinyhttp" onRunCommand={() => false} branch="main" tree={tree} home={home} readme={{ name:"README.md", markdown:"# Read me from the tree" }}/>)
+  const files = read.querySelector('[aria-label="Files"]')!
+  const readme = read.querySelector('[aria-label="README"]')!
+  expect(readme).not.toBeNull()
+  expect(files.compareDocumentPosition(readme) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  expect(readme.querySelector(".repo-ui-box-header")?.textContent).toBe("README.md")
+  expect(readme.querySelector("h1")?.textContent).toBe("Read me from the tree")
+  // Nothing read: no region and no placeholder.
+  const none = mount(<CodeHome repo="maya/tinyhttp" onRunCommand={() => false} branch="main" tree={tree} home={home}/>)
+  expect(none.querySelector('[aria-label="README"]')).toBeNull()
+  expect(none.textContent).not.toContain("Read me")
+  // The home's own README block outranks the tree's read.
+  const declared = mount(<CodeHome repo="maya/tinyhttp" onRunCommand={() => false} branch="main" tree={tree} readme={{ name:"README.md", markdown:"# From the tree" }}
+    home={{ kind:"blocks", blocks:[{ type:"markdown", path:"docs/README.md", markdown:"# Declared README" }] }}/>)
+  expect(declared.querySelector('[aria-label="README"] h1')?.textContent).toBe("Declared README")
+  expect(declared.querySelector('[aria-label="README"] .repo-ui-box-header')?.textContent).toBe("README.md")
+})
+
 // The repository page projects only the authoritative head and complete branch list.
 import type { ChangeRow } from "./state/AppState"
 

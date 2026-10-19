@@ -1,12 +1,14 @@
-import { codeReadKey, setCodeRead } from "./repository/RepositoryCodeRead"
+import { codeReadKey, readmeReadKey, setCodeRead, setReadmeRead } from "./repository/RepositoryCodeRead"
 import type { RefLocation, RepositorySubject } from "@smthrs/rpc/RepositorySubjectPath"
 import { isCommitRevision, resolveRefLocation } from "@smthrs/rpc/RepositorySubjectPath"
+import type { RepositoryHome } from "@smthrs/rpc/RepositoryHome"
 import { flowArgs } from "./flows/FlowArgs"
+import { treeCopyOf } from "./RepoLink"
 import type { AppController } from "./state/AppController"
 import { accountOwnerOf } from "./state/AccountOwner"
-import { parseRepoSelection } from "./state/AppState"
+import { parseRepoSelection, repoTreeRowId } from "./state/AppState"
 import type { AppStore } from "./state/AppStore"
-import type { Message } from "./state/AppState"
+import type { Message, RepoTreeEntry } from "./state/AppState"
 
 /*
  * The subject a GitHub-shaped repository URL asks for, opened through its
@@ -288,6 +290,71 @@ const openRequestedFile = async (
 }
 
 /**
+ * The README file the Code home still owes below Files: the tree's own entry
+ * (README.md first, then any README spelling) when the declared home is a
+ * block list that carries no README block of its own. Nothing when the
+ * server's answer already holds the README (`readme`), when there is no
+ * declared home, or when the tree lists none: a repository without a README
+ * shows nothing there, never a placeholder.
+ */
+export const readmeToRead = (
+  home: RepositoryHome | { readonly kind: "error"; readonly message: string } | undefined,
+  entries: ReadonlyArray<Pick<RepoTreeEntry, "name" | "kind">>
+): string | undefined => {
+  if (home?.kind !== "blocks" || home.blocks.some((block) => block.type === "markdown" && /readme/i.test(block.path))) return undefined
+  const files = entries.filter((entry) => entry.kind === "file" && /^readme(?:\.(?:md|markdown))?$/i.test(entry.name))
+  return (files.find((entry) => entry.name.toLowerCase() === "readme.md") ?? files[0])?.name
+}
+
+/**
+ * The root route's own read: the repository README below Files when the
+ * declared home carries none (repo-ui-spec view 1). It waits on the two
+ * reads the home already makes, the homepage (`repositoryFlows`) and the root
+ * tree (`repoTree`), and then reads the file through the same contents read
+ * the blob page uses, under the same admission checks. Nothing is read when
+ * the home or the tree says there is nothing to read.
+ */
+const openRequestedHome = (
+  controller: Pick<AppController, "store" | "readRepositoryFilePage">,
+  repo: string,
+  owner: string | null | undefined,
+  options: SubjectEntryOptions
+): void => {
+  const target = selectedRepoId(controller.store, repo)
+  const key = readmeReadKey(repo, options.requestId)
+  /** True once there is nothing left to wait for: the read started, or there is none, or this entry is no longer the page's. */
+  const settled = (): boolean => {
+    if (!admitted(controller.store, repo, options.requestId, owner)) return true
+    const { collections } = controller.store
+    const home = [...collections.repositoryFlows.values()].find((row) => row.id.toLowerCase() === target.toLowerCase())?.home
+    if (home === undefined) return false
+    if (home.kind !== "blocks") return true
+    const copyId = treeCopyOf(controller.store, target)
+    if (copyId === undefined) return false
+    const tree = collections.repoTree.get(repoTreeRowId(copyId, ""))
+    if (tree === undefined || tree.state === "loading") return false
+    const name = tree.state === "failed" ? undefined : readmeToRead(home, tree.entries)
+    if (name === undefined) return true
+    const ref = collections.repositories.get(target)?.head?.bookmark
+    setReadmeRead(key, "loading", name)
+    const live = () => !options.signal?.aborted && admitted(controller.store, repo, options.requestId, owner)
+    void controller.readRepositoryFilePage(target, name, ref).then(
+      (page) => { if (live()) setReadmeRead(key, page.content === null || page.binary ? "failed" : "ready", name, page.content === null || page.binary ? undefined : page.content) },
+      () => { if (live()) setReadmeRead(key, "failed", name) }
+    )
+    return true
+  }
+  if (settled()) return
+  let done = false
+  const subscriptions: Array<{ readonly unsubscribe: () => void }> = []
+  const stop = () => { done = true; for (const subscription of subscriptions) subscription.unsubscribe() }
+  const check = () => { if (!done && settled()) stop() }
+  subscriptions.push(controller.store.collections.repositoryFlows.subscribeChanges(check), controller.store.collections.repoTree.subscribeChanges(check), controller.store.collections.workingCopies.subscribeChanges(check))
+  if (done) stop()
+  options.signal?.addEventListener("abort", stop, { once: true })
+}
+
+/**
  * Open the subject a repository URL asked for, once that repository has been
  * admitted. Returns the read's own refusal when it failed, so the caller can
  * report it the way every other command failure is reported; returns nothing
@@ -299,9 +366,9 @@ export const openRequestedSubject = async (
   subject: RepositorySubject | undefined,
   options: SubjectEntryOptions
 ): Promise<string | void> => {
-  if (subject === undefined) return
   const owner = accountOwnerOf(controller.store.collections.identitySessions.get("identity"))
   if (!admitted(controller.store, repo, options.requestId, owner)) return
+  if (subject === undefined) { openRequestedHome(controller, repo, owner, options); return }
   if (subject.kind === "tree" || subject.kind === "blob") return openRequestedFile(controller, repo, subject, owner, options)
   const repository = controller.store.collections.repositories.get(repo)
   const requestedSource = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("source")

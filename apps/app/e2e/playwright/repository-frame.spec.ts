@@ -195,3 +195,56 @@ for (const member of [false, true]) for (const width of [1280, 390]) for (const 
     await expect(page.getByText("This action is no longer available")).toHaveCount(0)
   })
 }
+
+/*
+ * A declared home that carries no README block still shows the repository's
+ * README below Files (CEO: README on every repo home; repo-ui-spec view 1),
+ * read through the same contents read the tree uses. A repository without a
+ * README shows nothing there: no region and no placeholder.
+ */
+for (const member of [false, true]) for (const width of [1280, 390]) for (const colorScheme of ["light", "dark"] as const) {
+  test(`declared home reads the repository README below Files ${member ? "member" : "signed-out"} ${width} ${colorScheme}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await page.emulateMedia({ colorScheme })
+    await signedOutVisitor(page)
+    await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "maya/tinyhttp" }, { name: "maya/bare" }] } }))
+    for (const name of ["tinyhttp", "bare"]) {
+      await page.route(`**/api/repos/maya/${name}`, route => route.fulfill({ json: { is_public: true, default_bookmark: "main" } }))
+      await page.route(`**/api/repos/maya/${name}/home`, route => route.fulfill({ json: { kind: "blocks", blocks: [
+        { type: "text", text: "Repository introduction" },
+        { type: "links", links: [{ label: "Documentation", url: "https://example.com/docs" }] }
+      ] } }))
+    }
+    const readmeReads: string[] = []
+    await page.route(/\/api\/repos\/maya\/tinyhttp\/contents\/README\.md(?:\?.*)?$/, route => {
+      readmeReads.push(route.request().url())
+      return route.fulfill({ json: { type: "file", content: "# Read me from the tree\n\nInstall it.", size: 36, encoding: "utf-8", commit_sha: "a".repeat(40), raw_url: "/api/repos/maya/tinyhttp/contents/README.md?raw=1" } })
+    })
+    await page.route(/\/api\/repos\/maya\/tinyhttp\/contents(?:\?.*)?$/, route => route.fulfill({ json: [{ name: "src", path: "src", type: "dir" }, { name: "README.md", path: "README.md", type: "file", size: 36 }] }))
+    await page.route(/\/api\/repos\/maya\/bare\/contents(?:\?.*)?$/, route => route.fulfill({ json: [{ name: "src", path: "src", type: "dir" }] }))
+    if (member) {
+      await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute())
+      await page.route("**/api/user/repos**", route => route.fulfill({ json: [{ owner: "maya", name: "tinyhttp", full_name: "maya/tinyhttp", default_bookmark: "main" }] }))
+      await page.route("**/api/user/orgs**", route => route.fulfill({ json: [] }))
+    }
+    await page.goto("/maya/tinyhttp")
+    const home = page.getByTestId("repository-home")
+    await expect(home).toContainText("Repository introduction")
+    const files = page.getByRole("region", { name: "Files", exact: true })
+    await expect(files.getByRole("link", { name: "README.md", exact: true })).toBeVisible()
+    const readme = page.getByRole("region", { name: "README", exact: true })
+    await expect(readme.getByRole("heading", { name: "Read me from the tree", level: 1 })).toBeVisible()
+    await expect(readme).toContainText("README.md")
+    expect((await home.boundingBox())!.y).toBeLessThan((await files.boundingBox())!.y)
+    expect((await files.boundingBox())!.y).toBeLessThan((await readme.boundingBox())!.y)
+    expect(readmeReads.map(url => new URL(url).search)).toEqual(["?ref=main"])
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    // No README in the tree: nothing below Files, and nothing was read.
+    await page.goto("/maya/bare")
+    await expect(page.getByTestId("repository-home")).toContainText("Repository introduction")
+    await expect(page.getByRole("region", { name: "Files", exact: true }).getByRole("link", { name: "src", exact: true })).toBeVisible()
+    await expect(page.getByRole("region", { name: "README", exact: true })).toHaveCount(0)
+    await expect(page.getByText(/readme/i)).toHaveCount(0)
+    expect(readmeReads).toHaveLength(1)
+  })
+}
