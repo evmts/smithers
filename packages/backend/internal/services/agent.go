@@ -423,6 +423,9 @@ type AgentService struct {
 	// canonical TypeScript host. Deployment composition supplies either the
 	// trusted owner or isolated Plue runtime resolver behind it.
 	flowDispatcher AgentFlowDispatcher
+	// codingTurns observes a completed coding turn's head and test receipt
+	// for its coding_result part. nil writes no part.
+	codingTurns CodingTurnObserver
 	// concurrencyCounter + concurrencyMax cap how many agent sandbox provider VMs may be
 	// allocated fleet-wide; enforced ONLY on the dispatch (VM-provision) path.
 	// A nil counter or max <= 0 disables the cap.
