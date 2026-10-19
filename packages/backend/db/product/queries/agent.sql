@@ -37,10 +37,14 @@ RETURNING *;
 
 -- name: PrepareAgentSessionForTurn :one
 -- A completed author session can be resumed for reviewer feedback. Refuse to
--- reactivate it while its previous run is still queued/running.
+-- reactivate it while its previous run is still queued/running. The new turn
+-- is queued, not started: its clock starts at its own dispatch, and the last
+-- turn's failure and wait no longer describe it.
 UPDATE agent_sessions AS session
 SET status = 'active',
+    started_at = NULL,
     finished_at = NULL,
+    metadata = COALESCE(metadata, '{}'::jsonb) - 'failure_reason' - 'failure_reason_code' - 'failure_retryable' - 'waiting_reason',
     updated_at = NOW()
 WHERE session.id = sqlc.arg(session_id)
   AND session.deleted_at IS NULL

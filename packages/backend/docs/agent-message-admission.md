@@ -26,7 +26,9 @@ execution effects. Workspace capacity uses the workspace service's existing
 quota check before run creation. Capacity changes after run creation can leave
 a partial dispatch, which remains uncertain until reconciliation. Shutdown before execution leaves the request recoverable. Deterministic plan
 or runtime refusals fail without recording an execution effect. Closing the chat
-settles a queued request without dispatching it. Before run creation, the worker
+settles a queued request without dispatching it. On hosted, a request still
+queued 20 minutes after acceptance is cancelled and its chat fails with
+`box_busy`; the turn's 15 minutes start when a worker dispatches it. Before run creation, the worker
 persists an external-effect marker: a crash or dispatch failure after this marker records an
 `uncertain` outcome and prevents automatic redelivery. An operator must
 reconcile that outcome before retrying, because provisioning is not idempotent.

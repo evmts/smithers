@@ -35,11 +35,13 @@ ORDER BY t.created_at DESC, t.id DESC LIMIT sqlc.arg(row_limit)::int;
 
 
 -- name: ListNeverStartedAgentSessions :many
--- A re-dispatched session gets a fresh provisioning deadline from its run.
+-- A re-dispatched session gets a fresh provisioning deadline from its run, and
+-- a reactivated one from its newest request.
 SELECT s.* FROM agent_sessions s
 LEFT JOIN workflow_runs wr ON wr.id = s.workflow_run_id
 WHERE s.status = 'active' AND s.started_at IS NULL
-AND s.deleted_at IS NULL AND COALESCE(wr.created_at, s.created_at) < sqlc.arg(cutoff)::timestamptz
+AND s.deleted_at IS NULL AND GREATEST(COALESCE(wr.created_at, s.created_at),
+    (SELECT max(m.created_at) FROM agent_messages m WHERE m.session_id = s.id AND m.role = 'user')) < sqlc.arg(cutoff)::timestamptz
 ORDER BY COALESCE(wr.created_at, s.created_at), s.id LIMIT 200;
 
 
@@ -51,9 +53,9 @@ WITH failed_session AS (
     metadata = metadata || '{"failure_reason":"never_started"}'::jsonb
     WHERE s.id = sqlc.arg(id) AND s.status = 'active' AND s.started_at IS NULL
     AND s.workflow_run_id IS NOT DISTINCT FROM sqlc.narg(workflow_run_id)::bigint
-    AND s.deleted_at IS NULL AND COALESCE(
+    AND s.deleted_at IS NULL AND GREATEST(COALESCE(
         (SELECT wr.created_at FROM workflow_runs wr WHERE wr.id = s.workflow_run_id), s.created_at
-    ) < sqlc.arg(cutoff)::timestamptz
+    ), (SELECT max(m.created_at) FROM agent_messages m WHERE m.session_id = s.id AND m.role = 'user')) < sqlc.arg(cutoff)::timestamptz
     RETURNING s.*
 ), failed_tasks AS (
     UPDATE workflow_tasks wt

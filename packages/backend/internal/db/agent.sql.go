@@ -816,7 +816,9 @@ func (q *Queries) NotifyAgentSession(ctx context.Context, arg NotifyAgentSession
 const prepareAgentSessionForTurn = `-- name: PrepareAgentSessionForTurn :one
 UPDATE agent_sessions AS session
 SET status = 'active',
+    started_at = NULL,
     finished_at = NULL,
+    metadata = COALESCE(metadata, '{}'::jsonb) - 'failure_reason' - 'failure_reason_code' - 'failure_retryable' - 'waiting_reason',
     updated_at = NOW()
 WHERE session.id = $1
   AND session.deleted_at IS NULL
@@ -830,7 +832,9 @@ RETURNING session.id, session.repository_id, session.user_id, session.workflow_r
 `
 
 // A completed author session can be resumed for reviewer feedback. Refuse to
-// reactivate it while its previous run is still queued/running.
+// reactivate it while its previous run is still queued/running. The new turn
+// is queued, not started: its clock starts at its own dispatch, and the last
+// turn's failure and wait no longer describe it.
 func (q *Queries) PrepareAgentSessionForTurn(ctx context.Context, sessionID string) (AgentSession, error) {
 	row := q.db.QueryRow(ctx, prepareAgentSessionForTurn, sessionID)
 	var i AgentSession
