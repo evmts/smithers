@@ -1,0 +1,92 @@
+/**
+ * Spans and metrics for a service record whose members are Effects or
+ * Effect-returning functions.
+ *
+ * Attributes carry shapes only: a namespace kind, a limit, a row count. Never
+ * a key, a text, or a value.
+ *
+ * @since 1.0.0
+ */
+
+import * as Effect from "effect/Effect"
+import * as Metric from "effect/Metric"
+
+/**
+ * Memory store operations by method and outcome.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const operations = Metric.counter("smithers_memory_operations", {
+  description: "MemoryStore operations by method and outcome"
+})
+
+const inputAttributes = (input: unknown): Record<string, unknown> => {
+  if (typeof input !== "object" || input === null) return {}
+  const attributes: Record<string, unknown> = {}
+  const namespace = (input as { readonly namespace?: unknown }).namespace
+  if (typeof namespace === "object" && namespace !== null) {
+    const kind = (namespace as { readonly kind?: unknown }).kind
+    if (typeof kind === "string") attributes["memory.namespace_kind"] = kind
+  }
+  const limit = (input as { readonly limit?: unknown }).limit
+  if (typeof limit === "number") attributes["memory.limit"] = limit
+  return attributes
+}
+
+const resultAttributes = (result: unknown): Record<string, unknown> =>
+  Array.isArray(result)
+    ? { "memory.rows": result.length }
+    : typeof result === "number"
+    ? { "memory.count": result }
+    : {}
+
+// The span's attributes are read from the input when the member is called, as
+// the TypeScript's `withSpan(..., { attributes: inputAttributes(input) })` does.
+function observe<A, E, R>(method: string, attributes: Record<string, unknown>, effect: Effect.Effect<A, E, R>): A!E!R {
+  return withSpan(`MemoryStore.${method}`, { attributes }) {
+    try {
+      const result = effect()
+      Effect.annotateCurrentSpan(resultAttributes(result))
+      return result
+    } finally (exit) {
+      Metric.update(
+        Metric.withAttributes(operations, { method, outcome: exit._tag === "Success" ? "success" : "failure" }),
+        1
+      )
+    }
+  }
+}
+
+// S8-1: a call of an Effect-returning member runs where it stands, so the member is
+// typed as returning `unknown` to call it now and keep its cold program, as the
+// TypeScript does (a member may capture its input before its Effect runs).
+type Member = (...args: ReadonlyArray<unknown>) => unknown
+
+/**
+ * Wraps every member of `service` in a span named `MemoryStore.<method>` and
+ * counts its outcome.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const instrument = <S extends object>(service: S): S => {
+  const instrumented: Record<string, unknown> = {}
+  for (const [method, member] of Object.entries(service)) {
+    if (typeof member === "function") {
+      instrumented[method] = (input: unknown, ...rest: ReadonlyArray<unknown>) => {
+        const effect = (member as Member)(input, ...rest) as Effect.Effect<unknown>
+        const attributes = inputAttributes(input)
+        const observed: Effect.Effect<unknown, unknown, unknown> = () => observe(method, attributes, effect)
+        return observed
+      }
+    } else if (Effect.isEffect(member)) {
+      const attributes = inputAttributes(undefined)
+      const observed: Effect.Effect<unknown, unknown, unknown> = () => observe(method, attributes, member)
+      instrumented[method] = observed
+    } else {
+      instrumented[method] = member
+    }
+  }
+  return instrumented as S
+}

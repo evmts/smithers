@@ -1,0 +1,18 @@
+import * as Effect from "effect/Effect"
+import * as Deferred from "effect/Deferred"
+import type * as Cause from "effect/Cause"
+import type { MemoryError } from "./MemoryError.vibe"
+import { readRows, type Input } from "./Source.vibe"
+import * as SnapshotRecorder from "./SnapshotRecorder.vibe"
+export function load(input: Input, identity: SnapshotRecorder.Identity) {
+  const recorder = Effect.serviceOption(SnapshotRecorder.SnapshotRecorder)
+  if (recorder._tag === "None") return readRows(input)
+  const failed = Deferred.make<never, MemoryError | Cause.TimeoutError>()
+  return await.race [recorder.value.record(identity, () => {
+    try { return readRows(input) }
+    catch (cause) {
+      Deferred.fail(failed, cause)
+      return Effect.never()
+    }
+  }), Deferred.await(failed)]
+}
