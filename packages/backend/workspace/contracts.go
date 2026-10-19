@@ -5,9 +5,12 @@ package workspace
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/sandbox"
@@ -67,6 +70,39 @@ var ErrManagedHostNotRunning = errors.New("managed host is not running")
 // generation expected by common product state. It must never be replaced
 // opportunistically while it is still live.
 var ErrManagedHostIdentityConflict = errors.New("managed host identity conflict")
+
+// ManagedHostTooLargeCode is the Flow runtime code of a packaged host the
+// runtime refuses to stage because it exceeds the guest staging limit.
+const ManagedHostTooLargeCode = "flow_host_too_large"
+
+// ManagedHostTooLargeError refuses staging a packaged Flow host larger than the
+// runtime can write into a guest. Retrying stages the same bytes, so it is not
+// retryable: only a smaller host or a larger limit admits it. A runtime
+// returns it in place of a plain error so the session can name the cause.
+type ManagedHostTooLargeError struct {
+	Bytes int64
+	Limit int64
+}
+
+func (e ManagedHostTooLargeError) Error() string {
+	return fmt.Sprintf("packaged Flow host is %d bytes; staging allows 1 to %d", e.Bytes, e.Limit)
+}
+
+// FlowRuntimeCode, FlowRuntimeRetryable and FlowRuntimeDetail make the refusal
+// a typed Flow runtime failure that keeps its code through the host resolver.
+func (ManagedHostTooLargeError) FlowRuntimeCode() string    { return ManagedHostTooLargeCode }
+func (ManagedHostTooLargeError) FlowRuntimeRetryable() bool { return false }
+
+// FlowRuntimeDetail is the refusal in product words, with both sizes.
+func (e ManagedHostTooLargeError) FlowRuntimeDetail() string {
+	return fmt.Sprintf("The coding host (%s) exceeds the sandbox staging limit (%s).", mebibytes(e.Bytes), mebibytes(e.Limit))
+}
+
+// mebibytes renders a byte count with one decimal, dropping a whole ".0".
+func mebibytes(bytes int64) string {
+	value := strconv.FormatFloat(float64(bytes)/(1<<20), 'f', 1, 64)
+	return strings.TrimSuffix(value, ".0") + " MiB"
+}
 
 // ErrMachineBackoff marks a refusal a machine runtime answered from its retry
 // backoff after a failed attempt, without trying again. errors.Is also finds
@@ -235,6 +271,18 @@ func BindEgressSecrets(ctx context.Context, runtime WorkspaceLifecycle, workspac
 // repository. It refuses a workspace that is not stopped and is idempotent.
 type WorkspaceDiskReclaimer interface {
 	ReclaimWorkspaceDisk(ctx context.Context, workspaceID string) error
+}
+
+// WorkspaceRunProcessReaper ends every guest process an agent run started,
+// keeping only the box's own system processes (its relay and its agent
+// supervisor), and returns only once their end is confirmed. A process a
+// prompt-injected run left behind (a backgrounded command, a cron entry, a
+// watcher of a token file) must not survive into the next turn, where it
+// could read that turn's fresh credentials (plue#866). A runtime that cannot
+// confirm the reap must not implement this port; the product then retires the
+// box instead of reusing it.
+type WorkspaceRunProcessReaper interface {
+	ReapRunProcesses(ctx context.Context, workspaceID string) error
 }
 
 // WorkspaceEnvironmentLinker is an optional facet. After the product

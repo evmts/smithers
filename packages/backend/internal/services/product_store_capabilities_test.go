@@ -38,6 +38,8 @@ var productStoreCapabilities = map[string]func(any) bool{
 	"interface{IsSharedServiceMachineHostBinding}": storeImplements[interface {
 		IsSharedServiceMachineHostBinding(context.Context, string, string) (bool, error)
 	}],
+	"agentBoxIdleCapStore":                 storeImplements[agentBoxIdleCapStore],
+	"agentWorkspaceReleaseStore":           storeImplements[agentWorkspaceReleaseStore],
 	"branchMachineOwnerStore":              storeImplements[branchMachineOwnerStore],
 	"boxHostQuerier":                       storeImplements[boxHostQuerier],
 	"neverStartedAgentQuerier":             storeImplements[neverStartedAgentQuerier],
@@ -67,6 +69,7 @@ var productStoreCapabilities = map[string]func(any) bool{
 	"workspaceUnchangedFailureQuerier":     storeImplements[workspaceUnchangedFailureQuerier],
 	"workspaceVMRegistrar":                 storeImplements[workspaceVMRegistrar],
 	"workspaceVisibilityQuerier":           storeImplements[workspaceVisibilityQuerier],
+	"agentSessionModelRecorder":            storeImplements[agentSessionModelRecorder],
 	"interface{GetRepoByID}": storeImplements[interface {
 		GetRepoByID(context.Context, int64) (db.Repository, error)
 	}],

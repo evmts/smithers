@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -26,12 +27,13 @@ import (
 // (UpdateAgentSessionTerminalStatus only matches status='active' rows), leaking
 // the VM gauge and the run's scoped tokens.
 //
-// The reset drops metadata.failure_reason with it (see
-// RecordAgentSessionFailureReason): the API returns metadata verbatim and the
-// session status event repeats that key, so a retry that succeeds would
-// otherwise keep showing its owner the previous attempt's refusal. It drops
-// metadata.waiting_reason for the same reason: the wait this dispatch was
-// parked behind is over the moment it claims the session (#3888).
+// The reset drops the recorded failure with it (failure_reason,
+// failure_reason_code and failure_retryable; see RecordAgentSessionFailure):
+// the session read and its status event repeat those keys, so a retry that
+// succeeds would otherwise keep showing its owner the previous attempt's
+// refusal. It drops metadata.waiting_reason for the same reason: the wait this
+// dispatch was parked behind is over the moment it claims the session (#3888),
+// and metadata.model, which the new turn writes for itself when it is admitted.
 //
 // Returns false when the session is missing/tombstoned or another run is live.
 func (q *Queries) ClaimAgentSessionForDispatch(ctx context.Context, sessionID string, workflowRunID int64) (bool, error) {
@@ -71,7 +73,7 @@ SET workflow_run_id = $2,
     status = 'active',
     started_at = NULL,
     finished_at = NULL,
-    metadata = COALESCE(metadata, '{}'::jsonb) - 'failure_reason' - 'waiting_reason',
+    metadata = COALESCE(metadata, '{}'::jsonb) - 'failure_reason' - 'failure_reason_code' - 'failure_retryable' - 'waiting_reason' - 'model',
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
 `, sessionID, workflowRunID); err != nil {
@@ -154,30 +156,64 @@ func (q *Queries) FailNeverStartedAgentSession(ctx context.Context, arg FailNeve
 
 type FailNeverStartedAgentSessionParams = FailNeverStartedAgentSessionRawParams
 
-// RecordAgentSessionFailureReason merges one bounded, user-facing sentence into
-// the session's metadata under "failure_reason".
+// AgentSessionFailure is the typed reason a failed session carries: a code
+// from a closed vocabulary, one sentence in product words, and whether trying
+// again can succeed without a code or configuration change.
+type AgentSessionFailure struct {
+	Code      string
+	Reason    string
+	Retryable bool
+}
+
+// AgentSessionFailureRecord is what RecordAgentSessionFailure wrote: the
+// terminal session with its reason, and the final assistant reply that carries
+// the same sentence.
+type AgentSessionFailureRecord struct {
+	Session AgentSession
+	Reply   AgentMessage
+	Part    AgentPart
+}
+
+// RecordAgentSessionFailure stores a failed session's typed reason and ends its
+// turn with that sentence, in one transaction.
 //
-// A session that cannot start goes terminal in seconds and the API returns
-// metadata verbatim, so this is the only place the owner of the session can
-// learn why. The specific causes (no fleet capacity, a workspace that never
-// came up, a sandbox that was refused) otherwise reach slog and the workflow
-// task's last_error only — neither of which the session's own routes expose.
+// A session that cannot start, or whose turn fails in the box, goes terminal
+// with no reply of its own, and the API returns metadata verbatim, so this is
+// the only place the owner of the session can learn why. The specific causes
+// otherwise reach slog and the workflow task's last_error only, neither of
+// which the session's own routes expose.
 //
-// The caller passes product vocabulary, never a provider's error chain: the
-// value is handed straight back to the browser. The merge is additive so a
-// session's own metadata keys survive, and it is bounded to the terminal row
-// (status <> 'active') so a re-dispatched session cannot keep a stale reason.
-func (q *Queries) RecordAgentSessionFailureReason(ctx context.Context, sessionID, reason string) (AgentSession, bool, error) {
-	row := q.db.QueryRow(ctx, `
+// metadata gains failure_reason, failure_reason_code and failure_retryable;
+// the transcript gains one assistant message whose text part is the sentence,
+// so the turn ends with it rather than silence. The caller passes product
+// vocabulary, never a provider's error chain: both values are handed straight
+// back to the browser.
+//
+// Only a terminal row (status <> 'active') that carries no recorded failure is
+// written, so a re-dispatched session cannot keep a stale reason and a
+// repeated call never appends a second reply. Returns false when nothing was
+// written.
+func (q *Queries) RecordAgentSessionFailure(ctx context.Context, sessionID string, failure AgentSessionFailure) (AgentSessionFailureRecord, bool, error) {
+	tx, err := q.BeginTx(ctx)
+	if err != nil {
+		return AgentSessionFailureRecord{}, false, fmt.Errorf("record agent session failure: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	row := tx.QueryRow(ctx, `
 UPDATE agent_sessions
-SET metadata = (COALESCE(metadata, '{}'::jsonb) - 'waiting_reason') || jsonb_build_object('failure_reason', $2::text),
+SET metadata = (COALESCE(metadata, '{}'::jsonb) - 'waiting_reason') || jsonb_build_object(
+        'failure_reason', $2::text,
+        'failure_reason_code', $3::text,
+        'failure_retryable', $4::boolean),
     updated_at = NOW()
 WHERE id = $1 AND status <> 'active' AND deleted_at IS NULL
+  AND NOT (COALESCE(metadata, '{}'::jsonb) ? 'failure_reason_code')
 RETURNING id, repository_id, user_id, workflow_run_id, title, status, metadata, workspace_id,
           started_at, finished_at, created_at, updated_at, deleted_at
-`, sessionID, reason)
-	var i AgentSession
-	err := row.Scan(
+`, sessionID, failure.Reason, failure.Code, failure.Retryable)
+	var record AgentSessionFailureRecord
+	i := &record.Session
+	err = row.Scan(
 		&i.ID,
 		&i.RepositoryID,
 		&i.UserID,
@@ -193,12 +229,48 @@ RETURNING id, repository_id, user_id, workflow_run_id, title, status, metadata, 
 		&i.DeletedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return AgentSession{}, false, nil
+		return AgentSessionFailureRecord{}, false, nil
 	}
 	if err != nil {
-		return AgentSession{}, false, err
+		return AgentSessionFailureRecord{}, false, err
 	}
-	return i, true, nil
+	inTx := New(tx)
+	record.Reply, err = inTx.CreateAgentMessageWithNextSequence(ctx, CreateAgentMessageWithNextSequenceParams{SessionID: sessionID, Role: "assistant"})
+	if err != nil {
+		return AgentSessionFailureRecord{}, false, err
+	}
+	content, err := json.Marshal(map[string]string{"value": failure.Reason})
+	if err != nil {
+		return AgentSessionFailureRecord{}, false, err
+	}
+	record.Part, err = inTx.CreateAgentPart(ctx, CreateAgentPartParams{
+		MessageID: record.Reply.ID, RepositoryID: record.Session.RepositoryID, SessionID: sessionID,
+		PartIndex: 0, PartType: "text", Content: content,
+	})
+	if err != nil {
+		return AgentSessionFailureRecord{}, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return AgentSessionFailureRecord{}, false, err
+	}
+	return record, true, nil
+}
+
+// RecordAgentSessionModel stores the provider:model a dispatched turn runs on
+// as metadata.model, beside the failure keys, so the session read names the
+// model the turn actually used. Returns false when the session is missing or
+// tombstoned.
+func (q *Queries) RecordAgentSessionModel(ctx context.Context, sessionID, model string) (bool, error) {
+	tag, err := q.db.Exec(ctx, `
+UPDATE agent_sessions
+SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('model', $2::text),
+    updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+`, sessionID, model)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }
 
 // RecordAgentSessionWaitingReason merges one bounded, user-facing sentence into
@@ -210,7 +282,7 @@ RETURNING id, repository_id, user_id, workflow_run_id, title, status, metadata, 
 // which is indistinguishable from a wedged turn — production 2026-10-14 13:34Z,
 // sessions 3b6f589e and 82776348, four minutes silent. The key is cleared by
 // ClaimAgentSessionForDispatch when the turn finally starts and by
-// RecordAgentSessionFailureReason if it ends instead, so it never outlives the
+// RecordAgentSessionFailure if it ends instead, so it never outlives the
 // wait it describes.
 //
 // Product vocabulary only: the value is handed straight back to the browser.

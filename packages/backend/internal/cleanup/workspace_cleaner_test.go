@@ -19,6 +19,7 @@ type mockWorkspaceCleanupStore struct {
 	cleanupIdleWorkspacesFn      func(context.Context) error
 	cleanupOverQuotaWorkspacesFn func(context.Context) error
 	reclaimAgentDisksFn          func(context.Context) error
+	retireIdleAgentBoxesFn       func(context.Context) error
 	abandonedFn                  func(context.Context) error
 	childrenFn                   func(context.Context) error
 	journalsFn                   func(context.Context) error
@@ -36,6 +37,14 @@ func (m *mockWorkspaceCleanupStore) ReapWorkspaceChildren(ctx context.Context) e
 	m.calls = append(m.calls, "children")
 	if m.childrenFn != nil {
 		return m.childrenFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockWorkspaceCleanupStore) RetireIdleAgentBoxes(ctx context.Context) error {
+	m.calls = append(m.calls, "idle_agent_boxes")
+	if m.retireIdleAgentBoxesFn != nil {
+		return m.retireIdleAgentBoxesFn(ctx)
 	}
 	return nil
 }
@@ -96,7 +105,7 @@ func TestWorkspaceCleanerSweep_CallsAllCleanupPasses(t *testing.T) {
 
 	err := cleaner.sweep(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, []string{"idle_sessions", "stale_pending", "idle_workspaces", "over_quota_workspaces", "agent_disks", "abandoned", "children", "journals"}, store.calls)
+	assert.Equal(t, []string{"idle_sessions", "stale_pending", "idle_workspaces", "over_quota_workspaces", "agent_disks", "idle_agent_boxes", "abandoned", "children", "journals"}, store.calls)
 }
 
 func TestWorkspaceCleanerSweep_JoinsErrors(t *testing.T) {
@@ -122,7 +131,7 @@ func TestWorkspaceCleanerSweep_JoinsErrors(t *testing.T) {
 	assert.Contains(t, err.Error(), "cleanup abandoned workspaces: abandon failed")
 	assert.Contains(t, err.Error(), "reap child workspaces: children failed")
 	assert.Contains(t, err.Error(), "drop orphan flow journals: journals failed")
-	assert.Equal(t, []string{"idle_sessions", "stale_pending", "idle_workspaces", "over_quota_workspaces", "agent_disks", "abandoned", "children", "journals"}, store.calls)
+	assert.Equal(t, []string{"idle_sessions", "stale_pending", "idle_workspaces", "over_quota_workspaces", "agent_disks", "idle_agent_boxes", "abandoned", "children", "journals"}, store.calls)
 }
 
 func TestWorkspaceCleanerMeterFailureIncrementsSweepFailures(t *testing.T) {
@@ -139,5 +148,5 @@ func TestWorkspaceCleanerMeterFailureIncrementsSweepFailures(t *testing.T) {
 		return testutil.ToFloat64(SweepFailures.WithLabelValues("workspace")) == before+1
 	})
 	cleaner.Stop()
-	assert.Equal(t, []string{"idle_sessions", "stale_pending", "idle_workspaces", "over_quota_workspaces", "agent_disks", "abandoned", "children", "journals"}, store.calls)
+	assert.Equal(t, []string{"idle_sessions", "stale_pending", "idle_workspaces", "over_quota_workspaces", "agent_disks", "idle_agent_boxes", "abandoned", "children", "journals"}, store.calls)
 }

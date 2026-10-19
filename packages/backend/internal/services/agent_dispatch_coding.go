@@ -224,7 +224,43 @@ func (dispatch *agentDispatch) admitCodingTurn() error {
 		return dispatch.markInfraFailed("admit dispatched turn: " + err.Error())
 	}
 	dispatch.flowOperationID = receipt.OperationID
+	dispatch.svc.recordCodingTurnModel(dispatch.ctx, dispatch.input.SessionID)
 	return nil
+}
+
+// agentSessionModelRecorder is the store surface that records a turn's model.
+type agentSessionModelRecorder interface {
+	RecordAgentSessionModel(ctx context.Context, sessionID, model string) (bool, error)
+}
+
+// SetCodingTurnModel names the provider:model the coding host runs a
+// dispatched turn on: the coding catalog's pinned implementation model, else
+// the install's coding seat. The composition owns both; "" names none.
+func (service *AgentService) SetCodingTurnModel(model func(context.Context) (string, error)) {
+	service.codingTurnModel = model
+}
+
+// recordCodingTurnModel writes the admitted turn's model to metadata.model.
+// A deployment that names none writes nothing, so the field stays null rather
+// than claiming a model the host did not run. Best effort: the turn is
+// admitted either way.
+func (service *AgentService) recordCodingTurnModel(ctx context.Context, sessionID string) {
+	recorder, ok := service.dispatchQ.(agentSessionModelRecorder)
+	if !ok || service.codingTurnModel == nil {
+		return
+	}
+	model, err := service.codingTurnModel(ctx)
+	model = strings.TrimSpace(model)
+	provider, name, explicit := strings.Cut(model, ":")
+	if err != nil || !explicit || provider == "" || name == "" || strings.ContainsAny(model, " \t\r\n") {
+		if err != nil {
+			slog.Warn("read the coding turn's model failed", "agent_session_id", sessionID, "error", err)
+		}
+		return
+	}
+	if _, err := recorder.RecordAgentSessionModel(ctx, sessionID, model); err != nil {
+		slog.Warn("record the coding turn's model failed", "agent_session_id", sessionID, "error", err)
+	}
 }
 
 // cancelAgentFlowRun cancels the canonical Flow request for a session's
@@ -363,6 +399,11 @@ func (service *AgentService) ProjectFlowRuntime(ctx context.Context, update flow
 	}
 	if err != nil {
 		return fmt.Errorf("project canonical Flow terminal status: %w", err)
+	}
+	if finalStatus == "failed" {
+		// The box, its host or the turn failed: the session says which, and the
+		// turn ends with that sentence instead of no reply at all.
+		session = service.recordAgentSessionFailure(ctx, session, agentSessionFailureForFlow(update.Checkpoint))
 	}
 	// As with ordinary appends, notify after commit and before terminal status.
 	// Delivery is best-effort; oversized text remains available through replay.

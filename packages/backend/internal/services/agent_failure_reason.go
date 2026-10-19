@@ -5,14 +5,73 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/smithersai/smithers/packages/backend/flowdispatch"
+	"github.com/smithersai/smithers/packages/backend/flowhost"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 )
 
-// agentSessionFailureReasonKey is the single metadata key a failed session
-// carries. The API returns agent_sessions.metadata verbatim, so this key is
-// part of the session's public shape: one sentence, product vocabulary, no
-// provider error chain.
-const agentSessionFailureReasonKey = "failure_reason"
+// agentSessionFailure is the typed reason a failed session carries. The
+// session read returns it as reason_code, reason and retryable, and the
+// failure ends the turn with one assistant reply holding the same sentence.
+type agentSessionFailure = db.AgentSessionFailure
+
+// The closed vocabulary of reason_code. A failure that names no cause of its
+// own uses the code of the stage it failed in; nothing outside this list is
+// ever written. retryable is true when trying again can succeed without a code
+// or configuration change.
+const (
+	// The packaged coding Flow host is larger than the sandbox can stage.
+	agentFailureFlowHostTooLarge = "flow_host_too_large"
+	// The coding Flow host did not start or answer in the box.
+	agentFailureFlowHostUnavailable = "flow_host_unavailable"
+	// The agent pool had no room for the box.
+	agentFailureBoxUnavailable = "box_unavailable"
+	// The branch's box is already being started by another request.
+	agentFailureBoxStarting = "box_starting"
+	// The box did not finish setting itself up in time.
+	agentFailureBoxBootstrapTimeout = "box_bootstrap_timeout"
+	// The box, or the snapshot it boots from, no longer exists.
+	agentFailureBoxMissing = "box_missing"
+	// The branch retains a box whose provision failed.
+	agentFailureBoxFailed = "box_failed"
+	// The branch's box is stopped and must be started first.
+	agentFailureBoxStopped = "box_stopped"
+	// The model refused or did not answer the turn.
+	agentFailureModelUnavailable = "model_unavailable"
+	// The model is rate limited or over its quota.
+	agentFailureModelRateLimited = "model_rate_limited"
+	// The account has no model credit left.
+	agentFailureOutOfCredit = "out_of_credit"
+	// The turn ran and failed before it answered.
+	agentFailureTurnFailed = "turn_failed"
+	// The turn ran past its time limit.
+	agentFailureTurnTimedOut = "turn_timed_out"
+	// The dispatch failed for any other reason before the turn ran.
+	agentFailureDispatchFailed = "dispatch_failed"
+	// This deployment runs no cloud agents.
+	agentFailureAgentsUnavailable = "agents_unavailable"
+)
+
+// agentSessionFailureCodes is the whole vocabulary, in the order above.
+var agentSessionFailureCodes = []string{
+	agentFailureFlowHostTooLarge, agentFailureFlowHostUnavailable,
+	agentFailureBoxUnavailable, agentFailureBoxStarting, agentFailureBoxBootstrapTimeout,
+	agentFailureBoxMissing, agentFailureBoxFailed, agentFailureBoxStopped,
+	agentFailureModelUnavailable, agentFailureModelRateLimited, agentFailureOutOfCredit,
+	agentFailureTurnFailed, agentFailureTurnTimedOut,
+	agentFailureDispatchFailed, agentFailureAgentsUnavailable,
+}
+
+// The metadata keys a failed session carries. The API returns
+// agent_sessions.metadata verbatim, so they are part of the session's public
+// shape: one sentence, product vocabulary, no provider error chain.
+const (
+	agentSessionFailureReasonKey    = "failure_reason"
+	agentSessionFailureCodeKey      = "failure_reason_code"
+	agentSessionFailureRetryableKey = "failure_retryable"
+)
 
 // agentSessionNoCapacityMessage is what a session says when the agent pool had
 // no room for its box. It mirrors workspaceNoCapacityMessage: it names the
@@ -72,54 +131,144 @@ const agentSessionStartFailureMessage = "The agent could not be started. Nothing
 // detail (agentLoopRetiredMessage) stays in the log.
 const agentSessionLoopRetiredMessage = "Cloud agents are not available on this deployment yet. Nothing ran, and retrying will not help."
 
-// agentSessionFailureReasonForError classifies a dispatch failure into the one
-// sentence the session shows. The distinguished causes are the ones a user acts
-// on differently: a pool with no room and a branch machine another request is
+// The failures a dispatch distinguishes before its turn runs. Each pairs the
+// sentence above with its code and whether a retry alone can succeed.
+var (
+	agentSessionNoCapacity           = agentSessionFailure{Code: agentFailureBoxUnavailable, Reason: agentSessionNoCapacityMessage, Retryable: true}
+	agentSessionMachineStarting      = agentSessionFailure{Code: agentFailureBoxStarting, Reason: agentSessionMachineStartingMessage, Retryable: true}
+	agentSessionMachineMissing       = agentSessionFailure{Code: agentFailureBoxMissing, Reason: agentSessionMachineMissingMessage}
+	agentSessionSnapshotMissing      = agentSessionFailure{Code: agentFailureBoxMissing, Reason: agentSessionSnapshotMissingMessage}
+	agentSessionBranchMachineFailed  = agentSessionFailure{Code: agentFailureBoxFailed, Reason: agentSessionBranchMachineFailedMessage}
+	agentSessionBranchMachineStopped = agentSessionFailure{Code: agentFailureBoxStopped, Reason: agentSessionBranchMachineStoppedMessage}
+	agentSessionBoxNotReady          = agentSessionFailure{Code: agentFailureBoxBootstrapTimeout, Reason: "The box did not finish starting in time. Nothing ran; try again in a moment.", Retryable: true}
+	agentSessionStartFailure         = agentSessionFailure{Code: agentFailureDispatchFailed, Reason: agentSessionStartFailureMessage, Retryable: true}
+	agentSessionNeverStarted         = agentSessionFailure{Code: agentFailureDispatchFailed, Reason: "The agent never started. Nothing ran; try again.", Retryable: true}
+	agentSessionLoopRetired          = agentSessionFailure{Code: agentFailureAgentsUnavailable, Reason: agentSessionLoopRetiredMessage}
+	agentSessionOutOfCredit          = agentSessionFailure{Code: agentFailureOutOfCredit, Reason: "This account is out of model credit. Add credit, then try again."}
+)
+
+// The failures of a turn the Flow runtime admitted.
+var (
+	agentSessionFlowHostTooLarge    = agentSessionFailure{Code: agentFailureFlowHostTooLarge, Reason: "The coding host exceeds the sandbox staging limit. Nothing ran, and trying again will not help."}
+	agentSessionFlowHostUnavailable = agentSessionFailure{Code: agentFailureFlowHostUnavailable, Reason: "The coding host did not start in the box. Nothing ran; try again in a moment.", Retryable: true}
+	agentSessionModelBusy           = agentSessionFailure{Code: agentFailureModelUnavailable, Reason: "The model did not answer. Try again in a moment.", Retryable: true}
+	agentSessionModelUnrouted       = agentSessionFailure{Code: agentFailureModelUnavailable, Reason: "The model is not available on this deployment. Trying again will not help."}
+	agentSessionModelRateLimited    = agentSessionFailure{Code: agentFailureModelRateLimited, Reason: "The model is rate limited right now. Try again in a moment.", Retryable: true}
+	agentSessionTurnFailed          = agentSessionFailure{Code: agentFailureTurnFailed, Reason: "The agent stopped before it finished this turn. Try again.", Retryable: true}
+	agentSessionTurnTimedOut        = agentSessionFailure{Code: agentFailureTurnTimedOut, Reason: "The turn ran past its time limit and was stopped. Try again.", Retryable: true}
+)
+
+// agentSessionFailureForError classifies a dispatch failure into the reason
+// the session shows. The distinguished causes are the ones a user acts on
+// differently: a pool with no room and a branch machine another request is
 // already starting are both worth waiting for; the three permanent losses (a
 // machine that no longer exists, a snapshot the provider can no longer
 // restore, and a machine the branch retains after a failed provision) are
 // worth neither waiting nor retrying; and a machine the branch retains while
 // stopped is worth starting. Everything else is the fallback, with its cause
 // in the operator log.
-func agentSessionFailureReasonForError(err error) string {
+func agentSessionFailureForError(err error) agentSessionFailure {
 	if isNoCapacityError(err) {
-		return agentSessionNoCapacityMessage
+		return agentSessionNoCapacity
 	}
 	if errors.Is(err, errWorkspaceProvisionInProgress) {
-		return agentSessionMachineStartingMessage
+		return agentSessionMachineStarting
 	}
 	if errors.Is(err, errBranchMachineRetainedFailure) {
-		return agentSessionBranchMachineFailedMessage
+		return agentSessionBranchMachineFailed
 	}
 	if errors.Is(err, errBranchMachineStopped) {
-		return agentSessionBranchMachineStoppedMessage
+		return agentSessionBranchMachineStopped
 	}
 	var apiErr *pkgerrors.APIError
 	if errors.As(err, &apiErr) {
 		switch apiErr.Code {
 		case pkgerrors.CodeWorkspaceVMMissing:
-			return agentSessionMachineMissingMessage
+			return agentSessionMachineMissing
 		case pkgerrors.CodeSnapshotNotFound:
-			return agentSessionSnapshotMissingMessage
+			return agentSessionSnapshotMissing
+		case pkgerrors.CodeGuestNotReady:
+			return agentSessionBoxNotReady
+		case pkgerrors.CodeOutOfCredit:
+			return agentSessionOutOfCredit
 		}
 	}
-	return agentSessionStartFailureMessage
+	return agentSessionStartFailure
 }
 
-// agentSessionFailureReasonFromMetadata reads the recorded sentence back out of
-// a session row so the status event can repeat it without a second query.
-// Anything other than a non-empty string reads as absent.
-func agentSessionFailureReasonFromMetadata(metadata json.RawMessage) string {
+// agentSessionFailureForFlow classifies an admitted turn that the Flow runtime
+// failed. A run that failed in the host names the model or the turn; a bridge
+// refusal (the box or its host never ran the turn) names the stage. The one
+// detail it repeats is product copy a typed error wrote, never provider prose.
+func agentSessionFailureForFlow(checkpoint flowdispatch.RuntimeCheckpoint) agentSessionFailure {
+	if run := checkpoint.Run; run != nil && run.Status == "failed" {
+		tag := run.FailureTag
+		if modelCode, ok := strings.CutPrefix(tag, "flows/model/ModelError/"); ok {
+			switch modelCode {
+			case "rate_limited", "quota_exceeded":
+				return agentSessionModelRateLimited
+			case "out_of_credit":
+				return agentSessionOutOfCredit
+			case "no_route", "authentication":
+				return agentSessionModelUnrouted
+			case "invalid_request", "context_overflow", "content_policy":
+				return agentSessionTurnFailed
+			default:
+				return agentSessionModelBusy
+			}
+		}
+		if tag == "flows/agent/Timeout" {
+			return agentSessionTurnTimedOut
+		}
+		return agentSessionTurnFailed
+	}
+	switch code := checkpoint.FailureCode; {
+	case code == "":
+		return agentSessionTurnFailed
+	case code == workspaceapi.ManagedHostTooLargeCode:
+		failure := agentSessionFlowHostTooLarge
+		if detail := strings.TrimSpace(checkpoint.FailureDetail); detail != "" {
+			failure.Reason = detail + " Nothing ran, and trying again will not help."
+		}
+		return failure
+	case code == flowhost.WorkspaceInitializingCode || code == "wake_timeout" || code == string(pkgerrors.CodeGuestNotReady):
+		return agentSessionBoxNotReady
+	case code == "isolation_required" || code == "host_lease_lost" || code == "http_refused" || code == "health_refused" ||
+		strings.HasPrefix(code, "runtime_"):
+		return agentSessionFlowHostUnavailable
+	default:
+		return agentSessionStartFailure
+	}
+}
+
+// agentSessionFailureFromMetadata reads the recorded reason back out of a
+// session row so the session read and its status event can repeat it without
+// a second query. A row without a recorded sentence reads as no failure; a
+// legacy row with a sentence but no code reads as the fallback code.
+func agentSessionFailureFromMetadata(metadata json.RawMessage) (agentSessionFailure, bool) {
 	if len(metadata) == 0 {
-		return ""
+		return agentSessionFailure{}, false
 	}
 	var parsed map[string]any
 	if err := json.Unmarshal(metadata, &parsed); err != nil {
-		return ""
+		return agentSessionFailure{}, false
 	}
-	reason, ok := parsed[agentSessionFailureReasonKey].(string)
-	if !ok {
-		return ""
+	reason, _ := parsed[agentSessionFailureReasonKey].(string)
+	reason = strings.TrimSpace(reason)
+	code, _ := parsed[agentSessionFailureCodeKey].(string)
+	code = strings.TrimSpace(code)
+	retryable, _ := parsed[agentSessionFailureRetryableKey].(bool)
+	if reason == "" {
+		return agentSessionFailure{}, false
 	}
-	return strings.TrimSpace(reason)
+	if code == "" {
+		code = agentFailureDispatchFailed
+	}
+	return agentSessionFailure{Code: code, Reason: reason, Retryable: retryable}, true
+}
+
+// agentSessionFailureReasonFromMetadata is the recorded sentence alone.
+func agentSessionFailureReasonFromMetadata(metadata json.RawMessage) string {
+	failure, _ := agentSessionFailureFromMetadata(metadata)
+	return failure.Reason
 }

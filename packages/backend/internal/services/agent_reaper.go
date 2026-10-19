@@ -128,6 +128,7 @@ func (s *AgentService) reapNeverStartedSessions(ctx context.Context) error {
 			failures = append(failures, err)
 			continue
 		}
+		terminal = s.recordAgentSessionFailure(ctx, terminal, agentSessionNeverStarted)
 		s.notifyAgentSessionStatus(ctx, terminal)
 		s.finalizeAgentSession(ctx, terminal, "failed", "never_started")
 	}
@@ -178,26 +179,22 @@ func (s *AgentService) reapExpiredSession(ctx context.Context, session db.AgentS
 
 	s.cancelAgentFlowRunBestEffort(ctx, timedOutSession, "timeout")
 	s.observeAgentSessionTimeout()
+	timedOutSession = s.recordAgentSessionFailure(ctx, timedOutSession, agentSessionTurnTimedOut)
 	s.notifyAgentSessionStatus(ctx, timedOutSession)
 	s.finalizeAgentSession(ctx, timedOutSession, "timed_out", "agent session timed out")
 	return nil
 }
 
 func (s *AgentService) transitionAgentSessionTerminalStatus(ctx context.Context, sessionID, status string, expectedWorkflowRunID pgtype.Int8) (db.AgentSession, bool, error) {
-	return s.transitionAgentSessionTerminalStatusWithReason(ctx, sessionID, status, expectedWorkflowRunID, "")
+	return s.transitionAgentSessionTerminalStatusWithFailure(ctx, sessionID, status, expectedWorkflowRunID, nil)
 }
 
-// transitionAgentSessionTerminalStatusWithReason also records the one sentence
-// the session's owner sees.
+// transitionAgentSessionTerminalStatusWithFailure also records the typed
+// reason the session's owner sees, when there is one.
 //
-// The session row's only carrier for that sentence is its metadata, which the
-// API returns verbatim, so the reason is persisted there (one bounded key) and
-// repeated on the status event. Recording happens after the status write and
-// only when the write won, so a session another run already finished keeps its
-// own reason. A failure to record is logged and swallowed: the session is
-// already terminal, and losing the explanation must not strand the row in
-// 'active'.
-func (s *AgentService) transitionAgentSessionTerminalStatusWithReason(ctx context.Context, sessionID, status string, expectedWorkflowRunID pgtype.Int8, reason string) (db.AgentSession, bool, error) {
+// Recording happens after the status write and only when the write won, so a
+// session another run already finished keeps its own reason.
+func (s *AgentService) transitionAgentSessionTerminalStatusWithFailure(ctx context.Context, sessionID, status string, expectedWorkflowRunID pgtype.Int8, failure *agentSessionFailure) (db.AgentSession, bool, error) {
 	if s.dispatchQ == nil {
 		return db.AgentSession{}, false, nil
 	}
@@ -215,18 +212,43 @@ func (s *AgentService) transitionAgentSessionTerminalStatusWithReason(ctx contex
 		return db.AgentSession{}, false, err
 	}
 	meterSandboxUsage(ctx, s.dispatchQ, session.UserID, "agent", sessionID, false)
-	if strings.TrimSpace(reason) != "" {
-		recorded, ok, err := s.dispatchQ.RecordAgentSessionFailureReason(ctx, sessionID, reason)
-		switch {
-		case err != nil:
-			middleware.LoggerWithAgentSession(ctx, sessionID).
-				Error("failed to record agent session failure reason", "error", err)
-		case ok:
-			session = recorded
-		}
+	if failure != nil {
+		session = s.recordAgentSessionFailure(ctx, session, *failure)
 	}
 	s.notifyAgentSessionStatus(ctx, session)
 	return session, true, nil
+}
+
+// recordAgentSessionFailure stores a terminal session's typed reason and its
+// final reply, announces the reply, and returns the session as recorded.
+//
+// The session row's only carrier for the reason is its metadata, which the
+// session read returns as reason_code, reason and retryable, and the reply
+// ends the turn with the same sentence so the transcript does not stop in
+// silence. The caller has already won the terminal write. A failure to record
+// is logged and swallowed: the session is already terminal, and losing the
+// explanation must not strand the row in 'active'.
+func (s *AgentService) recordAgentSessionFailure(ctx context.Context, session db.AgentSession, failure agentSessionFailure) db.AgentSession {
+	record, ok, err := s.dispatchQ.RecordAgentSessionFailure(ctx, session.ID, failure)
+	if err != nil {
+		middleware.LoggerWithAgentSession(ctx, session.ID).
+			Error("failed to record agent session failure reason", "reason_code", failure.Code, "error", err)
+		return session
+	}
+	if !ok {
+		return session
+	}
+	reply := AgentMessageResponse{
+		ID: record.Reply.ID, SessionID: record.Reply.SessionID, Role: record.Reply.Role,
+		Sequence: record.Reply.Sequence, CreatedAt: record.Reply.CreatedAt,
+		Parts: []AgentPartResponse{{PartIndex: record.Part.PartIndex, Type: record.Part.PartType, Content: record.Part.Content}},
+	}
+	if payload, marshalErr := json.Marshal(AgentSessionMessageEvent(reply)); marshalErr == nil && s.q != nil {
+		_ = s.q.NotifyAgentMessage(ctx, db.NotifyAgentMessageParams{SessionID: session.ID, Payload: string(payload)})
+	}
+	// Only the reason changed; the caller's terminal row keeps its run link.
+	session.Metadata, session.UpdatedAt = record.Session.Metadata, record.Session.UpdatedAt
+	return session
 }
 
 func (s *AgentService) notifyAgentSessionStatus(ctx context.Context, session db.AgentSession) {
@@ -234,11 +256,14 @@ func (s *AgentService) notifyAgentSessionStatus(ctx context.Context, session db.
 		return
 	}
 
+	failure, _ := agentSessionFailureFromMetadata(session.Metadata)
 	payload, _ := json.Marshal(AgentSessionEvent{
-		SessionID: session.ID,
-		Action:    "status",
-		Status:    session.Status,
-		Reason:    agentSessionFailureReasonFromMetadata(session.Metadata),
+		SessionID:  session.ID,
+		Action:     "status",
+		Status:     session.Status,
+		Reason:     failure.Reason,
+		ReasonCode: failure.Code,
+		Retryable:  failure.Retryable,
 	})
 
 	safeSessionID := strings.ReplaceAll(session.ID, "-", "")
@@ -362,7 +387,7 @@ type agentRevisionSnapshotStamper interface {
 
 // finishAgentWorkspace closes a run's computer (RFD-004): a completed run's
 // workspace is snapshotted and the snapshot stamped on the run's revisions;
-// every terminal status then suspends the workspace and keeps the row.
+// every terminal status then releases the box and keeps the row.
 func (s *AgentService) finishAgentWorkspace(ctx context.Context, session db.AgentSession, workspaceID string, workflowRunID int64, finalStatus string) {
 	logger := middleware.LoggerWithAgentSessionAndWorkflowRun(ctx, session.ID, workflowRunID)
 	if finalStatus == "completed" {
@@ -380,11 +405,36 @@ func (s *AgentService) finishAgentWorkspace(ctx context.Context, session db.Agen
 			}
 		}
 	}
-	if err := s.workspaces.SuspendAgentWorkspace(ctx, workspaceID); err != nil {
-		logger.Error("failed to suspend agent workspace", "workspace_id", workspaceID, "error", err)
+	release, err := s.workspaces.ReleaseAgentWorkspace(ctx, workspaceID, session.ID)
+	logAgentWorkspaceRelease(logger, workspaceID, finalStatus, release, err)
+}
+
+// logAgentWorkspaceRelease states what ending a run did to its box: the
+// outcome, whether its head token is dead, and what keeps it running.
+func logAgentWorkspaceRelease(logger *slog.Logger, workspaceID, finalStatus string, release AgentWorkspaceRelease, err error) {
+	attrs := []any{"workspace_id", workspaceID, "final_status", finalStatus,
+		"outcome", release.Outcome, "head_token_revoked", release.HeadTokenRevoked}
+	if release.Detail != "" {
+		attrs = append(attrs, "kept_for", release.Detail)
+	}
+	if err != nil {
+		logger.Error("agent workspace release failed", append(attrs, "error", err)...)
 		return
 	}
-	logger.Info("agent workspace suspended", "workspace_id", workspaceID, "final_status", finalStatus)
+	message := map[string]string{
+		agentWorkspaceQuiesced:                "agent workspace quiesced",
+		agentWorkspaceRetired:                 "agent workspace retired",
+		agentWorkspaceUnreaped:                "agent workspace kept unreaped",
+		agentWorkspaceAlreadyReleased:         "agent workspace was already released",
+		agentWorkspaceKeptInUse:               "agent workspace kept running",
+		agentWorkspaceKeptForMachineLifecycle: "agent workspace kept running",
+		agentWorkspaceKeptWithoutRuntime:      "agent workspace kept running",
+		agentWorkspaceAbsent:                  "agent workspace absent",
+	}[release.Outcome]
+	if message == "" {
+		message = "agent workspace release unknown"
+	}
+	logger.Info(message, attrs...)
 }
 
 func (s *AgentService) deleteAgentSandboxVM(ctx context.Context, sessionID string, workflowRunID int64, sandboxVMID pgtype.Text, counted bool) {

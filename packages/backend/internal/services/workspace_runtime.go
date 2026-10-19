@@ -420,6 +420,19 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Conte
 	if row.Status == "releasing" {
 		return row, pkgerrors.Conflict("branch is releasing")
 	}
+	if row.Status == "running" && row.ProvisioningStage == db.AgentBoxUnreapedStage {
+		// Nothing is minted beside a process the last run left (plue#866).
+		cleaned, err := s.cleanUnreapedAgentBoxLocked(ctx, row)
+		if err != nil {
+			return row, err
+		}
+		row = cleaned
+	}
+	if retiredAgentBox(row) {
+		// The idle cap deleted this box's guest. Its next start builds a new
+		// one from the recorded head, as a create, so it needs no wake.
+		row.Status = "pending"
+	}
 	if err := s.refuseRebuildRequired(row); err != nil {
 		return row, err
 	}
@@ -449,6 +462,13 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Conte
 			return row, specErr
 		}
 		observed, err = s.runtime.CreateWorkspace(createCtx, spec)
+		if err == nil && row.DiskReclaimedAt.Valid {
+			// The runtime publishes the new guest's placement on the row; the
+			// reconstruction's compare-and-set reads it back.
+			if current, getErr := s.q.GetWorkspace(ctx, row.ID); getErr == nil {
+				row.VmID = current.VmID
+			}
+		}
 	} else {
 		observed, err = s.runtime.InspectWorkspace(operationCtx, row.ID)
 	}

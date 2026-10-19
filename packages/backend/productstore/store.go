@@ -33,6 +33,7 @@ type Product interface {
 	UpdateWorkflowRunCheckRun(ctx context.Context, arg db.UpdateWorkflowRunCheckRunParams) (db.WorkflowRun, error)
 	MarkWorkflowRunSuperseded(ctx context.Context, arg db.MarkWorkflowRunSupersededParams) error
 	ListSupersededWorkflowRuns(ctx context.Context, arg db.ListSupersededWorkflowRunsParams) ([]int64, error)
+	AgentWorkspaceUse(ctx context.Context, workspaceID, finishedSessionID string) (db.AgentWorkspaceUse, error)
 	AttachWorkflowArtifactToRelease(ctx context.Context, arg db.AttachWorkflowArtifactToReleaseParams) (db.WorkflowArtifact, error)
 	AuthorizePublicWorkspaceService(ctx context.Context, arg db.AuthorizePublicWorkspaceServiceParams) (bool, error)
 	CancelWorkflowRun(ctx context.Context, id int64) error
@@ -132,6 +133,8 @@ type Product interface {
 	IsWorkflowBackgroundWorkspace(ctx context.Context, id string) (bool, error)
 	ListCollaboratorsByRepo(ctx context.Context, repositoryID int64) ([]db.Collaborator, error)
 	ListExpiredLFSUploadReservationsByOwner(ctx context.Context, repositoryID int64) ([]db.LfsUploadReservation, error)
+	ListFlowHostBindingHolders(ctx context.Context, workspaceID string) ([]db.FlowHostBindingHolder, error)
+	ListIdleAgentBoxes(ctx context.Context, idleSeconds int64, limit int32) ([]string, error)
 	ListIdleWorkspaceSessions(ctx context.Context) ([]db.WorkspaceSession, error)
 	ListIdleWorkspaces(ctx context.Context) ([]db.Workspace, error)
 	ListLFSObjects(ctx context.Context, arg db.ListLFSObjectsParams) ([]db.LfsObject, error)
@@ -158,6 +161,8 @@ type Product interface {
 	ListWorkspacesByRepo(ctx context.Context, arg db.ListWorkspacesByRepoParams) ([]db.Workspace, error)
 	MarkWorkflowTaskTerminalByID(ctx context.Context, arg db.MarkWorkflowTaskTerminalByIDParams) (int64, error)
 	MarkWorkflowTaskVMRunning(ctx context.Context, arg db.MarkWorkflowTaskVMRunningParams) (int64, error)
+	MarkAgentBoxUnreaped(ctx context.Context, workspaceID string, unreaped bool) error
+	MarkFlowHostStopPending(ctx context.Context, bindingID string, ownerGeneration int64, pending bool) error
 	MarkOutsiderWorkspace(ctx context.Context, repositoryID int64, workspaceID string) error
 	MarkWorkspaceResumed(ctx context.Context, arg db.MarkWorkspaceResumedParams) error
 	MarkWorkspaceSessionRunning(ctx context.Context, id string) (db.WorkspaceSession, error)
@@ -165,12 +170,14 @@ type Product interface {
 	NotifyWorkflowRunLog(ctx context.Context, arg db.NotifyWorkflowRunLogParams) error
 	NotifyWorkspaceStatus(ctx context.Context, arg db.NotifyWorkspaceStatusParams) error
 	OpenSandboxUsageInterval(ctx context.Context, arg db.OpenSandboxUsageIntervalParams) error
+	RecordAgentSessionModel(ctx context.Context, sessionID, model string) (bool, error)
 	RecordWorkflowRunCodingHost(ctx context.Context, arg db.RecordWorkflowRunCodingHostParams) (db.WorkflowRunCodingHost, error)
 	RecordWorkspaceCodingOperation(ctx context.Context, arg db.RecordWorkspaceCodingOperationParams) (db.JjOperation, error)
 	RegisterWorkspaceVM(ctx context.Context, arg db.RegisterWorkspaceVMParams) (db.Workspace, error)
 	ReleaseWorkflowArtifactDeletionClaim(ctx context.Context, arg db.ReleaseWorkflowArtifactDeletionClaimParams) error
 	ReleaseWorkflowCacheDeletionClaim(ctx context.Context, arg db.ReleaseWorkflowCacheDeletionClaimParams) error
 	ResetWorkspaceForReprovision(ctx context.Context, id string) (db.Workspace, error)
+	RetireAgentBox(ctx context.Context, workspaceID string) (bool, error)
 	ResumeWorkflowRun(ctx context.Context, id int64) error
 	ResumeWorkflowSteps(ctx context.Context, workflowRunID int64) error
 	ResumeWorkflowTasks(ctx context.Context, workflowRunID int64) error

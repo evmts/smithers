@@ -52,6 +52,7 @@ func (*darkCleanupStore) CleanupIdleSessions(context.Context) error           { 
 func (*darkCleanupStore) CleanupStalePendingWorkspaces(context.Context) error { return nil }
 func (*darkCleanupStore) CleanupIdleWorkspaces(context.Context) error         { return nil }
 func (*darkCleanupStore) CleanupOverQuotaWorkspaces(context.Context) error    { return nil }
+func (*darkCleanupStore) RetireIdleAgentBoxes(context.Context) error          { return nil }
 func (*darkCleanupStore) CleanupAbandonedWorkspaces(context.Context) error    { return nil }
 func (*darkCleanupStore) ReapWorkspaceChildren(context.Context) error         { return nil }
 func (s *darkCleanupStore) CleanupOrphanFlowJournals(context.Context) error {

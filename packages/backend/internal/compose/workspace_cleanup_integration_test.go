@@ -38,6 +38,7 @@ func (*cleanupInstallTick) CleanupIdleSessions(context.Context) error           
 func (*cleanupInstallTick) CleanupStalePendingWorkspaces(context.Context) error { return nil }
 func (*cleanupInstallTick) CleanupIdleWorkspaces(context.Context) error         { return nil }
 func (*cleanupInstallTick) CleanupOverQuotaWorkspaces(context.Context) error    { return nil }
+func (*cleanupInstallTick) RetireIdleAgentBoxes(context.Context) error          { return nil }
 func (*cleanupInstallTick) CleanupAbandonedWorkspaces(context.Context) error    { return nil }
 func (*cleanupInstallTick) ReapWorkspaceChildren(context.Context) error         { return nil }
 func (s *cleanupInstallTick) CleanupOrphanFlowJournals(context.Context) error {
