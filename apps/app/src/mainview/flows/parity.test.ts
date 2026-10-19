@@ -1362,7 +1362,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/ApprovalCard.tsx": 2,
       "../cards/CodingVibeCard.tsx": 1,
       "../cards/RepositoryChoiceCard.tsx": 2,
-      "../repository/CodeHome.tsx": 1,
+      "../repository/CodeHome.tsx": 4, // The declared home's prompt (sign-in door, Send) and app row ride onRunCommand; the Ask opener is the fourth.
       "../repository/RepoFrame.tsx": 3,
       "../repository/RepositoryCodeView.tsx": 6,
       // The local command's Copy rides chat.copy-message; Retry is the route's own link.

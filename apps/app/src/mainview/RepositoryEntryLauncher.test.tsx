@@ -183,12 +183,15 @@ const openRepository = async (home: Response, repo = "smithersai/smithers") => {
   return { store, controller, ...view }
 }
 
-test("a repository that declares a view opens on it, with the tree one press away", async () => {
+test("a repository that declares a view opens on it, with the file table right below it", async () => {
   const { host, store } = await openRepository(json(200, { kind: "blocks", blocks: [{ type: "text", title: "Widgets", text: "The widget factory." }] }))
-  const view = host.querySelector<HTMLElement>("[data-testid=repository-home]")
+  const view = host.querySelector<HTMLElement>(".repo-code-home-intro")
   expect(view?.textContent).toContain("The widget factory.")
-  expect(view?.querySelector(".repository-home-files")).not.toBeNull()
-  // The tree is the default view and still opened for this arrival.
+  // Design (D): no Files button; the file table is the view, opened for this arrival, and it follows the declared blocks.
+  expect(host.querySelector(".repository-home-files")).toBeNull()
+  const files = host.querySelector("section[aria-label=Files]")!
+  expect(files).not.toBeNull()
+  expect(view!.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
   expect(store.collections.repoTree.get("shared:smithersai/smithers#")).not.toBeUndefined()
 })
 
@@ -208,7 +211,8 @@ test("a declaration that cannot be read falls back to the tree and says what fai
   const files = host.querySelector("section[aria-label=Files]")!
   expect(files).not.toBeNull()
   expect(view.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
-  expect(view.querySelector(".repository-home-files")).not.toBeNull()
+  // Design (D): the file table is right there; no Files button.
+  expect(view.querySelector(".repository-home-files")).toBeNull()
 })
 
 /*

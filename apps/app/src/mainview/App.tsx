@@ -3,6 +3,7 @@ import { PullViews } from "./repository/PullViews"
 import { IssueViews, matchesIssueReadKey } from "./repository/IssueViews"
 import { guestAdmission, RepoFrame } from "./repository/RepoFrame"
 import { CodeHome } from "./repository/CodeHome"
+import { latestCommitKey, readmeReadKey, repositoryLatestCommits, repositoryReadmeReads } from "./repository/RepositoryCodeRead"
 import { RepositoryCodeView } from "./repository/RepositoryCodeView"
 import { pathTarget as codePathTarget } from "./RepoLink"
 import { rememberComposerFocus, restoreComposerFocus } from "./runtime/ComposerFocus"
@@ -134,8 +135,9 @@ function AppContent() {
   const fileCards = useFileCardRows(collections.cards)
   const { data: identityRows } = useLiveQuery(collections.identitySessions)
   const { data: connectorRows } = useLiveQuery(collections.connectors)
-  const { data: repositoryChanges } = useLiveQuery(collections.changes)
   const { data: repoTreeRows } = useLiveQuery(collections.repoTree)
+  const { data: readmeReads } = useLiveQuery(repositoryReadmeReads)
+  const { data: latestCommits } = useLiveQuery(repositoryLatestCommits)
   const { data: repositoryRows } = useLiveQuery(collections.repositories)
   const { data: repositoryFlowRows } = useLiveQuery(collections.repositoryFlows)
   /* The GitHub App's coverage of the URL's repository, when the entry read it. */
@@ -780,12 +782,14 @@ function AppContent() {
       admitted={bootEntry?.phase === "ready"} requestId={bootEntry?.requestId} error={bootUnavailable ? bootEntry?.error : undefined} onAsk={text => controller.changeDraft(text)} /> : pullMatch ? <PullViews repo={bootRepository} number={pullMatch[2] ? Number(pullMatch[2]) : undefined} tab={pullMatch[3] as "commits" | "checks" | "files" | undefined} card={pullCard} onRunCommand={controller.runCommand}/> : issueMatch ? <IssueViews repo={bootRepository} number={issueMatch[1] ? Number(issueMatch[1]) : undefined} card={issueCard} signedIn={identity?.state === "signed-in"} onRunCommand={controller.runCommand}/> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
       branches={codeBranchRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())}
       onBranchesOpen={() => { void controller.repositoryBranches.load(bootRepository) }}
-      headCommit={repository?.head?.commitId}
-      changes={repositoryChanges}
+      latestCommit={latestCommits.find(row => row.id === latestCommitKey(bootRepository, bootEntry?.requestId))?.commit}
+      canAsk={identity?.state === "signed-in" || guestAdmission(session.guestConversation, bootRepository)}
       treeAvailable={homeTreeCopy !== undefined}
-      treeCopyId={homeTreeCopy} onRunCommand={controller.runCommand}
+      onRunCommand={controller.runCommand}
       tree={repoTreeRows.find(row => row.copyId === homeTreeCopy && row.path === "")}
-      home={repositoryHome}/>}
+      home={repositoryHome}
+      readme={readmeReads.find(row => row.id === readmeReadKey(bootRepository, bootEntry?.requestId))}
+      member={identity?.state === "signed-in" && repository?.canWrite === true}/>}
   </RepoFrame>
 }
 

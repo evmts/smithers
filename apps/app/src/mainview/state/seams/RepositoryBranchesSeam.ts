@@ -31,6 +31,8 @@ export interface RepositoryBranches {
   /** Sorted names; a failed re-read keeps the names of the last good one. */
   readonly names: ReadonlyArray<string>
   readonly commits?: Readonly<Record<string, string>>
+  /** The change each bookmark points at (`target_change_id`): the head's own record is read by it. */
+  readonly changeIds?: Readonly<Record<string, string>>
   readonly error?: string
 }
 
@@ -73,7 +75,7 @@ const createPicks = () => createCollection(localOnlyCollectionOptions<Repository
 export type RepositoryBranchRows = ReturnType<typeof createRows>
 export type RepositoryBranchPicks = ReturnType<typeof createPicks>
 
-type Loaded = { readonly names: ReadonlyArray<string>; readonly commits: Readonly<Record<string, string>> } | { readonly error: string }
+type Loaded = { readonly names: ReadonlyArray<string>; readonly commits: Readonly<Record<string, string>>; readonly changeIds: Readonly<Record<string, string>> } | { readonly error: string }
 
 export const createRepositoryBranchesSeam = (ctx: SeamContext) => {
   // The user's and the agent's bindings read one set of rows and picks and share reads in flight.
@@ -85,6 +87,7 @@ export const createRepositoryBranchesSeam = (ctx: SeamContext) => {
       draft.state = row.state
       draft.names = [...row.names]
       draft.commits = row.commits
+      draft.changeIds = row.changeIds
       draft.error = row.error
     })
   }
@@ -98,11 +101,15 @@ export const createRepositoryBranchesSeam = (ctx: SeamContext) => {
     const started = shared.epoch
     put({ id: repo, state: "loading", names: rows.get(repo)?.names ?? [] })
     const read = fetchAllBookmarks(ctx, repo).then((result): Loaded => {
-      const loaded: Loaded = "error" in result ? result : { names: [...new Set(result.rows.map(row => row.name))].sort((left, right) => left.localeCompare(right)), commits: Object.fromEntries(result.rows.flatMap(row => row.targetCommitId && /^[a-fA-F0-9]{40}$/.test(row.targetCommitId) ? [[row.name, row.targetCommitId]] : [])) }
+      const loaded: Loaded = "error" in result ? result : {
+        names: [...new Set(result.rows.map(row => row.name))].sort((left, right) => left.localeCompare(right)),
+        commits: Object.fromEntries(result.rows.flatMap(row => row.targetCommitId && /^[a-fA-F0-9]{40}$/.test(row.targetCommitId) ? [[row.name, row.targetCommitId]] : [])),
+        changeIds: Object.fromEntries(result.rows.map(row => [row.name, row.targetChangeId]))
+      }
       if (started !== shared.epoch || ctx.isDisposed?.()) return loaded
       put("error" in loaded
         ? { id: repo, state: "failed", names: rows.get(repo)?.names ?? [], error: loaded.error }
-        : { id: repo, state: "ready", names: loaded.names, commits: loaded.commits })
+        : { id: repo, state: "ready", names: loaded.names, commits: loaded.commits, changeIds: loaded.changeIds })
       return loaded
     }).finally(() => { if (pending.get(repo) === read) pending.delete(repo) })
     pending.set(repo, read)

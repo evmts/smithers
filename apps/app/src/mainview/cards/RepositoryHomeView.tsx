@@ -4,6 +4,7 @@ import type { FlowView, RepositoryHome } from "@smthrs/rpc/RepositoryHome"
 import type { MythicalStack } from "@smthrs/rpc/Mythical"
 import { itemReason, itemStateLabel, itemTitle, stackCounts, stackRows } from "@smthrs/rpc/StackView"
 import { ControllerContext } from "../ControllerContext"
+import type { AppController } from "../state/AppController"
 import type { RepositorySnapshot, RepositorySnapshots } from "../state/seams/RepositoryHistorySeam"
 import type { RepositoryFlowsRow } from "../state/AppState"
 import { flowViewOf } from "../state/seams/RepositoryFlowsSeam"
@@ -60,7 +61,24 @@ export interface RepositoryHomeViewProps {
   /** The copy the Files act lists; absent when this page has no copy to read. */
   readonly treeCopyId: string | undefined
   readonly onRunCommand: RunDynamicCommand
+  /**
+   * The viewer is a member of this repository. App blocks are offered to
+   * members only (app-spec row 6); absent or false is a visitor, signed out
+   * or not, who never sees one.
+   */
+  readonly member?: boolean
 }
+
+/**
+ * Whether a declared app block is offered here. A block names a flow; the
+ * registry says whether THIS host has a door for it (`Commands.find` is the
+ * availability filter every door shares). A flow the host does not serve
+ * renders for nobody: a control that would only answer "no longer available"
+ * is a dead control, and the catalog, not the block's name, decides.
+ */
+const appOffered = (controller: Pick<AppController, "commands"> | null, apps: boolean, flow: string): boolean =>
+  // Outside a controller (a bare mount) nothing is known about the host, and unknown is offered, never hidden (flows/DoorAvailability).
+  apps && (controller === null || controller.commands.find(flow) !== undefined)
 
 const NO_SNAPSHOTS: RepositorySnapshots = { get: () => undefined, subscribe: () => () => {} }
 
@@ -198,8 +216,11 @@ const DeclaredBlocks = ({ repo, blocks, onRunCommand }: {
         return <div className="repository-home-block" key={key}>
           {block.title === undefined ? null : <h2>{block.title}</h2>}
           <ul className="repository-home-links">
+            {/* The app's own pages (origin-relative, schema-admitted) open in place; other sites in a new tab, as CodeHome's HomeLinks does. */}
             {block.links.map((link) => <li key={link.url}>
-              <a href={link.url} rel="noreferrer noopener" target="_blank">{link.label}</a>
+              {/^https?:/i.test(link.url)
+                ? <a href={link.url} rel="noreferrer noopener" target="_blank">{link.label}</a>
+                : <a href={link.url}>{link.label}</a>}
             </li>)}
           </ul>
         </div>
@@ -231,7 +252,8 @@ const DeclaredBlocks = ({ repo, blocks, onRunCommand }: {
  * The repository's declared default view, or nothing when it declares none
  * (the tree is then the view, as it always was).
  */
-export function RepositoryHomeView({ repo, home, treeCopyId, onRunCommand }: RepositoryHomeViewProps) {
+export function RepositoryHomeView({ repo, home, treeCopyId, onRunCommand, member }: RepositoryHomeViewProps) {
+  const controller = useContext(ControllerContext)
   if (home === undefined || home.kind === "none") return null
   if (home.kind === "error") {
     return <section className="repository-home" data-testid="repository-home" data-home="error" aria-label={`${repo} home`}>
@@ -240,9 +262,9 @@ export function RepositoryHomeView({ repo, home, treeCopyId, onRunCommand }: Rep
       <FilesAction treeCopyId={treeCopyId} onRunCommand={onRunCommand} />
     </section>
   }
-  const blocks = home.kind === "readme"
+  const blocks = (home.kind === "readme"
     ? [{ type: "markdown" as const, path: "README.md", markdown: home.markdown }]
-    : home.blocks
+    : home.blocks).filter((block) => block.type !== "app" || appOffered(controller, member === true, block.flow))
   if (blocks.length === 0) return null
   return <section className="repository-home" data-testid="repository-home" data-home={home.kind} aria-label={`${repo} home`}>
     <DeclaredBlocks repo={repo} blocks={blocks} onRunCommand={onRunCommand} />
@@ -263,12 +285,15 @@ export function RunFlowView({ repo, flow, rows, onRunCommand }: {
   readonly rows: ReadonlyArray<RepositoryFlowsRow> | undefined
   readonly onRunCommand: RunDynamicCommand
 }) {
+  const controller = useContext(ControllerContext)
   const declared = rows?.find((row) => row.id.toLowerCase() === repo.toLowerCase())?.flows.find((row) => row.id === flow)
   const view = declared === undefined ? "none" : flowViewOf(declared)
   if (view === "none") return null
+  // A run's watcher is the install's own member; an app block still needs a door on this host.
+  const blocks = view === "unreadable" ? view : view.filter((block) => block.type !== "app" || appOffered(controller, true, block.flow))
   return <section className="repository-home run-flow-view" data-testid="run-flow-view" aria-label={`${flow} view`}>
-    {view === "unreadable"
+    {blocks === "unreadable"
       ? <p className="repository-home-notice" role="status">{`The ${flow} view is invalid.`}</p>
-      : <DeclaredBlocks repo={repo} blocks={view} onRunCommand={onRunCommand} />}
+      : <DeclaredBlocks repo={repo} blocks={blocks} onRunCommand={onRunCommand} />}
   </section>
 }

@@ -1,12 +1,15 @@
-import { codeReadKey, setCodeRead } from "./repository/RepositoryCodeRead"
+import { codeReadKey, latestCommitKey, readmeReadKey, setCodeRead, setLatestCommit, setReadmeRead } from "./repository/RepositoryCodeRead"
 import type { RefLocation, RepositorySubject } from "@smthrs/rpc/RepositorySubjectPath"
 import { isCommitRevision, resolveRefLocation } from "@smthrs/rpc/RepositorySubjectPath"
+import type { RepositoryHome } from "@smthrs/rpc/RepositoryHome"
+import { failureDetail } from "@smthrs/rpc/UserFailure"
 import { flowArgs } from "./flows/FlowArgs"
+import { treeCopyOf } from "./RepoLink"
 import type { AppController } from "./state/AppController"
 import { accountOwnerOf } from "./state/AccountOwner"
-import { parseRepoSelection } from "./state/AppState"
+import { parseRepoSelection, repoTreeRowId } from "./state/AppState"
 import type { AppStore } from "./state/AppStore"
-import type { Message } from "./state/AppState"
+import type { Message, RepoTreeEntry } from "./state/AppState"
 
 /*
  * The subject a GitHub-shaped repository URL asks for, opened through its
@@ -288,20 +291,129 @@ const openRequestedFile = async (
 }
 
 /**
+ * The README file the Code home still owes below Files: the tree's own entry
+ * (README.md first, then any README spelling) when the declared home is a
+ * block list that carries no README block of its own. Nothing when the
+ * server's answer already holds the README (`readme`), when there is no
+ * declared home, or when the tree lists none: a repository without a README
+ * shows nothing there, never a placeholder.
+ */
+export const readmeToRead = (
+  home: RepositoryHome | { readonly kind: "error"; readonly message: string } | undefined,
+  entries: ReadonlyArray<Pick<RepoTreeEntry, "name" | "kind">>
+): string | undefined => {
+  if (home?.kind !== "blocks" || home.blocks.some((block) => block.type === "markdown" && /readme/i.test(block.path))) return undefined
+  const files = entries.filter((entry) => entry.kind === "file" && /^readme(?:\.(?:md|markdown))?$/i.test(entry.name))
+  return (files.find((entry) => entry.name.toLowerCase() === "readme.md") ?? files[0])?.name
+}
+
+/**
+ * The latest-commit row's record (repo-ui-spec view 1): Platform's P-1
+ * commits read at the ref the home shows (LatestCommitSeam), and, while that route
+ * is not on this host, the default bookmark's change record, named by the
+ * bookmark list the branch selector already reads (`target_change_id`), else
+ * by the repository row's head, read as one change DTO. The record lands per
+ * admission, so a repeat visit reads it again (#4342). A read nobody can make
+ * for this viewer leaves no row behind: the home then shows no latest-commit
+ * row, never a bare commit id.
+ */
+const readHeadCommit = async (
+  controller: Pick<AppController, "store" | "repositoryBranches" | "readRepositoryChange" | "readLatestCommit">,
+  repo: string,
+  target: string,
+  owner: string | null | undefined,
+  options: SubjectEntryOptions
+): Promise<void> => {
+  const key = latestCommitKey(repo, options.requestId)
+  const live = () => !options.signal?.aborted && admitted(controller.store, repo, options.requestId, owner)
+  const ref = controller.store.collections.repositories.get(target)?.head?.bookmark
+  const commit = await controller.readLatestCommit(target, ref).catch(() => ({ error: "unread" }))
+  if (!live()) return
+  if (!("error" in commit)) { setLatestCommit(key, commit); return }
+  try { await controller.repositoryBranches.load(target) } catch { /* the branch read's own refusal stays on its row */ }
+  if (!live()) return
+  const head = controller.store.collections.repositories.get(target)?.head
+  const changeId = (head?.bookmark === undefined ? undefined : controller.repositoryBranches.rows.get(target)?.changeIds?.[head.bookmark]) ?? head?.changeId ?? undefined
+  if (changeId === undefined) return
+  const change = await controller.readRepositoryChange(target, changeId).catch(() => undefined)
+  if (!live() || change === undefined || "error" in change || change.commitId === null) return
+  setLatestCommit(key, {
+    sha: change.commitId, shortSha: change.commitId.slice(0, 7), title: change.description.split("\n")[0] ?? "",
+    author: change.authorName, committedAt: change.timestamp !== null && !Number.isNaN(Date.parse(change.timestamp)) ? change.timestamp : null
+  })
+}
+
+/**
+ * The root route's own read: the repository README below Files when the
+ * declared home carries none (repo-ui-spec view 1). It waits on the two
+ * reads the home already makes, the homepage (`repositoryFlows`) and the root
+ * tree (`repoTree`), and then reads the file through the same contents read
+ * the blob page uses, under the same admission checks. Nothing is read when
+ * the home or the tree says there is nothing to read.
+ *
+ * The check runs inside the store's own dispatch (a collection's change
+ * callback fires within that dispatch's transaction), so it writes no row
+ * there: a row written in it joined the store's transaction, the store's
+ * commit took it back, and a README that answered first never reached the
+ * page (member pages, 2026-10-19). The row is written once, by the read's
+ * own answer; until then the home shows nothing below Files, as it did.
+ */
+const openRequestedHome = (
+  controller: Pick<AppController, "store" | "readRepositoryFilePage" | "repositoryBranches" | "readRepositoryChange" | "readLatestCommit">,
+  repo: string,
+  owner: string | null | undefined,
+  options: SubjectEntryOptions
+): void => {
+  const target = selectedRepoId(controller.store, repo)
+  const key = readmeReadKey(repo, options.requestId)
+  void readHeadCommit(controller, repo, target, owner, options)
+  /** True once there is nothing left to wait for: the read started, or there is none, or this entry is no longer the page's. */
+  const settled = (): boolean => {
+    if (!admitted(controller.store, repo, options.requestId, owner)) return true
+    const { collections } = controller.store
+    const home = [...collections.repositoryFlows.values()].find((row) => row.id.toLowerCase() === target.toLowerCase())?.home
+    if (home === undefined) return false
+    if (home.kind !== "blocks") return true
+    const copyId = treeCopyOf(controller.store, target)
+    if (copyId === undefined) return false
+    const tree = collections.repoTree.get(repoTreeRowId(copyId, ""))
+    if (tree === undefined || tree.state === "loading") return false
+    const name = tree.state === "failed" ? undefined : readmeToRead(home, tree.entries)
+    if (name === undefined) return true
+    const ref = collections.repositories.get(target)?.head?.bookmark
+    const live = () => !options.signal?.aborted && admitted(controller.store, repo, options.requestId, owner)
+    void controller.readRepositoryFilePage(target, name, ref).then(
+      (page) => { if (live()) setReadmeRead(key, page.content === null || page.binary ? "failed" : "ready", name, page.content === null || page.binary ? undefined : page.content) },
+      // A refused or dropped read is a visible failure with its reason (never an empty README region); the raw text stays diagnostic.
+      (cause: unknown) => { if (live()) setReadmeRead(key, "failed", name, undefined, failureDetail(cause)) }
+    )
+    return true
+  }
+  if (settled()) return
+  let done = false
+  const subscriptions: Array<{ readonly unsubscribe: () => void }> = []
+  const stop = () => { done = true; for (const subscription of subscriptions) subscription.unsubscribe() }
+  const check = () => { if (!done && settled()) stop() }
+  subscriptions.push(controller.store.collections.repositoryFlows.subscribeChanges(check), controller.store.collections.repoTree.subscribeChanges(check), controller.store.collections.workingCopies.subscribeChanges(check))
+  if (done) stop()
+  options.signal?.addEventListener("abort", stop, { once: true })
+}
+
+/**
  * Open the subject a repository URL asked for, once that repository has been
  * admitted. Returns the read's own refusal when it failed, so the caller can
  * report it the way every other command failure is reported; returns nothing
  * when the URL named no subject or when the admission is not this request's.
  */
 export const openRequestedSubject = async (
-  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches" | "readRepositoryFilePage">,
+  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches" | "readRepositoryFilePage" | "readRepositoryChange" | "readLatestCommit">,
   repo: string,
   subject: RepositorySubject | undefined,
   options: SubjectEntryOptions
 ): Promise<string | void> => {
-  if (subject === undefined) return
   const owner = accountOwnerOf(controller.store.collections.identitySessions.get("identity"))
   if (!admitted(controller.store, repo, options.requestId, owner)) return
+  if (subject === undefined) { openRequestedHome(controller, repo, owner, options); return }
   if (subject.kind === "tree" || subject.kind === "blob") return openRequestedFile(controller, repo, subject, owner, options)
   // The default repo UI projects the other subjects directly from RepositoryRouter.
   // Never turn an unserved or newly mounted subject into an issues-list read.

@@ -357,6 +357,8 @@ export const openRequestedRepo = async (
   let memberDocument: { full_name: string; description?: unknown; default_bookmark?: unknown } | undefined
   let guest: { sessionId: string; landingId:string; revision: string } | undefined
   let declaration: RepositoryDeclaration = {}
+  // The viewer's write access, as this document answered it (`can_write`, per viewer); unknown when it did not.
+  let canWrite: boolean | undefined
   try {
     const path = `/api/repos/${requested.split("/").map(encodeURIComponent).join("/")}`
     const response = await http(path, { headers: { accept: "application/json" }, credentials: "same-origin" })
@@ -383,6 +385,7 @@ export const openRequestedRepo = async (
       ? { githubSource: "unavailable" }
       : repositoryDeclaration(typeof document?.full_name === "string" && document.full_name.toLowerCase() === requested.toLowerCase() ? document : undefined)
     declaration = { issueTracker: read.issueTracker, githubSource: read.githubSource }
+    canWrite = typeof document?.full_name === "string" && document.full_name.toLowerCase() === requested.toLowerCase() && typeof document.can_write === "boolean" ? document.can_write : undefined
     catalog = { repos: document?.is_public === true ? [{ name: canonical, summary: document.description }] : [] }
     if (document?.is_public === false && typeof document.full_name === "string" &&
       document.full_name.toLowerCase() === requested.toLowerCase() && identityAtStart?.state !== "signed-in" &&
@@ -421,7 +424,7 @@ export const openRequestedRepo = async (
     controller.store.dispatch({ type: "repository.upserted", actor: "system", repository: {
       ...existing, ...member, ownerKind: existing?.ownerKind ?? "user", catalog: false, guest: undefined,
       issueTracker: declaration.issueTracker, githubSource: declaration.githubSource,
-      documentOwner: identityAtStart!.login!,
+      documentOwner: identityAtStart!.login!, canWrite,
       head: bookmark === undefined || existing?.head?.bookmark === bookmark ? existing?.head ?? null : { bookmark, changeId: null, commitId: null }
     } })
     if (options.activate === false || options.scope === "command") return finish()
@@ -494,7 +497,7 @@ export const openRequestedRepo = async (
   diagnostics.source = "public-document"
   const { repositories } = controller.store.collections
   const existing = repositories.get(repository.id)
-  if (existing?.catalog !== true || JSON.stringify(existing.guest) !== JSON.stringify(guest) || !sameDeclaration(existing, declaration)) {
+  if (existing?.catalog !== true || JSON.stringify(existing.guest) !== JSON.stringify(guest) || existing.canWrite !== canWrite || !sameDeclaration(existing, declaration)) {
     controller.store.dispatch({
       type: "repository.upserted",
       actor: "system",
@@ -504,7 +507,7 @@ export const openRequestedRepo = async (
        * treats it as "no org changesets", never as a fabricated org.
        * `catalog` records where the row came from: readable signed out.
        */
-      repository: { ...existing, ...repository, ...declaration, guest, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: true }
+      repository: { ...existing, ...repository, ...declaration, guest, canWrite, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: true }
     })
   }
   if (options.activate === false || options.scope === "command") return finish()

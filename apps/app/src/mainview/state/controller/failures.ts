@@ -70,7 +70,7 @@ export interface FailureController {
    */
   readonly resolveToast: (
     key: string,
-    outcome: { readonly status: "ok" | "failed" | "cancelled"; readonly title?: string; readonly detail: string; readonly action?: Toast["action"]; readonly autoDismissMs?: number }
+    outcome: { readonly status: "ok" | "failed" | "cancelled"; readonly title?: string; readonly detail?: string; readonly action?: Toast["action"]; readonly autoDismissMs?: number }
   ) => void
   readonly dismissToast: (id: string) => void
   /**

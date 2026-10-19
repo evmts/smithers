@@ -290,8 +290,24 @@ export const CloudRepositorySchema = z.object({
    * Absent on the signed-in inventory.
    */
   catalog: z.boolean().optional(),
+  /**
+   * True while the account's own-repository list (GET /api/user/repos) names
+   * this repository. Set by `repositories.loaded` and cleared by a later list
+   * that omits it. It is NOT membership: that list names every public
+   * repository for every signed-in account (repos.sql `ListReadableReposForUser`,
+   * `OR r.is_public`), so a mark here says only that the account can read it.
+   */
+  inventory: z.literal(true).optional(),
   /** Account that directly read this repository; its own-repository list is not an access inventory. */
   documentOwner: z.string().optional(),
+  /**
+   * The viewer's effective write access, as the repository DOCUMENT answered
+   * it (`can_write` on GET /api/repos/{o}/{r}, per viewer; routes/repos.go),
+   * carried here by admission's upserts (RepoLink.ts). Membership for the
+   * Code home's app blocks is exactly `canWrite === true`; absent fails
+   * closed, the document's own rule for a client that cannot read it.
+   */
+  canWrite: z.boolean().optional(),
   /** Server admission for the fixed guest flow; the cookie stays HttpOnly. */
   guest: z.object({ sessionId: z.string(), landingId:z.string(), revision: z.string() }).optional(),
   /**
@@ -1949,7 +1965,8 @@ type AppTransitionBody =
     status: "ok" | "failed" | "cancelled"
     /** The settled title, so a done toast stops reading as still running. */
     title?: string
-    detail: string
+    /** Absent is no detail line at all; the row keeps "" for it (ToastSchema), which the stack projects to none. */
+    detail?: string
     action?: Toast["action"]
   }
   | { type: "toast.progressed"; actor: "system"; key: string; detail: string; title?: string }
@@ -2045,7 +2062,7 @@ type AppTransitionBody =
   | {
     type: "repository.upserted"
     actor: "system"
-    repository: Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "documentOwner" | "summary" | "issueTracker" | "githubSource" | "guest">
+    repository: Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "documentOwner" | "canWrite" | "summary" | "issueTracker" | "githubSource" | "guest">
   }
   | {
     type: "workingcopies.workspaces.loaded"

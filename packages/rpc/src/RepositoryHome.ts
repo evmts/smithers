@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod"
-import { HttpUrlSchema } from "./WebUrl.ts"
+import { HttpUrlSchema, RelativeUrlPathSchema } from "./WebUrl.ts"
 
 const title = z.string().min(1).max(120)
 const flow = z.string().regex(/^[a-z0-9_-]+(?:[./][a-z0-9_-]+)*$/)
@@ -41,7 +41,7 @@ export const RepositoryHomeText = z.object({
 })
 /* The repository's live mythical stack; the app reads it from `@smthrs/rpc/Mythical`. */
 const stack = z.object({ type: z.literal("stack"), title: title.optional() })
-/** Repository-owned links with validated HTTP(S) destinations.
+/** Repository-owned links: validated HTTP(S) destinations, or origin-relative paths on the app's own host (`/`, `/bug`), never a scheme-relative `//host`.
  * @category schemas
  * @since 0.1.0
  */
@@ -50,7 +50,7 @@ export const RepositoryHomeLinks = z.object({
   title: title.optional(),
   links: z.array(z.object({
     label: title,
-    url: HttpUrlSchema
+    url: z.union([HttpUrlSchema, RelativeUrlPathSchema])
   })).min(1)
 })
 /* A repository flow's declared view, drawn in this place (`Smithers.Home.View`). */

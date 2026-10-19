@@ -128,7 +128,8 @@ import { bundledDocs } from "../../docs/bundled"
 import { createBranchNavigationSeam, sessionBranchIndex } from "./seams/BranchNavigationSeam"
 import { createRepositoryBranchesSeam, type RepositoryBranchPicks, type RepositoryBranchRows } from "./seams/RepositoryBranchesSeam"
 import type { ChangeSeam } from "./seams/ChangeSeam"
-import { createChangeSeam } from "./seams/ChangeSeam"
+import { createChangeSeam, readRepositoryChange } from "./seams/ChangeSeam"
+import { readLatestCommit } from "./seams/LatestCommitSeam"
 import type { CloudSeam } from "./seams/CloudSeam"
 import { createCloudSeam } from "./seams/CloudSeam"
 import type { CodeIntelSeam } from "./seams/CodeIntelSeam"
@@ -586,7 +587,11 @@ export interface AppController extends IssueFlowsController {
   /** branch.fork on an install: POST /api/branches {from, name?} (spec §8.5); its value is the new scratch branch. A string is the refusal. Absent off an install, where the flow acts on the seeded world. */
   readonly selectConversationBranch: (name: string) => Promise<void>
   /** Complete repository file page, separate from the bounded transcript read. */
-  readonly readRepositoryFilePage: (repo: string, path: string, ref: string) => ReturnType<typeof readFilePage>
+  readonly readRepositoryFilePage: (repo: string, path: string, ref?: string) => ReturnType<typeof readFilePage>
+  /** One change's record for a page (the Code home's latest commit), landed in the changes collection; the server decides the reader. */
+  readonly readRepositoryChange: (repo: string, changeId: string) => ReturnType<typeof readRepositoryChange>
+  /** The newest commit at a ref (Platform's P-1 commits read, LatestCommitSeam); the server decides the reader. */
+  readonly readLatestCommit: (repo: string, ref?: string) => ReturnType<typeof readLatestCommit>
   /** A Cloud repository's branch names as last read and the branch picked in each (RepositoryBranchesSeam): the header's branch selector reads both and asks for a read when it opens. */
   readonly repositoryBranches: { readonly rows: RepositoryBranchRows; readonly picks: RepositoryBranchPicks; readonly load: (repo: string) => Promise<unknown>; readonly pickOf: (repo: string) => string | undefined }
   readonly setBranchNavigationView: (patch: { selected_branch?: string; selected_archive?: string; previous_branch?: string; open?: boolean }) => Promise<void>
@@ -3123,8 +3128,9 @@ export const createAppController = (
       const absent = commands.explainAbsent(name)
       const key = `command.unavailable.${name}`
       const detail = absent?.reason ?? "This action is no longer available"
+      // One sentence, once: the notice's title says it, and the resolution adds no second line (no detail at all).
       store.dispatch({ type: "toast.shown", actor: "system", key, title: detail })
-      resolveToast(key, { status: "failed", detail })
+      resolveToast(key, { status: "failed" })
       return {
         accepted: false,
         result: Promise.resolve(absent === undefined
@@ -3155,6 +3161,8 @@ export const createAppController = (
     observeReviewConfirmation: issueFlows.observeReviewConfirmation,
     fileDocuments,
     readRepositoryFilePage: (repo, path, ref) => readFilePage(seamCtx, repo, path, ref),
+    readRepositoryChange: (repo, changeId) => readRepositoryChange(seamCtx, repo, changeId),
+    readLatestCommit: (repo, ref) => readLatestCommit(seamCtx, repo, ref),
     repositoryBranches: { rows: repositoryBranches.rows, picks: repositoryBranches.picks, load: repositoryBranches.load, pickOf: repositoryBranches.pickOf },
     store,
     privacyNotices: privacyActions.notices,

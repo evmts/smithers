@@ -1123,3 +1123,71 @@ describe("authenticated repository document admission (#4313)", () => {
     } finally { response.resolve(jsonResponse({}, 404)); await store.dispose?.() }
   })
 })
+
+/*
+ * Membership for the Code home's app blocks (app-spec row 6) is the
+ * repository DOCUMENT's own per-viewer answer, `can_write`, carried onto the
+ * row by admission. The own-repository list is not that: `/api/user/repos`
+ * names every public repository for every signed-in account (repos.sql
+ * `ListReadableReposForUser`, `OR r.is_public`), so a mark from it must never
+ * read as membership. Absent answers fail closed.
+ */
+describe("the repository document's can_write is carried onto the row", () => {
+  const signIn = (store: Awaited<ReturnType<typeof fixture>>["store"], login = "reader") =>
+    store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login, admin: false, scopesPlain: null }).isPersisted.promise
+  const documentHTTP = (document: Record<string, unknown>) => async (input: RequestInfo | URL) =>
+    String(input).toLowerCase() === "/api/repos/smithersai/smithers" ? jsonResponse(document) : jsonResponse({}, 404)
+
+  for (const canWrite of [true, false, undefined]) test(`a public document answering can_write ${String(canWrite)} lands that answer on the catalog row (absent stays unknown)`, async () => {
+    const { store, controller } = await fixture()
+    try {
+      await signIn(store)
+      await openRequestedRepo(controller, documentHTTP({ ...publicDocument, ...(canWrite === undefined ? {} : { can_write: canWrite }) }), "smithersai/smithers")
+      expect(store.session().repositoryEntry?.phase).toBe("ready")
+      const row = store.collections.repositories.get("smithersai/smithers")
+      expect(row).toMatchObject({ catalog: true })
+      expect(row?.canWrite).toBe(canWrite)
+      // The account's own-repository list naming it changes nothing about membership.
+      await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "smithersai/smithers", org: "smithersai", name: "smithers", ownerKind: "org", head: null }] }).isPersisted.promise
+      expect(store.collections.repositories.get("smithersai/smithers")).toMatchObject({ inventory: true })
+      expect(store.collections.repositories.get("smithersai/smithers")?.canWrite).toBe(canWrite)
+    } finally { await store.dispose?.() }
+  })
+
+  test("a fresh public document replaces an older answer, so a revoked writer is not remembered as one", async () => {
+    const { store, controller } = await fixture()
+    try {
+      await signIn(store)
+      await openRequestedRepo(controller, documentHTTP({ ...publicDocument, can_write: true }), "smithersai/smithers")
+      expect(store.collections.repositories.get("smithersai/smithers")?.canWrite).toBe(true)
+      beginRepositoryEntry(store, "smithersai/smithers")
+      await openRequestedRepo(controller, documentHTTP({ ...publicDocument, can_write: false }), "smithersai/smithers")
+      expect(store.collections.repositories.get("smithersai/smithers")?.canWrite).toBe(false)
+      beginRepositoryEntry(store, "smithersai/smithers")
+      await openRequestedRepo(controller, documentHTTP(publicDocument), "smithersai/smithers")
+      expect(store.collections.repositories.get("smithersai/smithers")?.canWrite).toBeUndefined()
+    } finally { await store.dispose?.() }
+  })
+
+  test("a document that names another repository, or none, grants no membership here", async () => {
+    for (const document of [{ is_public: true, full_name: "other/repository", can_write: true }, { is_public: true, can_write: true }]) {
+      const { store, controller } = await fixture()
+      try {
+        await signIn(store)
+        await openRequestedRepo(controller, documentHTTP(document), "smithersai/smithers")
+        expect(store.session().repositoryEntry?.phase).toBe("ready")
+        expect(store.collections.repositories.get("smithersai/smithers")?.canWrite).toBeUndefined()
+      } finally { await store.dispose?.() }
+    }
+  })
+
+  test("a private member document carries its can_write too", async () => {
+    const { store, controller } = await fixture()
+    try {
+      await signIn(store)
+      await openRequestedRepo(controller, documentHTTP({ full_name: "smithersai/smithers", is_public: false, default_bookmark: "main", can_write: true }), "smithersai/smithers")
+      expect(store.session().repositoryEntry?.diagnostics).toMatchObject({ source: "member-document" })
+      expect(store.collections.repositories.get("smithersai/smithers")).toMatchObject({ documentOwner: "reader", canWrite: true })
+    } finally { await store.dispose?.() }
+  })
+})
