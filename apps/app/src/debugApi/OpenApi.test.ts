@@ -231,3 +231,13 @@ test.each(CONTRACT_GUARDS)("release $id declares its own authorization and reque
     expect(Object.keys(schema?.properties ?? {})).toEqual([...guard.body.properties])
   }
 })
+
+
+test("session read exposes optional durable dispatch stage fields", () => {
+  const schema = parse(readFileSync(new URL("../../../../docs/api/openapi.yaml", import.meta.url), "utf8")).components.schemas.AgentSessionRead
+  const fields = JSON.parse(readFileSync(new URL("./session-read.fixture.json", import.meta.url), "utf8"))
+  for (const [name, field] of Object.entries(fields)) {
+    expect(schema.properties[name]).toEqual(field)
+    expect(schema.required).not.toContain(name)
+  }
+})

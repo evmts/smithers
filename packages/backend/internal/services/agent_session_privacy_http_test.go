@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
@@ -19,6 +20,11 @@ import (
 // repository permission are supplied at the middleware boundary.
 func TestAgentSessionCreatorOnlyHTTPPostgres(t *testing.T) {
 	_, agents, creator, repository, sessionID, _, _ := services.NewSessionLandingHTTPFixture(t)
+	_, err := agents.AppendMessageAndDispatch(t.Context(), services.DispatchAgentRunInput{
+		SessionID: sessionID, RepositoryID: repository.ID, UserID: creator.ID,
+		RepoOwner: creator.Username, RepoName: repository.Name,
+	}, []db.CreateAgentPartParams{{PartType: "text", Content: json.RawMessage(`{"value":"run"}`)}})
+	require.NoError(t, err)
 	handler := &routes.AgentSessionHandler{Service: agents}
 	stream := &routes.AgentSessionStreamHandler{Service: agents}
 	router := chi.NewRouter()
@@ -63,6 +69,13 @@ func TestAgentSessionCreatorOnlyHTTPPostgres(t *testing.T) {
 					want = 200
 				}
 				require.Equal(t, want, out.Code, out.Body.String())
+				if actor == "creator" && suffix == "" {
+					var body map[string]any
+					require.NoError(t, json.Unmarshal(out.Body.Bytes(), &body))
+					require.Equal(t, "queued", body["stage"])
+					require.NotEmpty(t, body["queued_at"])
+					require.Equal(t, float64(1), body["queue_position"])
+				}
 			})
 		}
 		t.Run(actor+"/list", func(t *testing.T) {
@@ -92,6 +105,6 @@ func TestAgentSessionCreatorOnlyHTTPPostgres(t *testing.T) {
 	}
 	// Service calls without an HTTP actor must fail closed as well.
 	require.Error(t, agents.GetSessionForRepo(context.Background(), sessionID, repository.ID))
-	_, _, err := agents.ListSessions(context.Background(), repository.ID, 1, 30)
+	_, _, err = agents.ListSessions(context.Background(), repository.ID, 1, 30)
 	require.Error(t, err)
 }

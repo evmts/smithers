@@ -61,6 +61,9 @@ components:
         updated_at: {type: string, format: date-time}
         metadata: {$ref: '#/components/schemas/AnyJSON'}
         workspace_id: {type: string}
+        stage: {type: string, enum: [queued, started], description: "Current turn dispatch stage; absent when no turn is in flight."}
+        queued_at: {type: string, format: date-time, description: "User message acceptance time; present only while queued."}
+        queue_position: {type: integer, format: int64, minimum: 1, description: "Position in dispatch order, including capacity retries; never a time estimate."}
         workspace:
           oneOf:
             - type: 'null'
