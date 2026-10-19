@@ -56,9 +56,11 @@ Full input: `waitRunId="run-123"`, `waitName="decision"`, `askId="ask-1"`,
 `schema={"type":"object","properties":{"evidence":{"type":"object","format":"webauthn-assertion"}}}`,
 `issuedAt="2026-10-18T12:00:00.000Z"`.
 Exact preimage bytes (UTF-8, no BOM or trailing newline):
+
 ```json
-["smithers-answer/v1","run-123","decision","ask-1",{"a":1,"z":[true,null]},"2026-10-18T12:00:00.000Z"]
+["smithers-answer/v1", "run-123", "decision", "ask-1", { "a": 1, "z": [true, null] }, "2026-10-18T12:00:00.000Z"]
 ```
+
 Expected base64url challenge: `Fv40wrBkEJzgrMK98cMsstf1TYjSu5oDuAxmyr_R4YU`.
 
 ## Evidence and verifier duties

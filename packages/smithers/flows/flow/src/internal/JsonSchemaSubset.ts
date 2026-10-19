@@ -341,7 +341,9 @@ const validateSchemaAt = (
     return `${at(path)} declares an unsupported "format".`
   }
   if (schema["format"] === "webauthn-assertion") {
-    if (depth !== 1 || !property || (schema["type"] !== undefined && schema["type"] !== "object")) return `${at(path)} requires an object assertion marker on a depth-1 property.`
+    if (depth !== 1 || !property || (schema["type"] !== undefined && schema["type"] !== "object")) {
+      return `${at(path)} requires an object assertion marker on a depth-1 property.`
+    }
     if (++budget.markers > 1) return `${at(path)} declares more than one assertion marker.`
   }
   const enumeration = schema["enum"]

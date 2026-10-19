@@ -709,13 +709,18 @@ describe("HumanTask parks", () => {
     return Effect.gen(function*() {
       const result = yield* Flow.intoResult(
         Interpreter.interpret(HumanTask.action.call({
-          name: "release", requestId, kind: "confirm", prompt: "Ship it?"
+          name: "release",
+          requestId,
+          kind: "confirm",
+          prompt: "Ship it?"
         }))
       )
       expect(result._tag).toBe("Suspended")
       expect(instance.waiting?.reason).toBe("approval")
       expect(JSON.parse(instance.waiting!.request!)).toMatchObject({
-        name: "release", requestId, attempt: 1
+        name: "release",
+        requestId,
+        attempt: 1
       })
     }).pipe(
       Effect.provideService(FlowRuntime.FlowInstance, instance),
@@ -1656,5 +1661,13 @@ describe("HumanTask.decode", () => {
 
 it("refuses misplaced, mistyped and duplicate assertion markers at schema admission", () => {
   const marker = { format: "webauthn-assertion" }
-  for (const schema of [marker, { properties: { meta: { properties: { proof: marker } } } }, { properties: { proof: { ...marker, type: "string" } } }, { properties: { a: marker, b: marker } }, { items: marker }]) expect(HumanTask.validateSchema(schema)).toBeDefined()
+  for (
+    const schema of [
+      marker,
+      { properties: { meta: { properties: { proof: marker } } } },
+      { properties: { proof: { ...marker, type: "string" } } },
+      { properties: { a: marker, b: marker } },
+      { items: marker }
+    ]
+  ) expect(HumanTask.validateSchema(schema)).toBeDefined()
 })
