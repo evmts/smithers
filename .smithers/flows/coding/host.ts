@@ -187,6 +187,17 @@ export const repositoryFlowsServed = (
 ): boolean =>
   options.fixedFlowCatalog !== true || (options.flowSourceRoot ?? options.repositoryPath) !== options.repositoryPath
 
+/**
+ * Whether this host serves repository jobs: repository/setup, repository/trigger,
+ * repository-jobs/* and the RunJob, RunSetup and RunTrigger delegates. An install
+ * turns them off; a hosted host (a fixed flow catalog) never serves them, because
+ * a job runs the repository's stored command checks with the network (gate item
+ * 2b, Security d-alopxz, CEO a-wlojl3).
+ */
+export const repositoryJobsServed = (
+  options: Pick<Options, "retainedRepositoryJobs" | "fixedFlowCatalog">
+): boolean => options.retainedRepositoryJobs !== false && options.fixedFlowCatalog !== true
+
 /** The optional routes advertised by this configured host. */
 export const configuredCodingRoutes = (
   options: Pick<Options, "planning" | "landing">
@@ -209,14 +220,14 @@ export const configuredCodingRoutes = (
 export const provisionHostBuiltins = (
   stateRoot: string,
   policy: string,
-  options: Pick<Options, "planning" | "landing" | "retainedRepositoryJobs">
+  options: Pick<Options, "planning" | "landing" | "retainedRepositoryJobs" | "fixedFlowCatalog">
 ) =>
   provisionBuiltins(
     stateRoot,
     policy,
     configuredCodingRoutes(options).map((route) => route.name),
     options.planning?.detected ?? [],
-    options.retainedRepositoryJobs !== false
+    repositoryJobsServed(options)
   )
 
 /**
@@ -228,7 +239,7 @@ export const provisionHostBuiltins = (
  */
 export const missingCodingExecutables = (
   built: Pick<Executable.Catalog, "executables">,
-  options: Pick<Options, "planning" | "landing" | "retainedRepositoryJobs">
+  options: Pick<Options, "planning" | "landing" | "retainedRepositoryJobs" | "fixedFlowCatalog">
 ): ReadonlyArray<string> => {
   const required: ReadonlyArray<readonly [string, string | undefined]> = [
     ...[
@@ -238,7 +249,7 @@ export const missingCodingExecutables = (
       ...configuredCodingRoutes(options).map((route) => route.name)
     ]
       .map((name) => [name, undefined] as const),
-    ...(options.retainedRepositoryJobs === false ? [] : [
+    ...(!repositoryJobsServed(options) ? [] : [
       ["repository/setup", RunSetup._tag],
       ["repository/trigger", RunTrigger._tag],
       ["repository-jobs/issues", RunJob._tag]
@@ -783,7 +794,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
         const repositoryPolicy = Digest.digest(
           Digest.canonical({
             bundle: repositoryBundle,
-            retainedRepositoryJobs: options.retainedRepositoryJobs !== false,
+            retainedRepositoryJobs: repositoryJobsServed(options),
             implementationModel: options.implementationModel,
             researchModel: options.planningModel ?? options.implementationModel,
             gateway: options.gatewayId,
@@ -1015,7 +1026,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
             reviewCheckDelegate,
             securityReviewCheckDelegate,
             securityAuditDelegate,
-            ...(options.retainedRepositoryJobs === false ? [] : [RunSetup, RunJob, RunTrigger]),
+            ...(!repositoryJobsServed(options) ? [] : [RunSetup, RunJob, RunTrigger]),
             ...(wikiEnabled ? [wikiCheckDelegate] : [])
           ]
         }
