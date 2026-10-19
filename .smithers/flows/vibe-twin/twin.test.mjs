@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { affectedTests, dropDefaultNever, exportDocs, privateMembers, suiteEnv, undeclarableModules, unnamedInferredTypes, exactPathPattern, fallbackFor, localNames, sourceExports, normalizeDts, parseDts, quality, sameReferencedLocals, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
+import { affectedTests, dropDefaultNever, exportDocs, pinImportMeta, privateMembers, suiteEnv, undeclarableModules, unnamedInferredTypes, exactPathPattern, fallbackFor, localNames, sourceExports, normalizeDts, parseDts, quality, sameReferencedLocals, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
 
 test("declarations that differ only in relative import extensions are equal", () => {
   const ts = `import { type A } from "./ErrorCode.ts";\nexport { B } from "../x/y.ts";\nexport declare const c: import("./z.ts").Z;\n`
@@ -77,6 +77,11 @@ test("twin code falls back to src/ for a module the twin does not have yet", () 
   assert.equal(fallbackFor("../flow-form.js", importer, pkg), join(pkg, "src", "flow-form.ts"))
   assert.equal(fallbackFor("effect", importer, pkg), undefined, "packages resolve normally")
   assert.equal(fallbackFor("./b.js", join(pkg, "test", "x.ts"), pkg), undefined, "only twin code falls back")
+  writeFileSync(join(pkg, "src", "pack-release.mjs"), "")
+  assert.equal(fallbackFor("../pack-release.mjs", importer, pkg), join(pkg, "src", "pack-release.mjs"), "a source .mjs the twin imports (S20-70)")
+  writeFileSync(join(pkg, "src", "schema.ts"), "")
+  writeFileSync(join(pkg, "src", "schema.js"), "")
+  assert.equal(fallbackFor("../schema.js", importer, pkg), join(pkg, "src", "schema.ts"), "a .ts source wins over a compiled .js beside it")
 })
 
 test("quotes inside comments do not swallow later exports (finding B-3)", () => {
@@ -297,4 +302,12 @@ test("an export TypeScript itself can't name is reproduced, not a twin error (S1
     "host.ts(1,1): error TS2322: nope"
   ], pkg, ".")
   assert.deepEqual([...m].map(([k, v]) => [k, [...v]]), [["correction", ["TS2883:correctionLayers"]]])
+})
+
+test("a twin's import.meta names the source file it twins (S20-1)", () => {
+  const code = `const script = new URL("../smoke-release.mjs", import.meta.url)\nconst here = import.meta.dirname, me = import.meta.filename\nconst r = import.meta.resolve("x")\n`
+  const pinned = pinImportMeta(code, "/repo/.smithers/flows/release/smoke/flow.ts")
+  assert.match(pinned, /new URL\("..\/smoke-release.mjs", "file:\/\/\/repo\/.smithers\/flows\/release\/smoke\/flow.ts"\)/)
+  assert.match(pinned, /const here = "\/repo\/.smithers\/flows\/release\/smoke", me = "\/repo\/.smithers\/flows\/release\/smoke\/flow.ts"/)
+  assert.match(pinned, /import\.meta\.resolve\("x"\)/, "resolve stays")
 })

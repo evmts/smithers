@@ -285,6 +285,13 @@ const twinModules = (pkg) => {
 
 const MANIFEST = ".vibe-twin-modules.json"
 
+/** Pins a module's import.meta.url, dirname and filename to the source file it twins (S20-1). */
+export const pinImportMeta = (code, original) =>
+  code
+    .replaceAll(/\bimport\.meta\.url\b/g, JSON.stringify(pathToFileURL(original).href))
+    .replaceAll(/\bimport\.meta\.dirname\b/g, JSON.stringify(dirname(original)))
+    .replaceAll(/\bimport\.meta\.filename\b/g, JSON.stringify(original))
+
 /** A src/ module without a twin yet: its path relative to src/, without extension. */
 const srcModules = (pkg) =>
   walkSources(join(pkg, sourceRoot(pkg)))
@@ -327,6 +334,31 @@ const linkPartialTwin = (pkg, work) => {
     mkdirSync(dirname(dest), { recursive: true })
     copyFileSync(join(pkg, sourceRoot(pkg), f), dest)
   }
+  // A JavaScript source file the twin imports by relative path (release-support/operations
+  // imports ../release/pack-release.mjs) isn't compiled into the output folder; every runner
+  // reaches it through a re-export stub, so the real module evaluates once (S20-70).
+  for (const f of walkSources(join(pkg, sourceRoot(pkg)))) {
+    if (!/\.(?:mjs|js)$/.test(f)) continue
+    // A .js beside its .ts is a compiled copy, not a source file.
+    if ([".ts", ".tsx", ".mts"].some((x) => existsSync(join(pkg, sourceRoot(pkg), f.replace(/\.m?js$/, x))))) continue
+    const dest = join(out, f)
+    if (existsSync(dest)) continue
+    const real = join(pkg, sourceRoot(pkg), f)
+    mkdirSync(dirname(dest), { recursive: true })
+    const hasDefault = /^\s*export\s+default\b/m.test(readFileSync(real, "utf8"))
+    writeFileSync(dest, `// vibe-twin: a JavaScript source file, not compiled\nexport * from ${JSON.stringify(real)}\n${hasDefault ? `export { default } from ${JSON.stringify(real)}\n` : ""}`)
+  }
+  // A module that locates a script or file beside itself through import.meta (35 release,
+  // bench and land flows; coding's wiki-policy) must see its source location, where the
+  // compiled VibeLang sits after cutover, not the output folder (S20-1, E-12).
+  for (const f of walk(out).filter((x) => x.endsWith(".js"))) {
+    const emitted = join(out, f)
+    const text = readFileSync(emitted, "utf8")
+    if (!text.includes("import.meta")) continue
+    const base = join(pkg, sourceRoot(pkg), f.replace(/\.js$/, ""))
+    const original = [".ts", ".tsx", ".mts"].map((x) => base + x).find(existsSync) ?? `${base}.ts`
+    writeFileSync(emitted, pinImportMeta(text, original))
+  }
   writeFileSync(join(out, MANIFEST), JSON.stringify([...names]) + "\n")
   for (const { rel, file } of srcModules(pkg)) {
     if (names.has(rel)) continue
@@ -354,7 +386,18 @@ export const fallbackFor = (source, importer, pkg) => {
   // its src/ file itself, not the stub, so it has one namespace identity (A-9).
   const twins = twinModules(pkg)
   if (twins.has(rel) || twins.has(`${rel}/index`)) return undefined
-  return [".ts", ".tsx", ".mts", "/index.ts", "/index.tsx"].map((x) => join(pkg, sourceRoot(pkg), rel + x)).find(existsSync)
+  // A JavaScript source file the module imports by name (../release/pack-release.mjs) isn't
+  // compiled into the output folder: the twin reaches the source file itself (S20-70).
+  // A TypeScript source wins: a stale compiled .js beside schema.ts would be a second
+  // instance of the module, so instanceof fails (S20 repo-b).
+  const typescript = [".ts", ".tsx", ".mts", "/index.ts", "/index.tsx"].map((x) => join(pkg, sourceRoot(pkg), rel + x)).find(existsSync)
+  if (typescript !== undefined) return typescript
+  const script = target.match(/\.(?:mjs|cjs|js)$/)?.[0]
+  if (script !== undefined && !existsSync(target)) {
+    const real = join(pkg, sourceRoot(pkg), rel + script)
+    if (existsSync(real)) return real
+  }
+  return undefined
 }
 
 const walk = (dir, base = dir) =>
