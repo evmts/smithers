@@ -1,0 +1,48 @@
+/**
+ * Lazy host adapter loading shared by repository construction and application.
+ *
+ * @since 1.0.0
+ */
+
+import type * as NodeJj from "@smthrs/jj/node/NodeJj"
+import * as Effect from "effect/Effect"
+import { MergeError } from "./Outcome.vibe"
+
+// Keep browser/provider imports independent of Node until host work is requested.
+const adapter = "@smthrs/jj/node/NodeJj"
+
+// A named type keeps the importer a plain Promise-returning function (D-4).
+type Importer = () => Promise<typeof NodeJj>
+
+/**
+ * Builds a lazy loader sharing pending and successful imports, retrying rejections.
+ *
+ * @category utils
+ * @since 1.0.0
+ */
+export const makeHostAdapterLoader = (importer: Importer) => {
+  // One cell per loader, shared by every run of the program it returns.
+  const pending: { mutable loading: Promise<typeof NodeJj> | undefined } = { loading: undefined }
+  const program: Effect.Effect<typeof NodeJj, MergeError> = () =>
+    try(
+      async (pending, importer) =>
+        pending.loading ??= importer().catch((cause) => {
+          pending.loading = undefined
+          throw cause
+        }),
+      (cause) => new MergeError({ reason: "vcs_failed", message: "could not load the host jj adapter", cause }),
+      pending,
+      importer
+    )
+  return program
+}
+
+/**
+ * Loads the host adapter once, retrying resolution after a rejected import.
+ *
+ * @category utils
+ * @since 1.0.0
+ */
+export const loadHostAdapter: Effect.Effect<typeof NodeJj, MergeError> = makeHostAdapterLoader(() =>
+  import(adapter) as Promise<typeof NodeJj>
+)

@@ -1,0 +1,6 @@
+export class InboundBoundaryError extends TypeError {
+ readonly issue: string
+ constructor(issue: string) { super(issue); this.issue = issue }
+}
+type Boundary = (issue: string) => never
+export const boundaryImpl: Boundary = (issue: string): never => { throw new InboundBoundaryError(issue) }

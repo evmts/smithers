@@ -1,0 +1,38 @@
+{
+ "extends": "/Users/williamcory/smithers-vibe-twins/packages/smithers/build/build-cli/tsconfig.json",
+ "compilerOptions": {
+  "vibelang": {
+   "trustedPackages": [
+    "@smthrs/*",
+    "@smithers/*",
+    "smithers-*"
+   ],
+   "diagnostics": {
+    "EK4403": "warning"
+   }
+  },
+  "noEmit": false,
+  "noEmitOnError": false,
+  "composite": false,
+  "incremental": false,
+  "declarationMap": false,
+  "plugins": [],
+  "rootDir": "/Users/williamcory/smithers-vibe-twins",
+  "rootDirs": [
+   "/Users/williamcory/smithers-vibe-twins/packages/smithers/build/build-cli/src",
+   "/Users/williamcory/smithers-vibe-twins/packages/smithers/build/build-cli/src-vibe"
+  ],
+  "outDir": "/Users/williamcory/smithers-vibe-twins/packages/smithers/build/build-cli/.vibe-twin-check/f2/out",
+  "declaration": true,
+  "emitDeclarationOnly": false,
+  "allowImportingTsExtensions": true,
+  "rewriteRelativeImportExtensions": true,
+  "sourceMap": false,
+  "inlineSourceMap": false,
+  "inlineSources": false
+ },
+ "include": [
+  "/Users/williamcory/smithers-vibe-twins/packages/smithers/build/build-cli/src-vibe/**/*"
+ ],
+ "exclude": []
+}

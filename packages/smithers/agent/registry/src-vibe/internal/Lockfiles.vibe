@@ -1,0 +1,27 @@
+const byteHash: (value: string | Uint8Array) => ReturnType<typeof Digest.digest> = Digest.digest
+/**
+ * Shared dependency measurement for discovery and execution snapshots.
+ * @since 1.0.0-rc.1
+ */
+
+import * as Digest from "@smthrs/core/Digest"
+import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
+import * as Option from "effect/Option"
+import * as Path from "effect/Path"
+
+const lockfiles = ["pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lock", "bun.lockb"]
+/** Measure the repository dependency environment without executing it.
+ * @category utilities
+ * @since 1.0.0-rc.1
+ */
+export const measureLockfiles = (root: string) =>
+  Effect.suspend(() => {
+    const fs = FileSystem.FileSystem(), path = Path.Path()
+    const measured: Array<readonly [string, string]> = []
+    for (const name of lockfiles) {
+      const bytes = (fs.readFile(path.join(root, name)) |> Effect.map(%, Option.some) |> Effect.catchReason(%, "PlatformError", "NotFound", () => Effect.succeed(Option.none())))
+      if (Option.isSome(bytes)) measured.push([name, byteHash(bytes.value)])
+    }
+    return byteHash(new TextEncoder().encode(JSON.stringify(measured)))
+  })

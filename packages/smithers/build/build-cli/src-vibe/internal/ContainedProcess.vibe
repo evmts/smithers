@@ -1,0 +1,143 @@
+/** Scoped process execution for build-cli discovery and watch cycles.
+ * @since 1.0.0-rc.0
+ */
+
+import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
+import { Cause, Data, Effect, Exit, Stream } from "effect"
+import * as Fs from "node:fs"
+import * as NodePath from "node:path"
+import * as Native from "./ContainedProcess.native.ts"
+
+/** A bounded process operation failed, with its original cause retained.
+ * @category errors
+ * @since 1.0.0-rc.0
+ */
+export class ProcessError extends Data.TaggedError("smithers-build/ProcessError")<{
+  readonly code: "timed_out" | "cancelled" | "process_failed" | "output_limit" | "cleanup_failed"
+  readonly message: string
+  readonly cause?: unknown
+}> {
+  constructor(code: ProcessError["code"], message: string, cause?: unknown) {
+    super({ code, message, ...(cause === undefined ? {} : { cause }) })
+  }
+}
+
+const graceMs = 5000
+
+/** One bounded process invocation.
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface Options {
+  readonly command: string
+  readonly args: ReadonlyArray<string>
+  readonly cwd: string
+  readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+  readonly signal?: AbortSignal | undefined
+  readonly timeoutMs?: number | undefined
+  readonly maxOutputBytes?: number | undefined
+  readonly fatalUtf8?: boolean | undefined
+  /** Written to the command's stdin, which is then closed; without it stdin is ignored. */
+  readonly stdin?: string | undefined
+  readonly stdout: (text: string) => void
+  readonly stderr: (text: string) => void
+}
+
+/** A plain output sink: the caller's stdout or stderr writer (D-4). */
+type Write = (text: string) => void
+
+const processError = (cause: unknown): ProcessError =>
+  cause instanceof ProcessError ? cause : new ProcessError("process_failed", "process execution failed", cause)
+
+/** Executes a command and joins its owned process tree before releasing its scope.
+ * @category execution
+ * @since 1.0.0-rc.0
+ */
+export const runEffect = (options: Omit<Options, "signal">): Effect.Effect<number, ProcessError, never> => {
+  let cleanupFailure: unknown
+  const spawn = () => {
+    uninterruptible {
+    const nodeModule = try((command) =>
+      process.platform === "win32" && NodePath.isAbsolute(command) &&
+      /\.(?:mjs|cjs|js)$/.test(command) &&
+      Fs.statSync(command, { throwIfNoEntry: false })?.isFile() === true, options.command)
+    const handle = ScopedProcess.spawn({
+      command: nodeModule ? sync(process.execPath) : options.command,
+      args: nodeModule ? [options.command, ...options.args] : options.args,
+      cwd: options.cwd,
+      env: options.environment,
+      stdin: options.stdin === undefined ? "ignore" : "pipe",
+      killSignal: "SIGTERM",
+      forceKillAfter: graceMs
+    })
+    // Registered after spawn: this runs BEFORE the service releases its handle.
+    // Leader exit is insufficient: descendants may have closed all inherited pipes.
+    Effect.addFinalizer(() =>
+      handle.kill({ killSignal: "SIGTERM", forceKillAfter: graceMs })
+        |> Effect.tapCause(%, (cause) => {
+          cleanupFailure = Cause.squash(cause)
+        })
+        |> Effect.orDie(%))
+    return handle
+    }
+  }
+  const program = () => {
+    const handle = spawn()
+    const consume = (stream: typeof handle.stdout, write: Write) => {
+      let size = 0
+      const decoder = sync((fatal) => new TextDecoder("utf-8", { fatal }), options.fatalUtf8 ?? false)
+      Stream.runForEach(stream, (chunk) => {
+        size += chunk.byteLength
+        if (options.maxOutputBytes !== undefined && size > options.maxOutputBytes) {
+          throw new ProcessError("output_limit", `process output exceeds ${options.maxOutputBytes} bytes`)
+        }
+        try((chunk, decoder, write) => write(decoder.decode(chunk, { stream: true })), (cause) => cause, chunk, decoder, write)
+      })
+      try((decoder, write) => {
+        const tail = decoder.decode()
+        if (tail !== "") write(tail)
+      }, (cause) => cause, decoder, write)
+    }
+    // A command may exit without reading its input; its exit status, not the broken pipe, is the result.
+    const feed = (input: string) => {
+      try {
+        Stream.run(Stream.make(sync((input) => new TextEncoder().encode(input), input)), handle.stdin)
+      } catch (error) {
+        const code = (error.cause as NodeJS.ErrnoException | undefined)?.code
+        if (!(code === "EPIPE" || code === "EOF")) throw error
+      }
+    }
+    const [code] = await.all [
+      ScopedProcess.status(handle).code ?? 1,
+      consume(handle.stdout, options.stdout),
+      consume(handle.stderr, options.stderr),
+      options.stdin === undefined ? undefined : feed(options.stdin)
+    ]
+    return code
+  }
+  const bounded = () => {
+    if (options.timeoutMs === undefined) return program()
+    return Effect.timeoutOrElse(() => program(), {
+      duration: options.timeoutMs,
+      orElse: () => {
+        throw new ProcessError("timed_out", `process timed out after ${options.timeoutMs}ms`)
+      }
+    })
+  }
+  return Effect.uninterruptibleMask((restore) => {
+    // S3-1: restore wraps the scoped program in TypeScript, with no by-name frame inside it.
+    const result = exit(Native.restoreScoped(restore, bounded))
+    if (cleanupFailure !== undefined) {
+      throw new ProcessError("cleanup_failed", "process cleanup failed", cleanupFailure)
+    }
+    if (Exit.isSuccess(result)) return result.value
+    if (Cause.hasInterrupts(result.cause)) throw Cause.map(result.cause, processError)
+    throw processError(Cause.squash(result.cause))
+  })
+}
+
+/** Promise boundary for command APIs that accept an AbortSignal.
+ * @category execution
+ * @since 1.0.0-rc.0
+ */
+export const run: (options: Options) => Promise<number> = Native.run

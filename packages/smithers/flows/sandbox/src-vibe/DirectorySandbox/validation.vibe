@@ -1,0 +1,7 @@
+// Plain JavaScript contracts supported by D263.
+import type { DirectorySandboxOptions } from "./make.vibe"
+export const validateRoot = (options: DirectorySandboxOptions): void => {
+if (!/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(options.root)) {
+    throw new TypeError(`directory-sandbox: root must be an absolute path, got ${JSON.stringify(options.root)}`)
+  }
+}
