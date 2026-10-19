@@ -1,6 +1,7 @@
 import type { Locator, Page } from "./browserTest"
 import { controlTabKey, expect, test } from "./browserTest"
 import { identityRoute } from "./identity"
+import { ENTITY_RECOVERY_STORAGE_KEY } from "../../src/mainview/state/EntityRecovery"
 
 /*
  * THE FORM LAW meets the keyboard rule (apps/app/AGENTS.md). CT005 on live
@@ -27,13 +28,18 @@ test.beforeEach(async ({ page }) => {
 
 const README = { path: "README.md", name: "README.md", type: "file", encoding: "utf-8", content: "# Smithers\n", size: 11 }
 
-/** Open the repository, then Ctrl+K, `/file`, Enter: the Path form for the selected repository. */
-const askForPath = async (page: Page) => {
+/**
+ * Open the repository, then Ctrl+K, `/file`, Enter: the Path form for the selected repository.
+ * `afterTurn` waits for that shared turn first: a form card is anchored after the shared turns
+ * loaded when it opens (TranscriptOrder.merge), and one opened earlier sits above the turn.
+ */
+const askForPath = async (page: Page, afterTurn?: string) => {
   await page.goto("/smithersai/smithers/?design=off")
   await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
   await page.keyboard.press("Control+k")
   const composer = page.getByTestId("composer-input")
   await expect(composer).toBeFocused()
+  if (afterTurn !== undefined) await expect(page.getByText(afterTurn, { exact: true }).first()).toBeVisible()
   await composer.fill("/file")
   await composer.press("Enter")
   const form = page.locator(".flow-form[data-flow-name='file']")
@@ -41,6 +47,18 @@ const askForPath = async (page: Page) => {
   await expect(composer).toBeEditable()
   return { composer, form, path: form.getByTestId("flow-form-path") }
 }
+
+/**
+ * Wait for the form card's own commit. Until it is durable, a reload restores the card from its
+ * immediate-reload recovery record (docs/persistence.md), which boot replays without the card's
+ * transcript place, so it lands above earlier shared turns.
+ */
+const formSaved = (page: Page) => expect.poll(() => page.evaluate((key) => {
+  const raw = localStorage.getItem(key)
+  if (raw === null) return 0
+  const { records } = JSON.parse(raw) as { records: Record<string, { value?: { kind?: string } }> }
+  return Object.values(records).filter(record => record.value?.kind === "card").length
+}, ENTITY_RECOVERY_STORAGE_KEY)).toBe(0)
 
 const activeElement = (page: Page) => page.evaluate(() => {
   const active = document.activeElement
@@ -94,8 +112,10 @@ test("T1: a restored form after reload does not take the keyboard; Cancel return
     id: "prior-turn", author: 1, authorLogin: "codeplanesmithers", runId: "prior-run",
     prompt: "Earlier question", state: "completed", startedAt: 1, finishedAt: 2, frames: []
   }] } }))
-  const { path } = await askForPath(page)
+  // The form must follow the earlier turn, or Cancel rightly hands the keyboard to that turn's Copy message button.
+  const { path } = await askForPath(page, "Earlier question")
   await expect(path).toBeFocused()
+  await formSaved(page)
   await page.goto("/smithersai/smithers/?design=off")
   const form = page.locator(".flow-form[data-flow-name='file']")
   await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
