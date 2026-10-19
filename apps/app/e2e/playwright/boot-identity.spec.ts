@@ -8,6 +8,13 @@ import { controlTabKey, expect,test } from "./browserTest"
  * on that seam.
  * The T1 host stubs identity out entirely, so this spec boots its own origin
  * (identity-hang-host.ts) with the seam behind a socket that never answers.
+ *
+ * Repository routes (Will's 2026-10-18 decision; CEO ruling a-e1tbtp; PM gap
+ * list row 15): `/owner/repo` is the repository frame. Signed out it offers no
+ * composer (guest access is off); its one primary action, Ask, leads to
+ * sign-in carrying return_to, and nothing redirects on load. The slash-command
+ * doors a signed-out visitor types still park with one prompt in the
+ * transcript: state/signed-out-doors.test.ts pins each command's prompt.
  */
 
 
@@ -19,56 +26,84 @@ const slash = async (page: import("@playwright/test").Page, command: string) => 
   await page.getByTestId("composer-input").press("Enter")
 }
 
-test("repository prompt sign-in is keyboard reachable and carries return_to", async ({ page }) => {
+/** The chat shell's own door (a route the frame does not admit): Chat opens the composer. */
+const chatSlash = async (page: import("@playwright/test").Page, command: string) => {
+  await page.getByRole("button", { name: "Chat", exact: true }).click()
+  const input = page.getByTestId("composer-input")
+  await expect(input).toBeVisible()
+  await input.fill(command)
+  await input.press("Enter")
+}
+
+/** A public repository the frame admits: the catalog row and the reads the Code home makes. */
+const publicRepository = async (page: import("@playwright/test").Page) => {
+  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [
+    { name: "smithersai/smithers", title: "Smithers", url: "https://github.com/smithersai/smithers", summary: "Smithers.", stats: null },
+  ] } }))
+  await page.route("**/api/repos/smithersai/smithers", route => route.fulfill({ json: { full_name: "smithersai/smithers", is_public: true, default_bookmark: "main" } }))
+  await page.route("**/api/repos/smithersai/smithers/home", route => route.fulfill({ json: { kind: "readme", markdown: "# Smithers\n\nSmithers." } }))
+  await page.route(/\/api\/repos\/smithersai\/smithers\/contents(?:\?.*)?$/, route => route.fulfill({ json: [{ name: "README.md", path: "README.md", type: "file", size: 20 }] }))
+  await page.route("**/api/repos/smithersai/smithers/bookmarks**", route => route.fulfill({ json: { items: [
+    { name: "main", target_change_id: "main-change", target_commit_id: "a".repeat(40) }
+  ], next_cursor: "" } }))
+}
+
+/** Every request that reaches the sign-in route, from first paint on. */
+const signInRequests = (page: import("@playwright/test").Page): string[] => {
+  const requests: string[] = []
+  page.on("request", request => { if (new URL(request.url()).pathname === APPLICATION_SIGN_IN_PATH) requests.push(request.url()) })
+  return requests
+}
+
+test("repository frame sign-in is keyboard reachable from Ask and carries return_to", async ({ page }) => {
   await signedOutVisitor(page)
+  await publicRepository(page)
+  const redirects = signInRequests(page)
   await page.goto("/smithersai/smithers/")
-  await slash(page, "/auth.prompt")
-  await page.getByTestId("composer-input").press("Escape")
-  const door = page.getByRole("button", { name: "Sign in with GitHub", exact: true }).last()
+  const door = page.getByRole("button", { name: "Ask", exact: true })
   await expect(door).toBeVisible()
-  // The repository keeps its own action in the transcript.
+  // The frame keeps its own doors: the quiet header Sign in and the one primary action, Ask.
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible()
+  await expect(page.getByTestId("composer-input")).toBeHidden()
+  expect(redirects).toEqual([])
   for (let step = 0; step < 40 && !await door.evaluate(node => node === document.activeElement); step++) await page.keyboard.press(controlTabKey(page))
   await expect(door).toBeFocused()
   const bounds = await door.boundingBox()
   expect(bounds!.x).toBeGreaterThanOrEqual(0)
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width)
-  await expect(page.getByTestId("transcript").getByRole("button", { name: "Sign in with GitHub", exact: true }).last()).toBeVisible()
   await page.route("**/api/auth/github**", route => route.fulfill({ body: "Sign-in handoff" }))
   const request = page.context().waitForEvent("request", request => new URL(request.url()).pathname === APPLICATION_SIGN_IN_PATH)
   await page.keyboard.press("Enter")
   expect(new URL((await request).url()).searchParams.get("return_to")).toBe("/smithersai/smithers/")
 })
 
-for (const command of ["/flow.run review smithersai/smithers", "/secrets", "/settings", '/pr {"operation":"list","repo":"smithersai/smithers"}']) {
-  test(`${command} stays in the repository transcript with a sign-in prompt`, async ({ page }) => {
-    await signedOutVisitor(page)
-    // Repository arguments are resolved against the loaded public catalog.
-    await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [
-      { name: "smithersai/smithers", title: "Smithers", url: "https://github.com/smithersai/smithers", summary: "Smithers.", stats: null },
-    ] } }))
-    const redirects: string[] = []
-    page.on("request", request => { if (new URL(request.url()).pathname === APPLICATION_SIGN_IN_PATH) redirects.push(request.url()) })
-    await page.goto("/smithersai/smithers/")
-    await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
-    await slash(page, command)
-    const prompt = page.getByRole("article").filter({ has: page.getByRole("button", { name: "Sign in with GitHub", exact: true }) }).last()
-    await expect(prompt).toContainText(command === "/flow.run review smithersai/smithers" ? "Sign in with GitHub to run review on smithersai/smithers."
-      : command === "/secrets" || command === "/settings" ? "Sign in with GitHub to continue."
-      : "Sign in with GitHub to continue.")
-    await expect(prompt.getByRole("button", { name: "Sign in with GitHub", exact: true })).toBeVisible()
-    await expect(page.getByText(/0 Open|No open issues in/)).toHaveCount(0)
-    await expect(page.locator(".notice")).toHaveCount(0)
-    expect(new URL(page.url()).pathname).toMatch(/^\/smithersai\/smithers\/?$/)
-    expect(redirects).toEqual([])
-    if (command === "/secrets") {
-      await page.getByTestId("composer-input").press("Escape")
-      await page.route("**/api/auth/github**", route => route.fulfill({ body: "Sign-in handoff" }))
-      const request = page.context().waitForEvent("request", request => new URL(request.url()).pathname === APPLICATION_SIGN_IN_PATH)
-      await prompt.getByRole("button", { name: "Sign in with GitHub", exact: true }).click()
-      expect(new URL((await request).url()).searchParams.get("return_to")).toBe("/smithersai/smithers/")
-    }
-  })
-}
+/*
+ * Signed out, the repository frame has no composer to type a slash command into
+ * (guest access is off): the commands' own doors are pinned per command in
+ * state/signed-out-doors.test.ts. What the route still owes a signed-out
+ * visitor is the page itself: no redirect on load, no stand-in for data it
+ * cannot read, no stray notice, and Ask leading to sign-in that returns here.
+ */
+test("signed out, the repository frame keeps the visitor on the page and Ask leads to sign-in with return_to", async ({ page }) => {
+  await signedOutVisitor(page)
+  await publicRepository(page)
+  const redirects = signInRequests(page)
+  await page.goto("/smithersai/smithers/")
+  const ask = page.getByRole("button", { name: "Ask", exact: true })
+  await expect(ask).toBeVisible()
+  await expect(ask).toHaveAttribute("aria-expanded", "false")
+  await expect(page.getByTestId("composer-input")).toBeHidden()
+  await expect(page.getByRole("button", { name: "Chat", exact: true })).toHaveCount(0)
+  await expect(page.getByRole("region", { name: "README", exact: true }).getByRole("heading", { name: "Smithers", level: 1 })).toBeVisible()
+  await expect(page.getByText(/0 Open|No open issues in/)).toHaveCount(0)
+  await expect(page.locator(".notice")).toHaveCount(0)
+  expect(new URL(page.url()).pathname).toMatch(/^\/smithersai\/smithers\/?$/)
+  expect(redirects).toEqual([])
+  await page.route("**/api/auth/github**", route => route.fulfill({ body: "Sign-in handoff" }))
+  const request = page.context().waitForEvent("request", request => new URL(request.url()).pathname === APPLICATION_SIGN_IN_PATH)
+  await ask.click()
+  expect(new URL((await request).url()).searchParams.get("return_to")).toBe("/smithersai/smithers/")
+})
 
 // The Wiki is core (D-09b) and the web host seeds no World page; the default chrome has no icon rail (#3334).
 test("unknown repository has one sign-in card and no icon rail", async ({ page }) => {
@@ -81,12 +116,13 @@ test("unknown repository has one sign-in card and no icon rail", async ({ page }
   await expect(page.locator(".world-document-title")).toHaveCount(0)
 })
 
-test("repository sign-in paints with the readable primary action token", async ({ page }) => {
+// The transcript's own sign-in door on a repository route stands where the frame cannot admit the
+// repository (the card above); it is the same action the slash doors raise, painted readable.
+test("repository transcript sign-in paints with the readable primary action token", async ({ page }) => {
   await signedOutVisitor(page)
-  await page.goto("/smithersai/smithers/")
-  await slash(page, "/auth.prompt")
-  await page.getByTestId("composer-input").press("Escape")
-  const door = page.getByRole("button", { name: "Sign in with GitHub", exact: true }).last()
+  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [] } }))
+  await page.goto("/nope/nope/")
+  const door = page.getByRole("article").filter({ has: page.locator('[data-flow="sign-in"]') }).getByRole("button", { name: "Sign in with GitHub", exact: true }).last()
   await expect(door).toBeVisible()
   expect(await door.evaluate(node => {
     const probe = document.createElement("span")
@@ -151,20 +187,23 @@ test("a bare issues.list during first-run identity resumes into one sign-in prom
   expect(issueReads).toEqual([])
 })
 
+/*
+ * The admitted repository frame has no composer signed out, so the control
+ * types into the repository transcript the frame does not admit: a repository
+ * Smithers does not have. Its entry is still a route target, which is what
+ * the control pins.
+ */
 test("CONTROL: a repository entry is a target, so the same command never parks or reaches practice", async ({ page }) => {
   await signedOutVisitor(page)
-  await page.route("**/api/public/repos", route => route.fulfill({
-    status: 200, contentType: "application/json",
-    body: JSON.stringify({ repos: [{ name: "smithersai/smithers", title: "Smithers", url: "https://github.com/smithersai/smithers", summary: "Smithers.", stats: null }] })
-  }))
+  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [] } }))
   /*
    * No latch here, deliberately: a repository path never takes the
    * non-blocking branch (ControllerBootMemo canPaintAppBeforeIdentity), so the
    * first-run window does not exist for it — which is what this control pins.
    */
-  await page.goto("/smithersai/smithers/")
+  await page.goto("/nope/nope/")
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
-  await slash(page, "/issues.list")
+  await chatSlash(page, "/issues.list")
   await page.waitForTimeout(HELD_WINDOW_MS)
   // firstRunTargetPending is false whenever an entry or a selection exists, so
   // nothing parks and the bundled practice source is never the target.

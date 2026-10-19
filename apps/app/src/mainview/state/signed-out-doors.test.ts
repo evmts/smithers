@@ -30,12 +30,20 @@ const setup = async (fetchImpl?: import("./AppController").AppServices["fetchImp
 }
 
 // A repository read parks on repo-read, which an advertised public repository can satisfy; everything else on signed-in.
-for (const [name, args, requirement] of [["flow.run", "review smithersai/smithers", "signed-in"], ["secrets", undefined, "signed-in"], ["issues.view", "3", "repo-read"]] as const) {
+// The prompt names what sign-in unlocks (a named launch keeps its repository) or says "continue" for a chrome door.
+for (const [name, args, requirement, prompt] of [
+  ["flow.run", "review smithersai/smithers", "signed-in", "Sign in with GitHub to run review on smithersai/smithers."],
+  ["secrets", undefined, "signed-in", "Sign in with GitHub to continue."],
+  ["settings", undefined, "signed-in", "Sign in with GitHub to continue."],
+  ["issues.view", "3", "repo-read", undefined]
+] as const) {
   test(`${name} signed out parks silently with one sign-in prompt across repeated clicks, without starting OAuth`, async () => {
     const { controller, store, requests, redirects } = await setup()
     controller.runCommand(name, args)
     await settle()
-    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "sign-in").sort((a, b) => a.ordinal - b.ordinal)).toHaveLength(1)
+    const prompts = [...store.collections.messages.values()].filter(message => message.action?.flow === "sign-in").sort((a, b) => a.ordinal - b.ordinal)
+    expect(prompts).toHaveLength(1)
+    if (prompt !== undefined) expect(prompts[0]!.text).toBe(prompt)
     expect(store.session().pendingCommand).toMatchObject({ name, args: args ?? null, requirement })
     expect(requests).toEqual([])
     expect(redirects).toEqual([])
@@ -57,9 +65,11 @@ for (const source of ["issues", "github", "prs"] as const) {
       if (source === "github" && !String(input).includes("github-repos")) return Response.json([])
       return Response.json({ message: "Sign in to read this repository" }, { status: 401 })
     })
-    controller.runCommand(source === "prs" ? "pr" : "issues.list", source === "prs" ? JSON.stringify({ operation: "list" }) : undefined)
+    controller.runCommand(source === "prs" ? "pr" : "issues.list", source === "prs" ? JSON.stringify({ operation: "list", repo: "smithersai/smithers" }) : undefined)
     await settle()
-    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "sign-in").sort((a, b) => a.ordinal - b.ordinal)).toHaveLength(1)
+    const prompts = [...store.collections.messages.values()].filter(message => message.action?.flow === "sign-in").sort((a, b) => a.ordinal - b.ordinal)
+    expect(prompts).toHaveLength(1)
+    expect(prompts[0]!.text).toBe("Sign in with GitHub to continue.")
     expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list" || card.kind === "pr-list")).toEqual([])
     expect([...store.collections.toasts.values()]).toEqual([])
     expect(redirects).toEqual([])
