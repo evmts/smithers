@@ -1,0 +1,319 @@
+/** The coding host's one run-scoped std read ledger and atomic provider boundary. */
+import { Preconditions, type VersionedFileSystem } from "@smthrs/std/Read"
+import { StdError } from "@smthrs/std/StdError"
+import { Cause, Effect, type FileSystem, PlatformError, Sink, Stream } from "effect"
+import { ChildProcess, type ChildProcessSpawner } from "effect/process"
+import { digest, ledgerKey, resolvePath } from "./filesystem-node.ts"
+import type { NativeOptions } from "./native.vibe"
+
+/** Installed authority only. The provider must authenticate the registered run,
+ * confine paths and compare every base before settling the complete batch.
+ * A stale preflight changes no bytes. ADR 0004 application failures may retain
+ * a prefix; they must be reported as failures, never stale or success.
+ * The host must never adapt ordered single-file writes to this transaction.
+ */
+export interface MutationProvider {
+  readonly commit: (
+    session: string,
+    changes: ReadonlyArray<{ readonly path: string; readonly base_digest: string; readonly content: Uint8Array | null }>
+  ) => Effect.Effect<void, StdError>
+}
+
+const unavailable = () =>
+  new StdError({
+    code: "provider_unavailable",
+    message: "Authenticated file mutation provider unavailable"
+  })
+const stale = (path: string, base: string, current: string) =>
+  new StdError({
+    code: "stale_read",
+    path,
+    base_digest: base,
+    current_digest: current,
+    message: `Re-read ${path}`
+  })
+
+/** One installed-client submission and its validated receipt. */
+const daemonCommit = (
+  spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
+  changes: ReadonlyArray<{ readonly path: string; readonly base_digest: string; readonly content: Uint8Array | null }>
+) => {
+  if (changes.length === 0 || changes.length > 256) throw unavailable()
+  const batch = changes.length !== 1 || changes[0]!.content === null
+  const change = changes[0]!
+  let total = 0
+  for (const change of changes) {
+    total += change.content?.byteLength ?? 0
+    if (
+      total > 1024 * 1024 ||
+      (change.base_digest !== "absent" && !/^[0-9a-f]{64}$/.test(change.base_digest))
+    ) throw unavailable()
+  }
+  const child = spawner.spawn(ChildProcess.make(
+    "/opt/smithers/bin/smithers-machined",
+    batch ? ["client", "write-files"] : ["client", "write-file", change.path, "--base", change.base_digest],
+    {
+      cwd: "/workspace",
+      stdin: Stream.make(
+        batch
+          ? new TextEncoder().encode(JSON.stringify(changes.map((change) => ({
+            ...change,
+            content: change.content === null ? null : Array.from(change.content)
+          }))))
+          : change.content!
+      )
+    }
+  ))
+  const capture = (stream: typeof child.stdout, limit = 64 * 1024) => {
+    const state = Stream.runFoldEffect(
+      stream,
+      () => ({ size: 0, text: "", decoder: new TextDecoder() }),
+      (state, bytes) => {
+        if (state.size + bytes.length > limit) throw unavailable()
+        return {
+          size: state.size + bytes.length,
+          text: state.text + state.decoder.decode(bytes, { stream: true }),
+          decoder: state.decoder
+        }
+      }
+    )
+    return state.text + state.decoder.decode()
+  }
+  const [output, , exit] = all([
+    capture(child.stdout, batch ? 8 * 1024 * 1024 : 64 * 1024),
+    capture(child.stderr),
+    child.exitCode
+  ], { concurrency: "unbounded" })
+  const reply: unknown = try((output) => JSON.parse(output), output)
+  if (typeof reply !== "object" || reply === null || Array.isArray(reply)) throw unavailable()
+  if (batch && "writes" in reply) {
+    if (!Array.isArray(reply.writes) || reply.writes.length > changes.length) throw unavailable()
+    for (let i = 0; i < reply.writes.length; i++) {
+      const receipt = reply.writes[i], expected = changes[i]!
+      if (
+        typeof receipt !== "object" || receipt === null || receipt.path !== expected.path ||
+        receipt.post_digest !== (expected.content === null ? "absent" : digest(expected.content)) ||
+        (receipt.raced !== undefined &&
+          (typeof receipt.raced !== "string" || !/^[0-9a-f]{64}$/.test(receipt.raced)))
+      ) {
+        throw unavailable()
+      }
+    }
+    if ("failure" in reply) {
+      const failure = reply.failure
+      if (
+        exit === 0 || typeof failure !== "object" || failure === null || !("index" in failure) ||
+        typeof failure.index !== "number" || !Number.isInteger(failure.index) ||
+        failure.index < 0 || failure.index >= changes.length || !("preflight" in failure) ||
+        typeof failure.preflight !== "boolean" || !("code" in failure) ||
+        typeof failure.code !== "number" || !Number.isInteger(failure.code) || failure.code < 1 ||
+        failure.code > 12 ||
+        (failure.preflight ? reply.writes.length !== 0 : failure.index !== reply.writes.length)
+      ) throw unavailable()
+      const refused = changes[failure.index]!
+      if (failure.preflight && failure.code === 4) {
+        const current = "current_digest" in failure ? failure.current_digest : "absent"
+        if (
+          typeof current !== "string" || (current !== "absent" && !/^[0-9a-f]{64}$/.test(current))
+        ) throw unavailable()
+        throw stale(refused.path, refused.base_digest, current)
+      }
+      if (failure.preflight && failure.code === 10) {
+        throw new StdError({
+          code: "moved_off",
+          path: refused.path,
+          message: "Branch moved off the item"
+        })
+      }
+      throw new StdError({
+        code: "command_failed",
+        path: refused.path,
+        message: `Patch stopped after ${reply.writes.length} files; re-read all affected paths`
+      })
+    }
+    if (exit !== 0 || reply.writes.length !== changes.length) throw unavailable()
+    return
+  }
+  // A singleton error cannot establish a batch preflight refusal or name
+  // its stopped path. Require the batch receipt before reporting stale.
+  if (batch) throw unavailable()
+  if ("error" in reply) {
+    const error = reply.error
+    if (exit === 0 || typeof error !== "object" || error === null || !("code" in error)) {
+      throw unavailable()
+    }
+    if (error.code === "moved_off") {
+      throw new StdError({ code: "moved_off", path: change.path, message: "Branch moved off the item" })
+    }
+    if (error.code !== "stale") throw unavailable()
+    const current = "current_digest" in error ? error.current_digest : "absent"
+    if (
+      typeof current !== "string" || (current !== "absent" && !/^[0-9a-f]{64}$/.test(current))
+    ) throw unavailable()
+    throw stale(change.path, change.base_digest, current)
+  }
+  if (
+    exit !== 0 || !("post_digest" in reply) || reply.post_digest !== digest(change.content!)
+  ) throw unavailable()
+}
+
+/** ADR 0004's installed client owns the codec and kernel-derived run identity.
+ * Never send the model-facing ledger's session string as authentication. The
+ * installed local client submits a whole batch; preflight stale changes no bytes.
+ * Application failures may retain a durable prefix and require fresh reads.
+ */
+const daemonProvider = (
+  spawner: ChildProcessSpawner.ChildProcessSpawner["Service"]
+): MutationProvider => ({
+  commit: (_session, changes) =>
+    daemonCommit(spawner, changes)
+      |> Effect.scoped(%)
+      |> Effect.timeout(%, "45 seconds")
+      |> Effect.catchCause(%, (cause) => {
+        if (Cause.hasInterruptsOnly(cause)) return interrupt()
+        const error = Cause.squash(cause)
+        throw error instanceof StdError ? error : unavailable()
+      })
+})
+
+/** A new filesystem instance has no inherited read authority, including on resume.
+ * Only successful model-facing reads record bases. Mutation-internal reads do not.
+ */
+export const make = (
+  options: NativeOptions,
+  fs: FileSystem.FileSystem,
+  spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
+  canonicalRoot: string,
+  suppliedProvider?: MutationProvider
+): VersionedFileSystem => {
+  const root = resolvePath(options.repositoryPath)
+  const pinnedRoot = resolvePath(canonicalRoot)
+  // The shipped broker's socket is bound to this fixed guest workspace. A
+  // different root must never accidentally write into that machine's branch.
+  const provider = suppliedProvider ??
+    (pinnedRoot === resolvePath("/workspace") ? daemonProvider(spawner) : undefined)
+  const ledgers = new Map<string, Map<string, string>>()
+  const key = (path: string) => ledgerKey(root, pinnedRoot, path)
+  const authority = (session: string | undefined) => {
+    if (session === undefined || session === "" || provider === undefined) throw unavailable()
+    return session
+  }
+  const current = (path: string) => {
+    try {
+      const bytes = fs.readFile(path)
+      return { bytes, digest: digest(bytes) }
+    } catch (error) {
+      if (error.reason._tag === "NotFound") return { bytes: undefined, digest: "absent" }
+      throw new StdError({ code: "permission_denied", path, message: `Could not read ${path}` })
+    }
+  }
+  const prepare: NonNullable<NonNullable<VersionedFileSystem[typeof Preconditions]>["prepare"]> = (paths, session) => {
+    const run = authority(session)
+    const bases = new Map<string, { path: string; base: string; bytes: Uint8Array | undefined }>()
+    for (const path of paths) {
+      const target = key(path)
+      if (target === undefined || bases.has(target)) throw unavailable()
+      const observed = current(path)
+      const base = ledgers.get(run)?.get(target) ?? (observed.digest === "absent" ? "absent" : "unread")
+      if (base !== observed.digest) throw stale(path, base, observed.digest)
+      bases.set(target, { path, base, bytes: observed.bytes?.slice() })
+    }
+    let committed = false
+    return {
+      read: (path: string) => {
+        const target = key(path)
+        const captured = target === undefined ? undefined : bases.get(target)
+        if (captured === undefined) throw unavailable()
+        if (captured.bytes === undefined) {
+          throw new StdError({ code: "not_found", path, message: `File not found: ${path}` })
+        }
+        return captured.bytes.slice()
+      },
+      commit: (changes) =>
+        Effect.uninterruptible(() => {
+          if (committed || changes.length === 0) throw unavailable()
+          const seen = new Set<string>()
+          const request: Array<{ path: string; base_digest: string; content: Uint8Array | null }> = []
+          for (const change of changes) {
+            const target = key(change.path)
+            const captured = target === undefined ? undefined : bases.get(target)
+            if (target === undefined || captured === undefined || seen.has(target)) throw unavailable()
+            seen.add(target)
+            request.push({ path: target, base_digest: captured.base, content: change.content?.slice() ?? null })
+          }
+          // A provider's interruption/failure can have an unknown outcome. Never
+          // reuse this prepared invocation or claim its ledger advanced.
+          committed = true
+          Effect.catchCause(provider!.commit(run, request), (cause) => {
+            // Only a validated preflight refusal establishes an unchanged
+            // batch. Transport errors, invalid receipts and interruption can
+            // hide an applied prefix, including a stopped path with old bytes.
+            const error = Cause.squash(cause)
+            if (
+              !(error instanceof StdError) ||
+              (error.code !== "stale_read" && error.code !== "moved_off")
+            ) {
+              for (const change of request) ledgers.get(run)?.delete(change.path)
+            }
+            throw cause
+          })
+          let ledger = ledgers.get(run)
+          if (ledger === undefined) {
+            ledger = new Map()
+            ledgers.set(run, ledger)
+          }
+          for (const change of request) {
+            ledger.set(change.path, change.content === null ? "absent" : digest(change.content))
+          }
+        })
+    }
+  }
+  const denied = (method: string) => {
+    throw PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "FileSystem",
+      method,
+      description: "Coding mutations require an authenticated atomic provider"
+    })
+  }
+  return {
+    ...fs,
+    [Preconditions]: {
+      record: (path, bytes, session) => {
+        const target = key(path)
+        if (target === undefined || session === undefined || session === "") return
+        let ledger = ledgers.get(session)
+        if (ledger === undefined) {
+          ledger = new Map()
+          ledgers.set(session, ledger)
+        }
+        ledger.set(target, digest(bytes))
+      },
+      validate: (_paths, session) => {
+        authority(session)
+      },
+      prepare
+    },
+    writeFile: () => denied("writeFile"),
+    writeFileString: () => denied("writeFileString"),
+    rename: () => denied("rename"),
+    remove: () => denied("remove"),
+    copy: () => denied("copy"),
+    copyFile: () => denied("copyFile"),
+    makeDirectory: () => denied("makeDirectory"),
+    open: (path, options) =>
+      options?.flag === undefined || options.flag === "r" ? fs.open(path, options) : denied("open"),
+    sink: () =>
+      Sink.fail(PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: "sink" })),
+    truncate: () => denied("truncate"),
+    link: () => denied("link"),
+    symlink: () => denied("symlink"),
+    utimes: () => denied("utimes"),
+    chmod: () => denied("chmod"),
+    chown: () => denied("chown"),
+    makeTempDirectory: () => denied("makeTempDirectory"),
+    makeTempDirectoryScoped: () => denied("makeTempDirectoryScoped"),
+    makeTempFile: () => denied("makeTempFile"),
+    makeTempFileScoped: () => denied("makeTempFileScoped")
+  }
+}

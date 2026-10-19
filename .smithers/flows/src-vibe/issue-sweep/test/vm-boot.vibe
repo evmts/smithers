@@ -1,0 +1,15 @@
+/**
+ * Boot timing: N microVMs created from the issue-sweep snapshot at once,
+ * straight through the SDK; prints each machine's create start and end
+ * (seconds after launch) to show whether boots overlap or serialize.
+ *   node .smithers/flows/issue-sweep/test/vm-boot.ts <N>
+ */
+import type { MicrosandboxSandbox } from "@smthrs/sandbox"
+import * as Microsandbox from "microsandbox"
+import { latestImage } from "../vm.vibe"
+import { run } from "./vm-boot.native.ts"
+
+const sdk = Microsandbox as unknown as MicrosandboxSandbox.Sdk
+
+// A-2/E-4, E-7: the runner, the SDK's promises and the output are in vm-boot.native.ts.
+run(sdk, latestImage)

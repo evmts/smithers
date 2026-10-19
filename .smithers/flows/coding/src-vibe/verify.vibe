@@ -1,0 +1,17 @@
+/** The host wiring of `coding/verify` (verify/flow.ts). */
+import { FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Effect, Layer } from "effect"
+import { AdmitVerifySource, admitVerifySource } from "./verify-schema.vibe"
+import Verify from "../verify/flow.ts"
+
+export { Verify }
+export { VerifyInput, VerifyResult } from "./verify-schema.vibe"
+
+export const verifyRegistration = Layer.mergeAll(
+  Interpreter.layer(Verify),
+  AdmitVerifySource.toLayer(({ source, checks }) => {
+      const instance = FlowRuntime.FlowInstance()
+      return admitVerifySource(source, checks, instance.executionId)
+    }
+  )
+)

@@ -1,0 +1,17 @@
+/**
+ * Runs one shell line in a fresh agent microVM, booted and refreshed exactly
+ * as a work flow's is, and prints its exit code and output:
+ *   node .smithers/flows/issue-sweep/test/vm-exec.ts 'go version && cargo --version'
+ */
+import { make, sh } from "../vm.vibe"
+import { run } from "./vm-exec.native.ts"
+
+function exec(line: string, pid: number) {
+  return Effect.scoped(() => {
+    const session = make({ maxVms: 1 }).acquire(`vm-exec-${pid}`)
+    return sh(session, line)
+  })
+}
+
+// A-2/E-4, E-7: the runner, the argument and the process output are in vm-exec.native.ts.
+run(exec)

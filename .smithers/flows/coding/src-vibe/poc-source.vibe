@@ -1,0 +1,204 @@
+/** Private host composition: immutable native source in scoped scratch, never copy-back. */
+import { Effect, type FileSystem, Layer, Path, Schema, Stream } from "effect"
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
+import { NativeCoding, type NativeOptions } from "./native.vibe"
+import { CapturePocSource, invalid, RetainPoc, sourceDigest, validPath } from "./poc.vibe"
+import { CodingError, sameRevision, validatePlan } from "./schema.vibe"
+
+const Export = Schema.Struct({
+  commitId: Schema.String,
+  treeId: Schema.String,
+  changeId: Schema.String,
+  path: Schema.String
+})
+export interface PocHostOptions extends NativeOptions {
+  /** The existing host filesystem owns scratch creation and cleanup only. */
+  readonly fs: FileSystem.FileSystem
+  readonly exporterPath?: string | undefined
+}
+const fail = (message: string) => new CodingError({ code: "stale_revision", message })
+const capture = <E>(stream: Stream.Stream<Uint8Array, E>) => {
+  const state = Stream.runFoldEffect(
+    stream,
+    () => ({ decoder: new TextDecoder(), text: "", bytes: 0 }),
+    (state, chunk) => {
+      if (state.bytes + chunk.length > 65_536) {
+        throw invalid("Native POC export output exceeded its bounded identity response")
+      }
+      return {
+        decoder: state.decoder,
+        text: state.text + state.decoder.decode(chunk, { stream: true }),
+        bytes: state.bytes + chunk.length
+      }
+    }
+  )
+  return state.text + state.decoder.decode()
+}
+const execution = <A, E, R>(effect: Effect.Effect<A, E, R>) => {
+  try {
+    return effect()
+  } catch (error) {
+    throw (error instanceof CodingError
+      ? error
+      : new CodingError({ code: "execution", message: "POC source export, verification or scratch cleanup failed" }))
+  }
+}
+
+/** One captured POC source, read from its immutable native export in scoped scratch. */
+const captureSource = (
+  options: PocHostOptions,
+  plan: typeof CapturePocSource.payloadSchema.Type["plan"],
+  source: typeof CapturePocSource.payloadSchema.Type["source"]
+) => {
+  try(
+    (validate, plan) => validate(plan),
+    (error) => error instanceof CodingError ? error : invalid("Invalid prototype plan"),
+    validatePlan,
+    plan
+  )
+  if (plan.observedHead !== undefined && !sameRevision(plan.observedHead, source)) {
+    throw fail("The POC source does not match the plan's observed head")
+  }
+  const paths = [
+    ...new Set(
+      plan.changes.flatMap((change) => change.atoms.flatMap((atom) => [...atom.reads, ...atom.writes]))
+    )
+  ].sort()
+  const writable = [...new Set(plan.changes.flatMap((change) => change.atoms.flatMap((atom) => atom.writes)))]
+    .sort()
+  if (
+    paths.length === 0 || paths.length > 48 || writable.length === 0 || paths.some((path) => !validPath(path))
+  ) {
+    throw invalid(
+      "A file-level POC needs at most 48 explicit relative paths and at least one predicted write"
+    )
+  }
+  const native = NativeCoding()
+  const current = native.read([plan.base.changeId])
+  const base = current.revisions.find((revision) => revision.changeId === plan.base.changeId)
+  if (
+    current.head.kind !== "resolved" || !sameRevision(current.head, source) || !base ||
+    base.kind !== "resolved" ||
+    base.commitId !== plan.base.commitId || base.treeId !== plan.base.treeId ||
+    base.parentCommitIds.length !== plan.base.parentCommitIds.length || base.parentCommitIds.some((id, i) =>
+      id !== plan.base.parentCommitIds[i]
+    )
+  ) {
+    throw fail("The POC source head or plan base changed; capture and plan again")
+  }
+  if (!/^[0-9a-f]{40}$/.test(source.commitId) || !/^[0-9a-f]{40}$/.test(source.treeId)) {
+    throw invalid("POC source needs full immutable native commit and tree IDs")
+  }
+  const fs = options.fs, path = Path.Path(), spawner = ChildProcessSpawner.ChildProcessSpawner()
+  const scratch = fs.makeTempDirectoryScoped({ prefix: "smithers-poc-" })
+  const canonical = fs.realPath(scratch)
+  const process = spawner.spawn(
+    ChildProcess.make(options.exporterPath ?? "/usr/local/bin/smithers-jj-export", [
+      options.repositoryPath,
+      source.commitId,
+      canonical
+    ], { cwd: options.repositoryPath, env: {}, extendEnv: false, stdin: "ignore" })
+  )
+  const [stdout, , exit] = all([
+    capture(process.stdout),
+    capture(process.stderr),
+    process.exitCode
+  ], { concurrency: "unbounded" })
+  if (exit !== 0) throw invalid("Native POC source export failed")
+  const exported = Schema.decodeUnknownEffect(Schema.fromJsonString(Export))(stdout)
+  if (
+    exported.commitId !== source.commitId || exported.treeId !== source.treeId ||
+    exported.changeId !== source.changeId
+  ) {
+    throw invalid("Native POC export differs from the explicitly captured source")
+  }
+  const inside = (root: string, target: string) => {
+    const suffix = path.relative(root, target)
+    return suffix !== ".." && !suffix.startsWith(`..${path.sep}`) && !path.isAbsolute(suffix)
+  }
+  const root = fs.realPath(exported.path)
+  if (root === canonical || !inside(canonical, root)) {
+    throw invalid("Native POC export escaped its private scratch directory")
+  }
+  const files: Array<{ path: string; content: string | null }> = []
+  let total = 0
+  for (const name of paths) {
+    const segments = name.split("/")
+    let missing = false
+    for (let i = 1; i <= segments.length; i++) {
+      const candidate = path.join(root, ...segments.slice(0, i))
+      const real = Effect.catchReason(fs.realPath(candidate), "PlatformError", "NotFound", () => Effect.succeed(null))
+      if (real === null) {
+        // A dangling committed symlink is not an absent file.
+        const link = Effect.catchReason(fs.readLink(candidate), "PlatformError", "NotFound", () => Effect.succeed(null))
+        if (link !== null) throw invalid("POC source includes an unresolved symbolic link")
+        missing = true
+        break
+      }
+      if (!inside(root, real)) throw invalid("POC source path resolves outside its immutable export")
+    }
+    if (missing) {
+      files.push({ path: name, content: null })
+      continue
+    }
+    const target = path.join(root, name), info = fs.stat(target)
+    if (info.type !== "File" || info.size > 65_536n) {
+      throw invalid("POCs accept only bounded UTF-8 source files; narrow the predicted path set")
+    }
+    const content = fs.readFile(target)
+    total += content.byteLength
+    if (content.byteLength > 65_536 || total > 524_288) {
+      throw invalid("POC captured source exceeds its bounded file-level budget")
+    }
+    const text = try(
+      (content) => new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(content),
+      () => invalid("POC source must be valid UTF-8 text"),
+      content
+    )
+    files.push({ path: name, content: text })
+  }
+  const snapshot = { revision: source, files, writable }
+  return { ...snapshot, digest: sourceDigest(snapshot) }
+}
+
+/** The retained POC result, refused when the native head moved during the prototype. */
+const retainSource = (
+  source: typeof RetainPoc.payloadSchema.Type["source"],
+  changes: typeof RetainPoc.payloadSchema.Type["changes"],
+  review: typeof RetainPoc.payloadSchema.Type["review"]
+) => {
+  const current = NativeCoding().read()
+  if (current.head.kind !== "resolved" || !sameRevision(current.head, source.revision)) {
+    throw fail(
+      "Native revision changed during the discarded prototype; its findings cannot silently steer a different source"
+    )
+  }
+  if (changes.sourceDigest !== source.digest) {
+    throw invalid("POC review does not identify its captured source")
+  }
+  const feedback = [
+    "Saved disposable file-level POC: drafted-unvalidated. No build or tests ran.",
+    `Source commit: ${source.revision.commitId}; captured input digest: ${source.digest}`,
+    `Measured changed files: ${changes.files.map((file) => file.path).join(", ")}`,
+    "Review findings (model hypotheses unless directly supported by the retained diff):",
+    ...review.findings,
+    `Second-plan guidance: ${review.nextPlan}`
+  ].join("\n")
+  return {
+    status: "drafted-unvalidated" as const,
+    source: source.revision,
+    changes,
+    findings: review.findings,
+    feedback: feedback.length <= 32_768
+      ? feedback
+      : feedback.slice(0, 32_650) + "\n[Feedback truncated; inspect the retained prototype for full findings.]"
+  }
+}
+
+export const pocSource = (options: PocHostOptions) =>
+  Layer.mergeAll(
+    CapturePocSource.toLayer(({ plan, source }) =>
+      execution(Effect.timeout(Effect.scoped(captureSource(options, plan, source)), "2 minutes"))
+    ),
+    RetainPoc.toLayer(({ source, changes, review }) => execution(retainSource(source, changes, review)))
+  )

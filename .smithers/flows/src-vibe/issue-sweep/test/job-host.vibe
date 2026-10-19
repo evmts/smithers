@@ -1,0 +1,67 @@
+// One retained job across independent host processes; no agent credentials.
+import { NodeServices } from "@effect/platform-node"
+import * as CloudSandbox from "@smthrs/cli/CloudSandbox"
+import { Sandbox } from "@smthrs/sandbox"
+import { Effect, Layer } from "effect"
+import * as KeyValueStore from "effect/persistence/KeyValueStore"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { readFile, writeFile } from "node:fs/promises"
+import * as Native from "../../native.ts"
+import { makeJob } from "../vm.vibe"
+import { argv, emit, environment, run, transportOf } from "./job-host.native.ts"
+
+const [directory, backend, mode, key] = argv.slice(2) as [string, string, string, string]
+const handlePath = Native.join(directory, "handle.json")
+
+function host() {
+  provide Layer.provideMerge(KeyValueStore.layerFileSystem(Native.join(directory, "receipts")), NodeServices.layer) {
+    const spawner = ChildProcessSpawner()
+    const api = CloudSandbox.workspaceApi(environment)
+    const transport = transportOf(api)
+    const provider = backend === "cloud"
+      ? CloudSandbox.make({
+        spawner,
+        repository: environment.SMITHERS_CLOUD_SANDBOX_REPOSITORY ?? "smithersai/smithers",
+        api: transport,
+        persistence: "sticky",
+        namePrefix: "job-restart-",
+        readyTimeout: "15 minutes"
+      })
+      : makeJob({ refresh: false, minFreeBytes: 1024 ** 3 })
+    const job = Sandbox.job(provider, {
+      command: "printf 'job-edit-once\\n' >> README.md; printf 'launch-once\\n'; sleep 20; printf 'finished\\n'"
+    })
+    if (mode === "start") {
+      const handle = job.start({}, key)
+      sync(async (handlePath: string, text: string) => writeFile(handlePath, text), handlePath, JSON.stringify(handle))
+      emit({ status: "ready", handle })
+      return Effect.never()
+    }
+    const handle = JSON.parse(
+      sync(async (handlePath: string) => readFile(handlePath, "utf8"), handlePath)
+    ) as Sandbox.JobHandle
+    if (mode === "cleanup") {
+      job.cancel(handle, key)
+      emit({ status: "removed" })
+      return
+    }
+    const same = job.start({}, key)
+    if (JSON.stringify(same) !== JSON.stringify(handle)) return Effect.die("reattach returned another job")
+    for (let attempt = 0; attempt < 180; attempt++) {
+      const status = job.status(handle, key)
+      if (status._tag === "Lost") return Effect.die("job lost after host SIGKILL")
+      if (status._tag === "Exited") {
+        const result = job.collect(handle, key, status)
+        const cached = job.collect(handle, key, status)
+        const removed = job.status(handle, key)
+        emit({ status: "completed", handle, result, cached, removed })
+        return
+      }
+      sleep("1 second")
+    }
+    return Effect.die("job did not exit")
+  }
+}
+
+// A-2/E-4, E-7: the runner, the arguments, the environment and the output are in job-host.native.ts.
+run(host)

@@ -1,0 +1,38 @@
+import { Effect, Stream } from "effect"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { io, runIo } from "../io.vibe"
+
+export interface CommandResult {
+  readonly stdout: string
+  readonly stderr: string
+  readonly exitCode: number
+}
+/** Run through the host's guarded spawner. Scope release interrupts and reaps the child. */
+export const runCommand = (
+  command: string,
+  args: Array<string>,
+  cwd: string,
+  timeoutMs = 120_000,
+  input?: string
+): Promise<CommandResult> => {
+  const { spawner } = io()
+  return runIo(() => {
+    try {
+      return timeout(
+        Effect.scoped(() => {
+          const child = spawner.spawn(ChildProcess.make(command, args, {
+            cwd,
+            stdin: input === undefined ? "ignore" : Stream.succeed(new TextEncoder().encode(input))
+          }))
+          const text = (stream: typeof child.stdout) => stream.pipe(Stream.decodeText(), Stream.mkString)
+          return Effect.all({ stdout: text(child.stdout), stderr: text(child.stderr), exitCode: child.exitCode }, {
+            concurrency: "unbounded"
+          })
+        }),
+        timeoutMs
+      )
+    } catch (error) {
+      return { stdout: "", stderr: error.message, exitCode: error._tag === "TimeoutError" ? 124 : 127 }
+    }
+  })
+}

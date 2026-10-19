@@ -1,0 +1,142 @@
+/** Private staged /usr/local/bin/smithers-coding-host entry for an owning Plue workspace. */
+import { Effect, FileSystem, Layer, Redacted } from "effect"
+import type { HttpClient } from "effect/http"
+import type * as NativeControl from "../../../../packages/smithers/src/internal/NativeControl.ts"
+import * as Serve from "../../../../packages/smithers/src/Serve.ts"
+import { layer as checkReceiptLayer } from "../../repository/check-receipt.ts"
+import { remoteLayer } from "../../repository/remote.ts"
+import { layer, type Options, optionsFromEnv } from "./host.vibe"
+import { prepareFlowDependencies, withImmutableCommit, withPinnedSource } from "./immutable-source.vibe"
+import { load as loadLanding } from "./landing-config.vibe"
+import * as Landing from "./landing.vibe"
+import { nativeLayer, NativeTransport } from "./native.vibe"
+import { boundRelayWikiProvider } from "./planning-wiki-provider.vibe"
+import { loadProject } from "./project-config.vibe"
+import { type Entry, serveEntry } from "./serve-host-entry.ts"
+
+/** The configured host for one resolved entry: its landing binding, then its flow source, then serve. */
+const run = (
+  entry: Entry,
+  adapters: Pick<Options, "fileMutationProvider">,
+  platform: NativeControl.Platform,
+  http: Layer.Layer<HttpClient.HttpClient>
+) => {
+  const { root, bind, options, snapshot, environment } = entry
+  provide platform.host {
+    const landing = loadLanding(root, environment, environment.SMITHERS_WORKSPACE_CODING_CONFIG)
+    const serveSource = (flowSourceRoot: string, flowSourceRevision?: string) => {
+      provide platform.host {
+        const planning = loadProject(flowSourceRoot, environment.SMITHERS_CODING_PROJECT) catch (error) =>
+          throw (snapshot === undefined
+            ? error
+            : new Error(`Invalid install defaults or main:.smithers/coding-project.json: ${error.message}`))
+        // A guest's binding is root-owned /etc/smithers; a trusted-process
+        // test runtime names its own (the landing credential stays env-only).
+        const models = Effect.provide(optionsFromEnv(environment), platform.requestExecutor)
+        provide http {
+          return Effect.provide(Serve.host(bind, root), layer(platform, {
+            ...options,
+            ...adapters,
+            flowSourceRoot,
+            flowSourceRevision,
+            retainedRepositoryJobs: snapshot === undefined,
+            ...models,
+            // Plans read and cite wiki revisions through the host API with
+            // the provisioned run credential (T-FLW-10). Only the machine's
+            // own root-provisioned binding counts as isolated.
+            planning: landing === undefined ? planning : {
+              ...planning,
+              wikiProvider: boundRelayWikiProvider({
+                apiBaseUrl: landing.apiBaseUrl,
+                repositorySlug: landing.repositorySlug,
+                runCredential: Redacted.value(landing.token),
+                isolated: environment.SMITHERS_WORKSPACE_CODING_CONFIG === undefined &&
+                  options.sourcePublication !== "local-only"
+              })
+            },
+            ...(landing === undefined ? {} : {
+              nativeRepositoryToken: landing.token,
+              landing: Landing.layer(landing).pipe(Layer.provide(http), Layer.orDie),
+              repositoryRemote: Layer.merge(
+                remoteLayer({ ...landing, gatewayId: options.gatewayId, credential: options.credential ?? "" }),
+                checkReceiptLayer({
+                  ...landing,
+                  gatewayId: options.gatewayId,
+                  credential: options.credential ?? ""
+                })
+              ).pipe(Layer.provide(http), Layer.orDie)
+            })
+          }))
+          // The mutation provider retains this client for later writes.
+          // Keep its connection pool alive until the serving host exits.
+        }
+      }
+    }
+    // A review machine's working copy is the reviewed PR. Its restore
+    // already fetched the pinned commit beside it with a read-only token,
+    // so there is no binding to import through and nothing to publish:
+    // export that exact commit and register flows only from the export.
+    if (environment.SMITHERS_FLOW_SOURCE_PINNED === "1" && environment.SMITHERS_FLOW_SOURCE_LOCAL === "1") {
+      // A throw inside the TypeScript's Effect.gen is a defect, so this refusal dies.
+      if (landing !== undefined || options.todoExecutionDigest !== undefined) {
+        return die(new Error("Local pinned flow source carries no landing binding or TODO pin"))
+      }
+      const fs = FileSystem.FileSystem()
+      const sourceOptions = {
+        repositoryPath: root,
+        fs,
+        exporterPath: options.exporterPath,
+        sourceDirectory: entry.sourceDirectory,
+        environment: entry.sourceEnvironment
+      }
+      return withImmutableCommit(
+        sourceOptions,
+        options.runtimeSourceRevision ?? "",
+        (tree, sourceRoot) => {
+          prepareFlowDependencies(sourceOptions, sourceRoot)
+          return serveSource(sourceRoot, tree.commitId)
+        }
+      )
+    }
+    // Validate the protected workspace binding before invoking the source exporter.
+    // This entire effect runs in the unprivileged managed coding host.
+    if (environment.SMITHERS_FLOW_SOURCE_PINNED === "1") {
+      const mainSource = environment.SMITHERS_FLOW_SOURCE_MAIN === "1"
+      if (
+        mainSource
+          ? options.todoExecutionDigest !== undefined
+          : !/^[a-f0-9]{64}$/.test(options.todoExecutionDigest ?? "")
+      ) {
+        return die(new Error("Pinned flow source does not match its main or TODO binding"))
+      }
+      if (landing === undefined) return die(new Error("Pinned TODO workspace binding is unavailable"))
+      const fs = FileSystem.FileSystem()
+      const sourceOptions = {
+        repositoryPath: root,
+        fs,
+        exporterPath: options.exporterPath,
+        sourceDirectory: entry.sourceDirectory,
+        environment: entry.sourceEnvironment
+      }
+      return Effect.provide(
+        withPinnedSource(
+          sourceOptions,
+          landing.workspaceId,
+          options.runtimeSourceRevision ?? "",
+          (tree, sourceRoot) => {
+            prepareFlowDependencies(sourceOptions, sourceRoot)
+            return serveSource(sourceRoot, tree.commitId)
+          }
+        ),
+        nativeLayer({ ...options, nativeRepositoryToken: landing.token }).pipe(
+          Layer.provide(NativeTransport.layerFrom(platform.host))
+        )
+      )
+    }
+    return serveSource(root)
+  }
+}
+
+/** Code-owned host adapters; the installed entry supplies none. */
+export const serve = (adapters: Pick<Options, "fileMutationProvider"> = {}) =>
+  serveEntry((entry) => (platform, http) => run(entry, adapters, platform, http))

@@ -1,0 +1,48 @@
+/** Pinned single-file Bun host and local RPC bridge for a retained invocation VM. */
+import { ControlRpcs } from "@smthrs/control"
+import { GatewayRpcs } from "@smthrs/gateway/GatewayRpcs"
+import { Effect } from "effect"
+import { RpcClient } from "effect/rpc"
+import type * as NativeControl from "../../../../packages/smithers/src/internal/NativeControl.ts"
+import * as Serve from "../../../../packages/smithers/src/Serve.ts"
+import type { layer } from "./host.vibe"
+import * as ServeNative from "./serve.native.ts"
+
+/** Resolve declarations against this bundle without installing project dependencies. */
+export const registerPinnedLibraries = ServeNative.registerPinnedLibraries
+
+function host(
+  platform: NativeControl.Platform,
+  root: string,
+  credential: string,
+  invocation: ReturnType<typeof layer>
+) {
+  provide platform.host {
+    provide invocation {
+      return Serve.host({ host: "127.0.0.1", port: 3011, listen: false, credential }, root)
+    }
+  }
+}
+
+function call(procedure: string, payload: any, projection: boolean) {
+  if (projection) {
+    const client = RpcClient.make(GatewayRpcs)
+    if (procedure === "Projection.Snapshot") return client["Projection.Snapshot"](payload)
+    return client["Approval.Submit"](payload)
+  }
+  const client = RpcClient.make(ControlRpcs.ControlRpcs)
+  switch (procedure) {
+    case "Plan":
+      return client.Plan(payload)
+    case "Run":
+      return client.Run(payload)
+    case "List":
+      return client.List(payload)
+    case "Cancel":
+      return client.Cancel(payload)
+    default:
+      throw new Error("Unsupported invocation procedure")
+  }
+}
+
+if (import.meta.main) ServeNative.cli(host, call)

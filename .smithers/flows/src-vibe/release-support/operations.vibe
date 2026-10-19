@@ -1,0 +1,108 @@
+import type * as Evaluator from "@smthrs/model/Evaluator"
+import { Effect, Layer } from "effect"
+import { chooseTemplate } from "../release-content/jev-template.vibe"
+import * as Content from "../release-content/workflow.vibe"
+import type { releaseGateSetForHost } from "../release/release-gates.mjs"
+import * as Release from "../release/workflow.vibe"
+import { evaluatorLayer } from "../repository/jev-checks.vibe"
+import { checkContent } from "./content.ts"
+import type { postTweet, RunCommand } from "./io.ts"
+import * as OperationsNative from "./operations.native.ts"
+import { recordUi } from "./recording.ts"
+import { ReleaseError } from "./schema.vibe"
+
+/**
+ * The release inventory the checks step runs and the exceptions it reports.
+ * Defaults to `.smithers/flows/release/release-gates.mjs`; tests inject a mutated copy to
+ * prove the receipt without running the real gates.
+ */
+export type ReleaseGateSet = ReturnType<typeof releaseGateSetForHost>
+
+export interface Options {
+  readonly root: string
+  readonly run?: RunCommand
+  readonly tweet?: typeof postTweet
+  readonly reviewDirectory?: string
+  readonly gates?: ReleaseGateSet
+}
+
+/** Run gates serially; a failed command produces no receipt and stops the inventory. */
+export const runReleaseGates = OperationsNative.runReleaseGates
+
+/** All I/O lives in registered action implementations, never in flow planning. */
+export const operations = OperationsNative.operations
+
+type Work<A> = (signal: AbortSignal) => Promise<A>
+
+function attempt<A>(step: string, work: Work<A>): A!ReleaseError {
+  logInfo(`Release step: ${step}`)
+  const result = try(
+    async (work: Work<A>, signal: AbortSignal) => work(signal),
+    (error) =>
+      error instanceof ReleaseError
+        ? error
+        : new ReleaseError({ step, message: error instanceof Error ? error.message : String(error) }),
+    work
+  )
+  logInfo(`Release step complete: ${step}`)
+  return result
+}
+
+/**
+ * Select the release narrative's judge while assembling the host. A missing
+ * subscription fails judgment; an offline test deliberately scripts this
+ * classifier and the completion brake through the same evaluator.
+ */
+export const actionLayers = (
+  options: Options & {
+    readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
+  }
+) => {
+  const ops = operations(options)
+  return Layer.mergeAll(
+    Content.Outcome.toLayer(Effect.succeed),
+    Content.PickTemplate.toLayer(({ input, evidence, analysis }) => chooseTemplate(input, evidence, analysis))
+      .pipe(Layer.provide(options.evaluator ?? evaluatorLayer(OperationsNative.processEnv()))),
+    Release.Outcome.toLayer(Effect.succeed),
+    Content.Collect.toLayer((value) => attempt("collect", (signal) => ops.collect(value, signal))),
+    Content.RecordUi.toLayer(({ input, evidence }) =>
+      input.recording === null
+        ? evidence
+        : attempt("record-ui", (signal) => recordUi(options.root, input.recording!, evidence, signal))
+    ),
+    Content.Check.toLayer(({ input, evidence, analysis, draft, review }) =>
+      Effect.succeed(checkContent(input, evidence, analysis, draft, review))
+    ),
+    Content.QualityGate.toLayer(({ review, draft }) =>
+      review.passed
+        ? draft
+        : throw new ReleaseError({ step: "quality-gate", message: review.feedback.join("\n") })
+    ),
+    Content.Preview.toLayer((value) => attempt("preview", () => ops.preview(value))),
+    Content.RecordApproval.toLayer(({ artifact }) =>
+      attempt("record-approval", (signal) => ops.recordApproval(artifact, signal))
+    ),
+    Content.PublishFiles.toLayer(({ artifact }) =>
+      attempt("publish-files", (signal) => ops.publishFiles(artifact, signal))
+    ),
+    Content.PostThread.toLayer(({ artifact }) => attempt("post-thread", (signal) => ops.postThread(artifact, signal))),
+    Content.CommitFiles.toLayer(({ artifact, files }) =>
+      attempt("commit-files", (signal) => ops.commitFiles(artifact, files, signal))
+    ),
+    Release.PreparePlan.toLayer((value) => attempt("prepare-plan", (signal) => ops.preparePlan(value, signal))),
+    Release.WritePreparation.toLayer((value) =>
+      attempt("write-preparation", (signal) => ops.writePreparation(value, signal))
+    ),
+    Release.Validate.toLayer((value) => attempt("validate", (signal) => ops.validate(value, signal))),
+    Release.Checks.toLayer(({ evidence }) => attempt("checks", (signal) => ops.checks(evidence, signal))),
+    Release.Build.toLayer(({ evidence }) => attempt("build", (signal) => ops.build(evidence, signal))),
+    Release.Pack.toLayer(({ evidence }) => attempt("pack", (signal) => ops.pack(evidence, signal))),
+    Release.Smoke.toLayer(({ candidate, runtime }) =>
+      attempt("smoke", (signal) => ops.smoke(candidate, runtime, signal))
+    ),
+    Release.VerifyCandidate.toLayer((value) =>
+      attempt("verify-candidate", (signal) => ops.verifyCandidate(value, signal))
+    ),
+    Release.Publish.toLayer((value) => attempt("publish", (signal) => ops.publish(value, signal)))
+  )
+}

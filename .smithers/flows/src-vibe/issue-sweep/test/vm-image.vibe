@@ -1,0 +1,10 @@
+/**
+ * Builds the issue-sweep microVM image from smithersai/smithers main:
+ *   node .smithers/flows/issue-sweep/test/vm-image.ts [revision]
+ * Prints the snapshot name and the build time.
+ */
+import { buildImage } from "../vm.vibe"
+import { run } from "./vm-image.native.ts"
+
+// A-2/E-4, E-7: the runner, the revision lookup and the output are in vm-image.native.ts.
+run((revision: string) => buildImage(revision))

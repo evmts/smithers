@@ -1,0 +1,57 @@
+import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
+import { HumanTask } from "@smthrs/flow"
+import * as DurableDeferred from "@smthrs/flow/DurableDeferred"
+import * as RunStore from "@smthrs/run-store/RunStore"
+import { Exit, Option, Schedule, Schema } from "effect"
+import ReleaseContent from "../release-content/flow.vibe"
+import Release from "../release/flow.vibe"
+import * as MainNative from "./main.native.ts"
+import { ContentInput, ReleaseInput, type StoredRun } from "./schema.vibe"
+
+function statusEffect(id: string) {
+  const store = RunStore.RunStore()
+  const state = DurableEngineState.DurableEngineState()
+  const run = store.get(id)
+  const waiting = state.waiting(id)
+  return { id, status: run.status, waiting: Option.getOrNull(waiting) }
+}
+
+function drive(stored: StoredRun, answer?: boolean) {
+  if (answer !== undefined) {
+    const state = DurableEngineState.DurableEngineState()
+    const waiting = state.waiting(stored.id)
+    if (
+      Option.isNone(waiting) || waiting.value.reason !== "approval" || waiting.value.token === null
+    ) return die("This run is not waiting for a human approval")
+    HumanTask.answer({
+      token: Schema.decodeUnknownSync(DurableDeferred.Token)(waiting.value.token),
+      value: answer
+    })
+  }
+  if (stored.kind === "release") {
+    Release.execute(Schema.decodeUnknownSync(ReleaseInput)(stored.input), {
+      executionId: stored.id,
+      discard: true
+    })
+    const result = repeat(Release.poll(stored.id), { until: Option.isSome, schedule: Schedule.spaced(10) })
+    if (Option.isSome(result) && result.value._tag === "Complete") {
+      if (Exit.isFailure(result.value.exit)) throw result.value.exit.cause
+      return { id: stored.id, result: result.value.exit.value }
+    }
+  } else {
+    ReleaseContent.execute(Schema.decodeUnknownSync(ContentInput)(stored.input), {
+      executionId: stored.id,
+      discard: true
+    })
+    const result = repeat(ReleaseContent.poll(stored.id), { until: Option.isSome, schedule: Schedule.spaced(10) })
+    if (Option.isSome(result) && result.value._tag === "Complete") {
+      if (Exit.isFailure(result.value.exit)) throw result.value.exit.cause
+      return { id: stored.id, result: result.value.exit.value }
+    }
+  }
+  return statusEffect(stored.id)
+}
+
+export const main = MainNative.makeMain(statusEffect, drive)
+
+MainNative.whenEntry(import.meta.filename, main)
