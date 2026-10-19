@@ -315,6 +315,9 @@ func (s *ChangeService) RecordPush(ctx context.Context, repositoryID int64, owne
 			if strings.TrimSpace(change.ChangeID) == "" || strings.TrimSpace(change.CommitID) == "" {
 				continue
 			}
+			if s.changeAlreadyRecorded(ctx, repositoryID, change) {
+				continue
+			}
 			if err := s.recordRepoHostChange(ctx, repositoryID, owner, repo, change); err != nil {
 				return err
 			}
@@ -327,6 +330,23 @@ func (s *ChangeService) RecordPush(ctx context.Context, repositoryID int64, owne
 		}
 		cursor = nextCursor
 	}
+}
+
+// changeAlreadyRecorded reports whether the stored change already names this
+// commit. A jj commit id covers the description, parents, author and
+// conflicts, so its revision, issue links, conflicts and landing turns are
+// already recorded; rewriting every change on every push to any bookmark was
+// ~21% of production DB time (sh-owner d-ixpkxs). A read error records the
+// change as before.
+func (s *ChangeService) changeAlreadyRecorded(ctx context.Context, repositoryID int64, change repohost.Change) bool {
+	reader, ok := s.queries.(interface {
+		GetChangeByChangeID(context.Context, db.GetChangeByChangeIDParams) (db.Change, error)
+	})
+	if !ok {
+		return false
+	}
+	stored, err := reader.GetChangeByChangeID(ctx, db.GetChangeByChangeIDParams{RepositoryID: repositoryID, ChangeID: change.ChangeID})
+	return err == nil && stored.CommitID == change.CommitID
 }
 
 // recordRepoHostChange snapshots one repo-host change exactly as a push

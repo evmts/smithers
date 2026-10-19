@@ -21,6 +21,9 @@ import (
 )
 
 type changeTestQueries struct {
+	// stored maps a change id to the commit its changes row names; nil means
+	// the fake has no GetChangeByChangeID answer to give (ErrNoRows).
+	stored                 map[string]string
 	upserts                []db.UpsertChangeParams
 	records                []db.RecordChangeRevisionParams
 	turnUpdates            []db.UpdateLandingRequestsTurnForRevisionParams
@@ -81,6 +84,14 @@ type changeTestQueries struct {
 
 func changeConflictKey(repositoryID int64, changeID, filePath string) string {
 	return fmt.Sprintf("%d:%s:%s", repositoryID, changeID, filePath)
+}
+
+func (q *changeTestQueries) GetChangeByChangeID(_ context.Context, arg db.GetChangeByChangeIDParams) (db.Change, error) {
+	commit, ok := q.stored[arg.ChangeID]
+	if !ok {
+		return db.Change{}, pgx.ErrNoRows
+	}
+	return db.Change{RepositoryID: arg.RepositoryID, ChangeID: arg.ChangeID, CommitID: commit}, nil
 }
 
 func (q *changeTestQueries) UpsertChange(_ context.Context, arg db.UpsertChangeParams) (db.Change, error) {
@@ -441,6 +452,29 @@ func TestChangeService_RecordPushRecordsEveryRevisionAndProvenance(t *testing.T)
 	assert.Equal(t, "push", queries.records[1].Source)
 	require.Len(t, queries.turnUpdates, 2)
 	assert.Equal(t, db.UpdateLandingRequestsTurnForRevisionParams{RepositoryID: 42, ChangeID: "change-agent", CommitID: "commit-2"}, queries.turnUpdates[0])
+}
+
+// A push re-lists every change in the repository. One whose stored row
+// already names the same commit is not rewritten (sh-owner d-ixpkxs: ~21% of
+// DB time); a new change and one whose commit moved are recorded in full.
+func TestChangeService_RecordPushSkipsChangesWhoseCommitDidNotMove(t *testing.T) {
+	t.Parallel()
+
+	queries := &changeTestQueries{stored: map[string]string{"change-same": "commit-1", "change-moved": "commit-8"}}
+	repoHost := &changeTestRepoHost{pages: map[string][]repohost.Change{"": {
+		{ChangeID: "change-same", CommitID: "commit-1", Description: "Closes #7"},
+		{ChangeID: "change-new", CommitID: "commit-2"},
+		{ChangeID: "change-moved", CommitID: "commit-9"},
+	}}}
+
+	require.NoError(t, NewChangeService(queries, repoHost, nil).RecordPush(context.Background(), 42, "alice", "demo"))
+	var upserted []string
+	for _, upsert := range queries.upserts {
+		upserted = append(upserted, upsert.ChangeID+"@"+upsert.CommitID)
+	}
+	require.Equal(t, []string{"change-new@commit-2", "change-moved@commit-9"}, upserted)
+	require.Len(t, queries.records, 2)
+	require.Len(t, queries.turnUpdates, 2)
 }
 
 func TestChangeService_RecordPushParsesAndReplacesIssueTrailers(t *testing.T) {
