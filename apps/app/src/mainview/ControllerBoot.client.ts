@@ -5,7 +5,7 @@ import { selectFirstRunRepository } from "./state/BootRepositoryTarget"
 import { Effect } from "effect"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { loadRuntimeApplicationClient } from "./runtime/ApplicationTransport"
-import { beginRepositoryEntry, openRequestedRepo, withoutRepoParam } from "./RepoLink"
+import { askRequested, beginRepositoryEntry, openRequestedRepo, withoutRepoParam } from "./RepoLink"
 import { repositoryRouter } from "./RepositoryRouter"
 import { openRequestedSubject } from "./RepositorySubjectEntry"
 import { createBrowserFrameHistory, ROOT_APP_PATH } from "./runtime/FrameHistory"
@@ -63,7 +63,8 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     const bootstrapRead = warmBootstrap(http)
     const { bootstrap, store } = yield* promiseEffect("prepare runtime and persisted state", () =>
       loadControllerBootInputs(() => bootstrapRead, () => createAppStore(undefined, { eraseTurn: createTurnEraser(http) })))
-    const repositoryEntryId = yield* Effect.sync(() => store.savedStoreUnavailable ? undefined : beginRepositoryEntry(store, requested))
+    // `?ask=1` rides on the entry URL too: the frame opens Ask from the entry, and the address drops it below.
+    const repositoryEntryId = yield* Effect.sync(() => store.savedStoreUnavailable ? undefined : beginRepositoryEntry(store, requested, askRequested(entrySearch)))
     const runtime = yield* Effect.sync(() => createRuntime({
       bootstrap,
       http,

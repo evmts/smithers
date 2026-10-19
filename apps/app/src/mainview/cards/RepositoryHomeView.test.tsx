@@ -69,17 +69,24 @@ test("a declared homepage replaces the tree, and the tree is one press away", ()
 })
 
 test("links open the app's own pages in place and other sites in a new tab", () => {
+  // The page is on smithers.sh, whose home.json links the app's own pages absolutely (Platform r2.4).
+  const page = window as unknown as { happyDOM: { setURL: (url: string) => void } }
+  const before = window.location.href
+  page.happyDOM.setURL("https://smithers.sh/smithersai/smithers")
   const home = RepositoryHomeSchema.parse({ kind: "blocks", blocks: [
-    { type: "links", links: [{ label: "Docs", url: "https://smithers.sh/docs/" }, { label: "Report a bug", url: "/bug" }] }
+    { type: "links", links: [{ label: "Docs", url: "https://smithers.sh/docs/" }, { label: "Report a bug", url: "/bug" }, { label: "Guide", url: "https://example.com/guide" }] }
   ] })
-  const { host } = render(home)
-  const docs = host.querySelector<HTMLAnchorElement>('a[href="https://smithers.sh/docs/"]')!
-  expect(docs.target).toBe("_blank")
-  expect(docs.rel).toContain("noopener")
-  const bug = host.querySelector<HTMLAnchorElement>('a[href="/bug"]')!
-  expect(bug.textContent).toBe("Report a bug")
-  expect(bug.target).toBe("")
-  expect(bug.getAttribute("rel")).toBeNull()
+  let host: HTMLElement
+  try { host = render(home).host } finally { page.happyDOM.setURL(before) }
+  for (const [href, label] of [["https://smithers.sh/docs/", "Docs"], ["/bug", "Report a bug"]] as const) {
+    const own = host.querySelector<HTMLAnchorElement>(`a[href="${href}"]`)!
+    expect(own.textContent).toBe(label)
+    expect(own.target).toBe("")
+    expect(own.getAttribute("rel")).toBeNull()
+  }
+  const guide = host.querySelector<HTMLAnchorElement>('a[href="https://example.com/guide"]')!
+  expect(guide.target).toBe("_blank")
+  expect(guide.rel).toContain("noopener")
 })
 
 test("a declared flow is an offer, never a launch: it runs only when a member presses it", () => {

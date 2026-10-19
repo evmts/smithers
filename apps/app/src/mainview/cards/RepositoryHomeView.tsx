@@ -9,6 +9,7 @@ import type { RepositorySnapshot, RepositorySnapshots } from "../state/seams/Rep
 import type { RepositoryFlowsRow } from "../state/AppState"
 import { flowViewOf } from "../state/seams/RepositoryFlowsSeam"
 import { dynamicFlowProps } from "../flows/FlowAction"
+import { opensInPlace } from "../repository/homeLinks"
 import type { RunDynamicCommand } from "./CardFamily"
 import "./RepositoryHomeView.css"
 
@@ -216,11 +217,11 @@ const DeclaredBlocks = ({ repo, blocks, onRunCommand }: {
         return <div className="repository-home-block" key={key}>
           {block.title === undefined ? null : <h2>{block.title}</h2>}
           <ul className="repository-home-links">
-            {/* The app's own pages (origin-relative, schema-admitted) open in place; other sites in a new tab, as CodeHome's HomeLinks does. */}
+            {/* The app's own pages (origin-relative, or absolute on this origin) open in place; other sites in a new tab, as CodeHome's HomeLinks does. */}
             {block.links.map((link) => <li key={link.url}>
-              {/^https?:/i.test(link.url)
-                ? <a href={link.url} rel="noreferrer noopener" target="_blank">{link.label}</a>
-                : <a href={link.url}>{link.label}</a>}
+              {opensInPlace(link.url)
+                ? <a href={link.url}>{link.label}</a>
+                : <a href={link.url} rel="noreferrer noopener" target="_blank">{link.label}</a>}
             </li>)}
           </ul>
         </div>

@@ -323,6 +323,21 @@ test("links open their own host's pages in place and other sites in a new tab", 
   expect(bug.target).toBe("")
 })
 
+// Platform's home.json links smithers.sh absolutely (r2.4): on smithers.sh those are the app's own pages, so they open in place too.
+test("an absolute link to this page's own origin opens in place", () => {
+  const page = window as unknown as { happyDOM: { setURL: (url: string) => void } }
+  const before = window.location.href
+  page.happyDOM.setURL("https://smithers.sh/smithersai/smithers")
+  const own = { kind:"blocks" as const, blocks:[{ type:"links" as const, links:[{ label:"Install Smithers", url:"https://smithers.sh/" }, { label:"Elsewhere", url:"https://example.com/" }] }] }
+  let host: HTMLElement
+  try { host = mount(<CodeHome repo="smithersai/smithers" onRunCommand={() => false} branch="main" tree={tree} home={own}/>) } finally { page.happyDOM.setURL(before) }
+  const install = host.querySelector<HTMLAnchorElement>('.repo-code-home-links a[href="https://smithers.sh/"]')!
+  expect(install.textContent).toBe("Install Smithers")
+  expect(install.target).toBe("")
+  expect(install.getAttribute("rel")).toBeNull()
+  expect(host.querySelector<HTMLAnchorElement>('.repo-code-home-links a[href="https://example.com/"]')!.target).toBe("_blank")
+})
+
 // Design (B): the prompt carries the home's title; signed out it is one quiet sign-in button, signed in an input plus Send.
 test("the prompt block is one quiet sign-in button for a visitor and an input plus Send for a viewer who can Ask", () => {
   const visitorCommands: Array<[string, string | undefined]> = []

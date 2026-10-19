@@ -8,6 +8,10 @@ import { codeReadKey, repositoryCodeReads } from "./RepositoryCodeRead"
 import { useContext, useRef, useSyncExternalStore, type CSSProperties } from "react"
 import { File, Folder } from "lucide-react"
 import type { Card } from "../state/AppState"
+import type { RepositoryBranches } from "../state/seams/RepositoryBranchesSeam"
+import type { LatestCommit } from "../state/seams/LatestCommitSeam"
+import { BranchPicker } from "./BranchPicker"
+import { LatestCommitRow } from "./CodeHome"
 import { pathTarget } from "../RepoLink"
 import { isCommitRevision, resolveRefLocation } from "@smthrs/rpc/RepositorySubjectPath"
 import { tokenize } from "./syntax"
@@ -31,8 +35,12 @@ export const permalinkCommit = (revision: string, readCommit?: string | null, co
 }
 
 /** A projection of the admitted route's existing read, never an independent reader. */
-export function RepositoryCodeView({ repo, cards, refs, commits, admitted, requestId, error, onAsk, onRunCommand }: {
+export function RepositoryCodeView({ repo, cards, refs, commits, branches, onBranchesOpen, latestCommit, admitted, requestId, error, onAsk, onRunCommand }: {
   repo: string; cards: ReadonlyArray<Card>; refs: ReadonlyArray<string>; commits?: Readonly<Record<string, string>>; admitted: boolean; requestId?: string; error?: string; onAsk: (text: string) => void; onRunCommand: RunDynamicCommand
+  /** The bookmark list for the branch button (the home's own; Design (F)), and its reader for when the list opens. */
+  branches?: RepositoryBranches; onBranchesOpen?: () => void
+  /** The P-1 commit read at the ref this view shows (RepositoryCodeRead.latestCommitKey with the ref); absent, there is no bar. */
+  latestCommit?: LatestCommit
 }) {
   const anchor = useRef<number | null>(null)
   const openAsk = useContext(RepositoryAskContext)
@@ -69,20 +77,20 @@ export function RepositoryCodeView({ repo, cards, refs, commits, admitted, reque
   }
   return <section role="region" className="repository-code repo-code-main" data-keyboard-pane="Repository code" aria-label={subject.kind === "tree" ? "Folder view" : "File view"}>
     <div className="repo-code-path-header">
-      {located && <select aria-label="Switch branches" value={revision} onChange={event => { window.location.href = route(subject.kind, path, event.target.value) }}>
-        {[...new Set([revision, ...refs])].map(ref => <option key={ref}>{ref}</option>)}
-      </select>}
+      {located && <BranchPicker branch={revision} branches={branches} onOpen={onBranchesOpen} href={ref => route(subject.kind, path, ref)} />}
       <nav className="repo-code-breadcrumbs" aria-label="File path">{located ? <a href={route("tree", "")}>{repo.split("/").at(-1)}</a> : <span>{repo.split("/").at(-1)}</span>}
         {path.split("/").filter(Boolean).map((part, index, parts) => <span key={index}><span className="repo-code-separator">/</span>{index === parts.length - 1 ? <strong>{part}</strong> : <a href={route("tree", parts.slice(0, index + 1).join("/"))}>{part}</a>}</span>)}
       </nav>
       {located && commit && <button className="repo-ui-btn repo-ui-btn-primary repo-code-permalink" {...flowAction(onRunCommand, "chat.copy-message", flowArgs("chat.copy-message", { text: permalink() ?? "" }))}>Copy permalink</button>}
     </div>
     {failure ? <FailureNotice failure={unavailableFailure("repository.file", "Couldn’t load this file.", failure)} /> : !card && !page ? <p role="status">Loading…</p> : card?.kind === "file-list" ? <div className="repository-code-box">
+      {latestCommit && <LatestCommitRow commit={latestCommit} />}
       {card.payload.entries.length === 0 ? <p>This folder is empty.</p> : <div role="table" aria-label={path ? `Files in ${path}` : "Repository files"}>
         {path && <div role="row" className="repo-code-file-row"><span role="cell"><a href={route("tree", path.split("/").slice(0, -1).join("/"))} aria-label="Parent directory">..</a></span></div>}
         {card.payload.entries.map(entry => <div className="repo-code-file-row" role="row" key={entry.name}><span role="cell"><a href={route(entry.kind === "dir" ? "tree" : "blob", [path, entry.name].filter(Boolean).join("/"))}>{entry.kind === "dir" ? <Folder size={17} aria-hidden="true" /> : <File size={17} aria-hidden="true" />}{entry.name}</a></span></div>)}
       </div>}{card.payload.truncated && <p>Truncated</p>}
     </div> : payload && <div className="repository-code-box">
+      {latestCommit && <LatestCommitRow commit={latestCommit} />}
       <div className="repo-code-file-toolbar"><strong>Code</strong><span className="repo-code-file-stats">{!page?.tooLarge && <>{tokens.length} lines · </>}{payload.originalSize.toLocaleString("en-US")} B</span><span className="repo-code-toolbar-spacer" />{page?.tooLarge ? <a href={page.rawUrl}>Raw</a> : <><button {...flowAction(onRunCommand, "code.view", flowArgs("code.view", { pathname: window.location.pathname, field: "raw", value: raw ? "0" : "1" }))}>{raw ? "Exit raw" : "Raw"}</button><button aria-label="Copy file contents" {...flowAction(onRunCommand, "chat.copy-message", flowArgs("chat.copy-message", { text: payload.content }))}>Copy</button></>}</div>
       {page?.tooLarge ? null : payload.binary ? <p>Binary file</p> : !payload.content ? <p>This file is empty.</p> : raw ? <pre className="repo-code-raw" aria-label={`Raw ${path}`}>{payload.content}</pre> : <>
         {selected && <div className="repo-code-selection" aria-label="Selected line actions"><span>lines {selected.start}-{selected.end}</span><button {...flowProps("chat.open")} onClick={() => { onAsk(`Explain lines ${selected.start}-${selected.end} of ${path} at ${revision}`); if (openAsk) openAsk(onRunCommand); else onRunCommand("chat.open") }}>Ask about lines</button>{commit && <button {...flowAction(onRunCommand, "chat.copy-message", flowArgs("chat.copy-message", { text: permalink() ?? "" }))}>Copy link</button>}</div>}

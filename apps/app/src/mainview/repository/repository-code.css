@@ -1,6 +1,6 @@
 .repository-code { padding: 24px; width: 100%; min-height: 0; overflow: auto; color: var(--text); background: var(--bg); }
 .repository-code-box { border: 1px solid var(--border); border-radius: var(--r-3); min-width: 0; overflow: hidden; }
-.repository-code button, .repository-code select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-2); padding: 6px 10px; cursor: pointer; }
+.repository-code button { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-2); padding: 6px 10px; cursor: pointer; }
 .repository-code a { text-decoration: none; }
 .repository-code a:hover { text-decoration: underline; }
 .repository-code :focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }

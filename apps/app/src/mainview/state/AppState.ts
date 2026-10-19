@@ -954,6 +954,8 @@ export const RepositoryEntrySchema = z.object({
   requestId: z.string(),
   repo: z.string(),
   phase: z.enum(["pending", "ready", "failed"]),
+  /** The entry URL carried `?ask=1` (RepoLink.askRequested): the frame opens Ask once it is on the page. */
+  ask: z.literal(true).optional(),
   failureKind: z.enum(["unavailable", "not-public"]).optional(),
   /** Bounded admission receipts only: never response bodies, credentials, or file contents. */
   diagnostics: z.object({

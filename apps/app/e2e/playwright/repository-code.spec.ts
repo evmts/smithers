@@ -51,7 +51,8 @@ for (const width of [1440, 1280, 390]) for (const theme of ["light", "dark"] as 
     for (const name of ["Copy permalink", "Raw", "Copy file contents"]) {
       const control = view.getByRole("button", { name, exact: true }); await control.focus(); await expect(control).toBeFocused()
     }
-    const controls = view.locator("a, button, select")
+    // The branch button's closed list is not in the ring; its summary is.
+    const controls = view.locator("a:visible, button:visible, summary:visible")
     await controls.first().focus()
     for (let i = 0; i < await controls.count(); i++) {
       await expect(controls.nth(i)).toBeFocused()
