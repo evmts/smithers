@@ -203,9 +203,16 @@ func workspaceArtifactRuntimeFailure(ctx context.Context, operation string, err 
 	return pkgerrors.New(pkgerrors.CodeServiceUnavailable, operation+": "+workspaceBootstrapDiagnostic(err.Error())).WithCause(err)
 }
 
-// workspaceRuntimeCLIProbe runs the CLI installed in layout's home.
+// workspaceRuntimeCLIProbe runs the CLI installed in layout's home. The
+// controller execs it as root, and ~/.local/bin is the developer's, so a root
+// caller drops to the developer with an explicit PATH first: root never runs a
+// binary from a developer-writable directory. The direct branch serves
+// non-root callers and guests without runuser.
 func workspaceRuntimeCLIProbe(layout workspaceGuestLayout) string {
 	bin := layout.localBinDir()
-	return "PATH=" + shellQuote(bin+":/usr/local/bin") + ":$PATH; export PATH; " +
-		"if ! test -x " + shellQuote(bin+"/smithers") + " || ! test -x " + shellQuote(bin+"/smthrs") + "; then echo 'workspace CLI missing: smithers or smthrs' >&2; exit 1; fi; " + shellQuote(bin+"/smithers") + " --version"
+	check := "if ! test -x " + shellQuote(bin+"/smithers") + " || ! test -x " + shellQuote(bin+"/smthrs") + "; then echo 'workspace CLI missing: smithers or smthrs' >&2; exit 1; fi; " + shellQuote(bin+"/smithers") + " --version"
+	asDeveloper := "runuser -u " + shellQuote(layout.User) + " -- env -i HOME=" + shellQuote(layout.Home) + " USER=" + shellQuote(layout.User) + " LOGNAME=" + shellQuote(layout.User) +
+		" PATH=" + shellQuote(bin+":/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin") + " /bin/sh -c " + shellQuote(check)
+	return "if [ \"$(id -u)\" = 0 ] && command -v runuser >/dev/null 2>&1; then exec " + asDeveloper + "; fi; " +
+		"PATH=" + shellQuote(bin+":/usr/local/bin") + ":$PATH; export PATH; " + check
 }
