@@ -46,6 +46,12 @@ const workspaceArtifactGuestPath = "PATH=/run/current-system/sw/bin:/usr/sbin:/u
 const workspaceArtifactLock = workspaceArtifactRoot + "/bootstrap.lock"
 const workspaceArtifactBootstrapLog = workspaceArtifactCurrent + "/bootstrap.log"
 
+// workspaceArtifactLaunchLog collects the detached launcher's own output. The
+// launch opens it before it records a pending attempt, so a guest user that
+// cannot open it fails the launch instead of starting nothing while the wait
+// polls "pending" until its deadline.
+const workspaceArtifactLaunchLog = "/tmp/smithers-workspace-bootstrap.log"
+
 // workspaceArtifactLockBusy is the exit status of a publication that could
 // not take the bootstrap lock within workspaceArtifactPublishLockWait. The
 // caller retries until its own deadline, because an earlier install may hold
@@ -380,7 +386,7 @@ func finishWorkspaceArtifacts(ctx context.Context, provider any, id, script stri
 	// The attempt's own output replaces the previous attempt's log beside the
 	// bundle, where a failed wait reads its tail.
 	bootstrap := "exec 9>" + shellQuote(workspaceArtifactLock) + "; flock -w 120 9 || exit 1; " + workspaceArtifactOrphanSweep() + "test ! -f " + shellQuote(workspaceArtifactCurrent+"/bootstrap.done") + " || exit 0; rm -f -- " + shellQuote(workspaceArtifactCurrent+"/bootstrap.failed") + "; if /bin/bash " + shellQuote(workspaceArtifactCurrent+"/bootstrap.sh") + " 9>&- >" + shellQuote(workspaceArtifactBootstrapLog) + " 2>&1 && touch " + shellQuote(workspaceArtifactCurrent+"/bootstrap.done") + "; then exit 0; else status=$?; printf '%s:%s\\n' " + shellQuote(token) + " \"$status\" >" + shellQuote(workspaceArtifactCurrent+"/bootstrap.failed") + "; exit \"$status\"; fi"
-	command := "mkdir -p -- " + shellQuote(workspaceArtifactRoot) + " || exit 1; command -v flock >/dev/null || exit 1; command -v setsid >/dev/null || exit 1; printf '%s\\n' " + shellQuote(token) + " >" + shellQuote(workspaceArtifactCurrent+"/bootstrap.pending") + "; setsid /bin/sh -c " + shellQuote(bootstrap) + " >>/tmp/smithers-workspace-bootstrap.log 2>&1 </dev/null &"
+	command := "mkdir -p -- " + shellQuote(workspaceArtifactRoot) + " || exit 1; command -v flock >/dev/null || exit 1; command -v setsid >/dev/null || exit 1; exec 8>>" + shellQuote(workspaceArtifactLaunchLog) + " || exit 1; printf '%s\\n' " + shellQuote(token) + " >" + shellQuote(workspaceArtifactCurrent+"/bootstrap.pending") + "; setsid /bin/sh -c " + shellQuote(bootstrap) + " >&8 2>&8 </dev/null 8>&- &"
 	_, err = artifactCommand(ctx, client, id, command)
 	return err
 }
