@@ -254,3 +254,28 @@ describe("browser frame history", () => {
     expect(createBrowserFrameHistory(host).current()).toBeUndefined()
   })
 })
+
+describe("repository issue and pull query state", () => {
+  for (const source of ["github", "smithers-cloud"]) test(`${source} issue source survives frame writes and reload`, () => {
+    const { host } = browser(`/alpha/one/issues/7?source=${source}&tutorial`)
+    const history = createBrowserFrameHistory(host)
+    history.replace(root)
+    history.push(card)
+    expect(host.location.search).toBe(`?source=${source}`)
+    expect(createBrowserFrameHistory(host).current()).toEqual(card)
+  })
+  for (const list of ["issues", "pulls"]) test(`${list} filter survives frame writes`, () => {
+    const { host } = browser(`/alpha/one/${list}?q=is%3Aclosed+label%3Abug&tutorial`)
+    const history = createBrowserFrameHistory(host)
+    history.replace(root)
+    expect(new URLSearchParams(host.location.search).get("q")).toBe("is:closed label:bug")
+    expect(new URLSearchParams(host.location.search).has("tutorial")).toBe(false)
+    history.push(card)
+    expect(createBrowserFrameHistory(host).current()).toEqual(card)
+  })
+  test("an unknown issue source is not retained", () => {
+    const { host } = browser("/alpha/one/issues/7?source=unknown&tutorial")
+    createBrowserFrameHistory(host).replace(root)
+    expect(host.location.search).toBe("")
+  })
+})

@@ -36,19 +36,14 @@ export type RepositorySubjectView = Exclude<RepositorySubject, { readonly kind: 
 /**
  * The registered read flow a subject opens, with its target bound explicitly.
  *
- * `repo` always rides the payload, so the read is of the repository the URL
- * named and never of whatever happens to be active. An issue URL carries
- * `source: "github"` because a GitHub-shaped URL names GitHub's issue: a
- * Smithers Cloud repository can hold a private conversation or an issue of its
- * own under the same number, and that is a different subject
- * (IssuesSeam `issueView` gives it a different card entirely).
+ * `repo` binds the read to the URL. The row or repository chooses its tracker.
  */
-export const subjectCommand = (repo: string, subject: RepositorySubjectView): { readonly name: string; readonly args: string } =>
+export const subjectCommand = (repo: string, subject: RepositorySubjectView, source?: "github" | "smithers-cloud"): { readonly name: string; readonly args: string } =>
   subject.kind === "pull" ? { name: "pr", args: flowArgs("pr", { number: subject.number, repo }) }
     : subject.kind === "pulls" ? { name: "pr", args: flowArgs("pr", { operation: "list", repo }) }
       : subject.kind === "issue"
-        ? { name: "issues.view", args: flowArgs("issues.view", { number: subject.number, repo, source: "github" }) }
-        : { name: "issues.list", args: flowArgs("issues.list", { repo }) }
+        ? { name: "issues.view", args: flowArgs("issues.view", { number: subject.number, repo, source }) }
+        : { name: "issues.list", args: flowArgs("issues.list", { repo, filter: "all" }) }
 
 /** The pull request card this URL's subject names, under whichever id the surface mounted it with. */
 const landingCardId = (store: AppStore, repo: string, number: number): string | undefined =>
@@ -308,7 +303,10 @@ export const openRequestedSubject = async (
   const owner = accountOwnerOf(controller.store.collections.identitySessions.get("identity"))
   if (!admitted(controller.store, repo, options.requestId, owner)) return
   if (subject.kind === "tree" || subject.kind === "blob") return openRequestedFile(controller, repo, subject, owner, options)
-  const { name, args } = subjectCommand(repo, subject)
+  const repository = controller.store.collections.repositories.get(repo)
+  const requestedSource = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("source")
+  const source = (requestedSource === "github" || requestedSource === "smithers-cloud" ? requestedSource : undefined) ?? repository?.issueTracker
+  const { name, args } = subjectCommand(repo, subject, source)
   // The read runs to completion first: its own card is what the tab is chosen
   // on, and one command at a time is the lifecycle's own rule.
   const outcome = await controller.runCommandForResult(name, args)

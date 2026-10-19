@@ -56,7 +56,13 @@ const installIssue = {
   comments: []
 }
 
-const hosted = async (options: { readonly bootstrap?: AppBootstrap | undefined; readonly routes?: Record<string, unknown> } = {}) => {
+/**
+ * A hosted app watching one repository. `mirror` loads the repository row as
+ * admission records a document that declares a GitHub source, so the list
+ * asks GitHub's door beside the tracker's; without it the row declares
+ * nothing and the repository's own tracker is the only door.
+ */
+const hosted = async (options: { readonly bootstrap?: AppBootstrap | undefined; readonly routes?: Record<string, unknown>; readonly mirror?: boolean } = {}) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const calls: string[] = []
   const routes = options.routes ?? {}
@@ -79,7 +85,8 @@ const hosted = async (options: { readonly bootstrap?: AppBootstrap | undefined; 
   const controller = createAppController(store, unavailableAgent, services)
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "roninjin10", admin: false, scopesPlain: null }).isPersisted.promise
   await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
-    { id: REPO, org: "roninjin10", ownerKind: "user", name: "e2e-verify", head: { bookmark: "main", changeId: "c", commitId: "k" } }
+    { id: REPO, org: "roninjin10", ownerKind: "user", name: "e2e-verify", head: { bookmark: "main", changeId: "c", commitId: "k" },
+      ...(options.mirror === true ? { githubSource: { owner: "roninjin10", repo: "e2e-verify" } } : {}) }
   ] }).isPersisted.promise
   await store.dispatch({ type: "repo.selected", actor: "user", id: REPO }).isPersisted.promise
   await controller.secretAuthority?.read(REPO)
@@ -276,7 +283,7 @@ test("a host that serves neither Cloud issues nor an install is not asked for an
 const GITHUB_SOURCE = `/api/user/github-repos/roninjin10/e2e-verify/issues`
 
 test("a GitHub source that refuses while the tracker is empty is stated, not answered as 0 results", async () => {
-  const h = await hosted({ routes: {
+  const h = await hosted({ mirror: true, routes: {
     [`GET ${ISSUES}`]: [],
     [`GET /api/repos/roninjin10/e2e-verify/issue-views`]: [],
     [`GET ${GITHUB_SOURCE}`]: json(502, { status: "error", code: "bad_gateway", message: "GitHub is unavailable" })
@@ -301,7 +308,7 @@ test("a GitHub source that refuses while the tracker is empty is stated, not ans
  * answers, and the search states no refusal over a row it holds.
  */
 test("rows the tracker did establish still answer when the GitHub source refuses", async () => {
-  const h = await hosted({ routes: {
+  const h = await hosted({ mirror: true, routes: {
     [`GET ${ISSUES}`]: [cloudIssue],
     [`GET /api/repos/roninjin10/e2e-verify/issue-views`]: [],
     [`GET ${GITHUB_SOURCE}`]: json(502, { status: "error", code: "bad_gateway", message: "GitHub is unavailable" })
@@ -378,7 +385,7 @@ test("a refusing source is stated even while an issue card holds rows on the scr
     [`GET /api/repos/roninjin10/e2e-verify/issue-views`]: [],
     [`GET ${GITHUB_SOURCE}`]: []
   }
-  const h = await hosted({ routes })
+  const h = await hosted({ mirror: true, routes })
   try {
     /* The person opens the list first: the screen now HOLDS issue #5. */
     expect(await h.controller.runCommandForResult("issues.list", "all")).toMatchObject({ status: "executed" })
@@ -418,7 +425,7 @@ test("a refusing source is stated even while an issue card holds rows on the scr
  * diagnostic.
  */
 test("an issue index that answers no rows records its reason code, counts and nothing else", async () => {
-  const h = await hosted({ routes: {
+  const h = await hosted({ mirror: true, routes: {
     [`GET ${ISSUES}`]: [],
     [`GET /api/repos/roninjin10/e2e-verify/issue-views`]: [],
     [`GET ${GITHUB_SOURCE}`]: json(502, { status: "error", code: "bad_gateway", message: "GitHub is unavailable" })

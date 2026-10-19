@@ -10,6 +10,7 @@ pathRepo,
 pathTarget,
 requestedRepo,
 requestedTarget,
+repositoryDeclaration,
 signInReturnTo,
 withoutRepoParam,
   repositoryInputTarget,
@@ -576,6 +577,50 @@ describe("openRequestedRepo", () => {
     expect([...store.collections.repositories.keys()].sort()).toEqual(["acme/widgets", "smithersai/smithers"])
     expect(store.collections.repositories.get("acme/widgets")?.ownerKind).toBe("org")
     expect(store.session().activeRepoKey).toBe("smithersai/smithers")
+  })
+
+  /*
+   * The issue and pull seams decide a read's door from the repository row,
+   * never from a second read of the document: this entry's one read is where
+   * the document's declaration reaches the row, and a later entry whose
+   * document changed its mind replaces it.
+   */
+  test("the document's issue source declaration rides the admitted row, and a changed declaration replaces it", async () => {
+    const { store, controller } = await fixture()
+    const source = { owner: "upstream", repo: "project" }
+    await openRequestedRepo(controller, async () => jsonResponse({ ...publicDocument, github_source: source }), "smithersai/smithers")
+    expect(store.collections.repositories.get("smithersai/smithers")).toMatchObject({ catalog: true, githubSource: source })
+    expect(store.collections.repositories.get("smithersai/smithers")?.issueTracker).toBeUndefined()
+    await openRequestedRepo(controller, async () => jsonResponse({ ...publicDocument, issue_tracker: "smithers-cloud", github_source: source }), "smithersai/smithers")
+    expect(store.collections.repositories.get("smithersai/smithers")).toMatchObject({ issueTracker: "smithers-cloud", githubSource: source })
+    await openRequestedRepo(controller, publicHTTP, "smithersai/smithers")
+    expect(store.collections.repositories.get("smithersai/smithers")?.githubSource).toBeUndefined()
+  })
+})
+
+/*
+ * What one repository document declares, read as the seams will use it: the
+ * server's resolved tracker when it states one, else the mirror the document
+ * names; a declaration this app cannot use is recorded as such, never as the
+ * native tracker, so a read states it instead of listing an empty tracker.
+ */
+describe("repositoryDeclaration", () => {
+  const source = { owner: "upstream", repo: "project" }
+  test.each([
+    [undefined, {}],
+    [{ full_name: "a/b" }, {}],
+    [{ full_name: "a/b", github_source: source }, { githubSource: source }],
+    [{ full_name: "a/b", issue_tracker: "smithers-cloud", github_source: source }, { issueTracker: "smithers-cloud", githubSource: source }],
+    [{ full_name: "a/b", issue_tracker: "smithers-cloud" }, { issueTracker: "smithers-cloud" }],
+    [{ full_name: "a/b", issue_tracker: "github", github_source: source }, { issueTracker: "github", githubSource: source }],
+    [{ full_name: "a/b", issue_tracker: "github" }, { issueTracker: "github", githubSource: "unavailable" }],
+    [{ full_name: "a/b", issue_tracker: "future-tracker" }, { githubSource: "unavailable" }],
+    [{ full_name: "a/b", github_source_unavailable: true }, { githubSource: "unavailable" }],
+    [{ full_name: "a/b", github_source_ambiguous: true }, { githubSource: "ambiguous" }],
+    [{ full_name: "a/b", github_source: { owner: "someone/else", repo: "project" } }, { githubSource: "unavailable" }],
+    [{ full_name: "a/b", github_source: "upstream/project" }, { githubSource: "unavailable" }]
+  ] as const)("%j declares %j", (document, declaration) => {
+    expect(repositoryDeclaration(document as Record<string, unknown> | undefined)).toEqual(declaration)
   })
 })
 

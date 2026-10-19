@@ -292,7 +292,7 @@ export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
         Schema.Struct({ operation: Schema.Literal("list"), repo: Schema.optional(Schema.String), number: Schema.optional(Schema.Never) })
       ]),
       form: { fields: { operation: { hidden: true }, repo: { optionsFrom: "cloud-repos", kind: "text" } }, args: payload => JSON.stringify(payload) },
-      payloadRequires: payload => payload.operation === "list" ? ["signed-in"] : !design.enabled || payload.repo !== undefined || (actions.snapshot().repositorySelected === true && !design.world().prs.some(pr => pr.number === payload.number)) ? ["repo-read"] : [],
+      payloadRequires: payload => payload.operation === "list" || !design.enabled || payload.repo !== undefined || (actions.snapshot().repositorySelected === true && !design.world().prs.some(pr => pr.number === payload.number)) ? ["repo-source"] : [],
       prepare: ({ number, repo, operation }) => operation === "list" ? actions.listLandings.preload?.(repo)
         : number !== undefined && (!design.enabled || repo !== undefined || (actions.snapshot().repositorySelected === true && !design.world().prs.some(pr => pr.number === number))) ? actions.viewLanding.preload?.(number, repo) : undefined,
       handler: ({ number, repo, operation }) => {

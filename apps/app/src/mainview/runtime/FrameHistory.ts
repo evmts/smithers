@@ -97,15 +97,21 @@ export const createBrowserFrameHistory = (
    * reading it at write time never restores an entry marker boot has spent.
    */
   const subject = pathTarget(path)?.subject
-  const codeUrl = () => {
+  const subjectUrl = () => {
     const source = new URLSearchParams(host.location.search ?? "")
     const query = new URLSearchParams()
-    for (const key of ["L", "raw", "view"]) if (source.has(key)) query.set(key, source.get(key)!)
+    const keys = subject?.kind === "tree" || subject?.kind === "blob" ? ["L", "raw", "view"]
+      : subject?.kind === "issue" ? ["source"] : ["q"]
+    for (const key of keys) {
+      const value = source.get(key)
+      if (value === null || (key === "source" && value !== "github" && value !== "smithers-cloud")) continue
+      query.set(key, value)
+    }
     return `${path}${query.size ? `?${query}` : ""}`
   }
   const pinned: (() => string) | undefined = options.keepUrl === true && path === "/"
     ? () => `${host.location.pathname}${host.location.search}`
-    : subject?.kind === "tree" || subject?.kind === "blob" ? codeUrl
+    : subject?.kind === "tree" || subject?.kind === "blob" || subject?.kind === "issue" || subject?.kind === "issues" || subject?.kind === "pulls" ? subjectUrl
     : pathRepo(path) !== null || options.keepUrl === true ? () => path : undefined
   const current = (): FrameLocation | undefined =>
     pinned === undefined ? parseFramePath(host.location.pathname) : stateLocation(host.history.state)
