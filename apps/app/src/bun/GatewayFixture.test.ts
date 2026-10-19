@@ -7,7 +7,8 @@ import { resolve, join } from "node:path"
 test("the HumanTask fixture starts and parks with the source CLI in its disposable project", async () => {
   const repository = resolve(import.meta.dir, "../../../..")
   const root = execFileSync("mktemp", ["-d", join(repository, ".gateway-fixture.XXXXXX")], { encoding: "utf8" }).trim()
-  const node = join(process.env.HOME!, ".nvm/versions/node/v26.5.0/bin/node")
+  // Node from PATH: the toolchain preload (scripts/require-toolchain.mjs) already requires Node 26 there.
+  const node = "node"
   const cli = join(repository, "packages/smithers/bin/smithers.mjs")
   const options = { cwd: repository, env: { ...process.env, SMITHERS_TOKEN: "" } }
   const run = (args: string[]) => execFileSync(node, [cli, ...args, "--root", root], {
