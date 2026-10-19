@@ -593,8 +593,16 @@ describe("openRequestedRepo", () => {
     expect(store.collections.repositories.get("smithersai/smithers")?.issueTracker).toBeUndefined()
     await openRequestedRepo(controller, async () => jsonResponse({ ...publicDocument, issue_tracker: "smithers-cloud", github_source: source }), "smithersai/smithers")
     expect(store.collections.repositories.get("smithersai/smithers")).toMatchObject({ issueTracker: "smithers-cloud", githubSource: source })
+    // A fresh document is authoritative for both fields: a tracker it no longer declares is cleared.
+    await openRequestedRepo(controller, async () => jsonResponse({ ...publicDocument, github_source: source }), "smithersai/smithers")
+    expect(store.collections.repositories.get("smithersai/smithers")).toMatchObject({ githubSource: source })
+    expect(store.collections.repositories.get("smithersai/smithers")?.issueTracker).toBeUndefined()
+    await openRequestedRepo(controller, async () => jsonResponse({ ...publicDocument, issue_tracker: "smithers-cloud" }), "smithersai/smithers")
+    expect(store.collections.repositories.get("smithersai/smithers")?.issueTracker).toBe("smithers-cloud")
+    expect(store.collections.repositories.get("smithersai/smithers")?.githubSource).toBeUndefined()
     await openRequestedRepo(controller, publicHTTP, "smithersai/smithers")
     expect(store.collections.repositories.get("smithersai/smithers")?.githubSource).toBeUndefined()
+    expect(store.collections.repositories.get("smithersai/smithers")?.issueTracker).toBeUndefined()
   })
 })
 
@@ -644,6 +652,32 @@ test("a signed-in repository URL waits for the user's inventory, selects its row
   expect(store.session().activeRepoKey).toBe("codeplanesmithers/canary-sandbox")
   expect(store.collections.repositories.get("codeplanesmithers/canary-sandbox")?.catalog).not.toBe(true)
   expect(ran).toEqual(['files {"operation":"tree","copy":"shared:codeplanesmithers/canary-sandbox"}'])
+})
+
+/*
+ * A refused document (401, 403) withholds the mirror it may name. The
+ * inventory still admits the person's own repository, and the row records the
+ * source as unavailable so the Issues view states "could not be checked"
+ * instead of listing an empty native tracker; the inventory's tracker is
+ * cleared with it, so no earlier tracker hides the refusal. A 404 read no
+ * document (the backend answers 403, never 404, for a repository the viewer
+ * may not read), so the inventory's server-resolved tracker stands.
+ */
+for (const status of [401, 403, 404]) test(`a ${status} document beside the inventory's row records what it declared`, async () => {
+  const { store, controller } = await fixture()
+  try {
+    store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "reader", admin: false, scopesPlain: null })
+    controller.loadRepositories = async () => {
+      store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
+        { id: "smithersai/smithers", org: "smithersai", name: "smithers", ownerKind: "org", head: null, issueTracker: "github" }
+      ] })
+    }
+    expect(await openRequestedRepo(controller, async () => jsonResponse({ code: "permission_denied" }, status), "smithersai/smithers")).toBeUndefined()
+    expect(store.session().repositoryEntry).toMatchObject({ phase: "ready", diagnostics: { documentStatus: status, source: "inventory" } })
+    const row = store.collections.repositories.get("smithersai/smithers")
+    expect(row?.githubSource).toBe(status === 404 ? undefined : "unavailable")
+    expect(row?.issueTracker).toBe(status === 404 ? "github" : undefined)
+  } finally { await store.dispose?.() }
 })
 
 test("a signed-in catalog visitor keeps the shared tree without waiting on private inventory", async () => {

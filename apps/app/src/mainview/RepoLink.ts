@@ -368,8 +368,21 @@ export const openRequestedRepo = async (
     const document = response.ok ? await response.json() as { is_public?: unknown; description?: unknown; full_name?:unknown; default_bookmark?: unknown } & Record<string, unknown> : undefined
     if (!current()) return
     const canonical = typeof document?.full_name === "string" && document.full_name.toLowerCase() === requested.toLowerCase() ? document.full_name : requested
-    // The one declaration read: the row below carries it for the issue and pull seams.
-    declaration = repositoryDeclaration(typeof document?.full_name === "string" && document.full_name.toLowerCase() === requested.toLowerCase() ? document : undefined)
+    /*
+     * The one declaration read: the row below carries it for the issue and
+     * pull seams, and a fresh document is authoritative for both fields (a
+     * tracker it no longer declares is cleared). A refused document (401,
+     * 403) withholds the mirror it may name, so the row records the source
+     * as unavailable and a read states "could not be checked" instead of
+     * listing an empty native tracker. The backend answers 403, never 404,
+     * for a repository the viewer may not read (services/repo.go
+     * resolveReadableRepo), so a 404 is a document that does not exist: it
+     * declares nothing, as before.
+     */
+    const read: RepositoryDeclaration = response.status === 401 || response.status === 403
+      ? { githubSource: "unavailable" }
+      : repositoryDeclaration(typeof document?.full_name === "string" && document.full_name.toLowerCase() === requested.toLowerCase() ? document : undefined)
+    declaration = { issueTracker: read.issueTracker, githubSource: read.githubSource }
     catalog = { repos: document?.is_public === true ? [{ name: canonical, summary: document.description }] : [] }
     if (document?.is_public === false && typeof document.full_name === "string" &&
       document.full_name.toLowerCase() === requested.toLowerCase() && identityAtStart?.state !== "signed-in" &&
@@ -407,7 +420,7 @@ export const openRequestedRepo = async (
     const bookmark = typeof memberDocument.default_bookmark === "string" && memberDocument.default_bookmark !== "" ? memberDocument.default_bookmark : undefined
     controller.store.dispatch({ type: "repository.upserted", actor: "system", repository: {
       ...existing, ...member, ownerKind: existing?.ownerKind ?? "user", catalog: false, guest: undefined,
-      issueTracker: declaration.issueTracker ?? existing?.issueTracker, githubSource: declaration.githubSource,
+      issueTracker: declaration.issueTracker, githubSource: declaration.githubSource,
       documentOwner: identityAtStart!.login!,
       head: bookmark === undefined || existing?.head?.bookmark === bookmark ? existing?.head ?? null : { bookmark, changeId: null, commitId: null }
     } })
@@ -433,10 +446,17 @@ export const openRequestedRepo = async (
       diagnostics.inventory = failure !== undefined ? "unavailable" : own === undefined ? "missing" : "matched"
       if (failure === undefined && own !== undefined) {
         diagnostics.source = "inventory"
-        // The inventory carries no source declaration; the document this entry read does.
-        if (!sameDeclaration(own, { issueTracker: declaration.issueTracker ?? own.issueTracker, githubSource: declaration.githubSource })) {
-          controller.store.dispatch({ type: "repository.upserted", actor: "system",
-            repository: { ...own, issueTracker: declaration.issueTracker ?? own.issueTracker, githubSource: declaration.githubSource } })
+        /*
+         * The inventory carries its server-resolved tracker and no source;
+         * the document this entry read declares both, and a refused one
+         * records the source as unavailable. A 404 read no document and
+         * declares nothing, so the inventory's tracker stands.
+         */
+        const declared: RepositoryDeclaration = diagnostics.documentStatus === 404
+          ? { issueTracker: own.issueTracker, githubSource: declaration.githubSource }
+          : declaration
+        if (!sameDeclaration(own, declared)) {
+          controller.store.dispatch({ type: "repository.upserted", actor: "system", repository: { ...own, ...declared } })
         }
         if (options.activate === false || options.scope === "command") return finish()
         const refusal = await controller.selectRepo(selectionForRepo(controller, own.id))
@@ -474,8 +494,7 @@ export const openRequestedRepo = async (
   diagnostics.source = "public-document"
   const { repositories } = controller.store.collections
   const existing = repositories.get(repository.id)
-  const declared: RepositoryDeclaration = { issueTracker: declaration.issueTracker ?? existing?.issueTracker, githubSource: declaration.githubSource }
-  if (existing?.catalog !== true || JSON.stringify(existing.guest) !== JSON.stringify(guest) || !sameDeclaration(existing, declared)) {
+  if (existing?.catalog !== true || JSON.stringify(existing.guest) !== JSON.stringify(guest) || !sameDeclaration(existing, declaration)) {
     controller.store.dispatch({
       type: "repository.upserted",
       actor: "system",
@@ -485,7 +504,7 @@ export const openRequestedRepo = async (
        * treats it as "no org changesets", never as a fabricated org.
        * `catalog` records where the row came from: readable signed out.
        */
-      repository: { ...existing, ...repository, ...declared, guest, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: true }
+      repository: { ...existing, ...repository, ...declaration, guest, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: true }
     })
   }
   if (options.activate === false || options.scope === "command") return finish()
