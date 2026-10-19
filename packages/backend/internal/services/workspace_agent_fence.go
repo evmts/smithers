@@ -17,75 +17,87 @@ import (
 // to the box before it mints anything.
 
 // agentBoxJoinWait bounds how long a join waits for a release that holds the
-// box; agentBoxJoinPoll is how often it looks again.
+// box, including every pool acquisition; agentBoxJoinPoll is how often it
+// looks again. agentBoxReleaseBudget bounds a whole release and
+// agentBoxSweepBudget a whole cleanup sweep, both set before their first pool
+// acquisition (Security G4 finding 5).
 var (
-	agentBoxJoinWait = 2 * time.Minute
-	agentBoxJoinPoll = 250 * time.Millisecond
+	agentBoxJoinWait      = 2 * time.Minute
+	agentBoxJoinPoll      = 250 * time.Millisecond
+	agentBoxReleaseBudget = 10 * time.Minute
+	agentBoxSweepBudget   = 4 * time.Minute
 )
 
-type agentBoxJoinKey struct{}
-
-// agentBoxJoin is the agent session a start joins a box for.
-type agentBoxJoin struct {
-	sessionID string
-	userID    int64
-}
-
-// withAgentBoxJoin marks ctx as an agent turn's join of a box for sessionID.
-func withAgentBoxJoin(ctx context.Context, sessionID string, userID int64) context.Context {
-	return context.WithValue(ctx, agentBoxJoinKey{}, agentBoxJoin{sessionID: sessionID, userID: userID})
-}
-
-// admitAgentBoxJoinLocked passes a start through the box's fence before it
-// mints anything. An agent turn's join waits while a release on any replica
-// holds the box, then binds its session to the box in the same transaction,
-// so a release that reads the box's use afterwards sees the turn. Any other
-// start waits only while a release holds the box. A box whose last run's
-// processes were not confirmed ended is cleaned first (plue#866). It answers
-// the box as it now is.
-func (s *WorkspaceService) admitAgentBoxJoinLocked(ctx context.Context, row db.Workspace) (db.Workspace, error) {
+// admitAgentBoxJoin passes an agent turn's join of workspaceID through the
+// box's fence before the join opens its authorization transaction, so it
+// never needs a second connection while that transaction is held (Security
+// G4 finding 4). It waits while a release on any replica holds the box, ends
+// a dead release's lease, binds sessionID to the box, and cleans a box whose
+// state is unknown (plue#866). Its whole wait, including every pool
+// acquisition, is bounded by agentBoxJoinWait (finding 5).
+func (s *WorkspaceService) admitAgentBoxJoin(ctx context.Context, workspaceID, sessionID string, userID int64) error {
 	fence, ok := s.q.(agentWorkspaceReleaseStore)
-	if !ok || s.machineAdmission != nil || !s.hasWorkspaceRuntime() {
-		return row, nil
+	if !ok || s.machineAdmission != nil || !s.hasWorkspaceRuntime() || workspaceID == "" {
+		return nil
 	}
-	join, joining := ctx.Value(agentBoxJoinKey{}).(agentBoxJoin)
-	if !joining && !db.IsAgentBoxLease(row.ProvisioningStage) && row.ProvisioningStage != db.AgentBoxUnreapedStage {
-		return row, nil
+	ctx, cancel := context.WithTimeout(ctx, agentBoxJoinWait)
+	defer cancel()
+	refused := func(cause error) error {
+		return pkgerrors.New(pkgerrors.CodeServiceUnavailable, "the box is still being released after its last turn; try again in a moment").WithCause(cause)
 	}
-	deadline := time.Now().Add(agentBoxJoinWait)
+	unlock := s.lockRuntimeWorkspace(workspaceID)
+	defer unlock()
 	for {
-		admission, err := fence.AdmitAgentBoxJoin(ctx, row.ID, join.sessionID, join.userID)
+		admission, err := fence.AdmitAgentBoxJoin(ctx, workspaceID, sessionID, userID)
 		if err != nil {
-			return row, err
+			if ctx.Err() != nil {
+				return refused(ctx.Err())
+			}
+			return err
 		}
 		if admission.TookOver {
-			slog.WarnContext(ctx, "agent box lease of a release that died was ended", "workspace_id", row.ID)
+			slog.WarnContext(ctx, "agent box lease of a release that died was ended", "workspace_id", workspaceID)
 		}
 		if !admission.Busy {
-			current, err := s.q.GetWorkspace(ctx, row.ID)
+			current, err := s.q.GetWorkspace(ctx, workspaceID)
 			if err != nil {
-				return row, err
+				if ctx.Err() != nil {
+					return refused(ctx.Err())
+				}
+				return err
 			}
 			if current.Status != "running" || current.ProvisioningStage != db.AgentBoxUnreapedStage {
-				return current, nil
+				return nil
 			}
-			cleaned, busy, err := s.cleanUnreapedAgentBoxLocked(ctx, fence, current)
+			_, busy, err := s.cleanUnreapedAgentBoxLocked(ctx, fence, current)
 			if err != nil {
-				return current, err
+				return err
 			}
 			if !busy {
-				return cleaned, nil
+				return nil
 			}
-		}
-		if time.Now().After(deadline) {
-			return row, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "the box is still being released after its last turn; try again in a moment")
 		}
 		select {
 		case <-ctx.Done():
-			return row, ctx.Err()
+			return refused(ctx.Err())
 		case <-time.After(agentBoxJoinPoll):
 		}
 	}
+}
+
+// refuseHeldAgentBoxLocked refuses, retryably and without a database call, a
+// start of a box a release holds or whose state is unknown. An agent turn's
+// join passes the fence before its authorization transaction
+// (admitAgentBoxJoin); any other start waits for the release to end or the
+// sweep to clean the box.
+func (s *WorkspaceService) refuseHeldAgentBoxLocked(row db.Workspace) error {
+	if s.machineAdmission != nil || !s.hasWorkspaceRuntime() || row.Status != "running" {
+		return nil
+	}
+	if db.IsAgentBoxLease(row.ProvisioningStage) || row.ProvisioningStage == db.AgentBoxUnreapedStage {
+		return pkgerrors.New(pkgerrors.CodeServiceUnavailable, "the box is still being released after its last turn; try again in a moment")
+	}
+	return nil
 }
 
 // errAgentBoxLost is a release that no longer holds its box: its lease
