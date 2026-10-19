@@ -12,7 +12,7 @@ runtime.
 
 Send an Effect program's logs, metrics, and traces to an OpenTelemetry collector with one layer.
 
-`Otlp` composes only what `effect` itself ships, so it allocates no OpenTelemetry SDK, never resolves a `node:` built-in, and runs unchanged in Node, Bun, and a browser. Around it the package ships the pieces a host installs beside an exporter: Effect logger layers, a validated `Resource` describing the service, a `JournalLogger` that mirrors a run's log records into a durable journal, the runtime `Metric` handles that cross package boundaries, and `Otel`, which bridges OpenTelemetry providers an application already built.
+`Otlp` composes only what `effect` itself ships, so it allocates no OpenTelemetry SDK, never resolves a `node:` built-in, and runs unchanged in Node, Bun, and a browser. Around it the package ships the pieces a host installs beside an exporter: Effect logger layers, a validated `Resource` describing the service, a `JournalLogger` that mirrors a run's log records into a durable journal, the runtime `Metric` handles that cross package boundaries, `OtlpRelay`, which receives OTLP/HTTP JSON exports on your own server route (a Cloudflare Worker, for one) and re-emits each record as a structured Effect log line, and `Otel`, which bridges OpenTelemetry providers an application already built.
 
 `NodeOtel` and `BrowserOtel` are deliberately not re-exported from the root. Each binds a host-specific OpenTelemetry SDK: `NodeOtel` reaches `@effect/opentelemetry/NodeSdk` and `@opentelemetry/sdk-trace-node`, which pulls the bare `async_hooks` specifier through `@opentelemetry/context-async-hooks`. Re-exporting it would put a module a browser bundler cannot resolve in the root entry point. Import them by subpath instead: `@smthrs/observability/NodeOtel`.
 
@@ -79,6 +79,7 @@ Full documentation is at [the package docs](https://github.com/smithersai/smithe
 - [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/quickstart.md): export a trace, a log record, and a metric series to a collector you can watch.
 - [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/installation.md): requirements, import forms, and the rule that keeps the root entry point bundling for a browser.
 - [The layer map](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/concepts/layer-map.md): which builder to reach for, and what each one costs.
+- [Relay browser telemetry](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/guides/relay-browser-telemetry.md): receive a browser's OTLP exports on your own Worker route and log each record there.
 - [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/api.md): every public export, with validation, backpressure, shutdown, retry, and platform contracts.
 - [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/troubleshooting.md): the typed refusals this package reports, and the silent cases that are not refusals at all.
 

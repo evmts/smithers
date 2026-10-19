@@ -73,6 +73,27 @@ export const droppedLogRecords = Metric.counter(`${prefix}observability_log_drop
 })
 
 /**
+ * Counts OTLP records `OtlpRelay.serve` re-emitted as log lines, by `signal`.
+ *
+ * @category metrics
+ * @since 1.0.0-rc.16
+ */
+export const relayedRecords = Metric.counter(`${prefix}observability_otlp_relayed`, {
+  description: "OTLP records relayed into the server's loggers"
+})
+
+/**
+ * Counts OTLP records `OtlpRelay.serve` dropped over its per-request cap, by
+ * `signal`.
+ *
+ * @category metrics
+ * @since 1.0.0-rc.16
+ */
+export const relayDroppedRecords = Metric.counter(`${prefix}observability_otlp_relay_dropped`, {
+  description: "OTLP records dropped over the relay's per-request cap"
+})
+
+/**
  * All metrics declared by this package.
  *
  * @category registry
@@ -84,5 +105,7 @@ export const registry = {
   quotaParks,
   structuredOutputRejections,
   structuredOutputExhausted,
-  droppedLogRecords
+  droppedLogRecords,
+  relayedRecords,
+  relayDroppedRecords
 } as const

@@ -35,8 +35,8 @@ not OTLP/HTTP JSON, or a provider a framework hands you.
 
 ## Why the root entry point stops at `Otel`
 
-The root entry point exports `Otlp`, `Endpoint`, `JournalLogger`, `Logger`,
-`Metric`, `Otel`, and `Resource`. It stops there because those seven resolve
+The root entry point exports `Otlp`, `OtlpRelay`, `Endpoint`, `JournalLogger`,
+`Logger`, `Metric`, `Otel`, and `Resource`. It stops there because those eight resolve
 nothing host-specific.
 
 `NodeOtel` does. It reaches `@effect/opentelemetry/NodeSdk` and

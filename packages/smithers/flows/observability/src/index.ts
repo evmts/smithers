@@ -31,6 +31,12 @@
 export * as Otlp from "./Otlp.ts"
 
 /**
+ * @category handlers
+ * @since 1.0.0-rc.16
+ */
+export * as OtlpRelay from "./OtlpRelay.ts"
+
+/**
  * @category observability
  * @since 1.0.0-rc.0
  */

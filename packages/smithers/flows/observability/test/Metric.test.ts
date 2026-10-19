@@ -43,8 +43,10 @@ describe("Metric registry", () => {
       quotaParks: "flows_quota_park",
       structuredOutputRejections: "flows_agent_structured_output_rejections",
       structuredOutputExhausted: "flows_agent_structured_output_exhausted",
-      droppedLogRecords: "flows_observability_log_dropped"
+      droppedLogRecords: "flows_observability_log_dropped",
+      relayedRecords: "flows_observability_otlp_relayed",
+      relayDroppedRecords: "flows_observability_otlp_relay_dropped"
     })
-    expect(Object.keys(FlowsMetric.registry)).toHaveLength(6)
+    expect(Object.keys(FlowsMetric.registry)).toHaveLength(8)
   })
 })

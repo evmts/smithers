@@ -182,6 +182,8 @@ Two consequences worth planning for:
 
 ## Next steps
 
+- [Relay browser telemetry through your own Worker](./relay-browser-telemetry.md):
+  receive a browser's exports on your own route.
 - [Test telemetry without a collector](./testing.md): assert on what would have
   been posted.
 - [Wire an OpenTelemetry SDK](./wire-an-opentelemetry-sdk.md): when a collector

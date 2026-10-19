@@ -46,10 +46,10 @@ packages are not prerequisites for constructing its layer.
 
 ## Import forms
 
-The root entry point re-exports seven modules as namespaces:
+The root entry point re-exports eight modules as namespaces:
 
 ```ts
-import { Endpoint, JournalLogger, Logger, Metric, Otel, Otlp, Resource } from "@smthrs/observability"
+import { Endpoint, JournalLogger, Logger, Metric, Otel, Otlp, OtlpRelay, Resource } from "@smthrs/observability"
 ```
 
 Each is also importable from its own subpath, which is the form the
