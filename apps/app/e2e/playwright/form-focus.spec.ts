@@ -1,6 +1,7 @@
 import type { Locator, Page } from "./browserTest"
 import { controlTabKey, expect, test } from "./browserTest"
 import { identityRoute } from "./identity"
+import { ENTITY_RECOVERY_STORAGE_KEY } from "../../src/mainview/state/EntityRecovery"
 
 /*
  * THE FORM LAW meets the keyboard rule (apps/app/AGENTS.md). CT005 on live
@@ -11,13 +12,14 @@ import { identityRoute } from "./identity"
  * a class or a computed style.
 */
 
+// 59f7a91e/bf0ae9f8: repository routes open Ask; bc83ff23 keeps its composer in flow.
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/bootstrap", route => route.fulfill({ json: {
     apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
     capabilities: ["agent", "identity", "cloud", "cloud.terminal"], authFlow: "native-handoff", sandbox: null,
   } }))
   await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute())
-  await page.route("**/api/repos/smithersai/smithers", route => route.fulfill({ json: { is_public: true, default_bookmark: "main" } }))
+  await page.route("**/api/repos/smithersai/smithers", route => route.fulfill({ json: { full_name: "smithersai/smithers", is_public: true, default_bookmark: "main" } }))
   await page.route("**/api/repos/smithersai/smithers/contents", route => route.fulfill({ json: [] }))
   await page.route("**/api/agent/conversations", route => route.fulfill({ json: { status: "ok", conversations: [], next: null } }))
   await page.route("**/api/conversations/main", route => route.fulfill({ json: { id: "main", entries: [] } }))
@@ -26,20 +28,37 @@ test.beforeEach(async ({ page }) => {
 
 const README = { path: "README.md", name: "README.md", type: "file", encoding: "utf-8", content: "# Smithers\n", size: 11 }
 
-/** Open the repository, then Ctrl+K, `/file`, Enter: the Path form for the selected repository. */
-const askForPath = async (page: Page) => {
+/**
+ * Open the repository, then Ctrl+K, `/file`, Enter: the Path form for the selected repository.
+ * `afterTurn` waits for that shared turn first: a form card is anchored after the shared turns
+ * loaded when it opens (TranscriptOrder.merge), and one opened earlier sits above the turn.
+ */
+const askForPath = async (page: Page, afterTurn?: string) => {
   await page.goto("/smithersai/smithers/?design=off")
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
   await page.keyboard.press("Control+k")
   const composer = page.getByTestId("composer-input")
   await expect(composer).toBeFocused()
+  if (afterTurn !== undefined) await expect(page.getByText(afterTurn, { exact: true }).first()).toBeVisible()
   await composer.fill("/file")
   await composer.press("Enter")
   const form = page.locator(".flow-form[data-flow-name='file']")
   await expect(form).toBeVisible()
-  await expect(composer).toBeHidden()
+  await expect(composer).toBeEditable()
   return { composer, form, path: form.getByTestId("flow-form-path") }
 }
+
+/**
+ * Wait for the form card's own commit. Until it is durable, a reload restores the card from its
+ * immediate-reload recovery record (docs/persistence.md), which boot replays without the card's
+ * transcript place, so it lands above earlier shared turns.
+ */
+const formSaved = (page: Page) => expect.poll(() => page.evaluate((key) => {
+  const raw = localStorage.getItem(key)
+  if (raw === null) return 0
+  const { records } = JSON.parse(raw) as { records: Record<string, { value?: { kind?: string } }> }
+  return Object.values(records).filter(record => record.value?.kind === "card").length
+}, ENTITY_RECOVERY_STORAGE_KEY)).toBe(0)
 
 const activeElement = (page: Page) => page.evaluate(() => {
   const active = document.activeElement
@@ -58,6 +77,7 @@ test("T1: the slash door hands the keyboard to the missing Path field, and Tab s
   await page.keyboard.press(controlTabKey(page))
   await expect(form.getByTestId("flow-form-submit")).toBeFocused()
   await page.goto("/smithersai/smithers/?design=off")
+  await page.getByRole("button", { name: "Ask", exact: true }).click()
   await expect(page.getByTestId("flow-form-path")).toHaveValue("README.md")
 })
 
@@ -92,19 +112,25 @@ test("T1: a restored form after reload does not take the keyboard; Cancel return
     id: "prior-turn", author: 1, authorLogin: "codeplanesmithers", runId: "prior-run",
     prompt: "Earlier question", state: "completed", startedAt: 1, finishedAt: 2, frames: []
   }] } }))
-  const { path } = await askForPath(page)
+  // The form must follow the earlier turn, or Cancel rightly hands the keyboard to that turn's Copy message button.
+  const { path } = await askForPath(page, "Earlier question")
   await expect(path).toBeFocused()
+  await formSaved(page)
   await page.goto("/smithersai/smithers/?design=off")
   const form = page.locator(".flow-form[data-flow-name='file']")
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Ask", exact: true }).click()
   await expect(form).toBeVisible()
   expect(await activeElement(page)).not.toBe("flow-form-path")
-  await expect(page.getByRole("button", { name: "Repository smithersai/smithers", exact: true })).toBeVisible()
+  await expect(page.getByRole("navigation", { name: "Repository", exact: true }).getByRole("link", { name: "Code", exact: true })).toHaveAttribute("aria-current", "page")
   await expect(page.getByText("Earlier question", { exact: true }).first()).toBeVisible()
   await form.getByTestId("flow-form-cancel").focus()
   await page.keyboard.press("Enter")
   await expect(form).toHaveCount(0)
-  await expect(page.getByRole("navigation", { name: "Timeline", exact: true }).getByRole("button").first()).toBeFocused()
+  // bc83ff23: Ask places its composer after the transcript; the old Timeline is absent.
+  await expect(page.getByTestId("composer-input")).toBeFocused()
+  await page.keyboard.type("Continue after cancelling")
+  await expect(page.getByTestId("composer-input")).toHaveValue("Continue after cancelling")
 })
 
 /*
