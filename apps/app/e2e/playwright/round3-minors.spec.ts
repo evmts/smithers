@@ -26,7 +26,8 @@ test("an unknown repository opens its recovery notice after a known repository i
   await expect(notice).toContainText("nope/nope isn't on Smithers yet.")
   expect((await notice.boundingBox())!.y).toBeLessThan(180)
   await expect(notice.locator('[data-flow="sign-in"]')).toBeInViewport()
-  await expect(page).toHaveURL(/\/nope\/nope\/$/)
+  // ?design=off is the test-only fixture switch; since route.2 the app keeps unrelated query parameters on the path it stays on.
+  await expect(page).toHaveURL(/\/nope\/nope\/(\?design=off)?$/)
 
   await expect(notice.getByRole("link")).toHaveCount(0)
   await page.goto("/smithersai/smithers/?design=off")
