@@ -46,6 +46,9 @@ func (o *mythicalOrchestration) mythicalWorker(launcher mythicalLauncher) *Mythi
 	worker.scratchRoot = filepath.Join(o.t.TempDir(), "scratch")
 	worker.SetOrchestration(o.github, launcher, o.lanes)
 	worker.EnableTodoAdmission()
+	// An install, the only composition that admits TODOs, always turns wiki
+	// runs on (compose main.go), as newMythicalOrchestration does (be21589d).
+	worker.SetWikiRefresh(true)
 	worker.SetPolicyReader(policyHost{mythicalPolicy("")})
 	return worker
 }

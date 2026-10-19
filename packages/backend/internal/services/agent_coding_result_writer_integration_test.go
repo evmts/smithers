@@ -207,7 +207,9 @@ func TestCodingResultRecordsTheTestTheServerRan(t *testing.T) {
 
 	require.Equal(t, []bool{true}, f.rt.quiescedAtRun, "the test ran only after the coding host stopped and every run token was gone (Security d-3ensz3)")
 	require.Equal(t, []string{"vm-agent-box"}, f.rt.guests, "the test ran on the guest that ended the turn")
-	require.Contains(t, f.releaseLog(t), "outcome=quiesced", "release quiesces the already quiesced box again")
+	// The release then retires the box the test ran on: a session box is
+	// never kept warm for its next turn (G3b-2 e15400b6, Security d-am9s3m).
+	require.Contains(t, f.releaseLog(t), "outcome=retired", "release retires the quiesced box")
 	f.requireRunTokensRevoked(t, "head", "landing", "cache", "api")
 }
 
