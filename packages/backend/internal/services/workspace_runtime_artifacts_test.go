@@ -249,6 +249,28 @@ func TestRuntimeWorkspaceCLIProbeDropsToDeveloperAsRoot(t *testing.T) {
 	}
 }
 
+// runuser keeps root's working directory, which the developer may not enter.
+// Node spawns children with cwd = process.cwd() (esbuild's service does), so
+// prod 2026-10-19 failed every workspace start with "spawn …/esbuild EACCES".
+// The dropped shell starts in /, which holds nothing the developer can write.
+func TestRuntimeWorkspaceCLIProbeRunsFromRootDirectory(t *testing.T) {
+	layout := defaultWorkspaceGuestLayout
+	bin, fake, locked := t.TempDir(), t.TempDir(), t.TempDir()
+	command := strings.ReplaceAll(workspaceRuntimeCLIProbe(layout), layout.localBinDir(), bin)
+	// Re-entering the inherited cwd is the chdir a Node spawn makes.
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "smithers"), []byte("#!/bin/sh\ncd \"$(pwd -P)\" && pwd -P\n"), 0755))
+	require.NoError(t, os.Symlink("smithers", filepath.Join(bin, "smthrs")))
+	require.NoError(t, os.WriteFile(filepath.Join(fake, "id"), []byte("#!/bin/sh\necho 0\n"), 0755))
+	// Drop "-u <user> --" and run the rest in the same cwd, as runuser does.
+	require.NoError(t, os.WriteFile(filepath.Join(fake, "runuser"), []byte("#!/bin/sh\nshift 3\nexec \"$@\"\n"), 0755))
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	probe := exec.Command("/bin/sh", "-c", "cd \"$1\" && chmod 000 . && eval \"$2\"", "probe", locked, command)
+	probe.Env = append(os.Environ(), "PATH="+fake+":/usr/bin:/bin")
+	output, err := probe.CombinedOutput()
+	require.NoError(t, err, "the CLI could not re-enter its cwd: %s", output)
+	require.Equal(t, "/", strings.TrimSpace(string(output)), "the developer's CLI must run from /, not root's cwd")
+}
+
 func (*artifactRuntime) Isolation() workspaceapi.IsolationLevel {
 	return workspaceapi.IsolationSandboxed
 }

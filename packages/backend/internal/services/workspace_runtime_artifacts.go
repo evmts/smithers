@@ -231,12 +231,14 @@ func workspaceArtifactRuntimeFailure(ctx context.Context, operation string, err 
 // controller execs it as root, and ~/.local/bin is the developer's, so a root
 // caller drops to the developer with an explicit PATH first: root never runs a
 // binary from a developer-writable directory. The direct branch serves
-// non-root callers and guests without runuser.
+// non-root callers and guests without runuser. runuser keeps root's cwd, which
+// the developer may not enter, and Node spawns children there (esbuild: spawn
+// EACCES), so the dropped shell starts in /, which the developer cannot write.
 func workspaceRuntimeCLIProbe(layout workspaceGuestLayout) string {
 	bin := layout.localBinDir()
 	check := "if ! test -x " + shellQuote(bin+"/smithers") + " || ! test -x " + shellQuote(bin+"/smthrs") + "; then echo 'workspace CLI missing: smithers or smthrs' >&2; exit 1; fi; " + shellQuote(bin+"/smithers") + " --version"
 	asDeveloper := "runuser -u " + shellQuote(layout.User) + " -- env -i HOME=" + shellQuote(layout.Home) + " USER=" + shellQuote(layout.User) + " LOGNAME=" + shellQuote(layout.User) +
-		" PATH=" + shellQuote(bin+":/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin") + " /bin/sh -c " + shellQuote(check)
+		" PATH=" + shellQuote(bin+":/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin") + " /bin/sh -c " + shellQuote("cd / && "+check)
 	return "if [ \"$(id -u)\" = 0 ] && command -v runuser >/dev/null 2>&1; then exec " + asDeveloper + "; fi; " +
 		"PATH=" + shellQuote(bin+":/usr/local/bin") + ":$PATH; export PATH; " + check
 }
