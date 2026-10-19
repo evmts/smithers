@@ -13,6 +13,30 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const agentBoxDirtyOutsideTurn = `-- name: AgentBoxDirtyOutsideTurn :one
+SELECT (
+  w.vm_id <> ''
+  AND w.agent_box_dirty_vm_id = w.vm_id
+  AND NOT (s.status = 'active' AND s.deleted_at IS NULL)
+)::boolean AS refuse
+FROM workspaces w
+JOIN agent_sessions s ON s.id = w.agent_session_id
+WHERE w.id = $1
+`
+
+// Whether a start must be refused: the agent session box's live guest is
+// marked dirty and no turn of its session is in progress. A start reads it on
+// its own authorization transaction, never from the row it loaded before,
+// after it took the session's advisory lock shared
+// (LockAgentBoxSessionForStart): no release can run between this check and
+// what the start mints. A box no session owns answers no row.
+func (q *Queries) AgentBoxDirtyOutsideTurn(ctx context.Context, id string) (bool, error) {
+	row := q.db.QueryRow(ctx, agentBoxDirtyOutsideTurn, id)
+	var refuse bool
+	err := row.Scan(&refuse)
+	return refuse, err
+}
+
 const countActiveSessionsForUser = `-- name: CountActiveSessionsForUser :one
 SELECT COUNT(*)
 FROM workspace_sessions

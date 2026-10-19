@@ -88,6 +88,82 @@ func lockAgentBox(ctx context.Context, tx pgx.Tx, workspaceID string) (busy bool
 	return false, nil
 }
 
+// AgentBoxSessionLockClass is the first key of the advisory lock on an agent
+// session's turn: the second is hashtext of the session id. No other
+// advisory lock uses this class.
+const AgentBoxSessionLockClass int32 = 0x61627373
+
+// agentBoxSessionLockSQL takes the box's owning session's advisory lock,
+// exclusive, for a release. A box no session owns locks nothing.
+const agentBoxSessionLockSQL = `SELECT /* agent_box_session_lock */ pg_advisory_xact_lock($2::int4, hashtext(w.agent_session_id::text))
+FROM workspaces w WHERE w.id = $1::uuid AND w.agent_session_id IS NOT NULL`
+
+// agentBoxSessionStartLockSQL takes the same lock shared, for a start.
+const agentBoxSessionStartLockSQL = `SELECT /* agent_box_session_start */ pg_advisory_xact_lock_shared($2::int4, hashtext(w.agent_session_id::text))
+FROM workspaces w WHERE w.id = $1::uuid AND w.agent_session_id IS NOT NULL`
+
+// lockAgentBoxSession takes the advisory lock of the box's owning session,
+// exclusive, after the box's lock, in a release's transaction, before the
+// release revokes or retires anything. A start inside that session's turn
+// holds the lock shared from before its dirty check until it commits
+// (LockAgentBoxSessionForStart), so every release, whichever path it comes
+// from (a turn's end, a dispatch's cleanup, the runtime watchdog, the sweep, a
+// join ending a dead lease), waits for that start and sees what it minted; it
+// never revokes between the start's check and its mint. The lock is advisory,
+// not the session row: a message append (CreateAgentMessage locks the row)
+// and the session's status update never wait on a start.
+//
+// Lock order, on every path that takes them: the box's advisory lock, then
+// the session's advisory lock, then rows (the session row before the box
+// row). A release (ClaimAgentBoxRelease, RevokeStoppedAgentBoxCredentials)
+// and a join's admission ending a dead lease (AdmitAgentBoxJoin) take them in
+// that order; a start takes only the session's lock, shared, never the box's,
+// and writes rows after it. No path waits for a lock held by an operation
+// that waits on it, so no cycle forms, even through a start's second
+// connection (smithers#4347). busy is true when a start held the lock for the
+// whole AgentBoxLockWait; the caller backs off and is retried.
+func lockAgentBoxSession(ctx context.Context, tx pgx.Tx, workspaceID string) (busy bool, err error) {
+	err = drainAgentBoxLock(ctx, tx, agentBoxSessionLockSQL, workspaceID)
+	if isAgentBoxLockTimeout(err) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("lock agent box session: %w", err)
+	}
+	return false, nil
+}
+
+// LockAgentBoxSessionForStart takes the advisory lock of the box's owning
+// session, shared, on a start's own authorization transaction, before the
+// start reads whether the box is dirty (AgentBoxDirtyOutsideTurn). It holds
+// until that transaction ends. A box no session owns locks nothing.
+func LockAgentBoxSessionForStart(ctx context.Context, tx pgx.Tx, workspaceID string) error {
+	if err := drainAgentBoxLock(ctx, tx, agentBoxSessionStartLockSQL, workspaceID); err != nil {
+		return fmt.Errorf("lock agent box session for a start: %w", err)
+	}
+	return nil
+}
+
+func drainAgentBoxLock(ctx context.Context, tx pgx.Tx, sql, workspaceID string) error {
+	rows, err := tx.Query(ctx, sql, workspaceID, AgentBoxSessionLockClass)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+	}
+	rows.Close()
+	return rows.Err()
+}
+
+// isAgentBoxLockTimeout reports a statement that waited out
+// AgentBoxLockWait (lock_not_available, 55P03). On the fence's paths it means
+// another transaction holds the box or its session: the caller is answered
+// busy and retries, never failed.
+func isAgentBoxLockTimeout(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "55P03"
+}
+
 const agentBoxNewLeaseSQL = `'agent_box_releasing:' || floor(extract(epoch FROM clock_timestamp()))::bigint || ':' || gen_random_uuid()::text`
 
 // agentBoxLeaseFreshSQL is true while the row's stage is a lease younger than
@@ -148,6 +224,9 @@ func (q *Queries) ClaimAgentBoxRelease(ctx context.Context, arg ClaimAgentBoxRel
 	if claim.Busy, err = lockAgentBox(ctx, tx, arg.WorkspaceID); err != nil || claim.Busy {
 		return claim, err
 	}
+	if claim.Busy, err = lockAgentBoxSession(ctx, tx, arg.WorkspaceID); err != nil || claim.Busy {
+		return claim, err
+	}
 	var fresh bool
 	err = tx.QueryRow(ctx, `
 SELECT status, provisioning_stage, vm_id, head_push_token_id, `+agentBoxLeaseFreshSQL+`,
@@ -179,6 +258,9 @@ FROM workspaces WHERE id = $1::uuid AND deleted_at IS NULL`, arg.WorkspaceID, ar
 	}
 	if err := tx.QueryRow(ctx, `UPDATE workspaces SET provisioning_stage = `+agentBoxNewLeaseSQL+`, updated_at = NOW()
 WHERE id = $1::uuid RETURNING provisioning_stage`, arg.WorkspaceID).Scan(&claim.Lease); err != nil {
+		if isAgentBoxLockTimeout(err) {
+			return AgentBoxClaim{Busy: true}, nil
+		}
 		return AgentBoxClaim{}, fmt.Errorf("lease agent box: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -250,12 +332,14 @@ func (q *Queries) AdmitAgentBoxJoin(ctx context.Context, workspaceID, sessionID 
 		admission.Busy = true
 		return admission, nil
 	}
+	// The session row is bound before the box row: every path takes the
+	// session before the box (lockAgentBoxSession).
 	if IsAgentBoxLease(stage) {
-		if _, err := tx.Exec(ctx, `UPDATE workspaces SET provisioning_stage = '', updated_at = NOW() WHERE id = $1::uuid AND provisioning_stage = $2`,
-			workspaceID, stage); err != nil {
-			return admission, fmt.Errorf("end a dead agent box lease: %w", err)
+		// Ending a dead lease ends a release: like a release it waits for a
+		// start inside the session's turn (lockAgentBoxSession).
+		if admission.Busy, err = lockAgentBoxSession(ctx, tx, workspaceID); err != nil || admission.Busy {
+			return admission, err
 		}
-		admission.TookOver = true
 	}
 	if sessionID != "" {
 		if _, err := tx.Exec(ctx, `UPDATE agent_sessions s SET workspace_id = w.id, updated_at = NOW()
@@ -263,8 +347,23 @@ FROM workspaces w
 WHERE w.id = $1::uuid AND s.id::text = $2 AND s.user_id = $3 AND s.repository_id = w.repository_id
   AND s.deleted_at IS NULL AND s.status = 'active' AND (s.workspace_id IS NULL OR s.workspace_id = w.id)`,
 			workspaceID, sessionID, userID); err != nil {
+			if isAgentBoxLockTimeout(err) {
+				admission.Busy = true
+				return admission, nil
+			}
 			return admission, fmt.Errorf("bind the joining agent session: %w", err)
 		}
+	}
+	if IsAgentBoxLease(stage) {
+		if _, err := tx.Exec(ctx, `UPDATE workspaces SET provisioning_stage = '', updated_at = NOW() WHERE id = $1::uuid AND provisioning_stage = $2`,
+			workspaceID, stage); err != nil {
+			if isAgentBoxLockTimeout(err) {
+				admission.Busy = true
+				return admission, nil
+			}
+			return admission, fmt.Errorf("end a dead agent box lease: %w", err)
+		}
+		admission.TookOver = true
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return admission, fmt.Errorf("commit agent box join: %w", err)
@@ -330,6 +429,9 @@ func (q *Queries) RevokeStoppedAgentBoxCredentials(ctx context.Context, arg Revo
 	if out.Busy, err = lockAgentBox(ctx, tx, arg.WorkspaceID); err != nil || out.Busy {
 		return out, err
 	}
+	if out.Busy, err = lockAgentBoxSession(ctx, tx, arg.WorkspaceID); err != nil || out.Busy {
+		return out, err
+	}
 	var fresh bool
 	err = tx.QueryRow(ctx, `SELECT status, `+agentBoxLeaseFreshSQL+` FROM workspaces WHERE id = $1::uuid AND deleted_at IS NULL`,
 		arg.WorkspaceID).Scan(&out.Status, &fresh)
@@ -368,6 +470,10 @@ func (q *Queries) RevokeStoppedAgentBoxCredentials(ctx context.Context, arg Revo
 			[]any{arg.WorkspaceID, flowHostRevokedCredentialHash}},
 	} {
 		if _, err := tx.Exec(ctx, step.sql, step.args...); err != nil {
+			if isAgentBoxLockTimeout(err) {
+				out.Busy = true
+				return out, nil
+			}
 			return out, fmt.Errorf("revoke stopped agent box credentials: %w", err)
 		}
 	}
