@@ -166,3 +166,40 @@ test("signed out, a public repository's Settings is the sign-in state and its fl
   const flows = await enter(`/${REPO}/flows`, backend({ is_public: true }), false)
   expect(repositoryFlowReads.get(flowReadKey(REPO, undefined, flows.requestId))?.value.read.state).toBe("ready")
 })
+
+/*
+ * Every router subject the frame has no view for is the frame's not-found
+ * state with no tab current, never the full repository chat: the edge serves
+ * a typed /owner/repo/commits, so the app must answer it inside the frame.
+ */
+const unserved = [
+  ["commits", `/${REPO}/commits`],
+  ["commits", `/${REPO}/commits/main/src`],
+  ["commit", `/${REPO}/commit/${"a1b2c3d4e5".repeat(4)}`],
+  ["branches", `/${REPO}/branches`],
+  ["search", `/${REPO}/search?q=x`],
+  ["runs", `/${REPO}/runs`],
+  ["run", `/${REPO}/runs/42`],
+  ["approvals", `/${REPO}/approvals`]
+] as const
+for (const [kind, path] of unserved) test(`${path} (${kind}) is the frame's Page not found., not the repository chat`, async () => {
+  const { controller } = await enter(path, backend({}))
+  expect(requestedTarget(window.location)?.subject?.kind).toBe(kind)
+  const host = mount(controller)
+  await settled()
+  expect(host.querySelector("#repo-content h2")?.textContent).toBe("Page not found.")
+  expect(tabs(host)).toEqual([["Code", null], ["Issues", null], ["Pull requests", null], ["Flows", null]])
+  // The chat is only the frame's collapsed Ask, never the page.
+  expect(host.querySelector('button[aria-label="Ask"]')?.getAttribute("aria-expanded")).toBe("false")
+  const chat = [...host.querySelectorAll('[data-testid="transcript"], [data-testid="composer-overlay"], .app-chat-controls')]
+  expect(chat.filter(node => node.closest("#repo-ask") === null)).toEqual([])
+  expect(host.querySelector("#repo-content")?.textContent).toBe("Page not found.")
+})
+
+test("control: /flows still renders Flows, not the not-found state", async () => {
+  const { controller } = await enter(`/${REPO}/flows`, backend({}))
+  const host = mount(controller)
+  await settled()
+  expect(host.querySelector("#repo-content h1")?.textContent).toBe("Flows")
+  expect(host.querySelector("#repo-content")?.textContent).not.toContain("Page not found.")
+})
