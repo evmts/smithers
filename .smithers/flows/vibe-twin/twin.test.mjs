@@ -127,6 +127,7 @@ test("test names compare without run-dependent dates and numbers", () => {
   )
   assert.equal(stableName("at 2026-10-18T21:44:41.123Z id 1760823881000"), stableName("at 2026-10-18T21:51:02Z id 1760824262000"))
   assert.notEqual(stableName("retries 3 times"), stableName("retries 4 times"))
+  assert.notEqual(stableName("wide, seed 20260908"), stableName("wide, seed 20260909"), "a seed names its test (S12-1)")
 })
 
 test("a flat package's modules sit at its root, beside test/ (the .smithers/flows layout)", () => {

@@ -833,7 +833,9 @@ export const stableName = (name) =>
   name
     .replaceAll(/\b[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT[+-]\d{4}(?: \([^)]*\))?/g, "<date>")
     .replaceAll(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, "<date>")
-    .replaceAll(/\d{6,}/g, "<n>")
+    // Epoch seconds and milliseconds (10+ digits) vary per run; a test's seed (20260908) names
+    // the test and must stay distinct (S12-1).
+    .replaceAll(/\d{10,}/g, "<n>")
 
 /** Results from a JUnit XML report: Bun's `--reporter=junit`. */
 export const parseJunit = (xml, pkg) => {
