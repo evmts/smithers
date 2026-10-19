@@ -8,7 +8,7 @@ test("the repo /convert door keeps Chat usable and reload retains the persisted 
   } }))
   await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute(null))
   await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [] } }))
-  await page.route("**/api/repos/sponsor/public", route => route.fulfill({ json: { is_public: true, default_bookmark: "main" } }))
+  await page.route("**/api/repos/sponsor/public", route => route.fulfill({ json: { full_name: "sponsor/public", is_public: true, default_bookmark: "main" } }))
   await page.route("**/api/repos/sponsor/public/guest", route => route.fulfill({ json: {
     allowed: true, flow: "guest.chat", sessionId: "opaque-session", revision: "main-tip",
     landingId: "b0c8af15-f9cc-4325-b383-149c13144913"
@@ -28,9 +28,9 @@ test("the repo /convert door keeps Chat usable and reload retains the persisted 
     }
     await route.fulfill({ json: await jobs.get(body.idempotencyKey) })
   })
-  await page.goto("/sponsor/public")
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
-  await page.keyboard.press("Control+k")
+  await page.goto("/sponsor/public?design=off")
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Ask", exact: true }).click()
   const composer = page.getByTestId("composer-input")
   await expect(composer).toBeVisible()
   await composer.fill('/convert import { Effect } from "effect"')
@@ -43,6 +43,7 @@ test("the repo /convert door keeps Chat usable and reload retains the persisted 
   release()
   await expect(page.getByText('"state":"compiled"', { exact: false })).toBeVisible()
   await page.reload()
+  await page.getByRole("button", { name: "Ask", exact: true }).click()
   await expect(page.getByText('"state":"compiled"', { exact: false })).toBeVisible()
   expect(calls).toBe(1)
 })
