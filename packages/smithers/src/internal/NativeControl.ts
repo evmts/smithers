@@ -38,7 +38,7 @@ import type * as GatewayServer from "@smthrs/gateway/GatewayServer"
 import type * as NodeGateway from "@smthrs/gateway/node/NodeGateway"
 import * as GatewayProjections from "@smthrs/gateway/Projections"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
-import type { HarnessError } from "@smthrs/harness/HarnessError"
+import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
 import * as Steering from "@smthrs/harness/Steering"
@@ -389,7 +389,7 @@ export interface Platform {
   readonly shellTerminal?: "agent" | undefined
   /**
    * The machine's agent terminal for `shellTerminal: "agent"` (T-TRM-05).
-   * Undefined where the host has none: `bash` then refuses, typed.
+   * Undefined where the host has none: `bash` is then not offered.
    */
   readonly agentTerminal?: (
     spawner: KernelChildProcessSpawner.ChildProcessSpawner["Service"]
@@ -413,6 +413,13 @@ export interface Platform {
     filesystem: FileSystem.FileSystem,
     spawner: KernelChildProcessSpawner.ChildProcessSpawner["Service"]
   ) => Effect.Effect<FileSystem.FileSystem>
+  /**
+   * Whether the composed filesystem can apply model edits. False withholds
+   * `write`, `edit` and `apply_patch`; absent means it can.
+   */
+  readonly fileMutations?: ((filesystem: FileSystem.FileSystem) => boolean) | undefined
+  /** System teaching every model action on this host receives, chosen from the tools it offers. */
+  readonly agentSystem?: ((offered: ReadonlyArray<string>) => ReadonlyArray<string> | undefined) | undefined
   readonly httpClient: (
     environment: Readonly<Record<string, string | undefined>>
   ) => Layer.Layer<KernelHttpClient.HttpClient>
@@ -427,6 +434,29 @@ export interface Platform {
   readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   readonly gateway: typeof NodeGateway.layer
   readonly bearerPrincipal: typeof NodeGateway.bearerPrincipal
+}
+
+/**
+ * The startup self-check's verdict: the first offered tool whose provider is
+ * missing, as a typed `assembly_failed`, or undefined when every one has one.
+ *
+ * @private
+ * @since 1.0.0
+ */
+export const offeredWithoutProvider = (
+  offered: ReadonlyArray<string>,
+  providers: { readonly fileMutations: boolean; readonly terminal: boolean }
+): HarnessError | undefined => {
+  const missing = offered.find((name) =>
+    (!providers.fileMutations && (name === "write" || name === "edit" || name === "apply_patch")) ||
+    (!providers.terminal && (name === "bash" || name === "test"))
+  )
+  return missing === undefined ? undefined : new HarnessError({
+    code: "assembly_failed",
+    message: `Host self-check: ${missing} is offered but its ${
+      missing === "bash" || missing === "test" ? "terminal" : "file-mutation"
+    } provider is missing`
+  })
 }
 
 const secureSqliteFiles = (file: string) =>
@@ -1619,9 +1649,17 @@ export const make = (
               Effect.provideService(KernelChildProcessSpawner.ChildProcessSpawner, toolSpawner!)
             )
           ))
+        // A host offers only the tools it composed a provider for: no edits
+        // without a mutation provider, no `bash` without its terminal.
+        const fileMutations = native.fileMutations?.(Context.get(filesystemServices, FileSystem.FileSystem)) ?? true
+        const terminalPort = native.shellTerminal === "agent" ? native.agentTerminal?.(toolSpawner!) : undefined
         // A sealed host's file flows act on its container's files; see `containerFiles`.
         const files = sealedTo === undefined
-          ? [StandardFlows.filesystem(HostLanguageServers.bind(filesystemServices, languageServer), nativeSearch)]
+          ? [
+            StandardFlows.filesystem(HostLanguageServers.bind(filesystemServices, languageServer), nativeSearch, {
+              mutations: fileMutations
+            })
+          ]
           : yield* containerFiles(
             environment,
             root,
@@ -1631,11 +1669,13 @@ export const make = (
           )
         const sources = [
           ...files,
-          StandardFlows.shell(HostLanguageServers.bind(transportShell, languageServer), container, {
-            sealedTo,
-            terminal: native.shellTerminal,
-            terminalPort: native.shellTerminal === "agent" ? native.agentTerminal?.(toolSpawner!) : undefined
-          }),
+          ...(native.shellTerminal === "agent" && terminalPort === undefined ? [] : [
+            StandardFlows.shell(HostLanguageServers.bind(transportShell, languageServer), container, {
+              sealedTo,
+              terminal: native.shellTerminal,
+              terminalPort
+            })
+          ]),
           // Host-wide on purpose: these sources are built once per executor,
           // before any run, and the operator owns this memory database. A
           // host that runs a flow declaring `WithMemory.Policy` composes a
@@ -1653,13 +1693,24 @@ export const make = (
             : []),
           // Only a runner in the sealed container starts transport
           // processes. Any other runner keeps the confined spawner.
-          ...testFlows(
+          // A coding host without its terminal runs no command, so no test either.
+          ...(native.shellTerminal === "agent" && terminalPort === undefined ? [] : testFlows(
             Context.merge(runner?.container === sealedTo ? transportShell : shellServices, judge),
             container,
             runner
-          ),
+          )),
           ...mcp
         ]
+        // The startup self-check: the offered list is read back from the
+        // composed sources, so a source that regresses into offering a tool
+        // without its provider stops the host instead of failing every call.
+        const offered = (yield* Effect.forEach(sources, (source) => source.bindings()).pipe(Effect.orDie))
+          .flatMap((bindings) => bindings.map((binding) => binding.descriptor.name))
+        const unprovided = offeredWithoutProvider(offered, {
+          fileMutations: sealedTo !== undefined || fileMutations,
+          terminal: native.shellTerminal !== "agent" || terminalPort !== undefined
+        })
+        if (unprovided !== undefined) return yield* Effect.die(unprovided)
         // The judge `evaluatorFor` requires arms nudges and memory insertion
         // in the run and in every subagent step; memory writes wait for a
         // memory database of the operator's own.
@@ -1673,6 +1724,7 @@ export const make = (
           modelCallMs: native.agentLimits?.modelCallMs,
           flows: sources,
           instructions,
+          system: native.agentSystem?.(offered),
           pinnedSources: ["wait", "ask"],
           // Subscription judgments fail closed on missing seats or invalid answers.
           judged: true,
@@ -1982,13 +2034,18 @@ export const make = (
                           RemoteSearch.make(
                             Context.pick(KernelChildProcessSpawner.ChildProcessSpawner, KernelPath.Path)(machine)
                           ),
-                          { remote: true }
+                          { remote: true, mutations: native.fileMutations?.(filesystem) ?? true }
                         ),
-                        StandardFlows.shell(
-                          Context.pick(KernelChildProcessSpawner.ChildProcessSpawner, KernelPath.Path)(machine),
-                          undefined,
-                          { terminal: native.shellTerminal }
-                        ),
+                        // No agent terminal reaches a sandbox machine: a coding
+                        // host offers its runs there no `bash` rather than one
+                        // that refuses every call.
+                        ...(native.shellTerminal === "agent" ? [] : [
+                          StandardFlows.shell(
+                            Context.pick(KernelChildProcessSpawner.ChildProcessSpawner, KernelPath.Path)(machine),
+                            undefined,
+                            { terminal: native.shellTerminal }
+                          )
+                        ]),
                         StandardFlows.memory(memoryServices, judge, StandardFlows.hostWide),
                         StandardFlows.jev(judge)
                       ]

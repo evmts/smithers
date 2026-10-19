@@ -948,7 +948,14 @@ const runProductionUnmeasured: Service["run"] = (options) =>
           // The controller journals a fresh visible snapshot at each frame.
           // Call resolution still verifies the declaration digest against this
           // registry before executing, so a mid-frame change is refused.
-          const registry = FlowBinding.registry(discovered, catalog)
+          // A host with no prompt runner runs no markdown flow, so it never
+          // shows one: the model would call it and every call would be refused.
+          const runnable = options.promptRunner !== undefined ? discovered : {
+            ...discovered,
+            visible: () =>
+              Effect.map(discovered.visible(), (entries) => entries.filter((entry) => entry.body._tag !== "Markdown"))
+          }
+          const registry = FlowBinding.registry(runnable, catalog)
           const resolver = CellCalls.make({
             registry,
             catalog,

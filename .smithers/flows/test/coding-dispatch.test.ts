@@ -6,19 +6,26 @@ import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as StandardFlows from "@smthrs/agent/StandardFlows"
+import { CapabilityPattern } from "@smthrs/capability/Capability"
 import { Action, Graph } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as Model from "@smthrs/model/Model"
 import { ModelEvent } from "@smthrs/model/ModelEvent"
 import * as Registry from "@smthrs/registry/Registry"
-import { Cause, Effect, Layer, Schema, Stream } from "effect"
+import { StdError } from "@smthrs/std/StdError"
+import { Cause, Context, Effect, FileSystem, Layer, Path, Schema, Stream } from "effect"
+import { ChildProcessSpawner } from "effect/process"
 import assert from "node:assert/strict"
-import { mkdtemp, rm } from "node:fs/promises"
+import { execFileSync } from "node:child_process"
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
-import { conversation, DispatchInput, dispatchModels, seatFor } from "../coding/dispatch.ts"
+import { conversation, DispatchInput, dispatchModels, noChange, seatFor } from "../coding/dispatch.ts"
 import Dispatch, { dispatchRegistration } from "../coding/dispatch/flow.ts"
+import * as CodingFileSystem from "../coding/filesystem.ts"
 import { roleResolver } from "../coding/host.ts"
 import { NativeCoding } from "../coding/native.ts"
 
@@ -62,6 +69,8 @@ const scripted = (options: {
   readonly seats: Array<string>
   readonly prompts: Array<string>
   readonly answer: ReadonlyArray<string>
+  /** Cell statements run before the answer, such as tool calls. */
+  readonly before?: string | undefined
 }) => {
   const model = Model.make({
     stream: (request) =>
@@ -77,7 +86,9 @@ const scripted = (options: {
           ModelEvent.TextDelta({
             type: "text-delta",
             id: "cell",
-            text: `\`\`\`cell\nctx.done(${JSON.stringify({ messages: options.answer })})\n\`\`\``
+            text: `\`\`\`cell\n${options.before ?? ""}\nctx.done(${
+              JSON.stringify({ messages: options.answer })
+            })\n\`\`\``
           }),
           ModelEvent.TextEnd({ type: "text-end", id: "cell" }),
           ModelEvent.Settle({ type: "settle", stopReason: "stop" })
@@ -120,18 +131,20 @@ const scripted = (options: {
   })
 }
 
-const agentHost = Layer.effect(
-  AgentAction.Host,
-  Effect.gen(function*() {
-    const registry = yield* Registry.Registry
-    return {
-      registry,
-      limits: { memoryBytes: 128 * 1024 * 1024, steps: 25_000_000, calls: 8 },
-      capabilityEnvelope: [],
-      maxFrames: 6
-    }
-  })
-).pipe(Layer.provide(Registry.layerFromDescriptors([])), Layer.provide(NodeServices.layer))
+const agentHost = (flows: ReadonlyArray<FlowBinding.Source> = []) =>
+  Layer.effect(
+    AgentAction.Host,
+    Effect.gen(function*() {
+      const registry = yield* Registry.Registry
+      return {
+        registry,
+        flows,
+        limits: { memoryBytes: 128 * 1024 * 1024, steps: 25_000_000, calls: 8 },
+        capabilityEnvelope: flows.length === 0 ? [] : [new CapabilityPattern({ action: "*", resource: "*" })],
+        maxFrames: 6
+      }
+    })
+  ).pipe(Layer.provide(Registry.layerFromDescriptors([])), Layer.provide(NodeServices.layer))
 
 /** The offline dispatch host judges recorded completion evidence. */
 const confidentEvaluator = ScriptedJudge.layer
@@ -139,10 +152,16 @@ const confidentEvaluator = ScriptedJudge.layer
 const runTurn = async (
   t: TestContext,
   input: typeof DispatchInput.Type,
-  options: { readonly answer?: ReadonlyArray<string> } = {}
+  options: {
+    readonly answer?: ReadonlyArray<string>
+    readonly before?: (root: string) => string
+    readonly flows?: (root: string) => ReadonlyArray<FlowBinding.Source>
+  } = {}
 ) => {
-  const root = await mkdtemp(join(tmpdir(), "coding-dispatch-"))
+  const root = await realpath(await mkdtemp(join(tmpdir(), "coding-dispatch-")))
   t.after(() => rm(root, { recursive: true, force: true }))
+  // A turn that edits runs under the engine's workspace snapshots.
+  if (options.flows !== undefined) execFileSync("jj", ["git", "init", "--quiet"], { cwd: root })
   const seats: Array<string> = []
   const prompts: Array<string> = []
   const reads: Array<number> = []
@@ -153,8 +172,13 @@ const runTurn = async (
     Layer.provideMerge(nativeStub(reads)),
     Layer.provideMerge(
       Layer.mergeAll(
-        agentHost,
-        scripted({ seats, prompts, answer: options.answer ?? ["Read the greeting.", "Done."] }),
+        agentHost(options.flows?.(root)),
+        scripted({
+          seats,
+          prompts,
+          answer: options.answer ?? ["Read the greeting.", "Done."],
+          before: options.before?.(root)
+        }),
         Agent.layer
       )
     ),
@@ -173,7 +197,7 @@ const runTurn = async (
     Effect.scoped(Dispatch.execute(input, { executionId: `dispatch-${input.turnId}` }).pipe(Effect.provide(host)))
   )
   if (exit._tag === "Failure") t.diagnostic(Cause.pretty(exit.cause))
-  return { exit, seats, prompts, reads }
+  return { exit, seats, prompts, reads, root }
 }
 
 const baseInput = {
@@ -279,4 +303,87 @@ test("a turn that names only a role resolves through the host's role table", { t
   assert.ok(seats.includes("coding/dispatch"), seats.join(","))
   // roleResolver maps the role onto the host's configured implementation model.
   assert.ok(seats.includes("test:implementation-model"), seats.join(","))
+})
+
+/** The coding filesystem flows over one provider, as the host composes them. */
+const codingFiles = (provider: CodingFileSystem.MutationProvider) => (root: string) => [
+  StandardFlows.filesystem(Effect.runSync(
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const coding = CodingFileSystem.make(
+        { repositoryPath: root },
+        fs,
+        yield* ChildProcessSpawner.ChildProcessSpawner,
+        root,
+        provider
+      )
+      return Context.make(FileSystem.FileSystem, coding).pipe(Context.add(Path.Path, yield* Path.Path))
+    }).pipe(Effect.provide(NodeServices.layer))
+  ))
+]
+
+const writeCall = (root: string) =>
+  `const w = await ctx.call("write", ${JSON.stringify({ path: join(root, "note.txt"), content: "hello\n" })});`
+
+test(
+  "a turn whose every workspace change failed fails with a typed no-change error",
+  { timeout: 60_000 },
+  async (t) => {
+    const refusing: CodingFileSystem.MutationProvider = {
+      commit: () =>
+        Effect.fail(
+          new StdError({ code: "provider_unavailable", message: "Authenticated file mutation provider unavailable" })
+        )
+    }
+    const { exit, reads } = await runTurn(t, baseInput as typeof DispatchInput.Type, {
+      answer: ["Wrote note.txt."],
+      before: writeCall,
+      flows: codingFiles(refusing)
+    })
+    assert.equal(exit._tag, "Failure")
+    const error = Cause.squash((exit as Extract<typeof exit, { _tag: "Failure" }>).cause) as {
+      readonly _tag: string
+      readonly code: string
+      readonly message: string
+    }
+    assert.equal(error._tag, "coding/Error")
+    assert.equal(error.code, "unavailable")
+    // Every attempt the turn made is counted; the first refusal is the reason.
+    assert.match(
+      error.message,
+      /^No change made: \d+ calls? to change the workspace failed\. First: write: .*Authenticated file mutation provider unavailable$/
+    )
+    // The claim never reaches the caller as an answer.
+    assert.equal(reads.length, 0)
+  }
+)
+
+test("a turn whose workspace change succeeded answers as before", {
+  skip: CodingFileSystem.Anchored.available() ? false : "Directory-anchored file access needs Linux",
+  timeout: 60_000
+}, async (t) => {
+  const { exit, root } = await runTurn(t, baseInput as typeof DispatchInput.Type, {
+    answer: ["Wrote note.txt."],
+    before: writeCall,
+    flows: (root) => codingFiles(CodingFileSystem.localProvider(root))(root)
+  })
+  assert.equal(exit._tag, "Success", JSON.stringify(exit))
+  assert.equal(await readFile(join(root, "note.txt"), "utf8"), "hello\n")
+})
+
+test("no change is decided from every settled call to change the workspace", () => {
+  const failed = { flowName: "write", outcome: "failure", message: "Authenticated file mutation provider unavailable" }
+  assert.equal(noChange([]), undefined)
+  assert.equal(noChange([failed, { flowName: "edit", outcome: "success" }]), undefined)
+  const error = noChange([failed, { flowName: "apply_patch", outcome: "failure", code: "stale_read" }])
+  assert.equal(error?.code, "unavailable")
+  assert.equal(
+    error?.message,
+    "No change made: 2 calls to change the workspace failed. First: write: Authenticated file mutation provider unavailable"
+  )
+  // A truncated message marker is not text: the code stands in for it.
+  assert.equal(
+    noChange([{ flowName: "edit", outcome: "failure", message: { truncated: true }, code: "no_match" }])?.message,
+    "No change made: 1 call to change the workspace failed. First: edit: no_match"
+  )
 })

@@ -100,6 +100,12 @@ export interface Options extends NativeOptions {
 
   /** Installed registered-run atomic writer; never accepted in a flow payload. */
   readonly fileMutationProvider?: (canonicalRoot: string) => CodingFileSystem.MutationProvider
+  /** The box's own command runner where no machine broker serves an agent terminal. */
+  readonly agentTerminal?: NativeControl.Platform["agentTerminal"]
+  /** Teaching for every model action when this host offers no `bash`. */
+  readonly withoutTerminal?: ReadonlyArray<string> | undefined
+  /** Confines the agent's file reads to the served root (`CodingFileSystem.confineReads`). */
+  readonly confinedReads?: boolean | undefined
 
   /** Exact system names from the backend's packaged flow catalog. */
   readonly systemFlows: ReadonlyArray<string>
@@ -623,6 +629,55 @@ const effectiveSeats = (options: Pick<Options, "planning" | "seats">): Readonly<
   ...options.seats
 })
 
+/** The native platform a coding host composes: the agent terminal, edit provider and teaching it offers. */
+export const nativePlatform = (
+  platform: NativeControl.Platform,
+  options: Options,
+  evaluator: NonNullable<NativeControl.Platform["evaluator"]>
+): NativeControl.Platform => ({
+  ...platform,
+  shellTerminal: "agent",
+  // On its machine the agent's commands run in its own watched terminal.
+  agentTerminal: platform.agentTerminal ?? options.agentTerminal ?? ((spawner) => CodingTerminal.installed(spawner)),
+  // Retained TODO attempts wait for stack signals after delivery. A
+  // scratch Run owns no stack item and finishes with its module result.
+  reenterModules: options.planning === undefined || options.draftVersion ? undefined : ["todo"],
+  beforeSteeringDrain: (runId, flowId) => {
+    if (flowId !== "todo" || options.planning === undefined) return Effect.void
+    return Effect.tryPromise({
+      try: async (signal) => {
+        const origin = process.env.SMITHERS_MODEL_PROXY_URL
+        const credential = process.env.SMITHERS_MODEL_ROLE_IMPLEMENTER_KEY
+        if (!origin || !credential) throw new Error("Missing input delivery fence")
+        const response = await fetch(`${origin.replace(/\/+$/, "")}/input-fence?run=${encodeURIComponent(runId)}`, {
+          headers: { Authorization: `Bearer ${credential}` },
+          signal
+        })
+        if (!response.ok) throw new Error("Input delivery unavailable")
+      },
+      catch: () => new HarnessError({ code: "assembly_failed", message: "TODO input delivery is unavailable" })
+    })
+  },
+  reentryCheckpoint: (runId, flowId) => flowId === "todo" ? todoBringBoundary(runId) : Effect.void,
+  agentLimits: options.planning?.limits,
+  evaluator,
+  jj: (root) => Snapshots.layerAt({ ...options, repositoryPath: root }),
+  filesystem: (root, fs, spawner) =>
+    Effect.gen(function*() {
+      const canonicalRoot = yield* fs.realPath(root)
+      const coding = CodingFileSystem.make(
+        { ...options, repositoryPath: root },
+        fs,
+        spawner,
+        canonicalRoot,
+        options.fileMutationProvider?.(canonicalRoot)
+      )
+      return options.confinedReads === true ? CodingFileSystem.confineReads(coding, canonicalRoot) : coding
+    }).pipe(Effect.orDie),
+  fileMutations: CodingFileSystem.mutable,
+  agentSystem: (offered) => offered.includes("bash") ? undefined : options.withoutTerminal
+})
+
 /** Both platform entries call this one recipe; no second executor or store. */
 export const layer = (platform: NativeControl.Platform, options: Options, suppliedSeats?: SeatResolver.Service) => {
   configured(options)
@@ -637,46 +692,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     environment: process.env
   })
   const native = NativeControl.make(
-    {
-      ...platform,
-      shellTerminal: "agent",
-      // On its machine the agent's commands run in its own watched terminal.
-      agentTerminal: platform.agentTerminal ?? ((spawner) => CodingTerminal.installed(spawner)),
-      // Retained TODO attempts wait for stack signals after delivery. A
-      // scratch Run owns no stack item and finishes with its module result.
-      reenterModules: options.planning === undefined || options.draftVersion ? undefined : ["todo"],
-      beforeSteeringDrain: (runId, flowId) => {
-        if (flowId !== "todo" || options.planning === undefined) return Effect.void
-        return Effect.tryPromise({
-          try: async (signal) => {
-            const origin = process.env.SMITHERS_MODEL_PROXY_URL
-            const credential = process.env.SMITHERS_MODEL_ROLE_IMPLEMENTER_KEY
-            if (!origin || !credential) throw new Error("Missing input delivery fence")
-            const response = await fetch(`${origin.replace(/\/+$/, "")}/input-fence?run=${encodeURIComponent(runId)}`, {
-              headers: { Authorization: `Bearer ${credential}` },
-              signal
-            })
-            if (!response.ok) throw new Error("Input delivery unavailable")
-          },
-          catch: () => new HarnessError({ code: "assembly_failed", message: "TODO input delivery is unavailable" })
-        })
-      },
-      reentryCheckpoint: (runId, flowId) => flowId === "todo" ? todoBringBoundary(runId) : Effect.void,
-      agentLimits: options.planning?.limits,
-      evaluator,
-      jj: (root) => Snapshots.layerAt({ ...options, repositoryPath: root }),
-      filesystem: (root, fs, spawner) =>
-        Effect.gen(function*() {
-          const canonicalRoot = yield* fs.realPath(root)
-          return CodingFileSystem.make(
-            { ...options, repositoryPath: root },
-            fs,
-            spawner,
-            canonicalRoot,
-            options.fileMutationProvider?.(canonicalRoot)
-          )
-        }).pipe(Effect.orDie)
-    },
+    nativePlatform(platform, options, evaluator),
     roleSeats(options, suppliedSeats),
     options.planning === undefined ? undefined : routeMessages
   )

@@ -675,8 +675,10 @@ ctx.done(String(answer))`
 
   const flows = [descriptor("docs/summarise", { markdown: true })]
 
-  const run = (promptRunner: CellCalls.PromptRunner | undefined) => {
-    const requests: Array<ModelRequest.ModelRequest> = []
+  const run = (
+    promptRunner: CellCalls.PromptRunner | undefined,
+    requests: Array<ModelRequest.ModelRequest> = []
+  ) => {
     return drive(
       collect({
         registry: registryOf(flows, { "docs/summarise": "Summarise it." }),
@@ -690,21 +692,25 @@ ctx.done(String(answer))`
     ).then((outcome) => events(outcome))
   }
 
-  it("refuses the call catchably when the host runs no markdown flows", async () => {
-    const refused = refusals(await run(undefined))
-    expect(refused).toHaveLength(1)
-    expect(refused[0]).toBe("Flow docs/summarise is a markdown flow and this host runs none.")
+  it("never shows a markdown flow, nor runs one, when the host runs none", async () => {
+    const requests: Array<ModelRequest.ModelRequest> = []
+    const settled = await run(undefined, requests)
+    // The catalog the model reads never names it, and no call reaches the host.
+    expect(requests.length).toBeGreaterThan(0)
+    expect(JSON.stringify(requests)).not.toContain("docs/summarise")
+    expect(settled.some((event) => event._tag === "cell-call-settled")).toBe(false)
   })
 
   it("hands the rendered body to the runner the host did supply", async () => {
     const rendered: Array<string> = []
+    const requests: Array<ModelRequest.ModelRequest> = []
     const settled = await run(({ text }) =>
       Effect.sync(() => {
         rendered.push(text)
         return new Cell.CallResult({ outcome: "success", value: "summarised" })
-      })
-    )
+      }), requests)
 
+    expect(JSON.stringify(requests)).toContain("docs/summarise")
     expect(rendered).toEqual(["Summarise it."])
     expect(refusals(settled)).toEqual([])
   })

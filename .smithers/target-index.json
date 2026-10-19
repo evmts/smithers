@@ -3614,6 +3614,10 @@
       },
       {
         "kind": "file",
+        "path": ".smithers/flows/test/coding-hosted-tools.test.ts"
+      },
+      {
+        "kind": "file",
         "path": ".smithers/flows/test/coding-metered-steps.test.ts"
       },
       {

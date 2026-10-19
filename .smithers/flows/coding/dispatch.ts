@@ -30,7 +30,8 @@
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import { Action, FlowRuntime } from "@smthrs/flow"
-import { Effect, Layer, Schema } from "effect"
+import { Journal as JournalModules } from "@smthrs/flows"
+import { Effect, Layer, Option, Schema } from "effect"
 import { NativeCoding } from "./native.ts"
 import { CodingError, Revision } from "./schema.ts"
 
@@ -173,6 +174,67 @@ export const ObserveDispatch = Action.make("coding/observe-dispatch", {
 
 export const DispatchError = Schema.Union([CodingError, AgentAction.AgentFailure])
 
+const { CallFact, Journal, JournalEvent } = JournalModules
+
+/** The tools whose success changes the workspace. */
+const changingTools = new Set(["write", "edit", "apply_patch", "bash"])
+
+/**
+ * This execution's settled calls to tools that change the workspace, read
+ * from the call facts its journal recorded. Undefined when no journal is
+ * bound or it cannot be read: no evidence is never evidence of failure.
+ */
+const changingCalls = (executionId: string) =>
+  Effect.gen(function*() {
+    const journal = yield* Effect.serviceOption(Journal.Journal)
+    if (Option.isNone(journal)) return undefined
+    const settled: Array<Extract<typeof CallFact.Fact.Type, { readonly phase: "settled" }>> = []
+    let after: typeof JournalEvent.Seq.Type | undefined
+    for (let pages = 0; pages < 64; pages++) {
+      const page = yield* journal.value.entries({
+        runId: JournalEvent.RunId.make(executionId),
+        eventTypes: [CallFact.eventType],
+        ...(after === undefined ? {} : { after }),
+        limit: 512
+      })
+      for (const entry of page.entries) {
+        const fact = Schema.decodeUnknownOption(CallFact.Fact)(entry.payload)
+        if (Option.isSome(fact) && fact.value.phase === "settled" && changingTools.has(fact.value.flowName)) {
+          settled.push(fact.value)
+        }
+      }
+      after = page.entries.at(-1)?.seq
+      if (!page.hasMore || after === undefined) return settled
+    }
+    return undefined
+  }).pipe(Effect.orElseSucceed(() => undefined))
+
+/**
+ * A turn that tried to change the workspace and failed every time made no
+ * change. It must not answer as if it had: it fails, typed, with the first
+ * reason.
+ */
+export const noChange = (
+  calls: ReadonlyArray<
+    {
+      readonly flowName: string
+      readonly outcome: string
+      readonly message?: unknown
+      readonly code?: string | undefined
+    }
+  >
+): CodingError | undefined => {
+  if (calls.length === 0 || calls.some((call) => call.outcome !== "failure")) return undefined
+  const first = calls[0]!
+  const reason = typeof first.message === "string" ? first.message : first.code ?? "failed"
+  return new CodingError({
+    code: "unavailable",
+    message: `No change made: ${calls.length} ${
+      calls.length === 1 ? "call" : "calls"
+    } to change the workspace failed. First: ${first.flowName}: ${reason.slice(0, 300)}`
+  })
+}
+
 /**
  * The non-model half of the door.
  *
@@ -185,6 +247,8 @@ export const dispatchLayers = () =>
     ObserveDispatch.toLayer(({ answer, input }) =>
       Effect.gen(function*() {
         const instance = yield* FlowRuntime.FlowInstance
+        const failed = noChange((yield* changingCalls(instance.executionId)) ?? [])
+        if (failed !== undefined) return yield* Effect.fail(failed)
         const native = yield* NativeCoding
         // A turn that edited nothing still answers. The native read is
         // evidence about the workspace, never a condition on the reply, so an

@@ -151,18 +151,22 @@ export const defaultMaxWaitSeconds = 3_600
  * tree that may since have changed. Inputs, outputs, and failures are the
  * same.
  *
+ * `mutations: false` offers only `read`, `ls`, `glob` and `grep`, for a host
+ * that has no way to apply an edit: a tool the host cannot run is never
+ * offered.
+ *
  * @category constructors
  * @since 0.1.0
  */
 export const filesystem = (
   services: Context.Context<FileSystem.FileSystem | Path.Path>,
   search: Search.Search = PortableSearch.make(services),
-  options?: { readonly remote?: boolean | undefined }
+  options?: { readonly remote?: boolean | undefined; readonly mutations?: boolean | undefined }
 ): FlowBinding.Source => {
   const searchServices = Context.add(services, Search.Search, search)
   const declared = <F extends { readonly effects: object }>(flow: F): F =>
     options?.remote === true ? { ...flow, effects: { ...flow.effects, tier: "irreversible" } } : flow
-  return FlowBinding.source(filesystemSource, [
+  const bindings = [
     FlowBinding.provide(
       FlowBinding.make({
         flow: declared(Read.flow),
@@ -234,7 +238,12 @@ export const filesystem = (
       }),
       searchServices
     )
-  ])
+  ]
+  const mutating = new Set<string>([Write.flow.name, Edit.flow.name, ApplyPatch.flow.name])
+  return FlowBinding.source(
+    filesystemSource,
+    options?.mutations === false ? bindings.filter((binding) => !mutating.has(binding.descriptor.name)) : bindings
+  )
 }
 
 /**

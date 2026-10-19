@@ -3,8 +3,10 @@ import { Preconditions, type VersionedFileSystem } from "@smthrs/std/Read"
 import { StdError } from "@smthrs/std/StdError"
 import { Cause, Effect, type FileSystem, PlatformError, Sink, Stream } from "effect"
 import { ChildProcess, type ChildProcessSpawner } from "effect/process"
-import { createHash } from "node:crypto"
-import { isAbsolute, relative, resolve, sep } from "node:path"
+import { createHash, randomBytes } from "node:crypto"
+import { constants as fsConstants, existsSync } from "node:fs"
+import { type FileHandle, mkdir, open, rename, unlink } from "node:fs/promises"
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import type { NativeOptions } from "./native.ts"
 
 /** Installed authority only. The provider must authenticate the registered run,
@@ -14,6 +16,9 @@ import type { NativeOptions } from "./native.ts"
  * The host must never adapt ordered single-file writes to this transaction.
  */
 export interface MutationProvider {
+  /** The provider's own read of a file's current bytes, by root-relative path;
+   * undefined when absent. Without it the host reads through its filesystem. */
+  readonly read?: (path: string) => Effect.Effect<Uint8Array | undefined, StdError>
   readonly commit: (
     session: string,
     changes: ReadonlyArray<{ readonly path: string; readonly base_digest: string; readonly content: Uint8Array | null }>
@@ -179,6 +184,280 @@ const daemonProvider = (
     )
 })
 
+const MAX_BATCH_FILES = 256
+const MAX_BATCH_BYTES = 1024 * 1024
+
+/** The working copy a hosted developer box serves; no machine broker runs there. */
+export const HOSTED_ROOT = "/home/developer/workspace"
+
+const refused = (path: string, why: string) =>
+  new StdError({ code: "permission_denied", path, message: `Cannot change ${path}: ${why}` })
+
+/**
+ * Directory-anchored file access. Node has no openat, so each component is
+ * opened through the already-open directory's `/proc/self/fd/<fd>` link with
+ * O_NOFOLLOW: resolution starts at that directory itself, never at its name,
+ * and a link at the component is refused. Swapping a checked directory for a
+ * link after it was opened cannot redirect anything. Linux only; elsewhere
+ * every operation refuses.
+ *
+ * @private
+ */
+export const Anchored = {
+  available: (): boolean => process.platform === "linux" && existsSync("/proc/self/fd"),
+  at: (directory: FileHandle, name: string): string => `/proc/self/fd/${directory.fd}/${name}`,
+  /** Opens `root` and each directory in `segments` beneath it. With `create`
+   * a missing directory is made in its anchored parent; without it a missing
+   * one ends the walk early. The caller closes every returned handle. */
+  directories: async (
+    root: string,
+    segments: ReadonlyArray<string>,
+    path: string,
+    create: boolean
+  ): Promise<{ readonly opened: Array<FileHandle>; readonly complete: boolean }> => {
+    if (!Anchored.available()) {
+      throw new StdError({ code: "provider_unavailable", message: "Anchored file access needs Linux" })
+    }
+    const flags = fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW
+    const opened = [await open(root, flags)]
+    try {
+      for (const segment of segments) {
+        const parent = opened.at(-1)!
+        const next = await open(Anchored.at(parent, segment), flags).catch(async (error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") {
+            throw error.code === "ELOOP" || error.code === "ENOTDIR"
+              ? refused(path, "it traverses a symbolic link or a file")
+              : error
+          }
+          if (!create) return undefined
+          await mkdir(Anchored.at(parent, segment)).catch((made: NodeJS.ErrnoException) => {
+            if (made.code !== "EEXIST") throw made
+          })
+          return open(Anchored.at(parent, segment), flags).catch((again: NodeJS.ErrnoException) => {
+            throw again.code === "ELOOP" || again.code === "ENOTDIR"
+              ? refused(path, "it traverses a symbolic link or a file")
+              : again
+          })
+        })
+        if (next === undefined) return { opened, complete: false }
+        opened.push(next)
+      }
+      return { opened, complete: true }
+    } catch (error) {
+      await Promise.all(opened.map((handle) => handle.close()))
+      throw error
+    }
+  },
+  /** A regular file's bytes and mode, never through a link; undefined when absent. */
+  read: async (directory: FileHandle, name: string, path: string) => {
+    // O_NONBLOCK: a FIFO committed to the tree is refused below, never waited on.
+    const flags = fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK
+    const file = await open(Anchored.at(directory, name), flags).catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined
+        throw error.code === "ELOOP" ? refused(path, "it is a symbolic link") : error
+      }
+    )
+    if (file === undefined) return undefined
+    try {
+      const info = await file.stat()
+      if (!info.isFile()) throw refused(path, "it is not a regular file")
+      return { bytes: new Uint8Array(await file.readFile()), mode: info.mode & 0o7777 }
+    } finally {
+      await file.close()
+    }
+  }
+}
+
+const close = (handles: ReadonlyArray<FileHandle>) => Promise.all(handles.map((handle) => handle.close()))
+
+/** The workspace owner's own provider, for a box with no machine broker.
+ * It reads and writes as this process's uid, which already owns the tree, so
+ * it adds no authority. Every access is directory-anchored ({@link Anchored}):
+ * no symbolic link is followed and nothing outside the root is reached, even
+ * if the tree changes during the call. It refuses version-control metadata,
+ * where the host's own jj and git would run a planted hook or configuration.
+ * Every base is compared before any byte changes, so a stale batch changes
+ * nothing. Each file is replaced by an fsynced rename inside its anchored
+ * directory and keeps its mode. A failure part-way through a batch is reported
+ * as a stopped patch, never as stale or success.
+ */
+export const localProvider = (canonicalRoot: string): MutationProvider => {
+  const root = resolve(canonicalRoot)
+  /** The checked components of one root-relative path. */
+  const components = (path: string) => {
+    const suffix = relative(root, resolve(root, path))
+    if (suffix === "" || suffix === ".." || suffix.startsWith(`..${sep}`) || isAbsolute(suffix)) {
+      throw refused(path, "it is outside the workspace")
+    }
+    const segments = suffix.split(sep)
+    if (segments.some((segment) => segment === ".git" || segment === ".jj")) {
+      throw refused(path, "it is version-control metadata")
+    }
+    return { directories: segments.slice(0, -1), name: segments.at(-1)! }
+  }
+  const current = async (path: string) => {
+    const { directories, name } = components(path)
+    const walked = await Anchored.directories(root, directories, path, false)
+    try {
+      return walked.complete ? await Anchored.read(walked.opened.at(-1)!, name, path) : undefined
+    } finally {
+      await close(walked.opened)
+    }
+  }
+  const apply = async (path: string, base: string, content: Uint8Array | null) => {
+    const { directories, name } = components(path)
+    const walked = await Anchored.directories(root, directories, path, content !== null)
+    try {
+      if (!walked.complete) return
+      const directory = walked.opened.at(-1)!
+      // Compare again inside the anchored directory, just before the change:
+      // a write that raced the base check is refused, never overwritten.
+      const existing = await Anchored.read(directory, name, path)
+      const observed = existing === undefined ? "absent" : digest(existing.bytes)
+      if (observed !== base) {
+        throw new StdError({
+          code: "stale_read",
+          path,
+          base_digest: base,
+          current_digest: observed,
+          message: `Re-read ${path}`
+        })
+      }
+      if (content === null) {
+        if (existing !== undefined) await unlink(Anchored.at(directory, name))
+        return
+      }
+      const temporary = `.${name}.smithers-${randomBytes(6).toString("hex")}.tmp`
+      const mode = existing === undefined ? 0o666 : existing.mode
+      const file = await open(
+        Anchored.at(directory, temporary),
+        fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW,
+        mode
+      )
+      try {
+        await file.writeFile(content)
+        if (existing !== undefined) await file.chmod(mode)
+        await file.sync()
+      } finally {
+        await file.close()
+      }
+      await rename(Anchored.at(directory, temporary), Anchored.at(directory, name)).catch(async (error) => {
+        await unlink(Anchored.at(directory, temporary)).catch(() => {})
+        throw error
+      })
+    } finally {
+      await close(walked.opened)
+    }
+  }
+  const checkedRead = (path: string) =>
+    Effect.tryPromise({
+      try: async () => (await current(path))?.bytes,
+      catch: (error) =>
+        error instanceof StdError
+          ? error
+          : new StdError({ code: "permission_denied", path, message: `Could not read ${path}` })
+    })
+  return {
+    read: checkedRead,
+    commit: (_session, changes) =>
+      Effect.gen(function*() {
+        const total = changes.reduce((sum, change) => sum + (change.content?.byteLength ?? 0), 0)
+        if (changes.length === 0 || changes.length > MAX_BATCH_FILES || total > MAX_BATCH_BYTES) {
+          return yield* unavailable()
+        }
+        for (const change of changes) {
+          const bytes = yield* checkedRead(change.path)
+          const observed = bytes === undefined ? "absent" : digest(bytes)
+          if (observed !== change.base_digest) return yield* stale(change.path, change.base_digest, observed)
+        }
+        for (const [applied, change] of changes.entries()) {
+          yield* Effect.tryPromise({
+            try: () => apply(change.path, change.base_digest, change.content),
+            catch: (error) =>
+              error instanceof StdError && applied === 0 ? error : new StdError({
+                code: "command_failed",
+                path: change.path,
+                message: `Patch stopped after ${applied} files; re-read all affected paths`
+              })
+          })
+        }
+      }).pipe(Effect.uninterruptible)
+  }
+}
+
+/** Model-facing reads confined to the workspace. A path, after every link in
+ * it is resolved, must name the root or something inside it, so a link that
+ * leaves the tree, an absolute path elsewhere (/proc, /etc, the home's caches)
+ * and a ../ escape are refused before any byte is read. Links inside the tree,
+ * such as a package manager's, still resolve.
+ */
+export const confineReads = <F extends FileSystem.FileSystem>(fs: F, canonicalRoot: string): F => {
+  const root = resolve(canonicalRoot)
+  const within = (path: string) => {
+    const suffix = relative(root, path)
+    return suffix === "" || (suffix !== ".." && !suffix.startsWith(`..${sep}`) && !isAbsolute(suffix))
+  }
+  const denied = (method: string, path: string) =>
+    PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "FileSystem",
+      method,
+      pathOrDescriptor: path,
+      description: "Outside the workspace"
+    })
+  /** Where a path leads: its real path, a dangling link's target followed in
+   * turn, or the nearest existing ancestor's real path joined with the rest. */
+  const real = (absolute: string, depth = 0): Effect.Effect<string, PlatformError.PlatformError> =>
+    fs.realPath(absolute).pipe(
+      Effect.catch((error) =>
+        error.reason._tag !== "NotFound" || depth > 40 || dirname(absolute) === absolute
+          ? Effect.fail(error)
+          : fs.readLink(absolute).pipe(
+            Effect.matchEffect({
+              onSuccess: (target) => real(resolve(dirname(absolute), target), depth + 1),
+              onFailure: () =>
+                Effect.map(real(dirname(absolute), depth + 1), (parent) => join(parent, basename(absolute)))
+            })
+          )
+      )
+    )
+  /** The absolute path a read may use, or a refusal that reads nothing. */
+  const guard = (method: string, path: string) => {
+    const absolute = resolve(root, path)
+    return within(absolute)
+      ? Effect.flatMap(
+        real(absolute),
+        (resolved) => within(resolved) ? Effect.succeed(absolute) : Effect.fail(denied(method, path))
+      )
+      : Effect.fail(denied(method, path))
+  }
+  return {
+    ...fs,
+    access: (path, options) => Effect.flatMap(guard("access", path), (absolute) => fs.access(absolute, options)),
+    exists: (path) => Effect.flatMap(guard("exists", path), (absolute) => fs.exists(absolute)),
+    readDirectory: (path, options) =>
+      Effect.flatMap(guard("readDirectory", path), (absolute) => fs.readDirectory(absolute, options)),
+    readFile: (path) => Effect.flatMap(guard("readFile", path), (absolute) => fs.readFile(absolute)),
+    readFileString: (path, encoding) =>
+      Effect.flatMap(guard("readFileString", path), (absolute) => fs.readFileString(absolute, encoding)),
+    readLink: (path) => Effect.flatMap(guard("readLink", path), (absolute) => fs.readLink(absolute)),
+    realPath: (path) => Effect.flatMap(guard("realPath", path), (absolute) => fs.realPath(absolute)),
+    stat: (path) => Effect.flatMap(guard("stat", path), (absolute) => fs.stat(absolute)),
+    open: (path, options) => Effect.flatMap(guard("open", path), (absolute) => fs.open(absolute, options)),
+    stream: (path, options) =>
+      Stream.unwrap(Effect.map(guard("stream", path), (absolute) => fs.stream(absolute, options))),
+    watch: (path, options) => Stream.unwrap(Effect.map(guard("watch", path), (absolute) => fs.watch(absolute, options)))
+  }
+}
+
+const Mutable = Symbol.for("@smthrs/coding/file-mutations")
+
+/** Whether a coding filesystem has a provider to apply edits; the host offers
+ * `write`, `edit` and `apply_patch` only when it does. */
+export const mutable = (fs: FileSystem.FileSystem): boolean =>
+  (fs as { readonly [Mutable]?: boolean })[Mutable] === true
+
 /** A new filesystem instance has no inherited read authority, including on resume.
  * Only successful model-facing reads record bases. Mutation-internal reads do not.
  */
@@ -207,15 +486,19 @@ export const make = (
   }
   const authority = (session: string | undefined) =>
     session === undefined || session === "" || provider === undefined ? unavailable() : Effect.succeed(session)
-  const current = (path: string) =>
-    fs.readFile(path).pipe(
-      Effect.map((bytes) => ({ bytes, digest: digest(bytes) })),
-      Effect.catch((error) =>
-        error.reason._tag === "NotFound"
-          ? Effect.succeed({ bytes: undefined, digest: "absent" })
-          : Effect.fail(new StdError({ code: "permission_denied", path, message: `Could not read ${path}` }))
+  const current = (path: string, target: string) =>
+    provider?.read !== undefined
+      ? provider.read(target).pipe(
+        Effect.map((bytes) => ({ bytes, digest: bytes === undefined ? "absent" : digest(bytes) }))
       )
-    )
+      : fs.readFile(path).pipe(
+        Effect.map((bytes) => ({ bytes, digest: digest(bytes) })),
+        Effect.catch((error) =>
+          error.reason._tag === "NotFound"
+            ? Effect.succeed({ bytes: undefined, digest: "absent" })
+            : Effect.fail(new StdError({ code: "permission_denied", path, message: `Could not read ${path}` }))
+        )
+      )
   const prepare: NonNullable<NonNullable<VersionedFileSystem[typeof Preconditions]>["prepare"]> = (paths, session) =>
     Effect.gen(function*() {
       const run = yield* authority(session)
@@ -223,7 +506,7 @@ export const make = (
       for (const path of paths) {
         const target = key(path)
         if (target === undefined || bases.has(target)) return yield* unavailable()
-        const observed = yield* current(path)
+        const observed = yield* current(path, target)
         const base = ledgers.get(run)?.get(target) ?? (observed.digest === "absent" ? "absent" : "unread")
         if (base !== observed.digest) return yield* stale(path, base, observed.digest)
         bases.set(target, { path, base, bytes: observed.bytes?.slice() })
@@ -286,8 +569,9 @@ export const make = (
       method,
       description: "Coding mutations require an authenticated atomic provider"
     }))
-  return {
+  const coding: VersionedFileSystem & { readonly [Mutable]: boolean } = {
     ...fs,
+    [Mutable]: provider !== undefined,
     [Preconditions]: {
       record: (path, bytes, session) =>
         Effect.sync(() => {
@@ -325,4 +609,5 @@ export const make = (
     makeTempFile: () => denied("makeTempFile"),
     makeTempFileScoped: () => denied("makeTempFileScoped")
   }
+  return coding
 }

@@ -10,6 +10,7 @@ import { packageVersion } from "../../../packages/smithers/src/Version.ts"
 import { layer as checkReceiptLayer } from "../repository/check-receipt.ts"
 import { remoteLayer } from "../repository/remote.ts"
 import { consume as consumeCheckEnvironment } from "./check-environment.ts"
+import { HOSTED_ROOT, localProvider } from "./filesystem.ts"
 import { share } from "./host-modules.ts"
 import { layer, operatorSeats, type Options, optionsFromEnv, systemFlowsFromEnv } from "./host.ts"
 import { prepareFlowDependencies, withImmutableCommit, withPinnedSource } from "./immutable-source.ts"
@@ -49,8 +50,28 @@ const processEnvironment = [
 const selectEnvironment = (names: ReadonlyArray<string>): Readonly<Record<string, string>> =>
   Object.fromEntries(names.flatMap((name) => process.env[name] === undefined ? [] : [[name, process.env[name]]]))
 
-/** Code-owned host adapters; the installed entry supplies none. */
-export const serve = async (adapters: Pick<Options, "fileMutationProvider"> = {}) => {
+/** What a hosted turn's agent is told while its box offers no terminal. */
+export const hostedTeaching = [
+  "You cannot run commands in this workspace.",
+  "Smithers runs the repository's tests after your turn and shows the result.",
+  "Never claim test results, approval, a merge or a landing."
+] as const
+
+/** The adapters a hosted developer box composes. It runs no machine broker, so
+ * edits go through the workspace owner's local provider, no `bash` is offered,
+ * and the agent reads nothing outside the workspace: the box's caches and the
+ * host's own process files are readable by the same uid. */
+export const hostedAdapters = (): Pick<Options, "fileMutationProvider" | "withoutTerminal" | "confinedReads"> => ({
+  fileMutationProvider: localProvider,
+  withoutTerminal: hostedTeaching,
+  confinedReads: true
+})
+
+/** Code-owned host adapters. The installed entry supplies none; a hosted
+ * developer box's root selects {@link hostedAdapters}. */
+export const serve = async (
+  adapters: Pick<Options, "fileMutationProvider" | "agentTerminal" | "withoutTerminal" | "confinedReads"> = {}
+) => {
   const parsed = parseArgs({
     args: process.argv.slice(2),
     allowPositionals: true,
@@ -93,6 +114,7 @@ export const serve = async (adapters: Pick<Options, "fileMutationProvider"> = {}
     const systemFlows = systemFlowsFromEnv(process.env)
     share()
     const root = resolve(parsed.values.root ?? process.cwd())
+    const composed = root === HOSTED_ROOT ? { ...hostedAdapters(), ...adapters } : adapters
     const port = Number(parsed.values.port)
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("port must be an integer from 0 to 65535")
     const bind: Serve.Bind = {
@@ -204,7 +226,7 @@ export const serve = async (adapters: Pick<Options, "fileMutationProvider"> = {}
                 Effect.gen(function*() {
                   return yield* Serve.host(bind, root).pipe(Effect.provide(layer(platform, {
                     ...options,
-                    ...adapters,
+                    ...composed,
                     flowSourceRoot,
                     flowSourceRevision,
                     retainedRepositoryJobs: snapshot === undefined,
