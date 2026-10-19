@@ -49,7 +49,7 @@ test("mounted conversation preserves external attribution, ordering and copy acr
     "participant-claude", "participant-claude", "participant-claude", "participant-codex"
   ])
   for (const row of imported) {
-    expect([...row.querySelectorAll("button")].map(button => button.dataset.flow)).toEqual(["chat.copy-message"])
+    expect([...row.querySelectorAll("button")].map(button => button.dataset.flow)).toEqual(["chat.copy-message", ...(row.getAttribute("data-tone") === "failed" && row.getAttribute("data-correlation-id") ? ["bug.report"] : [])])
     expect(row.querySelector('a[href^="javascript:"]')).toBeNull()
   }
   flushSync(() => imported[1]!.querySelector<HTMLButtonElement>("button")!.click())

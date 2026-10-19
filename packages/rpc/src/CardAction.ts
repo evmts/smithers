@@ -328,6 +328,7 @@ export type CardCommandInput =
   }
 
 interface CurrentCardCommandInput {
+  readonly "bug.report": { readonly failureCode?: string; readonly correlationId?: string }
   readonly "approval.approve": { readonly cardId: string }
   readonly "approval.deny": { readonly cardId: string }
 

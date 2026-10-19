@@ -22,6 +22,7 @@
  * a new namespace is one import plus one spread line here and nothing else.
  * FlowOrder.test.ts pins that order.
  */
+import { bugFlows } from "./entries/bug"
 import { pendingControlFlows } from "./entries/controls"
 import { codeFlows } from "./entries/code"
 import type { FlowEntry } from "./registry"
@@ -113,6 +114,7 @@ export const USER_ONLY_VISIBLE: ReadonlyArray<{ readonly name: string; readonly 
 ]
 
 export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+  ...bugFlows(actions),
   ...pendingControlFlows(actions),
   ...wikiSurfaceFlows(actions),
   ...themeFlows(actions),
