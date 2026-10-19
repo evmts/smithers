@@ -539,10 +539,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
   const heldRepository = (repo: string) =>
     ctx.store.collections.repositories.get(repo) ??
       [...ctx.store.collections.repositories.values()].find((entry) => entry.id.toLowerCase() === repo.toLowerCase())
-  const repositoryTracker = (repo: string): IssueSource | undefined => {
-    const declared = declaredIssueSource(repo)
-    return "source" in declared ? declared.source : undefined
-  }
+  const repositoryTracker = (repo: string): IssueSource | undefined => heldRepository(repo)?.issueTracker
 
   /**
    * The tracker the repository's HELD document declares, as the one source
@@ -566,14 +563,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
   }
 
   const issuesPath = (repo: string): string => issuesRoute(ctx, repo)
-  const githubSourceIssuesPath = (repo: string, filter: "open" | "closed" | "all"): string => {
-    const source = heldRepository(repo)?.githubSource
-    return githubIssuesRoute(ctx, typeof source === "object" ? `${source.owner}/${source.repo}` : repo, filter)
-  }
-  const githubSourceRefusal = (repo: string): string | undefined => {
-    const declared = declaredIssueSource(repo)
-    return signedInOwner() !== undefined && "error" in declared ? declared.error : undefined
-  }
+  const githubSourceIssuesPath = (repo: string, filter: "open" | "closed" | "all"): string => githubIssuesRoute(ctx, repo, filter)
 
   /** Every issue card this seam has mounted for one `repo`/`number` pair. */
   const mountedIssues = (repo: string, number: number): ReadonlyArray<Extract<Card, { kind: "issue" }>> =>
@@ -629,8 +619,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
      * keeps the Cloud reading it has always had — the one tracker every
      * origin has — rather than being refused outright.
      */
-    const declared = declaredIssueSource(repo)
-    return "error" in declared ? { refusal: declared.error } : declared
+    return { source: repositoryTracker(repo) ?? "smithers-cloud" }
   }
 
   /**
@@ -743,8 +732,6 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     readonly issues: Array<IssueListRow & { readonly source: "github"; readonly htmlUrl?: string }>
     readonly meta?: { source: string; syncedAt: string | null; stale: boolean; syncError: string | null; refusal: string | null }
   }> => {
-    const refusal = githubSourceRefusal(repo)
-    if (refusal !== undefined) return { issues: [], meta: { source: "refused", syncedAt: null, stale: false, syncError: null, refusal } }
     let response: Response
     try {
       response = await (signedInOwner() === undefined ? fetchRepositoryMetadata(ctx, githubSourceIssuesPath(repo, filter)) : ctx.http(githubSourceIssuesPath(repo, filter)))
@@ -778,8 +765,6 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     repo: string,
     filter: "open" | "closed" | "all"
   ): Promise<ViewResult> => {
-    const refusal = githubSourceRefusal(repo)
-    if (refusal !== undefined) return refusal
     let response: Response
     try {
       response = await (signedInOwner() === undefined ? fetchRepositoryMetadata(ctx, githubSourceIssuesPath(repo, filter)) : ctx.http(githubSourceIssuesPath(repo, filter)))
@@ -821,8 +806,6 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
 
   /** GitHub has a separate tracker. Its supported metadata routes expose full issue bodies in the list. */
   const readGithubIssue = async (repo: string, number: number): Promise<ViewResult> => {
-    const refusal = githubSourceRefusal(repo)
-    if (refusal !== undefined) return refusal
     const listPath = githubSourceIssuesPath(repo, "all")
     let issue: Record<string, unknown> | undefined
     let notice: string | undefined
@@ -862,8 +845,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
   const githubIssueCard = (repo: string, number: number, issue: Record<string, unknown>, comments: ReadonlyArray<IssueCommentRow>): ViewResult => {
     const payload = parseDetail({ ...issue, author: issue.user }, repo, number, comments)!
     payload.source = "github"
-    const source = heldRepository(repo)?.githubSource
-    payload.htmlUrl = `https://github.com/${typeof source === "object" ? `${source.owner}/${source.repo}` : repo}/issues/${number}`
+    payload.htmlUrl = `https://github.com/${repo}/issues/${number}`
     const card: Card = {
       id: `issue-github-${repo}-${number}`, kind: "issue", title: `GitHub issue #${number} · ${repo}`,
       status: "active", createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload
