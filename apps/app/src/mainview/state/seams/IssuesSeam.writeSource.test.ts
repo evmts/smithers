@@ -255,6 +255,28 @@ describe("issue writes resolve their tracker", () => {
     expect(writes(calls)).toEqual(["POST /api/repos/will/flows/github/issues"])
   })
 
+  /*
+   * New issue follows the row's declaration through the same door the list
+   * reads (IssuesSeam declaredIssueSource): a GitHub tracker whose source this
+   * app could not check is stated, and the issue is posted nowhere, instead of
+   * reaching GitHub while the list beside it says "could not be checked".
+   */
+  test("a GitHub tracker whose source could not be checked refuses New issue instead of posting to GitHub", async () => {
+    const { store, controller, calls } = await controllerFor({
+      "POST /api/repos/will/flows/issues": json(201, { number: 6 }),
+      "POST /api/repos/will/flows/github/issues": json(202, { operationId: "op-create", requestId: "k", kind: "requested", state: "accepted", acceptedAt: "2026-10-16T13:00:00Z" })
+    })
+    const row = { id: "will/flows", org: "will", ownerKind: "user" as const, name: "flows", head: null, issueTracker: "github" as const }
+    await store.dispatch({ type: "repository.upserted", actor: "system", repository: { ...row, githubSource: "unavailable" } }).isPersisted.promise
+    const refused = await controller.commands.run("issues.create", "Upstream regression will/flows")
+    expect(refusal(refused)).toBe("The repository's issue source could not be checked.")
+    expect(writes(calls)).toEqual([])
+    // The same tracker with a readable source still opens the issue on GitHub, never on the Cloud tracker.
+    await store.dispatch({ type: "repository.upserted", actor: "system", repository: { ...row, githubSource: { owner: "will", repo: "flows" } } }).isPersisted.promise
+    expect(answer(await controller.commands.run("issues.create", "Upstream regression will/flows"))).toContain("requested")
+    expect(writes(calls)).toEqual(["POST /api/repos/will/flows/github/issues"])
+  })
+
   test("a Cloud write names the tracker its number belongs to", async () => {
     const { store, controller } = await controllerFor({
       "POST /api/repos/will/flows/issues": json(201, { number: 6 }),

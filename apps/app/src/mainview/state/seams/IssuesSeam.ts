@@ -1509,9 +1509,14 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
        * GitHub actually numbered.
        */
       if (kind !== "chat" && source === undefined) {
-        const tracker = install ? "github" : repositoryTracker(repo)
-        if (tracker !== undefined) source = tracker
+        if (install) source = "github"
         else {
+          /*
+           * The row's declaration, through the same door the list reads: a
+           * GitHub tracker whose source this app could not check is stated
+           * here too, and the issue is posted nowhere, instead of reaching
+           * GitHub while the list beside it says "could not be checked".
+           */
           const declared = declaredIssueSource(repo)
           if ("error" in declared) return declared.error
           source = declared.source
