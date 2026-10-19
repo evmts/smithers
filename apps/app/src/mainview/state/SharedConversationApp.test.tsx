@@ -544,7 +544,7 @@ test("install conversation binds imported snapshots through the shared renderer 
     expect(host.textContent).toContain("Codex for Ben")
     expect(host.textContent).toContain("Tests failed")
     expect([...host.querySelectorAll('article[data-origin="external"]')].map(row => row.getAttribute("data-participant-id"))).toEqual(["participant-claude", "participant-claude", "participant-claude", "participant-codex"])
-    for (const row of host.querySelectorAll('article[data-origin="external"]')) expect([...row.querySelectorAll("button")].map(button => button.dataset.flow)).toEqual(["chat.copy-message"])
+    for (const row of host.querySelectorAll('article[data-origin="external"]')) expect([...row.querySelectorAll("button")].map(button => button.dataset.flow)).toEqual(["chat.copy-message", ...(row.getAttribute("data-tone") === "failed" && row.getAttribute("data-correlation-id") ? ["bug.report"] : [])])
     const beforeReplay = reads
     expect(topics.get("conversation:main")?.size).toBe(1)
     for (const notify of topics.get("conversation:main")!) notify()

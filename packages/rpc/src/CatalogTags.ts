@@ -13,6 +13,7 @@ import { z } from "zod"
  * @category constants
  */
 export const CATALOG_TAGS = [
+  "bug.report",
   "approval.approve",
   "approval.deny",
   "form.set",
@@ -193,6 +194,7 @@ export const CatalogOperationSchema = z.enum([
   "branches",
   "branches.read",
   "browser.open",
+  "bug.report",
   "cache.tokens.create",
   "cache.tokens.list",
   "cache.tokens.revoke",
