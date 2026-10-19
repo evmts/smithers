@@ -22,27 +22,29 @@ import (
 // provider had no host with room, so the launch was refused before any worker
 // ran and before any provider started. The controller answers 503 with the
 // typed code its envelope publishes.
-type fullFleetHost struct{ attempts *int }
+type fullFleetHost struct {
+	attempts *int
+	message  string
+}
 
 func (h fullFleetHost) RunTurn(context.Context, ProducerGrant) error {
 	if h.attempts != nil {
 		*h.attempts++
+	}
+	message := h.message
+	if message == "" {
+		message = "no healthy worker has sufficient capacity"
 	}
 	return fmt.Errorf("create isolated chat sandbox: %w", &sandbox.StatusError{
 		StatusCode: http.StatusServiceUnavailable,
 		ErrorCode:  sandbox.NoCapacityCode,
 		Code:       sandbox.NoCapacityCode,
 		Provider:   "microsandbox",
-		Message:    "no healthy worker has sufficient capacity",
+		Message:    message,
 	})
 }
 
-// A full fleet is a deferral, not a host fault. Turn f413964a's generations 2
-// and 3 were both refused for capacity and both recorded the unclassified code
-// host_failed, which reads as the model host breaking, and the person was told
-// the host "stopped before completing the turn" — a verdict on a host that
-// never started. The same misattribution was fixed one layer down in the
-// controller's logs (plue#832); this is its API-side half.
+// A full fleet refuses the first attempt under its own code, never as a host fault.
 func TestDispatcherNamesAFullFleetAsCapacityAndNotAHostFailure(t *testing.T) {
 	store := needStore(t)
 	scope, runID, journal := testScope(), "capacity-"+uuid.NewString(), testJournal()
@@ -56,9 +58,9 @@ func TestDispatcherNamesAFullFleetAsCapacityAndNotAHostFailure(t *testing.T) {
 	var logs bytes.Buffer
 	dispatcher.logger = slog.New(slog.NewJSONHandler(&logs, nil))
 	if state := runDispatcherUntilTerminal(t, store, dispatcher, scope, accepted.TurnID); state != StateFailed {
-		t.Fatalf("a turn out of attempts against a full fleet ended %s, want failed", state)
+		t.Fatalf("a turn against a full fleet ended %s, want failed", state)
 	}
-	deferrals, misattributed := 0, 0
+	refusals, misattributed := 0, 0
 	for line := range strings.Lines(logs.String()) {
 		var record map[string]any
 		if json.Unmarshal([]byte(line), &record) != nil || record["turn_id"] != accepted.TurnID {
@@ -66,7 +68,9 @@ func TestDispatcherNamesAFullFleetAsCapacityAndNotAHostFailure(t *testing.T) {
 		}
 		switch record["code"] {
 		case codeHostNoCapacity:
-			deferrals++
+			if record["msg"] == "chat turn failed" {
+				refusals++
+			}
 		case "host_failed", "host_stalled":
 			misattributed++
 		}
@@ -74,10 +78,10 @@ func TestDispatcherNamesAFullFleetAsCapacityAndNotAHostFailure(t *testing.T) {
 	if misattributed != 0 {
 		t.Fatalf("a capacity refusal was recorded as a host fault %d times: %s", misattributed, logs.String())
 	}
-	if deferrals != maxProducerAttempts {
-		t.Fatalf("capacity deferrals logged = %d, want %d: %s", deferrals, maxProducerAttempts, logs.String())
+	if refusals != 1 {
+		t.Fatalf("capacity refusals logged = %d, want %d: %s", refusals, 1, logs.String())
 	}
-	if got := testutil.ToFloat64(dispatcher.metrics.failures.WithLabelValues(codeHostNoCapacity)); got < maxProducerAttempts {
+	if got := testutil.ToFloat64(dispatcher.metrics.failures.WithLabelValues(codeHostNoCapacity)); got < 1 {
 		t.Fatalf("%s counter = %v", codeHostNoCapacity, got)
 	}
 	// The person reads why the turn ended: the fleet was busy and nothing of
@@ -101,70 +105,33 @@ func TestDispatcherNamesAFullFleetAsCapacityAndNotAHostFailure(t *testing.T) {
 	}
 }
 
-// Generations 2 and 3 of turn f413964a were dispatched 1 s and 2 s after the
-// refusal before them — the host-failure ladder — so the turn spent two of its
-// five attempts inside forty seconds while the fleet was still full, and the
-// one attempt left had to cover the whole drain. A deferral waits the interval
-// the error registry publishes for no_capacity instead.
-func TestCapacityDeferralWaitsTheRegistrysRetryAfter(t *testing.T) {
-	store := needStore(t)
+// A known capacity refusal is terminal and cannot be recovered automatically.
+func TestCapacityRefusalDoesNotQueueRecovery(t *testing.T) {
+	store, clock := clockedStore(needStore(t))
 	scope, runID, journal := testScope(), "capacity-wait-"+uuid.NewString(), testJournal()
 	accepted := admit(t, store, scope, runID, journal)
 	attempts := 0
-	// A short claim lease keeps a live attempt's own renewal far below the
-	// deferral interval this test reads, so the two can never be confused.
-	dispatcher, err := NewDispatcher(store, fullFleetHost{attempts: &attempts}, 1, 2*time.Second)
+	dispatcher, err := NewDispatcher(store, fullFleetHost{attempts: &attempts}, 1, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Recovery scans fast; only the deferral interval under test is real.
-	dispatcher.scan = 20 * time.Millisecond
-	entry, ok := pkgerrors.Lookup(pkgerrors.CodeNoCapacity)
-	if !ok || entry.RetryAfter <= 0 {
-		t.Fatalf("the error registry publishes no RetryAfter for %s", pkgerrors.CodeNoCapacity)
+	dispatcher.runOne(t.Context(), Candidate{Scope: scope, TurnID: accepted.TurnID})
+	clock.advance(time.Hour)
+	candidates, err := store.RecoveryCandidates(t.Context(), 100)
+	if err != nil {
+		t.Fatal(err)
 	}
-	want := time.Duration(entry.RetryAfter) * time.Second
-	ctx, cancel := context.WithCancel(context.Background())
-	finished := make(chan error, 1)
-	go func() { finished <- dispatcher.Run(ctx, 1) }()
-	defer func() {
-		cancel()
-		<-finished
-	}()
-	if !dispatcher.Enqueue(Candidate{Scope: scope, TurnID: accepted.TurnID}) {
-		t.Fatal("enqueue refused")
+	for _, candidate := range candidates {
+		if candidate.TurnID == accepted.TurnID {
+			t.Fatal("capacity refusal scheduled an automatic retry")
+		}
 	}
-	deadline := time.Now().Add(dbWait)
-	for time.Now().Before(deadline) {
-		inspection, err := store.InspectTurn(context.Background(), accepted.TurnID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if inspection.Terminal {
-			t.Fatalf("the turn was sealed instead of deferred after %d attempt(s)", attempts)
-		}
-		if attempts > 0 && inspection.LeaseExpiresAt != nil {
-			// The rerun is held off until the published interval has passed,
-			// with slack for the round trips between the refusal and this read.
-			if waiting := time.Until(*inspection.LeaseExpiresAt); waiting > want-2*time.Second {
-				if attempts != 1 {
-					t.Fatalf("the fleet was asked %d times inside one deferral", attempts)
-				}
-				return
-			}
-		}
-		time.Sleep(20 * time.Millisecond)
+	if attempts != 1 {
+		t.Fatalf("attempts=%d, want 1", attempts)
 	}
-	t.Fatalf("a capacity deferral never waited %s; attempts=%d", want, attempts)
 }
 
-// The deferral reads one code twice: sandbox.IsNoCapacity decides that a
-// refusal is a capacity deferral, and the error registry decides how long to
-// hold the rerun. Before this, nothing tied the port's spelling to the
-// registry's, so renaming CodeNoCapacity would have left the dispatcher
-// detecting refusals it then backed off with the silent 30 s fallback, and the
-// workspace pool's own predicate — which stopped reading the registry constant
-// when it moved onto the port — recognising nothing at all.
+// The provider and product agree on the capacity refusal code.
 func TestTheDeferralsPortCodeIsTheRegistrysCode(t *testing.T) {
 	if sandbox.NoCapacityCode != string(pkgerrors.CodeNoCapacity) {
 		t.Fatalf("the provider port spells a capacity refusal %q and the error registry %q; one deferral cannot have two names",

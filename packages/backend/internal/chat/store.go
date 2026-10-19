@@ -488,6 +488,13 @@ func (s *Store) Admit(ctx context.Context, input AdmitInput) (AdmitResult, error
 		}
 		return AdmitResult{Status: "existing", Cursor: existing, Terminal: turn.Terminal, TurnID: turn.ID}, nil
 	}
+	progress, err := json.Marshal([]ProgressRecord{{Stage: "admitted", At: now.UnixMilli(), RequestID: input.Journal.LegID, TurnID: turnID, RunID: input.RunID}})
+	if err != nil {
+		return AdmitResult{}, err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE chat_turns SET progress=$2 WHERE id=$1`, turnID, progress); err != nil {
+		return AdmitResult{}, err
+	}
 	if err = notifyTx(ctx, tx, turnID); err != nil {
 		return AdmitResult{}, err
 	}
@@ -1019,6 +1026,11 @@ func (s *Store) Commit(ctx context.Context, input CommitInput) (CommitResult, er
 	if batchBytes > maxBatchBytes || ((!terminalReserve && (turn.OutputBytes+int64(batchBytes) > maxOutputBytes || batch.Batch > maxBatches)) || batch.Batch > maxBatches+1) {
 		return CommitResult{}, ErrLimit
 	}
+	if terminal {
+		if err := recordVerification(ctx, tx, turn, now); err != nil {
+			return CommitResult{}, err
+		}
+	}
 	framesJSON, err := json.Marshal(batch.Frames)
 	if err != nil {
 		return CommitResult{}, err
@@ -1199,8 +1211,8 @@ func cancelledFrame(runID string) json.RawMessage {
 	return value
 }
 
-// hostNoCapacityMessage is read by the person whose turn ran out of attempts
-// while every sandbox host was busy. Their conversation and its history are
+// hostNoCapacityMessage is read after the first known capacity refusal.
+// The person's conversation and its history are
 // untouched: the launch was refused before anything ran.
 const hostNoCapacityMessage = "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
 
@@ -1338,7 +1350,7 @@ func (s *Store) retireTurnTx(ctx context.Context, tx pgx.Tx, turn turnRecord) er
 	if _, err = tx.Exec(ctx, `DELETE FROM chat_turn_batches WHERE turn_id=$1`, turn.ID); err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `UPDATE chat_turns SET request_payload=NULL,writer_hash=NULL,acceptance=NULL,accepted_at_ms=NULL,cursor_hash=NULL,head_hash=NULL,
+	_, err = tx.Exec(ctx, `UPDATE chat_turns SET progress='[]'::jsonb,request_payload=NULL,writer_hash=NULL,acceptance=NULL,accepted_at_ms=NULL,cursor_hash=NULL,head_hash=NULL,
 		producer_token_hash=NULL,producer_lease_expires_at=NULL,producer_started_at=NULL,terminal=true,state='retired',retirement=$2,updated_at=$3 WHERE id=$1`, turn.ID, tombstone, now)
 	return err
 }
