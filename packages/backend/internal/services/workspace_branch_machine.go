@@ -517,6 +517,11 @@ func (s *WorkspaceService) withBranchMachineMutation(ctx context.Context, row db
 		}
 		return fn(ctx)
 	}
+	ctx, release, err := s.acquireMutationSlot(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	tx, err := s.transactions.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("%w: %w", errBranchMachineAdmission, err)

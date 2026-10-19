@@ -118,6 +118,8 @@ func TestAFailedSessionSaysWhyAndEndsItsTurnWithTheSentence(t *testing.T) {
 			expectation{"box_unavailable", true, agentSessionNoCapacityMessage}},
 		{"the branch's box is stopped", dispatch(fmt.Errorf("join: %w", branchMachineCompatible(db.Workspace{Status: "stopped", UserID: 7}, db.CreateWorkspaceParams{}, 7))),
 			expectation{"box_stopped", false, agentSessionBranchMachineStoppedMessage}},
+		{"every box start slot was held", dispatch(fmt.Errorf("join: %w", errWorkspaceMutationBusy(context.DeadlineExceeded))),
+			expectation{"box_busy", true, "The workspace service is busy starting other boxes; try again in a moment."}},
 		{"the dispatch failed otherwise", dispatch(pkgerrors.Internal("create repo api token: database unavailable")),
 			expectation{"dispatch_failed", true, agentSessionStartFailureMessage}},
 		{"the turn ran past its time limit", func(t *testing.T, service *AgentService, update flowdispatch.ProjectionUpdate) {
