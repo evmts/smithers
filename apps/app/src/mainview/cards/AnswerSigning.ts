@@ -1,5 +1,6 @@
 import { presentUserFailure, type UserFailureRegistry } from "@smthrs/rpc/UserFailure"
 import { Data } from "effect"
+import { digestSync } from "@smthrs/crypto"
 
 export class SigningRefused extends Data.TaggedError("SigningRefused")<{ readonly sentence: string }> {
   override get message(): string {
@@ -16,7 +17,6 @@ export const signingFailure = (error: unknown) =>
     unknown: { fault: "infra", sentence: "Authenticator unavailable", actions: [] }
   })
 
-import { digestSync } from "@smthrs/crypto"
 /** RFC 8785 (JCS), restricted to the signing I-JSON domain. JSON keys sort lexicographically by UTF-16 code units at every depth; arrays
  * retain order. JSON primitives use JSON.stringify, with no whitespace. Inputs
  * are JSON values (the form parses JSON before signing). No Unicode normalization.
