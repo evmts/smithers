@@ -218,14 +218,14 @@ export const parseDts = (text) => {
     // A named re-export is one entry per name, so a twin that re-exports the same names from a
     // differently spelled path is compared by type, not by path text (E-14).
     // A local export list (export { a, b as c };) is per name too: each is checked by type (E-14).
-    const named = body.match(/^export\s+(type\s+)?\{([^}]*)\}(?:\s*from\s*["'][^"']+["'])?;?$/)
+    const named = body.match(/^export\s+(type\s+)?\{([^}]*)\}(?:\s*from\s*["']([^"']+)["'])?;?$/)
     if (named) {
       for (const part of named[2].split(",").map((x) => x.trim()).filter(Boolean)) {
         const m = part.match(/^(type\s+)?([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$/)
         if (!m) continue
         const name = m[3] ?? m[2]
         const kind = named[1] || m[1] ? "type" : "value"
-        byName.set(name, { name, kind, generic: false, semantic: true, text: `export { ${part} } from <re-export>` })
+        byName.set(name, { name, kind, generic: false, semantic: true, from: named[3], text: `export { ${part} } from <re-export>` })
       }
       continue
     }
@@ -652,6 +652,16 @@ const apiCheck = (pkg, work, twinned = [], privates = { ts: new Map(), twin: new
     checks.set(lines.length, label)
     pairs.set(label, [left, right])
   }
+  // Declaration files identical on both sides. A named re-export of the same module, with the
+  // same name, is proven by its target's identity: checking it again through the namespace
+  // fails for any nominal type (std Read re-exports internal/FileMutation's Preconditions).
+  const identical = new Set(walk(join(work, "ts-dts")).filter((f) => f.endsWith(".d.ts") && twinDts.has(f) &&
+    normalizeDts(readFileSync(join(work, "ts-dts", f), "utf8")) === normalizeDts(readFileSync(join(twinOut, f), "utf8"))))
+  const sameIdenticalTarget = (file, a, b) => {
+    if (a === undefined || b === undefined || !a.startsWith(".") || !b.startsWith(".")) return false
+    const strip = (spec) => join(dirname(file), spec).replace(/\.(?:d\.ts|ts|tsx|js|mjs|vibe)$/, "")
+    return strip(a) === strip(b) && identical.has(`${strip(a)}.d.ts`)
+  }
   walk(join(work, "ts-dts")).filter((f) => f.endsWith(".d.ts")).forEach((file, i) => {
     if (!twinDts.has(file)) {
       api.missingModules.push(file)
@@ -691,6 +701,7 @@ const apiCheck = (pkg, work, twinned = [], privates = { ts: new Map(), twin: new
       // it is proof only when the module's private context matches too.
       const sameLocals = sameReferencedLocals(e.text, tsLocals, vbLocals)
       if (!e.semantic && !v.semantic && normalizeDts(e.text) === normalizeDts(v.text) && sameLocals) continue
+      if (e.semantic && v.semantic && e.text === v.text && sameIdenticalTarget(file, e.from, v.from)) continue
       if (e.kind === "reexport") {
         api.errors.push(`${file}: ${name} (changed export context requires semantic verification)`)
         continue
