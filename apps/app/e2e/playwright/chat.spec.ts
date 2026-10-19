@@ -148,8 +148,14 @@ for (const path of ["/", "/smithersai/smithers/"]) {
 
   test(`keyboard chat sends a turn and Shift+Enter inserts a newline: ${path}`, async ({ page }) => {
     await installConversationFixture(page)
-    await page.goto(path)
-    await expect(page.getByRole("button", { name: "Mode: Normal", exact: true })).toBeVisible()
+    // 632750b4 requires the repository read receipt; 59f7a91e/bf0ae9f8 expose Ask.
+    if (path !== "/") await page.route("**/api/repos/smithersai/smithers", route => route.fulfill({ json: {
+      full_name: "smithersai/smithers", is_public: true, default_bookmark: "main"
+    } }))
+    await page.goto(path === "/" ? path : `${path}?design=off`)
+    const entry = page.getByRole("button", { name: path === "/" ? "Chat" : "Ask", exact: true })
+    await expect(entry).toBeVisible()
+    await entry.focus()
     await page.keyboard.press("Meta+k")
     const input = page.getByTestId("composer-input")
     await expect(input).toBeFocused()
