@@ -251,3 +251,159 @@ WHERE w.id = $1::uuid AND s.id::text = $2 AND s.user_id = $3 AND s.repository_id
 	}
 	return admission, nil
 }
+
+// RevokeStoppedAgentBoxCredentialsParams names the release of a box that is
+// not running (suspended, stopped or failed).
+type RevokeStoppedAgentBoxCredentialsParams struct {
+	WorkspaceID string
+	// FinishedSessionID and FinishedRunID are the run whose end releases the
+	// box, excluded from its use as in ClaimAgentBoxRelease. CheckUse false
+	// (the sweep) excludes nothing.
+	FinishedSessionID string
+	FinishedRunID     int64
+	CheckUse          bool
+	// ChildrenTokenName names the box's children credential.
+	ChildrenTokenName string
+}
+
+// StoppedAgentBoxRevoke is what RevokeStoppedAgentBoxCredentials found.
+type StoppedAgentBoxRevoke struct {
+	// Status is the box's status; Running is true when it runs (a release
+	// then takes the leased path instead).
+	Status  string
+	Running bool
+	// Busy is true when another release holds the box or its lock; Use is
+	// what else uses it, when that kept it.
+	Busy bool
+	Use  AgentWorkspaceUse
+	// Revoked is true when every credential class reads back gone.
+	Revoked bool
+}
+
+// stoppedAgentBoxCredentialsLive is true while a box still names a head
+// token, holds its children credential, or any of its Flow host bindings has
+// a live control credential or a live landing or cache token. $1 is the
+// workspace, $2 the children credential's name, $3 the revoked marker.
+const stoppedAgentBoxCredentialsLive = `(
+  EXISTS (SELECT 1 FROM workspaces w WHERE w.id = $1::uuid AND w.head_push_token_id IS NOT NULL)
+  OR EXISTS (SELECT 1 FROM access_tokens t JOIN workspaces w ON w.id = $1::uuid WHERE t.user_id = w.user_id AND t.name = $2)
+  OR EXISTS (SELECT 1 FROM flow_runtime_host_bindings b WHERE b.workspace_id = $1::uuid AND b.credential_hash <> $3)
+  OR EXISTS (SELECT 1 FROM flow_runtime_host_bindings b JOIN access_tokens t ON t.user_id = b.user_id
+             AND t.name IN ('flow-host-landing-' || b.id::text, 'flow-host-cache-' || b.id::text)
+             WHERE b.workspace_id = $1::uuid))`
+
+// RevokeStoppedAgentBoxCredentials revokes every credential a box that is not
+// running still holds, in one transaction under the box's lock and the same
+// finished-run fence as ClaimAgentBoxRelease: its head token, its children
+// credential, and each Flow host binding's landing and cache tokens and
+// control credential (with the model credential derived from it). It reads
+// them back in the same transaction and commits only when all are gone. A box
+// that runs, or that a lease or another use holds, is left alone. No other
+// connection is acquired while the transaction is open.
+func (q *Queries) RevokeStoppedAgentBoxCredentials(ctx context.Context, arg RevokeStoppedAgentBoxCredentialsParams) (StoppedAgentBoxRevoke, error) {
+	var out StoppedAgentBoxRevoke
+	tx, err := q.BeginTx(ctx)
+	if err != nil {
+		return out, fmt.Errorf("revoke stopped agent box credentials: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if out.Busy, err = lockAgentBox(ctx, tx, arg.WorkspaceID); err != nil || out.Busy {
+		return out, err
+	}
+	var fresh bool
+	err = tx.QueryRow(ctx, `SELECT status, `+agentBoxLeaseFreshSQL+` FROM workspaces WHERE id = $1::uuid AND deleted_at IS NULL`,
+		arg.WorkspaceID).Scan(&out.Status, &fresh)
+	if errors.Is(err, pgx.ErrNoRows) {
+		out.Revoked = true
+		return out, nil
+	}
+	if err != nil {
+		return out, fmt.Errorf("read agent box: %w", err)
+	}
+	if out.Running = out.Status == "running"; out.Running {
+		return out, nil
+	}
+	if fresh {
+		out.Busy = true
+		return out, nil
+	}
+	if arg.CheckUse {
+		if out.Use, err = agentWorkspaceUse(ctx, tx, arg.WorkspaceID, arg.FinishedSessionID, arg.FinishedRunID); err != nil {
+			return out, err
+		}
+		if out.Use.InUse() {
+			return out, nil
+		}
+	}
+	for _, step := range []struct {
+		sql  string
+		args []any
+	}{
+		{`DELETE FROM access_tokens WHERE id = (SELECT head_push_token_id FROM workspaces WHERE id = $1::uuid)`, []any{arg.WorkspaceID}},
+		{`UPDATE workspaces SET head_push_token_id = NULL, updated_at = NOW() WHERE id = $1::uuid AND head_push_token_id IS NOT NULL`, []any{arg.WorkspaceID}},
+		{`DELETE FROM access_tokens t USING workspaces w WHERE w.id = $1::uuid AND t.user_id = w.user_id AND t.name = $2`, []any{arg.WorkspaceID, arg.ChildrenTokenName}},
+		{`DELETE FROM access_tokens t USING flow_runtime_host_bindings b WHERE b.workspace_id = $1::uuid AND t.user_id = b.user_id
+		   AND t.name IN ('flow-host-landing-' || b.id::text, 'flow-host-cache-' || b.id::text)`, []any{arg.WorkspaceID}},
+		{`UPDATE flow_runtime_host_bindings SET credential_hash = $2, updated_at = clock_timestamp() WHERE workspace_id = $1::uuid AND credential_hash <> $2`,
+			[]any{arg.WorkspaceID, flowHostRevokedCredentialHash}},
+	} {
+		if _, err := tx.Exec(ctx, step.sql, step.args...); err != nil {
+			return out, fmt.Errorf("revoke stopped agent box credentials: %w", err)
+		}
+	}
+	var live bool
+	if err := tx.QueryRow(ctx, `SELECT `+stoppedAgentBoxCredentialsLive, arg.WorkspaceID, arg.ChildrenTokenName, flowHostRevokedCredentialHash).Scan(&live); err != nil {
+		return out, fmt.Errorf("read back stopped agent box credentials: %w", err)
+	}
+	if live {
+		return out, errors.New("revoke stopped agent box credentials: a credential is still live")
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return out, fmt.Errorf("commit stopped agent box revocation: %w", err)
+	}
+	out.Revoked = true
+	return out, nil
+}
+
+// ListStoppedAgentBoxesWithLiveCredentials lists agent boxes that are not
+// running but still hold a credential (stoppedAgentBoxCredentialsLive),
+// oldest first. The sweep retries their revocation until none is left: the
+// durable retry for a release that failed on a box that is not running.
+func (q *Queries) ListStoppedAgentBoxesWithLiveCredentials(ctx context.Context, childrenTokenPrefix string, limit int32) ([]string, error) {
+	rows, err := q.db.Query(ctx, `
+SELECT w.id::text FROM workspaces w
+JOIN users machine ON machine.id = w.user_id AND machine.lower_username = 'smithers-machines' AND machine.user_type = 'service'
+WHERE w.deleted_at IS NULL AND w.status IN ('suspended', 'stopped', 'failed')
+  AND (w.head_push_token_id IS NOT NULL
+    OR EXISTS (SELECT 1 FROM access_tokens t WHERE t.user_id = w.user_id AND t.name = $1 || w.id::text)
+    OR EXISTS (SELECT 1 FROM flow_runtime_host_bindings b WHERE b.workspace_id = w.id AND b.credential_hash <> $2)
+    OR EXISTS (SELECT 1 FROM flow_runtime_host_bindings b JOIN access_tokens t ON t.user_id = b.user_id
+               AND t.name IN ('flow-host-landing-' || b.id::text, 'flow-host-cache-' || b.id::text)
+               WHERE b.workspace_id = w.id))
+ORDER BY w.updated_at, w.id
+LIMIT $3`, childrenTokenPrefix, flowHostRevokedCredentialHash, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list stopped agent boxes with live credentials: %w", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// AgentSessionWorkspace answers the box an agent session is bound to, or ""
+// when it has none.
+func (q *Queries) AgentSessionWorkspace(ctx context.Context, sessionID string) (string, error) {
+	var workspaceID *string
+	err := q.db.QueryRow(ctx, `SELECT workspace_id::text FROM agent_sessions WHERE id::text = $1 AND deleted_at IS NULL`, sessionID).Scan(&workspaceID)
+	if errors.Is(err, pgx.ErrNoRows) || workspaceID == nil {
+		return "", nil
+	}
+	return *workspaceID, err
+}

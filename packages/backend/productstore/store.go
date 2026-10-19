@@ -33,6 +33,7 @@ type Product interface {
 	UpdateWorkflowRunCheckRun(ctx context.Context, arg db.UpdateWorkflowRunCheckRunParams) (db.WorkflowRun, error)
 	MarkWorkflowRunSuperseded(ctx context.Context, arg db.MarkWorkflowRunSupersededParams) error
 	ListSupersededWorkflowRuns(ctx context.Context, arg db.ListSupersededWorkflowRunsParams) ([]int64, error)
+	AgentSessionWorkspace(ctx context.Context, sessionID string) (string, error)
 	AdmitAgentBoxJoin(ctx context.Context, workspaceID, sessionID string, userID int64) (db.AgentBoxAdmission, error)
 	AttachWorkflowArtifactToRelease(ctx context.Context, arg db.AttachWorkflowArtifactToReleaseParams) (db.WorkflowArtifact, error)
 	AuthorizePublicWorkspaceService(ctx context.Context, arg db.AuthorizePublicWorkspaceServiceParams) (bool, error)
@@ -136,6 +137,7 @@ type Product interface {
 	ListCollaboratorsByRepo(ctx context.Context, repositoryID int64) ([]db.Collaborator, error)
 	ListExpiredLFSUploadReservationsByOwner(ctx context.Context, repositoryID int64) ([]db.LfsUploadReservation, error)
 	ListFlowHostBindingHolders(ctx context.Context, workspaceID string) ([]db.FlowHostBindingHolder, error)
+	ListStoppedAgentBoxesWithLiveCredentials(ctx context.Context, childrenTokenPrefix string, limit int32) ([]string, error)
 	ListDirtyAgentBoxes(ctx context.Context, limit int32) ([]string, error)
 	ListIdleAgentBoxes(ctx context.Context, idleSeconds int64, limit int32) ([]string, error)
 	ListIdleWorkspaceSessions(ctx context.Context) ([]db.WorkspaceSession, error)
@@ -181,6 +183,7 @@ type Product interface {
 	RenewAgentBoxLease(ctx context.Context, workspaceID, lease, guestID string, noHeadToken bool) (string, error)
 	ResetWorkspaceForReprovision(ctx context.Context, id string) (db.Workspace, error)
 	RetireAgentBox(ctx context.Context, workspaceID, lease string) (bool, error)
+	RevokeStoppedAgentBoxCredentials(ctx context.Context, arg db.RevokeStoppedAgentBoxCredentialsParams) (db.StoppedAgentBoxRevoke, error)
 	RetireFlowHostCredentials(ctx context.Context, bindingID string, ownerGeneration, userID int64, names []string) (int64, error)
 	ResumeWorkflowRun(ctx context.Context, id int64) error
 	ResumeWorkflowSteps(ctx context.Context, workflowRunID int64) error
