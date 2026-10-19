@@ -5,7 +5,7 @@
     "path": "packages/backend/docs/github-app.md",
     "digest": "b54920294ae62f8c7d8437b42b7bce8be7ee517b6af879f96b98706ed1e63ae9"
   },
-  "closure": "fd5d7321f8821e438d129b0fc0ea806e977b39e337b3d68f44a6ead53169b5e5",
+  "closure": "6ada1b0829a63b04c676d096619af8e66f179ad12d2fba90a843b363ec6f4661",
   "inputs": [
     {
       "path": "docs/api/openapi/install.yaml",
@@ -25,7 +25,7 @@
     },
     {
       "path": "packages/backend/db/product/queries/github_synced_repos.sql",
-      "digest": "8b5ec8d385db8b94b06e34e73424c47f7728cfd79ed6744e015d496ac29f9d1c"
+      "digest": "c4f48aba3b7282ee5a0cf090d23a1d21d1cc9e53113dc6fb969bb77ff4e46830"
     },
     {
       "path": "packages/backend/internal/auth/github.go",
