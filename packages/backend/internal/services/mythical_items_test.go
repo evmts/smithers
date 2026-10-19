@@ -531,6 +531,14 @@ type mythicalOrchestration struct {
 }
 
 func newMythicalOrchestration(t *testing.T) *mythicalOrchestration {
+	o := newUnconfiguredMythicalOrchestration(t)
+	// The install's composition turns wiki runs on (compose main.go).
+	o.service.SetWikiRefresh(true)
+	return o
+}
+
+// newUnconfiguredMythicalOrchestration never calls SetWikiRefresh.
+func newUnconfiguredMythicalOrchestration(t *testing.T) *mythicalOrchestration {
 	f := newMythicalServiceFixture(t)
 	f.commit("✨ feat: one", "a.txt", "a\n")
 	f.commit("✨ feat: two", "b.txt", "b\n")
