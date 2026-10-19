@@ -189,7 +189,7 @@ func (s *MythicalService) wikiEnabled(ctx context.Context, r *mythicalRun) (bool
 // advanceWiki moves the repository's wiki refresh one step. The stack is
 // current (its tip has the folded main's tree) when this runs.
 func (s *MythicalService) advanceWiki(ctx context.Context, r *mythicalRun) {
-	if s.launcher == nil || s.lanes == nil || !r.row.ActorUserID.Valid {
+	if !s.wikiOn || s.launcher == nil || s.lanes == nil || !r.row.ActorUserID.Valid {
 		return
 	}
 	if err := s.stepWiki(ctx, r); err != nil && ctx.Err() == nil {
