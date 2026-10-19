@@ -13,7 +13,15 @@ NOW = '2026-10-18T05:00:00Z'
 BASE = 'smithers.sh/Effect-TS/effect'
 sha = lambda i: hashlib.sha1(f'effect-ui-scenario-{i}'.encode()).hexdigest()
 stamp = lambda days=0, hours=0: (datetime(2026,10,18,4,20,tzinfo=timezone.utc)-timedelta(days=days,hours=hours)).isoformat().replace('+00:00','Z')
-write = lambda name, data: (OUT/f'{name}.json').write_text(json.dumps(data, ensure_ascii=False, indent=None if name in ('tree','ci-projects','relations','commits','package-releases') else 2)+'\n')
+_write = lambda name, data: (OUT/f'{name}.json').write_text(json.dumps(data, ensure_ascii=False, indent=None if name in ('tree','ci-projects','relations','commits','package-releases') else 2)+'\n')
+def write(name, data):
+    # jj refuses to snapshot a new file over 1 MiB, so the blobs ship as files-a.json and files-b.json split at half their bytes.
+    if name != 'files': return _write(name, data)
+    sizes=[len(json.dumps(x, ensure_ascii=False).encode()) for x in data]; acc=0; cut=len(data)
+    for i,s in enumerate(sizes):
+        if acc+s>sum(sizes)/2: cut=i if acc>0 else i+1; break
+        acc+=s
+    _write('files-a', data[:cut]); _write('files-b', data[cut:])
 load = lambda path: json.loads(path.read_text())
 packages_facts = load(FACTS/'packages.json')['packages']
 upstream_handles = set()

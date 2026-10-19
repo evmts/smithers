@@ -4,7 +4,9 @@ import type { EffectExtras } from "./types"
 import repo from "./repo.json"
 import people from "./people.json"
 import tree from "./tree.json"
-import files from "./files.json"
+// The blobs ship in two halves: jj refuses to snapshot a new file over 1 MiB.
+import filesA from "./files-a.json"
+import filesB from "./files-b.json"
 import blame from "./blame.json"
 import commits from "./commits.json"
 import branches from "./branches.json"
@@ -32,7 +34,7 @@ export const MOCK_NOW = "2026-10-18T05:00:00Z"
 // JSON imports widen string literals; check.mjs validates their enums and graph references.
 export const dataset: Dataset = {
   MOCK_NOW, repo: repo as Dataset["repo"], people: people as Dataset["people"],
-  tree: tree as Dataset["tree"], files: files as Dataset["files"], blame,
+  tree: tree as Dataset["tree"], files: [...filesA, ...filesB] as Dataset["files"], blame,
   commits: commits as Dataset["commits"], branches: branches as Dataset["branches"], tags, labels: labels as Dataset["labels"],
   issues: issues as Dataset["issues"], pulls: pulls as Dataset["pulls"], stack: stack as Dataset["stack"],
   runs: runs as Dataset["runs"], approvals: approvals as Dataset["approvals"],

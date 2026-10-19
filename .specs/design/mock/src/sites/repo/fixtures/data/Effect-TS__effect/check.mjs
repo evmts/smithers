@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const read = name => JSON.parse(readFileSync(join(here, `${name}.json`), 'utf8'))
+const readOne = name => JSON.parse(readFileSync(join(here, `${name}.json`), 'utf8'))
+// The blobs ship as two halves under jj's 1 MiB new-file limit (index.ts joins them the same way).
+const read = name => name === 'files' ? [...readOne('files-a'), ...readOne('files-b')] : readOne(name)
 const fields = ['repo','people','tree','files','blame','commits','branches','tags','labels','issues','pulls','stack','runs','approvals','flows','agents','wiki','docs','releases','settings','ask']
 const d = Object.fromEntries(fields.map(key => [key, read(key)]))
 const extras = { relations: read('relations'), releasePlan: read('release-plan'), ciProjects: read('ci-projects'), packageReleases: read('package-releases') }
@@ -226,7 +228,7 @@ function visit(value,key='') {
 }
 visit(d);visit(extras)
 const allJson=readdirSync(here).filter(x=>x.endsWith('.json')).map(x=>({name:x,text:readFileSync(join(here,x),'utf8')}))
-for(const f of allJson){ok(!/Thanks\s+@/.test(f.text),`contributor thanks in ${f.name}`);ok(!/\b(?:undefined|NaN)\b/.test(f.text)||f.name==='files.json'||f.name==='docs.json'||f.name==='commits.json'||f.name==='pulls.json'||f.name==='releases.json'||f.name==='package-releases.json',`invalid serialized value ${f.name}`)}
+for(const f of allJson){ok(!/Thanks\s+@/.test(f.text),`contributor thanks in ${f.name}`);ok(!/\b(?:undefined|NaN)\b/.test(f.text)||f.name.startsWith('files-')||f.name==='docs.json'||f.name==='commits.json'||f.name==='pulls.json'||f.name==='releases.json'||f.name==='package-releases.json',`invalid serialized value ${f.name}`)}
 // The source checkout is machine-local: audit it only when EFFECT_SOURCE names it.
 const checkout=process.env.EFFECT_SOURCE??''
 for(const receipt of manifest.sourceFiles){
