@@ -351,3 +351,25 @@ export const formatRepositorySubject = (subject: RepositorySubject): string => {
       return subject.kind
   }
 }
+
+/**
+ * Site and infrastructure owners that cannot name a repository in either host.
+ * @since 0.1.0
+ * @category constants
+ */
+export const RESERVED_SITE_SEGMENTS: ReadonlyArray<string> = [
+  "404",
+  "_astro",
+  "api",
+  "blog",
+  "changelogs",
+  "demo",
+  "docs",
+  "download",
+  "migration",
+  "pricing",
+  "privacy",
+  "refunds",
+  "terms",
+  "w"
+]
