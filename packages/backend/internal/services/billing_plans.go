@@ -19,6 +19,9 @@ type SandboxEntitlement struct {
 	DayResetsAt         time.Time `json:"day_resets_at"`
 	ConcurrentChildren  int64     `json:"concurrent_children"`
 	ChildMaxTTLSecs     int64     `json:"child_max_ttl_secs"`
+	// OwnerType is whose limit this is (BillingOwnerTypeOrg for an org repo),
+	// so a refusal can say who is using the machine. Not part of the API.
+	OwnerType string `json:"-"`
 }
 
 // ConcurrentLimit returns the plan's concurrent-sandbox limit and whether the

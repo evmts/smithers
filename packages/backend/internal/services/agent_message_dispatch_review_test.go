@@ -225,7 +225,15 @@ func TestAgentMessageDispatchReviewDeterministicRefusalsHaveNoExternalMarker(t *
 			var started bool
 			require.NoError(t, service.messagePool.QueryRow(t.Context(), `SELECT external_started_at IS NOT NULL FROM product_job_dispatches WHERE operation_id=$1`, operation.ID).Scan(&started))
 			require.False(t, started, "a deterministic refusal must not require reconciliation")
-			appendBoundaryMessage(t, service, input)
+			// The refusal ends the turn with its typed reason: the session never
+			// waits 'active' for a run that will not exist. A retry is a new
+			// change (a new session), as the Ask card sends it.
+			// (This service's dispatch querier is a mock, so the typed reason is
+			// recorded there; TestAgentMessageDispatchRefusalEndsTheTurn reads it
+			// back on real PostgreSQL.)
+			var status string
+			require.NoError(t, service.messagePool.QueryRow(t.Context(), `SELECT status FROM agent_sessions WHERE id=$1`, input.SessionID).Scan(&status))
+			require.Equal(t, "failed", status)
 		})
 	}
 }

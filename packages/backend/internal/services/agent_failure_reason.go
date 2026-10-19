@@ -61,6 +61,9 @@ const (
 	// lists (agents.hosted_coding_user_ids), and the session's user is not
 	// one of them.
 	agentFailureHostedCodingNotOpen = "hosted_coding_not_open"
+	// The account already runs as many machines as it may; another change
+	// has to finish first.
+	agentFailureSandboxLimit = "sandbox_limit"
 )
 
 // agentSessionFailureCodes is the whole vocabulary, in the order above.
@@ -71,6 +74,7 @@ var agentSessionFailureCodes = []string{
 	agentFailureModelUnavailable, agentFailureModelRateLimited, agentFailureOutOfCredit,
 	agentFailureTurnFailed, agentFailureTurnTimedOut, agentFailureBoxBusy,
 	agentFailureDispatchFailed, agentFailureAgentsUnavailable, agentFailureHostedCodingNotOpen,
+	agentFailureSandboxLimit,
 }
 
 // The metadata keys a failed session carries. The API returns
@@ -160,6 +164,10 @@ var (
 	agentSessionLoopRetired          = agentSessionFailure{Code: agentFailureAgentsUnavailable, Reason: agentSessionLoopRetiredMessage}
 	agentSessionHostedCodingNotOpen  = agentSessionFailure{Code: agentFailureHostedCodingNotOpen, Reason: hostedCodingNotOpenMessage}
 	agentSessionOutOfCredit          = agentSessionFailure{Code: agentFailureOutOfCredit, Reason: "This account is out of model credit. Add credit, then try again."}
+	// A turn its dispatch refused before anything ran, for a reason retrying
+	// cannot fix (agent_message_dispatch.go).
+	agentSessionDispatchNotPermitted = agentSessionFailure{Code: agentFailureDispatchFailed, Reason: "You can no longer change this repository, so the agent did not start. Nothing ran."}
+	agentSessionRepositoryGone       = agentSessionFailure{Code: agentFailureDispatchFailed, Reason: "This repository is no longer available, so the agent did not start. Nothing ran."}
 )
 
 // The failures of a turn the Flow runtime admitted.
@@ -244,6 +252,16 @@ func agentSessionFailureForError(err error) agentSessionFailure {
 			return agentSessionBoxNotReady
 		case pkgerrors.CodeOutOfCredit:
 			return agentSessionOutOfCredit
+		case pkgerrors.CodePlanLimitExceeded:
+			if apiErr.LimitKind == "concurrent_sandboxes" {
+				// The billing refusal's message is the visitor sentence: it
+				// names no plan and says what to wait for (billing_sandbox.go).
+				return agentSessionFailure{Code: agentFailureSandboxLimit, Reason: apiErr.Message, Retryable: true}
+			}
+			// Any other plan limit (agent runs, daily machine hours) does not
+			// clear when another change finishes: say which, and do not
+			// offer a retry that would meet the same limit.
+			return agentSessionFailure{Code: agentFailureDispatchFailed, Reason: apiErr.Message}
 		}
 	}
 	return agentSessionStartFailure

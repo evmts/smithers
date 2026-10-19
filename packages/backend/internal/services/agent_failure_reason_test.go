@@ -130,6 +130,19 @@ func TestAgentSessionFailureReasonForError(t *testing.T) {
 	require.Equal(t, agentSessionNoCapacityMessage, agentSessionFailureForError(noCapacity).Reason)
 	require.Equal(t, agentSessionStartFailureMessage,
 		agentSessionFailureForError(pkgerrors.Internal("create sandbox: connection refused")).Reason)
+	// The account's machine limit is its own typed, retryable reason, worded
+	// by the billing refusal itself (no plan named); other plan limits are not
+	// retryable and keep their own sentence.
+	limit := authorizeSandboxEntitlement(SandboxEntitlement{PlanKey: BillingPlanFree, ConcurrentSandboxes: 1, ConcurrentInUse: 1, HoursPerDay: -1})
+	require.Equal(t, agentSessionFailure{Code: agentFailureSandboxLimit, Reason: "You can run one machine at a time. Wait for your other change to finish, then try again.", Retryable: true},
+		agentSessionFailureForError(fmt.Errorf("enforce concurrency cap: %w", limit)))
+	org := authorizeSandboxEntitlement(SandboxEntitlement{PlanKey: BillingPlanFree, ConcurrentSandboxes: 1, ConcurrentInUse: 1, HoursPerDay: -1, OwnerType: BillingOwnerTypeOrg})
+	require.Equal(t, agentSessionFailure{Code: agentFailureSandboxLimit, Reason: "This organization can run one machine at a time, and another change is using it. Try again when it finishes.", Retryable: true},
+		agentSessionFailureForError(org))
+	runs := pkgerrors.New(pkgerrors.CodePlanLimitExceeded, "agent runs quota exceeded")
+	runs.LimitKind = BillingMetricAgentRuns
+	require.Equal(t, agentSessionFailure{Code: agentFailureDispatchFailed, Reason: "agent runs quota exceeded"}, agentSessionFailureForError(runs))
+	require.Contains(t, agentSessionFailureCodes, agentFailureSandboxLimit)
 }
 
 func TestAgentSessionFailureReasonFromMetadata(t *testing.T) {
