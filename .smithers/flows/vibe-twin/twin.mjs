@@ -15,7 +15,7 @@
  * and the twin run has no failure the TypeScript run lacks.
  */
 import { spawnSync } from "node:child_process"
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
@@ -204,6 +204,15 @@ const linkPartialTwin = (pkg, work) => {
   )
   const names = new Set(twinned.map(({ rel }) => rel))
   mkdirSync(out, { recursive: true })
+  // A module may read a resource beside it (new URL("./x.ndjson", import.meta.url)); its twin
+  // runs from the output folder, so non-code files are copied there too (F-6).
+  for (const f of walkSources(join(pkg, sourceRoot(pkg)))) {
+    if (/\.(?:ts|tsx|mts|cts|js|mjs|cjs|vibe|map)$/.test(f)) continue
+    const dest = join(out, f)
+    if (existsSync(dest)) continue
+    mkdirSync(dirname(dest), { recursive: true })
+    copyFileSync(join(pkg, sourceRoot(pkg), f), dest)
+  }
   writeFileSync(join(out, MANIFEST), JSON.stringify([...names]) + "\n")
   for (const { rel, file } of srcModules(pkg)) {
     if (names.has(rel)) continue
