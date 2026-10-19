@@ -1,3 +1,4 @@
+import { createHostedChangeSeam } from "./seams/HostedChangeSeam"
 import { createBranchMutations } from "./seams/BranchMutationsSeam"
 import { draftIssueTodo } from "./seams/IssueTodoDraft"
 import { createBranchControlsSeam } from "./seams/BranchControlsSeam"
@@ -647,6 +648,10 @@ export interface AppController extends IssueFlowsController {
   readonly fastModelAccess: InstallSeam["fastModelAccess"]
   readonly saveInstallModelKey: InstallSeam["saveInstallModelKey"]
   readonly repositorySnapshots: RepositoryHistorySeam["snapshots"]
+  readonly openHostedDiff: ReturnType<typeof createHostedChangeSeam>["openHostedDiff"]
+  readonly hostedChangeGate: (repo?: string) => Promise<string | undefined>
+  readonly askHostedChange: ReturnType<typeof createHostedChangeSeam>["askHostedChange"]
+  readonly openHostedPull: ReturnType<typeof createHostedChangeSeam>["openHostedPull"]
   readonly importRepository: RepoImportSeam["importRepository"]
   readonly retryImport: RepoImportSeam["retryImport"]
   readonly listBookmarks: ReturnType<typeof createBranchNavigationSeam>["listBookmarks"]
@@ -1676,6 +1681,19 @@ export const createAppController = (
     requireJobBox: (repo, act, title) => select(workflowController).requireJobBox(repo, act, title),
     withToast
   }))
+  const hostedChangeGate = async (explicit?: string): Promise<string | undefined> => {
+    if (store.collections.identitySessions.get("identity")?.state !== "signed-in") {
+      seamCtx.promptSignIn?.("Sign in to start an agent.")
+      return "Sign in to start an agent."
+    }
+    const target = resolveTargetRepo(store, explicit)
+    // An unbound form can collect a request; the launch still resolves its repository.
+    if ("error" in target) return explicit === undefined ? undefined : target.error
+    const authority = await secretAuthority?.read(target.repo)
+    if (authority && (authority.phase !== "ready" || authority.permission === "read")) return `Only people who can push to ${target.repo} can start an agent.`
+    return undefined
+  }
+  const hostedChangeSeam = actors.pair(seamCtx, context => createHostedChangeSeam(context))
   const repoImportSeam = actors.pair(seamCtx, (context) => createRepoImportSeam(context))
   /*
    * `/branches` off an install reads the connected Cloud repository through
@@ -2181,6 +2199,12 @@ export const createAppController = (
    * Will read as a bug) and silent execution.
    */
   const requestFlowConfirmation = (name: string, args: string | null, label: string, question?: string): void => {
+    if (name === "change.ask") {
+      const input = JSON.parse(args ?? "{}")
+      const target = resolveTargetRepo(store, input.repo)
+      if ("repo" in target) renderFlowForm({ name, args: JSON.stringify({ ...input, repo: target.repo }), via: "user", title: `Start an agent on ${target.repo}?` })
+      return
+    }
     store.dispatch({
       type: "message.appended",
       actor: "system",
@@ -2786,6 +2810,10 @@ export const createAppController = (
     moveTodo: todoSeam.moveTodo,
     refreshWiki: wikiRefresh.refreshWiki,
     registerTrigger,
+    openHostedDiff: hostedChangeSeam.openHostedDiff,
+    hostedChangeGate,
+    askHostedChange: hostedChangeSeam.askHostedChange,
+    openHostedPull: hostedChangeSeam.openHostedPull,
     importRepository: repoImportSeam.importRepository,
     retryImport: repoImportSeam.retryImport,
     listBookmarks: async () => { earlierHistory.load(); return bookmarksSeam.listBookmarks() },
@@ -3000,6 +3028,7 @@ export const createAppController = (
   gitHubSyncRetry.resume()
   triggersSeam.resumePauses()
   triggersSeam.resumePreparations()
+  hostedChangeSeam.resume()
   repoImportSeam.resume()
   secretsSeam.resumeSecretRequests()
   egressSeam.resumeEgressRequests()
@@ -3066,6 +3095,7 @@ export const createAppController = (
     gitHubSyncRetry.resume()
     // Catalog recovery writes a card; leave the identity projection before dispatching it.
     repositoryReadiness.resume()
+    hostedChangeSeam.resume()
     repoImportSeam.resume()
     runs.resumeApprovalRequests()
     runs.resumeRunFacetRequests()
@@ -3076,6 +3106,7 @@ export const createAppController = (
   if (installHost && installSignedIn() && !setupEntry) queueMicrotask(() => { if (!ctx.disposed) void installSeam.showSetup() })
   ctx.onDispose(() => setupIdentitySubscription.unsubscribe())
   const importCloudSubscription = store.collections.cloudSessions.subscribeChanges(() => {
+    hostedChangeSeam.resume()
     repoImportSeam.resume()
     queueMicrotask(() => { if (!ctx.disposed) { secretsSeam.resumeSecretRequests(); egressSeam.resumeEgressRequests(); proposalSeam.resumeProposals(); orderSeam.resumeOrderRequests() } })
   })

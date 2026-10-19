@@ -1813,3 +1813,82 @@ test("a requested read of a pane card above the live edge reads it where it is (
   await act(async () => resizeCallbacks.get(content)!([], {} as ResizeObserver));
   expect(getViewport().scrollTop).toBe(5360);
 });
+
+describe("transcript flow activation", () => {
+  test.each(["change.ask", "change.open-pull", "chat.send"].flatMap(flow => [true, false].map(read => ({ flow, read }))))("%j re-pins the same card until a later reader scroll", async ({ flow, read }) => {
+    const states: { following: boolean }[] = [];
+    function Probe() {
+      states.push(useMessageScrollerState());
+      return null;
+    }
+    geometryByMessageId.set("run", { top: 0, height: 1000 });
+    await render(
+      <MessageScrollerProvider scrollAnchor="bottom" readAnchor={read ? { messageId: "run", actor: "output" } : undefined}>
+        <MessageScrollerViewport>
+          <MessageScrollerContent>
+            <MessageScrollerItem messageId="run"><button data-flow={flow}>Act</button></MessageScrollerItem>
+          </MessageScrollerContent>
+        </MessageScrollerViewport>
+        <Probe />
+      </MessageScrollerProvider>,
+      { scrollHeight: 1000, clientHeight: 200, scrollTop: 0 },
+    );
+    // Tab's focus scroll, or an earlier manual scroll, released follow.
+    metrics().scrollTop = 100;
+    await scroll();
+    expect(states.at(-1)!.following).toBe(false);
+    // Enter emits click too; no new card or read identity arrives.
+    await act(async () => container!.querySelector<HTMLButtonElement>("button")!.click());
+    expect(states.at(-1)!.following).toBe(true);
+    const content = container!.querySelector('[data-slot="message-scroller-content"]')!;
+    const resize = async () => act(async () => resizeCallbacks.get(content)!([], {} as ResizeObserver));
+    metrics().scrollHeight = 1400;
+    await resize();
+    expect(getViewport().scrollTop).toBe(read ? 1200 : 1400);
+    metrics().scrollTop = 400;
+    await scroll();
+    metrics().scrollHeight = 1600;
+    await resize();
+    expect(getViewport().scrollTop).toBe(400);
+    expect(states.at(-1)!.following).toBe(false);
+  });
+});
+
+// Hosted changes opt into an end target; ordinary oversized answers retain their top.
+test.each([true, false])("oversized answer growth with hosted end target %s", async (hosted) => {
+  geometryByMessageId.set("answer", { top: 100, height: 900 });
+  geometryByMessageId.set("end", { top: 1000, height: 0 });
+  const view = () => <MessageScrollerProvider scrollAnchor="bottom" readAnchor={{ messageId: "answer", targetId: hosted ? "answer-end" : undefined }}>
+    <MessageScrollerViewport><MessageScrollerContent><MessageScrollerItem messageId="answer"><div id="answer-end" data-message-id="end" /></MessageScrollerItem></MessageScrollerContent></MessageScrollerViewport>
+  </MessageScrollerProvider>;
+  await render(view(), { scrollHeight: 1000, clientHeight: 400, scrollTop: 0 });
+  expect(getViewport().scrollTop).toBe(hosted ? 600 : 90);
+  geometryByMessageId.set("answer", { top: 100, height: 1200 });
+  geometryByMessageId.set("end", { top: 1300, height: 0 });
+  metrics().scrollHeight = 1300;
+  await act(async () => resizeCallbacks.get(container!.querySelector('[data-slot="message-scroller-content"]')!)!([], {} as ResizeObserver));
+  expect(getViewport().scrollTop).toBe(hosted ? 900 : 90);
+  metrics().scrollTop = 300;
+  await scroll();
+  metrics().scrollHeight = 1500;
+  geometryByMessageId.set("end", { top: 1500, height: 0 });
+  await act(async () => root!.render(view()));
+  expect(getViewport().scrollTop).toBe(300);
+});
+
+// A hosted completion replaces the early run read after files and failure notes settle.
+test("hosted completion reads the action after an earlier tall run released follow", async () => {
+  geometryByMessageId.set("answer", { top: 100, height: 900 });
+  geometryByMessageId.set("end", { top: 1000, height: 0 });
+  const view = (done: boolean) => <MessageScrollerProvider scrollAnchor="bottom" readAnchor={{ messageId: "answer", targetId: done ? "answer-end" : undefined, actor: "user", version: done ? "done:files" : "running" }}>
+    <MessageScrollerViewport><MessageScrollerContent><MessageScrollerItem messageId="answer"><div id="answer-end" data-message-id="end" /></MessageScrollerItem></MessageScrollerContent></MessageScrollerViewport>
+  </MessageScrollerProvider>;
+  await render(view(false), { scrollHeight: 1000, clientHeight: 400, scrollTop: 0 });
+  metrics().scrollTop = 90;
+  await scroll();
+  geometryByMessageId.set("answer", { top: 100, height: 1300 });
+  geometryByMessageId.set("end", { top: 1400, height: 0 });
+  metrics().scrollHeight = 1400;
+  await act(async () => root!.render(view(true)));
+  expect(getViewport().scrollTop).toBe(1000);
+});

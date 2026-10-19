@@ -937,7 +937,15 @@ for (const name of Object.keys(FORM_INSTRUCTION_FIELDS)) {
       await waitFor(() => [...store.collections.cards.values()].some(card => card.kind === "flow-form" && card.payload.flow === name))
       const card = [...store.collections.cards.values()].find(card => card.kind === "flow-form" && card.payload.flow === name)!
       expect(card.kind).toBe("flow-form")
-      if (card.kind === "flow-form") expect(card.payload.via).toBe("agent")
+      if (card.kind === "flow-form") {
+        expect(card.payload.via).toBe("agent")
+        if (name === "change.ask") {
+          expect(card.payload.fields).toEqual(expect.arrayContaining([
+            expect.objectContaining({ name: "repo", required: true }),
+            expect.objectContaining({ name: "request", required: true })
+          ]))
+        }
+      }
       await controller.sharedConversation!.read()
       expect([...store.collections.cards.values()].filter(card => card.kind === "flow-form" && card.payload.flow === name)).toHaveLength(1)
       expect(writes).toEqual([])

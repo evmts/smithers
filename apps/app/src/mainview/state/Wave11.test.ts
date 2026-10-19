@@ -18,6 +18,7 @@ import { repositoryFlowsOf } from "./seams/RepositoryFlowsSeam"
 import type { Card } from "@smthrs/rpc/Cards"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
+import { diagnosticVisible } from "./AppState"
 import { createAppStore } from "./AppStore"
 import { json, loadBox, memoryStorage, settle, signupProfileFetch, silentAgent, waitFor } from "./TestFixtures"
 import { GATEWAY_REFUSED } from "./controller/GatewayFailureCopy"
@@ -1051,4 +1052,80 @@ test.each([
     { path: "/api/reviews", method: "POST", body: { number: 17, repo: REPO, conversation: "main" } }])
   expect(runCard(store)).toBeUndefined()
 
+})
+
+test("a reader's hosted change instruction keeps the refusal in Ask without a conversation error", async () => {
+  const store=await webStore(), double=relay()
+  const controller=createAppController(store,silentAgent,{
+    ...double.services,
+    bootstrap:{apiVersion:1,host:"cloud",version:"test",buildSha:"test",capabilities:["agent","identity","cloud"],authFlow:"redirect",sandbox:null},
+    fetchImpl:async(input,init)=>{
+      const path=new URL(String(input),"https://app.test").pathname
+      if(path==="/api/conversations/main") return json(200,{id:"main",entries:[]})
+      if(path==="/api/conversations/main/view-state") return json(200,{instructions:[{id:"change-reader",command:"change.ask",payload:{request:"add slugify with tests"}}]})
+      if(path===`/api/repos/${REPO}`) return json(200,{permission:"read",can_write:false})
+      return double.services.fetchImpl!(input,init)
+    }
+  })
+  await signIn(store)
+  await controller.sharedConversation!.read()
+  await waitFor(()=>[...store.collections.messages.values()].some(message=>message.text===`Only people who can push to ${REPO} can start an agent.`))
+  const gate = [...store.collections.messages.values()].find(message => message.text === `Only people who can push to ${REPO} can start an agent.`)!
+  expect(diagnosticVisible(gate, "codeplanesmithers", "main")).toBe(true)
+  expect(diagnosticVisible(gate, "someone-else", "main")).toBe(false)
+  expect(diagnosticVisible(gate, "codeplanesmithers", "another-branch")).toBe(false)
+  expect([...store.collections.cards.values()].filter(card=>card.kind==="hosted-change"||card.kind==="flow-form")).toEqual([])
+  expect([...store.collections.toasts.values()].filter(toast=>toast.status==="failed")).toEqual([])
+  expect(double.state.launched).toEqual([])
+  controller.send("/change a reader cannot launch")
+  await waitFor(() => [...store.collections.messages.values()].some(message => message.text === "/change a reader cannot launch"))
+  await waitFor(() => [...store.collections.messages.values()].filter(message => message.text === `Only people who can push to ${REPO} can start an agent.`).length === 2)
+  const typed = [...store.collections.messages.values()].find(message => message.text === "/change a reader cannot launch")!
+  expect(typed.role).toBe("user")
+  expect(diagnosticVisible(typed, "codeplanesmithers", "main")).toBe(true)
+  const denial = [...store.collections.messages.values()].filter(message => message.text === `Only people who can push to ${REPO} can start an agent.`).at(-1)!
+  expect(diagnosticVisible(denial, "codeplanesmithers", "main")).toBe(true)
+  expect([...store.collections.cards.values()].filter(card => card.kind === "hosted-change" || card.kind === "flow-form")).toEqual([])
+  await controller.dispose()
+})
+
+for (const initial of [undefined, "saved-before-reload"]) test(`live scroll saves do not become initial restores (${initial ?? "new conversation"})`, async () => {
+  let view: Record<string, unknown> = initial === undefined ? {} : { scroll_anchor: initial }
+  let refused = false
+  const double = relay()
+  const services: AppServices = {
+    ...double.services,
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async (input, init) => {
+      const path = new URL(String(input), "https://app.test").pathname
+      if (path === "/api/conversations/main") return refused ? json(503, {}) : json(200, { id: "main", entries: [] })
+      if (path === "/api/conversations/main/view-state") {
+        if (init?.method === "PUT") view = JSON.parse(String(init.body))
+        return json(200, view)
+      }
+      return double.services.fetchImpl!(input, init)
+    }
+  }
+  const store = await webStore(), controller = createAppController(store, silentAgent, services)
+  await signIn(store)
+  await controller.sharedConversation!.read()
+  await waitFor(() => controller.sharedConversation!.get().view !== undefined)
+  expect(controller.sharedConversation!.get().initialScrollAnchor).toBe(initial)
+  await controller.sharedConversation!.saveView({ scroll_anchor: "newest-hosted-card" })
+  await controller.sharedConversation!.read()
+  expect(controller.sharedConversation!.get().view?.scroll_anchor).toBe("newest-hosted-card")
+  expect(controller.sharedConversation!.get().initialScrollAnchor).toBe(initial)
+  refused = true
+  await controller.sharedConversation!.read()
+  expect(controller.sharedConversation!.get().error).toBe("Conversation unavailable")
+  refused = false
+  await controller.sharedConversation!.read()
+  expect(controller.sharedConversation!.get().initialScrollAnchor).toBe(initial)
+  await controller.dispose()
+  const reloadedStore = await webStore(), reloaded = createAppController(reloadedStore, silentAgent, services)
+  await signIn(reloadedStore)
+  await reloaded.sharedConversation!.read()
+  await waitFor(() => reloaded.sharedConversation!.get().view !== undefined)
+  expect(reloaded.sharedConversation!.get().initialScrollAnchor).toBe("newest-hosted-card")
+  await reloaded.dispose()
 })

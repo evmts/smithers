@@ -884,6 +884,7 @@ const FIXTURES: Record<
   settings: { minimal: {}, full: {} },
   members: { minimal: {}, full: {} },
   commands: { minimal: {}, full: {} },
+  "hosted-change": { minimal: { repo: "maya/tinyhttp", sessionId: "session", request: "add slugify" }, full: { repo: "maya/tinyhttp", sessionId: "session", request: "add slugify" } },
   "archives": { minimal: {}, full: { selected: "0b1c2d3e" } },
   draft: {
     minimal: { ...draftFixtures.append.model, idempotencyKey: "commit-1" },
@@ -3369,4 +3370,13 @@ test.each(["agent.edit", "flows"])("preserves the active /%s form", (flow) => {
     payload: { flow, via: "agent", fields: [], draft: {}, given: {} }
   }
   expect(CardSchema.parse(form)).toEqual(form)
+})
+
+
+test("hosted-change persists only its subject reference", () => {
+  const card = { id: "hosted-change-session", kind: "hosted-change", title: "add slugify", status: "active", createdAt: 0, ordinal: 0,
+    payload: { repo: "maya/tinyhttp", sessionId: "session", request: "add slugify" } }
+  expect(CardSchema.parse(card)).toEqual(card)
+  expect(CardSchema.safeParse({ ...card, payload: { repo: card.payload.repo } }).success).toBe(false)
+  expect(CardSchema.parse({ ...card, payload: { ...card.payload, model: "invented", stages: [] } }).payload).toEqual(card.payload)
 })

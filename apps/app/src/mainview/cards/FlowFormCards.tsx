@@ -177,6 +177,16 @@ export const FlowFormCardBody = ({
     }
   }, [])
   const cancel = flowAction(onRunCommand, "card.dismiss", card.id)
+  // The transcript already retains the who-asked quote; the settled form adds no second request.
+  if (flow === "change.ask" && settled) return <span className="hosted-change-confirm" hidden />
+  if (flow === "change.ask" && typeof card.payload.given?.repo === "string" && typeof card.payload.given?.request === "string" && card.payload.given.request && !settled) return <section className="hosted-change-card hosted-change-confirm">
+    <strong>{card.title}</strong>
+    
+    <p>The agent writes and tests the change. You open the pull request and merge it on GitHub.</p>
+    <button className="repo-ui-btn repo-ui-btn-primary" disabled={busy} onClick={() => onRunCommand("form.submit", card.id)}>Start agent</button>
+    <button className="repo-ui-btn repo-ui-btn-quiet" onClick={() => onRunCommand("card.dismiss", card.id)}>Cancel</button>
+    {error && <FailureNotice failure={formFailure(error, card.payload.errorKind)} />}
+  </section>
   return (
     <form ref={bindFocus} className="flow-form" data-flow-name={flow} data-via={card.payload.via} onSubmit={(event) => {
       event.preventDefault()
@@ -240,7 +250,7 @@ export const FlowFormCardBody = ({
                 onKeyDown={submitOnEnter} /> :
               field.kind === "textarea" ?
               <textarea aria-label={field.label}
-                data-testid={testId} ref={restoreDraft} defaultValue={text} placeholder={field.placeholder} rows={12} required={field.required} disabled={settled || busy}
+                data-testid={testId} ref={restoreDraft} defaultValue={text} placeholder={field.placeholder} rows={flow === "change.ask" ? 3 : 12} required={field.required} disabled={settled || busy}
                 onInput={event => commit(field.name, event.currentTarget.value)} /> :
               field.kind === "boolean" ?
               (
@@ -286,6 +296,7 @@ export const FlowFormCardBody = ({
       })}
       {settled ? null : (
         <div className="flow-run-actions">
+          {flow === "change.ask" && <Button type="submit" variant="solid" size="sm" {...flowProps("form.submit")} data-testid="flow-form-submit" disabled={!complete || busy}>{card.payload.submitLabel ?? "Submit"}</Button>}
           <Button variant="ghost" size="sm" data-testid="flow-form-cancel" disabled={busy} {...cancel} onClick={(event) => {
             // The card leaves with this act; a keyboard user's focus moves on before it does.
             if (event.currentTarget.form?.contains(event.currentTarget.ownerDocument.activeElement) === true) focusNeighbor(event.currentTarget.form)
@@ -294,9 +305,10 @@ export const FlowFormCardBody = ({
           }}>
             Cancel
           </Button>
-          <Button type="submit" size="sm" {...flowProps("form.submit")} data-testid="flow-form-submit" disabled={!complete || busy}>
+          {flow !== "change.ask" && <Button type="submit" size="sm" {...flowProps("form.submit")} data-testid="flow-form-submit" disabled={!complete || busy}>
             {card.payload.submitLabel ?? "Submit"}
-          </Button>
+          </Button>}
+
         </div>
       )}
       {settled && controller !== null && card.payload.afterBox !== undefined ?

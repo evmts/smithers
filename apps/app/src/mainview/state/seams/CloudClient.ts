@@ -21,6 +21,7 @@ export interface CloudFailure {
   readonly code: string | null
   readonly status: number | null
   readonly retryAfterSeconds: number | null
+  readonly githubRefusal?: { readonly sentence: string }
   readonly details?: unknown
   readonly refusal: Refusal
 }
@@ -49,6 +50,9 @@ export const cloudFailure = async (response: Response, fallback: string): Promis
     retryAfterSeconds: retryAfterHeader(response.headers)
   })
   return {
+    ...(isRecord(body) && typeof body.code === "string" && body.code.startsWith("github_") &&
+      typeof body.message === "string" && body.message.trim() && body.message.length <= 500
+      ? { githubRefusal: { sentence: body.message } } : {}),
     error: refusalLine(refusal, fallback),
     code: refusal.rawCode,
     status: refusal.status,

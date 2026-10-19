@@ -176,3 +176,19 @@ for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
     expect(result).toMatchObject({ refusal: { fault: "infra" } })
   })
 }
+
+// Hosted PR delivery may show a bounded GitHub refusal, never the arbitrary response body.
+test("GitHub refusal copy is bounded and typed while already-landed details survive", async () => {
+  const sentence = "GitHub could not create this pull request. Try again."
+  const failure = await cloudFailure(Response.json({ code: "github_unavailable", message: sentence }, { status: 502 }), "fallback")
+  expect(failure.githubRefusal).toEqual({ sentence })
+  expect(failure).not.toHaveProperty("responseBody")
+  for (const message of ["", " ", "x".repeat(501), 12]) {
+    const invalid = await cloudFailure(Response.json({ code: "github_unavailable", message }, { status: 502 }), "fallback")
+    expect(invalid).not.toHaveProperty("githubRefusal")
+  }
+  const details = { pull_number: 37, pull_url: "https://github.com/maya/tinyhttp/pull/37" }
+  const landed = await cloudFailure(Response.json({ code: "already_landed", details }, { status: 409 }), "fallback")
+  expect(landed.details).toEqual(details)
+  expect(landed).not.toHaveProperty("githubRefusal")
+})

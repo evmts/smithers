@@ -58,6 +58,13 @@ export const FORM_INSTRUCTION_FIELDS = {
   "browser.open": [
     "url"
   ],
+  "change.ask": [
+    "request"
+  ],
+  "change.open-pull": [
+    "repo",
+    "session"
+  ],
   "change.resolve": [
     "changeId",
     "path"
