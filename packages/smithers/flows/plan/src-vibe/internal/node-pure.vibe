@@ -1,0 +1,87 @@
+import { isRecord } from "@smthrs/canonical/Record"
+import { digestSync } from "@smthrs/crypto"
+import * as Identity from "@smthrs/crypto/Identity"
+import { identity } from "effect/Function"
+import { pipeArguments } from "effect/Pipeable"
+import * as Schema from "effect/Schema"
+import type { Node } from "../Node.vibe"
+import type * as Planned from "../Planned.vibe"
+import { jsonMirror } from "./JsonMirror.vibe"
+import { schemaIdentity } from "./SchemaIdentity.vibe"
+import type { Scheduled, Succeed, Fail, All, RaceMode, Race, Map, AndThen, Branch, Catch, FlowCall, ActionCall, FunctionIdentity, PlannedReference, NodeAst } from "./node.vibe"
+import { TypeId, CallMode, IdentityAlgorithm, capture, plannedReference, functionIdentity, NodeProto, isRaceCount, makeNode, succeed, fail, all, race, map, andThen, flowCall, actionCall, operation, predicate, filter, declaration, withPriority } from "./node.vibe"
+export interface LiveState {
+  readonly references: WeakSet<object>
+  readonly nodes: WeakSet<object>
+  readonly operations: WeakMap<AndThen | Map, Operation>
+  readonly predicates: WeakMap<Branch, Predicate>
+  readonly filters: WeakMap<Catch, Schema.Top>
+  readonly declarations: WeakMap<ActionCall | FlowCall, unknown>
+}
+
+export type Operation = (value: unknown) => unknown
+
+export type Predicate = (value: unknown) => boolean
+
+export /** One position of the {@link isNodeAst} walk: an AST to check, or one whose children are all checked. @private */
+type AstVisit = { readonly enter: unknown } | { readonly exit: object }
+export // A bundled runtime and a dynamically loaded flow may contain separate
+// compatible package copies. Share only live object metadata: JSON round trips
+// still lose executable bindings, and structural lookalikes remain inert.
+const stateKey = Symbol.for("@smthrs/plan/Node/live/v1")
+
+export const globals = globalThis as typeof globalThis & { mutable [stateKey]?: LiveState }
+
+export const liveState = globals[stateKey] ??= {
+  references: new WeakSet(),
+  nodes: new WeakSet(),
+  operations: new WeakMap(),
+  predicates: new WeakMap(),
+  filters: new WeakMap(),
+  declarations: new WeakMap()
+}
+
+export /** The AST references minted by this module; structural lookalikes are data. */
+const plannedReferences = liveState.references
+
+export const makePlannedReference = (reference: Planned.Reference): PlannedReference => {
+  const value = Object.freeze({
+    _tag: "PlannedReference" as const,
+    node: reference.node,
+    path: Object.freeze([...reference.path])
+  })
+  plannedReferences.add(value)
+  return value
+}
+
+export const operations = liveState.operations
+
+export const predicates = liveState.predicates
+
+export const filters = liveState.filters
+
+export const declarations = liveState.declarations
+
+export /**
+ * The JSON mirror of an AST payload. A planned value becomes an AST-owned
+ * {@link PlannedReference}, so the AST stays inert JSON.
+ *
+ * @private
+ */
+const payloadMirror = (input: unknown): unknown =>
+  jsonMirror(input, (_value, reference) => makePlannedReference(reference))
+
+export /**
+ * Every node {@link makeNode} built, so a node this module made is recognized
+ * in constant time without walking its AST again.
+ */
+const liveNodes = liveState.nodes
+
+export /** Recognizes the algorithms {@link IdentityAlgorithm} declares, and nothing else. */
+const isIdentityAlgorithm = (value: unknown): value is FunctionIdentity["algorithm"] => Schema.is(IdentityAlgorithm)(value)
+
+export /** Recognizes the modes {@link CallMode} declares, and nothing else. */
+const isCallMode = (value: unknown): value is CallMode => Schema.is(CallMode)(value)
+
+export /** Recognizes the modes {@link RaceMode} names, and nothing else. @private */
+const isRaceMode = (value: unknown): value is RaceMode => value === "race" || value === "any" || value === "quorum"

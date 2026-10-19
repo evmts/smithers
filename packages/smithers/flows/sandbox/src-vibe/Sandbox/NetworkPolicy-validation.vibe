@@ -1,0 +1,37 @@
+// Plain JavaScript contracts supported by D263.
+import type { NetworkPolicy } from "./NetworkPolicy.vibe"
+const label = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+const host = new RegExp(`^(?:\\*\\.)?(?:${label}\\.)*${label}$`, "i")
+
+/**
+ * Checks a network policy's shape and host grammar, throwing on anything
+ * else, and returns it.
+ *
+ * @category validation
+ * @since 1.0.0-rc.1
+ */
+export const validateNetworkPolicy = (provider: string, policy: NetworkPolicy): NetworkPolicy => {
+  if (policy === "none" || policy === "open") return policy
+  if (typeof policy !== "object" || policy === null || !Array.isArray(policy.allow)) {
+    throw new TypeError(`${provider}: network must be "none", "open" or { allow: string[] }`)
+  }
+  for (const entry of policy.allow) {
+    if (typeof entry !== "string" || entry.length > 253 || !host.test(entry)) {
+      throw new TypeError(`${provider}: network allowlist entry is not a host name: ${String(entry)}`)
+    }
+  }
+  return policy
+}
+
+/**
+ * Refuses any network restriction, for a provider that cannot enforce one.
+ * `"open"` restricts nothing, so it is accepted.
+ *
+ * @category validation
+ * @since 1.0.0-rc.1
+ */
+export const refuseNetworkPolicy = (provider: string, policy: NetworkPolicy | undefined): void => {
+  if (policy !== undefined && policy !== "open") {
+    throw new TypeError(`${provider}: cannot enforce a network policy; omit \`network\` or name "open"`)
+  }
+}

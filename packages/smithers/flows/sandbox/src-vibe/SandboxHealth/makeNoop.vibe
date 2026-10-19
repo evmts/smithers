@@ -1,0 +1,25 @@
+/**
+ * Constructs a healthy no-op sandbox health service.
+ *
+ * @since 0.1.0
+ */
+
+import * as Effect from "effect/Effect"
+import type { HealthState } from "./HealthState.vibe"
+import { Healthy } from "./Healthy.vibe"
+import { SandboxHealth } from "./SandboxHealth.vibe"
+import type { Service } from "./Service.vibe"
+
+/**
+ * A no-op service that always reports `Healthy` for hosts without a remote
+ * sandbox.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const makeNoop = (): Service => {
+  const healthy = new Healthy()
+  // The Effect-valued member holds its program as an annotated const (D262).
+  const check: Effect.Effect<HealthState> = () => healthy
+  return SandboxHealth.of({ check })
+}

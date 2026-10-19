@@ -1,0 +1,52 @@
+import { exhaustedImpl, scopeOfImpl, noticeImpl, makeImpl } from "./credit-boundary.ts"
+/**
+ * Which model accounts ran out of credit this session, and what runs instead.
+ *
+ * A terminal credit refusal marks its model or account spent until the TUI exits: the
+ * router skips its models, the model picker says `no credit`, and a worker
+ * whose model has none runs once on a known-working model instead, saying so
+ * in one line. A model the person pinned is never replaced.
+ */
+import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
+import * as Seat from "@smthrs/agent/Seat"
+import * as Providers from "@smthrs/cli/Providers"
+import { Option } from "effect"
+import { delegateSeat, labelOf, type Model, routeOf } from "./models.ts"
+
+/** Credit refusal codes; timing and scope determine whether they are terminal. */
+export const refusals: ReadonlySet<string> = new Set(["quota_exceeded", "out_of_credit"])
+
+/** Whether `error` permanently refused for lack of credit, rather than a timed window. */
+export const exhausted: typeof import("../src/credit.ts").exhausted = exhaustedImpl
+
+/** The scope of a normalized credit refusal. */
+export const scopeOf: typeof import("../src/credit.ts").scopeOf = scopeOfImpl
+
+/** `↪ GPT-6.1 Sol has no credit · using Qwen 3.8`: the one line a worker shows when it runs elsewhere. */
+export const notice: typeof import("../src/credit.ts").notice = noticeImpl
+
+export interface Ledger {
+  /** Records a terminal credit refusal for a model or account. */
+  readonly spend: (seat: string, scope?: "model" | "account") => void
+  /** Records that `seat` answered. */
+  readonly answered: (seat: string) => void
+  /** Whether `seat` is covered by a terminal credit refusal this session. */
+  readonly spent: (seat: string) => boolean
+  /** The account `seat` runs on (`openai`, `anthropic`, `claude-code`): what a failure names. */
+  readonly account: (seat: string) => string
+  /**
+   * The seat to run once in place of `seat` when its account has no credit:
+   * the latest seat that answered, else `chat`, on an account that has not
+   * refused. `Seat.auto` has none only when every routed model's account
+   * refused. Undefined when `seat` has credit or nothing known works.
+   */
+  readonly instead: (seat: string, chat: string) => { readonly from: string; readonly to: string } | undefined
+  /** `↪ GPT-6.1 Sol has no credit · using Qwen 3.8`. */
+  readonly notice: (from: string, to: string) => string
+}
+
+/**
+ * A session's ledger over the `models` this machine offers. `routed` are the
+ * seats an `auto` worker routes over, in the router's order.
+ */
+export const make: typeof import("../src/credit.ts").make = makeImpl

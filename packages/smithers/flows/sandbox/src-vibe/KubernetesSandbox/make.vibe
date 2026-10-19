@@ -1,0 +1,426 @@
+/**
+ * Constructs the Kubernetes Pod sandbox provider.
+ *
+ * @since 0.1.0
+ */
+
+import * as CommandLine from "@smthrs/kernel/CommandLine"
+import * as Effect from "effect/Effect"
+import * as ChildProcess from "effect/process/ChildProcess"
+import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import * as Schema from "effect/Schema"
+import * as Stream from "effect/Stream"
+import { configurationFingerprint } from "../internal/configurationFingerprint.vibe"
+import { checkEnvironmentNames } from "../internal/environmentNames.vibe"
+import { execSession } from "../internal/execSession.vibe"
+import { finalizeWithin } from "../internal/finalizeWithin.vibe"
+import { gather, type GatheredRun, providerFailure } from "../internal/localProcess.vibe"
+import { sessionSlug } from "../internal/sessionSlug.vibe"
+import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
+import { type NetworkPolicy, refuseNetworkPolicy } from "../Sandbox/NetworkPolicy.vibe"
+import type { Provider } from "../Sandbox/Provider.vibe"
+import { type ResourceLimits, validateResourceLimits } from "../Sandbox/ResourceLimits.vibe"
+
+interface ResourceValues {
+  readonly cpu?: string | undefined
+  readonly memory?: string | undefined
+}
+
+/**
+ * The Pod's CPU and memory requests and limits, as Kubernetes names them.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface KubernetesSandboxResources {
+  readonly requests?: ResourceValues | undefined
+  readonly limits?: ResourceValues | undefined
+}
+
+/**
+ * How the provider reaches its cluster and shapes each session's Pod.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface KubernetesSandboxOptions {
+  /**
+   * Restrictions refused: a Pod NetworkPolicy depends on the cluster's network plugin and matches no host names. `"none"` or an allowlist makes `make` throw rather than hand
+   * out a machine with a network it did not ask for; `"open"`, which restricts nothing, is accepted.
+   */
+  readonly network?: NetworkPolicy | undefined
+  readonly spawner: ChildProcessSpawner["Service"]
+  readonly image: string
+  readonly namespace?: string | undefined
+  readonly program?: string | undefined
+  readonly context?: string | undefined
+  readonly kubeconfig?: string | undefined
+  readonly workdir?: string | undefined
+  readonly env?: Readonly<Record<string, string>> | undefined
+  readonly labels?: Readonly<Record<string, string>> | undefined
+  readonly resources?: KubernetesSandboxResources | undefined
+  /**
+   * The Pod's ceilings. `cpus` and `memoryMib` become the container's
+   * `resources.limits.cpu` and `resources.limits.memory` (in `Mi`), each
+   * exclusive with the same field in `resources`; `timeoutSecs` is the Pod's
+   * `activeDeadlineSeconds`, after which Kubernetes fails it. The limits
+   * enter the configuration fingerprint, so a leftover Pod with others is
+   * refused rather than reattached. A `createArgs` `--overrides` or
+   * `--override-type` beside any of them is refused when `make` is called,
+   * because kubectl keeps only the last override.
+   */
+  readonly limits?: ResourceLimits | undefined
+  readonly serviceAccount?: string | undefined
+  readonly nodeSelector?: Readonly<Record<string, string>> | undefined
+  readonly createArgs?: ReadonlyArray<string> | undefined
+  readonly namePrefix?: string | undefined
+  /**
+   * An operator secret that lets a later process reattach a Pod this one
+   * left behind. Each fresh Pod is labelled with an HMAC of its fingerprint
+   * and its server-assigned `metadata.uid` under this key, and only a leftover
+   * carrying a valid seal is adopted. Without it, and for any leftover whose
+   * seal is missing or wrong, the leftover is deleted and a fresh Pod created.
+   * Keep the same value across restarts that should resume a session.
+   */
+  readonly reattachKey?: string | undefined
+}
+
+const decoder = new TextDecoder()
+const readyTimeout = "300s"
+const maximumPodNameLength = 63
+const fingerprintLabel = "smithers.dev/sandbox-fingerprint"
+const sealLabel = "smithers.dev/sandbox-seal"
+const inspectedPod = Schema.Struct({
+  metadata: Schema.Struct({
+    uid: Schema.optional(Schema.String),
+    labels: Schema.Record(Schema.String, Schema.String)
+  }),
+  spec: Schema.Struct({
+    hostNetwork: Schema.optional(Schema.Boolean),
+    hostPID: Schema.optional(Schema.Boolean),
+    hostIPC: Schema.optional(Schema.Boolean),
+    serviceAccountName: Schema.optional(Schema.String),
+    containers: Schema.Array(
+      Schema.Struct({
+        name: Schema.String,
+        image: Schema.String,
+        securityContext: Schema.optional(Schema.Struct({ privileged: Schema.optional(Schema.Boolean) }))
+      })
+    ),
+    volumes: Schema.optional(Schema.Array(Schema.Struct({ hostPath: Schema.optional(Schema.Unknown) })))
+  }),
+  status: Schema.Struct({ phase: Schema.String })
+})
+
+/**
+ * The phases in which a Pod will never run another command. A leftover in one
+ * of these is a corpse wearing the session's name, not a machine to reattach:
+ * `kubectl wait --for=condition=Ready` would block on it for the full timeout
+ * and `exec` would refuse it, so it is deleted and replaced instead.
+ */
+const terminalPhases = new Set(["Succeeded", "Failed"])
+
+/**
+ * The seal a Pod created by a holder of `key` carries: an HMAC-SHA256 of the
+ * configuration fingerprint and the Pod's server-assigned uid, as a label
+ * value (`s1-` and 60 hex digits). Binding the uid means a seal copied off a
+ * deleted Pod does not validate a new Pod created under the same name.
+ */
+const sealOf = (key: string, fingerprint: string, uid: string) =>
+  try(async (key, fingerprint, uid) => {
+      const subtle = globalThis.crypto.subtle
+      const hmacKey = await subtle.importKey(
+        "raw",
+        new TextEncoder().encode(key),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"]
+      )
+      const mac = await subtle.sign("HMAC", hmacKey, new TextEncoder().encode(`${fingerprint}\0${uid}`))
+      return "s1-" + Array.from(new Uint8Array(mac), (byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 60)
+    }, providerFailure("unavailable", "could not seal the sandbox pod"), key, fingerprint, uid)
+
+const podNameOf = (prefix: string, sessionKey: string): string => {
+  const slug = sessionSlug(sessionKey).toLowerCase().replaceAll(/[^a-z0-9-]/g, "-")
+  const candidate = `${prefix.toLowerCase().replaceAll(/[^a-z0-9-]/g, "-")}${slug}`
+    .replaceAll(/^-+|-+$/g, "")
+  if (candidate.length <= maximumPodNameLength) return candidate
+  const digest = slug.slice(slug.lastIndexOf("-"))
+  return `${candidate.slice(0, maximumPodNameLength - digest.length).replace(/-+$/, "")}${digest}`
+}
+
+
+
+const overrideArgs = (name: string, options: KubernetesSandboxOptions): ReadonlyArray<string> => {
+  const spec = {
+    ...options.limits?.timeoutSecs === undefined ? {} : { activeDeadlineSeconds: options.limits.timeoutSecs },
+    ...options.serviceAccount === undefined ? {} : { serviceAccountName: options.serviceAccount },
+    ...options.nodeSelector === undefined ? {} : { nodeSelector: options.nodeSelector },
+    ...options.resources === undefined
+      ? {}
+      : {
+        containers: [{
+          name,
+          resources: {
+            ...options.resources.requests === undefined ? {} : { requests: options.resources.requests },
+            ...options.resources.limits === undefined ? {} : { limits: options.resources.limits }
+          }
+        }]
+      }
+  }
+  return Object.keys(spec).length === 0
+    ? []
+    : ["--override-type", "strategic", "--overrides", JSON.stringify({ apiVersion: "v1", spec })]
+}
+
+/**
+ * Builds a sandbox provider whose machines are Kubernetes Pods driven through
+ * an injected `kubectl` spawner.
+ *
+ * The provider creates or reattaches a deterministically named Pod, waits for
+ * it to become Ready, and registers forced deletion as the acquiring scope's
+ * finalizer. On `AlreadyExists` the provider inspects the leftover. One whose
+ * configuration or fingerprint differs is refused without being touched. One
+ * that matches is adopted only when it is live and carries a valid
+ * {@link KubernetesSandboxOptions.reattachKey} seal; otherwise it is deleted
+ * and replaced. The fingerprint is a hash of configuration anyone who knows
+ * the flow can compute, so a principal with `pods/create` but not
+ * `pods/exec` could otherwise pre-create a Pod under the session's name,
+ * label, and image with its own command, and receive the session's exec'd
+ * commands, stdin, and environment. A terminal leftover (Succeeded or
+ * Failed) is always replaced, because `kubectl wait` would block on it. Commands and file transfers use
+ * `kubectl exec`, so no host filesystem or platform module is required. File
+ * contents cross the text boundary as base64 — written through the exec's
+ * stdin, read back with `base64 < path`, a redirect every guest `base64`
+ * accepts — and remain byte exact.
+ *
+ * `spawn` honors the whole session contract. A command's `stdin` bytes travel
+ * on the exec's own input channel (`--stdin`), a relative `cwd` is rooted at
+ * {@link Session.workdir} before the script's `cd`, and the environment is
+ * applied with `env(1)` rather than `export`, because `export` is a special
+ * builtin and a name it refuses would abort the whole script instead of one
+ * assignment. Names that are not shell identifiers never reach either form:
+ * `spawn` refuses them, because the guest `sh -c` that runs the command
+ * would drop them. Closing a spawn's scope is the process's lifetime ending:
+ * unless the command was already observed to end, the guest process is
+ * signalled through the same pid-walk `kill` uses, so a scope cannot close on
+ * a still-running guest.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const make = (input: KubernetesSandboxOptions): Provider => {
+  const options = validateOptions(input, overrideArgs)
+  const program = options.program ?? "kubectl"
+  const workdir = options.workdir ?? "/workspace"
+  const prefix = options.namePrefix ?? "smthrs-sbx-"
+  const globals = [
+    ...options.context === undefined ? [] : ["--context", options.context],
+    ...options.namespace === undefined ? [] : ["--namespace", options.namespace],
+    ...options.kubeconfig === undefined ? [] : ["--kubeconfig", options.kubeconfig]
+  ]
+  const run = (args: ReadonlyArray<string>, stdin?: Uint8Array): Effect.Effect<GatheredRun, ProviderError, never> =>
+    Effect.scoped(
+      (() => {
+        const handle = (() => { try { return options.spawner.spawn(
+          ChildProcess.make(program, [...globals, ...args], stdin === undefined ? {} : { stdin: Stream.make(stdin) })
+        ) } catch (error) { throw ((providerFailure("spawn_error", `\`${program} ${args[0]}\` could not start`))(error)) } })()
+        return gather(handle, `${program} ${args[0]}`)
+      })()
+    )
+  const step = (what: string, args: ReadonlyArray<string>): Effect.Effect<GatheredRun, ProviderError, never> =>
+    (() => { const _vibeSequence = run(args); return ((result) =>
+      result.code === 0 ? Effect.succeed(result) : (throw (new ProviderError({
+          code: "unavailable",
+          message: `${what}: \`${program} ${args[0]}\` exited ${result.code}: ${result.stderr.trim()}`
+        }))))(_vibeSequence) })()
+
+  return {
+    acquire: (sessionKey) =>
+      (() => {
+        const environment = options.env ?? {}
+        const name = podNameOf(prefix, sessionKey)
+        const fingerprint = configurationFingerprint({
+          provider: "KubernetesSandbox/v1",
+          owner: sessionKey,
+          name,
+          image: options.image,
+          workdir,
+          namespace: options.namespace,
+          context: options.context,
+          kubeconfig: options.kubeconfig,
+          env: environment,
+          labels: options.labels ?? {},
+          resources: options.resources,
+          serviceAccount: options.serviceAccount,
+          nodeSelector: options.nodeSelector,
+          createArgs: options.createArgs ?? [],
+          ...options.limits?.timeoutSecs === undefined ? {} : { timeoutSecs: options.limits.timeoutSecs }
+        })
+        const labels = Object.entries({ ...options.labels, [fingerprintLabel]: fingerprint })
+        const createArgs = [
+          "run",
+          name,
+          "--image",
+          options.image,
+          "--restart",
+          "Never",
+          "--labels",
+          labels.map(([key, value]) => `${key}=${value}`).join(","),
+          ...overrideArgs(name, options),
+          ...options.createArgs ?? [],
+          "--command",
+          "--",
+          "sleep",
+          "infinity"
+        ]
+        // Let kubectl render all run flags, then add environment values to
+        // the manifest sent over stdin rather than its local argv.
+        const create = () => (() => {
+          if (Object.keys(environment).length === 0) return run(createArgs)
+          ;checkEnvironmentNames(environment)
+          const commandIndex = createArgs.indexOf("--command")
+          const rendered = run([
+            ...createArgs.slice(0, commandIndex),
+            "--dry-run=client",
+            "-o",
+            "json",
+            ...createArgs.slice(commandIndex)
+          ])
+          if (rendered.code !== 0) return rendered
+          const manifest = try((decoder, rendered, environment, name) => {
+              const pod = JSON.parse(decoder.decode(rendered.stdout))
+              const container = pod.spec.containers.find((entry: { name: string }) => entry.name === name)
+              container.env = [
+                ...(container.env ?? []).filter((entry: { name: string }) => !Object.hasOwn(environment, entry.name)),
+                ...Object.entries(environment).map(([name, value]) => ({ name, value }))
+              ]
+              return new TextEncoder().encode(JSON.stringify(pod))
+            }, providerFailure("spawn_error", "kubectl did not render a valid Pod manifest"), decoder, rendered, environment, name)
+          return run(["create", "-f", "-"], manifest)
+        })()
+        const origin = Effect.acquireRelease(
+          (() => {
+            const created = create()
+            if (created.code === 0) return "fresh" as const
+            if (!/(?:AlreadyExists|already exists)/i.test(created.stderr)) {
+              return (throw (new ProviderError({
+                  code: "unavailable",
+                  message: `the pod ${name} could not be created from ${options.image}: ${created.stderr.trim()}`
+                })))
+            }
+            // The name is held by a previous acquire's leftover. A live one
+            // is reattached; one in a terminal phase is replaced, because the
+            // Ready wait below would otherwise block on it until its timeout.
+            // Validate ownership before adopting OR deleting a terminal Pod.
+            const inspected = step(`the pod ${name} could not be inspected`, ["get", "pod", name, "-o", "json"])
+            const held = try((inspectedPod, decoder, inspected) => Schema.decodeUnknownSync(inspectedPod)(JSON.parse(decoder.decode(inspected.stdout))), providerFailure("unavailable", `the pod ${name} has no verifiable configuration`), inspectedPod, decoder, inspected)
+            if (
+              held.metadata.labels[fingerprintLabel] !== fingerprint ||
+              !held.spec.containers.some((container) => container.name === name && container.image === options.image) ||
+              (options.serviceAccount !== undefined && held.spec.serviceAccountName !== options.serviceAccount) ||
+              ((options.createArgs?.length ?? 0) === 0 && (held.spec.hostNetwork === true ||
+                held.spec.hostPID === true || held.spec.hostIPC === true ||
+                held.spec.containers.some((container) => container.securityContext?.privileged === true) ||
+                held.spec.volumes?.some((volume) => volume.hostPath !== undefined)))
+            ) {
+              return (throw (new ProviderError({
+                  code: "unavailable",
+                  message: `the pod ${name} does not match the requested configuration or owner`
+                })))
+            }
+            const sealed = options.reattachKey !== undefined && held.metadata.uid !== undefined &&
+              held.metadata.labels[sealLabel] === (sealOf(options.reattachKey, fingerprint, held.metadata.uid))
+            if (sealed && !terminalPhases.has(held.status.phase)) return "adopted" as const
+            // An unsealed leftover is not trusted with the session: anyone who
+            // may create Pods here can build one that matches every check
+            // above. It is replaced, and a replacement that loses a race for
+            // the name fails below instead of being adopted.
+            ;step(`the leftover pod ${name} could not be replaced`, [
+              "delete",
+              `pod/${name}`,
+              "--force",
+              "--grace-period=0"
+            ])
+            const recreated = create()
+            if (recreated.code !== 0) {
+              return (throw (new ProviderError({
+                  code: "unavailable",
+                  message: `the pod ${name} could not be recreated from ${options.image}: ${recreated.stderr.trim()}`
+                })))
+            }
+            return "fresh" as const
+          })(),
+          () =>
+            finalizeWithin(
+              (() => { try { return (() => { const _vibeSequence = run(["delete", `pod/${name}`, "--force", "--grace-period=0"]); return ((result) =>
+                result.code === 0 ? Effect.void : Effect.logWarning("sandbox removal failed", {
+                  resource: `pod ${name}`,
+                  exitCode: result.code
+                }))(_vibeSequence) })() } catch (error) { return (() =>
+                  Effect.logWarning("sandbox removal failed", {
+                    resource: `pod ${name}`
+                  }))() } })(),
+              `pod ${name}`
+            )
+        )
+        // Seal a fresh Pod after the finalizer is registered, so a failed
+        // seal still deletes it. A crash before the seal leaves an unsealed
+        // Pod, which the next acquire replaces rather than adopts.
+        if (origin === "fresh" && options.reattachKey !== undefined) {
+          const uid = decoder.decode(
+            (step(`the pod ${name} could not be inspected`, [
+              "get",
+              "pod",
+              name,
+              "-o",
+              "jsonpath={.metadata.uid}"
+            ])).stdout
+          ).trim()
+          if (uid === "") {
+            return (throw (new ProviderError({ code: "unavailable", message: `the pod ${name} reported no uid to seal` })))
+          }
+          ;step(`the pod ${name} could not be sealed`, [
+            "label",
+            `pod/${name}`,
+            "--overwrite",
+            `${sealLabel}=${sealOf(options.reattachKey, fingerprint, uid)}`
+          ])
+        }
+        ;step(`the pod ${name} did not become Ready`, [
+          "wait",
+          "--for=condition=Ready",
+          `pod/${name}`,
+          `--timeout=${readyTimeout}`
+        ])
+        return execSession({
+          id: sessionKey,
+          name,
+          noun: "pod",
+          program,
+          workdir,
+          encode: "base64",
+          run: (args) => run(args),
+          launch: (args, stdin) =>
+            options.spawner.spawn(
+              ChildProcess.make(program, [...globals, ...args], stdin === undefined ? {} : { stdin })
+            ),
+          shell: (script, interactive) => ["exec", ...interactive ? ["-i"] : [], name, "--", "/bin/sh", "-c", script],
+          spawn: ({ command, cwd, record, stdin }) => [
+            "exec",
+            // The exec has a real input channel; it is asked for only when
+            // there is input to carry.
+            ...stdin === undefined ? [] : ["--stdin"],
+            name,
+            "--",
+            "/bin/sh",
+            "-c",
+            [`cd ${CommandLine.quote(cwd)}`, ...record, command].join(" && ")
+          ],
+          ping: ["exec", name, "--", "true"]
+        })
+      })()
+  }
+}
+
+import { validateOptions } from "./validation.vibe"

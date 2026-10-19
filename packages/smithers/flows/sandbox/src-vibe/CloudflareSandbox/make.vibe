@@ -1,0 +1,244 @@
+/**
+ * Builds a Cloudflare Sandbox provider.
+ *
+ * @since 0.1.0
+ */
+
+import * as CommandLine from "@smthrs/kernel/CommandLine"
+import * as Effect from "effect/Effect"
+import * as Stream from "effect/Stream"
+import { attemptIn } from "../internal/attempt.vibe"
+import { decodeBase64, encodeBase64 } from "../internal/base64.vibe"
+import { environmentCommand } from "../internal/environmentCommand.vibe"
+import { checkEnvironmentNames } from "../internal/environmentNames.vibe"
+import { finalizeWithin } from "../internal/finalizeWithin.vibe"
+import { parentOf } from "../internal/guestPath.vibe"
+import { providerFailure } from "../internal/localProcess.vibe"
+import { rootedAt } from "../internal/rootedPath.vibe"
+import { sessionSlug } from "../internal/sessionSlug.vibe"
+import { stdinRedirect } from "../internal/stdinRedirect.vibe"
+import { warnTeardown } from "../internal/teardownWarning.vibe"
+import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.vibe"
+import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
+import { type NetworkPolicy, refuseNetworkPolicy } from "../Sandbox/NetworkPolicy.vibe"
+import type { Provider } from "../Sandbox/Provider.vibe"
+import { refuseResourceLimits, type ResourceLimits } from "../Sandbox/ResourceLimits.vibe"
+import type { Session } from "../Sandbox/Session.vibe"
+import type { Sdk } from "./Sdk.vibe"
+
+/**
+ * How the provider reaches its Worker binding and shapes each session's
+ * Durable Object sandbox.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface CloudflareSandboxOptions<Binding> {
+  /**
+   * Restrictions refused: egress control lives on the Worker's Sandbox class, outside this provider. `"none"` or an allowlist makes `make` throw rather than hand
+   * out a machine with a network it did not ask for; `"open"`, which restricts nothing, is accepted.
+   */
+  readonly network?: NetworkPolicy | undefined
+  /**
+   * Refused: the Worker's `containers[].instance_type` sets CPU and memory, and `sleepAfter` is an idle timeout. Setting any ceiling makes `make` throw rather than hand
+   * out a machine without it.
+   */
+  readonly limits?: ResourceLimits | undefined
+  readonly sdk: Sdk<Binding>
+  readonly binding: Binding
+  readonly execution?: "exec" | "process" | undefined
+  readonly workdir?: string | undefined
+  readonly sleepAfter?: string | number | undefined
+  readonly keepAlive?: boolean | undefined
+}
+
+const encoder = new TextEncoder()
+
+const failed = (code: ProviderError["code"], message: string, cause: unknown): ProviderError =>
+  new ProviderError({ code, message: `cloudflare sandbox: ${message}`, cause })
+
+const attempt = attemptIn("cloudflare sandbox")
+
+const errorCodeOf = (cause: unknown): unknown =>
+  typeof cause === "object" && cause !== null && "code" in cause ? cause.code : undefined
+
+const processOf = (stdout: string, stderr: string, exitCode: number): RemoteProcess => {
+  // The Effect-valued member holds its program as an annotated const (D262).
+  const code: Effect.Effect<number, ProviderError> = () => exitCode
+  return {
+    stdout: Stream.make(encoder.encode(stdout)),
+    stderr: Stream.make(encoder.encode(stderr)),
+    exitCode: code
+  }
+}
+
+/**
+ * Builds a provider backed by Cloudflare Sandbox Durable Objects.
+ *
+ * The Worker binding is the credential and infrastructure handle. Acquiring a
+ * session resolves its key-derived Durable Object id, disables the SDK's
+ * implicit default shell session, and registers `destroy()` on the acquiring
+ * scope. `exec` mode uses the completed command result. `process` mode waits
+ * for the detached handle and fetches its logs before it reports an outcome,
+ * and a handle that reports no exit status at all is a provider failure, not
+ * an invented one.
+ *
+ * The SDK's command options carry no input channel, so `spawn` stages
+ * `options.stdin` as a workspace file and redirects the command from it, and
+ * a relative `cwd` is rooted at the session workdir. File payloads use the
+ * SDK's base64 encoding and the text is read from the result's `content`
+ * field. This preserves arbitrary bytes without importing host modules.
+ *
+ * Command output is not byte-exact here. The SDK reports a command's stdout
+ * and stderr as strings, so what this provider streams is those strings
+ * re-encoded as UTF-8: a command whose output is not valid UTF-8, such as a
+ * tarball or a compiled binary written to stdout, comes back changed. File
+ * transfer is byte-exact regardless, so a caller that needs bytes has the
+ * command write a file and reads it back with `readFile`.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const make = <Binding>(options: CloudflareSandboxOptions<Binding>): Provider => {
+  refuseNetworkPolicy("cloudflare-sandbox", options.network)
+  refuseResourceLimits(
+    "cloudflare-sandbox",
+    options.limits,
+    ["cpus", "memoryMib", "timeoutSecs"],
+    "the Worker's `containers[].instance_type` sets CPU and memory, and `sleepAfter` is an idle timeout, not a lifetime"
+  )
+  const workdir = options.workdir ?? "/workspace"
+
+  return {
+    acquire: (sessionKey) => {
+      const remoteId = sessionSlug(sessionKey)
+      const sandbox = Effect.acquireRelease(
+        () =>
+          try(
+            (options, remoteId) =>
+              options.sdk.getSandbox(options.binding, remoteId, {
+                enableDefaultSession: false,
+                ...options.keepAlive === undefined ? {} : { keepAlive: options.keepAlive },
+                ...options.sleepAfter === undefined ? {} : { sleepAfter: options.sleepAfter }
+              }),
+            (cause) => failed("unavailable", `could not resolve ${remoteId}`, cause),
+            options,
+            remoteId
+          ),
+        (sandbox) =>
+          finalizeWithin(
+            () => {
+              attempt(() => sandbox.destroy(), "unknown", `could not destroy ${remoteId}`) catch (error) => {
+                warnTeardown("cloudflare", "destroy", error)
+              }
+            },
+            `cloudflare sandbox ${remoteId}`
+          )
+      )
+      attempt(
+        () => sandbox.mkdir(workdir, { recursive: true }),
+        "unavailable",
+        `could not create ${workdir}`
+      )
+
+      const writeFile: Session["writeFile"] = (path, content) => {
+        const parent = parentOf(path)
+        if (parent !== undefined) {
+          attempt(
+            () => sandbox.mkdir(parent, { recursive: true }),
+            "unknown",
+            `could not create the parent of ${path}`
+          )
+        }
+        attempt(
+          () => sandbox.writeFile(path, encodeBase64(content), { encoding: "base64" }),
+          "unknown",
+          `could not write ${path}`
+        )
+      }
+
+      // The SDK's exec and process options carry no standard input, so the
+      // bytes are staged as a workspace file and the command reads from it.
+      const redirect = stdinRedirect({
+        workdir,
+        writeFile,
+        remove: (path) => {
+          const result = attempt(
+            () => sandbox.exec(`rm -f ${CommandLine.quote(path)}`),
+            "unknown",
+            `could not remove ${path}`
+          )
+          if (result.exitCode !== 0) {
+            throw failed("unknown", `could not remove ${path}: command exited ${result.exitCode}`, undefined)
+          }
+        }
+      })
+      const resolveCwd = rootedAt(workdir)
+
+      const spawn: Session["spawn"] = (command, spawnOptions) => {
+        checkEnvironmentNames(spawnOptions.env)
+        const fed = redirect(command, spawnOptions.stdin)
+        const guest = environmentCommand(fed, spawnOptions.env)
+        const commandOptions = {
+          cwd: resolveCwd(spawnOptions.cwd ?? ""),
+          env: guest.env
+        }
+        if (options.execution === "process") {
+          const result = try(
+            async (sandbox, line, commandOptions) => {
+              const started = await sandbox.startProcess(line, commandOptions)
+              const exit = await started.waitForExit()
+              const logs = await started.getLogs()
+              return {
+                ...logs,
+                exitCode: exit.exitCode ?? started.exitCode
+              }
+            },
+            providerFailure("spawn_error", `cloudflare sandbox: process failed for ${command}`),
+            sandbox,
+            guest.command,
+            commandOptions
+          )
+          if (result.exitCode === undefined) {
+            throw failed("spawn_error", `the sandbox reported no exit status for \`${command}\``, result)
+          }
+          return processOf(result.stdout, result.stderr, result.exitCode)
+        }
+        const result = attempt(
+          () => sandbox.exec(guest.command, commandOptions),
+          "spawn_error",
+          `exec failed for ${command}`
+        )
+        return processOf(result.stdout, result.stderr, result.exitCode)
+      }
+
+      // The Effect-valued member holds its program as an annotated const (D262).
+      const ping: Effect.Effect<void, ProviderError> = () => {
+        const result = attempt(() => sandbox.exec("true", { cwd: workdir }), "unavailable", `could not ping ${remoteId}`)
+        if (result.exitCode !== 0) throw failed("unavailable", `${remoteId} failed its ping`, result)
+      }
+
+      const session: Session = {
+        id: sessionKey,
+        remoteId,
+        workdir,
+        spawn,
+        readFile: (path) => {
+          const result = try(
+            async (sandbox, path) => sandbox.readFile(path, { encoding: "base64" }),
+            (cause) =>
+              errorCodeOf(cause) === "FILE_NOT_FOUND"
+                ? failed("not_found", `nothing exists at ${path}`, cause)
+                : failed("unknown", `could not read ${path}`, cause),
+            sandbox,
+            path
+          )
+          return decodeBase64(result.content, `for ${path}`)
+        },
+        writeFile,
+        ping
+      }
+      return session
+    }
+  }
+}

@@ -1,0 +1,2 @@
+type Raise = (error: unknown) => never
+export const raiseImpl: Raise = (error: unknown): never => { throw error }

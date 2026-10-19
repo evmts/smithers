@@ -1,0 +1,84 @@
+/**
+ * Deterministic grant-store layers for tests.
+ *
+ * @since 1.0.0-rc.0
+ */
+
+import { GrantStoreError, permissionDenied } from "@smthrs/capability/Permission"
+import { Effect, Layer } from "effect"
+import { emptyPolicy as closedPolicy } from "../GrantStore.vibe"
+import { GrantStore, layerNoop, type Resolution, type Service } from "../GrantStore.vibe"
+
+/**
+ * An allow-all grant store.
+ *
+ * @category layers
+ * @since 1.0.0-rc.0
+ */
+export const layerAllow: Layer.Layer<GrantStore> = layerNoop
+
+/**
+ * Provides a grant store that denies every capability.
+ *
+ * @category layers
+ * @since 1.0.0-rc.0
+ */
+export const layerDeny = (reason = "denied by test"): Layer.Layer<GrantStore> => {
+  const service = GrantStore.of({
+    policy: closedPolicy,
+    check: (capability) =>
+      withSpan("GrantStore.check") {
+        throw permissionDenied(capability, reason)
+      },
+    reply: () =>
+      withSpan("GrantStore.reply") {
+        throw new GrantStoreError({ code: "request_not_found" })
+      },
+    list: () =>
+      withSpan("GrantStore.list") {
+        return []
+      },
+    grantEnvelope: () =>
+      withSpan("GrantStore.grantEnvelope") {}
+  })
+  return Layer.succeed(GrantStore)(service)
+}
+
+/**
+ * Provides a grant store whose checks consume a deterministic sequence of
+ * attended-style replies. `once`, `run`, and `remembered` allow the check;
+ * `deny` rejects it. Exhausting the script rejects further checks.
+ *
+ * @category layers
+ * @since 1.0.0-rc.0
+ */
+export const layerScripted = (
+  replies: ReadonlyArray<Resolution>
+): Layer.Layer<GrantStore> =>
+  Layer.effect(GrantStore) {
+    let index = 0
+    const service: Service = GrantStore.of({
+      policy: closedPolicy,
+      check: (capability) =>
+        withSpan("GrantStore.check") {
+          const reply = replies[index++]
+          if (reply === undefined || reply === "deny") {
+            throw permissionDenied(
+              capability,
+              reply === undefined ? "permission reply script exhausted" : "permission request denied"
+            )
+          }
+        },
+      reply: () =>
+        withSpan("GrantStore.reply") {
+          throw new GrantStoreError({ code: "request_not_found" })
+        },
+      list: () =>
+        withSpan("GrantStore.list") {
+          return []
+        },
+      grantEnvelope: () =>
+        withSpan("GrantStore.grantEnvelope") {}
+    })
+    return service
+  }

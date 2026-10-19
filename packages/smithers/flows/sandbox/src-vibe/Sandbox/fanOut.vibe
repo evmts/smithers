@@ -1,0 +1,85 @@
+/**
+ * Forks a bounded set of child machines from one session.
+ *
+ * @since 1.0.0
+ */
+
+import * as Effect from "effect/Effect"
+import type { Scope } from "effect/Scope"
+import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
+import type { Session } from "./Session.vibe"
+
+/**
+ * The most children one fan-out may start, the same hard cap Smithers Cloud
+ * puts on a user's live child workspaces.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const maxFanOut = 128
+
+/**
+ * How many children to fork, and how many forks may run at once.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface FanOutOptions {
+  /** Children to fork: an integer from 1 to {@link maxFanOut}. */
+  readonly count: number
+  /** Forks in flight at once; defaults to 8. */
+  readonly concurrency?: number | undefined
+}
+
+// A plain contract keeps these throws synchronous JavaScript (D263), raised
+// when fanOut is called rather than when its program runs.
+const validate = (count: number, concurrency: number): void => {
+  if (!Number.isSafeInteger(count) || count < 1 || count > maxFanOut) {
+    throw new RangeError(`fanOut: count must be an integer from 1 to ${maxFanOut}`)
+  }
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
+    throw new RangeError("fanOut: concurrency must be a positive integer")
+  }
+}
+
+/**
+ * Forks `count` children from `parent`, keyed `<parent id>/<batch>/child-<n>`
+ * where the batch is new on every run.
+ *
+ * The batch first forks one base from the parent and forks every child from
+ * that base, so all children start from the same tree even while the parent
+ * keeps changing. Every child starts without the parent's credentials, and the
+ * base and children are released when the acquiring scope closes, so a
+ * fan-out inside the parent's scope never outlives the parent. A failed fork
+ * fails the whole fan-out; machines already forked are still released by the
+ * scope. A count outside 1..{@link maxFanOut} throws a `RangeError`; a machine
+ * that cannot fork fails with `unavailable`.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const fanOut = (
+  parent: Session,
+  options: FanOutOptions
+) => {
+  const { count, concurrency = 8 } = options
+  validate(count, concurrency)
+  // Eager validation, cold program: the unannotated arrow stays plain (A-4).
+  const program: Effect.Effect<ReadonlyArray<Session>, ProviderError, Scope> = () => {
+    const batch = `${parent.id}/${globalThis.crypto.randomUUID()}`
+    const base = forkOf(parent)(`${batch}/base`)
+    const fork = forkOf(base)
+    return forEach(
+      Array.from({ length: count }, (_, index) => `${batch}/child-${index}`),
+      (key) => fork(key),
+      { concurrency }
+    )
+  }
+  return program
+}
+
+const forkOf = (session: Session): (key: string) => Effect.Effect<Session, ProviderError, Scope> =>
+  session.fork ??
+    (() => {
+      throw new ProviderError({ code: "unavailable", message: `the machine behind session ${session.id} cannot fork` })
+    })

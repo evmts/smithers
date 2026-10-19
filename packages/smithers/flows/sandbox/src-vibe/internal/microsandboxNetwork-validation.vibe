@@ -1,0 +1,7 @@
+// Plain JavaScript contracts supported by D263.
+import { networkLabel } from "./microsandboxNetwork.vibe"
+export const recordedNetwork = (configJson: string): string | undefined => {
+  const labels = Reflect.get(Object(JSON.parse(configJson)), "labels")
+  const value = Reflect.get(Object(labels), networkLabel)
+  return typeof value === "string" ? value : undefined
+}

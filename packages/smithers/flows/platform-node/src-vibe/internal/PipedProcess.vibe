@@ -1,0 +1,273 @@
+/**
+ * Native I/O ownership for transient commands and prepared process owners.
+ * @since 1.0.0
+ */
+
+import * as NodeSink from "@effect/platform-node/NodeSink"
+import * as NodeStream from "@effect/platform-node/NodeStream"
+import * as Effect from "effect/Effect"
+import * as PlatformError from "effect/PlatformError"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { type ChildProcessHandle, ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
+import type * as Scope from "effect/Scope"
+import * as Sink from "effect/Sink"
+import * as Stream from "effect/Stream"
+import type * as Native from "node:child_process"
+import * as Platform from "./nodePlatform.ts"
+import * as PipedNative from "./pipedNative.ts"
+import { NativeProcessError } from "./ProcessFault.vibe"
+
+const ownerDescriptors = new WeakMap<ChildProcessHandle, ReadonlyArray<number | "ignore">>()
+
+/**
+ * Windows owners receive caller streams above the reserved CRT standard slots.
+ * @private
+ * @since 1.0.0
+ */
+export const standardFdsOf = (handle: ChildProcessHandle): ReadonlyArray<number | "ignore"> | undefined =>
+  ownerDescriptors.get(handle)
+
+/**
+ * Converts native errors without losing their errno or signal.
+ * @private
+ * @since 1.0.0
+ */
+export const failure = (method: string, cause: unknown): PlatformError.PlatformError => {
+  const error = cause instanceof Error ? cause : new NativeProcessError({ message: String(cause) })
+  const code = (error as NodeJS.ErrnoException).code
+  return PlatformError.systemError({
+    _tag: code === "ENOENT" ? "NotFound" : code === "EACCES" || code === "EPERM" ? "PermissionDenied" : "Unknown",
+    module: "ChildProcess",
+    method,
+    description: error.message,
+    cause: error
+  })
+}
+
+const inputConfig = (value: ChildProcess.CommandOptions["stdin"]): ChildProcess.StdinConfig =>
+  value === undefined || typeof value === "string" || Stream.isStream(value)
+    ? { stream: value ?? "pipe" }
+    : value
+
+const outputConfig = (
+  value: ChildProcess.CommandOptions["stdout"]
+): ChildProcess.CommandOutput =>
+  value === undefined || typeof value === "string" || Sink.isSink(value)
+    ? value ?? "pipe"
+    : value.stream ?? "pipe"
+
+/** The stdio table a command declares, and how each standard stream is configured. */
+interface Descriptors {
+  readonly stdin: ChildProcess.StdinConfig
+  readonly stdout: ChildProcess.CommandOutput
+  readonly stderr: ChildProcess.CommandOutput
+  readonly additional: Array<{ readonly fd: number; readonly config: ChildProcess.AdditionalFdConfig }>
+  readonly stdio: Array<Native.IOType>
+}
+
+const descriptorConfig = (options: ChildProcess.CommandOptions): Descriptors => {
+  const stdin = inputConfig(options.stdin)
+  const stdout = outputConfig(options.stdout)
+  const stderr = outputConfig(options.stderr)
+  const additional: Array<{ readonly fd: number; readonly config: ChildProcess.AdditionalFdConfig }> = []
+  for (const [name, config] of Object.entries(options.additionalFds ?? {})) {
+    const fd = ChildProcess.parseFdName(name)
+    if (fd === undefined) continue
+    // A sparse descriptor declaration must not allocate an unbounded stdio
+    // table. The OS may impose a smaller limit when opening the actual pipes.
+    if (!Number.isSafeInteger(fd) || fd > 65_535) {
+      throw new RangeError("Additional file descriptors must be below 65536")
+    }
+    additional.push({ fd, config })
+  }
+  additional.sort((left, right) => left.fd - right.fd)
+  const stdio: Array<Native.IOType> = Array.from(
+    { length: Math.max(2, ...additional.map(({ fd }) => fd)) + 1 },
+    () => "ignore"
+  )
+  stdio[0] = typeof stdin.stream === "string" ? stdin.stream : "pipe"
+  stdio[1] = typeof stdout === "string" ? stdout : "pipe"
+  stdio[2] = typeof stderr === "string" ? stderr : "pipe"
+  for (const { fd } of additional) stdio[fd] = "pipe"
+  return { stdin, stdout, stderr, additional, stdio }
+}
+
+/**
+ * Native standard-command I/O, including configured streams and custom pipes.
+ * Lifetime error listeners remain on every owned pipe after any consumer is
+ * interrupted, so a pending native write cannot raise an unhandled late EPIPE.
+ * Consumers still receive the original error through NodeStream/NodeSink.
+ * This adapter also preserves native Windows verbatim arguments.
+ *
+ * It never sends a negative-pid signal. POSIX tree cleanup belongs to the
+ * prepared supervisor, which remains alive while it signals its own group.
+ * @private
+ * @since 1.0.0
+ */
+export const spawn = (
+  command: ChildProcess.StandardCommand,
+  windowsVerbatimArguments: boolean | undefined,
+  owner = false
+): Effect.Effect<ChildProcessHandle, PlatformError.PlatformError, Scope.Scope> => {
+  const descriptors = try(
+    (configure, options) => configure(options),
+    (cause) => failure("spawn", cause),
+    descriptorConfig,
+    command.options
+  )
+  const standardFds: Array<number | "ignore"> = [0, 1, 2]
+  const physicalFds = [0, 1, 2]
+  const stdio: Array<Native.IOType | number> = [...descriptors.stdio]
+  if (owner && Platform.hostPlatform() === "win32") {
+    const first = stdio.length
+    for (const fd of [0, 1, 2]) {
+      const mode = stdio[fd]!
+      physicalFds[fd] = first + fd
+      standardFds[fd] = mode === "ignore" ? "ignore" : first + fd
+      stdio.push(mode === "inherit" ? fd : mode)
+      stdio[fd] = "ignore"
+    }
+  }
+  const readable = [
+    physicalFds[1]!,
+    physicalFds[2]!,
+    ...descriptors.additional.filter(({ config }) => config.type === "output").map(({ fd }) => fd)
+  ]
+  const state = Effect.acquireRelease(
+    try(
+      (command, windowsVerbatimArguments, stdio, readable) =>
+        PipedNative.start(command, windowsVerbatimArguments, stdio, readable),
+      (cause) => failure("spawn", cause),
+      command,
+      windowsVerbatimArguments,
+      stdio,
+      readable
+    ),
+    (state) =>
+      Effect.orDie(() => {
+        try {
+          if (state.referenced && !state.ended) {
+            // Native kill returns false for an exit whose event is still
+            // queued. Require that event below; never infer a live failure
+            // or successful cleanup from the boolean alone.
+            try((state) => PipedNative.signal(state, "SIGKILL"), (cause) => failure("kill", cause), state)
+            timeout(sync(async (state) => state.exited, state), "2 seconds")
+          }
+        } finally {
+          sync((state) => PipedNative.destroyPipes(state), state)
+        }
+      })
+  )
+  try(async (state) => state.ready, (cause) => failure("spawn", cause), state)
+  const wait: Effect.Effect<readonly [number | null, NodeJS.Signals | null], never, never> = () =>
+    sync(async (state) => state.exited, state)
+  const kill: ChildProcessHandle["kill"] = (options) => {
+    if (state.ended) return
+    const signal = options?.killSignal ?? command.options.killSignal ?? "SIGTERM"
+    const send = (signal: ChildProcess.Signal): Effect.Effect<void, PlatformError.PlatformError, never> =>
+      try((state, signal) => PipedNative.signal(state, signal), (cause) => failure("kill", cause), state, signal)
+    uninterruptible {
+      try {
+        send(signal)
+        Effect.timeoutOrElse(wait, {
+          duration: options?.forceKillAfter ?? command.options.forceKillAfter ?? 2000,
+          orElse: () =>
+            timeout(() => {
+              send("SIGKILL")
+              return wait()
+            }, "2 seconds")
+        })
+      } catch (cause) {
+        throw cause instanceof PlatformError.PlatformError ? cause : failure("kill", cause)
+      }
+    }
+  }
+  const input = (fd: number, config?: ChildProcess.StdinConfig): ChildProcessHandle["stdin"] => {
+    const pipe = state.child.stdio[fd]
+    if (pipe === null || pipe === undefined || !("write" in pipe)) return Sink.drain
+    const writable = pipe
+    const method = fd === 0 ? "stdin" : `fd${fd}`
+    return Sink.suspend(() => {
+      const error = state.pipeErrors.get(pipe) ?? writable.errored ?? undefined
+      if (error !== undefined) return Sink.fail(failure(method, error))
+      if (writable.destroyed || writable.writableEnded) {
+        return Sink.fail(failure(method, new NativeProcessError({ message: `${method} is closed`, code: "EPIPE" })))
+      }
+      return NodeSink.fromWritable({
+        evaluate: () => writable,
+        onError: (cause) => failure(method, cause),
+        encoding: config?.encoding,
+        endOnDone: config?.endOnDone
+      })
+    })
+  }
+  const output = (fd: number, transform?: ChildProcess.CommandOutput): ChildProcessHandle["stdout"] => {
+    const pipe = state.child.stdio[fd]
+    const stream = pipe !== null && pipe !== undefined && "read" in pipe
+      ? Stream.suspend(() => {
+        const method = fd === 1 ? "stdout" : fd === 2 ? "stderr" : `fd${fd}`
+        const error = state.pipeErrors.get(pipe) ?? pipe.errored ?? undefined
+        return error !== undefined ?
+          Stream.fail(failure(method, error)) :
+          NodeStream.fromReadable<Uint8Array, PlatformError.PlatformError>({
+            evaluate: () => pipe,
+            onError: (cause) => failure(method, cause)
+          })
+      })
+      : Stream.empty
+    return Sink.isSink(transform) ? Stream.transduce(stream, transform) : stream
+  }
+  const stdin = input(physicalFds[0]!, descriptors.stdin)
+  const stdout = output(physicalFds[1]!, descriptors.stdout)
+  const stderr = output(physicalFds[2]!, descriptors.stderr)
+  if (Stream.isStream(descriptors.stdin.stream)) {
+    Effect.forkScoped(Stream.run(descriptors.stdin.stream, stdin))
+  }
+  const inputs = new Map<number, ChildProcessHandle["stdin"]>()
+  const outputs = new Map<number, ChildProcessHandle["stdout"]>()
+  for (const { fd, config } of descriptors.additional) {
+    if (config.type === "input") {
+      const sink = input(fd)
+      inputs.set(fd, sink)
+      if (config.stream !== undefined) Effect.forkScoped(Stream.run(config.stream, sink))
+    } else outputs.set(fd, output(fd, config.sink))
+  }
+  // The Effect-valued members hold their programs as annotated consts (D262).
+  const exitCode: Effect.Effect<ExitCode, PlatformError.PlatformError, never> = () => {
+    const [code, signal] = wait()
+    if (code === null) {
+      throw failure(
+        "exitCode",
+        new NativeProcessError({
+          message: `Process interrupted due to receipt of signal: '${signal}'`,
+          signal: String(signal)
+        })
+      )
+    }
+    return ExitCode(code)
+  }
+  const isRunning: Effect.Effect<boolean, never, never> = () => !state.ended
+  const unref: Effect.Effect<Effect.Effect<void>, never, never> = () => {
+    state.referenced = false
+    PipedNative.unref(state)
+    return () => {
+      state.referenced = true
+      PipedNative.ref(state)
+    }
+  }
+  const handle = makeHandle({
+    pid: ProcessId(state.child.pid!),
+    exitCode,
+    isRunning,
+    kill,
+    stdin,
+    stdout,
+    stderr,
+    all: Stream.merge(stdout, stderr),
+    getInputFd: (fd) => inputs.get(fd) ?? Sink.drain,
+    getOutputFd: (fd) => outputs.get(fd) ?? Stream.empty,
+    unref
+  })
+  if (owner && Platform.hostPlatform() === "win32") ownerDescriptors.set(handle, standardFds)
+  return handle
+}

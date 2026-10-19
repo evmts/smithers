@@ -1,0 +1,19 @@
+// Plain JavaScript contracts supported by D263.
+import type { Provider } from "./Provider.vibe"
+import type { JobOptions } from "./job.vibe"
+import { pidDirectory } from "../internal/pidDirectory.vibe"
+export const validateJob = <Payload>(provider: Provider, options: JobOptions<Payload>): { readonly attach: NonNullable<Provider["attach"]>; readonly destroy: NonNullable<Provider["destroy"]>; readonly root: string } => {
+  if (provider.retained !== true || provider.attach === undefined || provider.destroy === undefined) {
+    throw new TypeError("Sandbox.job requires a retained provider with attach and destroy")
+  }
+  const attach = provider.attach
+  const destroy = provider.destroy
+  const root = options.jobDirectory ?? provider.jobDirectory ?? "/var/lib/smthrs-jobs"
+  if (!root.startsWith("/") || root.includes("\0") || root.split("/").includes("..")) {
+    throw new TypeError("Sandbox.job jobDirectory must be an absolute normalized path")
+  }
+  if (root === pidDirectory || root.startsWith(`${pidDirectory}/`)) {
+    throw new TypeError("Sandbox.job jobDirectory must be outside the transient pid directory")
+  }
+  return { attach, destroy, root }
+}

@@ -1,0 +1,188 @@
+/**
+ * Control-plane contracts and projections for the Smithers harness.
+ *
+ * This is the public surface of the control plane: the transport-independent
+ * `Control` service, the `ControlRuntime` port it writes through, the
+ * projections it reads back, and the durable adapter that binds both to a real
+ * database.
+ *
+ * `Control` is authority, not execution. Every mutation it accepts is
+ * idempotent, principal-stamped, and recorded in the journal beside the state
+ * change it caused, so "who asked for this, and when did it take effect?" is
+ * answered from persisted evidence rather than from a log line.
+ *
+ * @since 0.1.0
+ */
+
+/**
+ * @category services
+ * @since 0.1.0
+ */
+export * as Control from "./Control.vibe"
+
+/**
+ * @category services
+ * @since 1.0.0
+ */
+export * as ApprovalAuthority from "./ApprovalAuthority.vibe"
+
+/**
+ * @category errors
+ * @since 0.1.0
+ */
+export * as ControlError from "./ControlError.vibe"
+
+/**
+ * @category models
+ * @since 0.1.0
+ */
+export * as ControlSchema from "./ControlSchema.vibe"
+
+/**
+ * @category projections
+ * @since 0.1.0
+ */
+export * as Cancellation from "./Cancellation.vibe"
+
+/**
+ * @category projections
+ * @since 0.1.0
+ */
+export * as Lineage from "./Lineage.vibe"
+
+/**
+ * @category projections
+ * @since 0.1.0
+ */
+export * as Monitor from "./Monitor.vibe"
+
+/**
+ * @category projections
+ * @since 0.1.0
+ */
+export * as Steering from "./Steering.vibe"
+
+/**
+ * @category services
+ * @since 0.1.0
+ */
+export * as ControlRuntime from "./ControlRuntime.vibe"
+
+/**
+ * @category services
+ * @since 0.1.0
+ */
+export * as ControlExecutor from "./ControlExecutor.vibe"
+
+/**
+ * @category services
+ * @since 1.0.0
+ */
+export * as DispatchReader from "./DispatchReader.vibe"
+
+/**
+ * @category layers
+ * @since 0.1.0
+ */
+export * as ControlLive from "./ControlLive.vibe"
+
+/**
+ * @category models
+ * @since 0.1.0
+ */
+export * as SystemFlows from "./SystemFlows.vibe"
+
+/**
+ * @category rpc
+ * @since 0.1.0
+ */
+export * as ControlRpcs from "./ControlRpcs.vibe"
+
+/**
+ * @category layers
+ * @since 0.1.0
+ */
+export * as ControlServer from "./ControlServer.vibe"
+
+/**
+ * @category layers
+ * @since 0.1.0
+ */
+export * as ControlClient from "./ControlClient.vibe"
+
+/**
+ * @category services
+ * @since 0.1.0
+ */
+export * as Channels from "./Channels.vibe"
+
+/**
+ * @category channels
+ * @since 0.1.0
+ */
+export * as WebhookChannel from "./WebhookChannel.vibe"
+
+/**
+ * @category services
+ * @since 0.1.0
+ */
+export * as Credential from "./Credential.vibe"
+
+/**
+ * @category services
+ * @since 0.1.0
+ */
+export * as CredentialCipher from "./CredentialCipher.vibe"
+
+/**
+ * @category services
+ * @since 0.1.0
+ */
+export * as CredentialStore from "./CredentialStore.vibe"
+
+/**
+ * @category layers
+ * @since 0.1.0
+ */
+export * as SqlCredentialStore from "./SqlCredentialStore.vibe"
+
+/**
+ * @category layers
+ * @since 0.1.0
+ */
+export * as WebCryptoCipher from "./WebCryptoCipher.vibe"
+
+/**
+ * @category layers
+ * @since 0.1.0
+ */
+export * as SqlControlRuntime from "./SqlControlRuntime.ts"
+
+/**
+ * @category authentication
+ * @since 1.0.0
+ */
+export * as ScopedToken from "./ScopedToken.vibe"
+
+/**
+ * @category migrations
+ * @since 0.1.0
+ */
+export * as Migrations from "./Migrations.vibe"
+
+/**
+ * Observational health contracts.
+ * @category health
+ * @since 1.0.0
+ */
+export * as Health from "./Health.vibe"
+
+/**
+ * The Jev-decided session checker a host binds as `jev.session`.
+ * @category health
+ * @since 1.0.0
+ */
+export * as JevSessionChecker from "./JevSessionChecker.vibe"
+
+/** Versioned control lifecycle producer and projection contract. */
+export * as ControlFacts from "./ControlFacts.vibe"

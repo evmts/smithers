@@ -1,0 +1,40 @@
+// Plain JavaScript contracts supported by D263.
+import type { KubernetesSandboxOptions } from "./make.vibe"
+import { refuseNetworkPolicy } from "../Sandbox/NetworkPolicy.vibe"
+import { validateResourceLimits } from "../Sandbox/ResourceLimits.vibe"
+const withLimits = (options: KubernetesSandboxOptions): KubernetesSandboxOptions => {
+  if (options.limits === undefined) return options
+  const limits = validateResourceLimits("kubernetes-sandbox", options.limits)
+  if (limits.cpus !== undefined && options.resources?.limits?.cpu !== undefined) {
+    throw new TypeError("kubernetes-sandbox: resources.limits.cpu and limits.cpus are exclusive; name one")
+  }
+  if (limits.memoryMib !== undefined && options.resources?.limits?.memory !== undefined) {
+    throw new TypeError("kubernetes-sandbox: resources.limits.memory and limits.memoryMib are exclusive; name one")
+  }
+  if (limits.cpus === undefined && limits.memoryMib === undefined) return options
+  return {
+    ...options,
+    resources: {
+      ...options.resources,
+      limits: {
+        ...options.resources?.limits,
+        ...limits.cpus === undefined ? {} : { cpu: String(limits.cpus) },
+        ...limits.memoryMib === undefined ? {} : { memory: `${limits.memoryMib}Mi` }
+      }
+    }
+  }
+}
+export const validateOptions = (input: KubernetesSandboxOptions, overrideArgs: (name: string, options: KubernetesSandboxOptions) => ReadonlyArray<string>): KubernetesSandboxOptions => {
+refuseNetworkPolicy("kubernetes-sandbox", input.network)
+  const options = withLimits(input)
+  // kubectl keeps only the last `--overrides`, so a caller's would silently
+  // replace the one carrying the Pod's resources and deadline.
+  const overriding = (options.createArgs ?? []).find((arg) => /^--override(?:s|-type)(?:=|$)/.test(arg))
+  if (overriding !== undefined && overrideArgs("", options).length > 0) {
+    throw new TypeError(
+      `kubernetes-sandbox: createArgs ${overriding.split("=")[0]} would replace the Pod override carrying ` +
+        "limits, resources, serviceAccount, and nodeSelector; name those through the options"
+    )
+  }
+  return options
+}
