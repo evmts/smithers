@@ -75,6 +75,7 @@ type Client struct {
 	machineRepository   MachineRepository
 	immutableFilesMu    sync.Mutex
 	immutableFiles      map[immutableFileKey]*immutableFileRead
+	immutableCommits    map[string][]byte
 	resolver            StorageSetResolver
 	authToken           string
 	httpClient          *http.Client
