@@ -36,6 +36,7 @@ type Product interface {
 	AdmitAgentBoxJoin(ctx context.Context, workspaceID, sessionID string, userID int64) (db.AgentBoxAdmission, error)
 	GetAgentSessionBox(ctx context.Context, agentSessionID string) (db.Workspace, error)
 	MarkAgentBoxGuestDirty(ctx context.Context, arg db.MarkAgentBoxGuestDirtyParams) error
+	AgentBoxTurnActive(ctx context.Context, id string) (bool, error)
 	RecordAgentBoxGuest(ctx context.Context, arg db.RecordAgentBoxGuestParams) (db.Workspace, error)
 	AttachWorkflowArtifactToRelease(ctx context.Context, arg db.AttachWorkflowArtifactToReleaseParams) (db.WorkflowArtifact, error)
 	AuthorizePublicWorkspaceService(ctx context.Context, arg db.AuthorizePublicWorkspaceServiceParams) (bool, error)

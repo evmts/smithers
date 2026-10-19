@@ -86,6 +86,17 @@ WHERE id = sqlc.arg(id)
   AND agent_session_id IS NOT NULL
   AND deleted_at IS NULL;
 
+-- name: AgentBoxTurnActive :one
+-- Whether the agent session that owns a box has a turn in progress: only that
+-- turn may start the box's guest while it is dirty.
+SELECT EXISTS (
+  SELECT 1 FROM workspaces w
+  JOIN agent_sessions s ON s.id = w.agent_session_id
+  WHERE w.id = sqlc.arg(id)
+    AND s.status = 'active'
+    AND s.deleted_at IS NULL
+)::boolean AS active;
+
 -- name: RecordAgentBoxGuest :one
 -- Records the new guest of a retired agent box. It is the only write that
 -- clears the box's dirty mark (plue#869): a box is retired only after the

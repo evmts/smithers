@@ -13,6 +13,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const agentBoxTurnActive = `-- name: AgentBoxTurnActive :one
+SELECT EXISTS (
+  SELECT 1 FROM workspaces w
+  JOIN agent_sessions s ON s.id = w.agent_session_id
+  WHERE w.id = $1
+    AND s.status = 'active'
+    AND s.deleted_at IS NULL
+)::boolean AS active
+`
+
+// Whether the agent session that owns a box has a turn in progress: only that
+// turn may start the box's guest while it is dirty.
+func (q *Queries) AgentBoxTurnActive(ctx context.Context, id string) (bool, error) {
+	row := q.db.QueryRow(ctx, agentBoxTurnActive, id)
+	var active bool
+	err := row.Scan(&active)
+	return active, err
+}
+
 const countActiveSessionsForUser = `-- name: CountActiveSessionsForUser :one
 SELECT COUNT(*)
 FROM workspace_sessions

@@ -40,15 +40,22 @@ func withAgentBoxJoin(ctx context.Context, sessionID string, userID int64) conte
 // mints anything. An agent turn's join waits while a release on any replica
 // holds the box, then binds its session to the box in the same transaction,
 // so a release that reads the box's use afterwards sees the turn. Any other
-// start waits only while a release holds the box. The turn retired its box's
-// dirty guest before it got here (retireAgentSessionBoxForTurn). It answers
-// the box as it now is.
+// start waits only while a release holds the box, and never reaches a dirty
+// session box's guest outside its session's turn
+// (refuseDirtySessionBoxStart). The turn retired its box's dirty
+// guest before it got here (retireAgentSessionBoxForTurn). It answers the box
+// as it now is.
 func (s *WorkspaceService) admitAgentBoxJoinLocked(ctx context.Context, row db.Workspace) (db.Workspace, error) {
 	fence, ok := s.q.(agentWorkspaceReleaseStore)
 	if !ok || s.machineAdmission != nil || !s.hasWorkspaceRuntime() {
 		return row, nil
 	}
 	join, joining := ctx.Value(agentBoxJoinKey{}).(agentBoxJoin)
+	if !joining {
+		if err := s.refuseDirtySessionBoxStart(ctx, row); err != nil {
+			return row, err
+		}
+	}
 	if !joining && !db.IsAgentBoxLease(row.ProvisioningStage) {
 		return row, nil
 	}
