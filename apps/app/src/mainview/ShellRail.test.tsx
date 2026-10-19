@@ -23,6 +23,7 @@ import { installFixture } from "./state/seams/InstallFixtures.test-support"
 import { fixtures as todoFixtures } from "@smthrs/rpc/fixtures/Todo"
 import type { Card, Message, Toast } from "./state/AppState"
 import { homeFailureModel } from "./cards/HomeContainer"
+import { RepositoryNoticesContext } from "./repository/RepoFrame"
 import { Timeline } from "./Timeline"
 import { ToastStack } from "./ToastStackView"
 
@@ -106,6 +107,30 @@ test("the mounted install rail reads the real seams and Hide runs toast.dismiss 
   await waitFor(() => host.querySelectorAll(".notice").length === 0)
   expect(store.collections.toasts.get("toast-checks")).toBeUndefined()
   expect(host.querySelector('[data-entry="checks-entry"] .tl-text b')?.textContent).toBe("Checks failed")
+})
+
+// A collapsed repository Ask hides the rail: its notices show in the frame's region, still filtered and dismissable here.
+test("the rail's notices render in a repository notice region when the frame supplies one, keeping the member filter and Hide", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+  const controller = createAppController(store, silentAgent, {})
+  await store.dispatch({ type: "toast.shown", actor: "system", key: "repository.ready", title: "Loading repository…" }).isPersisted.promise
+  await store.dispatch({ type: "toast.shown", actor: "system", key: "maya-todo", title: "Needs Maya",
+    audience: { member: "maya", entryId: "todo:3", kind: "needs_you", actorLabel: "Coding agent for Maya", target: { flow: "todo", n: 3 } } }).isPersisted.promise
+  const region = document.createElement("div")
+  region.className = "repo-ui-toasts"
+  document.body.append(region)
+  cleanups.push(() => region.remove())
+  const host = mount(<ControllerTestProvider controller={controller}><MessageScrollerProvider>
+    <RepositoryNoticesContext.Provider value={{ host: region, reveal: () => {} }}><ShellRail home={false} entries={[]} /></RepositoryNoticesContext.Provider>
+  </MessageScrollerProvider></ControllerTestProvider>)
+  await waitFor(() => region.querySelectorAll(".notice").length === 1)
+  expect(host.querySelectorAll(".notice")).toHaveLength(0)
+  expect(region.querySelector(".notice")?.getAttribute("data-notice")).toBe("toast-repository.ready")
+  click(region.querySelector('[aria-label="Hide Loading repository…"]'))
+  await waitFor(() => region.querySelectorAll(".notice").length === 0)
+  expect(store.collections.toasts.get("toast-repository.ready")).toBeUndefined()
+  expect(store.collections.toasts.get("toast-maya-todo")?.title).toBe("Needs Maya")
 })
 
 describe("ShellRail maps the conversation to the rail", () => {

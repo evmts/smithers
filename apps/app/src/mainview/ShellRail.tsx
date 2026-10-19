@@ -19,7 +19,9 @@ import type { ShellView, ToastCard } from "@smthrs/rpc/ToastCard"
 import type { TimelineLine } from "@smthrs/rpc/TimelineCard"
 import { useMessageBand, useMessageScroller } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { useState, useSyncExternalStore } from "react"
+import { useContext, useState, useSyncExternalStore } from "react"
+import { createPortal } from "react-dom"
+import { RepositoryNoticesContext } from "./repository/RepoFrame"
 import { useSharedConversation } from "./state/useSharedConversation"
 import type { SharedConversation } from "./state/seams/SharedConversationSeam"
 import { useController } from "./ControllerContext"
@@ -326,9 +328,14 @@ export function ShellRail({ entries, home }: { readonly entries: ReadonlyArray<R
   // their own titles stand (#3732).
   const asked = controller.timelineTitles(wide ? foldedRuns(lines, folded) : [])
   const shown = withTitles(folded, useSyncExternalStore(asked.subscribe, asked.get, asked.get))
+  // A collapsed repository Ask hides this rail; its notices then show in the frame's own notice region, still
+  // filtered here, and a notice's action first reveals the Ask its target card lives in.
+  const hosted = useContext(RepositoryNoticesContext)
+  const stack = <ToastStack toasts={notices} more={Math.max(0, notices.length - 3)} onView={onView}
+    onAction={hosted === null ? onToastAction : (tag, args) => { if (tag !== "notifications.allow") hosted.reveal(); onToastAction(tag, args) }} />
   return <aside className="rail" aria-label="Activity" data-keyboard-pane="Timeline" data-wide={wide || undefined}>
     <EdgeMap above={edges.above} below={edges.below} narrow={!wide} onAction={onEdgeAction} onView={onView} />
     <Timeline lines={shown} on_screen={band === undefined ? [last, last] : [band[0], band[1]]} onView={onView} onAction={timeline.onAction} />
-    <ToastStack toasts={notices} more={Math.max(0, notices.length - 3)} onAction={onToastAction} onView={onView} />
+    {hosted === null ? stack : createPortal(stack, hosted.host)}
   </aside>
 }

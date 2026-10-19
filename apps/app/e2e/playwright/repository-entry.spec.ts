@@ -1,13 +1,19 @@
 import { expect, test, type Page } from "./browserTest"
 import { identityRoute } from "./identity"
 
+// An admitted repository's frame opens its composer through Ask; an unresolved
+// or refused URL stays on the chat page, where ⌘K opens it. Sending clears it either way.
 const command = async (page: Page, line: string) => {
   const input = page.getByTestId("composer-input")
-  if (!await input.isVisible()) await page.keyboard.press("Control+k")
+  if (!await input.isVisible()) {
+    const ask = page.getByRole("button", { name: "Ask", exact: true })
+    if (await ask.isVisible()) await ask.click()
+    else await page.keyboard.press("Control+k")
+  }
   await expect(input).toBeVisible()
   await input.fill(line)
   await input.press("Enter")
-  await expect(input).toBeHidden()
+  await expect(input).toHaveValue("")
 }
 
 test("an unresolved or failed repository URL never reads the previous repository by default", async ({ page }) => {
@@ -29,7 +35,7 @@ test("an unresolved or failed repository URL never reads the previous repository
     return route.fulfill({ json: [{ path: "README.md", name: "README.md", type: "file", size: 11 }] })
   })
   await page.goto("/smithersai/smithers/?design=off")
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
   await command(page, "/files / smithersai/smithers")
   await expect(page.locator('[data-kind="file-list"]').last()).toContainText("README.md")
 

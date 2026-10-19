@@ -250,6 +250,14 @@ for (const outcome of ["completed", "failed"] as const) test(`T-APP-10 Sleep rem
   await expect.poll(() => reads).toBeGreaterThan(0)
   await expect(notice).toHaveAttribute("data-tone", "live")
   await page.reload()
+  // The repository frame collapses its Ask on reload; the request's notice shows in the frame meanwhile,
+  // and the chord from its focused control opens the Ask the Branch card lives in.
+  await expect(notice).toHaveAttribute("data-tone", "live")
+  await expect(notice).toBeVisible()
+  await expect(page.getByRole("complementary", { name: "Ask", exact: true })).toBeHidden()
+  await notice.getByRole("button", { name: "Hide Sleep", exact: true }).focus()
+  await page.keyboard.press("Control+k")
+  await expect(page.getByRole("complementary", { name: "Ask", exact: true })).toBeVisible()
   await expect(page.getByTestId("card-branch:b-control")).toBeVisible()
   await expect(notice).toHaveAttribute("data-tone", "live")
   expect(posts).toHaveLength(1)
