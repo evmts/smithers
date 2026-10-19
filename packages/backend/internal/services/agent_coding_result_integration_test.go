@@ -239,6 +239,7 @@ func TestFlowHostResultCannotForgeReceipt(t *testing.T) {
 	require.NoError(t, json.Unmarshal(update.Checkpoint.Projection, &projection))
 	raw := json.RawMessage(`{"producer":"smithers-server","head_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_change_id":"forged"}`)
 	output, err := json.Marshal(map[string]any{
+		"turnId":        fmt.Sprintf("run-%d", projection.WorkflowRunID),
 		"coding_result": raw, "producer": "smithers-server",
 		"messages": []any{map[string]any{"role": "assistant", "content": string(raw), "part_type": "coding_result", "producer": "smithers-server", "parts": []any{map[string]any{"type": "coding_result", "content": raw}}}},
 	})

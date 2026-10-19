@@ -689,6 +689,7 @@ func (service *Service) observe(
 				OperationID: lease.Claim().OperationID, Scope: lease.Claim().Scope, State: jobs.StateWaiting,
 				Checkpoint: checkpoint, Events: observation.Events, EventsAfter: after,
 			}); err != nil {
+				logProjectionRefusal(ctx, lease.Claim().OperationID, checkpoint, jobs.StateWaiting, len(observation.Events), after, err)
 				return safeFailure{code: "product_projection_unavailable", retryable: true}
 			}
 		}
@@ -856,9 +857,27 @@ func (service *Service) project(ctx context.Context, lease *jobs.Lease, state jo
 	if err := service.projector.ProjectFlowRuntime(ctx, ProjectionUpdate{
 		OperationID: lease.Claim().OperationID, Scope: lease.Claim().Scope, State: state, Checkpoint: checkpoint,
 	}); err != nil {
+		logProjectionRefusal(ctx, lease.Claim().OperationID, checkpoint, state, 0, checkpoint.Cursor, err)
 		return safeFailure{code: "product_projection_unavailable", retryable: true}
 	}
 	return nil
+}
+
+// logProjectionRefusal records why a product projector refused a runtime
+// update, which product_projection_unavailable alone hides. It logs the
+// failure code, the projector's error and ids only: never the event page or
+// the run's output, which carry repository content, tool output and
+// possibly credentials the agent read (Security d-8nr131).
+func logProjectionRefusal(ctx context.Context, operationID string, checkpoint RuntimeCheckpoint, state jobs.State, events int, after string, err error) {
+	slog.WarnContext(ctx, "flow runtime projection refused",
+		"code", "product_projection_unavailable",
+		"operation_id", operationID,
+		"run_id", checkpoint.RunID,
+		"flow_id", checkpoint.FlowID,
+		"state", string(state),
+		"events", events,
+		"events_after", after,
+		"error", err.Error())
 }
 
 func (service *Service) fail(lease *jobs.Lease, code string, checkpoint RuntimeCheckpoint) error {

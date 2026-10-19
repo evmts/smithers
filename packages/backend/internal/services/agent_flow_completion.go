@@ -15,20 +15,26 @@ import (
 // code units as codingTriggerTextLimit, which that file also declares.
 const codingReplyMessageLimit = 20
 
+// The typed refusals of a completed coding turn's reply. Their text is what
+// operators grep for in the worker log ('refused completed coding turn reply').
+var (
+	errCodingRunIdentity  = errors.New("completed coding turn run identity is invalid")
+	errCodingTurnIdentity = errors.New("completed coding turn output identity is invalid")
+)
+
 // completedCodingMessages decodes only coding/dispatch's final reply rows.
-// Journal/tool frames are not replies. Older hosts omitted ordinal and the
-// echoed identities; when present those fields must match the admitted turn.
+// Journal/tool frames are not replies. The reply must name the admitted
+// turn; older hosts omitted ordinal, which is still optional.
 func completedCodingMessages(update flowdispatch.ProjectionUpdate, projection agentFlowProjection) ([]string, error) {
 	run := update.Checkpoint.Run
 	if run == nil || run.FinalOutput == nil {
 		return nil, errors.New("completed coding turn has no final output")
 	}
 	if run.Status != "completed" || run.FlowID != codingDispatchFlowID || run.RunID == "" || run.RunID != update.Checkpoint.RunID {
-		return nil, errors.New("completed coding turn run identity is invalid")
+		return nil, errCodingRunIdentity
 	}
 	var output struct {
 		TurnID   *string `json:"turnId"`
-		RunID    *string `json:"runId"`
 		Messages []struct {
 			Ordinal *int   `json:"ordinal"`
 			Role    string `json:"role"`
@@ -38,8 +44,18 @@ func completedCodingMessages(update flowdispatch.ProjectionUpdate, projection ag
 	if err := json.Unmarshal([]byte(*run.FinalOutput), &output); err != nil {
 		return nil, fmt.Errorf("decode completed coding turn: %w", err)
 	}
-	if output.TurnID != nil && *output.TurnID != fmt.Sprintf("run-%d", projection.WorkflowRunID) || output.RunID != nil && *output.RunID != run.RunID {
-		return nil, errors.New("completed coding turn output identity is invalid")
+	// Two id namespaces meet here. run.RunID is the runtime launch id the
+	// server started (dispatch:<op>), checked above against the checkpoint.
+	// The output's runId is the host engine's own execution id for the flow
+	// inside that launch (coding/dispatch.ts DispatchResult.runId, a handle
+	// for the host gateway's selectors), so it never equals run.RunID and is
+	// not compared (P0 2026-10-19, Security d-kq78n2). The server-assigned
+	// turnId binds the answer to its turn, so it is required (Security
+	// d-naxrhi; coding/dispatch's DispatchResult always carries it). Binding
+	// the echoed runId to the launch's own journal is post-launch work
+	// (option A).
+	if output.TurnID == nil || *output.TurnID != fmt.Sprintf("run-%d", projection.WorkflowRunID) {
+		return nil, errCodingTurnIdentity
 	}
 	if len(output.Messages) == 0 || len(output.Messages) > codingReplyMessageLimit {
 		return nil, fmt.Errorf("completed coding turn needs 1 to %d assistant messages", codingReplyMessageLimit)
