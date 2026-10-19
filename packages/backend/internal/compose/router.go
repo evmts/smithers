@@ -306,6 +306,7 @@ func buildRouter(
 	var quotaCounters interface {
 		middleware.ConnectedRepoCounter
 		middleware.ConcurrentWorkflowRunCounter
+		routes.ActiveWorkflowRunCounter
 		middleware.ConcurrentSandboxCounter
 	}
 	if queries != nil {
@@ -571,8 +572,7 @@ func buildRouter(
 		wrrHandler := &routes.WorkflowRunHandler{Service: workflowHandler.Service, Broker: wrrBroker, Metrics: smithersMetrics}
 		r.Group(func(r chi.Router) {
 			r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
-			r.Use(authLoader(queries, cfg.Auth))
-			r.Use(sseTicketAuth)
+			r.Use(authLoader(queries, cfg.Auth, sseTicketAuth))
 			if config.IsSingleOwner(cfg.Auth) {
 				r.Use(memberCommands(queries))
 			}
@@ -2407,11 +2407,18 @@ func buildRouter(
 var revocationChecker middleware.RevocationChecker
 
 // authLoader resolves the caller and then refuses a credential revoked since
-// it was issued, so every route group gets both with one middleware.
-func authLoader(queries *db.Queries, cfg config.AuthConfig) func(http.Handler) http.Handler {
+// it was issued, so every route group gets both with one middleware. Stream
+// credential loaders establish their final identity before run visibility.
+func authLoader(queries *db.Queries, cfg config.AuthConfig, credentialLoaders ...func(http.Handler) http.Handler) func(http.Handler) http.Handler {
 	load := middleware.AuthLoader(queries, cfg)
 	guard := middleware.RevocationGuard(revocationChecker)
 	return func(next http.Handler) http.Handler {
+		if queries != nil {
+			next = middleware.RunRecordVisibility(queries)(next)
+		}
+		for i := len(credentialLoaders) - 1; i >= 0; i-- {
+			next = credentialLoaders[i](next)
+		}
 		return load(guard(next))
 	}
 }

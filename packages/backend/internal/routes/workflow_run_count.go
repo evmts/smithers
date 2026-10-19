@@ -8,12 +8,10 @@ import (
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
-// ActiveWorkflowRunCounter is the authoritative per-user counter already used
-// by Plue's workflow-dispatch quota middleware. Exposing this narrow read lets
-// the edge Worker enforce the same account-wide safety cap before it provisions
-// or contacts a per-repository Smithers gateway.
+// ActiveWorkflowRunCounter reports the caller's visible runs, independently of
+// the shared-repository capacity quota's conservative internal accounting.
 type ActiveWorkflowRunCounter interface {
-	CountActiveWorkflowRunsForUser(ctx context.Context, userID int64) (int, error)
+	CountVisibleActiveWorkflowRunsForUser(ctx context.Context, userID, viewerID int64) (int, error)
 }
 
 type WorkflowRunCountHandler struct {
@@ -21,10 +19,7 @@ type WorkflowRunCountHandler struct {
 }
 
 // GetActiveWorkflowRunCount handles GET /api/user/workflow-runs/active-count.
-// Identity comes only from authenticated request context; callers cannot name a
-// different user. The underlying query includes personal, organization, and
-// collaborator repositories and intentionally counts shared-repository runs
-// conservatively, matching PerUserConcurrentWorkflowRuns.
+// Identity comes from the authenticated request; private turns never count.
 func (h *WorkflowRunCountHandler) GetActiveWorkflowRunCount(w http.ResponseWriter, r *http.Request) {
 	user := middleware.UserFromContext(r.Context())
 	if user == nil {
@@ -36,7 +31,7 @@ func (h *WorkflowRunCountHandler) GetActiveWorkflowRunCount(w http.ResponseWrite
 		return
 	}
 
-	count, err := h.Counter.CountActiveWorkflowRunsForUser(r.Context(), user.ID)
+	count, err := h.Counter.CountVisibleActiveWorkflowRunsForUser(r.Context(), user.ID, middleware.RunRecordViewerID(r.Context()))
 	if err != nil {
 		writeInternalError(w, r, "failed to count active workflow runs", err)
 		return
