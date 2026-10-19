@@ -1222,6 +1222,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithWorkspaceCommandJobs(commandJobs, webhookSecretCodec),
 		services.WithWorkspaceRuntime(options.Workspace),
 		services.WithWorkspaceTransactions(pool),
+		services.WithWorkspaceMutationConcurrency(services.WorkspaceMutationConcurrencyFor(pool.Config().MaxConns)),
 		services.WithTransactionalWorkspaceCleanup(options.CleanupClock),
 		services.WithWorkspaceBillingPolicy(billingPolicy),
 		services.WithWorkspaceServicePayerOrgs(cfg.Billing.ServicePayerOrgIDs),

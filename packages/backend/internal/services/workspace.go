@@ -663,6 +663,9 @@ type WorkspaceService struct {
 	// agentBoxIdleCap is how long a quiesced agent box may sit with no turn
 	// before it is retired; zero disables it. See WithAgentBoxIdleCap.
 	agentBoxIdleCap time.Duration
+	// mutationSlots caps the holders of a workspace mutation's authorization
+	// transaction (WithWorkspaceMutationConcurrency); nil is uncapped.
+	mutationSlots chan struct{}
 	// agentBoxReleaseHook, when set, is called at each point of a release or
 	// retirement named in agentBoxReleasePoint. Tests pause a replica there.
 	agentBoxReleaseHook func(point, workspaceID string)
