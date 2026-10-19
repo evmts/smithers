@@ -620,6 +620,44 @@ test("a fresh command refreshes a failed catalog once without changing selection
   } finally { release(json(404, {})); await h.close() }
 })
 
+// repository-readiness.spec.ts:61 counted two admission requests for one retry: the hosted viewer-rank
+// read (RepositoryAuthority, the same document) raced the retry on every command while admission was unsettled.
+test("a retry command reads the repository document once; the viewer's rank is read after admission settles", async () => {
+  let release!: (response: Response) => void
+  const admission = new Promise<Response>(resolve => release = resolve)
+  const admitted = () => json(200, { full_name: repo, is_public: true, permission: "read" })
+  let documents = 0
+  // A hosted, signed-in page: the design world is off and the viewer-rank authority is scoped to the account.
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "repository.entry.changed", actor: "system", entry: { requestId: crypto.randomUUID(), repo, phase: "pending" } }).isPersisted.promise
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "cloud"], authFlow: "native-handoff", sandbox: null },
+    fetchImpl: async input => {
+      const url = String(input)
+      if (url === DOCUMENT) { documents++; return documents === 1 ? admission : admitted() }
+      if (url.includes("/contents/.smithers/factory.json") || /\/api\/repos\/[^/]+\/[^/]+\/home$/.test(url)) return json(404, {})
+      return json(200, [])
+    },
+    toastDebounceMs: 10
+  })
+  const h = { store, controller, close: async () => { await controller.dispose?.(); await store.dispose?.() } }
+  try {
+    expect(controller.design.enabled).toBe(false)
+    await catalogFailed(h.store)
+    expect(await h.controller.commands.run("file", `README.md ${repo}`)).toEqual({ status: "executed", value: "Requested" })
+    await h.controller.commands.run("file", `README.md ${repo}`)
+    await pause(100)
+    expect(documents).toBe(1)
+    expect(h.store.session().repositoryEntry?.phase).toBe("pending")
+    release(admitted())
+    await until(() => h.store.collections.cards.get(`file-${repo}-README.md`) !== undefined || documents === 2)
+    await pause(100)
+    // Admission settled: the command's snapshot asked the platform for the viewer's rank, once.
+    expect(documents).toBe(2)
+  } finally { release(json(404, {})); await h.close() }
+})
+
 test("a failed refresh stays honest and the next user retry can succeed without reload", async () => {
   let refreshes = 0
   const h = await setup(undefined, async input => String(input) === DOCUMENT
