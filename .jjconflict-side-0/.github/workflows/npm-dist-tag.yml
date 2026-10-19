@@ -1,0 +1,128 @@
+# Point an npm dist-tag of one @smthrs package at a version already on npm.
+#
+# release.yml publishes a prerelease under `next` and never moves `latest`.
+# When `latest` must follow a published prerelease, a maintainer runs:
+#
+#   gh workflow run npm-dist-tag.yml -f package=@smthrs/flows -f version=1.0.0-rc.8 -f tag=latest
+#
+# It checks out nothing and publishes nothing. Its only write is
+# `npm dist-tag add`, made with the NPM_TOKEN repository secret, the npm
+# credential release-auth.yml verifies.
+#
+# GUARDS, all checked before the write:
+# - `package` is a scoped @smthrs/<name>. The unscoped `smthrs` and
+#   `smithers-orchestrator` names keep 0.x users on `latest`, so this workflow
+#   cannot move them.
+# - `version` is an exact version, published under that package.
+# - `tag` is a lowercase word.
+# - `tag: latest` is refused while the package's current `latest` is a 0.x
+#   version, the same rule release.yml applies to prereleases, unless
+#   `replaceZeroLatest` is true.
+#
+# The log prints the dist-tags before and after the move.
+#
+# LINTING. ci.yml names this file in its actionlint step, and release.yml
+# copies that step.
+name: Move an npm dist-tag
+run-name: npm dist-tag ${{ inputs.tag }} ${{ inputs.package }}@${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Package, as @smthrs/<name>"
+        required: true
+        type: string
+      version:
+        description: "Exact version already on npm, such as 1.0.0-rc.8"
+        required: true
+        type: string
+      tag:
+        description: "Dist-tag to point at that version, such as latest"
+        required: true
+        type: string
+      replaceZeroLatest:
+        description: "Move latest even when it is a 0.x version that 0.x users install"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-dist-tag-${{ inputs.package }}
+  cancel-in-progress: false
+
+jobs:
+  move:
+    name: Move the dist-tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm-publish
+    env:
+      PACKAGE: ${{ inputs.package }}
+      VERSION: ${{ inputs.version }}
+      TAG: ${{ inputs.tag }}
+      REPLACE_ZERO_LATEST: ${{ inputs.replaceZeroLatest }}
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 26.4.0
+          registry-url: https://registry.npmjs.org
+      # setup-node's .npmrc sends NODE_AUTH_TOKEN with every request, and the
+      # registry refuses even a public read made with its placeholder token, so
+      # each npm step carries the real one.
+      - name: Check the request
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$PACKAGE" =~ ^@smthrs/[a-z0-9-]+$ ]]; then
+            echo "::error::package must be @smthrs/<name> in lowercase letters, digits and hyphens; got '$PACKAGE'."
+            exit 1
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::version must be an exact version such as 1.0.0-rc.8; got '$VERSION'."
+            exit 1
+          fi
+          if [[ ! "$TAG" =~ ^[a-z][a-z0-9-]{0,63}$ ]]; then
+            echo "::error::tag must be a lowercase word such as latest or next; got '$TAG'."
+            exit 1
+          fi
+
+          published="$(npm view "$PACKAGE@$VERSION" version --registry https://registry.npmjs.org --loglevel error)"
+          if [ "$published" != "$VERSION" ]; then
+            echo "::error::$PACKAGE@$VERSION is not on npm."
+            exit 1
+          fi
+
+          before="$(npm dist-tag ls "$PACKAGE" --registry https://registry.npmjs.org --loglevel error)"
+          echo "dist-tags of $PACKAGE before:"
+          printf '%s\n' "$before"
+
+          current_latest="$(awk -F': ' '$1 == "latest" { print $2 }' <<<"$before")"
+          if [ "$TAG" = latest ] && [[ "$current_latest" == 0.* ]] && [ "$REPLACE_ZERO_LATEST" != true ]; then
+            echo "::error::$PACKAGE latest is $current_latest, a 0.x version that 0.x users install. Dispatch with replaceZeroLatest=true to move it anyway."
+            exit 1
+          fi
+        shell: bash
+      - name: Move the dist-tag
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm dist-tag add "$PACKAGE@$VERSION" "$TAG" --registry https://registry.npmjs.org --loglevel error
+        shell: bash
+      - name: Show the dist-tags after
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          after="$(npm dist-tag ls "$PACKAGE" --registry https://registry.npmjs.org --loglevel error)"
+          echo "dist-tags of $PACKAGE after:"
+          printf '%s\n' "$after"
+          moved="$(awk -F': ' -v tag="$TAG" '$1 == tag { print $2 }' <<<"$after")"
+          if [ "$moved" != "$VERSION" ]; then
+            echo "::error::$TAG of $PACKAGE reads '$moved', not $VERSION."
+            exit 1
+          fi
+        shell: bash

@@ -1,0 +1,77 @@
+.repo-frame { container-type:inline-size; container-name:repository-frame; height:100dvh; overflow:hidden; background:var(--bg); color:var(--text); font:16px/1.55 var(--font-ui); }
+.repo-frame a { color:inherit; text-decoration:none; }
+.repo-frame a:hover { color:var(--brand); }
+.repo-frame h1,.repo-frame h2,.repo-frame h3 { margin:0; }
+.repo-frame button,.repo-frame summary { cursor:pointer; }
+.repo-frame summary { list-style:none; }
+.repo-frame summary::-webkit-details-marker { display:none; }
+.repo-frame[data-ask-open="false"] .repo-frame-ask { display:none; }
+@container repository-frame (max-width:1439px) { .repo-frame[data-ask-open="auto"] .repo-frame-ask { display:none; } }
+@container repository-frame (min-width:1440px) { .repo-frame[data-ask-open="auto"] .repo-frame-page { width:calc(100cqw - 380px); margin-right:380px; } }
+.repository-chat { flex:1; min-height:0; position:relative; overflow:hidden; }
+.repository-chat .app-shell { height:100%; min-height:0; flex-direction:column; }
+.repository-chat .app-chat-controls,.repository-chat .shell-rail,.repository-chat .auth-shortcut { display:none; }
+.repository-chat .composer-overlay { position:relative; inset:auto; flex:none; padding-top:0; background:var(--surface); }
+.repository-chat .composer-wrap { width:100%; max-width:100%; }
+.repository-chat .chat-column { width:100%; max-width:100%; }
+.repo-ui-markdown { overflow-wrap:anywhere; }
+.repo-ui-markdown h1 { font-size:var(--fs-6); margin:0 0 20px; }
+.repo-ui-markdown h2 { font-size:var(--fs-5); margin:24px 0 16px; }
+.repo-ui-markdown h3 { font-size:var(--fs-4); margin:20px 0 12px; }
+.repo-ui-tabs { overflow-x:auto; }
+.repo-ui-tabs > a { flex-shrink:0; }
+/* Keep the mock's focus ring and file-name column when commit metadata is absent. */
+.repo-frame :focus-visible { outline:2px solid var(--ring-border); outline-offset:2px; }
+.repo-frame .repo-code-home-file-row > span:first-child { text-align:left; grid-column:1; }
+.repo-frame .repo-ui-menu { max-width:calc(100cqw - 32px); }
+.repo-frame .repo-ui-menu a { overflow-wrap:anywhere; }
+/* The repository frame owns the page header; the conversation strip belongs inside Ask. */
+.session-shell:has(> .repo-frame) { padding-top:0; }
+.session-shell:has(> .repo-frame) > .session-navigation { display:none; }
+.session-shell > .repo-frame { width:100%; flex:1; min-width:0; }
+
+.repo-frame-avatar-button { width:28px; height:28px; min-height:28px; border-radius:50%; padding:0; }
+.repo-frame-search { height:37px; }
+.repo-frame .repo-ui-tabs { height:52px; }
+.repo-frame-ask-button { background:var(--surface-2); color:var(--text); border-color:var(--border-strong); }
+
+/* Measured stage 1 frame: native account disclosure keeps the avatar box. */
+.repo-frame .repo-frame-avatar-button { font:inherit; padding:0; }
+@container repository-frame (max-width:767px) {
+  .repo-frame .repo-frame-ask-button { background:var(--surface); padding:0 12px; }
+}
+
+.repo-code-home-latest { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 16px; border-bottom:1px solid var(--border); font-size:var(--fs-1); background:var(--surface-2); }
+.repo-code-home-latest > span { flex:1; min-width:0; overflow-wrap:anywhere; }
+.repo-code-home-latest code { overflow-wrap:anywhere; min-width:0; }
+.repo-code-home-latest time { color:var(--text-muted); }
+.repo-ui-branch-menu { max-height: min(400px, 60dvh); overflow:auto; }
+
+/* Compact Ask keeps the shared notices without the desktop activity rail. */
+.repository-chat .chat-frame { container-type:inline-size; }
+@container (max-width:879px) {
+  .repository-chat .chat-frame > .rail {
+    display:flex; top:8px; bottom:auto; left:12px; width:calc(100% - 24px);
+    max-height:50%; overflow-y:auto;
+  }
+  .repository-chat .rail > :is(.edge-map, .timeline) { display:none; }
+  .repository-chat .rail > .notify { position:static; width:100%; }
+  .repository-chat .app-shell .chat-frame .smithers-transcript .sui-chat-messages,
+  .repository-chat .app-shell .chat-frame:has(> .rail) .smithers-transcript .sui-chat-messages {
+    width:100%; max-width:100%; margin-left:0; align-self:stretch;
+  }
+}
+.repo-code-home-layout:not(:has(> .repo-ui-sidebar)) { grid-template-columns:minmax(0,1fr); }
+.repo-code-home-file-row:has(> span:only-child) { grid-template-columns:minmax(0,1fr); }
+.repo-ui-branch-menu code { overflow-wrap:anywhere; font-size:var(--fs-1); color:var(--text-muted); }
+
+/* The Ask's filtered notices while the Ask is collapsed (ShellRail portals its ToastStack into the mock's toast region). */
+.repo-ui-toasts:empty { display:none; }
+.repo-ui-toasts [data-tone="live"] { --tone:var(--brand); }
+.repo-ui-toasts [data-tone="attention"] { --tone:var(--attention); }
+.repo-ui-toasts [data-tone="failed"] { --tone:var(--danger); }
+.repo-ui-toasts [data-tone="done"],.repo-ui-toasts [data-tone="quiet"] { --tone:var(--text-muted); }
+:where(.repo-ui-toasts) button { font:inherit; color:inherit; border:0; background:transparent; }
+
+.repo-frame-scroll { height:100%; overflow-y:auto; overflow-x:hidden; }
+.repo-frame-global,.repo-frame-page { width:100cqw; }

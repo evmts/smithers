@@ -1,0 +1,266 @@
+/* Issue anatomy follows GitHub; every visual value comes from Smithers' theme tokens. */
+.repo-issues-list-page,
+.repo-issues-detail,
+.repo-issues-new { min-width: 0; }
+.repo-issues-list-page { display: grid; gap: 20px; }
+.repo-issues-saved { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.repo-issues-saved > a { display: inline-flex; align-items: center; gap: 7px; border: 1px solid transparent; border-radius: var(--r-2); padding: 6px 10px; font-size: var(--fs-2); color: var(--text-muted); }
+.repo-issues-saved > a:hover { color: var(--text); background: var(--surface-2); }
+.repo-issues-saved > a[aria-current="page"] { background: var(--brand-soft); border-color: var(--brand-border); color: var(--brand); }
+.repo-issues-chip-count { font-size: var(--fs-1); color: var(--text-muted); }
+.repo-issues-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.repo-issues-search { display: flex; position: relative; flex: 1 1 230px; min-width: 0; }
+.repo-issues-search > svg { position: absolute; top: 10px; left: 11px; color: var(--text-faint); pointer-events: none; }
+.repo-issues-search > input { padding-left: 35px; font-family: var(--font-mono); font-size: var(--fs-2); }
+.repo-issues-toolbar .repo-ui-btn > span { font-size: var(--fs-1); color: var(--text-muted); }
+.repo-issues-directory .repo-ui-menu { left: auto; right: 0; }
+.repo-issues-milestone { display: flex; justify-content: space-between; gap: 15px; font-size: var(--fs-2); padding: 7px 3px; }
+.repo-issues-list-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.repo-issues-results-count { color: var(--text-muted); font-size: var(--fs-2); }
+.repo-issues-status-toggle { display: flex; gap: 18px; align-items: center; }
+.repo-issues-status-toggle > a { display: flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--text-muted); font-size: var(--fs-2); font-weight: 400; }
+.repo-issues-status-toggle > a[aria-current="page"] { color: var(--text); font-weight: 600; }
+.repo-issues-status-toggle > a > span:last-child { font-size: var(--fs-1); color: var(--text-muted); }
+.repo-issues-filters { display: flex; gap: 17px; align-items: center; margin-left: auto; }
+.repo-issues-filter-trigger { display: flex; align-items: center; gap: 5px; list-style: none; cursor: pointer; font-size: var(--fs-2); color: var(--text-muted); padding: 3px 0; }
+.repo-issues-filter-menu .repo-ui-menu { left: auto; right: 0; max-height: 350px; overflow-y: auto; }
+.repo-issues-filter-trigger:hover { color: var(--text); }
+.repo-issues-view-note { color: var(--text-muted); font-size: var(--fs-2); line-height: 1.6; }
+.repo-issues-view-note > a { display: inline-flex; align-items: center; gap: 4px; color: var(--brand); }
+.repo-issues-list-row { display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 17px 16px; }
+.repo-issues-list-row:hover { background: color-mix(in srgb, var(--surface-2) 45%, var(--surface)); }
+.repo-issues-row-top { min-width: 0; display: flex; gap: 11px; align-items: flex-start; }
+.repo-issues-row-top > .repo-ui-state-icon { margin-top: 3px; }
+.repo-issues-row-content { flex: 1; min-width: 0; }
+.repo-issues-row-title { display: flex; flex-wrap: wrap; gap: 7px 9px; align-items: center; line-height: 1.5; }
+.repo-issues-row-title > a { font-size: var(--fs-3); font-weight: 600; overflow-wrap: anywhere; }
+.repo-issues-row-title > a:hover { color: var(--brand); }
+.repo-issues-labels { display: inline-flex; gap: 5px; flex-wrap: wrap; vertical-align: middle; }
+.repo-issues-row-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 6px; color: var(--text-muted); font-size: var(--fs-1); line-height: 1.5; }
+.repo-issues-row-meta .repo-ui-time { font-size: inherit; }
+.repo-issues-stage { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.repo-issues-stage > i { display: block; width: 5px; height: 5px; border-radius: var(--r-4); background: var(--text-faint); }
+.repo-issues-row-counts { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 15px; padding-top: 1px; color: var(--text-muted); }
+.repo-issues-count { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-1); color: var(--text-muted); }
+.repo-issues-count:hover { color: var(--brand); }
+.repo-issues-assignees { display: flex; gap: 3px; }
+.repo-issues-assignees .repo-ui-avatar { width: 22px; height: 22px; font-size: 9px; }
+.repo-issues-list .repo-frame-state { border: 0; border-radius: 0 0 var(--r-3) var(--r-3); }
+
+/* Labels stay neutral; only the indicator has a surface and only evidence is linked. */
+.repo-issues-receipt { list-style:none; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); margin:0 0 28px; padding:16px 0; border:0; background:transparent; }
+.repo-issues-receipt-compact { margin:0; }
+.repo-issues-receipt-block { display: flex; flex-direction: column; min-width: 0; }
+.repo-issues-receipt-disclosure { min-width: 0; }
+.repo-issues-receipt-disclosure > summary { display: none; }
+.repo-issues-main-evidence[data-queue="false"] { display: none; }
+.repo-issues-receipt > li { position:relative; display:flex; flex-direction:column; align-items:flex-start; gap:6px; min-width:0; color:var(--text-muted); overflow-wrap:normal; word-break:normal; }
+.repo-issues-receipt > li::after { content:""; position:absolute; top:8px; left:24px; right:8px; height:1px; background:var(--border); }
+.repo-issues-receipt > li:last-child::after { display:none; }
+.repo-issues-receipt-dot { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; flex:0 0 16px; color:var(--text-muted); background:var(--surface-2); border:1px solid var(--border); border-radius:50%; }
+.repo-issues-receipt-dot svg { width:12px; height:12px; }
+.repo-issues-receipt strong { color:var(--text-muted); font:400 12px/1.5 var(--font-ui); text-decoration:none; }
+.repo-issues-receipt > li > a { color:var(--text-muted); font-size:12px; }
+.repo-issues-receipt time { color:var(--text-muted); font:400 12px/1.5 var(--font-ui); }
+.repo-frame .repo-issues-main-evidence { margin:0 0 16px; color:var(--text-muted); font-size:12px; }
+
+
+.repo-issues-detail-heading { padding-bottom: 21px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+.repo-issues-title-line { display: flex; align-items: flex-start; gap: 20px; justify-content: space-between; }
+.repo-issues-title-line > h1 { font-size: var(--fs-6); line-height: 1.35; font-weight: 500; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.repo-issues-title-line > h1 > span { color: var(--text-faint); font-weight: 400; white-space: nowrap; }
+.repo-issues-title-line > .repo-ui-actions { flex: 0 0 auto; padding-top: 2px; }
+.repo-issues-detail-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; color: var(--text-muted); font-size: var(--fs-2); line-height: 1.6; }
+.repo-issues-detail-meta strong { font-weight: 500; }
+.repo-issues-state-pill { display: inline-flex; gap: 6px; align-items: center; padding: 4px 11px; border-radius: var(--r-4); font-size: var(--fs-2); font-weight: 500; }
+.repo-issues-state-open { background: var(--success-soft); color: var(--success); }
+.repo-issues-state-closed { background: var(--surface-2); color: var(--text-muted); }
+.repo-issues-state-not-planned { background: var(--surface-2); color: var(--text-muted); }
+.repo-issues-state-not-planned .repo-ui-state-icon { color: inherit; }
+.repo-issues-detail-layout { display: grid; grid-template-columns: minmax(0, 1fr) 228px; align-items: start; gap: 30px; }
+.repo-issues-timeline { min-width: 0; }
+.repo-issues-comment { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: start; gap: 12px; min-width: 0; position: relative; z-index: 1; scroll-margin-top: 30px; }
+.repo-issues-comment-avatar { display: flex; padding-top: 10px; }
+.repo-issues-comment-avatar .repo-ui-avatar { width: 30px; height: 30px; }
+.repo-issues-comment-heading { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--text-muted); font-size: var(--fs-2); font-weight: 400; }
+.repo-issues-comment-heading > strong { color: var(--text); font-weight: 600; }
+.repo-issues-comment-heading > span:last-child { margin-left: auto; font-size: var(--fs-1); }
+.repo-issues-comment-heading .repo-ui-agent-harness { display: none; }
+.repo-issues-comment-body { padding: 19px 20px 10px; min-width: 0; }
+.repo-issues-comment-body .app-md pre { padding: 13px 15px; overflow-x: auto; }
+.repo-issues-comment-body .app-md :last-child { margin-bottom: 4px; }
+.repo-issues-timeline-items { position: relative; display: grid; gap: 22px; padding: 22px 0; }
+.repo-issues-timeline-items::before { content: ""; position: absolute; top: 0; bottom: 0; left: 57px; width: 1px; background: var(--border); }
+.repo-issues-timeline-event { display: flex; align-items: center; position: relative; z-index: 1; gap: 10px; margin-left: 44px; min-height: 30px; color: var(--text-muted); font-size: var(--fs-2); line-height: 1.8; scroll-margin-top: 35px; }
+.repo-issues-timeline-event > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.repo-issues-timeline-event strong { font-weight: 500; color: var(--text); }
+.repo-issues-timeline-event a { color: var(--brand); }
+.repo-issues-timeline-event .repo-ui-time { margin-left: 6px; }
+.repo-issues-timeline-event .repo-issues-labels { margin: 0 4px; }
+.repo-issues-event-icon { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 28px; height: 28px; border-radius: var(--r-4); background: var(--surface-2); border: 3px solid var(--bg); }
+.repo-issues-sha { font-family: var(--font-mono); font-size: var(--fs-1); }
+.repo-issues-composer { display: flex; align-items: flex-start; gap: 12px; padding-top: 22px; border-top: 1px solid var(--border); scroll-margin-top: 30px; }
+.repo-issues-composer > .repo-ui-person { padding-top: 9px; }
+.repo-issues-composer > .repo-ui-person .repo-ui-avatar { width: 30px; height: 30px; }
+.repo-issues-composer > form { flex: 1; min-width: 0; }
+.repo-issues-composer-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
+.repo-issues-sidebar-items { display: grid; gap: 11px; }
+.repo-issues-linked-item { display: flex; align-items: flex-start; gap: 7px; min-width: 0; font-size: var(--fs-2); line-height: 1.5; }
+.repo-issues-linked-item > svg,
+.repo-issues-linked-item > .repo-ui-state-icon { flex: 0 0 auto; margin-top: 3px; }
+.repo-issues-linked-item > span { overflow-wrap: anywhere; min-width: 0; }
+.repo-issues-linked-item > span:last-child.repo-ui-muted { margin-left: auto; font-size: var(--fs-1); }
+.repo-issues-branch { color: var(--text-muted); font-family: var(--font-mono); font-size: var(--fs-1); }
+.repo-issues-smithers { display: grid; gap: 12px; justify-items: start; }
+.repo-issues-agent-acts { display: flex; flex-wrap: wrap; gap: 7px; }
+.repo-issues-smithers > .repo-issues-linked-item { width: 100%; }
+.repo-issues-permission { color: var(--text-muted); font-size: var(--fs-1); line-height: 1.6; }
+.repo-issues-confirm { width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--brand-border); border-radius: var(--r-2); background: var(--surface); font-size: var(--fs-2); display: grid; gap: 12px; }
+.repo-issues-confirm-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.repo-issues-confirm-heading > h3 { font-size: var(--fs-2); font-weight: 600; }
+.repo-issues-confirm p { color: var(--text-muted); line-height: 1.6; }
+.repo-issues-confirm .repo-frame-state { padding: 8px; border: 0; }
+.repo-issues-confirm .repo-frame-state h2 { font-size: var(--fs-2); }
+.repo-issues-held { min-width: 0; display: grid; gap: 11px; }
+.repo-issues-install { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px; border: 1px solid var(--border); border-radius: var(--r-1); background: var(--code-bg); }
+.repo-issues-install > code { font: 11px/1.7 var(--font-mono); overflow-wrap: anywhere; }
+.repo-issues-edit-box { margin-bottom: 25px; }
+.repo-issues-edit-form { padding: 20px; display: grid; gap: 10px; }
+
+/* Markdown editing is shared by the issue, its comment composer and the new-issue form. */
+.repo-issues-markdown-field { border: 1px solid var(--border-strong); border-radius: var(--r-2); min-width: 0; overflow: hidden; }
+.repo-issues-write-tabs { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); padding: 0 12px; background: var(--surface-2); font-size: var(--fs-2); }
+.repo-issues-write-tabs > span { font-weight: 500; }
+.repo-issues-write-tabs > div { display: flex; gap: 12px; }
+.repo-issues-write-tabs button { border: 0; border-bottom: 2px solid transparent; padding: 11px 1px 9px; background: transparent; color: var(--text-muted); font-size: var(--fs-2); }
+.repo-issues-write-tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--brand); }
+.repo-issues-markdown-field textarea { border: 0; border-radius: 0; padding: 14px; font: var(--fs-2)/1.75 var(--font-mono); min-height: 170px; resize: vertical; display: block; }
+.repo-issues-preview { min-height: 200px; padding: 17px; background: var(--surface); }
+.repo-issues-new { max-width: 940px; margin-inline: auto; }
+.repo-issues-new-heading { display: grid; gap: 8px; margin-bottom: 24px; }
+.repo-issues-new-heading > h1 { font-size: var(--fs-6); font-weight: 500; }
+.repo-issues-back { color: var(--text-muted); font-size: var(--fs-2); width: fit-content; }
+.repo-issues-new-form { padding: 26px; display: grid; gap: 23px; }
+.repo-issues-title-field { display: grid; gap: 9px; font-size: var(--fs-2); font-weight: 500; }
+.repo-issues-title-field > input { font-size: var(--fs-4); padding: 10px 12px; }
+.repo-issues-title-field > label > span { color: var(--text-faint); }
+.repo-issues-templates { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; font-size: var(--fs-2); }
+.repo-issues-templates > span { color: var(--text-muted); margin-right: 3px; }
+.repo-issues-templates button[aria-pressed="true"] { color: var(--brand); background: var(--brand-soft); border-color: var(--brand-border); }
+.repo-issues-new-metadata { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.repo-issues-new-selected { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.repo-issues-check-option { display: flex; align-items: center; gap: 9px; padding: 6px 3px; cursor: pointer; }
+.repo-issues-check-option > input { accent-color: var(--brand); }
+.repo-issues-bug-context { display: flex; flex-wrap: wrap; gap: 9px; min-width: 0; }
+.repo-issues-bug-context > div { display: flex; flex-wrap: wrap; gap: 5px 8px; padding: 6px 9px; border: 1px solid var(--border); border-radius: var(--r-1); background: var(--surface-2); font-size: var(--fs-1); min-width: 0; }
+.repo-issues-bug-context dt { color: var(--text-muted); }
+.repo-issues-bug-context dd { font-family: var(--font-mono); color: var(--text); overflow-wrap: anywhere; min-width: 0; }
+.repo-issues-public-note { padding-top: 20px; border-top: 1px solid var(--border); font-size: var(--fs-2); line-height: 1.65; }
+.repo-issues-public-note > strong { font-weight: 500; }
+.repo-issues-public-note > p { color: var(--text-muted); margin-top: 3px; }
+.repo-issues-new-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+.repo-issues-draft-wall { margin-bottom: 22px; }
+.repo-issues-draft-wall .repo-frame-state { padding:24px; display:flex; flex-direction:column; align-items:center; gap:16px; }
+.repo-issues-draft-wall .repo-frame-state h2 { font-size: var(--fs-3); margin: 0; }
+.repo-issues-draft-wall .repo-frame-state p { margin: 0; font-size: var(--fs-2); }
+.repo-issues-draft-wall .repo-frame-state .repo-ui-btn-primary { margin:0; }
+.repo-issues-list-page button:focus-visible,
+.repo-issues-detail button:focus-visible,
+.repo-issues-new button:focus-visible,
+.repo-issues-list-page a:focus-visible,
+.repo-issues-detail a:focus-visible,
+.repo-issues-new a:focus-visible,
+.repo-issues-list-page summary:focus-visible,
+.repo-issues-detail summary:focus-visible,
+.repo-issues-new summary:focus-visible,
+.repo-issues-new input:focus-visible,
+.repo-issues-detail input:focus-visible,
+.repo-issues-list-page input:focus-visible,
+.repo-issues-markdown-field textarea:focus-visible,
+.repo-issues-confirm:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 3px; }
+.repo-issues-list-page button:disabled,
+.repo-issues-detail button:disabled,
+.repo-issues-new button:disabled { opacity: .5; cursor: not-allowed; }
+
+@media (min-width: 1000px) and (max-width: 1500px) {
+  .repo-frame[data-ask-open="true"] .repo-issues-detail-layout { grid-template-columns: minmax(0, 1fr) 205px; gap: 22px; }
+  .repo-frame[data-ask-open="true"] .repo-issues-title-line { flex-wrap: wrap; gap: 12px; }
+  .repo-frame[data-ask-open="true"] .repo-issues-row-counts { gap: 9px; }
+  .repo-frame[data-ask-open="true"] .repo-issues-filters { gap: 12px; }
+}
+@media (max-width: 999px) {
+  .repo-issues-detail-layout { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .repo-issues-detail-layout > .repo-ui-sidebar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; }
+  .repo-issues-detail-layout > .repo-ui-sidebar .repo-ui-sidebar-section { padding-top: 18px; }
+  .repo-issues-title-line { flex-wrap: wrap; gap: 12px; }
+}
+@media (max-width: 767px) {
+  .repo-issues-list-page { gap: 16px; }
+  .repo-issues-saved { gap: 4px; flex-wrap: nowrap; overflow-x: auto; min-width: 0; max-width: 100%; }
+  .repo-issues-saved > a { box-sizing: border-box; flex: 0 0 auto; min-height: 40px; white-space: nowrap; padding: 6px 8px; font-size: var(--fs-1); }
+  .repo-issues-confirm { box-sizing: border-box; width: calc(100% - 12px); margin-inline: 6px; }
+  .repo-issues-list-page .repo-frame-state h2 { font-size: var(--fs-3); }
+  .repo-issues-toolbar { gap: 8px; }
+  .repo-issues-search { flex-basis: 100%; }
+  .repo-issues-toolbar > .repo-ui-btn-primary { margin-left: auto; }
+  .repo-issues-directory .repo-ui-menu { left: 0; right: auto; min-width: 220px; }
+  .repo-issues-list .repo-ui-box-header { padding: 13px 12px; }
+  .repo-issues-list-heading { gap: 15px; }
+  .repo-issues-filters { margin-left: 0; justify-content: space-between; width: 100%; gap: 8px; }
+  .repo-issues-filter-menu .repo-ui-menu { left: 0; right: auto; min-width: 200px; }
+  .repo-issues-filter-menu:nth-last-child(-n+2) .repo-ui-menu { left: auto; right: 0; }
+  .repo-issues-list-row { padding: 15px 12px; }
+  .repo-issues-row-top { display: grid; grid-template-columns: 17px minmax(0, 1fr); gap: 7px 9px; }
+  .repo-issues-row-title { gap: 6px; }
+  .repo-issues-row-title > a { font-size: var(--fs-3); }
+  .repo-issues-row-counts { grid-column: 2; justify-content: flex-start; padding-top: 2px; gap: 16px; }
+  .repo-issues-row-counts .repo-issues-assignees { order: 2; margin-left: auto; }
+  .repo-issues-title-line > h1 { font-size: var(--fs-5); }
+  .repo-issues-detail-meta > span:last-child { flex-basis: 100%; }
+  .repo-issues-detail-layout > .repo-ui-sidebar { display: block; }
+  .repo-issues-comment { grid-template-columns: minmax(0, 1fr); }
+  .repo-issues-comment-avatar { display: none; }
+  .repo-issues-comment-heading { gap: 6px; }
+  .repo-issues-comment-heading > span:last-child { font-size: 10px; }
+  .repo-issues-comment .repo-ui-box-header { padding: 11px 12px; }
+  .repo-issues-comment-body { padding: 15px 13px 10px; }
+  .repo-issues-timeline-event { margin-left: 0; gap: 8px; font-size: var(--fs-1); }
+  .repo-issues-timeline-items::before { left: 13px; }
+  .repo-issues-composer > .repo-ui-person { display: none; }
+  .repo-issues-composer-actions { justify-content: space-between; }
+  .repo-issues-new-form { padding: 17px 14px; gap: 20px; }
+  .repo-issues-templates { gap: 7px; }
+  .repo-issues-templates > span { flex-basis: 100%; }
+  .repo-issues-new-metadata .repo-ui-menu { min-width: 220px; }
+  .repo-issues-new-metadata .repo-ui-dropdown:nth-child(2) .repo-ui-menu { left: auto; right: 0; }
+  .repo-issues-title-field > input { font-size: var(--fs-3); }
+  .repo-issues-write-tabs { padding: 0 10px; gap: 7px; }
+  .repo-issues-write-tabs > div { gap: 10px; }
+  .repo-issues-draft-wall .repo-frame-state { padding: 17px; }
+  .repo-issues-draft-wall .repo-frame-state .repo-ui-btn-primary { margin-left: 0; }
+}
+
+.repo-issues-new-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.repo-issues-new-heading h1 { flex: 1; }
+.repo-issues-report-context { font-size: 12px; color: var(--text-muted); }
+.repo-issues-report-context summary { cursor: pointer; min-height: 40px; display: flex; align-items: center; }
+.repo-issues-markdown-field textarea { font-family: var(--font-ui); }
+
+
+
+.repo-issues-evidence-facts { display: grid; gap: 12px; margin: 0 0 16px; padding: 16px; font-size: 12px; color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-2); }
+.repo-issues-evidence-facts > div { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 12px; }
+.repo-issues-evidence-facts dd { margin: 0; overflow-wrap: anywhere; }
+.repo-issues-evidence-facts a { color: var(--brand); }
+
+.repo-issues-fix-sha { margin-inline:8px; white-space:nowrap; font-family:var(--font-mono); }
+
+
+@media (max-width:599px) {
+  .repo-frame .repo-issues-main-evidence { display: block; order: -1; margin-bottom: 0; white-space: nowrap; }
+  .repo-issues-receipt-disclosure > summary { display: list-item; width: fit-content; min-height: 40px; align-content: center; color: var(--text-muted); font-size: var(--fs-1); cursor: pointer; }
+  .repo-issues-receipt { display:flex; flex-direction:column; gap:0; padding:8px 0; }
+  .repo-issues-receipt > li { display:grid; grid-template-columns:16px minmax(0,1fr) auto; gap:8px; align-items:center; min-height:40px; }
+  .repo-issues-receipt > li::after { top:28px; bottom:-12px; left:7px; right:auto; width:1px; height:auto; }
+  .repo-issues-receipt > li > a { text-align:right; }
+}

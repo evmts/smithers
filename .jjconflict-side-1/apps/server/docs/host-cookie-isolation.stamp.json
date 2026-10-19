@@ -1,0 +1,35 @@
+{
+  "format": 1,
+  "producer": null,
+  "output": {
+    "path": "apps/server/docs/host-cookie-isolation.md",
+    "digest": "61958044604f3681afb566a8935c471ca422bfb7c340ad4e0f56798a1282f52e"
+  },
+  "closure": "a448195cd28fdb545545775c2d6d2ef8992c339d3978403c6b0182b21fdaa0fa",
+  "inputs": [
+    {
+      "path": "apps/server/scripts/cutover/host-cookie-workerd.mjs",
+      "digest": "443d7e5b52bd871039fe93b27f0fc80908701e7b257f4cc340a2e064a35cbee3"
+    },
+    {
+      "path": "packages/backend/internal/config/browser_cookies.go",
+      "digest": "4fb75cb14a5d0d8eb47f9633eb1c4f49223f2b3a68a4b9f7e481bf373a2c293b"
+    },
+    {
+      "path": "packages/backend/internal/middleware/auth.go",
+      "digest": "d4c053b9696850bbf36c5ec0d476f99648e4e93de1b4e588f5089a513e6baf48"
+    },
+    {
+      "path": "packages/backend/internal/middleware/csrf.go",
+      "digest": "f90f4197a6e522e4de587a4c51dc1da6727969e004ca0ed786cce3d4c4d4f516"
+    },
+    {
+      "path": "packages/backend/internal/routes/auth.go",
+      "digest": "62dc13b1dddebd73a91151740d628045666a9dbdf00779248416117472ce54cb"
+    },
+    {
+      "path": "packages/rpc/src/ApplicationAuth.ts",
+      "digest": "c8f7721063d4e18c7da0c396b49c5c0673ae8f6eae6c3673a4076cc5098164d4"
+    }
+  ]
+}

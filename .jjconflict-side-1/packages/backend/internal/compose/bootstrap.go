@@ -1,0 +1,175 @@
+package compose
+
+import (
+	"encoding/json"
+	"net/http"
+	"runtime"
+	"strings"
+
+	"github.com/go-chi/cors"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+)
+
+// BuildVersion and BuildSHA are set by release builds. Plain local Go builds
+// retain the development version and may leave the revision unset.
+var BuildVersion = "dev"
+var BuildSHA string
+
+// appBootstrap describes only capabilities that this assembled process can
+// actually serve. The browser reads it before making any authenticated call.
+//
+// Host is always "cloud": every origin this backend serves — hosted or
+// single-owner self-host — is the same web app, and the differences travel as
+// Capabilities and AuthFlow. The desktop shell is never named here; its own
+// renderer relay appends the "native.shell" capability (apps/app/src/bun/
+// NativeRendererServer.ts), so a web page can never be mistaken for the shell.
+type appBootstrap struct {
+	APIVersion   int      `json:"apiVersion"`
+	Host         string   `json:"host"`
+	Version      string   `json:"version"`
+	BuildSHA     string   `json:"buildSha"`
+	Capabilities []string `json:"capabilities"`
+	AuthFlow     string   `json:"authFlow"`
+	Sandbox      *struct {
+		Platform string `json:"platform"`
+		Mode     string `json:"mode"`
+	} `json:"sandbox"`
+}
+
+type bootstrapFeatures struct {
+	install          bool
+	debugAPI         bool
+	role             topology
+	identity         bool
+	redirectAuth     bool
+	github           bool
+	agent            bool
+	modelTurn        bool
+	recommend        bool
+	workspace        bool
+	terminal         bool
+	billingBalance   bool
+	billingOverview  bool
+	billingPlans     bool
+	billingPortal    bool
+	billingCheckout  bool
+	workspaceRuntime bool
+	isolatedSandbox  bool
+	codeIntelligence bool
+}
+
+func newAppBootstrap(features bootstrapFeatures) appBootstrap {
+	version, sha := buildIdentity()
+	result := appBootstrap{APIVersion: 1, Host: "cloud", Version: version, BuildSHA: sha,
+		Capabilities: make([]string, 0, 4), AuthFlow: "none"}
+	if features.install && !features.role.hosted() {
+		result.Capabilities = append(result.Capabilities, "install")
+	}
+	if features.debugAPI && features.identity && !features.role.hosted() {
+		result.Capabilities = append(result.Capabilities, "debug.api")
+	}
+	if features.identity {
+		result.Capabilities = append(result.Capabilities, "identity")
+		if !features.role.hosted() {
+			result.AuthFlow = "redirect"
+		} else if features.redirectAuth {
+			result.AuthFlow = "redirect"
+		}
+	}
+	if features.agent {
+		// The archive routes are mounted with the conversation routes they cut from.
+		result.Capabilities = append(result.Capabilities, "agent", "chat.archive")
+	}
+	if features.github {
+		result.Capabilities = append(result.Capabilities, "github")
+	}
+	if features.modelTurn {
+		result.Capabilities = append(result.Capabilities, "model.turn")
+	}
+	if features.recommend {
+		// Selection is served by the same Jev handler as recommendations.
+		result.Capabilities = append(result.Capabilities, "recommend", "commands.select")
+	}
+	if features.workspace {
+		result.Capabilities = append(result.Capabilities, "cloud")
+	}
+	if features.terminal {
+		result.Capabilities = append(result.Capabilities, "cloud.terminal")
+	}
+	if features.codeIntelligence {
+		result.Capabilities = append(result.Capabilities, "code.intelligence")
+	}
+	if features.billingBalance {
+		result.Capabilities = append(result.Capabilities, "billing.balance")
+	}
+	if features.billingOverview {
+		result.Capabilities = append(result.Capabilities, "billing.overview")
+	}
+	if features.billingPlans {
+		result.Capabilities = append(result.Capabilities, "billing.plans")
+	}
+	if features.billingPortal {
+		result.Capabilities = append(result.Capabilities, "billing.portal")
+	}
+	if features.billingCheckout {
+		result.Capabilities = append(result.Capabilities, "billing.checkout")
+	}
+	if features.workspaceRuntime || features.isolatedSandbox {
+		mode := "trusted-only"
+		if features.isolatedSandbox {
+			mode = "enforced"
+		}
+		result.Sandbox = &struct {
+			Platform string `json:"platform"`
+			Mode     string `json:"mode"`
+		}{Platform: runtime.GOOS, Mode: mode}
+	}
+	return result
+}
+
+func buildIdentity() (version, sha string) {
+	sha = strings.TrimSpace(BuildSHA)
+	if sha == "" {
+		sha = "unknown"
+	}
+	return BuildVersion, sha
+}
+
+func withAppBootstrap(next http.Handler, bootstrap appBootstrap, corsOptions cors.Options) http.Handler {
+	return serveBootstrap(next, cors.Handler(corsOptions)(bootstrapDocument(bootstrap)))
+}
+
+// withInstallBootstrap serves an install's bootstrap document to its known
+// origins only (spec §16.3.3): the document is read before sign-in, so an
+// unknown Host gets 421 unknown_origin and a foreign Origin 403 here, as on
+// every other route. The app and its API share one origin, so no answer
+// carries a CORS allow header.
+func withInstallBootstrap(next http.Handler, bootstrap appBootstrap, origins func() []string) http.Handler {
+	return serveBootstrap(next, middleware.EffectiveOrigin(origins)(bootstrapDocument(bootstrap)))
+}
+
+func serveBootstrap(next, document http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/bootstrap" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		document.ServeHTTP(w, r)
+	})
+}
+
+func bootstrapDocument(bootstrap appBootstrap) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Allow", "GET, HEAD")
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		if r.Method == http.MethodHead {
+			return
+		}
+		_ = json.NewEncoder(w).Encode(bootstrap)
+	})
+}
