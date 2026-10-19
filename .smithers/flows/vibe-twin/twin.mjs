@@ -15,7 +15,7 @@
  * and the twin run has no failure the TypeScript run lacks.
  */
 import { spawnSync } from "node:child_process"
-import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
@@ -990,10 +990,13 @@ const runUnlocked = (pkgArg) => {
     sourceMap: true
   }, ["../src-vibe/**/*"])
   // The module list is explicit: tests, configs and test folders are not API modules.
+  // rootDir is the repository root: with the package's src as rootDir, declarations of the
+  // sibling-package sources the program imports resolve outside outDir, and tsc wrote 360 of
+  // them into other packages' src/. ts-dts links to this package's subtree.
   tsconfig(pkg, join(work, "tsconfig.ts.json"), {
     ...common,
-    rootDir: join("..", sourceRoot(pkg)),
-    outDir: "ts-dts",
+    rootDir: relative(work, repoRoot(pkg)) || ".",
+    outDir: "ts-dts-root",
     declaration: true,
     emitDeclarationOnly: true
   }, srcModules(pkg).map(({ file }) => relative(work, file)))
@@ -1001,7 +1004,11 @@ const runUnlocked = (pkgArg) => {
   const split = splitTwinErrors(compiled.errors)
   const twin = { ...compiled, errors: split.twin, typescriptErrors: split.typescript }
   const twinned = linkPartialTwin(pkg, work)
+  for (const dir of ["ts-dts", "ts-dts-root"]) rmSync(join(work, dir), { recursive: true, force: true })
   const ts = compile(join(work, "tsconfig.ts.json"), pkg)
+  const ownDts = join(work, "ts-dts-root", relative(repoRoot(pkg), join(pkg, sourceRoot(pkg))))
+  mkdirSync(ownDts, { recursive: true })
+  symlinkSync(ownDts, join(work, "ts-dts"), "dir")
   const missingOutputs = twinned.flatMap((rel) => ["js", "d.ts"].map((ext) => join(twinOutDir(pkg), `${rel}.${ext}`))).filter((file) => !existsSync(file))
   const missingDeclarations = srcModules(pkg).map(({ rel }) => join(work, "ts-dts", `${rel}.d.ts`)).filter((file) => !existsSync(file))
   // C-3: a VibeLang error in unchanged TypeScript exits non-zero but is a finding; a crash
