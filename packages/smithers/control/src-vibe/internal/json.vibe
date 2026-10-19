@@ -1,0 +1,3 @@
+import type { ControlEvent } from "../ControlSchema.vibe"
+type Json = (value: unknown) => ControlEvent["payload"]
+export const jsonImpl: Json = (value: unknown): ControlEvent["payload"] => JSON.parse(JSON.stringify(value)) as ControlEvent["payload"]

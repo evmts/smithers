@@ -1,0 +1,35 @@
+/**
+ * Unresolved checkpoints survive every retry until operator recovery.
+ *
+ * @since 1.0.0-rc.0
+ * @private
+ */
+
+import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
+import * as Option from "effect/Option"
+import * as Path from "effect/Path"
+import * as Fs from "../../internal/Fs.vibe"
+import { io, make, type MigrateError } from "../../MigrateError.vibe"
+
+/**
+ * Checks presence without trusting or replacing a possibly incomplete record.
+ *
+ * @since 1.0.0-rc.0
+ * @private
+ */
+export const assertClear = (
+  reportDirectory: string
+): Effect.Effect<void, MigrateError, FileSystem.FileSystem | Path.Path> =>
+  (() => {
+    const fs = FileSystem.FileSystem()
+    const path = Path.Path()
+    const file = path.join(reportDirectory, "pending-unit.json")
+    const found = (() => { try { return Fs.optionalNotFound(fs.stat(file)) } catch (error) { throw ((io(`could not inspect the pending checkpoint ${file}`))(error)) } })()
+    if (Option.isNone(found)) return
+    return (throw (make(
+      "checkpoint-failed",
+      `an earlier migration has an unresolved checkpoint at ${file}`,
+      `inspect that recovery record and restore its checkpoint; verify the recovered project, then remove only ${file} and rerun. Keep its backups until recovery is complete. Choosing another report directory does not clear the checkpoint.`
+    )))
+  })()

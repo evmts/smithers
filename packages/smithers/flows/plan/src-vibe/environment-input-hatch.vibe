@@ -1,0 +1,33 @@
+// Plain JavaScript contracts supported by D263.
+import * as Schema from "effect/Schema"
+import { EnvironmentIdentity, KeyMaterialError } from "./StepKey.vibe"
+const validateEnvironment = (environment: EnvironmentIdentity): KeyMaterialError | undefined => {
+  const candidate = environment as { readonly declared?: unknown; readonly runScope?: unknown }
+  if (candidate.declared === false) {
+    if (typeof candidate.runScope !== "string" || candidate.runScope.length === 0) {
+      return new KeyMaterialError({
+        code: "invalid_environment",
+        message: "Undeclared environment identity requires a non-empty runScope"
+      })
+    }
+    return undefined
+  }
+  if (candidate.declared === true) {
+    return candidate.runScope === undefined
+      ? undefined
+      : new KeyMaterialError({
+        code: "invalid_environment",
+        message: "Declared environment identity must not include runScope"
+      })
+  }
+  return new KeyMaterialError({
+    code: "invalid_environment",
+    message: "Environment identity requires a boolean declared field"
+  })
+}
+
+export const decodeEnvironmentInput = (environment: EnvironmentIdentity): EnvironmentIdentity => {
+  const invalid = validateEnvironment(environment)
+  if (invalid !== undefined) throw invalid
+  return Schema.decodeUnknownSync(EnvironmentIdentity)(environment, { onExcessProperty: "error" })
+}

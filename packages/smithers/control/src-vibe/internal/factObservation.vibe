@@ -1,0 +1,4 @@
+type AssertNoObservation = (observed: boolean) => void
+export const assertNoObservationImpl: AssertNoObservation = (observed: boolean): void => {
+  if (observed) throw new Error("A control fact cannot persist an executor observation")
+}

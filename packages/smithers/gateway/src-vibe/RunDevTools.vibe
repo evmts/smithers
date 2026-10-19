@@ -15,7 +15,6 @@
  * @since 1.0.0
  */
 
-import { decodeSpanId } from "./decodeSpanId.ts"
 import { clip, firstLine } from "./Diagnosis.vibe"
 import {
   durationWords,
@@ -156,7 +155,7 @@ const timeOf = (record: JournalRecord): number => {
 const engineKeyOf = (span: TraceSpan): string | undefined => {
   const match = /^(engine|engine-attempt|engine-event):([^:]+):([^:]+)/.exec(span.id)
   if (match === null) return undefined
-  return match[1] === "engine" ? `${match[2]}:${match[3]}` : decodeSpanId(match[2]!)
+  return match[1] === "engine" ? `${match[2]}:${match[3]}` : decodeURIComponent(match[2]!)
 }
 
 /** The same key off a journaled engine envelope; absent for every other record. */

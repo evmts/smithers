@@ -1,0 +1,9 @@
+type Subtle = () => SubtleCrypto
+export const subtleImpl: Subtle = (): SubtleCrypto => {
+  const available = (globalThis.crypto as Crypto | undefined)?.subtle
+  if (available === undefined) throw new Error("Web Crypto is not available on this host")
+  return available
+}
+type HmacKey = (key: string, usage: "sign" | "verify") => Promise<CryptoKey>
+export const hmacKeyImpl: HmacKey = (key: string, usage: "sign" | "verify"): Promise<CryptoKey> =>
+  subtleImpl().importKey("raw", new TextEncoder().encode(key), { name: "HMAC", hash: "SHA-256" }, false, [usage])

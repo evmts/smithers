@@ -1,0 +1,20 @@
+import type * as Transcript from "@smthrs/harness/ExternalTranscript"
+import { normalizeTranscript as normalizeTranscriptPlain } from "./normalize-transcript.ts"
+
+/**
+ * The decoder refused this record: a release line or a kind of record it does not read. The backend stops the
+ * source and shows the import as stopped; it never retries under another profile.
+ */
+export class TranscriptRefused extends Error {
+  readonly reason: Transcript.ExternalTranscriptErrorCode
+  readonly line: number
+  constructor(reason: Transcript.ExternalTranscriptErrorCode, line: number) {
+    super(reason)
+    this.reason = reason
+    this.line = line
+  }
+}
+
+// The backend supplies registry identities and the checkpoint from its receipt
+// transaction. Transcript session IDs never select a member or a branch.
+export const normalizeTranscript: typeof normalizeTranscriptPlain = normalizeTranscriptPlain

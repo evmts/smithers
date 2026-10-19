@@ -1,0 +1,227 @@
+/**
+ * Coordinates keyed drain executions.
+ *
+ * Adapted nearly verbatim from
+ * `reference/opencode/packages/smithers/flows/core/src/session/run-coordinator.ts`:
+ * `Deferred` joins, `FiberSet` ownership, coalesced wakes, and
+ * `uninterruptibleMask` preserve its start-or-join semantics. This adaptation
+ * drops the source's `force` drain argument because no engine-store drain has
+ * a second execution mode; the successor flag carries coordinator scheduling.
+ *
+ * @since 0.1.0
+ */
+
+import { Cause, Deferred, Effect, Exit, Fiber, FiberSet, type Scope } from "effect"
+
+/**
+ * Serializes drain execution for each key while allowing distinct keys to run
+ * concurrently.
+ *
+ * @since 0.1.0
+ * @category models
+ */
+export interface RunCoordinator<Key, E> {
+  /**
+   * Snapshots keys with an execution owned by this coordinator.
+   *
+   * @since 0.1.0
+   * @category operations
+   */
+  readonly active: Effect.Effect<ReadonlySet<Key>>
+  /**
+   * Starts a drain while idle or joins the active drain for the key.
+   *
+   * @since 0.1.0
+   * @category operations
+   */
+  readonly run: (key: Key) => Effect.Effect<void, E>
+  /**
+   * Joins the active drain for the key, and starts none while idle.
+   *
+   * @since 1.0.0
+   * @category operations
+   */
+  readonly join: (key: Key) => Effect.Effect<void, E>
+  /**
+   * Starts an idle key without joining or requesting another active drain.
+   *
+   * @since 1.0.0
+   * @category operations
+   */
+  readonly schedule: (key: Key) => Effect.Effect<void>
+  /** Reserves an idle key, then starts its drain only while the supplied durable readiness holds. */
+  readonly scheduleIf: (key: Key, ready: Effect.Effect<boolean>) => Effect.Effect<void>
+  /**
+   * Ensures one coalesced drain follows the active drain for the key.
+   *
+   * @since 0.1.0
+   * @category operations
+   */
+  readonly wake: (key: Key) => Effect.Effect<void>
+  /**
+   * Interrupts the active drain for the key and waits for its cleanup.
+   *
+   * @since 0.1.0
+   * @category operations
+   */
+  readonly interrupt: (key: Key) => Effect.Effect<void>
+  /** Sends interruption without awaiting cleanup; safe for a short commit publication. */
+  readonly requestInterrupt: (key: Key) => Effect.Effect<void>
+}
+
+type Entry<E> = {
+  readonly done: Deferred.Deferred<void, E>
+  mutable owner?: Fiber.Fiber<void, never>
+  mutable pendingWake: boolean
+  mutable stopping: boolean
+}
+
+// D262: a module-level program; the TypeScript default is `Effect.succeed(true)`.
+const alwaysReady: Effect.Effect<boolean, never, never> = () => true
+
+/**
+ * Creates a scoped coordinator for keyed drain effects.
+ *
+ * @since 0.1.0
+ * @category constructors
+ */
+export const make = <Key, E, R>(options: {
+  readonly drain: (key: Key) => Effect.Effect<void, E, R>
+}): Effect.Effect<RunCoordinator<Key, E>, never, Scope.Scope | R> => {
+  const active = new Map<Key, Entry<E>>()
+  const fork = FiberSet.makeRuntime<R, void, never>()
+
+  const makeEntry = (): Entry<E> => ({
+    done: Deferred.makeUnsafe<void, E>(),
+    pendingWake: false,
+    stopping: false
+  })
+
+  const start = (
+    key: Key,
+    entry: Entry<E>,
+    successor = false,
+    onlyIf: Effect.Effect<boolean> = alwaysReady
+  ): void => {
+    const ready = Deferred.makeUnsafe<void>()
+    // C-8/D-10: the explicit thunk keeps `start` plain; `fork` runs it.
+    const owner = fork(() => {
+      exit(Effect.onExit(
+        Effect.onError(() => {
+          if (successor) yieldNow()
+          else Deferred.await(ready)
+          if (onlyIf()) options.drain(key)
+        }, (cause) => {
+          if (!Cause.hasInterruptsOnly(cause)) {
+            Effect.logWarning(`engine-store: coordinated drain failed for ${String(key)}`, cause)
+          }
+        }),
+        (settled) => {
+          settle(key, entry, settled)
+        }
+      ))
+    })
+    entry.owner = owner
+    if (!successor) Deferred.doneUnsafe(ready, Effect.void)
+  }
+
+  const settle = (key: Key, entry: Entry<E>, exit: Exit.Exit<void, E>): void => {
+    if (Exit.isSuccess(exit) && !entry.stopping && entry.pendingWake) {
+      entry.pendingWake = false
+      start(key, entry, true)
+      return
+    }
+
+    const successor = entry.pendingWake ? makeEntry() : undefined
+    if (successor === undefined) active.delete(key)
+    else {
+      active.set(key, successor)
+      start(key, successor, true)
+    }
+    Deferred.doneUnsafe(entry.done, exit)
+  }
+
+  const startIdle = (key: Key, onlyIf?: Effect.Effect<boolean>): Entry<E> => {
+    const next = makeEntry()
+    active.set(key, next)
+    start(key, next, false, onlyIf)
+    return next
+  }
+
+  // S11-1: the self-recursive helper is a function declaration; the arrow const panics the checker.
+  function run(key: Key): Effect.Effect<void, E, never> {
+    return Effect.uninterruptibleMask((restore) => {
+      const entry = active.get(key)
+      if (entry !== undefined) {
+        /* v8 ignore next -- stopping is a cooperative-scheduler handoff covered by the cleanup race test */
+        if (entry.stopping) {
+          return restore(() => {
+            Deferred.await(entry.done)
+            run(key)
+          })
+        }
+        return restore(Deferred.await(entry.done))
+      }
+
+      return restore(Deferred.await(startIdle(key).done))
+    })
+  }
+
+  const join = (key: Key): Effect.Effect<void, E, never> => {
+    const entry = active.get(key)
+    if (entry !== undefined) Deferred.await(entry.done)
+  }
+
+  const schedule = (key: Key): Effect.Effect<void, never, never> => {
+    if (!active.has(key)) startIdle(key)
+  }
+
+  const scheduleIf = (key: Key, ready: Effect.Effect<boolean>): Effect.Effect<void, never, never> => {
+    if (!active.has(key)) startIdle(key, ready)
+  }
+
+  const wake = (key: Key): Effect.Effect<void, never, never> => {
+    const entry = active.get(key)
+    if (entry !== undefined) {
+      entry.pendingWake = true
+      return
+    }
+
+    startIdle(key)
+  }
+
+  const interrupt = (key: Key): Effect.Effect<void, never, never> => {
+    const entry = active.get(key)
+    if (entry?.owner === undefined) return
+    entry.stopping = true
+    entry.pendingWake = false
+    Fiber.interrupt(entry.owner)
+  }
+
+  const requestInterrupt = (key: Key): Effect.Effect<void, never, never> => {
+    const fiberId = Effect.fiberId()
+    const entry = active.get(key)
+    if (entry?.owner === undefined) return
+    entry.stopping = true
+    entry.pendingWake = false
+    entry.owner.interruptUnsafe(fiberId)
+  }
+
+  // D265: a local annotated const holds the snapshot program.
+  const activeKeys: Effect.Effect<ReadonlySet<Key>, never, never> = () => {
+    return withSpan("RunCoordinator.active") {
+      return new Set(active.keys())
+    }
+  }
+
+  return {
+    active: activeKeys,
+    run: (key) => withSpan("RunCoordinator.run") { return run(key) },
+    join: (key) => withSpan("RunCoordinator.join") { return join(key) },
+    schedule: (key) => withSpan("RunCoordinator.schedule") { return schedule(key) },
+    scheduleIf: (key, ready) => withSpan("RunCoordinator.scheduleIf") { return scheduleIf(key, ready) },
+    wake: (key) => withSpan("RunCoordinator.wake") { return wake(key) },
+    interrupt: (key) => withSpan("RunCoordinator.interrupt") { return interrupt(key) },
+    requestInterrupt: (key) => withSpan("RunCoordinator.requestInterrupt") { return requestInterrupt(key) }
+  }
+}

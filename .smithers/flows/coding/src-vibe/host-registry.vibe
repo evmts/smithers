@@ -1,0 +1,31 @@
+/** Compose the existing registry with its durable archive outside source. */
+import * as ExecutionSnapshot from "@smthrs/registry/ExecutionSnapshot"
+import * as Registry from "@smthrs/registry/Registry"
+import { Effect, type FileSystem, Layer, type Path } from "effect"
+import { registryRoot, relocateArchive } from "./host-registry-node.ts"
+
+// Only the archive directories move. Existing control journals, their codecs
+// and their database locations are unchanged. Each rename is atomic, so a
+// restart after moving one directory finishes the other rather than losing it.
+export const relocateExecutionArchive = (sourceRoot: string, stateRoot: string) =>
+  try(
+    async (relocate, sourceRoot, stateRoot) => relocate(sourceRoot, stateRoot),
+    (error) => error instanceof Error ? error : new Error(String(error)),
+    relocateArchive,
+    sourceRoot,
+    stateRoot
+  )
+
+export const layer = (
+  sourceRoot: string,
+  stateRoot: string,
+  bodyPlatform: Layer.Layer<FileSystem.FileSystem | Path.Path>
+) => {
+  // A block-param call ends its expression (S15-2), so the layer is named before it is piped.
+  const unwrapped = Layer.unwrap {
+    relocateExecutionArchive(sourceRoot, stateRoot)
+    const snapshots = ExecutionSnapshot.makeFileSystem({ root: registryRoot(stateRoot) })
+    return Registry.layerProject({ root: sourceRoot, snapshots }).pipe(Layer.provide(bodyPlatform))
+  }
+  return unwrapped.pipe(Layer.orDie)
+}

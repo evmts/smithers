@@ -1,0 +1,45 @@
+/** Wiki publication paths are judged by where they really resolve, never lexically. */
+import { Effect, FileSystem, Option, Path } from "effect"
+
+/** The canonical location of a possibly-missing output, relative to the canonical repository. */
+function resolveOutput(repositoryPath: string, output: string) {
+  const fs = FileSystem.FileSystem(), path = Path.Path()
+  const root = fs.realPath(repositoryPath)
+  const requested = path.resolve(repositoryPath, output)
+  let ancestor = requested
+  // Resolve existing ancestors before creating anything. A symlinked ancestor
+  // can otherwise route a publication across the repository boundary.
+  while (!fs.exists(ancestor)) {
+    if (Option.isSome(Effect.option(fs.readLink(ancestor)))) {
+      throw new Error("Wiki output cannot contain a dangling symlink")
+    }
+    const parent = path.dirname(ancestor)
+    if (parent === ancestor) throw new Error("Wiki output has no existing parent")
+    ancestor = parent
+  }
+  const canonical = path.resolve(fs.realPath(ancestor), path.relative(ancestor, requested))
+  const relative = path.relative(root, canonical)
+  const inside = relative !== "" && !path.isAbsolute(relative) && relative !== ".." &&
+    !relative.startsWith(`..${path.sep}`)
+  return { canonical, inside, relative }
+}
+
+/** Host-owned publication must never become an implementation workspace edit. */
+export function separateWikiOutput(repositoryPath: string, output: string) {
+  const { canonical, inside, relative } = resolveOutput(repositoryPath, output)
+  if (inside || relative === "") {
+    throw new Error(
+      "Coding wiki output must be outside the source workspace, including .flows; use a separate wiki directory"
+    )
+  }
+  return canonical
+}
+
+/** A local generation writes its output and engine state only where it really lies inside the repository. */
+export function containedWikiOutput(repositoryPath: string, output: string) {
+  const { canonical, inside } = resolveOutput(repositoryPath, output)
+  if (!inside) {
+    throw new Error(`Wiki path must resolve to a dedicated location inside --root, through no symlink out: ${output}`)
+  }
+  return canonical
+}

@@ -4,7 +4,6 @@
  * @since 1.0.0
  */
 
-import { roundTrip } from "./jsonRoundTrip.ts"
 import { CallFact, StepFact } from "@smthrs/journal"
 import * as Schema from "effect/Schema"
 
@@ -256,3 +255,5 @@ export const callEventFilter = <Event extends CallObservation>(): CallEventFilte
     }
   }
 }
+
+const roundTrip = (value: unknown): any => JSON.parse(JSON.stringify(value))
