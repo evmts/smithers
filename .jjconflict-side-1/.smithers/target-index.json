@@ -48313,6 +48313,31 @@
     }
   },
   {
+    "label": "//packages/backend:withTestPostgres",
+    "package": "packages/backend",
+    "name": "withTestPostgres",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/backend/scripts/with-test-postgres.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/backend/scripts/with-test-postgres.sh"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/backend/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/errors:check",
     "package": "packages/errors",
     "name": "check",

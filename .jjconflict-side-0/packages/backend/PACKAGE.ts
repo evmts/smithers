@@ -220,11 +220,20 @@ const openapiClients = Smithers.NodeTest({
   cwd: "packages/backend"
 })
 
+// The throwaway PostgreSQL wrapper landing gates run database tests through:
+// it fails loudly when the server cannot start and never leaves it running.
+const withTestPostgres = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("scripts/with-test-postgres.test.mjs")]),
+  srcs: [Smithers.file("scripts/with-test-postgres.sh")],
+  deps: [],
+  cwd: "packages/backend"
+})
+
 /** The backend package: build inputs, script gates, the documentation freshness gate and the security review.
  * @since 1.0.0
  * @category packages
  */
 export const Package = Smithers.Package({ targets: {
   machineContractInputs, buildInputs, apiSchemas, docs, goTestRunners, deploymentBranches, openapiBundle, openapiClients,
-  journeyTodoLabel, ...securityReview
+  withTestPostgres, journeyTodoLabel, ...securityReview
 } })
