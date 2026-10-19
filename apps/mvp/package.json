@@ -1,0 +1,26 @@
+{
+  "name": "@smthrs/mvp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5190 --strictPort",
+    "build": "vite build",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@fontsource/inter": "5.3.0",
+    "@smthrs/ui": "workspace:*",
+    "@tanstack/react-router": "1.170.42",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "@vitejs/plugin-react": "6.1.1",
+    "typescript": "^5.9.3",
+    "vite": "8.2.2"
+  }
+}
