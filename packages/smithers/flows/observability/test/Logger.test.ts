@@ -1,4 +1,4 @@
-import { Effect, Logger as EffectLogger, References } from "effect"
+import { Effect, Logger as EffectLogger, References, Tracer } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Logger from "../src/Logger.ts"
 
@@ -95,6 +95,57 @@ describe("Logger layers", () => {
 
     expect(overridden).toBe("Warn")
     expect(pinned.values).toHaveLength(0)
+  })
+
+  it("adds the current span's trace_id and span_id to a structured record, and nothing outside a span", async () => {
+    const records: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const sink = EffectLogger.make((options) => {
+      records.push(Logger.formatStructured.log(options))
+    })
+    const parent = Tracer.externalSpan({ traceId: "4bf92f3577b34da6a3ce929d0e0e4736", spanId: "00f067aa0ba902b7" })
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        yield* Effect.logInfo("outside")
+        const span = yield* Effect.logInfo("inside").pipe(
+          Effect.andThen(Effect.currentSpan),
+          Effect.withSpan("work", { parent })
+        )
+        yield* Effect.logInfo("caller's ids").pipe(
+          Effect.annotateLogs({ trace_id: "relayed-trace", span_id: "relayed-span" }),
+          Effect.withSpan("relay", { parent })
+        )
+        expect(span.traceId).toBe(parent.traceId)
+        expect(records[1]?.annotations).toEqual({ trace_id: parent.traceId, span_id: span.spanId })
+      }).pipe(Effect.provide(EffectLogger.layer([sink])))
+    )
+
+    expect(records.map((record) => record.message)).toEqual(["outside", "inside", "caller's ids"])
+    expect(records[0]?.annotations).toEqual({})
+    expect(records[2]?.annotations).toEqual({ trace_id: "relayed-trace", span_id: "relayed-span" })
+  })
+
+  it("writes the span's ids into each structured JSON line", async () => {
+    const lines: Array<string> = []
+    const parent = Tracer.externalSpan({ traceId: "4bf92f3577b34da6a3ce929d0e0e4736", spanId: "00f067aa0ba902b7" })
+    const log = console.log
+    console.log = (line: string) => void lines.push(line)
+    try {
+      await Effect.runPromise(
+        Effect.logInfo("joined").pipe(
+          Effect.withSpan("work", { parent }),
+          Effect.provide(Logger.layerStructuredJson())
+        )
+      )
+    } finally {
+      console.log = log
+    }
+
+    expect(lines).toHaveLength(1)
+    expect(JSON.parse(lines[0]!)).toMatchObject({
+      message: "joined",
+      level: "INFO",
+      annotations: { trace_id: parent.traceId, span_id: expect.stringMatching(/^[0-9a-f]{16}$/) }
+    })
   })
 
   it("composes `layer` around a caller-supplied logger, defaults and all", async () => {

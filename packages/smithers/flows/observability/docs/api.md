@@ -508,7 +508,28 @@ output it finds.
 const layerStructuredJson: (options?: Options) => Layer.Layer<never>
 ```
 
-One structured JSON object per log line.
+One structured JSON object per log line: the record `Logger.formatStructured`
+builds, written to the console.
+
+### Logger.formatStructured
+
+```ts
+const formatStructured: Logger.Logger<unknown, {
+  readonly level: string
+  readonly fiberId: string
+  readonly timestamp: string
+  readonly message: unknown
+  readonly cause: string | undefined
+  readonly annotations: Record<string, unknown>
+  readonly spans: Record<string, number>
+}>
+```
+
+Effect's structured record of a log line, with the current span's `trace_id`
+and `span_id` among its annotations when the line is logged inside a span.
+They are the names `OtlpRelay` gives a relayed record's ids, so a service's own
+lines and the browser records it relays join on the trace. An annotation the
+caller set under either name wins. Outside a span, the record is Effect's own.
 
 ### Logger.layerNoop
 

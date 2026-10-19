@@ -4,10 +4,13 @@
  * @since 0.1.0
  */
 
+import * as Context from "effect/Context"
+import * as Formatter from "effect/Formatter"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
 import type * as LogLevel from "effect/LogLevel"
 import * as References from "effect/References"
+import * as Tracer from "effect/Tracer"
 
 /**
  * Options shared by the built-in logger layers.
@@ -66,7 +69,25 @@ export const layerPrettyDev = (options?: Options): Layer.Layer<never> => {
 }
 
 /**
- * Provides one structured JSON object per log line.
+ * Effect's structured record of a log line (`Logger.formatStructured`), with
+ * the current span's `trace_id` and `span_id` among its annotations when the
+ * line is logged inside a span. They are the names `OtlpRelay` gives a relayed
+ * record's ids, so a service's own lines and the browser records it relays
+ * join on the trace. An annotation the caller set under either name wins.
+ *
+ * @category loggers
+ * @since 1.0.0
+ */
+export const formatStructured = Logger.make((options) => {
+  const record = Logger.formatStructured.log(options)
+  const span = Context.getOrUndefined(options.fiber.context, Tracer.ParentSpan)
+  if (span === undefined) return record
+  return { ...record, annotations: { trace_id: span.traceId, span_id: span.spanId, ...record.annotations } }
+})
+
+/**
+ * Provides one structured JSON object per log line: {@link formatStructured},
+ * with the current span's ids, written to the console.
  *
  * @category layers
  * @since 0.1.0
@@ -74,7 +95,9 @@ export const layerPrettyDev = (options?: Options): Layer.Layer<never> => {
 export const layerStructuredJson = (options?: Options): Layer.Layer<never> => {
   const resolved = optionsWithDefaults(options)
   return withMinimumLogLevel(
-    Logger.layer([Logger.consoleJson], { mergeWithExisting: resolved.mergeWithExisting }),
+    Logger.layer([Logger.withConsoleLog(Logger.map(formatStructured, Formatter.formatJson))], {
+      mergeWithExisting: resolved.mergeWithExisting
+    }),
     resolved.minimumLogLevel
   )
 }

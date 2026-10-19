@@ -27,7 +27,9 @@ const silent = Logger.layerNoop()
 `Logger.layerPrettyDev` chooses colors and mode from the terminal it finds, so
 it degrades to plain text when the output is not a TTY.
 `Logger.layerStructuredJson` is the one to ship: a log shipper can parse it, and
-it is what a collector's log pipeline expects.
+it is what a collector's log pipeline expects. A line logged inside a span
+carries the span's `trace_id` and `span_id` in its annotations, so a log search
+can join it to the trace and to browser records `OtlpRelay` relayed.
 
 To install a logger you wrote, or one from another package, use `Logger.layer`:
 
