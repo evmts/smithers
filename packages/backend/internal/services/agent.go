@@ -464,10 +464,11 @@ type AgentServiceOption func(*AgentService)
 type AgentWorkspaceBackend interface {
 	CheckAgentWorkspaceQuota(ctx context.Context, userID int64) error
 	CreateAgentWorkspace(ctx context.Context, input CreateAgentWorkspaceInput) (AgentWorkspaceResult, error)
-	// ReleaseAgentWorkspace ends a finished run's hold on its box and reports
-	// what that did: suspended, stopped, kept running for another user, or
-	// failed with its credentials revoked all the same.
-	ReleaseAgentWorkspace(ctx context.Context, workspaceID, sessionID string) (AgentWorkspaceRelease, error)
+	// ReleaseAgentWorkspace ends the hold of finishedRunID, a run of
+	// sessionID, on its box and reports what that did: quiesced, retired,
+	// kept running for another user or turn, or failed with its credentials
+	// revoked all the same.
+	ReleaseAgentWorkspace(ctx context.Context, workspaceID, sessionID string, finishedRunID int64) (AgentWorkspaceRelease, error)
 	SnapshotAgentWorkspace(ctx context.Context, workspaceID, name string) (string, error)
 }
 
@@ -1573,7 +1574,7 @@ func (s *AgentService) startAgentRuntimeWatchdog(sessionID, vmID string, workflo
 			// RFD-004: a run executing in a workspace releases it, never
 			// deletes it; the disk stays for the human to inspect.
 			if workspaceID := s.agentSessionWorkspaceID(deleteCtx, sessionID); workspaceID != "" {
-				release, err := s.workspaces.ReleaseAgentWorkspace(deleteCtx, workspaceID, sessionID)
+				release, err := s.workspaces.ReleaseAgentWorkspace(deleteCtx, workspaceID, sessionID, workflowRunID)
 				logAgentWorkspaceRelease(logger, workspaceID, "max_runtime", release, err)
 				return
 			}
