@@ -4,7 +4,7 @@ import { Schema } from "effect"
 export default Flow.make("local-gateway-question", {
   description: "A local gateway question.",
   capabilities: [],
-  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "reversible" },
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
   payload: {},
   success: Schema.Json,
   error: HumanTask.HumanTaskFailed,
