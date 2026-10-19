@@ -90,9 +90,9 @@ WHERE id = $1 AND deleted_at IS NULL
 // ReserveAgentSessionVMSlot atomically checks the fleet-wide active-agent-VM
 // count against the cap and, if below it, stamps the session's started_at so
 // the session is counted immediately — BEFORE the slow Microsandbox CreateSandbox call.
-// startedAt is when the turn's message was accepted: the turn's wall clock,
-// which the session reaper bounds, starts there; the count reads only that
-// started_at is set.
+// startedAt is when the turn left the message-dispatch queue and its box
+// allocation began: the turn's wall clock, which the session reaper bounds,
+// starts there; the count reads only that started_at is set.
 //
 // The count + stamp are serialized across the whole fleet with a transaction-
 // scoped advisory lock: concurrent reservers queue on the lock, and each

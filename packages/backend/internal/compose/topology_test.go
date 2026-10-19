@@ -64,6 +64,22 @@ func TestHostedAgentTurnsEndWithinTheHostedTurnTimeout(t *testing.T) {
 	}
 }
 
+// A hosted turn may wait for dispatch twenty minutes; an install leaves a
+// queued turn to its never-started bound (PM d-qij9n0).
+func TestHostedAgentTurnsWaitForDispatchWithinTheHostedQueueTimeout(t *testing.T) {
+	for _, role := range []topology{hostedAPITopology, hostedWorkerTopology, {multitenant: true}} {
+		if got := agentQueueTimeout(role); got != services.HostedAgentQueueTimeout {
+			t.Errorf("%+v agentQueueTimeout = %s, want %s", role, got, services.HostedAgentQueueTimeout)
+		}
+	}
+	if got := agentQueueTimeout(localTopology); got != 0 {
+		t.Errorf("install agentQueueTimeout = %s, want 0", got)
+	}
+	if services.HostedAgentQueueTimeout != 20*time.Minute {
+		t.Fatalf("hosted queue bound = %s; the launch requires 20m", services.HostedAgentQueueTimeout)
+	}
+}
+
 // isolatedRuntime reports only its isolation class; composition must refuse a
 // mismatched identity before it touches any other runtime method.
 type isolatedRuntime struct {

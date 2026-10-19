@@ -830,9 +830,9 @@ WITH failed_session AS (
     metadata = metadata || '{"failure_reason":"never_started"}'::jsonb
     WHERE s.id = $1 AND s.status = 'active' AND s.started_at IS NULL
     AND s.workflow_run_id IS NOT DISTINCT FROM $2::bigint
-    AND s.deleted_at IS NULL AND COALESCE(
+    AND s.deleted_at IS NULL AND GREATEST(COALESCE(
         (SELECT wr.created_at FROM workflow_runs wr WHERE wr.id = s.workflow_run_id), s.created_at
-    ) < $3::timestamptz
+    ), (SELECT max(m.created_at) FROM agent_messages m WHERE m.session_id = s.id AND m.role = 'user')) < $3::timestamptz
     RETURNING s.id, s.repository_id, s.user_id, s.workflow_run_id, s.title, s.status, s.metadata, s.workspace_id, s.started_at, s.finished_at, s.created_at, s.updated_at, s.deleted_at
 ), failed_tasks AS (
     UPDATE workflow_tasks wt
@@ -900,11 +900,13 @@ const listNeverStartedAgentSessions = `-- name: ListNeverStartedAgentSessions :m
 SELECT s.id, s.repository_id, s.user_id, s.workflow_run_id, s.title, s.status, s.metadata, s.workspace_id, s.started_at, s.finished_at, s.created_at, s.updated_at, s.deleted_at FROM agent_sessions s
 LEFT JOIN workflow_runs wr ON wr.id = s.workflow_run_id
 WHERE s.status = 'active' AND s.started_at IS NULL
-AND s.deleted_at IS NULL AND COALESCE(wr.created_at, s.created_at) < $1::timestamptz
+AND s.deleted_at IS NULL AND GREATEST(COALESCE(wr.created_at, s.created_at),
+    (SELECT max(m.created_at) FROM agent_messages m WHERE m.session_id = s.id AND m.role = 'user')) < $1::timestamptz
 ORDER BY COALESCE(wr.created_at, s.created_at), s.id LIMIT 200
 `
 
-// A re-dispatched session gets a fresh provisioning deadline from its run.
+// A re-dispatched session gets a fresh provisioning deadline from its run, and
+// a reactivated one from its newest request.
 func (q *Queries) ListNeverStartedAgentSessions(ctx context.Context, cutoff time.Time) ([]AgentSession, error) {
 	rows, err := q.db.Query(ctx, listNeverStartedAgentSessions, cutoff)
 	if err != nil {

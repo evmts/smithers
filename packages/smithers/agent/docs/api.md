@@ -1643,7 +1643,9 @@ fault is `{ class: "policy", tag: callLimitTag }` and nothing retries past it.
 Unlike a command's own `timeoutMs`, which the cell reads as a `timeout` call
 failure, the bound ends the run whatever its budget says. A hosted coding host
 sets the bound to five minutes; Smithers reads the fault as the turn's
-`turn_timed_out`.
+`turn_timed_out`. A hosted turn's own 15 minutes start when it leaves the
+queue for a box; a turn still queued 20 minutes after it was sent fails with
+`box_busy` and never starts.
 
 ## EventSink
 

@@ -17,18 +17,26 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
+	"github.com/smithersai/smithers/packages/backend/jobs"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
-// Hosted bounds on one agent turn. Neither is configuration: the composition
-// applies both on hosted, and tests inject shorter bounds where these are
+// Hosted bounds on one agent turn. None is configuration: the composition
+// applies them on hosted, and tests inject shorter bounds where these are
 // read (StartSessionReaper's maxDuration, the coding host's call limit).
 const (
 	// HostedAgentTurnTimeout is the wall-clock bound on one hosted turn,
-	// counted from the turn's start. The session reaper stops a turn still
-	// active past it, with turn_timed_out, even when the box never reports
-	// again, then releases the turn's box through finalizeAgentSession.
+	// counted from the turn's start: the moment it leaves the message-dispatch
+	// queue and its box allocation begins (turnStartedAt). The session reaper
+	// stops a turn still active past it, with turn_timed_out, even when the
+	// box never reports again, then releases the turn's box through
+	// finalizeAgentSession.
 	HostedAgentTurnTimeout = 15 * time.Minute
+	// HostedAgentQueueTimeout bounds the wait before that start: a turn whose
+	// message was accepted this long ago and that no worker has dispatched
+	// fails with box_busy, and its request is cancelled so it never starts
+	// later (PM d-qij9n0).
+	HostedAgentQueueTimeout = 20 * time.Minute
 	// HostedToolCallTimeout is the bound on one shell or test command in a
 	// hosted turn. The coding host kills the command's process group and
 	// fails the turn (RunawayGuard.callLimitExceeded), which the session
@@ -115,6 +123,126 @@ func WithAgentNeverStartedTimeout(timeout time.Duration) AgentServiceOption {
 	return func(s *AgentService) { s.neverStartedTimeout = timeout }
 }
 
+// WithAgentQueueTimeout bounds how long an accepted turn may wait for
+// dispatch; the session reaper enforces it. Zero leaves a queued turn to the
+// never-started bound.
+func WithAgentQueueTimeout(timeout time.Duration) AgentServiceOption {
+	return func(s *AgentService) { s.queueTimeout = timeout }
+}
+
+// queuedAgentTurn is a turn waiting in the message-dispatch queue: the
+// request AppendMessageAndDispatch admitted with its message is ready for a
+// worker, and no dispatch has begun.
+type queuedAgentTurn struct {
+	operationID string
+	scope       jobs.Scope
+	sessionID   string
+	acceptedAt  time.Time
+}
+
+// listQueuedAgentTurns lists the queued turns accepted before acceptedBefore,
+// oldest first. A request a worker holds has left the queue; a request a
+// worker refused for capacity is back in it. The scan starts from the
+// partial index of ready deliveries, which holds only queued work.
+func (s *AgentService) listQueuedAgentTurns(ctx context.Context, acceptedBefore time.Time) ([]queuedAgentTurn, error) {
+	rows, err := s.messagePool.Query(ctx, `
+SELECT request.id::text, request.tenant_id, request.principal_id, COALESCE(request.payload->>'SessionID', ''), request.created_at
+FROM product_job_dispatches dispatch
+JOIN product_job_requests request ON request.id = dispatch.operation_id
+WHERE dispatch.status = 'ready' AND dispatch.external_started_at IS NULL
+  AND request.operation = $1 AND request.state = 'accepted'
+  AND request.created_at < $2
+ORDER BY request.created_at, request.id
+LIMIT 200`, agentMessageDispatchOperation, acceptedBefore)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var turns []queuedAgentTurn
+	for rows.Next() {
+		var turn queuedAgentTurn
+		if err := rows.Scan(&turn.operationID, &turn.scope.TenantID, &turn.scope.PrincipalID, &turn.sessionID, &turn.acceptedAt); err != nil {
+			return nil, err
+		}
+		turns = append(turns, turn)
+	}
+	return turns, rows.Err()
+}
+
+// reapQueuedTurns fails every turn still queued queueTimeout after its
+// message was accepted, with box_busy, and ends it like any failed session.
+func (s *AgentService) reapQueuedTurns(ctx context.Context) error {
+	if s.queueTimeout <= 0 || s.messagePool == nil || s.messageJobs == nil {
+		return nil
+	}
+	turns, err := s.listQueuedAgentTurns(ctx, time.Now().UTC().Add(-s.queueTimeout))
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for _, turn := range turns {
+		record, failed, err := s.failQueuedTurn(ctx, turn)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("fail queued agent turn %s: %w", turn.sessionID, err))
+			continue
+		}
+		if !failed {
+			continue
+		}
+		s.announceAgentSessionFailureReply(ctx, record)
+		s.notifyAgentSessionStatus(ctx, record.Session)
+		s.finalizeAgentSession(ctx, record.Session, "failed", "queue wait exceeded")
+	}
+	return stdErrors.Join(failures...)
+}
+
+// failQueuedTurn fails the turn in one transaction, and only while its
+// request is still queued: the session goes failed with box_busy's reason
+// and final reply, and the request is cancelled. It holds the request's
+// delivery row, which a worker's claim skips while it is locked, so a turn is
+// either failed here or dispatched, never both. Returns false when a worker
+// claimed the request first or the session is no longer active.
+func (s *AgentService) failQueuedTurn(ctx context.Context, turn queuedAgentTurn) (db.AgentSessionFailureRecord, bool, error) {
+	tx, err := s.messagePool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return db.AgentSessionFailureRecord{}, false, err
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	var queued bool
+	err = tx.QueryRow(ctx, `SELECT status = 'ready' AND external_started_at IS NULL
+FROM product_job_dispatches WHERE operation_id = $1 FOR UPDATE`, turn.operationID).Scan(&queued)
+	if stdErrors.Is(err, pgx.ErrNoRows) || (err == nil && !queued) {
+		return db.AgentSessionFailureRecord{}, false, nil
+	}
+	if err != nil {
+		return db.AgentSessionFailureRecord{}, false, err
+	}
+	q := db.New(tx)
+	_, err = q.UpdateAgentSessionTerminalStatus(ctx, db.UpdateAgentSessionTerminalStatusParams{
+		ID: turn.sessionID, Status: "failed", FinishedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	})
+	if stdErrors.Is(err, pgx.ErrNoRows) {
+		return db.AgentSessionFailureRecord{}, false, nil
+	}
+	if err != nil {
+		return db.AgentSessionFailureRecord{}, false, err
+	}
+	record, recorded, err := q.RecordAgentSessionFailure(ctx, turn.sessionID, agentSessionBoxBusy)
+	if err != nil {
+		return db.AgentSessionFailureRecord{}, false, err
+	}
+	if !recorded {
+		return db.AgentSessionFailureRecord{}, false, fmt.Errorf("session %s already carries a failure reason", turn.sessionID)
+	}
+	if _, err := s.messageJobs.RequestCancellationInTx(ctx, tx, turn.scope, turn.operationID); err != nil {
+		return db.AgentSessionFailureRecord{}, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return db.AgentSessionFailureRecord{}, false, err
+	}
+	return record, true, nil
+}
+
 type neverStartedAgentQuerier interface {
 	ListNeverStartedAgentSessions(context.Context, time.Time) ([]db.AgentSession, error)
 	FailNeverStartedAgentSession(context.Context, db.FailNeverStartedAgentSessionParams) (db.AgentSession, error)
@@ -158,11 +286,11 @@ func (s *AgentService) reapExpiredSessions(ctx context.Context, maxDuration time
 		return nil
 	}
 
-	neverStartedErr := s.reapNeverStartedSessions(ctx)
+	unstartedErr := stdErrors.Join(s.reapQueuedTurns(ctx), s.reapNeverStartedSessions(ctx))
 	cutoff := time.Now().UTC().Add(-maxDuration)
 	sessions, err := s.dispatchQ.ListStaleActiveSessions(ctx, pgtype.Timestamptz{Time: cutoff, Valid: true})
 	if err != nil {
-		return stdErrors.Join(neverStartedErr, err)
+		return stdErrors.Join(unstartedErr, err)
 	}
 
 	for _, session := range sessions {
@@ -176,7 +304,7 @@ func (s *AgentService) reapExpiredSessions(ctx context.Context, maxDuration time
 		}
 	}
 
-	return neverStartedErr
+	return unstartedErr
 }
 
 // reapExpiredSession fails a turn past its bound with turn_timed_out (the
@@ -266,17 +394,23 @@ func (s *AgentService) recordAgentSessionFailure(ctx context.Context, session db
 	if !ok {
 		return session
 	}
+	s.announceAgentSessionFailureReply(ctx, record)
+	// Only the reason changed; the caller's terminal row keeps its run link.
+	session.Metadata, session.UpdatedAt = record.Session.Metadata, record.Session.UpdatedAt
+	return session
+}
+
+// announceAgentSessionFailureReply tells the session's streams about the
+// final reply a recorded failure wrote.
+func (s *AgentService) announceAgentSessionFailureReply(ctx context.Context, record db.AgentSessionFailureRecord) {
 	reply := AgentMessageResponse{
 		ID: record.Reply.ID, SessionID: record.Reply.SessionID, Role: record.Reply.Role,
 		Sequence: record.Reply.Sequence, CreatedAt: record.Reply.CreatedAt,
 		Parts: []AgentPartResponse{{PartIndex: record.Part.PartIndex, Type: record.Part.PartType, Content: record.Part.Content}},
 	}
 	if payload, marshalErr := json.Marshal(AgentSessionMessageEvent(reply)); marshalErr == nil && s.q != nil {
-		_ = s.q.NotifyAgentMessage(ctx, db.NotifyAgentMessageParams{SessionID: session.ID, Payload: string(payload)})
+		_ = s.q.NotifyAgentMessage(ctx, db.NotifyAgentMessageParams{SessionID: record.Session.ID, Payload: string(payload)})
 	}
-	// Only the reason changed; the caller's terminal row keeps its run link.
-	session.Metadata, session.UpdatedAt = record.Session.Metadata, record.Session.UpdatedAt
-	return session
 }
 
 func (s *AgentService) notifyAgentSessionStatus(ctx context.Context, session db.AgentSession) {

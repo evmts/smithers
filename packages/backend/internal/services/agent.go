@@ -409,6 +409,7 @@ type AgentService struct {
 	guestEntrypointAssumed bool
 
 	neverStartedTimeout   time.Duration
+	queueTimeout          time.Duration
 	revocations           revocation.Publisher
 	q                     AgentQuerier
 	appendTxManager       agentAppendTxManager

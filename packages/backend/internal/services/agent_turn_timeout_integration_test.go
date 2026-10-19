@@ -187,12 +187,13 @@ func TestTurnTimeoutSentencesSayHowLong(t *testing.T) {
 	}}))
 }
 
-// PM d-kppoyr: the turn's clock starts when its message is accepted (the
-// confirm, or a typed /change), not when its box is ready. A dispatch that
-// runs ten minutes after the message was accepted stamps the acceptance as
-// the turn's start, on both the uncapped and the fleet-capped path, so the
-// reaper ends it five minutes later, not fifteen.
-func TestATurnsClockStartsWhenItsMessageIsAccepted(t *testing.T) {
+// PM d-qij9n0 (replaces d-kppoyr): a turn's fifteen minutes start when it
+// leaves the queue, as dispatch begins allocating its box, never when its
+// message was accepted; the wait before has its own bound
+// (HostedAgentQueueTimeout). A turn accepted at T and dispatched at T+10 is
+// still running at T+16 and ends fifteen minutes after its dispatch, on both
+// the uncapped and the fleet-capped path.
+func TestATurnsClockStartsWhenItsDispatchBegins(t *testing.T) {
 	for _, capped := range []bool{false, true} {
 		t.Run(map[bool]string{false: "uncapped", true: "fleet capped"}[capped], func(t *testing.T) {
 			service, pool, update := codingCompletionFixture(t)
@@ -214,28 +215,33 @@ func TestATurnsClockStartsWhenItsMessageIsAccepted(t *testing.T) {
 			d := &agentDispatch{svc: service, ctx: ctx, run: db.WorkflowRun{ID: projection.WorkflowRunID},
 				input: DispatchAgentRunInput{SessionID: session.ID, RepositoryID: session.RepositoryID, UserID: session.UserID, TriggerMessageID: messages[0].ID}}
 
+			dispatched := time.Now().UTC().Truncate(time.Microsecond)
 			require.NoError(t, d.loadMessageHistory())
 			require.NoError(t, d.reserveFleetSlot())
 
 			session, err = q.GetAgentSession(ctx, projection.SessionID)
 			require.NoError(t, err)
 			require.True(t, session.StartedAt.Valid)
-			require.True(t, accepted.Equal(session.StartedAt.Time), "started_at %s is the acceptance %s", session.StartedAt.Time, accepted)
-			sessions, err := q.ListStaleActiveSessions(ctx, pgtype.Timestamptz{Time: time.Now().UTC().Add(-5 * time.Minute), Valid: true})
+			started := session.StartedAt.Time
+			require.False(t, started.Before(dispatched), "started_at %s is the dispatch %s, not the acceptance %s", started, dispatched, accepted)
+			require.Less(t, started.Sub(dispatched), time.Minute)
+
+			// The reaper at time x stops turns started before x minus the bound.
+			staleAt := func(x time.Time) int {
+				sessions, err := q.ListStaleActiveSessions(ctx, pgtype.Timestamptz{Time: x.Add(-HostedAgentTurnTimeout), Valid: true})
+				require.NoError(t, err)
+				return len(sessions)
+			}
+			require.Zero(t, staleAt(accepted.Add(16*time.Minute)), "at T+16, six minutes after its dispatch, the turn keeps running")
+			require.Zero(t, staleAt(started.Add(HostedAgentTurnTimeout)), "at dispatch+15 exactly, the turn keeps running")
+			require.Equal(t, 1, staleAt(started.Add(HostedAgentTurnTimeout+time.Second)), "past dispatch+15, the turn ends")
+
+			// Fifteen minutes and five seconds after its dispatch, the reaper
+			// fails the turn and says it ran fifteen minutes.
+			_, err = pool.Exec(ctx, `UPDATE agent_sessions SET started_at = started_at - interval '15 minutes 5 seconds' WHERE id = $1`, session.ID)
 			require.NoError(t, err)
-			require.Len(t, sessions, 1, "five minutes after dispatch, the turn has run fifteen")
+			require.NoError(t, service.reapExpiredSessions(ctx, HostedAgentTurnTimeout))
+			requireTurnEnded(t, service, update, "failed", "This turn stopped after 15 minutes without finishing.")
 		})
 	}
-}
-
-func TestATurnWithoutItsAcceptedMessageStartsItsClockAtDispatch(t *testing.T) {
-	messages := []AgentMessageResponse{{ID: 4, Role: "assistant", CreatedAt: time.Unix(10, 0)}, {ID: 5, Role: "user", CreatedAt: time.Unix(20, 0)}}
-	require.Equal(t, time.Unix(20, 0), agentTriggerMessageAcceptedAt(messages, 5))
-	require.True(t, agentTriggerMessageAcceptedAt(messages, 4).IsZero(), "only a user message starts a turn")
-	require.True(t, agentTriggerMessageAcceptedAt(messages, 6).IsZero())
-	require.True(t, agentTriggerMessageAcceptedAt(messages, 0).IsZero())
-	before := time.Now().UTC()
-	require.False(t, (&agentDispatch{}).turnStartedAt().Before(before))
-	require.False(t, (&agentDispatch{acceptedAt: time.Now().Add(time.Hour)}).turnStartedAt().After(time.Now().UTC()),
-		"a clock skewed into the future starts at dispatch")
 }

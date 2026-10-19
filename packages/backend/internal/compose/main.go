@@ -339,6 +339,17 @@ func agentTurnTimeout(role topology, configuredSeconds int64) time.Duration {
 	return configured
 }
 
+// agentQueueTimeout is how long an accepted turn may wait for dispatch
+// before the session reaper fails it with box_busy: on hosted
+// services.HostedAgentQueueTimeout; an install leaves a queued turn to its
+// never-started bound.
+func agentQueueTimeout(role topology) time.Duration {
+	if role.hosted() {
+		return services.HostedAgentQueueTimeout
+	}
+	return 0
+}
+
 // selectPublicMirrors is a deployment's mirror list: the composer's names
 // (Options.PublicMirrors) and then SMITHERS_PUBLIC_MIRRORS's, each repository
 // once. An install wraps one repository whose import, not the GitHub pull,
@@ -1185,6 +1196,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	agentService := services.NewAgentServiceWithPool(queries, pool,
 		services.WithAgentDispatchQuerier(runtimeStores.AgentDispatch),
 		services.WithAgentNeverStartedTimeout(neverStartedTimeout),
+		services.WithAgentQueueTimeout(agentQueueTimeout(options.topology)),
 		services.WithAgentChangesetMaterializer(changesetService),
 		services.WithAgentLogStore(agentLogStore),
 		services.WithAgentSecretService(secretService),
