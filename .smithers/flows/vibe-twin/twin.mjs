@@ -586,7 +586,7 @@ const apiCheck = (pkg, work, twinned = [], privates = { ts: new Map(), twin: new
   const twinDts = new Set(walk(twinOut).filter((f) => f.endsWith(".d.ts")))
   const api = {
     modules: 0, identicalFiles: 0, checked: 0, missingModules: [], missingExports: [], extraExports: [],
-    typeDiffers: [], valueDiffers: [], nominal: [], assignable: [], errors: [], privateProjection: []
+    typeDiffers: [], valueDiffers: [], nominal: [], assignable: [], errors: [], privateProjection: [], docsDiffer: []
   }
   const lines = [
     "type Eq<A, B> = (<G>() => G extends A ? 1 : 2) extends (<G>() => G extends B ? 1 : 2) ? true : false",
@@ -635,6 +635,8 @@ const apiCheck = (pkg, work, twinned = [], privates = { ts: new Map(), twin: new
         api.missingExports.push(`${file}: ${name}`)
         continue
       }
+      // An export's JSDoc is its published documentation: the twin keeps it (S10-22).
+      if (exportDocs(e.text) !== exportDocs(v.text)) api.docsDiffer.push(`${file}: ${name}`)
       // Equal export text may refer to different private aliases or imports (guardian-review):
       // it is proof only when the module's private context matches too.
       const sameLocals = sameReferencedLocals(e.text, tsLocals, vbLocals)
@@ -769,6 +771,20 @@ export const privateMembers = (errors, pkg, dir) => {
 /** The modules, relative to the source root, for which TypeScript reported TS4094. */
 export const undeclarableModules = (tsErrors, pkg) => new Set(privateMembers(tsErrors, pkg, sourceRoot(pkg)).keys())
 
+/**
+ * An export's documentation as one comparable string: the JSDoc block nearest its
+ * declaration and every JSDoc inside it, whitespace-normalized. Earlier leading blocks are
+ * the comments of private declarations the emitter dropped; tsc drops them, and VibeLang
+ * keeps them, so they don't count.
+ */
+export const exportDocs = (text) => {
+  const norm = (block) => block.replace(/^\s*\*\s?/gm, "").replace(/\s+/g, " ").trim()
+  const leading = text.match(/^(?:\s*\/\*\*[\s\S]*?\*\/)+/)?.[0] ?? ""
+  const own = [...leading.matchAll(/\/\*\*[\s\S]*?\*\//g)].at(-1)?.[0]
+  const body = [...text.slice(leading.length).matchAll(/\/\*\*[\s\S]*?\*\//g)].map((m) => m[0])
+  return [own, ...body].filter((b) => b !== undefined).map(norm).join(" | ")
+}
+
 export const suiteEnv = (extra = {}) => {
   const env = { ...process.env, ...extra }
   delete env.CI
@@ -803,7 +819,7 @@ export const quality = (pkg) => {
 }
 
 const apiOk = (api) =>
-  api.missingExports.length + api.extraExports.length + api.typeDiffers.length + api.valueDiffers.length + api.errors.length === 0
+  api.missingExports.length + api.extraExports.length + api.typeDiffers.length + api.valueDiffers.length + api.errors.length + (api.docsDiffer?.length ?? 0) === 0
 
 /** A test name without the run-dependent parts some suites put in it: dates, times, long numbers. */
 export const stableName = (name) =>
@@ -1274,7 +1290,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         `  quality: ${receipt.quality.vibeLines} VibeLang lines, hatch share ${receipt.quality.hatchShare}, casts added ${receipt.quality.castsAdded}, suppressions added ${receipt.quality.suppressionsAdded}${receipt.quality.heldCalls ? `, ${receipt.quality.heldCalls} held-template calls (B-1 workaround)` : ""}${receipt.quality.constantConditionsAdded > 0 ? `, ${receipt.quality.constantConditionsAdded} constant conditions added (an unrestored mutation?)` : ""}`,
         `  tests: ts ${t.ts.pass} pass ${t.ts.fail} fail ${t.ts.skip} skip | vibe ${t.vibe.pass} pass ${t.vibe.fail} fail ${t.vibe.skip} skip`,
         ...receipt.compile.twinErrors.slice(0, 20).map((e) => `  ${e}`),
-        ...["missingExports", "extraExports", "typeDiffers", "valueDiffers", "errors"].flatMap((k) =>
+        ...["missingExports", "extraExports", "typeDiffers", "valueDiffers", "docsDiffer", "errors"].flatMap((k) =>
           receipt.api[k].slice(0, 30).map((x) => `  api ${k}: ${x}`)
         ),
         ...receipt.regressions.slice(0, 40).map((r) => `  regression: ${r}`)
