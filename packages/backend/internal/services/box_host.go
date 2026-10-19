@@ -370,9 +370,13 @@ func (s *WorkspaceService) replaceMissingBoxLocked(ctx context.Context, row db.W
 }
 
 // retireBoxHostCredentials revokes every credential minted for a
-// box's coding hosts when the box stops, suspends or is destroyed: its host
-// process ends with it, and the next start mints its own.
+// box's coding hosts, and the box's account-pool credential, when the box
+// stops, suspends or is destroyed: its processes end with it, and the next
+// start mints its own.
 func (s *WorkspaceService) retireBoxHostCredentials(ctx context.Context, workspace db.Workspace) {
+	if err := s.revokeWorkspaceProviderPoolToken(ctx, workspace); err != nil {
+		slog.Warn("revoke provider pool credential failed", "workspace_id", workspace.ID, "error", err)
+	}
 	q, ok := s.q.(boxHostQuerier)
 	if !ok || workspace.UserID <= 0 {
 		return
@@ -637,8 +641,12 @@ func (s *WorkspaceService) ReleaseFailedFlowHostMachine(ctx context.Context, bin
 		_, err = s.q.UpdateWorkspaceStatus(ctx, db.UpdateWorkspaceStatusParams{ID: row.ID, Status: "stopped"})
 		if err == nil {
 			// A stopped machine keeps no live head token (the 2026-10-18
-			// spike's token 63979 outlived this stop).
+			// spike's token 63979 outlived this stop), nor its pool
+			// credential.
 			s.revokeWorkspaceHeadToken(ctx, row)
+			if err := s.revokeWorkspaceProviderPoolToken(ctx, row); err != nil {
+				slog.Warn("revoke provider pool credential failed", "workspace_id", row.ID, "error", err)
+			}
 			s.notifyWorkspace(ctx, row.ID, "stopped")
 		}
 		return err

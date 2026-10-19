@@ -399,13 +399,20 @@ type StoppedAgentBoxRevoke struct {
 	Revoked bool
 }
 
+// ProviderPoolTokenPrefix names a box's account-pool credential:
+// ProviderPoolTokenPrefix + the workspace id, minted once per boot for the
+// box's owner (services.bindWorkspaceProviderPool).
+const ProviderPoolTokenPrefix = "provider-pool-workspace-"
+
 // stoppedAgentBoxCredentialsLive is true while a box still names a head
-// token, holds its children credential, or any of its Flow host bindings has
-// a live control credential or a live landing or cache token. $1 is the
-// workspace, $2 the children credential's name, $3 the revoked marker.
+// token, holds its children or account-pool credential, or any of its Flow
+// host bindings has a live control credential or a live landing or cache
+// token. $1 is the workspace, $2 the children credential's name, $3 the
+// revoked marker.
 const stoppedAgentBoxCredentialsLive = `(
   EXISTS (SELECT 1 FROM workspaces w WHERE w.id = $1::uuid AND w.head_push_token_id IS NOT NULL)
   OR EXISTS (SELECT 1 FROM access_tokens t JOIN workspaces w ON w.id = $1::uuid WHERE t.user_id = w.user_id AND t.name = $2)
+  OR EXISTS (SELECT 1 FROM access_tokens t JOIN workspaces w ON w.id = $1::uuid WHERE t.user_id = w.user_id AND t.name = '` + ProviderPoolTokenPrefix + `' || w.id::text)
   OR EXISTS (SELECT 1 FROM flow_runtime_host_bindings b WHERE b.workspace_id = $1::uuid AND b.credential_hash <> $3)
   OR EXISTS (SELECT 1 FROM flow_runtime_host_bindings b JOIN access_tokens t ON t.user_id = b.user_id
              AND t.name IN ('flow-host-landing-' || b.id::text, 'flow-host-cache-' || b.id::text)
@@ -414,7 +421,7 @@ const stoppedAgentBoxCredentialsLive = `(
 // RevokeStoppedAgentBoxCredentials revokes every credential a box that is not
 // running still holds, in one transaction under the box's lock and the same
 // finished-run fence as ClaimAgentBoxRelease: its head token, its children
-// credential, and each Flow host binding's landing and cache tokens and
+// and account-pool credentials, and each Flow host binding's landing and cache tokens and
 // control credential (with the model credential derived from it). It reads
 // them back in the same transaction and commits only when all are gone. A box
 // that runs, or that a lease or another use holds, is left alone. No other
@@ -464,6 +471,7 @@ func (q *Queries) RevokeStoppedAgentBoxCredentials(ctx context.Context, arg Revo
 		{`DELETE FROM access_tokens WHERE id = (SELECT head_push_token_id FROM workspaces WHERE id = $1::uuid)`, []any{arg.WorkspaceID}},
 		{`UPDATE workspaces SET head_push_token_id = NULL, updated_at = NOW() WHERE id = $1::uuid AND head_push_token_id IS NOT NULL`, []any{arg.WorkspaceID}},
 		{`DELETE FROM access_tokens t USING workspaces w WHERE w.id = $1::uuid AND t.user_id = w.user_id AND t.name = $2`, []any{arg.WorkspaceID, arg.ChildrenTokenName}},
+		{`DELETE FROM access_tokens t USING workspaces w WHERE w.id = $1::uuid AND t.user_id = w.user_id AND t.name = '` + ProviderPoolTokenPrefix + `' || w.id::text`, []any{arg.WorkspaceID}},
 		{`DELETE FROM access_tokens t USING flow_runtime_host_bindings b WHERE b.workspace_id = $1::uuid AND t.user_id = b.user_id
 		   AND t.name IN ('flow-host-landing-' || b.id::text, 'flow-host-cache-' || b.id::text)`, []any{arg.WorkspaceID}},
 		{`UPDATE flow_runtime_host_bindings SET credential_hash = $2, updated_at = clock_timestamp() WHERE workspace_id = $1::uuid AND credential_hash <> $2`,
@@ -493,8 +501,8 @@ func (q *Queries) RevokeStoppedAgentBoxCredentials(ctx context.Context, arg Revo
 
 // AgentBoxCredentialsLive reads back, as RevokeStoppedAgentBoxCredentials
 // does (stoppedAgentBoxCredentialsLive), whether a box still names a head
-// token or holds a live children, landing, cache or Flow host credential,
-// whatever its status.
+// token or holds a live children, account-pool, landing, cache or Flow host
+// credential, whatever its status.
 func (q *Queries) AgentBoxCredentialsLive(ctx context.Context, workspaceID, childrenTokenName string) (bool, error) {
 	var live bool
 	err := q.db.QueryRow(ctx, `SELECT `+stoppedAgentBoxCredentialsLive, workspaceID, childrenTokenName, flowHostRevokedCredentialHash).Scan(&live)
@@ -512,6 +520,7 @@ JOIN users machine ON machine.id = w.user_id AND machine.lower_username = 'smith
 WHERE w.deleted_at IS NULL AND w.status IN ('suspended', 'stopped', 'failed')
   AND (w.head_push_token_id IS NOT NULL
     OR EXISTS (SELECT 1 FROM access_tokens t WHERE t.user_id = w.user_id AND t.name = $1 || w.id::text)
+    OR EXISTS (SELECT 1 FROM access_tokens t WHERE t.user_id = w.user_id AND t.name = '`+ProviderPoolTokenPrefix+`' || w.id::text)
     OR EXISTS (SELECT 1 FROM flow_runtime_host_bindings b WHERE b.workspace_id = w.id AND b.credential_hash <> $2)
     OR EXISTS (SELECT 1 FROM flow_runtime_host_bindings b JOIN access_tokens t ON t.user_id = b.user_id
                AND t.name IN ('flow-host-landing-' || b.id::text, 'flow-host-cache-' || b.id::text)

@@ -36,7 +36,7 @@ const (
 	// account connected after boot serves without a restart.
 	ProviderPoolProvidersEnvName = flowhost.AccountPoolProvidersEnv
 
-	providerPoolTokenPrefix = "provider-pool-workspace-"
+	providerPoolTokenPrefix = db.ProviderPoolTokenPrefix
 	providerPoolTokenTTL    = 7 * 24 * time.Hour
 )
 
@@ -94,7 +94,9 @@ func (s *WorkspaceService) bindWorkspaceProviderPool(ctx context.Context, worksp
 	}
 	// The coding host chooses a pool-only default from live routes at startup.
 	// Persisting a boot-time choice would turn a removed account into a pin.
-	s.revokeProviderPoolTokens(ctx, workspace)
+	if err := s.revokeWorkspaceProviderPoolToken(ctx, workspace); err != nil {
+		slog.Warn("revoke provider pool credential failed", "workspace_id", workspace.ID, "error", err)
+	}
 	token, err := issueTemporaryRepoTokenWithTTL(ctx, s.q, workspace.UserID, providerPoolTokenPrefix+workspace.ID,
 		ProviderPoolTokenScopes(workspace.RepositoryID, workspace.ID), providerPoolTokenTTL)
 	if err != nil {
@@ -107,21 +109,20 @@ func (s *WorkspaceService) bindWorkspaceProviderPool(ctx context.Context, worksp
 	return nil
 }
 
-func (s *WorkspaceService) revokeProviderPoolTokens(ctx context.Context, workspace db.Workspace) {
-	lister, ok := s.q.(providerPoolTokenLister)
-	if !ok {
-		return
+// revokeWorkspaceProviderPoolToken revokes the box's account-pool credential.
+// It is minted once per boot, so every stop, retirement, release and delete
+// revokes it, and the next boot mints its own (Security s-to2s1x). A head
+// token rotation on a running box leaves it, since the guest still uses it.
+func (s *WorkspaceService) revokeWorkspaceProviderPoolToken(ctx context.Context, workspace db.Workspace) error {
+	store, ok := s.q.(workspaceChildrenTokenStore)
+	if !ok || strings.TrimSpace(workspace.ID) == "" || workspace.UserID <= 0 {
+		return nil
 	}
-	tokens, err := lister.ListAccessTokensByUserID(ctx, workspace.UserID)
-	if err != nil {
-		slog.Warn("list provider pool credentials failed", "workspace_id", workspace.ID, "error", err)
-		return
-	}
-	for _, token := range tokens {
-		if token.Name == providerPoolTokenPrefix+workspace.ID {
-			revokeTemporaryRepoCloneToken(ctx, s.q, workspace.UserID, token.ID)
-		}
-	}
+	revokeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), temporaryRepoTokenRevokeTimeout)
+	defer cancel()
+	return store.DeleteSystemAccessTokensByName(revokeCtx, db.DeleteSystemAccessTokensByNameParams{
+		UserID: workspace.UserID, Name: providerPoolTokenPrefix + workspace.ID,
+	})
 }
 
 // providerPoolScopeQuerier resolves the credential and the workspace it names.
