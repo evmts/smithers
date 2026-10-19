@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { exactPathPattern, fallbackFor, localNames, sourceExports, normalizeDts, parseDts, quality, sameReferencedLocals, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
+import { affectedTests, exactPathPattern, fallbackFor, localNames, sourceExports, normalizeDts, parseDts, quality, sameReferencedLocals, sourceRoot, splitTwinErrors, stableName, twinFor } from "./twin.mjs"
 
 test("declarations that differ only in relative import extensions are equal", () => {
   const ts = `import { type A } from "./ErrorCode.ts";\nexport { B } from "../x/y.ts";\nexport declare const c: import("./z.ts").Z;\n`
@@ -197,4 +197,20 @@ test("errors in a dependency's declarations are findings, not twin errors (E-14)
 test("a local export list is one entry per name (E-14)", () => {
   const e = parseDts(`declare const ImplementPlan: number;\nexport { ImplementPlan };\ntype Hidden = string;\nexport { type Hidden as Shown };\n`)
   assert.deepEqual(e.map((x) => [x.name, x.kind]), [["ImplementPlan", "value"], ["Shown", "type"]])
+})
+
+test("a test that imports its own package by name is affected (S2-1)", () => {
+  const pkg = mkdtempSync(join(tmpdir(), "vibe-twin-"))
+  mkdirSync(join(pkg, "src", "flow", "internal"), { recursive: true })
+  mkdirSync(join(pkg, "test"), { recursive: true })
+  writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@x/p", exports: { ".": "./src/index.ts", "./flow/internal/*": null, "./flow/*": "./src/flow/*.ts" } }))
+  for (const f of ["index.ts", "flow/Command.ts", "flow/internal/x.ts", "Other.ts"]) writeFileSync(join(pkg, "src", f), "")
+  writeFileSync(join(pkg, "test", "named.test.ts"), `import { run } from "@x/p/flow/Command"\n`)
+  writeFileSync(join(pkg, "test", "root.test.ts"), `import { run } from "@x/p"\n`)
+  writeFileSync(join(pkg, "test", "blocked.test.ts"), `import { x } from "@x/p/flow/internal/x"\n`)
+  writeFileSync(join(pkg, "test", "other.test.ts"), `import { y } from "@x/q/flow/Command"\n`)
+  const names = (twinned) => affectedTests(pkg, ["test"], twinned, "direct").map((f) => f.split("/").pop()).sort()
+  assert.deepEqual(names(["flow/Command"]), ["named.test.ts"])
+  assert.deepEqual(names(["index"]), ["root.test.ts"])
+  assert.deepEqual(names(["flow/internal/x"]), [], "an export mapped to null is not importable")
 })

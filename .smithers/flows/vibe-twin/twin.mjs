@@ -727,16 +727,36 @@ export const parseJunit = (xml, pkg) => {
  */
 export const affectedTests = (pkg, folders, twinned, mode = "transitive") => {
   const root = join(pkg, sourceRoot(pkg))
-  const targets = new Set(twinned.map((rel) => join(root, rel)))
   const strip = (f) => f.replace(/\.(?:ts|tsx|mts|js|mjs)$/, "").replace(/\/index$/, "")
+  // Both sides drop /index, or a twinned index module never selects its importers.
+  const targets = new Set(twinned.map((rel) => strip(join(root, rel))))
   const files = (dir) => (existsSync(dir) ? (/\.(?:ts|tsx)$/.test(dir) ? [dir] : walk(dir).map((f) => join(dir, f))) : [])
   const imports = new Map()
+  // Tests also import their package by name (@smthrs/migrate/flow/Command): resolve those
+  // through the package's own exports map, or 23 of migrate's 55 test files go unseen (S2-1).
+  const manifest = JSON.parse(readFileSync(join(pkg, "package.json"), "utf8"))
+  const selfExport = (specifier) => {
+    if (!manifest.name || (specifier !== manifest.name && !specifier.startsWith(`${manifest.name}/`))) return undefined
+    const key = specifier === manifest.name ? "." : `./${specifier.slice(manifest.name.length + 1)}`
+    const exportsMap = typeof manifest.exports === "string" ? { ".": manifest.exports } : manifest.exports ?? {}
+    const pick = (value) => (typeof value === "string" ? value : value && typeof value === "object" ? pick(value.import ?? value.default ?? value.types) : undefined)
+    if (key in exportsMap) return pick(exportsMap[key]) && join(pkg, pick(exportsMap[key]))
+    for (const [pattern, value] of Object.entries(exportsMap)) {
+      const star = pattern.indexOf("*")
+      if (star < 0 || !key.startsWith(pattern.slice(0, star)) || !key.endsWith(pattern.slice(star + 1))) continue
+      const target = pick(value)
+      if (target === undefined) return undefined
+      return join(pkg, target.replace("*", key.slice(star, key.length - (pattern.length - star - 1))))
+    }
+    return undefined
+  }
   const importsOf = (file) => {
     if (!imports.has(file)) {
       const found = []
       if (existsSync(file)) {
-        for (const m of readFileSync(file, "utf8").matchAll(/(?:from\s+|import\(\s*)["'](\.{1,2}\/[^"']+)["']/g)) {
-          const target = resolve(dirname(file), m[1])
+        for (const m of readFileSync(file, "utf8").matchAll(/(?:from\s+|import\(\s*)["']([^"']+)["']/g)) {
+          const target = m[1].startsWith(".") ? resolve(dirname(file), m[1]) : selfExport(m[1])
+          if (target === undefined) continue
           const base = target.replace(/\.(?:ts|tsx|mts|js|mjs)$/, "")
           const real = [`${base}.ts`, `${base}.tsx`, join(base, "index.ts"), join(base, "index.tsx")].find(existsSync)
           if (real) found.push(real)
