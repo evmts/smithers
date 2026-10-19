@@ -234,3 +234,48 @@ test("not-run schema supports old and nullable records and requires string reaso
   }
   expect(CodingResultSchema.safeParse({ ...record, test_not_run: { reason_code: "future", reason: 42 } }).success).toBe(false)
 })
+// A fresh box is bound at admission and reads "starting" until it runs (Platform f-aseaz8): that stretch is
+// allocation, not cloning (PM d-dp12la).
+const coldStart = (box: string | null, run: "queued" | "running" | "none", stage: "queued" | "started" = "started"): HostedObservation => {
+  const live: HostedSession = {
+    ...session,
+    status: "active",
+    stage,
+    workspace: box === null ? null : { id: "box", name: "agent", status: box },
+    run: run === "none" ? null : { ...session.run!, status: run, finished_at: null }
+  }
+  return {
+    id: "x", repo: "o/r", request: "change", sessionId: "s", owner: "maya", phase: "running", accepted: true,
+    session: live, result: null, pull: null, files: [], error: null, observedAt: 5000,
+    stages: observeStages({ Admitted: 1000 }, live, true, null, null, 2000)
+  }
+}
+const liveStage = (row: HostedObservation) => deriveHostedChange(row).stages.find((stage) => stage.tone === "live")?.label
+test.each([
+  ["pending", "queued"],
+  ["starting", "queued"],
+  ["starting", "none"],
+  [null, "queued"]
+] as const)("a box that is %s with run %s reads as Allocating a machine, with a clock", (box, run) => {
+  const row = coldStart(box, run)
+  expect(row.stages.Cloning).toBeUndefined()
+  expect(liveStage(row)).toBe("Allocating a machine")
+  expect(deriveHostedChange(row).stages[1]?.duration).toBe("3 s")
+})
+test.each([
+  ["running", "queued"],
+  ["running", "none"],
+  ["provisioning", "queued"]
+] as const)("Cloning is the stretch after the box is %s and before the model works (run %s)", (box, run) => {
+  const row = coldStart(box, run)
+  expect(row.stages.Cloning).toBe(2000)
+  expect(liveStage(row)).toBe("Cloning")
+})
+test("a queued turn showing its previous running box never starts the Cloning clock", () => {
+  const row = coldStart("running", "none", "queued")
+  expect(row.stages.Cloning).toBeUndefined()
+  expect(liveStage(row)).toBe("Allocating a machine")
+})
+test("once the model works, the box no longer reads as Cloning", () => {
+  expect(liveStage(coldStart("running", "running"))).toBe("Model working")
+})
