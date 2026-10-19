@@ -8,6 +8,7 @@ test("public metadata reads use the repository door", async () => {
  expect(await readPublicRepositoryMetadata(ctx,"owner/repo","issues")).toEqual([row])
  expect(requested).toBe("https://example.test/api/repos/owner/repo/github/metadata/issues")
  await expect(readPublicRepositoryMetadata(ctx,"owner/repo","issues/../../user")).rejects.toThrow()
+ await expect(readPublicRepositoryMetadata(ctx,"../user","issues")).rejects.toThrow()
 })
 
 test("signed-out reads retry only metadata through the public mirror", async () => {
@@ -59,4 +60,17 @@ test("rejected reads retain a typed failure and never fetch invalid paths", asyn
  for (const status of [403, 404, 500]) {
   await expect(readPublicRepositoryMetadata({ ...ctx, http: async () => new Response(null, { status }) }, "owner/repo", "issues")).rejects.toMatchObject({ _tag: "RepositoryMetadataReadFailed", status })
  }
+})
+
+test("a repository that mirrors another GitHub name reads its own mirror, not the source's", async () => {
+ // smithers-canary/smithers mirrors smithersai/smithers: the proxy names the source, the mirror is the Smithers repository's.
+ const urls: string[]=[]
+ const ctx={baseUrl:"https://example.test",http:async(url: RequestInfo | URL)=>{urls.push(String(url));return String(url).includes("/github-repos/")?new Response(null,{status:401}):Response.json([])}}
+ const response=await fetchRepositoryMetadata(ctx,"https://example.test/api/user/github-repos/smithersai/smithers/issues/7/comments?per_page=100&page=1","smithers-canary/smithers")
+ expect(response.status).toBe(200)
+ expect(urls).toEqual(["https://example.test/api/user/github-repos/smithersai/smithers/issues/7/comments?per_page=100&page=1","https://example.test/api/repos/smithers-canary/smithers/github/metadata/issues/7/comments?per_page=100&page=1"])
+ // A malformed repository never builds a path: the proxy URL's own name stands.
+ urls.length=0
+ await fetchRepositoryMetadata(ctx,"https://example.test/api/user/github-repos/o/r/issues?state=all","../user")
+ expect(urls).toEqual(["https://example.test/api/user/github-repos/o/r/issues?state=all","https://example.test/api/repos/o/r/github/metadata/issues?state=all"])
 })

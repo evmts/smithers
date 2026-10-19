@@ -117,6 +117,9 @@ test("signed-out GitHub-backed repository reads source rows and shows sync age",
   await page.route(`**/api/repos/${repo}/issue-views`, route => route.fulfill({ json: [] }))
   await page.route(`**/api/user/github-repos/${repo}/issues?*`, route => route.fulfill({ status: 401, json: {message: "authentication required"} }))
   await page.route(`**/api/user/github-repos/${repo}/issues/7/comments*`, route => route.fulfill({ status: 401, json: {message: "authentication required"} }))
+  // Since #4320 the proxy is addressed by the declared GitHub source, as the pulls read below already is; signed out it refuses.
+  await page.route("**/api/user/github-repos/smithersai/smithers/issues?*", route => route.fulfill({ status: 401, json: {message: "authentication required"} }))
+  await page.route("**/api/user/github-repos/smithersai/smithers/issues/7/comments*", route => route.fulfill({ status: 401, json: {message: "authentication required"} }))
   await page.route(`**/api/repos/${repo}/github/metadata/issues?*`, route => route.fulfill({ json: [issue], headers }))
   await page.route(`**/api/repos/${repo}/github/metadata/issues/7/comments*`, route => route.fulfill({ json: [] }))
   await page.route("**/api/user/github-repos/smithersai/smithers/pulls?*", route => route.fulfill({ status: 401, json: {message: "authentication required"} }))

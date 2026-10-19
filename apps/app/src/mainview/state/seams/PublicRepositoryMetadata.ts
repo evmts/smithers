@@ -5,6 +5,14 @@ import { Data } from "effect"
 import { PublicRepositoryRecordSchema, PublicRepositoryRecordsSchema } from "@smthrs/rpc/PublicRepositoryMetadata"
 import type { SeamContext } from "./SeamContext"
 
+/** `owner/name` with two plain segments: a `.` or `..` segment would resolve to another route once the path is normalized. */
+const repositoryPath = (repo: string): string | undefined => {
+  const segments = repo.split("/")
+  return segments.length === 2 && segments.every((segment) => /^[\w.-]+$/.test(segment) && segment !== "." && segment !== "..")
+    ? segments.map(encodeURIComponent).join("/")
+    : undefined
+}
+
 /** A rejected repository read retains its diagnostic and HTTP status. */
 export class RepositoryMetadataReadFailed extends Data.TaggedError("RepositoryMetadataReadFailed")<{ readonly message: string; readonly status?: number }> {}
 
@@ -18,9 +26,10 @@ export const readPublicRepositoryMetadata = async (
   resource: string,
   query?: URLSearchParams,
 ) => {
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !/^(issues|pulls)(\/[1-9][0-9]*)?$/.test(resource)) throw new RepositoryMetadataReadFailed({ message: "Invalid repository metadata path" })
+  const path = repositoryPath(repo)
+  if (path === undefined || !/^(issues|pulls)(\/[1-9][0-9]*)?$/.test(resource)) throw new RepositoryMetadataReadFailed({ message: "Invalid repository metadata path" })
   const suffix = query?.toString()
-  const response = await ctx.http(`${ctx.baseUrl}/api/repos/${repo.split("/").map(encodeURIComponent).join("/")}/github/metadata/${resource}${suffix ? `?${suffix}` : ""}`)
+  const response = await ctx.http(`${ctx.baseUrl}/api/repos/${path}/github/metadata/${resource}${suffix ? `?${suffix}` : ""}`)
   if (!response.ok) throw new RepositoryMetadataReadFailed({ message: `Repository metadata read failed (${response.status})`, status: response.status })
   const body: unknown = await response.json()
   return /^(issues|pulls)\/[0-9]+$/.test(resource)
@@ -29,12 +38,20 @@ export const readPublicRepositoryMetadata = async (
 }
 
 /** Retry a signed-out GitHub read through the repository's public mirror.
+ *
+ * The proxy URL names the GitHub source (`/api/user/github-repos/<source>/...`);
+ * the mirror lives under the Smithers repository (`/api/repos/<repo>/github/metadata/...`),
+ * and the two differ when a repository mirrors another name (smithers-canary/smithers
+ * mirrors smithersai/smithers). Pass that Smithers `repo` so a 401 is retried at its
+ * mirror; without it (or with one that is not two plain segments) the mirror is read
+ * under the proxy URL's own name, as before.
  * @since 0.1.0
  * @category constructors
  */
 export const fetchRepositoryMetadata = async (
  ctx: Pick<SeamContext, "http" | "baseUrl">,
  url: string,
+ repo?: string,
 ): Promise<Response> => {
  const response = await ctx.http(url)
  if (response.status !== 401) return response
@@ -43,6 +60,7 @@ export const fetchRepositoryMetadata = async (
  const match = /^([^/]+)\/([^/]+)\/((?:issues|pulls)(?:\/[1-9][0-9]*(?:\/comments)?)?)(\?.*)?$/.exec(url.slice(prefix.length))
  if (!match) return response
  // A mirror that cannot answer leaves the original refusal in place.
- const mirror = await ctx.http(`${ctx.baseUrl}/api/repos/${match[1]}/${match[2]}/github/metadata/${match[3]}${match[4] ?? ""}`).catch(() => undefined)
+ const mirrorRepo = (repo === undefined ? undefined : repositoryPath(repo)) ?? `${match[1]}/${match[2]}`
+ const mirror = await ctx.http(`${ctx.baseUrl}/api/repos/${mirrorRepo}/github/metadata/${match[3]}${match[4] ?? ""}`).catch(() => undefined)
  return mirror?.ok === true ? mirror : response
 }
