@@ -8,7 +8,7 @@
  * `keepHints: true` keeps them for a shot about a hint. It also hides toasts
  * and refuses a shot that still shows one; `keepToasts: true` keeps them.
  * Selectors were verified against live https://smithers.sh (build 8b0fc466)
- * on 2026-10-18. The repository shots use smithersai/vibelang, a public
+ * on 2026-10-18, and quickstart-issues against build ae86664e on 2026-10-19. The repository shots use smithersai/vibelang, a public
  * repository that opens on its file tree.
  */
 export const shots = [
@@ -50,6 +50,21 @@ export const shots = [
     steps: [],
     callouts: [{ n: 1, target: "nav.repo-code-breadcrumbs" }],
     mask: []
+  },
+  {
+    id: "quickstart-issues",
+    page: "quickstart",
+    alt: "The Issues tab of smithersai/vibelang on smithers.sh: Issues (1) and Pull requests (2), with each issue's author hidden",
+    path: "/smithersai/vibelang/issues",
+    auth: "signed-out",
+    ready: '[role="list"][aria-label="Issues"] [role="listitem"]',
+    steps: [],
+    callouts: [
+      { n: 1, target: 'a[href="/smithersai/vibelang/issues"]:has-text("Issues")' },
+      { n: 2, target: 'a[href="/smithersai/vibelang/pulls"]' }
+    ],
+    // Author names are real people's; the row's meta line carries them.
+    mask: [".repo-issues-row-meta"]
   },
   {
     id: "quickstart-sign-in",
