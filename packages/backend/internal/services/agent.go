@@ -292,11 +292,12 @@ type AgentDispatchQuerier interface {
 	UpdateAgentSessionTerminalStatus(ctx context.Context, arg db.UpdateAgentSessionTerminalStatusParams) (db.AgentSession, error)
 	GetAgentSessionForFlowProjection(ctx context.Context, arg db.GetAgentSessionForFlowProjectionParams) (db.AgentSession, error)
 	UpdateAgentSessionTerminalStatusForFlow(ctx context.Context, arg db.UpdateAgentSessionTerminalStatusForFlowParams) (db.AgentSession, error)
-	UpdateAgentSessionTimedOut(ctx context.Context, arg db.UpdateAgentSessionTimedOutParams) (db.AgentSession, error)
-	// RecordAgentSessionFailure stores a failed session's typed reason and ends
-	// its turn with that sentence. Without it a refused dispatch or a failed
-	// turn is indistinguishable from any other failure.
-	RecordAgentSessionFailure(ctx context.Context, sessionID string, failure db.AgentSessionFailure) (db.AgentSessionFailureRecord, bool, error)
+	// FailAgentSession fails a session with its typed reason: the terminal
+	// status, the reason the session read returns and the final reply commit
+	// in one transaction. Without the reason a refused dispatch or a failed
+	// turn is indistinguishable from any other failure, and without the one
+	// transaction a read between two writes answers a bare failure.
+	FailAgentSession(ctx context.Context, end func(context.Context, db.AgentSessionEnds) (db.AgentSession, error), failure func(db.AgentSession) db.AgentSessionFailure) (db.AgentSessionFailureRecord, error)
 	// The run's own log is the only place the Steps view reads. A dispatch
 	// that fails before its task runs writes nothing there otherwise, so the
 	// run page shows a red node with no line at all.
