@@ -160,16 +160,15 @@ async function fixture(page: Page, target: string, reader = false, signedOut = f
         created_at: iso(0),
         base_commit: "b".repeat(40),
         updated_at: iso(terminal ? 72 : Math.min(poll * 2, 70)),
-        workspace:
-          observed === "allocating"
-            ? null
-            : {
-                id: "box",
-                name: "agent",
-                status: observed === "admitted" ? "pending" : observed === "cloning" ? "provisioning" : "ready",
-                created_at: iso(1),
-                updated_at: iso(observed === "cloning" ? 9 : 12)
-              },
+        // The backend's own statuses: a session is bound to its box at admission, and a fresh box reads
+        // "starting" until it runs (Platform f-aseaz8); "allocating" is that cold start.
+        workspace: {
+          id: "box",
+          name: "agent",
+          status: observed === "admitted" ? "pending" : observed === "allocating" ? "starting" : "running",
+          created_at: iso(1),
+          updated_at: iso(observed === "cloning" ? 9 : 12)
+        },
         run:
           observed === "admitted"
             ? null

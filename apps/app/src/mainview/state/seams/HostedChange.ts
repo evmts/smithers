@@ -131,6 +131,15 @@ export const finishedCopy = (session: HostedSession | null): string | null => {
   if (!Number.isFinite(seconds) || seconds < 0) return null
   return `finished just now · took\u00a0${seconds >= 60 ? `${Math.floor(seconds / 60)}\u00a0m\u00a0` : ""}${seconds % 60}\u00a0s`
 }
+// A fresh box is bound at admission and reads "starting" until it runs (Platform f-aseaz8): that is allocation.
+// Cloning is the setup after the box runs and before the model works. A queued turn may still show its
+// previous box, so it never starts the Cloning clock.
+const boxStarting = (session: HostedSession | null) =>
+  session?.workspace?.status === "pending" || session?.workspace?.status === "starting"
+const boxCloning = (session: HostedSession | null) =>
+  session?.stage !== "queued" &&
+  (session?.workspace?.status === "provisioning" ||
+    (session?.workspace?.status === "running" && (!session.run || session.run.status === "queued")))
 export const observeStages = (
   prior: HostedObservation["stages"],
   session: HostedSession | null,
@@ -144,8 +153,8 @@ export const observeStages = (
     if (observed && next[stage] === undefined) next[stage] = now
   }
   mark("Admitted", accepted)
-  mark("Allocating a machine", accepted && (session?.run?.status === "queued" || session?.workspace === null))
-  mark("Cloning", session?.workspace?.status === "starting" || session?.workspace?.status === "provisioning")
+  mark("Allocating a machine", accepted && (session?.run?.status === "queued" || session?.workspace === null || boxStarting(session)))
+  mark("Cloning", boxCloning(session))
   mark("Model working", session?.run?.status === "running")
   mark("Testing", result?.test_receipt != null)
   mark("Pull request opened", pull !== null)
@@ -160,9 +169,9 @@ export const deriveHostedChange = (row: HostedObservation) => {
       ? 4
       : row.session?.run?.status === "running" || row.session?.run?.status === "success"
         ? 3
-        : ["starting", "provisioning"].includes(row.session?.workspace?.status ?? "")
+        : boxCloning(row.session)
           ? 2
-          : row.accepted && (row.session?.run?.status === "queued" || row.session?.workspace === null)
+          : row.accepted && (row.session?.run?.status === "queued" || row.session?.workspace === null || boxStarting(row.session))
             ? 1
             : row.sessionId ? 1 : 0
   const active = row.busyWaiting || row.session?.stage === "queued" ? 1 : Math.max(
