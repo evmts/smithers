@@ -58,7 +58,7 @@ test("RunsInbox answers a real parked HumanTask through the local gateway withou
     await symlink(join(repository, "node_modules"), join(root, "node_modules"), "dir")
     await run(["init", "local-gateway-question"])
     await writeFile(join(root, ".smithers/flows/local-gateway-question/flow.ts"), await readFile(join(__dirname, "HumanTask.fixture.ts"), "utf8"))
-    launch(process.execPath, [cli, "flow", "start", "local-gateway-question", "--data", "{}", "--format", "json", "--root", root])
+    const flow = launch(process.execPath, [cli, "flow", "start", "local-gateway-question", "--data", "{}", "--format", "json", "--root", root])
     const port = await freePort()
     const tokenFile = join(root, "operator-token")
     launch(process.execPath, [cli, "serve", "--root", root, "--port", String(port), "--operator-token-file", tokenFile])
@@ -92,6 +92,9 @@ test("RunsInbox answers a real parked HumanTask through the local gateway withou
     }
     await send('/runs.list {"repo":"local/project"}')
     await expect(page.getByTestId("runs-inbox-needs-you")).toContainText("local-gateway-question", { timeout: 30_000 })
+    // The attached executor stays alive while its HumanTask awaits this answer.
+    expect(flow.exitCode).toBeNull()
+    expect(flow.signalCode).toBeNull()
     const runId = (await page.getByTestId("runs-inbox-needs-you").locator("[data-testid^=runs-answer-]").first().getAttribute("data-testid"))!.replace("runs-answer-", "")
     await send('/runs {"operation":"approval-list","repo":"local/project"}')
     await expect(page.getByTestId("approval-answer-text")).toBeVisible()
@@ -102,6 +105,8 @@ test("RunsInbox answers a real parked HumanTask through the local gateway withou
       await page.locator('[data-kind="run-list"]').first().getByRole("button", { name: "Refresh", exact: true }).click()
       return page.getByTestId("runs-inbox-done").getByTestId(`runs-open-${runId}`).count()
     }, { timeout: 30_000 }).toBe(1)
+    await expect.poll(() => flow.exitCode, { timeout: 30_000 }).toBe(0)
+    expect(flow.signalCode).toBeNull()
     expect(external).toEqual([])
     expect(output.join("")).not.toContain(token)
     expect(await page.content()).not.toContain(token)
