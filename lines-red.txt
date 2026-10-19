@@ -1,0 +1,1 @@
+bash packages/backend/scripts/with-test-postgres.sh go -C packages/backend test ./internal/services -run "^(TestCodingResultRecordsTheTestTheServerRan|TestMythicalQueuedTodoSurvivesARestartAndLaunchesOnce)$" -count=5 -v 2>&1 | grep -E "^--- (PASS|FAIL)" | sed -E "s/ \(.*//" | sort | uniq -c
