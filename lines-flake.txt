@@ -1,0 +1,1 @@
+bash packages/backend/scripts/with-test-postgres.sh go -C packages/backend test ./internal/services -run "TestGitHubAppManifestConcurrentConversionsExchangeOnlyOncePostgres" -count=30 -v
