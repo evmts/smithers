@@ -265,6 +265,7 @@
   {"id":"get_api_repos_owner_repo_file_change_id_path","method":"GET","path":"/api/repos/{owner}/{repo}/file/{change_id}/{path}"},
   {"id":"get_api_repos_owner_repo_git_refs","method":"GET","path":"/api/repos/{owner}/{repo}/git/refs"},
   {"id":"get_api_repos_owner_repo_github_app_status","method":"GET","path":"/api/repos/{owner}/{repo}/github-app-status"},
+  {"id":"get_api_repos_owner_repo_github_metadata_path","method":"GET","path":"/api/repos/{owner}/{repo}/github/metadata/{path}"},
   {"id":"get_api_repos_owner_repo_hooks","method":"GET","path":"/api/repos/{owner}/{repo}/hooks"},
   {"id":"post_api_repos_owner_repo_hooks","method":"POST","path":"/api/repos/{owner}/{repo}/hooks"},
   {"id":"get_api_repos_owner_repo_hooks_id_deliveries","method":"GET","path":"/api/repos/{owner}/{repo}/hooks/{id}/deliveries"},
