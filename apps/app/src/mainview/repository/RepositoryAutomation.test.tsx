@@ -153,7 +153,7 @@ test("Settings words GitHub sync exactly as the header chip rule does, and claim
     [{ mirror_status: "synced", last_mirror_at: at }, "Synced with GitHub"],
     [{ mirror_status: "behind", behind_refs: 0, failed_refs: 0, last_mirror_at: at }, "Synced with GitHub"],
     [{ mirror_status: "behind", behind_refs: 2, failed_refs: 0, last_mirror_at: at }, "Synced 3 h ago"],
-    [{ mirror_status: "failed", last_mirror_at: at, last_mirror_error: "GitHub returned 401" }, "GitHub sync failed: GitHub returned 401·Last success 3 h ago"],
+    [{ mirror_status: "failed", last_mirror_at: at, last_mirror_error: "GitHub returned 401" }, "GitHub sync failed: GitHub returned 401"],
     [{ mirror_status: "behind", behind_refs: 4, last_mirror_at: null }, null],
     [{ mirror_status: "synced" }, null]
   ]

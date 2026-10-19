@@ -11,6 +11,7 @@ import { RepositorySettings } from "./repository/RepositorySettings"
 import { githubSyncChip } from "./repository/githubSync"
 import { pathTarget as codePathTarget } from "./RepoLink"
 import { resolveRefLocation } from "@smthrs/rpc/RepositorySubjectPath"
+import type { RepositorySubject } from "@smthrs/rpc/RepositorySubjectPath"
 import { rememberComposerFocus, restoreComposerFocus } from "./runtime/ComposerFocus"
 import { useSharedConversation } from "./state/useSharedConversation"
 import { useTodoRole } from "./cards/TodoCard"
@@ -75,6 +76,8 @@ const transcriptOrder = (left: TranscriptEntry, right: TranscriptEntry): number 
   entryOrdinal(left) - entryOrdinal(right) || entryCreatedAt(left) - entryCreatedAt(right)
 
 const entryId = (entry: TranscriptEntry): string => entry.kind === "card" ? entry.card.id : entry.message.id
+/** Router subjects the frame has no view for (PM d-58xeqb): the frame's not-found state, never the full repository chat. */
+const UNSERVED_SUBJECTS: ReadonlySet<RepositorySubject["kind"]> = new Set(["commits", "commit", "branches", "search", "runs", "run", "approvals"])
 
 function AppContent() {
   const controller = useController()
@@ -786,7 +789,8 @@ function AppContent() {
   const routeSubject = codeTarget?.repo.toLowerCase() === bootRepository.toLowerCase() ? codeTarget.subject : undefined
   const flowsRoute = routeSubject?.kind === "flows" ? routeSubject : undefined
   const settingsRoute = routeSubject?.kind === "settings" ? routeSubject : undefined
-  if (!rootRoute && !codeRoute && !issueMatch && !pullMatch && !flowsRoute && !settingsRoute) return chat()
+  const notFoundRoute = routeSubject !== undefined && UNSERVED_SUBJECTS.has(routeSubject.kind)
+  if (!rootRoute && !codeRoute && !issueMatch && !pullMatch && !flowsRoute && !settingsRoute && !notFoundRoute) return chat()
   // Membership is the admission document's can_write for this signed-in viewer; absent fails closed.
   const member = identity?.state === "signed-in" && bootEntry?.canWrite === true
   const flowRead = flowsRoute ? flowReadRows.find(row => row.id === flowReadKey(bootRepository, flowsRoute.name, bootEntry?.requestId))?.value : undefined
@@ -811,7 +815,8 @@ function AppContent() {
       return bookmark ? `${bootRepository} at ${bookmark}` : bootRepository
     })()}
     ask={(visible: boolean) => chat(visible)}>
-    {codeRoute ? <RepositoryCodeView onRunCommand={controller.runCommand} repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
+    {notFoundRoute ? <section className="repo-frame-state" aria-label="Not found"><h2>Page not found.</h2></section>
+    : codeRoute ? <RepositoryCodeView onRunCommand={controller.runCommand} repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
       branches={codeBranches} onBranchesOpen={() => { void controller.repositoryBranches.load(bootRepository) }}
       latestCommit={codeLocated ? latestCommits.find(row => row.id === latestCommitKey(bootRepository, bootEntry?.requestId, codeLocated.ref))?.commit : undefined}
       admitted={bootEntry?.phase === "ready"} requestId={bootEntry?.requestId} error={bootUnavailable ? bootEntry?.error : undefined} onAsk={text => controller.changeDraft(text)} /> : flowsRoute ? flowsRoute.name === undefined

@@ -30,7 +30,6 @@ export function RepositorySyncStatus({ sync }: { sync: GitHubSyncChip | null }) 
     <span className={`repo-settings-sync-state${sync.state === "failed" ? " repo-settings-sync-error" : sync.state === "stale" ? " repo-settings-sync-stale" : ""}`}>
       {sync.state === "failed" && <X size={16} aria-hidden="true" />}
       {sync.state === "failed" ? sync.failure : sync.state === "stale" ? `Synced ${sync.age}` : "Synced with GitHub"}
-      {sync.state === "failed" && <><span aria-hidden="true">·</span><span className="repo-frame-last-sync">Last success {sync.age}</span></>}
     </span>
   </div></div>
 }
