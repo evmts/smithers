@@ -662,6 +662,11 @@ func (h *RepoHandler) ListGitRefs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	refs, err := h.Service.ListGitRefs(r.Context(), middleware.UserFromContext(r.Context()), owner, repoName)
+	if apiErr, ok := err.(*errors.APIError); ok && apiErr.Status == http.StatusForbidden && middleware.UserFromContext(r.Context()) == nil {
+		// Like its contents, a private repository answers strangers as if it did not exist.
+		errors.WriteError(w, errors.NotFound("repository not found"))
+		return
+	}
 	if err != nil {
 		writeRouteError(w, r, err)
 		return

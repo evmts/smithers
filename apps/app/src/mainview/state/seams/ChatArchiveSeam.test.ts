@@ -192,6 +192,27 @@ describe("chat archive rehydration (#4033)", () => {
     return Response.json({ archive: chat("a1", null, null, 1), conversation: { id: "archive-a1", entries: [] } })
   })
 
+  test("a synchronous reading subscriber joins the reserved listing until it answers", async () => {
+    const response = Promise.withResolvers<Response>()
+    const h = harness(() => response.promise)
+    let joined: Promise<void> | undefined
+    const stop = h.seam.subscribe(() => {
+      if (h.seam.get().reading === true && joined === undefined) joined = h.seam.list()
+    })
+    try {
+      const first = h.seam.list()
+      let answered = false
+      void joined!.then(() => { answered = true })
+      await Promise.resolve()
+      expect(index(h.calls)).toBe(1)
+      expect(answered).toBe(false)
+      response.resolve(Response.json({ archives: [chat("a1", null, null, 1)] }))
+      await Promise.all([first, joined!])
+      expect(answered).toBe(true)
+      expect(h.seam.get().archives?.map(each => each.id)).toEqual(["a1"])
+    } finally { stop() }
+  })
+
   test("ensure reads the index once for a card that never asked, and says it is reading until it answers", async () => {
     const h = fixture()
     expect(h.seam.get().archives).toBeUndefined()

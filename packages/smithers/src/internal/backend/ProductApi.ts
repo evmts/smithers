@@ -4501,6 +4501,38 @@ export interface GetApiReposOwnerRepoGitRefsInput {
 export const getApiReposOwnerRepoGitRefs = (transport: Transport, input: GetApiReposOwnerRepoGitRefsInput): Promise<GetApiReposOwnerRepoGitRefsResponse> =>
   transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/git/refs`) as Promise<GetApiReposOwnerRepoGitRefsResponse>
 
+export type GetApiReposOwnerRepoBranchesResponse = AnyJSON
+
+export interface GetApiReposOwnerRepoBranchesInput {
+  readonly path: { readonly owner: string; readonly repo: string }
+  readonly query?: { readonly cursor?: string; readonly limit?: number }
+}
+
+/** GET /api/repos/{owner}/{repo}/branches */
+export const getApiReposOwnerRepoBranches = (transport: Transport, input: GetApiReposOwnerRepoBranchesInput): Promise<GetApiReposOwnerRepoBranchesResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/branches${search({ cursor: input.query?.cursor, limit: input.query?.limit })}`) as Promise<GetApiReposOwnerRepoBranchesResponse>
+
+export type GetApiReposOwnerRepoCommitsResponse = AnyJSON
+
+export interface GetApiReposOwnerRepoCommitsInput {
+  readonly path: { readonly owner: string; readonly repo: string }
+  readonly query?: { readonly ref?: string; readonly path?: string; readonly cursor?: string; readonly limit?: number }
+}
+
+/** GET /api/repos/{owner}/{repo}/commits */
+export const getApiReposOwnerRepoCommits = (transport: Transport, input: GetApiReposOwnerRepoCommitsInput): Promise<GetApiReposOwnerRepoCommitsResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/commits${search({ ref: input.query?.ref, path: input.query?.path, cursor: input.query?.cursor, limit: input.query?.limit })}`) as Promise<GetApiReposOwnerRepoCommitsResponse>
+
+export type GetApiReposOwnerRepoCommitsShaResponse = AnyJSON
+
+export interface GetApiReposOwnerRepoCommitsShaInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly sha: string }
+}
+
+/** GET /api/repos/{owner}/{repo}/commits/{sha} */
+export const getApiReposOwnerRepoCommitsSha = (transport: Transport, input: GetApiReposOwnerRepoCommitsShaInput): Promise<GetApiReposOwnerRepoCommitsShaResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/commits/${segment(input.path.sha)}`) as Promise<GetApiReposOwnerRepoCommitsShaResponse>
+
 export type GetApiReposOwnerRepoGithubAppStatusResponse = AnyJSON
 
 export interface GetApiReposOwnerRepoGithubAppStatusInput {
@@ -6602,6 +6634,28 @@ export interface GetApiRunsIdBackgroundStatusInput {
 /** GET /api/runs/{id}/background-status: Read a background run receipt */
 export const getApiRunsIdBackgroundStatus = (transport: Transport, input: GetApiRunsIdBackgroundStatusInput): Promise<GetApiRunsIdBackgroundStatusResponse> =>
   transport.request("GET", `/api/runs/${segment(input.path.id)}/background-status`) as Promise<GetApiRunsIdBackgroundStatusResponse>
+
+export type GetApiReposOwnerRepoSearchCodeResponse = AnyJSON
+
+export interface GetApiReposOwnerRepoSearchCodeInput {
+  readonly path: { readonly owner: string; readonly repo: string }
+  readonly query?: { readonly q?: string; readonly cursor?: string; readonly limit?: number }
+}
+
+/** GET /api/repos/{owner}/{repo}/search/code */
+export const getApiReposOwnerRepoSearchCode = (transport: Transport, input: GetApiReposOwnerRepoSearchCodeInput): Promise<GetApiReposOwnerRepoSearchCodeResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/search/code${search({ q: input.query?.q, cursor: input.query?.cursor, limit: input.query?.limit })}`) as Promise<GetApiReposOwnerRepoSearchCodeResponse>
+
+export type GetApiReposOwnerRepoSearchIssuesResponse = AnyJSON
+
+export interface GetApiReposOwnerRepoSearchIssuesInput {
+  readonly path: { readonly owner: string; readonly repo: string }
+  readonly query?: { readonly q?: string; readonly state?: string; readonly label?: string; readonly assignee?: string; readonly milestone?: string; readonly cursor?: string; readonly limit?: number }
+}
+
+/** GET /api/repos/{owner}/{repo}/search/issues */
+export const getApiReposOwnerRepoSearchIssues = (transport: Transport, input: GetApiReposOwnerRepoSearchIssuesInput): Promise<GetApiReposOwnerRepoSearchIssuesResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/search/issues${search({ q: input.query?.q, state: input.query?.state, label: input.query?.label, assignee: input.query?.assignee, milestone: input.query?.milestone, cursor: input.query?.cursor, limit: input.query?.limit })}`) as Promise<GetApiReposOwnerRepoSearchIssuesResponse>
 
 export type GetApiSearchCodeResponse = AnyJSON
 
