@@ -38,7 +38,7 @@ export {};
   const exports = parseDts(dts)
   assert.deepEqual(exports.map((e) => [e.name, e.kind]), [
     ["A", "type"], ["B", "type"], ["C", "class"], ["f", "value"], ["g", "value"],
-    [`export { h, type I } from "./h.js";`, "reexport"], [`export * from "./j.js";`, "reexport"]
+    ["h", "value"], ["I", "type"], [`export * from "./j.js";`, "reexport"]
   ])
   assert.match(exports[0].text, /Doc for A/)
   assert.equal(exports[1].generic, true)

@@ -139,6 +139,19 @@ export const parseDts = (text) => {
   for (const statement of statementsOf(text)) {
     const body = bodyOf(statement)
     if (!body.startsWith("export ") || /^export \{\s*\};?$/.test(body)) continue
+    // A named re-export is one entry per name, so a twin that re-exports the same names from a
+    // differently spelled path is compared by type, not by path text (E-14).
+    const named = body.match(/^export\s+(type\s+)?\{([^}]*)\}\s*from\s*["'][^"']+["'];?$/)
+    if (named) {
+      for (const part of named[2].split(",").map((x) => x.trim()).filter(Boolean)) {
+        const m = part.match(/^(type\s+)?([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$/)
+        if (!m) continue
+        const name = m[3] ?? m[2]
+        const kind = named[1] || m[1] ? "type" : "value"
+        byName.set(name, { name, kind, generic: false, text: `export { ${part} } from <re-export>` })
+      }
+      continue
+    }
     const m = body.match(/^export (?:declare )?(?:abstract )?(const|let|var|function|class|interface|type|enum|namespace|default)\b\s*([A-Za-z_$][\w$]*)?/)
     const entry = m === null
       ? { name: normalizeDts(body), kind: "reexport" }
