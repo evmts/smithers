@@ -111,6 +111,9 @@ func (s *LandingService) createLandingIdempotent(ctx context.Context, repository
 			return LandingRequestResponse{}, normalizeLandingCreateError(err, "failed to store landing request changes")
 		}
 	}
+	if err = recordSessionLandingSourceInTx(ctx, tx, created.ID); err != nil {
+		return LandingRequestResponse{}, err
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return LandingRequestResponse{}, normalizeLandingCreateError(err, "failed to commit landing request transaction")
 	}

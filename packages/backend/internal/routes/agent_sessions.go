@@ -44,6 +44,7 @@ type AgentSessionRouteService interface {
 
 // AgentSessionHandler handles the public repository-scoped agent session API.
 type AgentSessionHandler struct {
+	Landing     AgentSessionLandingRouteService
 	Service     AgentSessionRouteService
 	EgressAudit SandboxEgressAuditRouteService
 }

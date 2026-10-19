@@ -99,6 +99,10 @@ type landingGitHubPullRequest struct {
 
 var errLandingGitHubPullExists = stdErrors.New("github pull request already exists")
 
+// Session publication translates this internal cause into its typed refusal;
+// ordinary landing publication retains its existing wire errors.
+var errLandingGitHubHeadMismatch = stdErrors.New("github landing head changed")
+
 type landingGitHubPulls interface {
 	Find(ctx context.Context, token, owner, repo, branch string) (*landingGitHubPullRequest, error)
 	Create(ctx context.Context, token, owner, repo string, input landingGitHubPullCreate) (*landingGitHubPullRequest, error)
@@ -244,7 +248,7 @@ func (s *LandingGitHubPullService) OpenLandingGitHubPull(ctx context.Context, ac
 		return LandingGitHubPull{}, mapLandingRepoHostError(err, "failed to resolve the landing tip")
 	}
 	if tip.CommitID != commitID {
-		return LandingGitHubPull{}, pkgerrors.Conflict("commit_id is not this landing's current tip")
+		return LandingGitHubPull{}, pkgerrors.Conflict("commit_id is not this landing's current tip").WithCause(errLandingGitHubHeadMismatch)
 	}
 	if err := s.landings.refuseOutsiderLandingPaths(ctx, owner, repo, landing.ID, landing.ChangeIds, landing.TargetBookmark); err != nil {
 		return LandingGitHubPull{}, err
@@ -261,7 +265,7 @@ func (s *LandingGitHubPullService) OpenLandingGitHubPull(ctx context.Context, ac
 	branch := LandingGitHubPullBranch(number)
 	result := func(pull *landingGitHubPullRequest, created bool) (LandingGitHubPull, error) {
 		if pull.Head.Ref != branch || pull.Head.SHA != commitID {
-			return LandingGitHubPull{}, pkgerrors.Conflict("GitHub pull request #" + strconv.FormatInt(pull.Number, 10) + " no longer carries this landing's tip")
+			return LandingGitHubPull{}, pkgerrors.Conflict("GitHub pull request #" + strconv.FormatInt(pull.Number, 10) + " no longer carries this landing's tip").WithCause(errLandingGitHubHeadMismatch)
 		}
 		return LandingGitHubPull{LandingNumber: number, Repository: remotes.githubOwner + "/" + remotes.githubRepo,
 			Number: pull.Number, URL: pull.HTMLURL, State: pull.State, Merged: pull.MergedAt != nil,
@@ -297,10 +301,10 @@ func (s *LandingGitHubPullService) OpenLandingGitHubPull(ctx context.Context, ac
 			return LandingGitHubPull{}, landingGitHubGitError("verify the GitHub branch", err, remotes)
 		}
 		if after[targetRef] != commitID {
-			return LandingGitHubPull{}, pkgerrors.New(pkgerrors.CodeBadGateway, "GitHub branch "+branch+" did not reach the landing tip")
+			return LandingGitHubPull{}, pkgerrors.New(pkgerrors.CodeBadGateway, "GitHub branch "+branch+" did not reach the landing tip").WithCause(errLandingGitHubHeadMismatch)
 		}
 	default:
-		return LandingGitHubPull{}, pkgerrors.Conflict("GitHub branch " + branch + " moved to another commit; inspect it before retrying")
+		return LandingGitHubPull{}, pkgerrors.Conflict("GitHub branch " + branch + " moved to another commit; inspect it before retrying").WithCause(errLandingGitHubHeadMismatch)
 	}
 
 	base := landing.TargetBookmark

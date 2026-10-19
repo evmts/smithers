@@ -26,6 +26,44 @@ const search = (values: Record<string, string | number | boolean | undefined>): 
   return query.size === 0 ? "" : `?${query}`
 }
 
+export type SessionLanding = {
+  landing_number: number
+  branch: string
+  pull_number: number
+  pull_url: string
+  head_commit: string
+  tested: boolean
+  passed: boolean
+}
+
+export type AgentSessionRead = {
+  id: string
+  repository_id: number
+  user_id: number
+  title: string
+  status: string
+  message_count: number
+  created_at: string
+  updated_at: string
+  metadata: AnyJSON
+  workspace_id?: string
+  workspace: null | {
+    id: string
+    name: string
+    status: string
+  }
+  run: null | {
+    id: number
+    status: string
+    model: string | null
+    started_at: string | null
+    finished_at: string | null
+  }
+  reason_code: string | null
+  reason: string | null
+  retryable: boolean
+}
+
 export type AppBootstrap = {
   apiVersion: 1
   host: "cloud"
@@ -3679,7 +3717,7 @@ export interface DeleteApiReposOwnerRepoAgentEnvironmentSecretsNameInput {
 export const deleteApiReposOwnerRepoAgentEnvironmentSecretsName = (transport: Transport, input: DeleteApiReposOwnerRepoAgentEnvironmentSecretsNameInput): Promise<void> =>
   transport.request("DELETE", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/agent-environment/secrets/${segment(input.path.name)}`).then(() => undefined)
 
-export type GetApiReposOwnerRepoAgentSessionsIdResponse = AnyJSON
+export type GetApiReposOwnerRepoAgentSessionsIdResponse = AgentSessionRead
 
 export interface GetApiReposOwnerRepoAgentSessionsIdInput {
   readonly path: { readonly owner: string; readonly repo: string; readonly id: string }
@@ -6468,6 +6506,21 @@ export interface PostApiReposOwnerRepoWorkspacesIdChildrenChildIdStopInput {
 /** POST /api/repos/{owner}/{repo}/workspaces/{id}/children/{child_id}/stop: Stop a workspace's child */
 export const postApiReposOwnerRepoWorkspacesIdChildrenChildIdStop = (transport: Transport, input: PostApiReposOwnerRepoWorkspacesIdChildrenChildIdStopInput): Promise<PostApiReposOwnerRepoWorkspacesIdChildrenChildIdStopResponse> =>
   transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/workspaces/${segment(input.path.id)}/children/${segment(input.path.child_id)}/stop`) as Promise<PostApiReposOwnerRepoWorkspacesIdChildrenChildIdStopResponse>
+
+export type PostApiReposOwnerRepoAgentSessionsSessionIdLandingBody = {
+  reply_id?: number
+}
+
+export type PostApiReposOwnerRepoAgentSessionsSessionIdLandingResponse = SessionLanding
+
+export interface PostApiReposOwnerRepoAgentSessionsSessionIdLandingInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly session_id: string }
+  readonly body: PostApiReposOwnerRepoAgentSessionsSessionIdLandingBody
+}
+
+/** POST /api/repos/{owner}/{repo}/agent/sessions/{session_id}/landing: Open a person's pull request from a coding turn */
+export const postApiReposOwnerRepoAgentSessionsSessionIdLanding = (transport: Transport, input: PostApiReposOwnerRepoAgentSessionsSessionIdLandingInput): Promise<PostApiReposOwnerRepoAgentSessionsSessionIdLandingResponse> =>
+  transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/agent/sessions/${segment(input.path.session_id)}/landing`, input.body) as Promise<PostApiReposOwnerRepoAgentSessionsSessionIdLandingResponse>
 
 export type GetApiRepoConnectionResponse = AnyJSON
 

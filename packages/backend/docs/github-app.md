@@ -380,3 +380,21 @@ from downstream PR/check/review projections and reference-host C-GH-07 evidence.
 The production-composition cadence tests cover repository streams and admission;
 the service tests cover related-page conditional reads, restart, head fencing,
 rollback and distinct comment identities. They do not qualify a live canary run.
+
+## Pull requests from coding sessions
+
+`POST /api/repos/{owner}/{repo}/agent/sessions/{session_id}/landing` opens a
+pull request only for the person who owns the session, after local repository
+write access and that person's GitHub push permission are proven. Agent and run
+credentials and guests are refused. Browser sessions require the shared CSRF
+and effective-origin checks.
+
+The server reads the coding reply's recorded change and commit; the request
+accepts only an optional reply id. A changed head refuses publication. Repeated
+or concurrent requests return `already_landed` with the existing pull in
+`details`. Publication uses separate one-repository App tokens for contents
+write and contents read plus pull_requests write, without workflows permission.
+It never merges. A stopped coding box is not needed to publish its retained head.
+
+Session reads expose the bound workspace, latest run's numeric id, status,
+nullable model and start/finish times, and persisted failure reason and retryability.

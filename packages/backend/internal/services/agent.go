@@ -29,15 +29,20 @@ import (
 
 // AgentSessionResponse is the API representation of an agent session.
 type AgentSessionResponse struct {
-	ID           string          `json:"id"`
-	RepositoryID int64           `json:"repository_id"`
-	UserID       int64           `json:"user_id"`
-	Title        string          `json:"title"`
-	Status       string          `json:"status"`
-	MessageCount int64           `json:"message_count"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
-	Metadata     json.RawMessage `json:"metadata"`
+	Workspace    *AgentSessionWorkspace `json:"workspace"`
+	Run          *AgentSessionRun       `json:"run"`
+	ReasonCode   *string                `json:"reason_code"`
+	Reason       *string                `json:"reason"`
+	Retryable    bool                   `json:"retryable"`
+	ID           string                 `json:"id"`
+	RepositoryID int64                  `json:"repository_id"`
+	UserID       int64                  `json:"user_id"`
+	Title        string                 `json:"title"`
+	Status       string                 `json:"status"`
+	MessageCount int64                  `json:"message_count"`
+	CreatedAt    time.Time              `json:"created_at"`
+	UpdatedAt    time.Time              `json:"updated_at"`
+	Metadata     json.RawMessage        `json:"metadata"`
 	// WorkspaceID is the kind=agent workspace this run executes in (RFD-004).
 	WorkspaceID string `json:"workspace_id,omitempty"`
 }
@@ -674,7 +679,11 @@ func (s *AgentService) GetSession(ctx context.Context, sessionID string) (AgentS
 		return AgentSessionResponse{}, pkgerrors.NotFound("agent session not found")
 	}
 
-	return toAgentSessionWithCountResponse(row), nil
+	result := toAgentSessionWithCountResponse(row)
+	if err := s.enrichSessionRead(ctx, row, &result); err != nil {
+		return AgentSessionResponse{}, pkgerrors.Internal("read agent session details").WithCause(err)
+	}
+	return result, nil
 }
 
 // GetSessionForRepo verifies that the given agent session exists and belongs to the
