@@ -37,7 +37,22 @@ vi.mock(
   async (original) => ({ ...await original<typeof import("../src/ProcessTable.ts")>() })
 )
 
-const sleeper = () => spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" })
+/**
+ * Every child a case spawns, so `afterEach` stops the survivors. A case that fails before its
+ * own kill would otherwise leave an idle `node -e` running after vitest exits, reparented to
+ * pid 1 (eight such orphans built up on the shared Mac mini).
+ */
+const spawned: Array<ReturnType<typeof spawn>> = []
+const sleeper = () => {
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" })
+  spawned.push(child)
+  return child
+}
+afterEach(() => {
+  for (const child of spawned.splice(0)) {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
+  }
+})
 
 describe("invalid process identifiers", () => {
   it.each([0, -0, -1, NaN, 1.5, Infinity])("rejects %s without signalling anything", async (pid) => {
