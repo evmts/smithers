@@ -28,7 +28,7 @@ func (s *agentWorkspaceBackendStub) CreateAgentWorkspace(ctx context.Context, in
 }
 func (s *agentWorkspaceBackendStub) ReleaseAgentWorkspace(_ context.Context, id, sessionID string, _ int64) (AgentWorkspaceRelease, error) {
 	s.released = append(s.released, id+"/"+sessionID)
-	return AgentWorkspaceRelease{Outcome: agentWorkspaceQuiesced, HeadTokenRevoked: true}, nil
+	return AgentWorkspaceRelease{Outcome: agentWorkspaceRetired, HeadTokenRevoked: true}, nil
 }
 func (s *agentWorkspaceBackendStub) SnapshotAgentWorkspace(context.Context, string, string) (string, error) {
 	return "snap-1", nil

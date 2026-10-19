@@ -19,8 +19,11 @@ type DBTX = db.DBTX
 // stores belongs here; TestRuntimeStoreAssertionsAreClassified in
 // internal/services enforces this (smithers#3390).
 type Product interface {
+	GetAgentSessionBox(ctx context.Context, agentSessionID string) (db.Workspace, error)
 	GetBranchMachineOwner(context.Context) (int64, error)
 	IsSharedServiceMachineHostBinding(context.Context, string, string) (bool, error)
+	MarkAgentBoxGuestDirty(ctx context.Context, arg db.MarkAgentBoxGuestDirtyParams) error
+	RecordAgentBoxGuest(ctx context.Context, arg db.RecordAgentBoxGuestParams) (db.Workspace, error)
 	SetWorkspaceClientLease(ctx context.Context, arg db.SetWorkspaceClientLeaseParams) (db.Workspace, error)
 	RenewWorkspaceClientLease(ctx context.Context, id string) (db.Workspace, error)
 	ListLapsedLeaseWorkspaces(ctx context.Context, maxRows int32) ([]db.Workspace, error)

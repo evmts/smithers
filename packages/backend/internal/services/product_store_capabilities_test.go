@@ -38,7 +38,9 @@ var productStoreCapabilities = map[string]func(any) bool{
 	"interface{IsSharedServiceMachineHostBinding}": storeImplements[interface {
 		IsSharedServiceMachineHostBinding(context.Context, string, string) (bool, error)
 	}],
+	"agentBoxGuestRecorder":                storeImplements[agentBoxGuestRecorder],
 	"agentBoxIdleCapStore":                 storeImplements[agentBoxIdleCapStore],
+	"agentSessionBoxStore":                 storeImplements[agentSessionBoxStore],
 	"agentWorkspaceReleaseStore":           storeImplements[agentWorkspaceReleaseStore],
 	"branchMachineOwnerStore":              storeImplements[branchMachineOwnerStore],
 	"boxHostQuerier":                       storeImplements[boxHostQuerier],

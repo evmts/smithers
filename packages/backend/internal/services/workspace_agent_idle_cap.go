@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // agentBoxIdleRetireBatch bounds one sweep's retirements.
@@ -112,7 +111,7 @@ func (s *WorkspaceService) retireIdleAgentBox(ctx context.Context, store agentBo
 	}()
 	row.HeadPushTokenID, row.ProvisioningStage, row.VmID = claim.HeadPushTokenID, claim.Lease, claim.VmID
 	guard := agentBoxGuard{fence: fence, workspaceID: id, guest: claim.VmID, lease: &lease}
-	if _, err = s.retireAgentBoxLeased(ctx, guard, store, row, "idle_cap", 1); errors.Is(err, errAgentBoxLost) {
+	if _, err = s.retireAgentBoxLeased(ctx, guard, store, row, agentBoxRetireIdleCap, 1); errors.Is(err, errAgentBoxLost) {
 		logger.Warn("agent box kept past its idle cap", "outcome", "kept_in_use", "kept_for", err.Error())
 		return nil
 	}
@@ -126,20 +125,20 @@ var (
 	agentBoxHeadVerifyWait     = 500 * time.Millisecond
 )
 
-// retireAgentBoxLeased retires a running agent box while the caller holds its
-// lease (*guard.lease, renewed in place): the next box restores the recorded
-// head, so it retires only when that head is the published branch head and
-// nothing the turn recorded is lost. It revokes the head token, stops the
+// retireAgentBoxLeased retires an agent box while the caller holds its lease
+// (*guard.lease, renewed in place): the next box restores the recorded head,
+// so it retires only when that head is the published branch head and nothing
+// the turn recorded is lost. A box that recorded no head has nothing to lose
+// and is built afresh from its branch. It revokes the head token, stops the
 // coding hosts, renews the lease to prove no turn joined since, deletes the
-// guest it was decided for and its disk, records the box asleep for
-// reconstruction and closes its usage. It reports false, with the reason
-// logged, when the head is unverified, and errAgentBoxLost when another
-// replica took the box over.
+// guest it was decided for and its disk, records the box retired and closes
+// its usage. It reports false, with the reason logged, when the head is
+// unverified, and errAgentBoxLost when another replica took the box over.
 func (s *WorkspaceService) retireAgentBoxLeased(ctx context.Context, guard agentBoxGuard, store agentBoxIdleCapStore, row db.Workspace, reason string, attempts int) (bool, error) {
 	lease := guard.lease
 	logger := slog.With("workspace_id", row.ID, "reason", reason)
 	var verifyErr error
-	for attempt := 0; attempt < max(attempts, 1); attempt++ {
+	for attempt := 0; row.HeadCommitID != "" && attempt < max(attempts, 1); attempt++ {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
@@ -159,13 +158,19 @@ func (s *WorkspaceService) retireAgentBoxLeased(ctx context.Context, guard agent
 		return false, nil
 	}
 	revoked := s.revokeAgentWorkspaceHeadToken(ctx, row)
+	guest := strings.TrimSpace(row.VmID) != ""
 	operationCtx, err := s.workspaceRuntimeContext(ctx, row, row.UserID, workspaceLifecycleOperation(row, "retire-"+reason))
 	if err != nil {
 		return false, err
 	}
-	kept, err := s.stopAgentWorkspaceHosts(operationCtx, row, guard)
-	if err != nil {
-		return false, err
+	var kept string
+	if guest {
+		if kept, err = s.stopAgentWorkspaceHosts(operationCtx, row, guard); err != nil {
+			return false, err
+		}
+	} else {
+		// No guest ran a host; retire the credentials any binding still holds.
+		s.retireAgentBoxHostCredentials(ctx, row)
 	}
 	// The guest is deleted only while the lease still holds a running box that
 	// names no head token and still has this guest: no turn joined since, so
@@ -180,14 +185,16 @@ func (s *WorkspaceService) retireAgentBoxLeased(ctx context.Context, guard agent
 	}
 	*lease = renewed
 	s.agentBoxReleasePoint(agentBoxBeforeDelete, row.ID)
-	ran, err := guard.run(ctx, func(ctx context.Context) error { return s.deleteRuntimeWorkspaceLocked(ctx, row, row.UserID) })
-	if err != nil {
-		logger.Warn("agent box retirement failed; the next pass retries it", "outcome", "release_failed", "head_token_revoked", revoked, "error", err)
-		return false, err
-	}
-	if !ran {
-		logger.Warn("agent box kept: its release no longer holds it", "outcome", "kept_lease_lost", "head_token_revoked", revoked)
-		return false, errAgentBoxLost
+	if guest {
+		ran, err := guard.run(ctx, func(ctx context.Context) error { return s.deleteRuntimeWorkspaceLocked(ctx, row, row.UserID) })
+		if err != nil {
+			logger.Warn("agent box retirement failed; the next pass retries it", "outcome", "release_failed", "head_token_revoked", revoked, "error", err)
+			return false, err
+		}
+		if !ran {
+			logger.Warn("agent box kept: its release no longer holds it", "outcome", "kept_lease_lost", "head_token_revoked", revoked)
+			return false, errAgentBoxLost
+		}
 	}
 	retired, err := store.RetireAgentBox(context.WithoutCancel(ctx), row.ID, *lease)
 	if err != nil {
@@ -203,72 +210,31 @@ func (s *WorkspaceService) retireAgentBoxLeased(ctx context.Context, guard agent
 	if kept = strings.TrimSpace(kept); kept != "" {
 		attrs = append(attrs, "kept_for", kept)
 	}
-	if reason == "idle_cap" {
-		logger.Info("agent box retired after its idle cap", attrs...)
-	} else {
-		logger.Info("agent box retired: its run's processes could not be confirmed ended", attrs...)
-	}
+	logger.Info(map[string]string{
+		agentBoxRetireIdleCap: "agent box retired after its idle cap",
+		agentBoxRetireTurnEnd: "agent box retired at its turn's end",
+		agentBoxRetireDirty:   "agent box retired before its next turn: its guest is dirty",
+		agentBoxRetireFailed:  "agent box retired before its next turn: its guest failed",
+	}[reason], attrs...)
 	return true, nil
 }
 
-// errAgentBoxCleaning refuses a turn on a box still being cleaned after its
-// last turn, retryably.
-func errAgentBoxCleaning() error {
-	return pkgerrors.New(pkgerrors.CodeServiceUnavailable, "the box is still being cleaned after its last turn; try again in a moment")
-}
+// Why an agent box is retired.
+const (
+	agentBoxRetireIdleCap = "idle_cap"
+	// Its turn ended: every hosted turn retires its box (Security d-am9s3m).
+	agentBoxRetireTurnEnd = "turn_end"
+	// A turn's join found the guest its dirty mark names still live.
+	agentBoxRetireDirty = "dirty"
+	// A turn's join found its box failed, stopped or needing a rebuild.
+	agentBoxRetireFailed = "failed"
+)
 
-// cleanUnreapedAgentBoxLocked clears a box whose state is unknown (its last
-// run's processes were not confirmed ended, or a release died holding it)
-// before its next turn mints anything, holding the box's lease. A reap never
-// makes such a box clean (Security d-am9s3m): it is retired and the turn
-// rebuilds it from the recorded head. A box that cannot be retired refuses the
-// turn, retryably. busy is true when another replica holds the box; the
-// caller waits for it.
-func (s *WorkspaceService) cleanUnreapedAgentBoxLocked(ctx context.Context, fence agentWorkspaceReleaseStore, row db.Workspace) (cleaned db.Workspace, busy bool, err error) {
-	store, ok := s.q.(agentBoxIdleCapStore)
-	if !ok {
-		return row, false, errAgentBoxCleaning()
-	}
-	claim, err := fence.ClaimAgentBoxRelease(ctx, db.ClaimAgentBoxReleaseParams{WorkspaceID: row.ID})
-	if err != nil {
-		return row, false, err
-	}
-	if claim.Busy {
-		return row, true, nil
-	}
-	if claim.Lease == "" || claim.Stage != db.AgentBoxUnreapedStage {
-		// Another replica cleaned it, or it changed since: read it again.
-		if claim.Lease != "" {
-			_ = fence.EndAgentBoxLease(context.WithoutCancel(ctx), row.ID, claim.Lease, claim.Stage)
-		}
-		current, err := s.q.GetWorkspace(ctx, row.ID)
-		return current, false, err
-	}
-	lease := claim.Lease
-	defer func() {
-		if err := fence.EndAgentBoxLease(context.WithoutCancel(ctx), row.ID, lease, db.AgentBoxUnreapedStage); err != nil {
-			slog.Warn("end agent box lease failed; it lapses on its own", "workspace_id", row.ID, "error", err)
-		}
-	}()
-	row.HeadPushTokenID, row.ProvisioningStage, row.VmID = claim.HeadPushTokenID, claim.Lease, claim.VmID
-	guard := agentBoxGuard{fence: fence, workspaceID: row.ID, guest: claim.VmID, lease: &lease}
-	retired, err := s.retireAgentBoxLeased(ctx, guard, store, row, "unreaped", 1)
-	if errors.Is(err, errAgentBoxLost) {
-		return row, true, nil
-	}
-	if err != nil {
-		return row, false, err
-	}
-	if !retired {
-		return row, false, errAgentBoxCleaning()
-	}
-	current, err := s.q.GetWorkspace(ctx, row.ID)
-	return current, false, err
-}
-
-// retiredAgentBox reports a box the idle cap retired: asleep with no guest,
-// waiting to be rebuilt from its recorded head. Its next start creates a new
-// guest rather than waking one, so it needs no machine admission.
+// retiredAgentBox reports a retired agent box: asleep with no guest, waiting
+// to be rebuilt from its recorded head, or built afresh from its branch when
+// it recorded none (db.RetireAgentBox). Its next start creates a new guest
+// rather than waking one, so it needs no machine admission.
 func retiredAgentBox(row db.Workspace) bool {
-	return row.Status == "suspended" && strings.TrimSpace(row.VmID) == "" && row.DiskReclaimedAt.Valid
+	return row.Status == "suspended" && strings.TrimSpace(row.VmID) == "" &&
+		(row.DiskReclaimedAt.Valid || row.ProvisioningStage == db.AgentBoxRetiredStage)
 }

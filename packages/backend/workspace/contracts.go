@@ -237,18 +237,6 @@ type WorkspaceDiskReclaimer interface {
 	ReclaimWorkspaceDisk(ctx context.Context, workspaceID string) error
 }
 
-// WorkspaceRunProcessReaper ends every guest process an agent run started,
-// keeping only the box's own system processes (its relay and its agent
-// supervisor), and returns only once their end is confirmed. A process a
-// prompt-injected run left behind (a backgrounded command, a cron entry, a
-// watcher of a token file) must not survive into the next turn, where it
-// could read that turn's fresh credentials (plue#866). A runtime that cannot
-// confirm the reap must not implement this port; the product then retires the
-// box instead of reusing it.
-type WorkspaceRunProcessReaper interface {
-	ReapRunProcesses(ctx context.Context, workspaceID string) error
-}
-
 // WorkspaceEnvironmentLinker is an optional facet. After the product
 // checkout, it finishes the workspace's prepared environment offline, for
 // example by linking dependencies from a prepared store.

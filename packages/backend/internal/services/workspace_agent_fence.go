@@ -39,8 +39,8 @@ func withAgentBoxJoin(ctx context.Context, sessionID string, userID int64) conte
 // mints anything. An agent turn's join waits while a release on any replica
 // holds the box, then binds its session to the box in the same transaction,
 // so a release that reads the box's use afterwards sees the turn. Any other
-// start waits only while a release holds the box. A box whose last run's
-// processes were not confirmed ended is cleaned first (plue#866). It answers
+// start waits only while a release holds the box. The turn retired its box's
+// dirty guest before it got here (retireAgentSessionBoxForTurn). It answers
 // the box as it now is.
 func (s *WorkspaceService) admitAgentBoxJoinLocked(ctx context.Context, row db.Workspace) (db.Workspace, error) {
 	fence, ok := s.q.(agentWorkspaceReleaseStore)
@@ -48,7 +48,7 @@ func (s *WorkspaceService) admitAgentBoxJoinLocked(ctx context.Context, row db.W
 		return row, nil
 	}
 	join, joining := ctx.Value(agentBoxJoinKey{}).(agentBoxJoin)
-	if !joining && !db.IsAgentBoxLease(row.ProvisioningStage) && row.ProvisioningStage != db.AgentBoxUnreapedStage {
+	if !joining && !db.IsAgentBoxLease(row.ProvisioningStage) {
 		return row, nil
 	}
 	deadline := time.Now().Add(agentBoxJoinWait)
@@ -61,23 +61,10 @@ func (s *WorkspaceService) admitAgentBoxJoinLocked(ctx context.Context, row db.W
 			slog.WarnContext(ctx, "agent box lease of a release that died was ended", "workspace_id", row.ID)
 		}
 		if !admission.Busy {
-			current, err := s.q.GetWorkspace(ctx, row.ID)
-			if err != nil {
-				return row, err
-			}
-			if current.Status != "running" || current.ProvisioningStage != db.AgentBoxUnreapedStage {
-				return current, nil
-			}
-			cleaned, busy, err := s.cleanUnreapedAgentBoxLocked(ctx, fence, current)
-			if err != nil {
-				return current, err
-			}
-			if !busy {
-				return cleaned, nil
-			}
+			return s.q.GetWorkspace(ctx, row.ID)
 		}
 		if time.Now().After(deadline) {
-			return row, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "the box is still being released after its last turn; try again in a moment")
+			return row, errAgentBoxBusy()
 		}
 		select {
 		case <-ctx.Done():
@@ -85,6 +72,12 @@ func (s *WorkspaceService) admitAgentBoxJoinLocked(ctx context.Context, row db.W
 		case <-time.After(agentBoxJoinPoll):
 		}
 	}
+}
+
+// errAgentBoxBusy refuses a turn while a release still holds its box,
+// retryably.
+func errAgentBoxBusy() error {
+	return pkgerrors.New(pkgerrors.CodeServiceUnavailable, "the box is still being released after its last turn; try again in a moment")
 }
 
 // errAgentBoxLost is a release that no longer holds its box: its lease

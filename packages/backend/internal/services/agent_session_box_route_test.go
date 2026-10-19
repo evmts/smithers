@@ -17,8 +17,8 @@ import (
 
 // The app finds a session's agent box through the session read, never the
 // person's workspace list (hosted P0 A/B contract). With one box per session
-// (plue#869) that read names the session's own box, and the same one on
-// every later turn.
+// (plue#869) that read names the session's own box, and the same one across
+// a retire and every later turn.
 func TestAgentSessionReadNamesItsOwnStableBox(t *testing.T) {
 	turns := services.NewAgentBoxTurnsForTest(t)
 	q := db.New(turns.Pool)
@@ -48,7 +48,11 @@ func TestAgentSessionReadNamesItsOwnStableBox(t *testing.T) {
 	require.NoError(t, turns.Pool.QueryRow(t.Context(), `SELECT agent_session_id::text FROM workspaces WHERE id=$1`, first.WorkspaceID).Scan(&owner))
 	require.Equal(t, turns.Session, owner)
 
+	turns.Retire(t, first.WorkspaceID)
+	require.Equal(t, first.WorkspaceID, read(), "a retired box keeps its id")
+
 	second := turns.Turn(t)
 	require.Equal(t, first.WorkspaceID, second.WorkspaceID)
-	require.Equal(t, first.WorkspaceID, read(), "the session's box id is stable across its turns")
+	require.NotEqual(t, first.VMID, second.VMID, "the next turn runs on a fresh guest")
+	require.Equal(t, first.WorkspaceID, read(), "the session's box id is stable across a retire")
 }

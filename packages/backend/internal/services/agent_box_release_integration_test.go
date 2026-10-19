@@ -320,6 +320,10 @@ func newAgentBoxReleaseWith(t *testing.T, status string, reaper bool) *agentBoxR
 	f.agent = NewAgentServiceWithPool(q, pool, WithAgentDispatchQuerier(q))
 	f.agent.SetWorkspaceBackend(f.boxes)
 	f.session = f.attachSession(t, repo)
+	// The box is the session's own (plue#869), and recording the run's head
+	// token marked its guest dirty.
+	_, err = pool.Exec(ctx, `UPDATE workspaces SET agent_session_id=$2, agent_box_dirty_vm_id=vm_id WHERE id=$1`, f.workspace, f.session)
+	require.NoError(t, err)
 
 	// The run's own credentials: its callback token and its repository API token.
 	definition, err := q.UpsertAgentWorkflowDefinition(ctx, repo)
@@ -413,49 +417,43 @@ func (f *agentBoxRelease) releaseLog(t *testing.T) string {
 	return ""
 }
 
-func TestAFinishedRunQuiescesItsBoxAndRevokesEveryTokenMintedForIt(t *testing.T) {
+func TestAFinishedRunRetiresItsBoxAndRevokesEveryTokenMintedForIt(t *testing.T) {
 	f := newAgentBoxRelease(t, "running")
 
 	f.finish(t)
 
-	require.Zero(t, f.runtime.stops.Load(), "hosted cannot wake a stopped box through the session path, so the box is not stopped")
-	require.Equal(t, workspaceapi.WorkspaceRunning, f.guest.state)
+	require.Zero(t, f.runtime.stops.Load(), "the box is retired, not stopped: hosted cannot wake a stopped box")
+	require.Equal(t, int32(1), f.runtime.deletes.Load(), "its guest and disk are deleted (Security d-am9s3m)")
 	box := f.box(t)
-	require.Equal(t, "running", box.Status, "the next turn joins it without a wake")
+	require.Empty(t, box.VmID, "it has no guest")
+	require.Equal(t, "suspended", box.Status, "a retired box always reads suspended")
+	require.False(t, box.DiskReclaimedAt.Valid, "one that recorded no head is built afresh by its next turn")
+	require.Equal(t, db.AgentBoxRetiredStage, box.ProvisioningStage)
+	require.Equal(t, "vm-agent-box", box.AgentBoxDirtyVmID, "only a new guest clears the dirty mark")
 	require.False(t, box.HeadPushTokenID.Valid, "the row records no head token")
 	require.Equal(t, []string{"smithers-coding-host"}, f.hosted.stopped, "the coding host is stopped before its credentials are retired")
 	f.requireRunTokensRevoked(t, "head", "landing", "cache", "api")
 	line := f.releaseLog(t)
-	require.Contains(t, line, "outcome=quiesced", "the log states what happened to the box")
+	require.Contains(t, line, "outcome=retired", "the log states what happened to the box")
 	require.Contains(t, line, "head_token_revoked=true")
 }
 
 // A coding host the runtime does not stop still loses every credential the
-// run minted: the run is over, so a host left running only fails its next
-// call. The stop is owed, so the binding is marked and the next release
-// retries it (Security s-z9semr).
+// run minted, and the box is retired all the same: deleting its guest ends
+// the host (Security s-z9semr).
 func TestAFailedHostStopStillRevokesTheRunsTokens(t *testing.T) {
 	f := newAgentBoxRelease(t, "running")
 	f.hosted.serviceErr = errors.New("guest agent unreachable")
 
 	f.finish(t)
 
-	require.Zero(t, f.runtime.stops.Load())
+	require.Equal(t, int32(1), f.runtime.deletes.Load(), "the guest the host ran on is deleted")
 	require.False(t, f.box(t).HeadPushTokenID.Valid)
 	f.requireRunTokensRevoked(t, "head", "landing", "cache", "api")
 	line := f.releaseLog(t)
-	require.Contains(t, line, "outcome=quiesced")
+	require.Contains(t, line, "outcome=retired")
 	require.Contains(t, line, "head_token_revoked=true")
-	require.Contains(t, line, "stop retried on the next release")
-	require.Equal(t, db.FlowHostStopPending, f.bindingErrorCode(t), "the owed stop is recorded")
-
-	// The next release retries the stop and clears the mark.
-	f.hosted.serviceErr = nil
-	release, err := f.boxes.ReleaseAgentWorkspace(f.ctx, f.workspace, "", 0)
-	require.NoError(t, err)
-	require.Equal(t, agentWorkspaceQuiesced, release.Outcome)
-	require.Equal(t, []string{"smithers-coding-host"}, f.hosted.stopped, "the owed stop is retried")
-	require.Empty(t, f.bindingErrorCode(t), "a stop that succeeds clears the mark")
+	require.Contains(t, f.logs.String(), "stop retried on the next release", "the failed stop is logged")
 }
 
 func (f *agentBoxRelease) bindingErrorCode(t *testing.T) string {
@@ -476,27 +474,6 @@ func TestARunOnAnAlreadyStoppedBoxRevokesTheHeadTokenItLeftLive(t *testing.T) {
 	require.Equal(t, "stopped", f.box(t).Status)
 	f.requireRunTokensRevoked(t, "head", "api")
 	require.Contains(t, f.releaseLog(t), "outcome=already_released")
-}
-
-// A box another session is still working on keeps running, and keeps the head
-// token that session's edits publish with. Only the finished run's own
-// credentials are revoked.
-func TestABoxAnotherSessionStillUsesKeepsRunning(t *testing.T) {
-	f := newAgentBoxRelease(t, "running")
-	box := f.box(t)
-	other := f.attachSession(t, box.RepositoryID)
-
-	f.finish(t)
-
-	require.Zero(t, f.runtime.stops.Load(), "never stop a box a live session is using")
-	require.Empty(t, f.hosted.stopped, "nor its coding host")
-	require.Equal(t, "running", f.box(t).Status)
-	require.True(t, f.tokenLive(t, "head"), "the box's head token serves the session still on it")
-	require.True(t, f.tokenLive(t, "landing"), "the coding host still serves the other session")
-	f.requireRunTokensRevoked(t, "api")
-	line := f.releaseLog(t)
-	require.Contains(t, line, "outcome=kept_in_use")
-	require.Contains(t, line, other, "the log names who still uses the box")
 }
 
 // A person's open terminal on the branch's box is use too.
@@ -545,10 +522,10 @@ func TestReleasingAFailedFlowHostMachineRevokesItsHeadToken(t *testing.T) {
 
 // TWO CONSECUTIVE CHANGE REQUESTS ON ONE REPO BOTH GET A WORKING BOX (PM
 // d-qhgqyv). A person cannot start a box the payer account owns, so after the
-// first turn releases its box, a second message on the same session and a
-// new session on the same repository must each get a running box through the
-// session path, with fresh credentials, and their turns must be admitted to
-// the coding host. Nothing may be refused.
+// first turn retires its box, a second message on the same session gets a
+// fresh guest on its box and a new session on the same repository gets a box
+// of its own (plue#869), each with fresh credentials, and their turns must be
+// admitted to the coding host. Nothing may be refused.
 func TestTwoConsecutiveChangeRequestsOnOneRepoBothGetAWorkingBox(t *testing.T) {
 	f := newAgentBoxRelease(t, "running")
 	box := f.box(t)
@@ -556,7 +533,7 @@ func TestTwoConsecutiveChangeRequestsOnOneRepoBothGetAWorkingBox(t *testing.T) {
 	f.requireRunTokensRevoked(t, "head", "landing", "cache", "api")
 	firstHead := f.tokens["head"]
 
-	request := func(t *testing.T, sessionID string) {
+	request := func(t *testing.T, sessionID string, own bool, creates int) {
 		t.Helper()
 		ctx := f.ctx
 		definition, err := f.q.UpsertAgentWorkflowDefinition(ctx, box.RepositoryID)
@@ -573,11 +550,17 @@ func TestTwoConsecutiveChangeRequestsOnOneRepoBothGetAWorkingBox(t *testing.T) {
 		joined, err := f.boxes.CreateAgentWorkspace(ctx, CreateAgentWorkspaceInput{RepositoryID: box.RepositoryID, UserID: f.person,
 			SessionID: sessionID, RepoOwner: slug.OwnerSlug, RepoName: slug.RepoName})
 		require.NoError(t, err, "the dispatch gets a working box, never a refusal")
-		require.Equal(t, box.ID, joined.WorkspaceID, "the branch's own box serves the turn")
-		require.Zero(t, f.hosted.starts, "the quiesced box is still running: no wake, no refusal")
-		current := f.box(t)
+		if own {
+			require.Equal(t, box.ID, joined.WorkspaceID, "the session's own box serves its next turn")
+		} else {
+			require.NotEqual(t, box.ID, joined.WorkspaceID, "a new session gets a box of its own")
+		}
+		require.Zero(t, f.hosted.starts, "no wake, no refusal")
+		require.Equal(t, creates, f.hosted.creates, "on a fresh guest")
+		current, err := f.q.GetWorkspace(ctx, joined.WorkspaceID)
+		require.NoError(t, err)
 		require.Equal(t, "running", current.Status)
-		require.Equal(t, workspaceapi.WorkspaceRunning, f.guest.state)
+		require.Equal(t, joined.VMID, current.VmID)
 		require.True(t, current.HeadPushTokenID.Valid, "the box publishes with a fresh head token")
 		require.NotEqual(t, firstHead, current.HeadPushTokenID.Int64)
 
@@ -594,11 +577,11 @@ func TestTwoConsecutiveChangeRequestsOnOneRepoBothGetAWorkingBox(t *testing.T) {
 	}
 
 	t.Run("a second message on the same session", func(t *testing.T) {
-		request(t, f.session)
+		request(t, f.session, true, 1)
 	})
 	t.Run("a new session on the same repository", func(t *testing.T) {
 		session, err := f.agent.CreateSession(f.ctx, CreateAgentSessionInput{RepositoryID: box.RepositoryID, UserID: f.person, Title: "second"})
 		require.NoError(t, err)
-		request(t, session.ID)
+		request(t, session.ID, false, 2)
 	})
 }

@@ -397,9 +397,8 @@ func logAgentWorkspaceRelease(logger *slog.Logger, workspaceID, finalStatus stri
 		return
 	}
 	message := map[string]string{
-		agentWorkspaceQuiesced:                "agent workspace quiesced",
 		agentWorkspaceRetired:                 "agent workspace retired",
-		agentWorkspaceUnreaped:                "agent workspace kept unreaped",
+		agentWorkspaceKeptDirty:               "agent workspace kept dirty",
 		agentWorkspaceAlreadyReleased:         "agent workspace was already released",
 		agentWorkspaceKeptInUse:               "agent workspace kept running",
 		agentWorkspaceKeptForMachineLifecycle: "agent workspace kept running",

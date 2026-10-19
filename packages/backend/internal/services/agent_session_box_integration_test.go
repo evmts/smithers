@@ -79,6 +79,13 @@ type sessionBoxRuntime struct {
 	creates    int
 	cloneURL   string
 	repository int64
+	// deleted are the guests deleted, by vm id.
+	deleted []string
+	// failCheckouts fails that many checkouts, as a provision that fails
+	// after its guest was created does.
+	failCheckouts int
+	// head is the commit the guest's checkout answers with.
+	head string
 }
 
 func newSessionBoxRuntime(pool *pgxpool.Pool, repository int64, cloneURL string) *sessionBoxRuntime {
@@ -120,6 +127,23 @@ func (r *sessionBoxRuntime) CreateWorkspace(ctx context.Context, spec workspacea
 		return workspaceapi.Workspace{}, err
 	}
 	return workspaceapi.Workspace{ID: spec.ID, State: workspaceapi.WorkspaceRunning, Home: "/home/developer", Root: "/workspace/repo"}, nil
+}
+
+// DeleteWorkspace deletes the guest and its disk and, as hosted's placement
+// store does, clears the row's placement.
+func (r *sessionBoxRuntime) DeleteWorkspace(ctx context.Context, id string) error {
+	r.mu.Lock()
+	g := r.guests[id]
+	if g != nil {
+		r.deleted = append(r.deleted, g.vm)
+		delete(r.guests, id)
+	}
+	r.mu.Unlock()
+	if g == nil {
+		return workspaceapi.ErrWorkspaceNotFound
+	}
+	_, err := r.pool.Exec(ctx, `UPDATE workspaces SET vm_id='' WHERE id=$1 AND vm_id=$2`, id, g.vm)
+	return err
 }
 
 func (r *sessionBoxRuntime) InspectWorkspace(_ context.Context, id string) (workspaceapi.Workspace, error) {
@@ -194,13 +218,19 @@ func (r *sessionBoxRuntime) ExecuteCommand(_ context.Context, id string, command
 		}
 		return workspaceapi.CommandResult{}, nil
 	}
-	head := strings.Repeat("a", 40)
+	head := r.head
+	if head == "" {
+		head = strings.Repeat("a", 40)
+	}
 	args := command.Args
 	switch {
 	case len(args) >= 3 && args[0] == "git" && args[1] == "remote":
 		return workspaceapi.CommandResult{Stdout: r.cloneURL + "\n"}, nil
 	case len(args) >= 2 && args[0] == "git" && args[1] == "ls-remote":
 		return workspaceapi.CommandResult{Stdout: head + "\trefs/heads/main\n"}, nil
+	case len(args) >= 2 && args[0] == "git" && args[1] == "check-ref-format" && r.failCheckouts > 0:
+		r.failCheckouts--
+		return workspaceapi.CommandResult{ExitCode: 1, Stderr: "fatal: the checkout failed"}, nil
 	case len(args) >= 2 && args[0] == "git" && args[1] == "clone":
 		g.hasGit = true
 	case len(args) >= 3 && args[0] == "jj" && args[1] == "git" && args[2] == "init":
@@ -567,4 +597,12 @@ func (a *AgentBoxTurnsForTest) Turn(t *testing.T) AgentWorkspaceResult {
 	result, err := a.f.turn(a.Person, a.Session)
 	require.NoError(t, err)
 	return result
+}
+
+// Retire ends the turn: the release retires the session's box.
+func (a *AgentBoxTurnsForTest) Retire(t *testing.T, box string) {
+	t.Helper()
+	release, err := a.f.boxes.ReleaseAgentWorkspace(a.f.ctx, box, a.Session, 0)
+	require.NoError(t, err)
+	require.Equal(t, agentWorkspaceRetired, release.Outcome)
 }

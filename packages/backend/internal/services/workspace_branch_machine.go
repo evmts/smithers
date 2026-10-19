@@ -276,15 +276,9 @@ func (s *WorkspaceService) requireSessionBoxPerson(ctx context.Context, tx pgx.T
 		if err != nil {
 			return false, err
 		}
-		if box = row.AgentSessionID.Valid; box {
-			if sessions, ok := s.q.(interface {
-				GetAgentSession(context.Context, string) (db.AgentSession, error)
-			}); ok {
-				if session, err := sessions.GetAgentSession(ctx, UUIDString(row.AgentSessionID)); err == nil {
-					person = session.UserID
-				}
-			}
-		}
+		// Without the admission transaction no session's person is read, so
+		// a session's box admits no one here.
+		box = row.AgentSessionID.Valid
 	}
 	if box && (person == 0 || person != actorID) {
 		return true, pkgerrors.Forbidden("access denied")

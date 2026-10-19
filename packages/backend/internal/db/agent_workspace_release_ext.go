@@ -134,27 +134,27 @@ LIMIT $2`, idleSeconds, limit)
 	return ids, rows.Err()
 }
 
-// RetireAgentBox records a running agent box retired after its guest was
-// deleted: asleep with no guest and no head token, marked for reconstruction
-// from its recorded branch head. It writes only while the release still holds
-// lease and the box names no head token, the one the release revoked: a token
-// named since belongs to a turn the release must not touch. Returns false
-// otherwise.
+// RetireAgentBox records an agent box retired after its guest was deleted:
+// suspended with no guest and no head token, at AgentBoxRetiredStage, every
+// time, so a reader sees one state. A box that recorded a branch head is
+// marked for reconstruction from it; one that recorded none (a provision that
+// failed, a turn that published nothing) is built afresh from its branch. Its
+// failure and rebuild marks are cleared. The dirty mark is left as it is:
+// only recording the next guest clears it (RecordAgentBoxGuest). It writes
+// only while the release still holds lease and the box names no head token,
+// the one the release revoked: a token named since belongs to a turn the
+// release must not touch. Returns false otherwise.
 func (q *Queries) RetireAgentBox(ctx context.Context, workspaceID, lease string) (bool, error) {
 	tag, err := q.db.Exec(ctx, `
 UPDATE workspaces
-SET status = 'suspended', vm_id = '', disk_reclaimed_at = NOW(),
-    suspended_at = NOW(), provisioning_stage = $2, updated_at = NOW()
-WHERE id = $1::uuid AND status = 'running' AND deleted_at IS NULL
+SET status = 'suspended', vm_id = '', suspended_at = NOW(),
+    disk_reclaimed_at = CASE WHEN head_commit_id = '' THEN NULL ELSE NOW() END,
+    rebuild_required_at = NULL, failure_code = NULL, failure_message = NULL,
+    provisioning_stage = $2, updated_at = NOW()
+WHERE id = $1::uuid AND `+agentBoxLiveStatusSQL+` AND deleted_at IS NULL
   AND provisioning_stage = $3 AND head_push_token_id IS NULL`, workspaceID, AgentBoxRetiredStage, lease)
 	if err != nil {
 		return false, err
 	}
 	return tag.RowsAffected() == 1, nil
 }
-
-// AgentBoxUnreapedStage marks a running agent box whose run processes could
-// not be confirmed ended and which could not be retired either. Its next turn
-// is refused until the box is reaped or retired, so no credential is minted
-// beside a process the last run left.
-const AgentBoxUnreapedStage = "agent_box_unreaped"

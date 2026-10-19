@@ -44,13 +44,22 @@ func (h publishedHeads) GetChange(_ context.Context, _, _, commit string) (repoh
 
 const idleCapTestHead = "0123456789abcdef0123456789abcdef01234567"
 
-// idleBox is the release fixture after one finished turn whose head was
-// published, left idle past the cap.
+// idleBox is the release fixture after one finished turn whose head was not
+// yet published when the turn ended, so its release kept the box with its
+// guest dirty, left idle past the cap. published says whether the head has
+// published since.
 func idleBox(t *testing.T, published bool) *agentBoxRelease {
 	t.Helper()
+	attempts := agentBoxHeadVerifyAttempts
+	agentBoxHeadVerifyAttempts = 1
+	t.Cleanup(func() { agentBoxHeadVerifyAttempts = attempts })
 	f := newAgentBoxRelease(t, "running")
+	_, err := f.pool.Exec(f.ctx, `UPDATE workspaces SET head_commit_id=$2 WHERE id=$1`, f.workspace, idleCapTestHead)
+	require.NoError(t, err)
+	f.boxes.branchHeads = publishedHeads{heads: map[string]string{}}
 	f.finish(t)
-	_, err := f.pool.Exec(f.ctx, `UPDATE workspaces SET head_commit_id=$2, last_activity_at=NOW()-interval '20 minutes' WHERE id=$1`, f.workspace, idleCapTestHead)
+	require.Contains(t, f.releaseLog(t), "outcome=kept_dirty")
+	_, err = f.pool.Exec(f.ctx, `UPDATE workspaces SET last_activity_at=NOW()-interval '20 minutes' WHERE id=$1`, f.workspace)
 	require.NoError(t, err)
 	_, err = f.pool.Exec(f.ctx, `UPDATE agent_sessions SET finished_at=NOW()-interval '20 minutes' WHERE workspace_id=$1`, f.workspace)
 	require.NoError(t, err)
@@ -100,9 +109,10 @@ func TestAnAgentBoxIdlePastItsCapIsRetiredAndStopsAccruing(t *testing.T) {
 	require.Equal(t, total, again, "no usage interval after retirement")
 }
 
-// The next change on the repository, in the same session or a new one, gets a
-// new box through the session path, rebuilt from the previous head, and its
-// turn reaches the coding host. Nothing is refused.
+// The next change on the repository gets a working box through the session
+// path and its turn reaches the coding host: the same session's box rebuilt
+// from the previous head, a new session's box of its own (plue#869). Nothing
+// is refused.
 func TestTheNextChangeAfterRetirementGetsANewBoxAtThePreviousHead(t *testing.T) {
 	f := idleBox(t, true)
 	require.NoError(t, f.boxes.RetireIdleAgentBoxes(f.ctx))
@@ -130,10 +140,15 @@ func TestTheNextChangeAfterRetirementGetsANewBoxAtThePreviousHead(t *testing.T) 
 			joined, err := f.boxes.CreateAgentWorkspace(f.ctx, CreateAgentWorkspaceInput{RepositoryID: box.RepositoryID, UserID: f.person,
 				SessionID: sessionID, RepoOwner: slug.OwnerSlug, RepoName: slug.RepoName})
 			require.NoError(t, err, "the dispatch gets a working box, never a refusal")
-			require.Equal(t, box.ID, joined.WorkspaceID)
-			require.Equal(t, 1, f.hosted.creates, "one new guest serves both turns after retirement")
+			if i == 0 {
+				require.Equal(t, box.ID, joined.WorkspaceID, "the session's own box")
+			} else {
+				require.NotEqual(t, box.ID, joined.WorkspaceID, "a new session's box of its own")
+			}
+			require.Equal(t, i+1, f.hosted.creates, "each turn after retirement gets a new guest")
 			require.Zero(t, f.hosted.starts, "the new box is created, not woken")
-			current := f.box(t)
+			current, err := f.q.GetWorkspace(f.ctx, joined.WorkspaceID)
+			require.NoError(t, err)
 			require.Equal(t, "running", current.Status)
 			require.NotEmpty(t, current.VmID)
 			require.False(t, current.DiskReclaimedAt.Valid, "the rebuild is complete")
