@@ -19,6 +19,7 @@ const expectedExports = [
   "ModelCatalog",
   "ModelError",
   "ModelEvent",
+  "ModelProxy",
   "ModelRequest",
   "OpenAIChatCompletions",
   "OpenAIChatGPT",

@@ -194,7 +194,7 @@ these fields:
 | `resetSource`        | `string?`               | Which header or body field supplied the reset instant.                                                                                                                                            |
 | `quotaScope`         | `"model" \| "account"?` | Optional scope supplied by a protocol classifier. Model scope leaves sibling models eligible; account scope cools every model on the same route.                                                  |
 | `providerCode`       | `string?`               | The provider's own error code.                                                                                                                                                                    |
-| `requestId`          | `string?`               | The provider's request id, from the usual `x-request-id` family of headers.                                                                                                                       |
+| `requestId`          | `string?`               | The provider's request id, from the usual `x-request-id` family of headers. From a `ModelProxy` client, the request id both sides logged.                                                         |
 | `httpStatus`         | `number?`               | The HTTP status, when a response was received.                                                                                                                                                    |
 
 The failed provider response body is reachable as `error.body`, capped at
@@ -264,6 +264,59 @@ each read as themselves, not as a model call that failed.
 `authentication`, `content_policy` and `out_of_credit` are `user`; the rest are `dependency`.
 `Evaluator.faults` is the same table for Jev's codes, shared by
 `EvaluatorError` and `ClassifierError`.
+
+## `ModelProxy`
+
+A `Model` served over HTTP, and a `Model` that reads one served elsewhere. The
+host runs `serve`, which owns the provider key and decides what the model
+receives; a browser, Worker or CLI provides `layerClient` and calls
+`model.stream(request)` as it would locally. See
+[Proxy a model](./guides/proxy-a-model.md).
+
+| Export                 | Kind        | Behavior                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `serve(options)`       | server      | `Effect<HttpServerResponse, never, HttpServerRequest \| Model \| R>`. Reads a `POST` JSON `ModelRequest` body, runs `options.prepare`, calls `Model.stream` inside `Model.withGenAiSpan`, and streams NDJSON. Answers `405` to another method, `413` past `maxBodyBytes` (counted while reading), `400` to a body that is not a `ModelRequest`, a `Refusal`'s status, and `500` when `prepare` dies. |
+| `ServeOptions<R>`      | interface   | `prepare: (request) => Effect<ModelRequest, Refusal, R>`, required; `maxBodyBytes?`, default `defaultMaxBodyBytes`.                                                                                                                                                                                                                                                                                  |
+| `policy(options)`      | server      | A `prepare` hook: the request keeps only its `messages`; `modelId`, `system` (default none) and `params` (default provider defaults) are the host's. Refuses with `400` a request with tools or provider-run tools, no messages, or more than `maxMessages`.                                                                                                                                         |
+| `PolicyOptions`        | interface   | `modelId`, `system?`, `params?`, `maxMessages?`.                                                                                                                                                                                                                                                                                                                                                     |
+| `Refusal`              | error class | Tag `flows/model/ModelProxyRefusal`. `status` (400 to 599) and `message` reach the client as written; `code?` is the client's `ModelError` code, chosen by the status when omitted.                                                                                                                                                                                                                  |
+| `makeClient(options)`  | client      | `Effect<Model, never, HttpClient>`. `stream` posts the encoded request with a fresh request id and trace context and decodes the lines. Interrupting it aborts the request.                                                                                                                                                                                                                          |
+| `layerClient(options)` | client      | `Layer<Model, never, HttpClient>` from `makeClient`.                                                                                                                                                                                                                                                                                                                                                 |
+| `ClientOptions`        | interface   | `url` (relative URLs resolve against the page), `headers?`.                                                                                                                                                                                                                                                                                                                                          |
+| `Line`                 | schema      | One NDJSON line: a `ModelEvent`, `EndLine` or `ErrorLine`.                                                                                                                                                                                                                                                                                                                                           |
+| `EndLine`              | schema      | `{"type":"end"}`, the terminal line of a clean stream.                                                                                                                                                                                                                                                                                                                                               |
+| `ErrorLine`            | schema      | `{"type":"error",code,message,retryAfterMillis?}`, the terminal line of a stream whose model failed after the headers. `message` is the code's fixed `FailureCopy` headline, never provider text.                                                                                                                                                                                                    |
+| `ErrorBody`            | schema      | `{code,message,requestId}`, the body of every non-`200` answer.                                                                                                                                                                                                                                                                                                                                      |
+| `requestIdHeader`      | constant    | `x-smithers-request-id`.                                                                                                                                                                                                                                                                                                                                                                             |
+| `contentType`          | constant    | `application/x-ndjson`.                                                                                                                                                                                                                                                                                                                                                                              |
+| `defaultMaxBodyBytes`  | constant    | 1 MiB.                                                                                                                                                                                                                                                                                                                                                                                               |
+| `requests`             | metric      | Counter `smithers_model_proxy_requests` by `side`, `outcome`, `status` (`0` with no response).                                                                                                                                                                                                                                                                                                       |
+| `duration`             | metric      | Histogram `smithers_model_proxy_duration_ms` by `side`, `outcome`.                                                                                                                                                                                                                                                                                                                                   |
+| `firstEvent`           | metric      | Histogram `smithers_model_proxy_first_event_ms` by `side`.                                                                                                                                                                                                                                                                                                                                           |
+| `tokens`               | metric      | Counter `smithers_model_proxy_tokens` by `type` (`input`, `output`) and `model`, from the final merged `usage` events; server only.                                                                                                                                                                                                                                                                  |
+
+The client fails every stream with a `ModelError` carrying the request id as
+`requestId`: an `ErrorLine` as its code, `retryAfterMillis` and message; an
+error status as the `ErrorBody`'s code and message (or the status's code and
+`The model host answered HTTP <status>.` for a body that is not one) with
+`httpStatus`; an unreachable host, a broken body, or a body that ends before
+its terminal line as `transport`; an undecodable line as
+`invalid_provider_output`; and a request it cannot encode as
+`invalid_request`, without sending it.
+
+Each side ends each request with one span (`model.proxy.serve`,
+`model.proxy.stream`), the metrics above, and one log line whose message is the
+span name: Info for `success` and `interrupted`, Warn for `invalid` and
+`refused`, Error for `failed`. The span carries
+`smithers.model.proxy.request_id`, `smithers.model.proxy.outcome`,
+`http.response.status_code`, `error.type`, `smithers.model.proxy.events`,
+`smithers.model.proxy.duration_ms` and `smithers.model.proxy.first_event_ms`, and
+on the server `gen_ai.request.model`, `gen_ai.provider.name` and
+`smithers.model.proxy.request_bytes`. A failed span ends with a `ModelError`
+rebuilt from the code alone. With no HTTP server span in context, the
+`model.proxy.serve` span is a `server` span parented on the request's
+`traceparent`. Prompt, response and provider text and credentials never reach
+a span, metric or log line.
 
 ## `Route`
 

@@ -67,6 +67,15 @@ Effect.runPromise(Effect.provide(program, modelLayer)).then(({ message, usage })
 whole stack with your own provider or a scripted stub, so tests never reach the
 network.
 
+## Proxy a model
+
+A browser must not hold a provider key. `ModelProxy.serve` is an `effect/http`
+handler that runs the host's `Model` under the host's policy and streams the
+events as NDJSON; `ModelProxy.layerClient` is a `Model` that calls it, so a
+browser keeps calling `model.stream(request)`. Both record spans, metrics and
+one log line per request, joined by one request id and one trace. See
+https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/docs/guides/proxy-a-model.md.
+
 ## Public API
 
 The root entry point exports these namespaces. Each is also importable from
@@ -100,6 +109,8 @@ The root entry point exports these namespaces. Each is also importable from
   `ModelErrorCode`, `isContextOverflow`, `isQuotaExhausted`, `isTerminalRefusal`, `ModelError`
 - **`ModelEvent`**: The normalized events one model call emits, and the fold that turns them back into a single durable assistant message.
   `Usage`, `TextStart`, `TextDelta`, `TextEnd`, `ThinkingStart`, `ThinkingDelta`, `ThinkingEnd`, `ToolCallStart`, `ToolCallDelta`, `ToolCallEnd`, `ToolResult`, `UsageEvent`, `Retry`, `Settle`, `ModelEvent`, `settledMessage`
+- **`ModelProxy`**: A `Model` served over HTTP, and a `Model` that reads one served elsewhere.
+  `requestIdHeader`, `contentType`, `defaultMaxBodyBytes`, `EndLine`, `ErrorLine`, `Line`, `ErrorBody`, `Refusal`, `requests`, `duration`, `firstEvent`, `tokens`, `ServeOptions`, `serve`, `PolicyOptions`, `policy`, `ClientOptions`, `makeClient`, `layerClient`
 - **`ModelRequest`**: The serializable, credential-free declaration of one model call.
   `JsonObject`, `StopReason`, `SystemPart`, `TextPart`, `ThinkingPart`, `ToolCallPart`, `ToolResultPart`, `ContentPart`, `AssistantContentPart`, `UserMessage`, `AssistantMessage`, `ToolMessage`, `Message`, `ToolDefinition`, `ReasoningEffort`, `GenerationParams`, `ToolChoice`, `ModelRequest`
 - **`OpenAIChatCompletions`**: OpenAI Chat Completions request lowering and SSE event handling.
@@ -107,8 +118,9 @@ The root entry point exports these namespaces. Each is also importable from
 - **`OpenAIChatGPT`**: Route construction for OpenAI's ChatGPT-subscription Responses backend, the deployment the codex CLI speaks.
   `defaultBaseUrl`, `clientHeaders`, `make`
 - **`OpenAIResponses`**: OpenAI Responses request lowering and SSE event handling.
-- **`Pricing`**: USD rate cards from the backend price table and per-call cost.
   `Body`, `ChatGPTBody`, `State`, `protocol`, `chatgptProtocol`
+- **`Pricing`**: USD rate cards from the backend price table and per-call cost.
+  `Rates`, `Price`, `Table`, `table`, `CostSource`, `Cost`, `Options`, `lookup`, `weigh`, `costUsd`, `cost`
 - **`Protocol`**: The wire contract of a model API family, split from the deployment that serves it.
   `Protocol`, `ProtocolBody`, `ProtocolStream`, `make`, `jsonEvent`
 - **`RequestExecutor`**: Executes provider requests with bounded retries, quota classification, and credential-safe diagnostics.

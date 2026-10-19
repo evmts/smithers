@@ -136,7 +136,7 @@ layer of it should start there.
 
 ## Namespaces
 
-The root entry point re-exports seventeen namespaces. Each is also importable
+The root entry point re-exports twenty-four namespaces. Each is also importable
 on its own subpath, such as `@smthrs/model/Route`.
 
 | Namespace               | What it owns                                                         |
@@ -145,6 +145,13 @@ on its own subpath, such as `@smthrs/model/Route`.
 | `ModelRequest`          | The serializable, credential-free declaration of one model call.     |
 | `ModelEvent`            | The normalized events one call emits, and the `settledMessage` fold. |
 | `ModelError`            | The provider-neutral failure vocabulary.                             |
+| `ModelProxy`            | A `Model` served over HTTP, and a `Model` that reads one.            |
+| `ModelCatalog`          | Static facts about known models, read from a model id.               |
+| `FailureCopy`           | Safe headlines and actions for typed failures.                       |
+| `Pricing`               | USD rate cards and per-call cost.                                    |
+| `Classifier`            | Typed questions about a JSON state, answered by Jev.                 |
+| `Evaluator`             | The transport a classifier asks.                                     |
+| `EvaluatorBackup`       | A model as the judge when the primary judge is unreachable.          |
 | `Route`                 | A resolved route: endpoint, protocol, framing, and credentials.      |
 | `Protocol`              | The wire contract of a model API family.                             |
 | `Endpoint`              | The credential-free HTTP target of a route, and its validation.      |
@@ -169,6 +176,8 @@ on its own subpath, such as `@smthrs/model/Route`.
 - To consume the event stream, see
   [Read the stream](./guides/read-the-stream.md).
 - To branch on failures, see [Handle failures](./guides/handle-failures.md).
+- To serve a model from a Worker and call it from a browser, see
+  [Proxy a model](./guides/proxy-a-model.md).
 - To make a decision inside a flow with Jev, see
   [Decide with Jev](./guides/decide-with-jev.md).
 - For the mental models, see

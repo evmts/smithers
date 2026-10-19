@@ -87,6 +87,11 @@ export * as ModelError from "./ModelError.ts"
 export * as ModelEvent from "./ModelEvent.ts"
 
 /**
+ * @since 1.0.0
+ */
+export * as ModelProxy from "./ModelProxy.ts"
+
+/**
  * @since 0.1.0
  * @slop
  */

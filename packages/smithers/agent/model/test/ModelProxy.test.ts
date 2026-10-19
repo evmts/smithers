@@ -1,0 +1,1075 @@
+import { GrantStoreError } from "@smthrs/capability/Permission"
+import * as Cause from "effect/Cause"
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpEffect from "effect/http/HttpEffect"
+import * as HttpServerRequest from "effect/http/HttpServerRequest"
+import * as HttpServerResponse from "effect/http/HttpServerResponse"
+import * as Logger from "effect/Logger"
+import * as Metric from "effect/Metric"
+import * as Schema from "effect/Schema"
+import * as Stream from "effect/Stream"
+import * as Tracer from "effect/Tracer"
+import { describe, expect, it } from "vitest"
+import * as FailureCopy from "../src/FailureCopy.ts"
+import * as Model from "../src/Model.ts"
+import { ModelError } from "../src/ModelError.ts"
+import { ModelEvent } from "../src/ModelEvent.ts"
+import * as ModelProxy from "../src/ModelProxy.ts"
+import { GenerationParams, Message, ModelRequest, SystemPart, ToolDefinition } from "../src/ModelRequest.ts"
+
+const url = "http://model.test/api/model"
+const encoder = new TextEncoder()
+
+const request = (text = "hello", overrides: Partial<ConstructorParameters<typeof ModelRequest>[0]> = {}) =>
+  ModelRequest.make({
+    modelId: "browser-choice",
+    system: [SystemPart.make({ text: "browser system" })],
+    messages: [Message.user(text)],
+    tools: [],
+    params: GenerationParams.make({ maxTokens: 999_999 }),
+    ...overrides
+  })
+
+const hostPolicy = ModelProxy.policy({
+  modelId: "host-model",
+  system: [SystemPart.make({ text: "host system" })],
+  params: GenerationParams.make({ maxTokens: 256 }),
+  maxMessages: 4
+})
+
+/** A model that answers with the text of the request's last user message. */
+const echo = Model.make({
+  stream: (request) => {
+    const last = request.messages.at(-1)
+    const text = last?.role === "user" ? last.content.map((part) => part.text).join("") : ""
+    return Stream.make(
+      ModelEvent.TextStart({ type: "text-start", id: "t" }),
+      ModelEvent.TextDelta({ type: "text-delta", id: "t", text }),
+      ModelEvent.TextEnd({ type: "text-end", id: "t" }),
+      ModelEvent.Settle({ type: "settle", stopReason: "stop" })
+    )
+  }
+})
+
+type StructuredLog = ReturnType<typeof Logger.formatStructured.log>
+
+interface HarnessOptions {
+  readonly model?: Model.Model
+  readonly prepare?: ModelProxy.ServeOptions<never>["prepare"]
+  readonly maxBodyBytes?: number
+  /** Replaces or wraps the in-process fetch that reaches the handler. */
+  readonly fetch?: (handler: typeof globalThis.fetch) => typeof globalThis.fetch
+  readonly headers?: Readonly<Record<string, string>>
+}
+
+/**
+ * The real server Effect behind `HttpEffect.toWebHandler`, and the real client
+ * `FetchHttpClient` whose `fetch` calls that handler: Web `Request`s,
+ * `Response`s, streamed bodies and abort signals, with no socket. Both halves
+ * share one recording tracer, logger and metric registry.
+ */
+const harness = (options: HarnessOptions = {}) => {
+  const spans: Array<Tracer.NativeSpan> = []
+  const tracer = Tracer.make({
+    span(spanOptions) {
+      const span = new Tracer.NativeSpan(spanOptions)
+      spans.push(span)
+      return span
+    }
+  })
+  const logs: Array<StructuredLog> = []
+  const logger = Logger.make((logOptions) => {
+    logs.push(Logger.formatStructured.log(logOptions))
+  })
+  const registry: Metric.MetricRegistry = new Map()
+  const observed = Context.make(Tracer.Tracer, tracer).pipe(
+    Context.add(Logger.CurrentLoggers, new Set([logger])),
+    Context.add(Metric.MetricRegistry, registry)
+  )
+  const served: Array<ModelRequest> = []
+  const model = options.model ?? echo
+  const recording = Model.make({
+    ...(model.providerName === undefined ? {} : { providerName: model.providerName }),
+    stream: (received) => {
+      served.push(received)
+      return model.stream(received)
+    }
+  })
+  const handler = HttpEffect.toWebHandlerWith<Model.Model, HttpServerRequest.HttpServerRequest | Model.Model>(
+    observed.pipe(Context.add(Model.Model, recording))
+  )(
+    ModelProxy.serve({
+      prepare: options.prepare ?? hostPolicy,
+      ...(options.maxBodyBytes === undefined ? {} : { maxBodyBytes: options.maxBodyBytes })
+    })
+  )
+  const direct: typeof globalThis.fetch = (input, init) => handler(new Request(input, init))
+  const fetch = options.fetch?.(direct) ?? direct
+  const run = <A, E>(effect: Effect.Effect<A, E, Model.Model>): Promise<A> =>
+    Effect.runPromise(
+      effect.pipe(
+        Effect.provide(
+          ModelProxy.layerClient({ url, ...(options.headers === undefined ? {} : { headers: options.headers }) })
+        ),
+        Effect.provide(FetchHttpClient.layer),
+        Effect.provideService(FetchHttpClient.Fetch, fetch),
+        Effect.provideContext(observed)
+      )
+    )
+  const stream = (body: ModelRequest) =>
+    Stream.unwrap(Effect.gen(function*() {
+      const model = yield* Model.Model
+      return model.stream(body)
+    }))
+  /** Every event the client decoded, and the error that ended the stream, if one did. */
+  const call = async (body: ModelRequest = request()) => {
+    const events: Array<ModelEvent> = []
+    const exit = await run(
+      Effect.exit(Stream.runForEach(stream(body), (event) => Effect.sync(() => events.push(event))))
+    )
+    return { events, error: Exit.isFailure(exit) ? Cause.squash(exit.cause) as ModelError : undefined }
+  }
+  const metric = <State>(self: Metric.Metric<number, State>, attributes: Record<string, string>): State =>
+    Effect.runSync(
+      Metric.value(Metric.withAttributes(self, attributes)).pipe(Effect.provideService(Metric.MetricRegistry, registry))
+    )
+  /** The one log line a side writes when its request ends; the server's may land after the client returns. */
+  const logLine = async (side: "server" | "client", index = 0): Promise<StructuredLog> => {
+    const message = side === "server" ? "model.proxy.serve" : "model.proxy.stream"
+    for (let attempt = 0; attempt < 400; attempt++) {
+      const lines = logs.filter((line) => line.message === message)
+      if (lines.length > index) return lines[index]!
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    throw new Error(`no ${side} log line`)
+  }
+  const span = (name: string) => {
+    const found = spans.filter((candidate) => candidate.name === name)
+    expect(found).toHaveLength(1)
+    return found[0]!
+  }
+  return { spans, logs, registry, served, handler, run, stream, call, metric, logLine, span }
+}
+
+const post = (body: BodyInit | null, headers: Record<string, string> = {}): RequestInit & { duplex?: "half" } => ({
+  method: "POST",
+  body,
+  headers,
+  ...(body instanceof ReadableStream ? { duplex: "half" as const } : {})
+})
+
+const lines = async (response: Response): Promise<Array<unknown>> =>
+  (await response.text()).split("\n").filter((line) => line !== "").map((line) => JSON.parse(line))
+
+const ndjson = (...values: ReadonlyArray<unknown>) => values.map((value) => JSON.stringify(value) + "\n").join("")
+
+/** A response body re-cut into one-byte chunks, so every multibyte character is split. */
+const oneByteChunks = (fetch: typeof globalThis.fetch): typeof globalThis.fetch => async (input, init) => {
+  const response = await fetch(input, init)
+  const reader = response.body!.getReader()
+  let pending = new Uint8Array(0)
+  let offset = 0
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      while (offset >= pending.length) {
+        const next = await reader.read()
+        if (next.done) return controller.close()
+        pending = next.value
+        offset = 0
+      }
+      controller.enqueue(pending.slice(offset, offset + 1))
+      offset += 1
+    },
+    cancel: (reason) => reader.cancel(reason)
+  })
+  return new Response(body, { status: response.status, headers: response.headers })
+}
+
+/** A request body that yields `bytes` one byte per chunk, with no content-length. */
+const oneByteBody = (bytes: Uint8Array) => {
+  let index = 0
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (index < bytes.length) controller.enqueue(bytes.slice(index, ++index))
+      else controller.close()
+    }
+  })
+}
+
+/** A body that yields each string as its own chunk, then fails with an `Error` given last. */
+const chunks = (...parts: ReadonlyArray<string | Error>) => {
+  let index = 0
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const part = parts[index++]
+      if (part === undefined) controller.close()
+      else if (part instanceof Error) controller.error(part)
+      else controller.enqueue(encoder.encode(part))
+    }
+  })
+}
+
+const encodedRequest = (body: ModelRequest) => encoder.encode(JSON.stringify(Schema.encodeSync(ModelRequest)(body)))
+
+const everyKind: ReadonlyArray<ModelEvent> = [
+  { type: "thinking-start", id: "r", signature: "sig" },
+  { type: "thinking-delta", id: "r", text: "consider" },
+  { type: "thinking-end", id: "r" },
+  { type: "text-start", id: "t" },
+  { type: "text-delta", id: "t", text: "answer" },
+  { type: "text-end", id: "t" },
+  { type: "tool-call-start", id: "c", name: "search" },
+  { type: "tool-call-delta", id: "c", arguments: "{\"q\":" },
+  { type: "tool-call-end", id: "c", arguments: "{\"q\":1}" },
+  { type: "tool-result", id: "c", output: "found", isError: true },
+  {
+    type: "usage",
+    inputTokens: 10,
+    outputTokens: 4,
+    reasoningTokens: 1,
+    cachedInputTokens: 2,
+    cacheWriteTokens: 3,
+    totalTokens: 14,
+    costUsd: 0.25
+  },
+  { type: "retry", attempt: 1, code: "rate_limited", delayMillis: 250, elapsedMs: 40, httpStatus: 429 },
+  {
+    type: "settle",
+    stopReason: "tool-calls",
+    responseId: "resp-1",
+    servedTier: "default",
+    sessionId: "session-1",
+    itemIds: ["item-1"],
+    timing: {
+      startedAt: 1,
+      attempts: 2,
+      requestBytes: 3,
+      preparedMs: 4,
+      signedMs: 5,
+      sentMs: 6,
+      headersMs: 7,
+      firstEventMs: 8,
+      firstThinkingMs: 9,
+      firstOutputMs: 10,
+      lastOutputMs: 11,
+      completedMs: 12,
+      closedMs: 13,
+      failedTries: [{ sentMs: 1, failedMs: 2, code: "transport", httpStatus: 503 }]
+    }
+  }
+]
+
+describe("ModelProxy wire", () => {
+  it("round trips every ModelEvent kind with every field", async () => {
+    expect(new Set(everyKind.map((event) => event.type))).toEqual(new Set(Object.keys(ModelEvent.cases)))
+    const h = harness({ model: Model.make({ stream: () => Stream.fromIterable(everyKind) }) })
+
+    const { events, error } = await h.call()
+
+    expect(error).toBeUndefined()
+    expect(events).toEqual(everyKind)
+  })
+
+  it("streams NDJSON, one encoded event per line, ending with the end line", async () => {
+    const h = harness()
+
+    const response = await h.handler(new Request(url, post(encodedRequest(request("hi")))))
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toBe("application/x-ndjson")
+    expect(response.headers.get("cache-control")).toBe("no-store")
+    expect(response.headers.get(ModelProxy.requestIdHeader)).toMatch(/^[0-9a-f]{32}$/)
+    expect(await lines(response)).toEqual([
+      { type: "text-start", id: "t" },
+      { type: "text-delta", id: "t", text: "hi" },
+      { type: "text-end", id: "t" },
+      { type: "settle", stopReason: "stop" },
+      { type: "end" }
+    ])
+  })
+
+  it("hands the model the host's model, system prompt and parameters, and the caller's messages", async () => {
+    const h = harness()
+
+    await h.call(request("question"))
+
+    expect(h.served).toHaveLength(1)
+    const served = h.served[0]!
+    expect(served.modelId).toBe("host-model")
+    expect(served.system).toEqual([SystemPart.make({ text: "host system" })])
+    expect(served.params).toEqual(GenerationParams.make({ maxTokens: 256 }))
+    expect(served.messages).toEqual([Message.user("question")])
+  })
+
+  it("decodes multibyte text split across one-byte chunks in both directions", async () => {
+    const text = "héllo 世界 🎉 ✓"
+    const h = harness({ fetch: oneByteChunks })
+
+    const { events } = await h.call(request(text))
+    const raw = await h.handler(new Request(url, post(oneByteBody(encodedRequest(request(text))))))
+
+    expect(events).toContainEqual({ type: "text-delta", id: "t", text })
+    expect(await lines(raw)).toContainEqual({ type: "text-delta", id: "t", text })
+  })
+
+  it("keeps the order of many events", async () => {
+    const count = 3_000
+    const deltas = Array.from(
+      { length: count },
+      (_, index) => ModelEvent.TextDelta({ type: "text-delta", id: "t", text: `${index}` })
+    )
+    const h = harness({ model: Model.make({ stream: () => Stream.fromIterable(deltas) }) })
+
+    const { events, error } = await h.call()
+
+    expect(error).toBeUndefined()
+    expect(events.map((event) => event.type === "text-delta" ? Number(event.text) : -1)).toEqual(
+      Array.from({ length: count }, (_, index) => index)
+    )
+  })
+
+  it("keeps concurrent requests isolated", async () => {
+    const h = harness({
+      model: Model.make({
+        stream: (received) =>
+          Stream.fromEffect(Effect.sleep(`${received.messages.length * 3} millis`)).pipe(
+            Stream.flatMap(() => echo.stream(received))
+          )
+      })
+    })
+    const prompts = Array.from({ length: 8 }, (_, index) => `prompt-${index}`)
+
+    const results = await Promise.all(prompts.map((prompt) => h.call(request(prompt))))
+
+    expect(results.map(({ events }) => events.find((event) => event.type === "text-delta"))).toEqual(
+      prompts.map((text) => ({ type: "text-delta", id: "t", text }))
+    )
+    const ids = await Promise.all(prompts.map((_, index) => h.logLine("server", index)))
+    expect(new Set(ids.map((line) => line.annotations.requestId)).size).toBe(prompts.length)
+    expect(h.metric(ModelProxy.requests, { side: "server", outcome: "success", status: "200" }).count).toBe(8)
+    expect(h.metric(ModelProxy.requests, { side: "client", outcome: "success", status: "200" }).count).toBe(8)
+  })
+})
+
+describe("ModelProxy failures", () => {
+  it("turns a mid-stream provider failure into the typed ModelError on the client", async () => {
+    const providerFailure = new ModelError({
+      code: "rate_limited",
+      message: "provider body: account acct_123 is over its limit",
+      retryAfterMillis: 1200,
+      httpStatus: 429
+    })
+    const h = harness({
+      model: Model.make({
+        stream: () =>
+          Stream.make(ModelEvent.TextStart({ type: "text-start", id: "t" })).pipe(
+            Stream.concat(Stream.fail(providerFailure))
+          )
+      })
+    })
+
+    const { events, error } = await h.call()
+
+    expect(events).toEqual([{ type: "text-start", id: "t" }])
+    expect(error).toBeInstanceOf(ModelError)
+    expect(error?.code).toBe("rate_limited")
+    expect(error?.retryAfterMillis).toBe(1200)
+    expect(error?.message).toBe(FailureCopy.describe(new ModelError({ code: "rate_limited", message: "" })).headline)
+    expect(error?.message).not.toContain("acct_123")
+    const server = await h.logLine("server")
+    expect(error?.requestId).toBe(server.annotations.requestId)
+    expect(server.level).toBe("ERROR")
+    expect(server.annotations).toMatchObject({ outcome: "failed", status: 200, errorCode: "rate_limited" })
+    expect(server.annotations.errorTag).toBe("flows/model/ModelError")
+  })
+
+  it("writes the failure as the last line, after the events already sent", async () => {
+    const h = harness({
+      model: Model.make({
+        stream: () =>
+          Stream.make(ModelEvent.TextStart({ type: "text-start", id: "t" })).pipe(
+            Stream.concat(Stream.fail(new ModelError({ code: "context_overflow", message: "too long" })))
+          )
+      })
+    })
+
+    const response = await h.handler(new Request(url, post(encodedRequest(request()))))
+
+    expect(await lines(response)).toEqual([
+      { type: "text-start", id: "t" },
+      {
+        type: "error",
+        code: "context_overflow",
+        message: FailureCopy.describe(new ModelError({ code: "context_overflow", message: "" })).headline
+      }
+    ])
+  })
+
+  it.each(
+    [
+      [
+        "a permission failure",
+        Stream.fail(new GrantStoreError({ code: "store_closed" })),
+        "@smthrs/capability/GrantStoreError"
+      ],
+      ["a defect", Stream.die(new Error("boom")), "defect"],
+      ["a failure without a tag", Stream.fail("raw" as never), "unknown"]
+    ] as const
+  )("reports %s as unknown", async (_, failure, tag) => {
+    const h = harness({ model: Model.make({ stream: () => failure }) })
+
+    const { error } = await h.call()
+
+    expect(error?.code).toBe("unknown")
+    expect(error?.retryAfterMillis).toBeUndefined()
+    const server = await h.logLine("server")
+    expect(server.annotations).toMatchObject({ outcome: "failed", errorCode: "unknown", errorTag: tag })
+  })
+
+  it("ends the body without a terminal line when the model stream is interrupted", async () => {
+    const h = harness({ model: Model.make({ stream: () => Stream.failCause(Cause.interrupt()) }) })
+
+    const { error } = await h.call()
+
+    expect(error?.code).toBe("transport")
+    expect((await h.logLine("server")).annotations.outcome).toBe("interrupted")
+    expect((await h.logLine("client")).annotations).toMatchObject({ outcome: "failed", errorCode: "transport" })
+  })
+
+  it("refuses with the Refusal's status, code and message", async () => {
+    const h = harness({
+      prepare: () => Effect.fail(new ModelProxy.Refusal({ status: 429, message: "Slow down.", code: "rate_limited" }))
+    })
+
+    const { events, error } = await h.call()
+
+    expect(events).toEqual([])
+    expect(error?.code).toBe("rate_limited")
+    expect(error?.httpStatus).toBe(429)
+    expect(error?.message).toBe("Slow down.")
+    expect(h.served).toEqual([])
+    const server = await h.logLine("server")
+    expect(server.level).toBe("WARN")
+    expect(server.annotations).toMatchObject({ outcome: "refused", status: 429, errorCode: "rate_limited" })
+    expect(error?.requestId).toBe(server.annotations.requestId)
+    expect((await h.logLine("client")).annotations).toMatchObject({ outcome: "refused", status: 429 })
+  })
+
+  it("lets a Refusal without a code take its status's code", async () => {
+    const h = harness({ prepare: () => Effect.fail(new ModelProxy.Refusal({ status: 403, message: "Sign in." })) })
+
+    const { error } = await h.call()
+
+    expect(error?.code).toBe("authentication")
+    expect(error?.message).toBe("Sign in.")
+  })
+
+  it("rejects a Refusal status outside 400 to 599", () => {
+    expect(() => new ModelProxy.Refusal({ status: 200, message: "fine" })).toThrow()
+    expect(() => new ModelProxy.Refusal({ status: 600, message: "fine" })).toThrow()
+  })
+
+  it("answers 500 when prepare dies, without its message", async () => {
+    const h = harness({ prepare: () => Effect.die(new Error("prepare broke on secret-config")) })
+
+    const response = await h.handler(new Request(url, post(encodedRequest(request()))))
+
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({
+      code: "unknown",
+      message: "The model host failed.",
+      requestId: response.headers.get(ModelProxy.requestIdHeader)
+    })
+    const server = await h.logLine("server")
+    expect(server.level).toBe("ERROR")
+    expect(server.annotations).toMatchObject({ outcome: "failed", status: 500, errorTag: "defect" })
+  })
+
+  it.each(
+    [
+      ["invalid JSON", encoder.encode("{\"modelId\":")],
+      ["JSON that is not a ModelRequest", encoder.encode(JSON.stringify({ modelId: 1 }))],
+      ["invalid UTF-8", new Uint8Array([0x7b, 0xff, 0x7d])],
+      ["no body", null]
+    ] as const
+  )("answers 400 to %s", async (_, body) => {
+    const h = harness()
+
+    const response = await h.handler(new Request(url, post(body)))
+
+    expect(response.status).toBe(400)
+    const requestId = response.headers.get(ModelProxy.requestIdHeader)
+    expect(await response.json()).toEqual({ code: "invalid_request", message: "Send a JSON ModelRequest.", requestId })
+    const server = await h.logLine("server")
+    expect(server.level).toBe("WARN")
+    expect(server.annotations).toMatchObject({ outcome: "invalid", status: 400, errorCode: "invalid_request" })
+    expect(h.served).toEqual([])
+  })
+
+  it("answers 405 to a method other than POST", async () => {
+    const h = harness()
+
+    const response = await h.handler(new Request(url))
+
+    expect(response.status).toBe(405)
+    expect(response.headers.get("allow")).toBe("POST")
+    expect((await response.json()).code).toBe("invalid_request")
+    const server = await h.logLine("server")
+    expect(server.annotations).not.toHaveProperty("requestBytes")
+    expect(server.annotations).not.toHaveProperty("modelId")
+  })
+
+  it("answers 413 to a declared oversized body without reading it", async () => {
+    let pulled = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1024
+        controller.enqueue(new Uint8Array(1024))
+      }
+    })
+    const h = harness({ maxBodyBytes: 4096 })
+
+    const response = await h.handler(new Request(url, post(body, { "content-length": "1000000" })))
+
+    expect(response.status).toBe(413)
+    expect(await response.json()).toMatchObject({ code: "invalid_request", message: "Send at most 4096 bytes." })
+    expect(pulled).toBeLessThanOrEqual(1024)
+  })
+
+  it("answers 413 to a chunked oversized body and stops reading it", async () => {
+    let pulled = 0
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1024
+        controller.enqueue(new Uint8Array(1024).fill(0x20))
+      },
+      cancel() {
+        cancelled = true
+      }
+    })
+    const h = harness({ maxBodyBytes: 10_000 })
+
+    const response = await h.handler(new Request(url, post(body)))
+
+    expect(response.status).toBe(413)
+    const settled = pulled
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(pulled).toBe(settled)
+    expect(pulled).toBeLessThan(10_000 + 4 * 1024)
+    expect(cancelled).toBe(true)
+    expect((await h.logLine("server")).annotations).toMatchObject({ outcome: "invalid", status: 413 })
+  })
+
+  it("accepts a body exactly at the limit", async () => {
+    const bytes = encodedRequest(request())
+    const h = harness({ maxBodyBytes: bytes.length })
+
+    const response = await h.handler(new Request(url, post(bytes)))
+
+    expect(response.status).toBe(200)
+    expect((await lines(response)).at(-1)).toEqual({ type: "end" })
+    expect((await h.logLine("server")).annotations.requestBytes).toBe(bytes.length)
+  })
+})
+
+describe("ModelProxy policy", () => {
+  const refusal = (body: ModelRequest) => Effect.runPromise(Effect.flip(hostPolicy(body)))
+
+  it.each(
+    [
+      [
+        "tools",
+        request("q", { tools: [ToolDefinition.make({ name: "t", description: "d", parameters: {} })] }),
+        "Send no tools."
+      ],
+      ["provider-run tools", request("q", { serverTools: [{ type: "web_search" }] }), "Send no tools."],
+      ["no messages", request("q", { messages: [] }), "Send at least one message."],
+      [
+        "more than maxMessages",
+        request("q", { messages: Array.from({ length: 5 }, () => Message.user("q")) }),
+        "Send at most 4 messages."
+      ]
+    ] as const
+  )("refuses %s with 400", async (_, body, message) => {
+    expect(await refusal(body)).toMatchObject({ status: 400, code: "invalid_request", message })
+  })
+
+  it("keeps only the messages and drops every other caller field", async () => {
+    const body = request("q", { cacheKey: "k", cacheBoundary: 1, toolChoice: "none", serverTools: [] })
+
+    const prepared = await Effect.runPromise(hostPolicy(body))
+
+    expect(prepared).toEqual(
+      ModelRequest.make({
+        modelId: "host-model",
+        system: [SystemPart.make({ text: "host system" })],
+        messages: body.messages,
+        tools: [],
+        params: GenerationParams.make({ maxTokens: 256 })
+      })
+    )
+  })
+
+  it("defaults to no system prompt, provider parameters and any number of messages", async () => {
+    const body = request("q", { messages: Array.from({ length: 50 }, () => Message.user("q")) })
+
+    const prepared = await Effect.runPromise(ModelProxy.policy({ modelId: "m" })(body))
+
+    expect(prepared.system).toEqual([])
+    expect(prepared.params).toEqual(GenerationParams.make())
+    expect(prepared.messages).toHaveLength(50)
+  })
+
+  it("refuses tools over HTTP with 400 and the policy's message", async () => {
+    const h = harness()
+
+    const { error } = await h.call(
+      request("q", { tools: [ToolDefinition.make({ name: "t", description: "d", parameters: {} })] })
+    )
+
+    expect(error).toMatchObject({ code: "invalid_request", httpStatus: 400, message: "Send no tools." })
+  })
+})
+
+describe("ModelProxy client", () => {
+  const answering = (body: BodyInit | null, init: ResponseInit = {}) =>
+    harness({ fetch: () => () => Promise.resolve(new Response(body, init)) })
+
+  it("fails a body that ends before its terminal line as transport", async () => {
+    const h = answering(ndjson({ type: "text-start", id: "t" }))
+
+    const { events, error } = await h.call()
+
+    expect(events).toEqual([{ type: "text-start", id: "t" }])
+    expect(error).toMatchObject({ code: "transport", message: "The model stream ended before it finished." })
+    expect(error?.requestId).toMatch(/^[0-9a-f]{32}$/)
+  })
+
+  it("fails a body cut inside a line as transport, not as an unreadable line", async () => {
+    const h = answering(ndjson({ type: "text-start", id: "t" }) + "{\"type\":\"text-de")
+
+    const { events, error } = await h.call()
+
+    expect(events).toEqual([{ type: "text-start", id: "t" }])
+    expect(error).toMatchObject({ code: "transport", message: "The model stream ended before it finished." })
+  })
+
+  it("fails a body that breaks as transport", async () => {
+    const h = answering(chunks(ndjson({ type: "text-start", id: "t" }), new Error("connection reset")))
+
+    const { events, error } = await h.call()
+
+    expect(events).toEqual([{ type: "text-start", id: "t" }])
+    expect(error).toMatchObject({ code: "transport", message: "The model stream broke." })
+  })
+
+  it("fails an unreadable line as invalid_provider_output", async () => {
+    const h = answering(chunks(ndjson({ type: "text-start", id: "t" }), "not json\n", ndjson({ type: "end" })))
+
+    const { events, error } = await h.call()
+
+    expect(events).toEqual([{ type: "text-start", id: "t" }])
+    expect(error).toMatchObject({ code: "invalid_provider_output" })
+  })
+
+  it("stops at the end line and ignores blank lines", async () => {
+    const h = answering("\n" + ndjson({ type: "text-start", id: "t" }, { type: "end" }, { type: "text-end", id: "t" }))
+
+    const { events, error } = await h.call()
+
+    expect(error).toBeUndefined()
+    expect(events).toEqual([{ type: "text-start", id: "t" }])
+  })
+
+  it.each(
+    [
+      [
+        "the host's error body",
+        JSON.stringify({ code: "quota_exceeded", message: "Your plan is out of requests.", requestId: "r" }),
+        402,
+        { code: "quota_exceeded", message: "Your plan is out of requests.", httpStatus: 402 }
+      ],
+      [
+        "a body that is not the host's",
+        "<html>Bad gateway</html>",
+        502,
+        { code: "provider_internal", message: "The model host answered HTTP 502.", httpStatus: 502 }
+      ],
+      [
+        "an error body over 16 KiB",
+        JSON.stringify({ code: "invalid_request", message: "x".repeat(20_000), requestId: "r" }),
+        429,
+        { code: "rate_limited", message: "The model host answered HTTP 429.", httpStatus: 429 }
+      ]
+    ] as const
+  )("fails an error status from %s", async (_, body, status, expected) => {
+    const h = answering(body, { status })
+
+    const { error } = await h.call()
+
+    expect(error).toMatchObject(expected)
+    const client = await h.logLine("client")
+    expect(client.annotations).toMatchObject({ outcome: status < 500 ? "refused" : "failed", status })
+    expect(client.level).toBe(status < 500 ? "WARN" : "ERROR")
+  })
+
+  it("fails an unreachable host as transport", async () => {
+    const h = harness({ fetch: () => () => Promise.reject(new TypeError("fetch failed")) })
+
+    const { error } = await h.call()
+
+    expect(error).toMatchObject({ code: "transport", message: "The model host could not be reached." })
+    const client = await h.logLine("client")
+    expect(client.annotations).not.toHaveProperty("status")
+    expect(h.span("model.proxy.stream").attributes.has("http.response.status_code")).toBe(false)
+    expect(h.metric(ModelProxy.requests, { side: "client", outcome: "failed", status: "0" }).count).toBe(1)
+  })
+
+  it("fails a request it cannot encode as invalid_request without sending it", async () => {
+    let sent = 0
+    const h = harness({ fetch: (handler) => (input, init) => (sent++, handler(input, init)) })
+
+    const { error } = await h.call({ ...request(), messages: "not messages" } as never)
+
+    expect(error).toMatchObject({ code: "invalid_request", message: "The request could not be encoded." })
+    expect(sent).toBe(0)
+  })
+
+  it("sends its headers, the request id, the NDJSON accept type and the trace context", async () => {
+    const seen: Array<Headers> = []
+    const h = harness({
+      headers: { "x-host-token": "token-value" },
+      fetch: (handler) => (input, init) => {
+        seen.push(new Headers(init?.headers))
+        return handler(input, init)
+      }
+    })
+
+    await h.call()
+
+    const headers = seen[0]!
+    expect(headers.get("x-host-token")).toBe("token-value")
+    expect(headers.get("accept")).toBe("application/x-ndjson")
+    expect(headers.get(ModelProxy.requestIdHeader)).toBe((await h.logLine("client")).annotations.requestId)
+    expect(headers.get("traceparent")).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/)
+  })
+
+  it("aborts the request when the reader stops early, interrupting the model call", async () => {
+    let serverExit: (exit: Exit.Exit<unknown, unknown>) => void = () => undefined
+    const ended = new Promise<Exit.Exit<unknown, unknown>>((resolve) => (serverExit = resolve))
+    const h = harness({
+      model: Model.make({
+        stream: () =>
+          Stream.make(ModelEvent.TextStart({ type: "text-start", id: "t" })).pipe(
+            Stream.concat(Stream.never),
+            Stream.onExit((exit) => Effect.sync(() => serverExit(exit)))
+          )
+      })
+    })
+
+    const first = await h.run(Stream.runCollect(Stream.take(h.stream(request()), 1)))
+
+    expect(first).toEqual([{ type: "text-start", id: "t" }])
+    const exit = await ended
+    expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+    expect((await h.logLine("server")).annotations.outcome).toBe("interrupted")
+    expect((await h.logLine("client")).annotations.outcome).toBe("interrupted")
+  })
+
+  it("aborts the request when its fiber is interrupted", async () => {
+    let serverExit: (exit: Exit.Exit<unknown, unknown>) => void = () => undefined
+    const ended = new Promise<Exit.Exit<unknown, unknown>>((resolve) => (serverExit = resolve))
+    let firstEvent: () => void = () => undefined
+    const started = new Promise<void>((resolve) => (firstEvent = resolve))
+    const h = harness({
+      model: Model.make({
+        stream: () =>
+          Stream.make(ModelEvent.TextStart({ type: "text-start", id: "t" })).pipe(
+            Stream.concat(Stream.never),
+            Stream.onExit((exit) => Effect.sync(() => serverExit(exit)))
+          )
+      })
+    })
+
+    await h.run(Effect.gen(function*() {
+      const fiber = yield* Effect.forkChild(
+        Stream.runForEach(h.stream(request()), () => Effect.sync(firstEvent))
+      )
+      yield* Effect.promise(() => started)
+      yield* Fiber.interrupt(fiber)
+    }))
+
+    const exit = await ended
+    expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+    expect((await h.logLine("client")).level).toBe("INFO")
+    expect((await h.logLine("client")).annotations.outcome).toBe("interrupted")
+    expect((await h.logLine("server")).annotations.outcome).toBe("interrupted")
+  })
+
+  it("records an interruption while the server still reads the body", async () => {
+    const logs: Array<StructuredLog> = []
+    const logger = Logger.make((options) => {
+      logs.push(Logger.formatStructured.log(options))
+    })
+    let pulls = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull: () => {
+        pulls += 1
+        return new Promise(() => undefined)
+      }
+    })
+    const incoming = HttpServerRequest.fromWeb(new Request(url, post(body)))
+
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const fiber = yield* Effect.forkChild(
+          ModelProxy.serve({ prepare: hostPolicy }).pipe(
+            Effect.provideService(HttpServerRequest.HttpServerRequest, incoming),
+            Effect.provideService(Model.Model, echo)
+          )
+        )
+        while (pulls === 0) yield* Effect.sleep("1 millis")
+        yield* Fiber.interrupt(fiber)
+      }).pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger])))
+    )
+
+    expect(logs.map((line) => [line.message, line.level, line.annotations.outcome])).toEqual([
+      ["model.proxy.serve", "INFO", "interrupted"]
+    ])
+  })
+})
+
+describe("ModelProxy request ids", () => {
+  it.each(
+    [
+      ["keeps a well-formed incoming id", { [ModelProxy.requestIdHeader]: "answer:42.a_b-c" }, "answer:42.a_b-c"],
+      ["replaces a malformed one", { [ModelProxy.requestIdHeader]: "has spaces/and slashes" }, undefined],
+      ["mints one when absent", {}, undefined]
+    ] as const
+  )("%s", async (_, headers, expected) => {
+    const h = harness()
+
+    const response = await h.handler(new Request(url, post(encodedRequest(request()), headers)))
+    await response.text()
+
+    const id = response.headers.get(ModelProxy.requestIdHeader)
+    if (expected === undefined) expect(id).toMatch(/^[0-9a-f]{32}$/)
+    else expect(id).toBe(expected)
+    expect((await h.logLine("server")).annotations.requestId).toBe(id)
+  })
+})
+
+describe("ModelProxy observability", () => {
+  it("joins the client, HTTP, server and model spans in one trace under one request id", async () => {
+    const h = harness({ model: Model.make({ providerName: "anthropic", stream: echo.stream }) })
+
+    await h.call()
+    await h.logLine("server")
+
+    const client = h.span("model.proxy.stream")
+    const serve = h.span("model.proxy.serve")
+    const chat = h.span("chat host-model")
+    expect(new Set(h.spans.map((span) => span.traceId))).toEqual(new Set([client.traceId]))
+    const parentOf = (span: Tracer.Span) => span.parent._tag === "Some" ? span.parent.value.spanId : undefined
+    const byId = new Map(h.spans.map((span) => [span.spanId, span]))
+    // client -> HTTP client span -> HTTP server span -> serve -> chat
+    expect(parentOf(chat)).toBe(serve.spanId)
+    const httpServer = byId.get(parentOf(serve)!)!
+    expect(httpServer.kind).toBe("server")
+    const httpClient = byId.get(parentOf(httpServer)!)!
+    expect(httpClient.kind).toBe("client")
+    expect(parentOf(httpClient)).toBe(client.spanId)
+    expect(serve.kind).toBe("internal")
+
+    const requestId = client.attributes.get("smithers.model.proxy.request_id")
+    expect(requestId).toMatch(/^[0-9a-f]{32}$/)
+    expect(Object.fromEntries(serve.attributes)).toMatchObject({
+      "smithers.model.proxy.request_id": requestId,
+      "gen_ai.request.model": "host-model",
+      "gen_ai.provider.name": "anthropic",
+      "http.response.status_code": 200,
+      "smithers.model.proxy.outcome": "success",
+      "smithers.model.proxy.events": 4
+    })
+    expect(Object.fromEntries(client.attributes)).toMatchObject({
+      "smithers.model.proxy.request_id": requestId,
+      "gen_ai.request.model": "browser-choice",
+      "http.response.status_code": 200,
+      "smithers.model.proxy.outcome": "success",
+      "smithers.model.proxy.events": 4
+    })
+    for (const span of [serve, client]) {
+      const durationMs = span.attributes.get("smithers.model.proxy.duration_ms") as number
+      const firstEventMs = span.attributes.get("smithers.model.proxy.first_event_ms") as number
+      expect(firstEventMs).toBeGreaterThanOrEqual(0)
+      expect(durationMs).toBeGreaterThanOrEqual(firstEventMs)
+      expect(span.status._tag).toBe("Ended")
+    }
+    expect(chat.attributes.get("gen_ai.provider.name")).toBe("anthropic")
+    const server = await h.logLine("server")
+    expect(server.annotations).toMatchObject({ requestId, traceId: client.traceId, provider: "anthropic" })
+    expect((await h.logLine("client")).annotations).toMatchObject({ requestId, traceId: client.traceId })
+  })
+
+  it("ends a failed request's spans with the code alone", async () => {
+    const h = harness({
+      model: Model.make({ stream: () => Stream.fail(new ModelError({ code: "authentication", message: "key sk-x" })) })
+    })
+
+    await h.call()
+    await h.logLine("server")
+
+    for (const name of ["model.proxy.serve", "model.proxy.stream"]) {
+      const span = h.span(name)
+      expect(span.attributes.get("error.type")).toBe("authentication")
+      expect(span.status._tag === "Ended" && span.status.exit._tag).toBe("Failure")
+      const exit = span.status._tag === "Ended" ? span.status.exit : undefined
+      const error = exit !== undefined && Exit.isFailure(exit) ? Cause.squash(exit.cause) as ModelError : undefined
+      expect(error?.message).not.toContain("sk-x")
+    }
+  })
+
+  it("records request, duration, first-event and token metrics", async () => {
+    const h = harness({
+      model: Model.make({
+        stream: () =>
+          Stream.make<ReadonlyArray<ModelEvent>>(
+            { type: "usage", inputTokens: 5, outputTokens: 1 },
+            { type: "retry", attempt: 1, code: "transport", delayMillis: 0 },
+            { type: "usage", inputTokens: 7 },
+            { type: "text-delta", id: "t", text: "ok" },
+            { type: "usage", outputTokens: 3 },
+            { type: "settle", stopReason: "stop" }
+          )
+      })
+    })
+
+    await h.call()
+    await h.logLine("server")
+
+    for (const side of ["server", "client"]) {
+      expect(h.metric(ModelProxy.requests, { side, outcome: "success", status: "200" }).count).toBe(1)
+      expect(h.metric(ModelProxy.duration, { side, outcome: "success" }).count).toBe(1)
+      expect(h.metric(ModelProxy.firstEvent, { side }).count).toBe(1)
+    }
+    expect(h.metric(ModelProxy.tokens, { type: "input", model: "host-model" }).count).toBe(7)
+    expect(h.metric(ModelProxy.tokens, { type: "output", model: "host-model" }).count).toBe(3)
+    expect(h.metric(ModelProxy.tokens, { type: "input", model: "browser-choice" }).count).toBe(0)
+    expect((await h.logLine("server")).annotations).toMatchObject({ inputTokens: 7, outputTokens: 3 })
+  })
+
+  it("records no first event and no tokens for a request that produced none", async () => {
+    const h = harness({ prepare: () => Effect.fail(new ModelProxy.Refusal({ status: 401, message: "Sign in." })) })
+
+    await h.call()
+    const server = await h.logLine("server")
+
+    expect(h.metric(ModelProxy.requests, { side: "server", outcome: "refused", status: "401" }).count).toBe(1)
+    expect(h.metric(ModelProxy.duration, { side: "server", outcome: "refused" }).count).toBe(1)
+    expect(h.metric(ModelProxy.firstEvent, { side: "server" }).count).toBe(0)
+    expect(server.annotations).not.toHaveProperty("firstEventMs")
+    expect(server.annotations).not.toHaveProperty("inputTokens")
+    expect(h.span("model.proxy.serve").attributes.has("smithers.model.proxy.first_event_ms")).toBe(false)
+  })
+
+  it("logs one line per request on each side, at the level its outcome warrants", async () => {
+    const outcomes = [
+      ["success", echo, "INFO"],
+      [
+        "failed",
+        Model.make({ stream: () => Stream.fail(new ModelError({ code: "transport", message: "x" })) }),
+        "ERROR"
+      ]
+    ] as const
+    for (const [outcome, model, level] of outcomes) {
+      const h = harness({ model })
+      await h.call()
+      const server = await h.logLine("server")
+      const client = await h.logLine("client")
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      expect(h.logs.filter((line) => line.message === "model.proxy.serve")).toHaveLength(1)
+      expect(h.logs.filter((line) => line.message === "model.proxy.stream")).toHaveLength(1)
+      expect([server.level, client.level]).toEqual([level, level])
+      expect(server.annotations).toMatchObject({ side: "server", outcome, status: 200, modelId: "host-model" })
+      expect(client.annotations).toMatchObject({ side: "client", outcome, status: 200, modelId: "browser-choice" })
+      for (const line of [server, client]) {
+        expect(Object.keys(line.annotations).sort()).toEqual(
+          expect.arrayContaining(["durationMs", "events", "traceId"])
+        )
+      }
+    }
+  })
+
+  it("keeps prompt, response and provider text out of every log line and span attribute", async () => {
+    const sentinel = "SENTINEL-7f3a9c"
+    const h = harness({
+      model: Model.make({
+        stream: (received) =>
+          echo.stream(received).pipe(
+            Stream.take(2),
+            Stream.concat(Stream.fail(new ModelError({ code: "invalid_request", message: `echoed ${sentinel}` })))
+          )
+      })
+    })
+    const refused = harness({
+      prepare: () => Effect.fail(new ModelProxy.Refusal({ status: 400, message: "Shorter, please." }))
+    })
+
+    const { events, error } = await h.call(request(`tell me about ${sentinel}`))
+    await refused.call(request(`tell me about ${sentinel}`))
+    await h.logLine("server")
+    await refused.logLine("server")
+
+    expect(JSON.stringify(events)).toContain(sentinel)
+    expect(error?.message).not.toContain(sentinel)
+    for (const { logs, spans } of [h, refused]) {
+      expect(logs.length).toBeGreaterThan(0)
+      expect(JSON.stringify(logs)).not.toContain(sentinel)
+      for (const span of spans) {
+        expect(JSON.stringify([...span.attributes])).not.toContain(sentinel)
+        expect(JSON.stringify(span.events)).not.toContain(sentinel)
+      }
+    }
+  })
+
+  it("parents the serve span on incoming trace headers when no server span exists", async () => {
+    const spans: Array<Tracer.NativeSpan> = []
+    const tracer = Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      }
+    })
+    const traceId = "0af7651916cd43dd8448eb211c80319c"
+    const parentId = "b7ad6b7169203331"
+    const incoming = HttpServerRequest.fromWeb(
+      new Request(url, post(encodedRequest(request()), { traceparent: `00-${traceId}-${parentId}-01` }))
+    )
+
+    const response = await Effect.runPromise(
+      ModelProxy.serve({ prepare: hostPolicy }).pipe(
+        Effect.provideService(HttpServerRequest.HttpServerRequest, incoming),
+        Effect.provideService(Model.Model, echo),
+        Effect.provideService(Tracer.Tracer, tracer),
+        Effect.provideService(Logger.CurrentLoggers, new Set())
+      )
+    )
+    const body = await HttpServerResponse.toWeb(response).text()
+
+    expect(body.trim().split("\n").at(-1)).toBe("{\"type\":\"end\"}")
+    const serve = spans.find((span) => span.name === "model.proxy.serve")!
+    expect(serve.kind).toBe("server")
+    expect(serve.traceId).toBe(traceId)
+    expect(serve.parent._tag === "Some" && serve.parent.value.spanId).toBe(parentId)
+    expect(spans.find((span) => span.name === "chat host-model")?.parent).toMatchObject({
+      _tag: "Some",
+      value: { spanId: serve.spanId }
+    })
+  })
+})

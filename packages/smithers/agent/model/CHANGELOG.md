@@ -37,6 +37,16 @@
 
 ### Added
 
+- `ModelProxy` serves a `Model` over HTTP and reads one as a `Model`.
+  `ModelProxy.serve` is an `effect/http` handler for Cloudflare Workers, Node
+  and Bun: it reads a `ModelRequest`, runs the host's required `prepare` hook
+  (`ModelProxy.policy` keeps only the caller's messages), and streams NDJSON
+  `ModelEvent` lines ending in an end or error line. `ModelProxy.layerClient`
+  provides `Model` over any Effect `HttpClient` and fails every stream with a
+  typed `ModelError`. Both record a span, request, duration, first-event and
+  token metrics, and one log line per request under one request id and trace,
+  with no prompt, response or provider text. See
+  `docs/guides/proxy-a-model.md`.
 - The `settle` event can say where a call's time went. `ModelEvent.Settle`
   gains optional `timing` and `servedTier`. `ModelEvent.Timing` holds
   `startedAt` (epoch milliseconds) and whole milliseconds from that start:
