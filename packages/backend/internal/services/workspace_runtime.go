@@ -420,14 +420,13 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Conte
 	if row.Status == "releasing" {
 		return row, pkgerrors.Conflict("branch is releasing")
 	}
-	if row.Status == "running" && row.ProvisioningStage == db.AgentBoxUnreapedStage {
-		// Nothing is minted beside a process the last run left (plue#866).
-		cleaned, err := s.cleanUnreapedAgentBoxLocked(ctx, row)
-		if err != nil {
-			return row, err
-		}
-		row = cleaned
+	// A release on another replica finishes before this start mints anything,
+	// and nothing is minted beside a process the last run left (plue#866).
+	admitted, admitErr := s.admitAgentBoxJoinLocked(ctx, row)
+	if admitErr != nil {
+		return row, admitErr
 	}
+	row = admitted
 	if retiredAgentBox(row) {
 		// The idle cap deleted this box's guest. Its next start builds a new
 		// one from the recorded head, as a create, so it needs no wake.
@@ -721,6 +720,10 @@ func (s *WorkspaceService) deleteRuntimeWorkspaceLocked(ctx context.Context, row
 		return err
 	}
 	if err := s.runtime.DeleteWorkspace(operationCtx, row.ID); err != nil && !errors.Is(err, workspaceapi.ErrWorkspaceNotFound) {
+		if errors.Is(err, workspaceapi.ErrGuestGone) {
+			// A delete scoped to a guest another one replaced reached nothing.
+			return err
+		}
 		return runtimeOperationError("delete workspace runtime", err)
 	}
 	return nil
