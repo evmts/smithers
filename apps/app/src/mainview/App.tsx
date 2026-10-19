@@ -2,10 +2,13 @@ import { isOpenPull } from "./cards/GithubParts"
 import { PullViews } from "./repository/PullViews"
 import { IssueViews, matchesIssueReadKey } from "./repository/IssueViews"
 import { guestAdmission, RepoFrame } from "./repository/RepoFrame"
+import { RepositoryBranches } from "./repository/RepositoryBranches"
+import { RepositoryCommit } from "./repository/RepositoryCommit"
+import { RepositoryCommits } from "./repository/RepositoryCommits"
+import { subscribe as subscribeRepositoryRoute, getSnapshot as repositoryRouteSnapshot } from "./RepositoryRouter"
 import { CodeHome } from "./repository/CodeHome"
 import { latestCommitKey, readmeReadKey, repositoryLatestCommits, repositoryReadmeReads } from "./repository/RepositoryCodeRead"
 import { RepositoryCodeView } from "./repository/RepositoryCodeView"
-import { pathTarget as codePathTarget } from "./RepoLink"
 import { rememberComposerFocus, restoreComposerFocus } from "./runtime/ComposerFocus"
 import { useSharedConversation } from "./state/useSharedConversation"
 import { useTodoRole } from "./cards/TodoCard"
@@ -29,7 +32,7 @@ SmithersUiStyles
 } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import type { ReactNode, PointerEvent as ReactPointerEvent } from "react"
-import { useMemo,useRef,useState } from "react"
+import { useMemo,useRef,useState,useSyncExternalStore } from "react"
 import { controllerCardActions as cardActions } from "./cards/controllerCardActions"
 import { LoginScreen } from "./cards/LoginScreen"
 import { CardView } from "./ChatCards"
@@ -263,8 +266,17 @@ function AppContent() {
   // pending/failed request, or reject a repository added since this build.
   const bootEntry = session.repositoryEntry?.repo.toLowerCase() === bootRepository?.toLowerCase()
     ? session.repositoryEntry : undefined
-  const codeTarget = typeof window === "undefined" ? null : codePathTarget(window.location.pathname)
+  const codeTarget = useSyncExternalStore(subscribeRepositoryRoute, repositoryRouteSnapshot, () => null)
+  const branchesRoute = codeTarget?.subject?.kind === "branches"
+  const commitRoute = codeTarget?.subject?.kind === "commit"
+  const commitsRoute = codeTarget?.subject?.kind === "commits"
   const codeRoute = codeTarget?.subject?.kind === "tree" || codeTarget?.subject?.kind === "blob"
+  const loadHistoryRefs = useMemo(() => async () => {
+    const repo = codeTarget!.repo
+    await controller.repositoryBranches.load(repo)
+    const branches = controller.repositoryBranches.rows.get(repo)
+    return branches?.state === "ready" ? { names: branches.names } : { error: "Reference unavailable" }
+  }, [controller, codeTarget?.repo])
   const codeBranches = codeBranchRows.find(row => row.id.toLowerCase() === codeTarget?.repo.toLowerCase())
   const codeDefaultRef = repositoryRows.find(row => row.id.toLowerCase() === codeTarget?.repo.toLowerCase())?.head?.bookmark
   const codeRefs = [...new Set([...(codeBranches?.names ?? []), ...(codeDefaultRef ? [codeDefaultRef] : [])])]
