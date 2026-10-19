@@ -126,6 +126,30 @@ func outOfPoolConn(t *testing.T, databaseURL string) *pgx.Conn {
 	return conn
 }
 
+// workspace reads one workspace row from OUTSIDE the pool under test. A
+// claim holds no connection across its work (#4294), so a pool drained during
+// that work stays drained after the claim refuses, and a read that asked it
+// for a connection would wait on the drain it is meant to observe.
+func (o *corePoolObserver) workspace(t *testing.T, id string) db.Workspace {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), corePoolObserveBound)
+	defer cancel()
+	row, err := db.New(o.conn).GetWorkspace(ctx, id)
+	require.NoError(t, err)
+	return row
+}
+
+// provisioningBacklog lists the reconciler's backlog from OUTSIDE the pool
+// under test, for the same reason.
+func (o *corePoolObserver) provisioningBacklog(t *testing.T) []db.ListWorkspaceProvisioningRecoveryRow {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), corePoolObserveBound)
+	defer cancel()
+	rows, err := db.New(o.conn).ListWorkspaceProvisioningRecovery(ctx)
+	require.NoError(t, err)
+	return rows
+}
+
 // holdWorkspaceRowLock takes the real row lock a concurrent writer holds on
 // one workspace, from OUTSIDE the pool under test, and returns the release.
 // The claim's fenced receipt write is an UPDATE on that row, so it acquires a
@@ -1119,7 +1143,7 @@ func starvedProductReconciler(t *testing.T, pool *pgxpool.Pool, runtime workspac
 // untouched for the next tick — which, once the pool recovers, records the
 // real fenced receipt.
 func TestRetainedGuestStopReleasesItsClaimWhenTheCallbackReadStarves(t *testing.T) {
-	pool, _ := shippedCorePool(t)
+	pool, observer := shippedCorePool(t)
 	listed := realRetainedGuestStopRow(t, pool, "corepool-callback-read")
 	guest := &interruptedReleaseGuest{state: workspaceapi.WorkspaceRunning, disk: "retained-working-copy"}
 	runtime := &interruptedReleaseRuntime{guest: guest}
@@ -1158,14 +1182,19 @@ func TestRetainedGuestStopReleasesItsClaimWhenTheCallbackReadStarves(t *testing.
 	// the next tick will list.
 	require.Equal(t, workspaceapi.WorkspaceRunning, guest.state)
 	require.Zero(t, runtime.stops.Load())
-	stalled, err := db.New(pool).GetWorkspace(context.Background(), listed.ID)
-	require.NoError(t, err)
+	// The claim held no connection while its read starved, so the drain took
+	// the whole pool, and it still has it.
+	require.Equal(t, pool.Stat().MaxConns(), pool.Stat().AcquiredConns(),
+		"the drain did not take the whole pool, so the claim was holding a connection across its work")
+	stalled := observer.workspace(t, listed.ID)
 	require.Equal(t, workspaceRepositoryAdvertisementUnverifiedMessage, stalled.FailureMessage.String)
 	require.Equal(t, listed.UpdatedAt, stalled.UpdatedAt, "a refused claim wrote to the row")
 
-	// The advisory lock went back too, so the next tick can claim the row. If
-	// the claim had parked holding it, this second attempt would be refused
-	// as in-progress forever.
+	// The claim is over too, so the next tick can claim the row. The starved
+	// pool could not serve the release of its lease; this process takes that
+	// lease over at once rather than waiting out its expiry. If the claim had
+	// parked holding it, this second attempt would be refused as in-progress
+	// forever.
 	store.release()
 	outcome, err := svc.reconcileRetainedGuestStop(context.Background(), listed, advertisementStopDoor(t))
 	require.NoError(t, err, "the row is still claimable once the pool recovers")
@@ -1196,7 +1225,7 @@ func TestRetainedGuestStopReleasesItsClaimWhenTheCallbackReadStarves(t *testing.
 // stop and records the real receipt. A stop is never decided twice from a
 // guess: the receipt is written only after a confirming read.
 func TestRetainedGuestStopRecordsItsReceiptAfterTheWriteStarves(t *testing.T) {
-	pool, _ := shippedCorePool(t)
+	pool, observer := shippedCorePool(t)
 	listed := realRetainedGuestStopRow(t, pool, "corepool-receipt-write")
 	guest := &interruptedReleaseGuest{state: workspaceapi.WorkspaceRunning, disk: "retained-working-copy",
 		history: []string{"change-a"}, snapshots: 1}
@@ -1232,13 +1261,10 @@ func TestRetainedGuestStopRecordsItsReceiptAfterTheWriteStarves(t *testing.T) {
 	// sentence and still be listed.
 	require.Equal(t, workspaceapi.WorkspaceStopped, guest.state, "the stop this receipt was for never happened")
 	require.Equal(t, int32(1), runtime.stops.Load())
-	unrecorded, err := db.New(pool).GetWorkspace(context.Background(), listed.ID)
-	require.NoError(t, err)
+	unrecorded := observer.workspace(t, listed.ID)
 	require.Equal(t, workspaceRepositoryAdvertisementUnverifiedMessage, unrecorded.FailureMessage.String,
 		"a refused write recorded a receipt anyway")
-	backlog, err := db.New(pool).ListWorkspaceProvisioningRecovery(context.Background())
-	require.NoError(t, err)
-	require.Len(t, backlog, 1, "a stop with no receipt left the backlog, so nothing will re-confirm it")
+	require.Len(t, observer.provisioningBacklog(t), 1, "a stop with no receipt left the backlog, so nothing will re-confirm it")
 
 	// The next tick, against a recovered pool, records it.
 	store.release()

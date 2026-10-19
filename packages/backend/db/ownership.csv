@@ -284,3 +284,4 @@ run_archives,product,product migration 0154; T-FLW-07;owner:smithers-3f
 run_archive_events,product,product migration 0155; T-FLW-07;owner:smithers-3f
 guest_reservations,product,product migration 0168;EH-GUEST;owner:eh-guest
 guest_conversions,product,product migration 0169;EH-CONVERT;owner:eh-convert
+workspace_provisioning_leases,product,product migration 0171; #4294
