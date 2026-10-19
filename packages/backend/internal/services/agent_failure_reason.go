@@ -57,6 +57,10 @@ const (
 	agentFailureDispatchFailed = "dispatch_failed"
 	// This deployment runs no cloud agents.
 	agentFailureAgentsUnavailable = "agents_unavailable"
+	// This deployment runs hosted coding only for the users its operator
+	// lists (agents.hosted_coding_user_ids), and the session's user is not
+	// one of them.
+	agentFailureHostedCodingNotOpen = "hosted_coding_not_open"
 )
 
 // agentSessionFailureCodes is the whole vocabulary, in the order above.
@@ -66,7 +70,7 @@ var agentSessionFailureCodes = []string{
 	agentFailureBoxMissing, agentFailureBoxFailed, agentFailureBoxStopped,
 	agentFailureModelUnavailable, agentFailureModelRateLimited, agentFailureOutOfCredit,
 	agentFailureTurnFailed, agentFailureTurnTimedOut, agentFailureBoxBusy,
-	agentFailureDispatchFailed, agentFailureAgentsUnavailable,
+	agentFailureDispatchFailed, agentFailureAgentsUnavailable, agentFailureHostedCodingNotOpen,
 }
 
 // The metadata keys a failed session carries. The API returns
@@ -136,6 +140,11 @@ const agentSessionStartFailureMessage = "The agent could not be started. Nothing
 // detail (agentLoopRetiredMessage) stays in the log.
 const agentSessionLoopRetiredMessage = "Cloud agents are not available on this deployment yet. Nothing ran, and retrying will not help."
 
+// hostedCodingNotOpenMessage is what a user the hosted coding allowlist does
+// not name reads, on the API refusal and on the session. Retrying does not
+// help: only the operator opens the gate.
+const hostedCodingNotOpenMessage = "Hosted coding isn't open for your account yet"
+
 // The failures a dispatch distinguishes before its turn runs. Each pairs the
 // sentence above with its code and whether a retry alone can succeed.
 var (
@@ -149,6 +158,7 @@ var (
 	agentSessionStartFailure         = agentSessionFailure{Code: agentFailureDispatchFailed, Reason: agentSessionStartFailureMessage, Retryable: true}
 	agentSessionNeverStarted         = agentSessionFailure{Code: agentFailureDispatchFailed, Reason: "The agent never started. Nothing ran; try again.", Retryable: true}
 	agentSessionLoopRetired          = agentSessionFailure{Code: agentFailureAgentsUnavailable, Reason: agentSessionLoopRetiredMessage}
+	agentSessionHostedCodingNotOpen  = agentSessionFailure{Code: agentFailureHostedCodingNotOpen, Reason: hostedCodingNotOpenMessage}
 	agentSessionOutOfCredit          = agentSessionFailure{Code: agentFailureOutOfCredit, Reason: "This account is out of model credit. Add credit, then try again."}
 )
 

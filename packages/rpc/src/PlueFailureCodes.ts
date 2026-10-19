@@ -35,7 +35,7 @@ export const PLUE_FAILURE_SCHEMA_VERSION = 1
  * @since 1.0.0
  * @category constants
  */
-export const PLUE_FAILURE_DIGEST = "sha256:84d6072d627ed4ad97da56fb9a7be68305f64ca0c5f9acf7f1e952e33ba92ced"
+export const PLUE_FAILURE_DIGEST = "sha256:9099b27cd19c0a0835fc45e107b78e3b4369cda5467c39dc0a5389e9691bb140"
 
 /**
  * Whose problem a failure is — the registry's verdict, and the only question the app
@@ -120,6 +120,7 @@ export const PLUE_FAILURE_CODES = [
   "guest_user_required",
   "head_receipt_mismatch",
   "host_lease_lost",
+  "hosted_coding_not_open",
   "idempotency_conflict",
   "idempotency_key_required",
   "image_required",
@@ -348,6 +349,8 @@ export const PLUE_FAILURES = {
   "head_receipt_mismatch": { fault: "user", status: 409, retryAfter: 0 },
   /** The controller's lease on a sandbox host has expired, so the host is no longer the controller's to act on. */
   "host_lease_lost": { fault: "infra", status: 503, retryAfter: 0 },
+  /** This deployment runs hosted coding only for the accounts its operator lists, and the caller's account is not one of them yet. */
+  "hosted_coding_not_open": { fault: "user", status: 403, retryAfter: 0 },
   /** The idempotency key was reused with a different request body. */
   "idempotency_conflict": { fault: "user", status: 409, retryAfter: 0 },
   /** The operation requires an idempotency key and the request carried none. */

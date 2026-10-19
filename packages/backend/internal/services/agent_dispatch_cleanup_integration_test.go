@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/flowdispatch"
+	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/jobs"
@@ -95,7 +96,10 @@ func TestDispatchAgentRun_LostClaimPreservesWinner(t *testing.T) {
 		releaseOnce.Do(func() { close(admission.release) })
 		dispatches.Wait()
 	})
-	svc := NewAgentServiceWithPool(q, pool, WithAgentDispatchQuerier(barrier), WithAgentFlowDispatcher(admission))
+	// A hosted coding turn needs its user on the allowlist; without one the
+	// dispatch is refused before flow admission.
+	svc := NewAgentServiceWithPool(q, pool, WithAgentDispatchQuerier(barrier), WithAgentFlowDispatcher(admission),
+		WithAgentHostedCodingUsers(config.HostedCodingUsers{UserIDs: []int64{userID}}))
 	svc.SetWorkspaceBackend(stubAgentWorkspaceBackend{})
 	_, err = svc.AppendMessage(ctx, sessionID, "user", []db.CreateAgentPartParams{
 		{PartType: "text", Content: json.RawMessage(`{"value":"please inspect this repository"}`)},

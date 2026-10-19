@@ -1193,6 +1193,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		subscriptionPool = providerConnectionService
 	}
 	neverStartedTimeout, _ := time.ParseDuration(cfg.Agents.NeverStartedTimeout)
+	hostedCoding := hostedCodingUsers(cfg)
+	slog.Info("hosted coding admits", "everyone", hostedCoding.Everyone, "user_ids", hostedCoding.UserIDs)
 	agentService := services.NewAgentServiceWithPool(queries, pool,
 		services.WithAgentDispatchQuerier(runtimeStores.AgentDispatch),
 		services.WithAgentNeverStartedTimeout(neverStartedTimeout),
@@ -1226,6 +1228,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		// SMITHERS_SANDBOX_AGENT_MAX_CONCURRENT is set. queries (*db.Queries)
 		// supplies CountActiveAgentSessionVMs.
 		services.WithAgentConcurrencyCap(queries, int(cfg.Sandbox.AgentMaxConcurrent)),
+		// Who may run a hosted coding turn (SMITHERS_HOSTED_CODING_USER_IDS).
+		services.WithAgentHostedCodingUsers(hostedCoding),
 	)
 	landingService.SetAgentTurnDispatcher(agentService)
 
