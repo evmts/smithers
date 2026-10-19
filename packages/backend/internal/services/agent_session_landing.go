@@ -68,7 +68,7 @@ func (s *AgentSessionLandingService) Open(ctx context.Context, actor *db.User, o
 		return refuse(pkgerrors.CodeAgentCredentialRefused, "Only a person can open this pull request")
 	}
 	if actor == nil {
-		return refuse(pkgerrors.CodeSignInRequired, "Sign in to open a pull request")
+		return refuse(pkgerrors.CodeUnauthenticated, "Sign in to open a pull request")
 	}
 	if actor.UserType == "guest" {
 		return refuse(pkgerrors.CodeGuestRefused, "Sign in to open a pull request")

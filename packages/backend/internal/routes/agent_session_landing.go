@@ -94,7 +94,7 @@ func SessionLandingCredentialFirst(next http.Handler) http.Handler {
 		case middleware.IsAgentCredential(r.Context(), user):
 			refusal = pkgerrors.New(pkgerrors.CodeAgentCredentialRefused, "Only a person can open this pull request")
 		case user == nil:
-			refusal = pkgerrors.New(pkgerrors.CodeSignInRequired, "Sign in to open a pull request")
+			refusal = pkgerrors.New(pkgerrors.CodeUnauthenticated, "Sign in to open a pull request")
 		case user.UserType == "guest":
 			refusal = pkgerrors.New(pkgerrors.CodeGuestRefused, "Sign in to open a pull request")
 		case info != nil && info.IsTokenAuth && !info.Scopes.Has(middleware.ScopeWriteRepository):

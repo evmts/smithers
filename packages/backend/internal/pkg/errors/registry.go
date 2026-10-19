@@ -40,7 +40,6 @@ type Code string
 type Fault string
 
 const (
-	CodeSignInRequired         Code = "sign_in_required"
 	CodeGuestRefused           Code = "guest_refused"
 	CodePushPermissionRequired Code = "push_permission_required"
 	CodeAgentCredentialRefused Code = "agent_credential_refused"
@@ -335,7 +334,6 @@ const (
 // without a row cannot reach the wire with a fault, and a row without a
 // constant cannot be raised.
 var registry = map[Code]Entry{
-	CodeSignInRequired:         {Status: 401, Fault: FaultUser, Class: ClassPermission, Doc: "Sign in to open a pull request."},
 	CodeGuestRefused:           {Status: 403, Fault: FaultUser, Class: ClassNever, Doc: "A guest cannot open a pull request."},
 	CodePushPermissionRequired: {Status: 403, Fault: FaultUser, Class: ClassPermission, Doc: "The person needs repository push access."},
 	CodeAgentCredentialRefused: {Status: 403, Fault: FaultUser, Class: ClassNever, Doc: "An agent credential cannot open this pull request."},

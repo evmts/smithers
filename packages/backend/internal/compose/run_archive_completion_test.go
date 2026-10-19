@@ -37,7 +37,7 @@ func TestRunArchiveRefusalDoesNotBlockCompletion(t *testing.T) {
 
 type completionWorkspace struct{ services.AgentWorkspaceBackend }
 
-func (completionWorkspace) ReleaseAgentWorkspace(context.Context, string, string) (services.AgentWorkspaceRelease, error) {
+func (completionWorkspace) ReleaseAgentWorkspace(context.Context, string, string, int64) (services.AgentWorkspaceRelease, error) {
 	return services.AgentWorkspaceRelease{Outcome: "kept_in_use"}, nil
 }
 func (completionWorkspace) SnapshotAgentWorkspace(context.Context, string, string) (string, error) {

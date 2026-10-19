@@ -19,7 +19,7 @@ func TestSessionLandingRefusesNonPeopleBeforeReading(t *testing.T) {
 		agent bool
 		code  pkgerrors.Code
 	}{
-		{"signed out", nil, false, pkgerrors.CodeSignInRequired},
+		{"signed out", nil, false, pkgerrors.CodeUnauthenticated},
 		{"guest", &db.User{ID: 1, UserType: "guest"}, false, pkgerrors.CodeGuestRefused},
 		{"bot", &db.User{ID: 1, UserType: "bot"}, false, pkgerrors.CodeAgentCredentialRefused},
 		{"run", &db.User{ID: 1}, true, pkgerrors.CodeAgentCredentialRefused},
