@@ -10,7 +10,7 @@ import type { Card } from "../AppState"
 import type { FieldOption } from "@smthrs/ui/flow-form"
 import { resolveTargetRepo } from "../RepoContext"
 import type { SeamContext } from "./SeamContext"
-import { captureCloudOwner,refusalWords,readErrorMessage,readResult,signInRequired,unreachableSentence } from "./SeamContext"
+import { captureCloudOwner,pageIsPartial,refusalWords,readErrorMessage,readResult,signInRequired,unreachableSentence } from "./SeamContext"
 import { refusalOf } from "@smthrs/rpc/Refusal"
 import { refusalLine } from "@smthrs/rpc/RefusalCopy"
 
@@ -735,6 +735,8 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
    * GitHub's issues for `repo`, through the GitHub-source route, with the
    * read's provenance from plue's X-Metadata-* headers. A refusal answers
    * no rows and the reason; the caller states it beside Smithers Cloud's own list.
+   * `partial` when the page is one of several (GitHub's default 30 rows,
+   * pull requests included, or a `rel="next"` link).
    */
   const readGithubIssues = async (
     repo: string,
@@ -742,6 +744,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
   ): Promise<{
     readonly issues: Array<IssueListRow & { readonly source: "github"; readonly htmlUrl?: string }>
     readonly meta?: { source: string; syncedAt: string | null; stale: boolean; syncError: string | null; refusal: string | null }
+    readonly partial?: boolean
   }> => {
     const refusal = githubSourceRefusal(repo)
     if (refusal !== undefined) return { issues: [], meta: { source: "refused", syncedAt: null, stale: false, syncError: null, refusal } }
@@ -770,7 +773,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       const htmlUrl = typeof (entry as { html_url?: unknown }).html_url === "string" ? (entry as { html_url: string }).html_url : undefined
       return [{ ...parsed, source: "github" as const, ...(htmlUrl === undefined ? {} : { htmlUrl }) }]
     })
-    return { issues, meta }
+    return { issues, meta, partial: pageIsPartial(response, body.length) }
   }
 
   /** The source-only list read; the card carries the degradation note in `body`. */
@@ -806,7 +809,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       status: "active",
       createdAt: Date.now(),
       ordinal: ctx.nextOrdinal(),
-      payload: { repo, filter, issues, github: {
+      payload: { repo, filter, issues, ...(pageIsPartial(response, body.length) ? { partial: true } : {}), github: {
         source: response.headers.get("x-metadata-source") ?? "github",
         syncedAt: response.headers.get("x-metadata-synced-at"),
         stale: response.headers.get("x-metadata-stale") === "true",
@@ -893,7 +896,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     })
     const card: Card = {
       id: `issues-${repo}`, kind: "issue-list", title: `Issues · ${repo}`, status: "active",
-      createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload: { repo, filter, issues }
+      createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload: { repo, filter, issues, ...(pageIsPartial(response, body.length) ? { partial: true } : {}) }
     }
     return { card, ...readResult(issues.length === 0
       ? `No ${filter === "all" ? "" : `${filter} `}issues in ${repo}.`
@@ -1078,6 +1081,8 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       const parsed = parseListRow(entry)
       return parsed === null ? [] : [{ ...parsed, source: "smithers-cloud" as const }]
     }).filter((row) => kind === "all" || (kind === "conversation" ? row.kind === "chat" : row.kind !== "chat"))
+    // plue pages its own tracker too (30 rows unless asked, `rel="next"` beyond).
+    const nativePartial = pageIsPartial(response, body.length)
     /*
      * Smithers Cloud's /issues is the repository's OWN tracker and is correctly
      * empty for a repo mirrored from GitHub; the upstream issues live at
@@ -1089,7 +1094,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     // Read before GitHub: a GitHub 401 re-probes the session, and the view must settle in the scope it started in.
     const views = ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in" ? [] : await readIssueViews(repo)
     // Conversations and saved views live in Smithers' own tracker; GitHub's rows join the unfiltered and issues lists.
-    const github = await (async () => {
+    const github: Awaited<ReturnType<typeof readGithubIssues>> = await (async () => {
       if (kind === "conversation" || named !== undefined) return { issues: [], meta: undefined }
       const declared = declaredIssueSource(repo)
       if ("error" in declared) return { issues: [], meta: { source: "refused", syncedAt: null, stale: false, syncError: null, refusal: declared.error } }
@@ -1105,6 +1110,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       ordinal: ctx.nextOrdinal(),
       payload: {
         repo, filter, issues,
+        ...(nativePartial || github.partial ? { partial: true } : {}),
         ...(kind === "all" ? {} : { kind }),
         ...(github.meta === undefined ? {} : { github: github.meta }),
         ...(named === undefined ? {} : { view: named }),

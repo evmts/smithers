@@ -147,6 +147,8 @@ export const IssueListCardBody = ({
   const { repo, filter, issues, github, view, views } = card.payload
   const kind = card.payload.kind ?? "all"
   const open = issues.filter((issue) => issue.state !== "closed").length
+  // One page of more: each count is a floor.
+  const more = card.payload.partial === true ? "+" : ""
   const noun = kind === "conversation" ? "conversations" : "issues"
   /* Conversations and issues (smithers-ui-DESIGN.md §3.1): the kind chips re-invoke issues.list with the same state and repository. */
   const kindArgs = (next: "all" | "conversation" | "issue") => flowArgs("issues.list", { filter, repo, kind: next, ...(view === undefined ? {} : { view }) })
@@ -154,10 +156,10 @@ export const IssueListCardBody = ({
     <div className="ghc ghc-box" data-testid="issue-list" data-kind={kind}>
       <div className="ghc-toolbar">
         {filter !== "closed" ?
-          <span className="ghc-count" data-active={filter === "open" ? "true" : undefined}><Octicon name="issue-opened" /> {open} Open</span> :
+          <span className="ghc-count" data-active={filter === "open" ? "true" : undefined}><Octicon name="issue-opened" /> {`${open}${more}`} Open</span> :
           null}
         {filter !== "open" ?
-          <span className="ghc-count" data-active={filter === "closed" ? "true" : undefined}><Octicon name="check" /> {issues.length - open} Closed</span> :
+          <span className="ghc-count" data-active={filter === "closed" ? "true" : undefined}><Octicon name="check" /> {`${issues.length - open}${more}`} Closed</span> :
           null}
         <span className="ghc-toolbar-kinds" role="group" aria-label="Kind">
           {([["all", "All"], ["conversation", "Conversations"], ["issue", "Issues"]] as const).map(([id, label]) => (

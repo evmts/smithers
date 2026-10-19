@@ -248,3 +248,19 @@ test("a failed sync's reason is a member's: a visitor reads 'GitHub sync failed'
     } finally { act(() => root.unmount()); host.remove() }
   }
 })
+
+test("the repository tabs draw a partial list's count as a floor and a complete one plainly", () => {
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  // A tab's count: the counter inside the tab whose label is `name`.
+  const tab = (name: string) => [...host.querySelectorAll('nav[aria-label="Repository"] a')].find(link => link.firstChild?.textContent === name)?.querySelector(".repo-ui-counter")?.textContent
+  try {
+    act(() => root.render(<RepoFrame repo="ada/widgets" onRunCommand={() => {}} ask={null} issueCount={29} issuesPartial pullCount={3} pullsPartial>content</RepoFrame>))
+    expect(tab("Issues")).toBe("29+")
+    expect(tab("Pull requests")).toBe("3+")
+    act(() => root.render(<RepoFrame repo="ada/widgets" onRunCommand={() => {}} ask={null} issueCount={2} pullCount={3} pullsPartial={false}>content</RepoFrame>))
+    expect(tab("Issues")).toBe("2")
+    expect(tab("Pull requests")).toBe("3")
+  } finally { act(() => root.unmount()); host.remove() }
+})
