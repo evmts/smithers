@@ -182,7 +182,9 @@ export const makeCli = (
         host: z.string().default(Serve.defaultBind.host),
         port: z.number().int().min(0).max(65535).default(Serve.defaultBind.port),
         listen: z.boolean().default(false),
-        operatorTokenFile: z.string().min(1).optional().describe("Write the session credential to a private file instead of stderr")
+        operatorTokenFile: z.string().min(1).optional().describe(
+          "Write the session credential to a private file instead of stderr"
+        )
       }),
       run: (c) =>
         Presentation.guard(
