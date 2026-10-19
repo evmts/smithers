@@ -2119,6 +2119,8 @@ func buildRouter(
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/contents", repoHandler.GetRepoContents)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/contents/*", repoHandler.GetRepoContents)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/home", repoHandler.GetRepositoryHome)
+			r.With(append(append([]func(http.Handler) http.Handler{}, readRepo...), gateSearch, middleware.SearchRateLimit(queries))...).Get("/repos/{owner}/{repo}/search/code", searchHandler.SearchCode)
+			r.With(append(append([]func(http.Handler) http.Handler{}, readRepo...), gateSearch, middleware.SearchRateLimit(queries), withholdConversation)...).Get("/repos/{owner}/{repo}/search/issues", searchHandler.SearchIssues)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/commits", repoHandler.ListRepositoryCommits)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/commits/{sha}", repoHandler.GetRepositoryCommit)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/git/refs", repoHandler.ListGitRefs)
