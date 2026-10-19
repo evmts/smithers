@@ -39,8 +39,24 @@ func (c *artifactGuestClient) scriptContent(t *testing.T) string {
 	return string(content)
 }
 
+// local maps every guest path a command names into this client's own files.
+// The launch log moves too: a host-wide /tmp file created by one OS user cannot
+// be reopened by another under fs.protected_regular, which silently stopped the
+// detached bootstrap from starting on a shared test host.
 func (c *artifactGuestClient) local(p string) string {
-	return strings.NewReplacer(workspaceArtifactRoot, c.root, workspaceClaudeScriptPath, c.script).Replace(p)
+	return strings.NewReplacer(workspaceArtifactRoot, c.root, workspaceClaudeScriptPath, c.script, workspaceArtifactLaunchLog, c.launchLog()).Replace(p)
+}
+
+func (c *artifactGuestClient) launchLog() string { return c.root + ".launch.log" }
+
+// artifactWaitContext bounds one bootstrap wait. waitForWorkspaceArtifactBootstrap
+// polls until its context ends, so a bootstrap that never starts must fail the
+// test here instead of running into the package's 10-minute timeout.
+func artifactWaitContext(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	t.Cleanup(cancel)
+	return ctx
 }
 func (c *artifactGuestClient) WriteFile(ctx context.Context, _ string, p string, r sandbox.WriteFileRequest) error {
 	if e := ctx.Err(); e != nil {
@@ -197,7 +213,7 @@ func TestWorkspaceArtifactSnapshotReusesMatchingInstalledBundle(t *testing.T) {
 	require.NoError(t, os.MkdirAll(client.root, 0700))
 	require.NoError(t, os.WriteFile(client.root+"/release", nil, 0600))
 	require.NoError(t, finishWorkspaceArtifacts(t.Context(), client, "guest", client.scriptContent(t)))
-	require.NoError(t, waitForWorkspaceArtifactBootstrap(t.Context(), client, "guest"))
+	require.NoError(t, waitForWorkspaceArtifactBootstrap(artifactWaitContext(t), client, "guest"))
 	source, err := os.Readlink(client.root + "/current")
 	require.NoError(t, err)
 	writes := client.writeCount
@@ -205,7 +221,7 @@ func TestWorkspaceArtifactSnapshotReusesMatchingInstalledBundle(t *testing.T) {
 	userData := filepath.Join(filepath.Dir(client.root), "persisted-user-file")
 	require.NoError(t, os.WriteFile(userData, []byte("keep"), 0600))
 	require.NoError(t, finishWorkspaceArtifacts(t.Context(), client, "guest", client.scriptContent(t)))
-	require.NoError(t, waitForWorkspaceArtifactBootstrap(t.Context(), client, "guest"))
+	require.NoError(t, waitForWorkspaceArtifactBootstrap(artifactWaitContext(t), client, "guest"))
 	published, err := os.Readlink(client.root + "/current")
 	require.NoError(t, err)
 	require.Equal(t, source, published, "identical installed bytes remain reusable after fork")
@@ -229,7 +245,7 @@ func TestWorkspaceArtifactConcurrentSameKeyPublishesOnce(t *testing.T) {
 	go func() { finished <- finishWorkspaceArtifacts(t.Context(), second, "guest", script) }()
 	require.NoError(t, <-finished)
 	require.NoError(t, <-finished)
-	require.NoError(t, waitForWorkspaceArtifactBootstrap(t.Context(), first, "guest"))
+	require.NoError(t, waitForWorkspaceArtifactBootstrap(artifactWaitContext(t), first, "guest"))
 	started, err := os.ReadFile(first.root + "/started")
 	require.NoError(t, err)
 	require.Equal(t, "x", string(started), "identical concurrent attempts install once")
@@ -302,13 +318,13 @@ func TestWorkspaceArtifactFailedBootstrapIsVisibleAndRetryable(t *testing.T) {
 	script := "#!/bin/sh\nif ! test -f " + shellQuote(first) + "; then touch " + shellQuote(first) + "; exit 9; fi\nprintf x >> " + shellQuote(client.root+"/started") + "\n"
 	require.NoError(t, os.WriteFile(client.script, []byte(script), 0700))
 	require.NoError(t, finishWorkspaceArtifacts(t.Context(), client, "guest", client.scriptContent(t)))
-	require.ErrorContains(t, waitForWorkspaceArtifactBootstrap(t.Context(), client, "guest"), "bootstrap failed")
+	require.ErrorContains(t, waitForWorkspaceArtifactBootstrap(artifactWaitContext(t), client, "guest"), "bootstrap failed")
 	status, err := os.ReadFile(client.root + "/current/bootstrap.failed")
 	require.NoError(t, err)
 	require.True(t, strings.HasSuffix(string(status), ":9\n"), "failure marker records the launch identity and exit code")
 	writes := client.writeCount
 	require.NoError(t, finishWorkspaceArtifacts(t.Context(), client, "guest", client.scriptContent(t)))
-	require.NoError(t, waitForWorkspaceArtifactBootstrap(t.Context(), client, "guest"))
+	require.NoError(t, waitForWorkspaceArtifactBootstrap(artifactWaitContext(t), client, "guest"))
 	require.Equal(t, writes, client.writeCount, "retry must reuse the complete bundle")
 	_, err = os.Stat(client.root + "/current/bootstrap.failed")
 	require.True(t, os.IsNotExist(err))
@@ -326,7 +342,7 @@ func TestWorkspaceArtifactQueuedRetryIgnoresEarlierFailure(t *testing.T) {
 	require.Eventually(t, func() bool { _, err := os.Stat(first); return err == nil }, 3*time.Second, 10*time.Millisecond)
 	require.NoError(t, finishWorkspaceArtifacts(t.Context(), client, "guest", script))
 	require.NoError(t, os.WriteFile(client.root+"/release", nil, 0600))
-	require.NoError(t, waitForWorkspaceArtifactBootstrap(t.Context(), client, "guest"))
+	require.NoError(t, waitForWorkspaceArtifactBootstrap(artifactWaitContext(t), client, "guest"))
 	started, err := os.ReadFile(client.root + "/started")
 	require.NoError(t, err)
 	require.Equal(t, "x", string(started), "queued retry should finish after the first attempt fails")
@@ -339,12 +355,12 @@ func TestWorkspaceArtifactRefreshesScriptOnReusedDisk(t *testing.T) {
 	first, err := os.ReadFile(client.script)
 	require.NoError(t, err)
 	require.NoError(t, finishWorkspaceArtifacts(t.Context(), client, "guest", string(first)))
-	require.NoError(t, waitForWorkspaceArtifactBootstrap(t.Context(), client, "guest"))
+	require.NoError(t, waitForWorkspaceArtifactBootstrap(artifactWaitContext(t), client, "guest"))
 	old, err := os.Readlink(client.root + "/current")
 	require.NoError(t, err)
 	second := "#!/bin/sh\nprintf y >> " + shellQuote(client.root+"/started") + "\n"
 	require.NoError(t, finishWorkspaceArtifacts(t.Context(), client, "guest", second))
-	require.NoError(t, waitForWorkspaceArtifactBootstrap(t.Context(), client, "guest"))
+	require.NoError(t, waitForWorkspaceArtifactBootstrap(artifactWaitContext(t), client, "guest"))
 	started, err := os.ReadFile(client.root + "/started")
 	require.NoError(t, err)
 	require.Equal(t, "xy", string(started), "new script must run after a deployment recipe change")
@@ -352,7 +368,7 @@ func TestWorkspaceArtifactRefreshesScriptOnReusedDisk(t *testing.T) {
 	require.True(t, os.IsNotExist(err), "old recipe bundle must be collected")
 	writes := client.writeCount
 	require.NoError(t, finishWorkspaceArtifacts(t.Context(), client, "guest", second))
-	require.NoError(t, waitForWorkspaceArtifactBootstrap(t.Context(), client, "guest"))
+	require.NoError(t, waitForWorkspaceArtifactBootstrap(artifactWaitContext(t), client, "guest"))
 	require.Equal(t, writes, client.writeCount, "same recipe reuses the immutable bundle")
 }
 
@@ -362,7 +378,7 @@ func TestWorkspaceArtifactGuestCommandsRestoreNixPath(t *testing.T) {
 	require.NoError(t, os.MkdirAll(client.root, 0700))
 	require.NoError(t, os.WriteFile(client.root+"/release", nil, 0600))
 	require.NoError(t, finishWorkspaceArtifacts(t.Context(), client, "guest", client.scriptContent(t)))
-	require.NoError(t, waitForWorkspaceArtifactBootstrap(t.Context(), client, "guest"))
+	require.NoError(t, waitForWorkspaceArtifactBootstrap(artifactWaitContext(t), client, "guest"))
 	_, err := os.Stat(client.root + "/current/bootstrap.done")
 	require.NoError(t, err)
 }
@@ -436,7 +452,7 @@ func TestWorkspaceArtifactOrphanSurvivesLongLockAndIsSweptLater(t *testing.T) {
 
 	client.failWrite = 0
 	require.NoError(t, finishWorkspaceArtifacts(t.Context(), client, "guest", client.scriptContent(t)))
-	require.NoError(t, waitForWorkspaceArtifactBootstrap(t.Context(), client, "guest"))
+	require.NoError(t, waitForWorkspaceArtifactBootstrap(artifactWaitContext(t), client, "guest"))
 	_, err = os.Stat(staged[0])
 	require.True(t, os.IsNotExist(err), "the next bootstrap sweeps the stale attempt")
 	_, err = os.Stat(active)
@@ -459,7 +475,7 @@ func TestWorkspaceArtifactPublicationOutwaitsBusyLockWithinDeadline(t *testing.T
 	start := time.Now()
 	require.NoError(t, finishWorkspaceArtifacts(t.Context(), client, "guest", client.scriptContent(t)))
 	require.GreaterOrEqual(t, time.Since(start), 2*time.Second, "publication waited past one bounded lock wait")
-	require.NoError(t, waitForWorkspaceArtifactBootstrap(t.Context(), client, "guest"))
+	require.NoError(t, waitForWorkspaceArtifactBootstrap(artifactWaitContext(t), client, "guest"))
 
 	// A deadline still ends the wait.
 	release = holdArtifactLock(t, client.root)
@@ -474,7 +490,34 @@ func TestWorkspaceArtifactFailedGuestScriptReportsRedactedLog(t *testing.T) {
 	client := artifactGuestFixture(t)
 	script := "#!/bin/sh\necho 'resolving toolchain'\necho 'NPM_TOKEN=npm_abcdefghijklmnopqrstuvwxyz0123456789'\necho 'error: attribute nodejs missing' >&2\nexit 3\n"
 	require.NoError(t, finishWorkspaceArtifacts(t.Context(), client, "guest", script))
-	err := waitForWorkspaceArtifactBootstrap(t.Context(), client, "guest")
+	err := waitForWorkspaceArtifactBootstrap(artifactWaitContext(t), client, "guest")
 	require.ErrorContains(t, err, "workspace bootstrap failed (exit 3): resolving toolchain | NPM_TOKEN=[redacted] | error: attribute nodejs missing")
 	require.NotContains(t, err.Error(), "npm_abcdefghijklmnopqrstuvwxyz0123456789")
+}
+
+// The launch opens its log before it records a pending attempt. A log the
+// guest user cannot open (another user's file under fs.protected_regular; a
+// directory here) once started nothing while the launch reported success, and
+// the wait then polled "pending" until its deadline.
+func TestWorkspaceArtifactLaunchFailsWhenItsLogCannotOpen(t *testing.T) {
+	client := artifactGuestFixture(t)
+	require.NoError(t, os.MkdirAll(client.root, 0700))
+	require.NoError(t, os.WriteFile(client.root+"/release", nil, 0600))
+	require.NoError(t, os.Mkdir(client.launchLog(), 0700))
+	err := finishWorkspaceArtifacts(t.Context(), client, "guest", client.scriptContent(t))
+	require.ErrorContains(t, err, "workspace artifact command failed")
+	require.ErrorContains(t, err, client.launchLog())
+	_, err = os.Stat(client.root + "/current/bootstrap.pending")
+	require.True(t, os.IsNotExist(err), "a launch that cannot start records no pending attempt")
+	_, err = os.Stat(client.root + "/started")
+	require.True(t, os.IsNotExist(err), "no bootstrap ran")
+
+	require.NoError(t, os.Remove(client.launchLog()))
+	require.NoError(t, finishWorkspaceArtifacts(t.Context(), client, "guest", client.scriptContent(t)))
+	require.NoError(t, waitForWorkspaceArtifactBootstrap(artifactWaitContext(t), client, "guest"))
+	started, err := os.ReadFile(client.root + "/started")
+	require.NoError(t, err)
+	require.Equal(t, "x", string(started), "the retry starts the bootstrap once")
+	_, err = os.Stat(client.launchLog())
+	require.NoError(t, err, "the launcher writes the client's own log, never the host's /tmp")
 }
