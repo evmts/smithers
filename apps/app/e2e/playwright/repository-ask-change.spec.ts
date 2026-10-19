@@ -516,6 +516,8 @@ for (const [width, scheme] of [
           await expect(page.locator('.hosted-change-stage[data-tone="done"]').filter({ hasText: "Admitted" })).toBeVisible()
           await expect(page.locator(".hosted-change-chip")).toHaveText("Running")
         }
+        // A live run's notice appears after the toast debounce; wait for it so shot() closes it.
+        await expect(page.locator(".notice").filter({ hasText: "Starting agent…" })).toBeVisible()
         await shot(page, state, width, scheme)
         expect(f.accepted()).toBe(true)
         return
