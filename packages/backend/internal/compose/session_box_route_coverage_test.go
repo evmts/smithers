@@ -1,27 +1,46 @@
 package compose
 
 import (
+	"bufio"
+	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
-	"slices"
 	"sort"
+	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 )
 
-// sessionBoxRouteSegment matches a served path that names a workspace, a
-// workspace session or snapshot, an agent session, a run of a box, a branch
-// or a terminal: every door that can reach an agent session's own box.
-var sessionBoxRouteSegment = regexp.MustCompile(`/(workspaces|workspace/sessions|workspace-snapshots|agent/sessions|agent-sessions|monitors|branches|terminals)/\{|/agent/sessions$`)
+// sessionBoxRoutesFile classifies every served route (hosted and install):
+// the check that keeps an agent session's own box to its person, or why the
+// route reaches no box. TestEverySessionBoxGateRefusesAnotherPerson
+// (internal/services) runs each probe class's check against another person's
+// box from this same file.
+const sessionBoxRoutesFile = "testdata/session_box_routes.tsv"
 
-// sessionTranscriptCreatorOnly classifies an agent session's transcript
-// routes (PM d-k9xonl): only the session's creator reads them; every other
-// member and a signed-out visitor gets 404, not 403. Platform's lane A pass 4
-// (C) enforces it; this test only keeps the routes from drifting
-// unclassified.
-const sessionTranscriptCreatorOnly = "creator-only (404 to others), enforced by lane A pass 4 (C)"
+// sessionBoxPathBound matches a served path that names a workspace, a
+// workspace session or snapshot, an agent session, a run, a branch, a
+// conversation, a gateway or a terminal: a door that can reach an agent
+// session's own box by its path.
+var sessionBoxPathBound = regexp.MustCompile(`/(workspaces|workspace/sessions|workspace-snapshots|agent/sessions|agent-sessions|monitors|branches|terminals|conversations|gateways|runs)/\{|/agent/sessions$`)
 
-// sessionTranscriptRoutes are the routes PM d-k9xonl makes creator-only.
+// sessionBoxBodyBound are the served routes that name a box in their body or
+// query rather than their path. Each must be classified as a door.
+var sessionBoxBodyBound = []string{
+	"post /api/workflow/provision",
+	"post /api/workflow/rpc",
+	"post /api/repos/{owner}/{repo}/workspace/sessions",
+	"post /api/repos/{owner}/{repo}/workspace-snapshots",
+	"post /api/terminals",
+	"get /api/ssh",
+}
+
+// sessionTranscriptRoutes are the routes PM d-k9xonl makes creator-only (404
+// to everyone else); Platform's lane A pass 4 (C) enforces it.
 var sessionTranscriptRoutes = []string{
 	"get /api/repos/{owner}/{repo}/agent/sessions",
 	"get /api/repos/{owner}/{repo}/agent/sessions/{id}",
@@ -29,121 +48,195 @@ var sessionTranscriptRoutes = []string{
 	"get /api/repos/{owner}/{repo}/agent/sessions/{id}/stream",
 }
 
-// sessionBoxRouteGates is how each such door keeps an agent session's own box
-// (plue#869) to that session's person: the check every request passes
-// before it reads or acts on the box. requireSessionBoxPerson
-// (services/workspace_branch_machine.go) is reached by every check named
-// here, unless the entry says why the door cannot reach a box at all.
-var sessionBoxRouteGates = map[string]string{
-	// Workspace doors: requireWorkspaceAccess reaches requireSessionBoxPerson
-	// through authorizeBranchFileRead (read) and preflightBranchMachine (write)
-	// for every machine-owned row, and every session box is machine-owned.
-	"get /api/repos/{owner}/{repo}/workspaces/{id}":                                    "loadWorkspaceWithAccess(read)",
-	"delete /api/repos/{owner}/{repo}/workspaces/{id}":                                 "loadOwnedWorkspace → requireWorkspaceAccess(write)",
-	"get /api/repos/{owner}/{repo}/workspaces/{id}/egress":                             "GetWorkspace → loadWorkspaceWithAccess(read)",
-	"get /api/repos/{owner}/{repo}/workspaces/{id}/files":                              "workspace facets → requireWorkspaceAccess(read)",
-	"get /api/repos/{owner}/{repo}/workspaces/{id}/files/content":                      "workspace facets → requireWorkspaceAccess(read)",
-	"put /api/repos/{owner}/{repo}/workspaces/{id}/files/content":                      "withWorkspaceMutationAuthority → authorizeBranchMachine",
-	"get /api/repos/{owner}/{repo}/workspaces/{id}/coding/revisions":                   "workspace facets → requireWorkspaceAccess(read)",
-	"post /api/repos/{owner}/{repo}/workspaces/{id}/coding/operations":                 "withWorkspaceMutationAuthority → authorizeBranchMachine",
-	"get /api/repos/{owner}/{repo}/workspaces/{id}/services":                           "workspace facets → requireWorkspaceAccess(read)",
-	"post /api/repos/{owner}/{repo}/workspaces/{id}/services":                          "withWorkspaceMutationAuthority → authorizeBranchMachine",
-	"post /api/repos/{owner}/{repo}/workspaces/{id}/services/{name}/{action}":          "withWorkspaceMutationAuthority → authorizeBranchMachine",
-	"get /api/repos/{owner}/{repo}/workspaces/{id}/services/{port}/visibility":         "loadWorkspaceWithAccess(read), then owner only",
-	"put /api/repos/{owner}/{repo}/workspaces/{id}/services/{port}/visibility":         "loadWorkspaceWithAccess(read), then owner only",
-	"get /api/repos/{owner}/{repo}/workspaces/{id}/preview/{port}":                     "loadWorkspaceWithAccess(read)",
-	"get /api/repos/{owner}/{repo}/workspaces/{id}/preview/{port}/{path}":              "loadWorkspaceWithAccess(read)",
-	"post /api/repos/{owner}/{repo}/workspaces/{id}/suspend":                           "loadOwnedWorkspace → requireWorkspaceAccess(write)",
-	"post /api/repos/{owner}/{repo}/workspaces/{id}/resume":                            "withWorkspaceMutationAuthority → authorizeBranchMachine",
-	"post /api/repos/{owner}/{repo}/workspaces/{id}/fork":                              "withWorkspaceMutationAuthority → authorizeBranchMachine",
-	"post /api/repos/{owner}/{repo}/workspaces/{id}/snapshot":                          "withWorkspaceMutationAuthority → authorizeBranchMachine",
-	"post /api/repos/{owner}/{repo}/workspaces/{id}/lease":                             "loadOwnedWorkspace → requireWorkspaceAccess(write)",
-	"get /api/repos/{owner}/{repo}/workspaces/{id}/ssh":                                "withWorkspaceMutationAuthority → authorizeBranchMachine",
-	"get /api/repos/{owner}/{repo}/workspaces/{id}/stream":                             "loadWorkspaceWithAccess(read)",
-	"post /api/repos/{owner}/{repo}/workspaces/{id}/command-runs":                      "withWorkspaceMutationAuthority → authorizeBranchMachine",
-	"get /api/repos/{owner}/{repo}/workspaces/{id}/command-runs/{operationID}":         "loadWorkspaceWithAccess(read)",
-	"post /api/repos/{owner}/{repo}/workspaces/{id}/command-runs/{operationID}/cancel": "withWorkspaceMutationAuthority → authorizeBranchMachine",
-	"get /api/repos/{owner}/{repo}/workspaces/{id}/children":                           "loadWorkspaceWithAccess(read)",
-	"post /api/repos/{owner}/{repo}/workspaces/{id}/children":                          "owner only: a session's box is the machine service's, never a person's",
-	"post /api/repos/{owner}/{repo}/workspaces/{id}/children/{child_id}/stop":          "loadOwnedWorkspace → requireWorkspaceAccess(write), then owner only",
-	"get /api/repos/{owner}/{repo}/workspaces/{id}/operations/{op_id}/undo/preview":    "withWorkspaceMutationAuthority → authorizeBranchMachine",
-	"post /api/repos/{owner}/{repo}/workspaces/{id}/operations/{op_id}/undo":           "withWorkspaceMutationAuthority → authorizeBranchMachine",
-	"post /api/repos/{owner}/{repo}/workspaces/{id}/head":                              "the box's own head token (workspace restriction) or the owner: never a person",
-	"post /api/repos/{owner}/{repo}/workspaces/{id}/user-source":                       "owner only: a session's box is the machine service's, never a person's",
-	"post /api/repos/{owner}/{repo}/workspaces/{id}/stack/{operation}":                 "the box's own head token (workspace restriction): never a person",
-	"get /api/repos/{owner}/{repo}/workspace/sessions/{id}":                            "loadWorkspaceSessionWithAccess(read)",
-	"get /api/repos/{owner}/{repo}/workspace/sessions/{id}/ssh":                        "loadWorkspaceSessionWithAccess → requireWorkspaceAccess",
-	"post /api/repos/{owner}/{repo}/workspace/sessions/{id}/destroy":                   "loadOwnedWorkspaceSession → requireWorkspaceAccess(write)",
-	"get /api/repos/{owner}/{repo}/workspace/sessions/{id}/stream":                     "loadWorkspaceSessionWithAccess(read)",
-	"get /api/repos/{owner}/{repo}/workspace/sessions/{id}/terminal":                   "loadWorkspaceSessionWithAccess(read) to attach; withWorkspaceMutationAuthority to open",
-	"get /api/repos/{owner}/{repo}/workspace-snapshots/{id}":                           "loadOwnedWorkspaceSnapshot → requireWorkspaceAccess(read)",
-	"delete /api/repos/{owner}/{repo}/workspace-snapshots/{id}":                        "loadOwnedWorkspaceSnapshot → requireWorkspaceAccess(write)",
-	"get /api/repos/{owner}/{repo}/agent/sessions/{id}":                                sessionTranscriptCreatorOnly,
-	"get /api/repos/{owner}/{repo}/agent/sessions":                                     sessionTranscriptCreatorOnly,
-	"post /api/repos/{owner}/{repo}/agent/sessions":                                    "creates the caller's own session; its box does not exist yet",
-	"delete /api/repos/{owner}/{repo}/agent/sessions/{id}":                             "the session's person only",
-	"get /api/repos/{owner}/{repo}/agent/sessions/{id}/messages":                       sessionTranscriptCreatorOnly,
-	"post /api/repos/{owner}/{repo}/agent/sessions/{id}/messages":                      "the session's person only; the turn joins through attachBranchMachineSession → authorizeBranchMachine",
-	"get /api/repos/{owner}/{repo}/agent/sessions/{id}/stream":                         sessionTranscriptCreatorOnly,
-	"get /api/repos/{owner}/{repo}/agent-sessions/{id}/egress":                         "the session's person only (ListEgressAudit)",
-	"get /api/repos/{owner}/{repo}/monitors/{id}":                                      "sessionBoxOfAnother: a run on another person's box does not exist",
-	"get /api/repos/{owner}/{repo}/monitors/{id}/trace":                                "sessionBoxOfAnother: a run on another person's box does not exist",
-	"get /api/branches/{b}":                      "branchFileWorkspace → authorizeBranchFileRead",
-	"post /api/branches/{b}":                     "withBranchMachineMutation → authorizeBranchMachine",
-	"get /api/branches/{b}/activity":             "branchFileWorkspace → authorizeBranchFileRead",
-	"get /api/branches/{b}/files":                "branchFileWorkspace → authorizeBranchFileRead",
-	"post /api/branches/{b}/archive":             "InstallScratchArchiveSubject: a session's box is no branch to archive",
-	"post /api/branches/{b}/add-to-stack":        "authorizeBranchMachine",
-	"get /api/branches/{b}/files/{path}":         "PresenceBranch → authorizeBranchFileRead",
-	"post /api/branches/{b}/files/{path}":        "withWorkspaceMutationAuthority → authorizeBranchMachine",
-	"get /api/branches/{b}/diff":                 "PresenceBranch → authorizeBranchFileRead",
-	"post /api/branches/{b}/lsp":                 "AuthorizeTerminalBranch → requireSessionBoxPerson",
-	"get /api/branches/{b}/lsp/{id}":             "AuthorizeTerminalBranch → requireSessionBoxPerson",
-	"post /api/terminals/{id}/commands":          "the terminal's own credential, bound to the person who opened it",
-	"post /api/admin/workspaces/{id}/stop":       "admin only (RequireAdmin, requireAdminActor): operators act on every box",
-	"post /api/admin/workspaces/{id}/suspend":    "admin only (RequireAdmin, requireAdminActor): operators act on every box",
-	"post /api/admin/agent-sessions/{id}/cancel": "admin only (RequireAdmin, requireAdminActor): operators act on every session",
+const sessionTranscriptClass = "creator-only-lane-a-4c"
+
+type sessionBoxRouteClass struct {
+	door  bool
+	proof string
 }
 
-// EVERY DOOR TO A WORKSPACE KEEPS A SESSION'S BOX TO ITS PERSON (Security
-// d-b01lum, plue#869). Each served route that names a workspace, a workspace
-// session or snapshot, an agent session, a run, a branch or a terminal must
-// say which check keeps another person (a member or a guest) off an agent
-// session's own box. A new door that names none fails here until it does.
-func TestSessionBoxRouteAuthorizationCoverage(t *testing.T) {
-	routes := servedCompositionRoutes(t, config.AuthModeMultitenant, config.AuthModeSelfHosted)
-	var unclassified, all []string
-	for key, route := range routes {
-		if !sessionBoxRouteSegment.MatchString(route.path) {
+type sessionBoxRoutes struct {
+	classes map[string]sessionBoxRouteClass
+	routes  map[string]string
+}
+
+func loadSessionBoxRoutes(t *testing.T) sessionBoxRoutes {
+	t.Helper()
+	file, err := os.Open(sessionBoxRoutesFile)
+	require.NoError(t, err)
+	defer file.Close()
+	parsed, problems := parseSessionBoxRoutes(bufio.NewScanner(file))
+	require.Empty(t, problems)
+	return parsed
+}
+
+func parseSessionBoxRoutes(scanner *bufio.Scanner) (sessionBoxRoutes, []string) {
+	parsed := sessionBoxRoutes{classes: map[string]sessionBoxRouteClass{}, routes: map[string]string{}}
+	var problems []string
+	for line := 1; scanner.Scan(); line++ {
+		text := scanner.Text()
+		if strings.TrimSpace(text) == "" || strings.HasPrefix(text, "#") {
 			continue
 		}
-		all = append(all, key)
-		if _, ok := sessionBoxRouteGates[key]; !ok {
-			unclassified = append(unclassified, key)
+		fields := strings.Split(text, "\t")
+		switch {
+		case fields[0] == "class" && len(fields) == 5 && (fields[2] == "door" || fields[2] == "none"):
+			parsed.classes[fields[1]] = sessionBoxRouteClass{door: fields[2] == "door", proof: fields[3]}
+		case fields[0] == "route" && len(fields) == 3:
+			if _, dup := parsed.routes[fields[1]]; dup {
+				problems = append(problems, fmt.Sprintf("line %d: %s is classified twice", line, fields[1]))
+			}
+			parsed.routes[fields[1]] = fields[2]
+		default:
+			problems = append(problems, fmt.Sprintf("line %d: malformed: %q", line, text))
 		}
 	}
-	sort.Strings(all)
-	sort.Strings(unclassified)
-	for _, key := range unclassified {
-		t.Errorf("served route %s names a workspace, session, run, branch or terminal but declares no session-box person check in sessionBoxRouteGates", key)
+	return parsed, problems
+}
+
+// sessionBoxRouteProblems checks a composition's served routes against the
+// classification: every served route is classified once, by a known class;
+// nothing unserved is listed; a route that names a box by its path or body is
+// a door; a door says how its check is proven; and the transcript routes
+// carry exactly the creator-only class.
+func sessionBoxRouteProblems(served []string, bodyBound []string, parsed sessionBoxRoutes) []string {
+	var problems []string
+	servedSet := map[string]bool{}
+	for _, key := range served {
+		servedSet[key] = true
+		class, ok := parsed.routes[key]
+		if !ok {
+			problems = append(problems, fmt.Sprintf("served route %s is not classified in %s", key, sessionBoxRoutesFile))
+			continue
+		}
+		definition, known := parsed.classes[class]
+		if !known {
+			problems = append(problems, fmt.Sprintf("%s has unknown class %q", key, class))
+			continue
+		}
+		_, path, _ := strings.Cut(key, " ")
+		if sessionBoxPathBound.MatchString(path) && !definition.door && class != "own-create" {
+			problems = append(problems, fmt.Sprintf("%s names a box in its path but is classified %q, which is no door", key, class))
+		}
 	}
-	for key := range sessionBoxRouteGates {
-		if _, ok := routes[key]; !ok {
-			t.Errorf("sessionBoxRouteGates lists %s, which no composition serves", key)
+	for _, key := range bodyBound {
+		if !servedSet[key] {
+			continue
+		}
+		if definition, ok := parsed.classes[parsed.routes[key]]; !ok || !definition.door {
+			problems = append(problems, fmt.Sprintf("%s names a box in its body or query but is classified %q, which is no door", key, parsed.routes[key]))
+		}
+	}
+	for key := range parsed.routes {
+		if !servedSet[key] {
+			problems = append(problems, fmt.Sprintf("%s lists %s, which no composition serves", sessionBoxRoutesFile, key))
+		}
+	}
+	for name, definition := range parsed.classes {
+		proof := definition.proof
+		switch {
+		case !definition.door && proof != "-":
+			problems = append(problems, fmt.Sprintf("class %s is no door but names proof %q", name, proof))
+		case definition.door && !(proof == "probe" || strings.HasPrefix(proof, "test:") || strings.HasPrefix(proof, "deferred:") || strings.HasPrefix(proof, "gap:")):
+			problems = append(problems, fmt.Sprintf("door class %s names no proof (%q)", name, proof))
 		}
 	}
 	for _, key := range sessionTranscriptRoutes {
-		if got := sessionBoxRouteGates[key]; got != sessionTranscriptCreatorOnly {
-			t.Errorf("%s is an agent session transcript: classify it %q (PM d-k9xonl), not %q", key, sessionTranscriptCreatorOnly, got)
+		if servedSet[key] && parsed.routes[key] != sessionTranscriptClass {
+			problems = append(problems, fmt.Sprintf("%s is an agent session transcript: classify it %s (PM d-k9xonl), not %q", key, sessionTranscriptClass, parsed.routes[key]))
 		}
 	}
-	for key, gate := range sessionBoxRouteGates {
-		if gate == sessionTranscriptCreatorOnly && !slices.Contains(sessionTranscriptRoutes, key) {
-			t.Errorf("%s is classified creator-only but is not in sessionTranscriptRoutes", key)
+	for key, class := range parsed.routes {
+		if class == sessionTranscriptClass && !containsString(sessionTranscriptRoutes, key) {
+			problems = append(problems, fmt.Sprintf("%s is classified %s but is no transcript route", key, class))
 		}
 	}
-	if t.Failed() {
-		t.Logf("served doors: %q", all)
+	sort.Strings(problems)
+	return problems
+}
+
+func containsString(values []string, value string) bool {
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
 	}
-	t.Logf("%d served doors to a workspace keep a session's box to its person", len(all))
+	return false
+}
+
+// EVERY SERVED ROUTE KEEPS A SESSION'S BOX TO ITS PERSON (Security d-b01lum,
+// d-nhn9cy finding 3). Every route either composition serves is classified,
+// collections and body- or query-bound routes included. A route that names a
+// box is a door, and each door's check is run against another person's box:
+// by TestEverySessionBoxGateRefusesAnotherPerson for a probe class, or by the
+// named test. A new route fails here until it is classified.
+func TestSessionBoxRouteAuthorizationCoverage(t *testing.T) {
+	routes := servedCompositionRoutes(t, config.AuthModeMultitenant, config.AuthModeSelfHosted)
+	served := make([]string, 0, len(routes))
+	for key := range routes {
+		served = append(served, key)
+	}
+	parsed := loadSessionBoxRoutes(t)
+	for _, problem := range sessionBoxRouteProblems(served, sessionBoxBodyBound, parsed) {
+		t.Error(problem)
+	}
+	for name, definition := range parsed.classes {
+		dir, test, ok := strings.Cut(strings.TrimPrefix(definition.proof, "test:"), ":")
+		if !strings.HasPrefix(definition.proof, "test:") {
+			continue
+		}
+		require.True(t, ok, "class %s: proof %q is test:<dir>:<Test>", name, definition.proof)
+		require.True(t, testDefined(t, filepath.Join("..", "..", dir), test), "class %s: %s does not define %s", name, dir, test)
+	}
+	doors := 0
+	for _, class := range parsed.routes {
+		if parsed.classes[class].door {
+			doors++
+		}
+	}
+	t.Logf("%d served routes, %d doors to a box", len(served), doors)
+}
+
+func testDefined(t *testing.T, dir, name string) bool {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "*_test.go"))
+	require.NoError(t, err)
+	for _, path := range files {
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		if strings.Contains(string(data), "func "+name+"(t *testing.T)") {
+			return true
+		}
+	}
+	return false
+}
+
+// The checker fails on the routes it exists to catch (Security d-nhn9cy
+// finding 3): an unguarded path-bound route and an unguarded body-bound route
+// that nobody classified, a path-bound route classified as no door, and a
+// transcript route that lost its class.
+func TestSessionBoxRouteCoverageCatchesUnguardedRoutes(t *testing.T) {
+	parsed, problems := parseSessionBoxRoutes(bufio.NewScanner(strings.NewReader(strings.Join([]string{
+		"class\tworkspace-read\tdoor\tprobe\tcheck",
+		"class\tno-box\tnone\t-\tnothing",
+		"route\tget /api/repos/{owner}/{repo}/workspaces/{id}\tworkspace-read",
+		"route\tget /api/repos/{owner}/{repo}/workspaces/{id}/mislabelled\tno-box",
+		"route\tget /api/repos/{owner}/{repo}/agent/sessions/{id}\tno-box",
+	}, "\n"))))
+	require.Empty(t, problems)
+
+	got := sessionBoxRouteProblems([]string{
+		"get /api/repos/{owner}/{repo}/workspaces/{id}",
+		"get /api/repos/{owner}/{repo}/workspaces/{id}/unguarded",
+		"post /api/unguarded-body",
+		"get /api/repos/{owner}/{repo}/workspaces/{id}/mislabelled",
+		"get /api/repos/{owner}/{repo}/agent/sessions/{id}",
+	}, []string{"post /api/unguarded-body"}, parsed)
+
+	require.Contains(t, got, "served route get /api/repos/{owner}/{repo}/workspaces/{id}/unguarded is not classified in "+sessionBoxRoutesFile, "an unguarded path-bound route fails")
+	require.Contains(t, got, "served route post /api/unguarded-body is not classified in "+sessionBoxRoutesFile, "an unguarded body-bound route fails")
+	require.Contains(t, got, `post /api/unguarded-body names a box in its body or query but is classified "", which is no door`)
+	require.Contains(t, got, `get /api/repos/{owner}/{repo}/workspaces/{id}/mislabelled names a box in its path but is classified "no-box", which is no door`)
+	require.Contains(t, got, `get /api/repos/{owner}/{repo}/agent/sessions/{id} is an agent session transcript: classify it creator-only-lane-a-4c (PM d-k9xonl), not "no-box"`)
+	require.NotContains(t, strings.Join(got, "\n"), "workspaces/{id} is not classified", "a classified door passes")
 }

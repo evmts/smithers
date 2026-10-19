@@ -430,6 +430,11 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Conte
 	if err := s.refuseHeldAgentBoxLocked(row); err != nil {
 		return row, err
 	}
+	// Nor beside a process a turn left on a dirty guest: a start outside its
+	// session's turn is refused (Security d-nhn9cy finding 1).
+	if err := s.refuseDirtySessionBoxStart(ctx, row); err != nil {
+		return row, err
+	}
 	if retiredAgentBox(row) {
 		// A retirement deleted this box's guest. Its next start builds a new
 		// one, from the recorded head or afresh, as a create, so it needs no
