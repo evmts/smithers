@@ -85,7 +85,8 @@ func TestNotesMirrorIntegration(t *testing.T) {
 	require.Equal(t, []services.GitRef{{Ref: "refs/notes/mythical", Object: services.GitRefObject{SHA: sha, Type: "commit"}}}, result)
 	content := request("/api/repos/alice/demo/contents/ab/cd?ref=" + result[0].Object.SHA)
 	require.Equal(t, 200, content.Code, content.Body.String())
-	require.JSONEq(t, `{"name":"cd","path":"ab/cd","sha":"","type":"file","encoding":"utf-8","content":"story","size":5}`, content.Body.String())
+	require.JSONEq(t, fmt.Sprintf(`{"name":"cd","path":"ab/cd","sha":"","type":"file","encoding":"utf-8","content":"story","size":5,"commit_sha":%q,"raw_url":%q}`,
+		sha, "/api/repos/alice/demo/contents/ab/cd?raw=1&ref="+sha), content.Body.String())
 	q.repository.IsPublic = false
 	deniedRefs := request("/api/repos/alice/demo/git/refs")
 	deniedContent := request("/api/repos/alice/demo/contents/ab/cd?ref=" + sha)
