@@ -789,7 +789,7 @@ func (d *agentDispatch) createAgentWorkspaceVM() error {
 	if d.sandboxStartAuthorized {
 		provisionCtx = context.WithValue(provisionCtx, sandboxStartAdmissionKey{}, d.input.UserID)
 	}
-	result, err := d.svc.workspaces.CreateAgentWorkspace(provisionCtx, CreateAgentWorkspaceInput{
+	result, err := d.createAgentWorkspaceRetryingBusy(provisionCtx, CreateAgentWorkspaceInput{
 		RepositoryID:   d.input.RepositoryID,
 		UserID:         d.input.UserID,
 		SessionID:      d.input.SessionID,
@@ -820,6 +820,47 @@ func (d *agentDispatch) createAgentWorkspaceVM() error {
 			"duration_ms", d.vmCreateDuration.Milliseconds())
 	d.revokeCloneToken()
 	return nil
+}
+
+// A turn's box start refused because the workspace service held every
+// mutation slot (box_busy) is retried within the turn: the start is
+// background work, so a launch spike delays the turn instead of failing it.
+// The retries back off from agentWorkspaceBusyBackoff, doubling up to
+// agentWorkspaceBusyBackoffCap, and stop once agentWorkspaceBusyRetryBudget,
+// a third of the 15-minute turn limit, is spent; each attempt itself waits at
+// most workspaceMutationSlotWait for a slot. Only then does the session fail,
+// as box_busy and retryable. A refused attempt changed nothing: the refusal
+// comes before the join's authorization transaction and its provision lock.
+var (
+	agentWorkspaceBusyBackoff     = 2 * time.Second
+	agentWorkspaceBusyBackoffCap  = 30 * time.Second
+	agentWorkspaceBusyRetryBudget = 5 * time.Minute
+)
+
+// createAgentWorkspaceRetryingBusy creates the turn's box, retrying a
+// box_busy refusal as above. Any other error, or the turn's own context
+// ending, returns at once.
+func (d *agentDispatch) createAgentWorkspaceRetryingBusy(ctx context.Context, input CreateAgentWorkspaceInput) (AgentWorkspaceResult, error) {
+	started := time.Now()
+	backoff := agentWorkspaceBusyBackoff
+	for attempt := 1; ; attempt++ {
+		result, err := d.svc.workspaces.CreateAgentWorkspace(ctx, input)
+		if err == nil || !isWorkspaceMutationBusy(err) || ctx.Err() != nil ||
+			time.Since(started)+backoff > agentWorkspaceBusyRetryBudget {
+			return result, err
+		}
+		middleware.LoggerWithAgentSessionAndWorkflowRun(ctx, d.input.SessionID, d.run.ID).
+			Warn("agent workspace start busy; retrying", "attempt", attempt, "backoff", backoff.String(),
+				"elapsed", time.Since(started).Round(time.Millisecond).String())
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return result, err
+		case <-timer.C:
+		}
+		backoff = min(2*backoff, agentWorkspaceBusyBackoffCap)
+	}
 }
 
 // applyReservedRuntimeEnv sets the runtime env keys that a repo secret must never
