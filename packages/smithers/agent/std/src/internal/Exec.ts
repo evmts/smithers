@@ -96,7 +96,8 @@ export interface ExecOptions {
    * Text written to the program's standard input, as data. A script delivered
    * this way is never quoted, escaped, or heredoc-terminated, which is the
    * whole point: quoting corruption cost the measured SWE-bench program twelve
-   * probe failures and one instance's most expensive frame.
+   * probe failures and one instance's most expensive frame. Absent, the
+   * program's standard input is /dev/null.
    */
   readonly stdin?: string | undefined
   /**
@@ -299,9 +300,10 @@ const unbounded = (
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       env: ChildProcessEnvironment.make(process.env, options.env),
       extendEnv: false,
-      ...(options.stdin === undefined
-        ? {}
-        : { stdin: Stream.make(new TextEncoder().encode(options.stdin)) })
+      // No input is /dev/null, never an open pipe nothing writes to: a
+      // command that reads standard input sees end of file at once instead
+      // of waiting on it until its timeout.
+      stdin: options.stdin === undefined ? "ignore" : Stream.make(new TextEncoder().encode(options.stdin))
     }
     const handle = yield* spawner.spawn(
       options.args === undefined

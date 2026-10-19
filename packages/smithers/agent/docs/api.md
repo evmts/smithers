@@ -1586,6 +1586,8 @@ class Timeout extends Schema.TaggedError<Timeout>()("flows/agent/Timeout", {
 type Incident = typeof ControlFacts.GuardIncident.Type
 const incident: (tripped: BudgetExceeded | Timeout, raised?: number) => Incident
 const stopped: (facts: Incident) => HarnessError.HarnessError
+const callLimitTag: "flows/agent/RunawayGuard/CallLimit"
+const callLimitExceeded: (flow: string, limitMillis: number) => HarnessError.HarnessError
 const layerFlowLimit: (
   flowName: string,
   limitMillis: number
@@ -1631,6 +1633,17 @@ bounded, not the execution: time suspended on a person, an approval or a timer
 is not charged. Under a budget that does not park, the flow runs unbounded.
 The configured coding host bounds `coding/PreparePlan` by its project's
 `limits.toolMs`.
+
+`callLimitExceeded` is the failure a host's command bound ends a run with
+(`callLimitMillis` on [`StandardFlows.shell`](#standardflowsshell) and
+[`StandardFlows.tests`](#standardflowstests)): one `bash` or `test` command
+ran `limitMillis` and was killed with its process group. It is a
+`model_failed` `HarnessError` whose cause carries `callLimitTag`, so the run's
+fault is `{ class: "policy", tag: callLimitTag }` and nothing retries past it.
+Unlike a command's own `timeoutMs`, which the cell reads as a `timeout` call
+failure, the bound ends the run whatever its budget says. A hosted coding host
+sets the bound to five minutes; Smithers reads the fault as the turn's
+`turn_timed_out`.
 
 ## EventSink
 
@@ -1726,18 +1739,26 @@ const shell: (
   options?: {
     readonly sealedTo?: string | undefined
     readonly terminal?: "agent" | undefined
+    readonly callLimitMillis?: number | undefined
   }
 ) => FlowBinding.Source
 ```
 
 Shell execution as one ordinary flow, `bash`. The container transport defaults
 to `Container.makeCommand()`, the docker or podman CLI; a composition that
-supplies none refuses a containerised call.
+supplies none refuses a containerised call. A command that names no `stdin`
+reads `/dev/null`, so a command that waits on input ends at once.
 
 `options.sealedTo` restricts execution to one container. `options.terminal`
 (since 1.0.0) accepts `"agent"` and fails with `provider_unavailable` until
 registered PTY execution and card evidence are available. It never falls back
 to container execution.
+
+`options.callLimitMillis` (since 1.0.0) is the host's bound on one command. A
+longer or absent `timeoutMs` is lowered to it. A command it stops is killed
+with its whole process group and fails the run with
+[`RunawayGuard.callLimitExceeded`](#runawayguard) instead of answering the
+cell. A shorter `timeoutMs` the cell chose stays the cell's own timeout.
 
 ### StandardFlows.tests
 
@@ -1745,9 +1766,15 @@ to container execution.
 const tests: (
   services: Context.Context<
     ChildProcessSpawner.ChildProcessSpawner | Evaluator.Evaluator | TestRunner.TestRunner
-  >
+  >,
+  options?: { readonly callLimitMillis?: number | undefined }
 ) => FlowBinding.Source
 ```
+
+`options.callLimitMillis` bounds one suite run as it bounds a `bash` command:
+a given `timeoutMs` is lowered to it, and a run it stops fails the run with
+`RunawayGuard.callLimitExceeded`. The host lowers the declared runner's own
+`timeoutMs` to the bound as well.
 
 The project's own test runner as one ordinary flow. A host that has no
 runner binds `TestRunner.layerNoop` and the flow says so when it is called. The

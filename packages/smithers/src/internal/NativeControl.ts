@@ -424,6 +424,13 @@ export interface Platform {
     readonly taskMs: number
     readonly weights?: Budget.Weights | undefined
   } | undefined
+  /**
+   * The bound on one `bash` or `test` command, in milliseconds. A command
+   * past it is killed with its process group and fails its run
+   * (`RunawayGuard.callLimitExceeded`). Undefined, each command keeps its
+   * own timeout.
+   */
+  readonly toolCallLimitMs?: number | undefined
   readonly host: Layer.Layer<NodeServices.NodeServices>
   readonly crypto: Layer.Layer<Crypto.Crypto>
   readonly database: (filename: string) => Layer.Layer<DurableWriter.DurableWriter | SqlClient>
@@ -1715,7 +1722,8 @@ export const make = (
             StandardFlows.shell(HostLanguageServers.bind(transportShell, languageServer), container, {
               sealedTo,
               terminal: native.shellTerminal,
-              terminalPort
+              terminalPort,
+              callLimitMillis: native.toolCallLimitMs
             })
           ]),
           // Host-wide on purpose: these sources are built once per executor,
@@ -1739,7 +1747,8 @@ export const make = (
           ...(native.shellTerminal === "agent" && terminalPort === undefined ? [] : testFlows(
             Context.merge(runner?.container === sealedTo ? transportShell : shellServices, judge),
             container,
-            runner
+            runner,
+            native.toolCallLimitMs
           )),
           ...mcp
         ]
@@ -2087,7 +2096,7 @@ export const make = (
                           StandardFlows.shell(
                             Context.pick(KernelChildProcessSpawner.ChildProcessSpawner, KernelPath.Path)(machine),
                             undefined,
-                            { terminal: native.shellTerminal }
+                            { terminal: native.shellTerminal, callLimitMillis: native.toolCallLimitMs }
                           )
                         ]),
                         StandardFlows.memory(memoryServices, judge, StandardFlows.hostWide),

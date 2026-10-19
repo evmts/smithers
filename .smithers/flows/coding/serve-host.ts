@@ -12,7 +12,7 @@ import { remoteLayer } from "../repository/remote.ts"
 import { consume as consumeCheckEnvironment } from "./check-environment.ts"
 import { HOSTED_ROOT, localProvider } from "./filesystem.ts"
 import { share } from "./host-modules.ts"
-import { layer, operatorSeats, type Options, optionsFromEnv, systemFlowsFromEnv } from "./host.ts"
+import { layer, operatorSeats, type Options, optionsFromEnv, systemFlowsFromEnv, toolCallLimitFromEnv } from "./host.ts"
 import { prepareFlowDependencies, withImmutableCommit, withPinnedSource } from "./immutable-source.ts"
 import { consumeInstallProject } from "./install-project.ts"
 import { load as loadLanding } from "./landing-config.ts"
@@ -142,6 +142,7 @@ export const serve = async (
     // Before any repository flow is imported: its effect and @smthrs packages
     // are the host's own instances (#2197).
     const systemFlows = systemFlowsFromEnv(process.env)
+    const toolCallLimitMs = toolCallLimitFromEnv(process.env)
     share()
     const root = resolve(parsed.values.root ?? process.cwd())
     const composed = root === HOSTED_ROOT ? { ...hostedAdapters(), ...adapters } : adapters
@@ -230,10 +231,12 @@ export const serve = async (
     // parses the repository JSON or selects its destination.
     const snapshot = consumeInstallProject(process.env)
     // Every model call to the install's metered proxy names the engine
-    // dispatch it ran under, so the monitor prices each step (T-FLW-07).
+    // dispatch it ran under, so the monitor prices each step (T-FLW-07). A
+    // hosted host also bounds every bash and test command.
     const metered = (platform: NativeControl.Platform): NativeControl.Platform => ({
       ...platform,
-      requestExecutor: MeteredSteps.layer(platform.requestExecutor, process.env.SMITHERS_MODEL_PROXY_URL)
+      requestExecutor: MeteredSteps.layer(platform.requestExecutor, process.env.SMITHERS_MODEL_PROXY_URL),
+      toolCallLimitMs
     })
     const run = (platform: NativeControl.Platform, http: Layer.Layer<HttpClient.HttpClient>) =>
       loadLanding(root, process.env, process.env.SMITHERS_WORKSPACE_CODING_CONFIG).pipe(
