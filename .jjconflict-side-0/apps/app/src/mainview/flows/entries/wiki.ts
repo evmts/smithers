@@ -1,0 +1,110 @@
+/*
+ * The `wiki` flows: the shared wiki operations (`@smthrs/ui/app-operations/wiki`)
+ * bound to the controller. The surface id, the card kind, the store events
+ * and the CSS classes keep the `world` prefix so persisted sessions load
+ * unchanged; only what a person reads or types says Wiki. entries/world.ts
+ * registers the old names as hidden aliases over the same controller calls.
+ */
+import { wikiCard } from "../../state/seams/DesignWorld/subjects"
+import { WIKI_DISPLAY_NAME, wikiOperations, wikiSurfaceOperations } from "@smthrs/ui/app-operations/wiki"
+import { Schema } from "effect"
+import { bind, flow, type CommandActions } from "./Declare"
+import type { FlowEntry, Namespace, Recommendation } from "../registry"
+
+/** The `wiki` namespace row: the slash tree lists it in registry.ts NAMESPACES order. */
+export const namespace: Namespace = { id: "wiki", label: WIKI_DISPLAY_NAME, summary: "What Smithers understands" }
+
+/** The Wiki leads connect once something is connected. */
+export const recommendations: ReadonlyArray<Recommendation> = [
+  { name: "wiki", when: () => true, rank: (state) => (state.hasConnectors ? 1 : 2) }
+]
+
+/** The bare `wiki` surface switch, registered first with the other top-level surfaces. */
+export const wikiSurfaceFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
+  bind(wikiSurfaceOperations, { wiki: async ({ operation, id }) => {
+    if (operation === "proposal") return id === undefined ? "Choose a proposal" : actions.openProposal(id)
+    if (actions.bootstrap?.capabilities.includes("install")) return actions.listCloudWiki()
+    const page = actions.design.world().wiki[0]
+    return page === undefined ? actions.showWorld() : { value: await actions.presentSubject(wikiCard(page.id, page.title)) }
+  } })
+
+/*
+ * The repository Wiki ROUTE FAMILY, named here rather than in the shared
+ * operation because which routes an origin mounts is the app's question
+ * (entries/controls.ts says the same about the TODO controls).
+ *
+ * Every door below reaches `/api/repos/{owner}/{repo}/wiki*` through
+ * `wiki/CloudWiki.ts`, and `compose/router.go` puts that whole family behind
+ * `FeatureFlagGate(cfg.FeatureFlags.Wiki)` — the pages, the search, the
+ * navigation index, the history, the create/patch/delete and the attachment
+ * PUT alike. So they declare the same `door` as `wiki.save`
+ * (flows/DoorAvailability.ts): once this origin has answered a Wiki call with
+ * the gate's own verdict, none of them opens a form again, and `/wiki.cloud.new`
+ * cannot be typed past the withdrawn answer button into the same refusal.
+ *
+ * The notes doors are deliberately NOT in it. `wiki`, `wiki.pane`,
+ * `wiki.open`, `wiki.new-note`, `wiki.select`, `wiki.edit`, `wiki.delete*`,
+ * `wiki.backlinks`, `wiki.graph`, `wiki.heading`, `wiki.view`, `wiki.card.*`
+ * and `wiki.space` act on this page's own documents, and `wiki.create` asks
+ * the Mythical stack (`/api/repos/{owner}/{repo}/mythical/wiki`, a different
+ * family). An origin whose Wiki flag is off still serves all of them.
+ */
+const WIKI_DOOR_FAMILY: ReadonlySet<string> = new Set([
+  "wiki.cloud", "wiki.cloud.open", "wiki.cloud.new", "wiki.cloud.rename",
+  "wiki.cloud.delete", "wiki.history", "wiki.attach", "wiki.sync"
+])
+
+/** The `wiki.*` flows: the shared wiki operations bound to the controller. */
+export const wikiFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
+  [...bind(wikiOperations.filter(operation => operation.name !== "wiki.ask")
+    .map(operation => WIKI_DOOR_FAMILY.has(operation.name) ? { ...operation, door: "wiki" as const } : operation), {
+    /* Manual refresh enters the packaged wiki worker; failed Home runs share background.retry. */
+    "wiki.create": ({ repo }) => actions.refreshWiki(repo),
+    "wiki.cloud": ({ repo, page, space }) => actions.listCloudWiki(repo, page, space),
+    "wiki.cloud.open": ({ slug, repo, space }) => actions.openCloudWiki(repo, slug, undefined, space),
+    "wiki.sync": ({ documentId }) => actions.retryCloudWiki(documentId),
+    "wiki.edit": ({ documentId, body }, _signal, _call, gesture) =>
+      gesture?.wikiEditPrepared?.() ?? actions.changeWorldDocument(documentId, body),
+    "wiki.card.select": ({ cardId, documentId }) => actions.selectWikiCardDocument(cardId, documentId),
+    "wiki.card.view": ({ cardId, view }) => actions.setWikiCardView(cardId, view),
+    "wiki.new-note": () => actions.createWorldDocument(),
+    "wiki.select": ({ documentId }) => actions.selectWorldDocument(documentId),
+    /* wiki.open, wiki.backlinks and wiki.graph embed their card for either actor. */
+    "wiki.open": ({ path }) => actions.openWorldDocument(path),
+    "wiki.backlinks": ({ path }) => actions.showWorldLinks(path),
+    "wiki.graph": ({ path }) => actions.showWorldGraph(path),
+    "wiki.heading": ({ line, cardId }) => actions.jumpToHeading(line, cardId),
+    "wiki.delete": ({ documentId }) => actions.removeWorldDocument(documentId),
+    "wiki.delete.confirm": () => actions.confirmWorldDelete(),
+    "wiki.delete.cancel": () => actions.cancelWorldDelete(),
+    "wiki.space": ({ space, repo }) => actions.setWikiSpace(space, repo),
+    "wiki.view": ({ view }) => actions.setWikiPageView(view),
+    "wiki.cloud.new": ({ title, repo }) => actions.createCloudWikiPage(title, repo),
+    "wiki.cloud.rename": ({ slug, path, repo }) =>
+      slug === undefined || slug === "" ? "Choose a page to rename." : actions.renameCloudWikiPage(slug, path, repo),
+    "wiki.cloud.delete": ({ slug, repo }) => actions.deleteCloudWikiPage(slug, repo),
+    "wiki.history": ({ slug, repo, page, space }) => actions.showWikiHistory(slug, repo, page, space),
+    "wiki.attach": ({ path, repo }, _signal, _call, gesture) => actions.attachCloudWiki(path ?? "", repo, gesture),
+    "wiki.pane": () => actions.showWikiPane()
+  }), flow({
+    /*
+     * `door: "wiki"` is the repository Wiki route family, which
+     * `compose/router.go` refuses per request through
+     * `FeatureFlagGate(cfg.FeatureFlags.Wiki)`. No bootstrap row states that
+     * flag, so the door is withdrawn only once THIS origin has answered a Wiki
+     * call with the gate's own verdict (flows/DoorAvailability.ts): a host
+     * whose Wiki is enabled never answers that way and keeps the door.
+     */
+    name: "wiki.save", door: "wiki",  slash: "/wiki.save", cli: ["wiki","save"], journey: ["J9"], group: "Wiki", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: null, summary: "Save this answer as a page", args: "<name>",
+    agent: "run", input: Schema.Struct({ name: Schema.NonEmptyString, text: Schema.optional(Schema.String) }),
+    grammar: args => {
+      if (!args?.trim().startsWith("{")) return { payload: args?.trim() ? { name: args.trim() } : {} }
+      try {
+        const payload: unknown = JSON.parse(args)
+        return payload && typeof payload === "object" && !Array.isArray(payload)
+          ? { payload: payload as Record<string, unknown> } : { error: "Invalid page input" }
+      } catch { return { error: "Invalid page input" } }
+    },
+    form: { submitLabel: "Save", fields: { text: { hidden: true } }, args: payload => JSON.stringify(payload) },
+    handler: ({ name, text }) => actions.saveWikiAnswer(name, text)
+  })]

@@ -1,0 +1,308 @@
+/*
+ * Issue, File, Diff, Wiki page and PR (mvp.md Appendix A). MOCK: each
+ * handler reads or writes the seeded design world (state/seams/DesignWorld/
+ * subjects.ts) and opens the retained card for its subject; the Issue card's
+ * Make TODO is `todo.new` and a finding's Please fix is `todo.steer`, both the
+ * TODO lane's flows. The real seams replace the handlers one by one:
+ * IssuesSeam, FilesSeam, ChangeSeam, the wiki collections, LandingsSeam.
+ */
+import { Schema } from "effect"
+import { payloadFor } from "../SlashPayload"
+import { flowArgs } from "../FlowArgs"
+import { FILES_LIST_COMMAND } from "@smthrs/rpc/FileList"
+import { FILES_READ_COMMAND } from "@smthrs/rpc/FileRead"
+import { shellViewsOf } from "../../state/seams/DesignWorld/shell"
+import { flow, type CommandActions, type CommandResult } from "./Declare"
+import type { FlowEntry } from "../registry"
+import type { Grammar } from "../SlashPayload"
+import {
+  commentIssue, diffCard, fileCard, fileListCard, findBranch, findFile, findWikiPage, issueCard, issueListCard, issueNumberOf,
+  newIssue, newWikiPage, prCard, wikiCard
+} from "../../state/seams/DesignWorld/subjects"
+
+/** A JSON object from a button or form, or one positional word for `field` from the slash line. */
+const positional = (field: string, coerce: (text: string) => unknown = text => text): Grammar => args => {
+  const text = args?.trim() ?? ""
+  if (text === "") return { payload: {} }
+  if (text.startsWith("{")) {
+    try {
+      const payload: unknown = JSON.parse(text)
+      if (payload && typeof payload === "object" && !Array.isArray(payload)) return { payload: payload as Record<string, unknown> }
+    } catch { /* falls through to the refusal */ }
+    return { error: "Enter a JSON object" }
+  }
+  return { payload: { [field]: coerce(text) } }
+}
+
+/** `#231 the comment`: the number, then the rest of the line as `field`. */
+export const numbered = (field?: string): Grammar => args => {
+  const text = args?.trim() ?? ""
+  if (text.startsWith("{")) return positional("number")(text)
+  const match = /^#?([1-9]\d*)(?:\s+([\s\S]*))?$/.exec(text)
+  if (match === null) return { payload: {} }
+  return { payload: { number: Number(match[1]), ...(field !== undefined && match[2] ? { [field]: match[2] } : {}) } }
+}
+
+const json = (payload: Record<string, unknown>) => JSON.stringify(payload)
+
+/**
+ * The doors `/issue.new` and `/issue.comment` name when this host does not
+ * serve theirs. A Smithers Cloud origin reads GitHub's issues but writes only
+ * its own tracker, so `/issue.new` there names the door that writes the
+ * tracker it does have; the sentence never substitutes one source for the
+ * other. An install serves both doors itself.
+ */
+const CLOUD_ISSUE_DOOR = "Use /issues.create on Smithers Cloud."
+const NO_ISSUE_DOOR = "Opening an issue needs the GitHub App install or Smithers Cloud."
+const NO_COMMENT_DOOR = "Commenting on an issue needs the GitHub App install or Smithers Cloud."
+
+export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => {
+  const design = actions.design
+  const designRepo = () => design.world().repo.repo
+  const open = async (card: Parameters<CommandActions["presentSubject"]>[0]): Promise<CommandResult> => ({ value: await actions.presentSubject(card) })
+  /* An install's issues are its repository's GitHub issues, through IssuesSeam (GET /api/issues). */
+  const install = () => actions.bootstrap?.capabilities.includes("install") === true
+  /**
+   * Whether this host serves the issues `/issue` and `/issues` read.
+   *
+   * The doors are the ones `issues.view` and `issues.list` already declare in
+   * `runtimeAny` — the `install` and `cloud` CAPABILITIES — never the design
+   * FIXTURE. [#3879](https://github.com/smithersai/smithers/issues/3879):
+   * branching on `install` alone dropped the hosted app, which serves `cloud`
+   * with the fixture off, into the empty seeded world, so `/issue 5` answered
+   * "No issue #5" for an issue `/issues.view 5` opened. Same class as #3865.
+   *
+   * The fixture still answers whenever it is on (the design preview), and a
+   * host that serves neither keeps the seeded answer it had.
+   */
+  const hostIssues = () => !design.enabled && (install() || actions.bootstrap?.capabilities.includes("cloud") === true)
+  /**
+   * Whether this host writes issues through its repository's own tracker: the
+   * Smithers Cloud doors `issues.create` and `issues.comment` already declare
+   * in `runtime`/`runtimeAny`, never the design FIXTURE.
+   *
+   * An install is answered before this, by its GitHub App, and the fixture is
+   * a write only while it is on (the design preview).
+   * [#3831](https://github.com/smithersai/smithers/issues/3831) item 1:
+   * branching on `install` alone had the hosted app — `cloud`, fixture off —
+   * write the seeded world, whose writes work with the fixture off, so
+   * `/issue.new` answered "Opened #1 on GitHub" for an in-memory row and
+   * `/issue.comment` "Commented on #n" for a thread nobody can read. Same
+   * class as #3879.
+   */
+  const cloudIssueWrites = () => !design.enabled && !install() && actions.bootstrap?.capabilities.includes("cloud") === true
+  const realFiles = () => !design.enabled || actions.branchFiles.available()
+  const repositoryFile = (payload: Readonly<Record<string, unknown>>): boolean => payload.operation !== "workspace" && payload.operation !== "tree" && payload.branch === undefined && payload.revision === undefined &&
+    (payload.operation === "repository" || payload.repo !== undefined || payload.ref !== undefined || /^\/[^/]+\/[^/]+(?:\/|$)/.test(String(payload.path ?? "")) ||
+      actions.snapshot().repositorySelected === true || actions.snapshot().firstRunTargetPending === true || actions.snapshot().repositoryReadiness !== undefined || install() || actions.bootstrap?.host === "cloud")
+  return [
+    flow({ name: "issue",   slash: "/issue", cli: ["issue","show"], journey: ["J2"], group: "Issues", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: {"method":"GET","path":"/api/issues/{number}"}, summary: "Open an issue's card", args: "#n", discloseToAgent: true,
+      grammar: numbered(), agent: "run", input: Schema.Struct({ number: Schema.Number }),
+      handler: ({ number }) => {
+        /* An install reads GitHub's issue; Smithers Cloud reads its repository's own. */
+        if (hostIssues()) return actions.viewIssue(number, undefined, install() ? "github" : undefined)
+        const issue = design.world().issues.find(each => each.number === number)
+        return issue === undefined ? `No issue #${number}` : open(issueCard(designRepo(), number, issue.title))
+      } }),
+    flow({ name: "issues",   slash: "/issues", cli: ["issues"], journey: ["J2"], group: "Issues", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: {"method":"GET","path":"/api/issues"}, summary: "List the repository's issues", agent: "run", input: Schema.Struct({}),
+      handler: () => hostIssues() ? actions.listIssues("open") : open(issueListCard(designRepo())) }),
+    flow({ name: "issue.new",   slash: "/issue.new", cli: ["issue","new"], journey: [], group: "Issues", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: {"method":"POST","path":"/api/issues"}, summary: "Open a GitHub issue", args: "<title>", discloseToAgent: true,
+      grammar: positional("title"), agent: "confirm", input: Schema.Struct({ title: Schema.NonEmptyString, body: Schema.String }),
+      form: { submitLabel: "Open on GitHub", fields: { title: { label: "Title" }, body: { label: "Body" } }, args: json },
+      /*
+       * This door is GitHub's, by its summary and by the design canon's submit
+       * verb (.specs/design/mock/src/world.ts). Smithers Cloud has no GitHub
+       * issue identity — `issues.create` refuses the mirror image, "Use
+       * /issue.new on this install." — so the Cloud host names the door that
+       * writes its own tracker instead of opening a seeded issue and claiming
+       * GitHub numbered it.
+       */
+      /*
+       * `unavailable`, not `preflight`: which host serves this door does not
+       * depend on the title or the body, so the answer is owed BEFORE the form
+       * asks for either (../Declare.ts, `Commands.settle`). As a `preflight` it
+       * could not be read until a payload had been decoded, so a bare
+       * `/issue.new` on a Smithers Cloud origin opened Title / Body / "Open on
+       * GitHub" and named the right door only after the submit.
+       */
+      unavailable: () => design.enabled || install() ? undefined : cloudIssueWrites() ? CLOUD_ISSUE_DOOR : NO_ISSUE_DOOR,
+      handler: ({ title, body }) => {
+        if (install()) return actions.requestIssueCreate(title, body)
+        // Unreachable through the registry; the door's own answer stays, so no
+        // caller of the binding can write the seeded world on a hosted origin.
+        if (!design.enabled) return cloudIssueWrites() ? CLOUD_ISSUE_DOOR : NO_ISSUE_DOOR
+        return { value: `Opened #${newIssue(design, title, body, design.viewer())} on GitHub` }
+      } }),
+    flow({ name: "issue.comment",   slash: "/issue.comment", cli: ["issue","comment"], journey: ["J2"], group: "Issues", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: {"method":"POST","path":"/api/issues/{number}/comments"}, summary: "Comment on an issue", args: "#n <text>", discloseToAgent: true,
+      grammar: numbered("body"), agent: "confirm", input: Schema.Struct({ number: Schema.Number, body: Schema.NonEmptyString }),
+      form: { submitLabel: "Comment", fields: { number: { label: "Issue" }, body: { label: "Comment" } }, args: json },
+      /*
+       * `unavailable`, not `preflight`: which host serves the comment door
+       * does not depend on the issue number or the text, so the answer is
+       * owed BEFORE the form asks for either and BEFORE the confirm step
+       * (../Declare.ts, `Commands.settle`). As a `preflight` it could not be
+       * read until a payload had been decoded, so an install answered
+       * `/issue.comment` with the Issue / Comment form, kept the comment the
+       * person wrote and refused on the submit — `/issue.new`'s own bug, one
+       * door over. A `confirm` door reached by an agent would otherwise answer
+       * "asked the user to confirm" and post a confirmation message for a
+       * write this host cannot perform, so the person authorizes a refusal.
+       */
+      unavailable: () => cloudIssueWrites() || install() ? undefined : design.enabled ? undefined : NO_COMMENT_DOOR,
+      handler: ({ number, body }) => {
+        /*
+         * One seam decides which tracker the comment addresses and sends it:
+         * on an install the repository's GitHub issue, through the canonical
+         * durable writer (POST /api/issues/{n}/comments); on Smithers Cloud
+         * the repository's own issue — the one `/issue` just opened. An
+         * install used to answer "a member confirmation, not an app write
+         * yet" and keep the comment the person had written.
+         */
+        if (cloudIssueWrites() || install()) return actions.commentOnIssue(number, body, undefined, undefined, install() ? "github" : undefined)
+        if (!design.enabled) return NO_COMMENT_DOOR
+        return commentIssue(design, number, body, design.viewer()) ? { value: `Commented on #${number}` } : `No issue #${number}`
+      } }),
+    flow({ name: "file",   slash: "/file", cli: ["file"], journey: ["J3","J9"], group: "Files and code", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: { method: "GET", path: "/api/branches/{branch}/files/{path}", defaults: { branch: "main" }, query: { at: "revision" } }, summary: "Open and co-edit a file", args: FILES_READ_COMMAND.args, discloseToAgent: true,
+      grammar: args => payloadFor("file", args), agent: "run",
+      payloadRequires: payload => payload.operation === "workspace" ? ["signed-in"] : repositoryFile(payload) ? ["first-run-target", "repo-source"] : [],
+      form: { fields: { branch: { hidden: true }, revision: { hidden: true }, workspaceId: { optionsFrom: "workspaces", hidden: true }, operation: { hidden: true }, path: { kind: "text" }, repo: { optionsFrom: "cloud-repos", kind: "text" } }, args: payload => flowArgs("file", payload as Parameters<typeof flowArgs<"file">>[1]) },
+      input: Schema.Struct({ path: Schema.String, branch: Schema.optional(Schema.String), line: Schema.optional(Schema.Number), column: Schema.optional(Schema.Number), revision: Schema.optional(Schema.String), repo: Schema.optional(Schema.String), ref: Schema.optional(Schema.String), workspaceId: Schema.optional(Schema.String), operation: Schema.optional(Schema.Literals(["repository", "workspace"])) }),
+      prepare: ({ path, repo, line, column, ref, branch, revision, operation }) => operation !== "workspace" && branch === undefined && revision === undefined ? actions.readFile.preload?.(path, repo, line === undefined ? undefined : { line, ...(column === undefined ? {} : { column }) }, ref) : undefined,
+      handler: ({ path, branch, line, column, revision, repo, ref, operation, workspaceId }) => {
+        if (operation === "workspace") return install() || actions.live ? "Branch unavailable" : actions.readWorkspaceFile(path, workspaceId)
+        if (repositoryFile({ path, branch, revision, operation, repo, ref })) return actions.readFile(path, repo, line === undefined ? undefined : { line, ...(column === undefined ? {} : { column }) }, ref)
+
+        if (install() && branch === "main") return actions.readFile(path, undefined, line === undefined ? undefined : { line, ...(column === undefined ? {} : { column }) }, "main")
+        if (revision !== undefined) return actions.readFile(path, undefined, line === undefined ? undefined : { line }, revision)
+        if (install() && !actions.branchFiles.available()) return actions.readFile(path, undefined, line === undefined ? undefined : { line }, branch)
+        if (realFiles()) return actions.branchFiles.open(path, branch, line)
+        const world = design.world()
+        if (path === "") return open(fileListCard(designRepo(), findBranch(world, branch ?? "")?.id ?? "main"))
+        const file = findFile(world, path, branch, design.viewer())
+        return file === undefined ? `No file ${path}` : open(fileCard(designRepo(), file.branch, file.path, line))
+      } }),
+    flow({ name: "files", slash: "/files", cli: ["files"], journey: ["J3"], group: "Files and code", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: { method: "GET", path: "/api/branches/{branch}/files", defaults: { branch: "main" }, query: { path: "path" } }, summary: "Browse a branch's files", args: FILES_LIST_COMMAND.args, discloseToAgent: true,
+      grammar: args => {
+        const parsed = payloadFor("files", args)
+        if (!("payload" in parsed) || args?.trim().startsWith("{")) return parsed
+        const branch = (value: unknown): value is string => typeof value === "string" && /^(?:main|T[1-9]\d*|scratch\/[^/]+\/[^/]+)$/.test(value)
+        if (branch(parsed.payload.repo)) return { payload: { path: parsed.payload.path, branch: parsed.payload.repo } }
+        if (branch(parsed.payload.path) && parsed.payload.repo === undefined) return { payload: { branch: parsed.payload.path } }
+        return parsed
+      }, agent: "run",
+      payloadRequires: payload => {
+        if (payload.operation === "tree") {
+          // A public mirror's shared tree is readable by its signed-out visitors.
+          // Bind the exception to this copy's catalog repository, never the selection.
+          const repo = typeof payload.copy === "string" && payload.copy.startsWith("shared:") ? payload.copy.slice("shared:".length) : undefined
+          return repo !== undefined && actions.snapshot(repo).publicRepo === true ? [] : ["signed-in"]
+        }
+        return payload.operation === "workspace" ? ["signed-in"] : repositoryFile(payload) ? ["first-run-target", "repo-source"] : []
+      },
+      preflight: (payload, actor) => payload.operation === "tree" && actor !== "user" ? "Only a person can change the file tree" : undefined,
+      input: Schema.Struct({ path: Schema.optional(Schema.String), branch: Schema.optional(Schema.String), repo: Schema.optional(Schema.String), ref: Schema.optional(Schema.String), workspaceId: Schema.optional(Schema.String), copy: Schema.optional(Schema.String), operation: Schema.optional(Schema.Literals(["repository", "workspace", "tree"])) }),
+      form: { requires: payload => payload.operation === "tree" ? ["copy"] : undefined, fields: { branch: { hidden: true }, ref: { hidden: true }, operation: { hidden: true }, copy: { label: "Working copy", kind: "text", hidden: true }, path: { kind: "text" }, repo: { optionsFrom: "cloud-repos", kind: "text" }, workspaceId: { optionsFrom: "workspaces", hidden: true } }, args: payload => JSON.stringify(payload) },
+      prepare: ({ path, repo, branch, ref, operation }) => operation !== "workspace" && operation !== "tree" && branch === undefined ? actions.listFiles.preload?.(path ?? "", repo, ref) : undefined,
+      handler: ({ path, branch, repo, ref, operation, workspaceId, copy }) => {
+        if (operation === "tree") return copy ? actions.toggleRepoTree(copy, path) : "Choose a working copy"
+        if (operation === "workspace") return install() || actions.live ? "Branch unavailable" : actions.listWorkspaceFiles(path, workspaceId)
+        /* The revision the URL named rides the same route parameter `/file` reads one file with. */
+        if (repositoryFile({ path, branch, repo, operation })) return actions.listFiles(path ?? "", repo, ref)
+        return install() ? actions.listFiles(path ?? "", branch) : realFiles() ? actions.branchFiles.list(branch) : open(fileListCard(designRepo(), findBranch(design.world(), branch ?? path ?? "")?.id ?? "main"))
+      } }),
+    flow({ name: "diff",   slash: "/diff", cli: ["diff"], journey: ["J2","J3"], group: "Files and code", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: { method: "GET", path: "/api/branches/{branch}/diff", defaults: { branch: "main" }, query: { entry: "entry" } }, summary: "Show a branch's changes", args: "[branch|path]", discloseToAgent: true,
+      grammar: positional("subject"),
+      form: {
+        fields: { operation: { hidden: true }, cardId: { hidden: true } },
+        requires: payload => payload.operation === "file" ? ["cardId", "path"] : payload.operation === "pins" ? ["changeId", "from", "to"] : payload.operation === "checks" ? ["changeId", "seq"] : payload.operation ? ["changeId"] : undefined,
+        optionalFields: payload => payload.operation === "change-diff" ? ["from", "to", "path"] : payload.operation === "change" ? ["rev"] : [],
+        args: payload => JSON.stringify(payload)
+      },
+      payloadRequires: payload => payload.operation && payload.operation !== "file" ? ["signed-in"] : [],
+      agent: "run", input: Schema.Struct({ subject: Schema.optional(Schema.String), branch: Schema.optional(Schema.String), path: Schema.optional(Schema.String), entry: Schema.optional(Schema.String),
+        operation: Schema.optional(Schema.Literals(["change", "change-diff", "pins", "checks", "file"])), changeId: Schema.optional(Schema.String), rev: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))), from: Schema.optional(Schema.String), to: Schema.optional(Schema.String), seq: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))), cardId: Schema.optional(Schema.String) }),
+      handler: ({ subject, branch, path, entry, operation, changeId, rev, from, to, seq, cardId }) => {
+        if (operation === "file") return cardId && path ? actions.openDiffFile(cardId, path) : "Select a diff and file"
+        if (operation === "change") return changeId ? actions.viewChange(changeId, rev) : "Choose a change"
+        if (operation === "change-diff") return changeId ? actions.diffChange(changeId, from, to, path) : "Choose a change"
+        if (operation === "pins") return changeId && from && to ? actions.setChangePins(changeId, from, to) : "Choose revision pins"
+        if (operation === "checks") return changeId && seq !== undefined ? actions.checksOfChangeAt(changeId, seq) : "Choose a revision"
+
+        if (realFiles()) return actions.branchDiff(branch ?? subject, entry, path)
+        const world = design.world()
+        const wanted = path ?? subject ?? ""
+        const file = wanted === "" ? undefined : findFile(world, wanted, branch, design.viewer())
+        if (file !== undefined) return open(diffCard(designRepo(), file.id, file.path.split("/").at(-1) ?? file.path))
+        /* A bare /diff shows the branch this person is on; on main, the first item in review. */
+        const here = shellViewsOf(design).get(design.viewer())?.at
+        const fallback = here !== undefined && here !== "main" ? findBranch(world, here) ?? findBranch(world, "T8") : findBranch(world, "T8")
+        const target = findBranch(world, branch ?? wanted) ?? (wanted === "" && branch === undefined ? fallback : undefined)
+        return target === undefined ? `Nothing to diff for ${wanted}` : open(diffCard(designRepo(), target.id, target.name))
+      } }),
+    flow({ name: "file.restore", agent: "run", actors: ["person","app_agent"], minimumRole: "member", visibility: "in-card", summary: "Restore this file", args: "<path>", hidden: true, discloseToAgent: true,
+      grammar: positional("path"), input: Schema.Struct({ path: Schema.String, branch: Schema.optional(Schema.String), revision: Schema.optional(Schema.String), post_digest: Schema.optional(Schema.String) }),
+      handler: ({ path, branch, revision, post_digest }) => {
+        if (realFiles()) return revision && post_digest ? actions.branchFiles.restoreVersion(path, branch, revision, post_digest) : actions.branchFiles.action("file.restore", path, branch)
+        const file = findFile(design.world(), path, branch, design.viewer())
+        if (file === undefined) return `No file ${path}`
+        const result = design.restoreFile(file.id)
+        return result.ok ? { value: result.ack } : result.refusal
+      } }),
+    ...(["file.compare", "file.restore-deleted", "file.follow-rename"] as const).map(name => flow({
+      name, visibility: "in-card", agent: "run", actors: ["person","app_agent"], minimumRole: "member", summary: name === "file.compare" ? "Compare" : name === "file.restore-deleted" ? "Restore" : "Follow", hidden: true, discloseToAgent: true,
+      grammar: positional("path"), input: Schema.Struct({ path: Schema.String, branch: Schema.optional(Schema.String) }),
+      handler: async ({ path, branch }) => {
+        const document = await actions.recoverFile(name, path, branch)
+        if (document !== undefined) return document
+        if (realFiles()) return actions.branchFiles.action(name, path, branch)
+        const file = findFile(design.world(), path, branch, design.viewer())
+        if (!file) return `No file ${path}`
+        if (name === "file.follow-rename" && file.gone?.kind === "renamed") {
+          const path = file.gone.to ?? file.path
+          design.patch("files", file.id, current => ({ ...current, path, gone: undefined }))
+          return open({ ...fileCard(designRepo(), file.branch, path), id: fileCard(designRepo(), file.branch, file.path).id })
+        }
+        if (name === "file.compare") return open(diffCard(designRepo(), file.id, file.path))
+        const result = design.restoreFile(file.id)
+        return result.ok ? { value: result.ack } : result.refusal
+      }
+    })),
+    flow({ name: "wiki.page",   slash: "/wiki.page", cli: ["wiki","page"], journey: ["J8"], group: "Wiki", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: { method: "GET", path: "/api/repos/{owner}/{repo}/wiki/{name}", query: {} }, summary: "Open or create a page", args: "<name>", discloseToAgent: true,
+      form: { fields: { owner: { hidden: true }, repo: { hidden: true } } },
+      grammar: positional("name"), agent: "run", input: Schema.Struct({ name: Schema.NonEmptyString, revision: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))), owner: Schema.optional(Schema.NonEmptyString), repo: Schema.optional(Schema.NonEmptyString) }),
+      handler: ({ name, revision }) => {
+        /*
+         * The repository's own wiki, behind the same `install`/`cloud`
+         * capabilities the issues read names above (hostIssues) and the doors
+         * `wiki.save` already holds. The fixture answers only while it is on:
+         * branching on `install` alone had the hosted app create a page in the
+         * seeded world and open it as the repository's. Same class as #3879.
+         */
+        if (revision !== undefined || install() || hostIssues()) return actions.openWikiPage(name, revision)
+        const page = findWikiPage(design.world(), name)
+        if (page !== undefined) return open(wikiCard(page.id, page.title))
+        const id = newWikiPage(design, name, design.viewer())
+        return open(wikiCard(id, name.trim()))
+      } }),
+    flow({ name: "pr", slash: "/pr", cli: ["pr"], journey: ["J2"], group: "Review", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: null, summary: "Open a pull request's card", args: "#n [owner/repo]", discloseToAgent: true,
+      grammar: args => args?.trim().startsWith("{") ? positional("number", Number)(args) : payloadFor("prs.view", args?.trim().replace(/^#/, "")),
+      agent: "run",
+      input: Schema.Union([
+        Schema.Struct({ number: Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER))), repo: Schema.optional(Schema.String), operation: Schema.optional(Schema.Never) }),
+        Schema.Struct({ operation: Schema.Literal("list"), repo: Schema.optional(Schema.String), number: Schema.optional(Schema.Never) })
+      ]),
+      form: { fields: { operation: { hidden: true }, repo: { optionsFrom: "cloud-repos", kind: "text" } }, args: payload => JSON.stringify(payload) },
+      payloadRequires: payload => payload.operation === "list" ? ["signed-in"] : !design.enabled || payload.repo !== undefined || (actions.snapshot().repositorySelected === true && !design.world().prs.some(pr => pr.number === payload.number)) ? ["repo-read"] : [],
+      prepare: ({ number, repo, operation }) => operation === "list" ? actions.listLandings.preload?.(repo)
+        : number !== undefined && (!design.enabled || repo !== undefined || (actions.snapshot().repositorySelected === true && !design.world().prs.some(pr => pr.number === number))) ? actions.viewLanding.preload?.(number, repo) : undefined,
+      handler: ({ number, repo, operation }) => {
+        if (operation === "list") return actions.listLandings(repo)
+        if (number === undefined) return "Choose a pull request"
+        if (!design.enabled || repo !== undefined || (actions.snapshot().repositorySelected === true && !design.world().prs.some(pr => pr.number === number))) return actions.viewLanding(number, repo)
+        const pr = design.world().prs.find(each => each.number === number)
+        return pr === undefined ? `No pull request #${number}` : open(prCard(designRepo(), number, pr.title))
+      } })
+  ]
+}
+
+export { issueNumberOf }
