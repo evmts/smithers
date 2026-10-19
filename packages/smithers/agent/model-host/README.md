@@ -33,7 +33,9 @@ const handler = createModelTurnHandler({
   callbackBaseUrl: "http://127.0.0.1:4000",
   resolve: environmentModelResolver({ binding: configuredBinding, env: process.env }),
   // A Node host reads each journal callback's transport phase off Node's own `undici` channels.
-  observeTransport: FetchTransport.observe
+  observeTransport: FetchTransport.observe,
+  // A Node host writes each turn's diagnostic records to standard error.
+  writeDiagnostic: (line) => process.stderr.write(line)
 })
 ```
 
@@ -43,13 +45,14 @@ The handler is a `(request: Request) => Promise<Response>`, so any server that s
 - A turn grant is refused with `400 request_invalid` when it is expired, malformed, names a different run or leg in its cursor, or names a producer origin other than `callbackBaseUrl`.
 - `environmentModelResolver` plans the configured binding, reads exactly one named credential from `env`, and refuses provider redirects. A request may pick another model only on the same credential and origin.
 - `observeTransport` is the host's `CallbackTransportObserver`. With one, a turn records the host's runtime build before its first callback, and a callback that never answers carries the phase it reached (`none`, `created`, `sent`, `responded`, `received`) in its record and in the `502` answer. Without one, failures carry no transport phase.
+- `writeDiagnostic` receives each turn's diagnostic records, one newline-terminated line per call. Without one, turns record nothing.
 
 ## Building blocks
 
 - `runModelTurn` streams one model call into turn frames and cuts the credential out of text, reasoning and tool calls, including echoes split across chunks (`StreamingCredentialCutter`).
 - `DurableChatProducer` and `runDurableChatTurn` commit frames to the journal callback and verify each receipt against the expected cursor.
 - `fastModelFallback` tries the next source only when one fails as unavailable before it emitted any output.
-- `createHostDiagnostics` writes bounded, marker-tagged records to `console.error`, which is standard error under Node and Bun. Fields that are not counts, flags or short tokens are dropped and counted.
+- `createHostDiagnostics` writes bounded, marker-tagged records to the `write` sink the host passes, and is inert without one; the package never writes to a console or stream itself. Fields that are not counts, flags or short tokens are dropped and counted.
 - `createModelProbe` tests a configured model and dials only its planned origin.
 
 ## Failures

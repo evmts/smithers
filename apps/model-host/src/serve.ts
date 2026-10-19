@@ -76,7 +76,12 @@ const handle = createModelTurnHandler({
   docs,
   // This host is Node, so its journal callbacks are read off Node's own
   // `undici` channels: a callback that never answers names the phase it died in.
-  observeTransport: FetchTransport.observe
+  observeTransport: FetchTransport.observe,
+  // Turn diagnostics go to this guest's standard error, which its sandbox
+  // keeps, so a stalled turn can be read while it is still stuck.
+  writeDiagnostic: (line) => {
+    process.stderr.write(line)
+  }
 })
 const modelProbe = createModelProbe({ env: process.env, egress: true })
 const authorized = bearerAuthorization(authorization)

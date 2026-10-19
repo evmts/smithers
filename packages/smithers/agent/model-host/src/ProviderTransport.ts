@@ -19,8 +19,8 @@ import type * as HttpClient from "effect/http/HttpClient"
  * @category transport
  * @since 1.0.0
  */
-export const refusingRedirects = (base: typeof globalThis.fetch): typeof globalThis.fetch =>
-  (async (input: RequestInfo | URL, init?: RequestInit) => {
+export const refusingRedirects = (base: typeof globalThis.fetch): typeof globalThis.fetch => {
+  const guarded = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const response = await base(input, { ...init, redirect: "manual" })
     // Browsers and Node answer a manual redirect as `opaqueredirect`; Workers
     // answer the 3xx itself and type `type` without that member, so it is read
@@ -32,6 +32,8 @@ export const refusingRedirects = (base: typeof globalThis.fetch): typeof globalT
     }
     return response
   }) as typeof globalThis.fetch
+  return guarded
+}
 
 /**
  * An `HttpClient` for credentialed provider calls, over a fetch that refuses

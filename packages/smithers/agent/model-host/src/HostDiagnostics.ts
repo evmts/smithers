@@ -3,9 +3,11 @@
  *
  * A hosted guest that stops answering writes nothing an operator can read: its
  * only durable channel is the journal, and a turn wedged before its first
- * commit never reaches it. These records go to the guest's own standard error,
- * which the sandbox keeps, so the boundary between a provider response and a
- * journal callback can be read while the turn is still stuck.
+ * commit never reaches it. These records go wherever the host composition
+ * sends them; the Node model host writes them to the guest's own standard
+ * error, which the sandbox keeps, so the boundary between a provider response
+ * and a journal callback can be read while the turn is still stuck. This
+ * package never writes to a console or stream itself.
  *
  * @since 1.0.0-rc.0
  */
@@ -70,8 +72,12 @@ export interface HostDiagnostics {
 export interface HostDiagnosticOptions {
   /** The turn these records belong to; omitted when there is none to name. */
   readonly turnId?: string
-  /** Where one record line goes; the runtime's error console (standard error under Node and Bun) by default. */
-  readonly write?: (line: string) => void
+  /**
+   * Where one newline-terminated record line goes, supplied by the host
+   * composition. Without one the recorder is inert: it writes nothing, starts
+   * no timer and reads no clock.
+   */
+  readonly write?: ((line: string) => void) | undefined
   /** Monotonic milliseconds. */
   readonly clock?: () => number
   /** How often an unfinished operation repeats. */
@@ -120,23 +126,21 @@ const unref = (timer: unknown): void => {
   handle.unref?.()
 }
 
+/** The recorder a host that supplied no sink gets: nothing to write, so nothing to time. */
+const inert: HostDiagnostics = { record: () => {}, begin: () => () => {} }
+
 /**
  * Creates a bounded recorder. Nothing it writes names a host, header,
  * destination, credential or message, and its total output is bounded, so it
- * is safe to leave on for every hosted turn.
+ * is safe to leave on for every hosted turn. Records reach only the `write`
+ * sink the host passes; without one the recorder is inert.
  *
  * @category constructors
  * @since 1.0.0-rc.0
  */
 export const createHostDiagnostics = (options: HostDiagnosticOptions = {}): HostDiagnostics => {
-  // The runtime's own error stream, which is standard error under Node and
-  // Bun and the platform's error log elsewhere: every runtime has one, so the
-  // recorder needs nothing from its host. A record line ends in its newline,
-  // and the console adds its own.
-  const write = options.write ?? ((line: string) => {
-    // eslint-disable-next-line no-console -- the default sink is the runtime's error stream by design.
-    console.error(line.slice(0, -1))
-  })
+  const write = options.write
+  if (write === undefined) return inert
   const clock = options.clock ?? (() => performance.now())
   const pendingMillis = options.pendingMillis ?? 15_000
   const detailLimit = options.detailLimit ?? 8

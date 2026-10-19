@@ -252,15 +252,11 @@ test("the model stream names the stage that refused it and hides the resolver's 
 
 test("a refused model stream records its stage on the guest's diagnostics", async () => {
   const records: Array<Record<string, unknown>> = []
-  const write = vi.spyOn(console, "error").mockImplementation((line: unknown) => {
-    records.push(JSON.parse(String(line)))
-  })
-  try {
-    const response = await createModelTurnHandler(options)(streamPost({ runId: "run", messages: [] }))
-    expect(response.status).toBe(502)
-  } finally {
-    write.mockRestore()
-  }
+  const response = await createModelTurnHandler({
+    ...options,
+    writeDiagnostic: (line) => records.push(JSON.parse(line))
+  })(streamPost({ runId: "run", messages: [] }))
+  expect(response.status).toBe(502)
   expect(records).toEqual(expect.arrayContaining([expect.objectContaining({
     event: "model_stream",
     phase: "refused",
@@ -493,6 +489,39 @@ test("answers the caller with the phase a failed callback reached", async () => 
     transport: { transport: "none" }
   })
   expect(opened).toEqual([new URL(options.callbackBaseUrl).toString()])
+})
+
+test("writes a turn's diagnostics only to the sink the host passes", async () => {
+  // The Node host passes standard error; the package itself writes nowhere.
+  const records: Array<Record<string, unknown>> = []
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+  const handler = (writeDiagnostic?: (line: string) => void) =>
+    createModelTurnHandler({
+      ...options,
+      ...(writeDiagnostic === undefined ? {} : { writeDiagnostic }),
+      resolve: () =>
+        Effect.succeed({
+          model: Model.make({
+            stream: () => Stream.fromIterable<ModelEvent.ModelEvent>([{ type: "settle", stopReason: "stop" }])
+          }),
+          options: { modelId: "fixture" }
+        }),
+      fetchImpl: async () => new Response(null, { status: 403 })
+    })
+  try {
+    expect((await handler()(post(JSON.stringify(grant)))).status).toBe(502)
+    expect((await handler()(streamPost({ runId: "run", messages: [] }))).status).toBe(200)
+    expect(consoleError).not.toHaveBeenCalled()
+    const response = await handler((line) => records.push(JSON.parse(line)))(post(JSON.stringify(grant)))
+    expect(response.status).toBe(502)
+    expect(consoleError).not.toHaveBeenCalled()
+  } finally {
+    consoleError.mockRestore()
+  }
+  expect(records).toEqual(expect.arrayContaining([
+    expect.objectContaining({ event: "host_runtime", phase: "start", turnId: grant.turnId }),
+    expect.objectContaining({ event: "chat_callback", phase: "begin", turnId: grant.turnId })
+  ]))
 })
 
 test("answers a failed callback without a phase when the host observes none", async () => {

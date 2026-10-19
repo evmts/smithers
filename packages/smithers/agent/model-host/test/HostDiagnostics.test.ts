@@ -128,25 +128,26 @@ describe("createHostDiagnostics", () => {
     })
   })
 
-  test("writes one line per record to the runtime's error console by default", () => {
-    // Standard error under Node and Bun, and the platform's error log
-    // elsewhere: the recorder needs nothing from its host to be heard.
-    const written: Array<string> = []
-    const console = vi.spyOn(globalThis.console, "error").mockImplementation((line: unknown) => {
-      written.push(String(line))
-    })
+  test("is inert without a sink: it writes nothing, starts no timer and reads no clock", () => {
+    // The package never writes to a console or stream on its own; records
+    // reach only the sink the host composition passes.
+    const consoleError = vi.spyOn(globalThis.console, "error")
+    const clock = vi.fn(() => 0)
+    vi.useFakeTimers()
     try {
-      createHostDiagnostics().record("model_stream", "first_event", { kind: "text-delta" })
+      const diagnostics = createHostDiagnostics({ turnId: "turn", clock, pendingMillis: 1 })
+      diagnostics.record("model_stream", "first_event", { kind: "text-delta" })
+      const settle = diagnostics.begin("chat_callback", { step: "commit" })
+      expect(vi.getTimerCount()).toBe(0)
+      vi.advanceTimersByTime(10)
+      settle({ status: 200 })
+      createHostDiagnostics().record("host_runtime", "start")
+      expect(clock).not.toHaveBeenCalled()
+      expect(consoleError).not.toHaveBeenCalled()
     } finally {
-      console.mockRestore()
+      vi.useRealTimers()
+      consoleError.mockRestore()
     }
-    expect(written).toHaveLength(1)
-    // The console ends the line itself, so the record carries no newline of its own.
-    expect(written[0]?.includes("\n")).toBe(false)
-    const record = JSON.parse(String(written[0])) as Record<string, unknown>
-    expect(record.diagnostic).toBe(HOST_DIAGNOSTIC_MARKER)
-    expect(record.atMillis).toBeTypeOf("number")
-    expect(record.turnId).toBeUndefined()
   })
 })
 

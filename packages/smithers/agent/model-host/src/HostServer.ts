@@ -137,6 +137,12 @@ export interface ModelTurnHandlerOptions {
    * `@smthrs/platform-node`; without one, failures carry no transport phase.
    */
   readonly observeTransport?: CallbackTransportObserver
+  /**
+   * Where each turn's diagnostic records go, one newline-terminated line per
+   * call. The Node host writes them to standard error; without one, turns
+   * record nothing.
+   */
+  readonly writeDiagnostic?: (line: string) => void
 }
 
 const normalizedBaseUrl = (raw: string): string => {
@@ -392,7 +398,7 @@ export const createModelTurnHandler = (options: ModelTurnHandlerOptions): (reque
         request: body,
         producerBaseUrl: callbackBaseUrl
       }
-      const diagnostics = createHostDiagnostics({ turnId: grant.turnId })
+      const diagnostics = createHostDiagnostics({ turnId: grant.turnId, write: options.writeDiagnostic })
       const resolveExit = await Effect.runPromiseExit(options.resolve(grant), { signal: request.signal })
       if (Exit.isFailure(resolveExit)) return streamRefused(diagnostics, "resolve", resolveExit.cause)
       const resolved = resolveExit.value
@@ -476,7 +482,7 @@ export const createModelTurnHandler = (options: ModelTurnHandlerOptions): (reque
             options.fetchImpl,
             preflight,
             options.docs,
-            undefined,
+            createHostDiagnostics({ turnId: grant.turnId, write: options.writeDiagnostic }),
             options.observeTransport
           )
         )

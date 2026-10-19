@@ -419,7 +419,7 @@ const unobserved: Attempt = { run: (action) => action(), fields: () => ({}) }
  * const observer = FetchTransport.observe("https://journal.example")
  * const attempt = observer.begin()
  * await attempt.run(() => fetch("https://journal.example/commit", { method: "POST" }))
- * console.log(attempt.fields()) // { transport: "received", reusedSocket: false, ... }
+ * attempt.fields() // { transport: "received", reusedSocket: false, connectBegan: 1, connectEnded: 1 }
  * observer.close()
  * ```
  *

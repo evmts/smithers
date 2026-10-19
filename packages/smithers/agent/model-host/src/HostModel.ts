@@ -105,11 +105,13 @@ export class HostModel extends Context.Service<HostModel, {
       const origin = yield* Config.option(Config.String(originName))
       const planned = ConfiguredModel.planModelBinding(
         record,
-        ConfiguredModel.hostModelCredentials({ [keyName]: Redacted.value(apiKey), [originName]: Option.getOrUndefined(origin) }),
+        ConfiguredModel.hostModelCredentials({
+          [keyName]: Redacted.value(apiKey),
+          [originName]: Option.getOrUndefined(origin)
+        }),
         { kind: "generation" }
       )
       if (!planned.ok) return yield* Effect.die(new Error(`${name} is not usable: ${JSON.stringify(planned.failure)}`))
       return HostModel.layer(planned.plan, apiKey, options)
     }))
 }
-

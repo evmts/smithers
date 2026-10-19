@@ -5,7 +5,8 @@ import type { AddressInfo } from "node:net"
 import { afterEach, describe, expect, test } from "vitest"
 import { HostModel } from "../src/HostModel.ts"
 
-const custom = (record: object) => JSON.stringify({ protocol: "openai-chat", modelId: "fixture-1", credential: "FIXTURE", ...record })
+const custom = (record: object) =>
+  JSON.stringify({ protocol: "openai-chat", modelId: "fixture-1", credential: "FIXTURE", ...record })
 
 const load = (env: Record<string, string>, fallback?: Parameters<typeof HostModel.layerConfig>[1]) =>
   Effect.runPromiseExit(
