@@ -74,5 +74,8 @@ binding inputs supplied by the answer. Check the origin allowlist, the enrolled
 credential and the signature, client data type `webauthn.get`, rpIdHash, user
 presence and user verification. Enforce freshness with `notBefore` at the current
 ask's time, a maximum age and a bounded future-clock tolerance. Persist consumed
-ask identities and record a replayed askId as unverified, without applying the
-answer again. Proof transport alone does not authenticate signal admission.
+(waitRunId, waitName, askId) triples, never the askId alone, and record a
+replayed askId within the same wait as unverified, without applying the answer again. The `String(requestedAt)`
+fallback cannot repeat within one wait, because a wait's asks are sequential; a
+flow-supplied `requestId` is unique only if the flow keeps it so. Proof transport
+alone does not authenticate signal admission.
