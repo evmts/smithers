@@ -1,0 +1,635 @@
+/**
+ * Persistent history reads and mutation/control reconciliation.
+ * @since 1.0.0
+ */
+
+import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import * as AgentSession from "@smthrs/agent/AgentSession"
+import { Control, ControlRuntime } from "@smthrs/control"
+import * as Dialect from "@smthrs/database/Dialect"
+import * as DurableWriter from "@smthrs/database/DurableWriter"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import * as NodeJj from "@smthrs/jj/node/NodeJj"
+import { Journal, SqlJournal } from "@smthrs/journal"
+import type { Entry, RunId, Seq } from "@smthrs/journal/JournalEvent"
+import * as Evaluator from "@smthrs/model/Evaluator"
+import { Ownership, RunStore } from "@smthrs/run-store"
+import { CacheStore } from "@smthrs/step-cache"
+import { EffectBoundary, ReadOnlyTimeTravel, SqlTimeTravelStore, TimeTravel } from "@smthrs/time-travel"
+import { forkWorkspaceName, type Position } from "@smthrs/time-travel/TimeTravel"
+import type { CarriedChild, StepOverride } from "@smthrs/time-travel/TimeTravelStore"
+import { TimeTravelStore } from "@smthrs/time-travel/TimeTravelStore"
+import { Cause, Context, Effect, Exit, Layer, type Schema } from "effect"
+import { SqlClient } from "effect/sql/SqlClient"
+import * as CliError from "../CliError.vibe"
+import * as ControlDatabaseMigrations from "../internal/ControlDatabaseMigrations.ts"
+import * as DatabaseLocation from "../internal/DatabaseLocation.ts"
+import type * as NativeControl from "../internal/NativeControl.vibe"
+import * as NodeControl from "../NodeControl.vibe"
+import * as Project from "../Project.vibe"
+import * as Boundary from "./HistoryBoundary.ts"
+import * as Projection from "./Projection.ts"
+import * as Workspace from "./Workspace.vibe"
+
+/**
+ * Local history address and resource limits.
+ * @since 1.0.0
+ * @category models
+ */
+export interface Options {
+  readonly root?: string | undefined
+  readonly remote?: string | undefined
+  readonly sequence?: number | undefined
+  readonly lineage?: string | undefined
+  readonly limit?: number | undefined
+  /** Rewind only: restore the frame's jj operation instead of only its tree. */
+  readonly wholeRepo?: boolean | undefined
+  /** Fork only: the step result the child replays in place of the parent's. */
+  readonly override?: StepOverride | undefined
+  /**
+   * Fork only: the root input the child runs with in place of the parent's.
+   * It is planned and approved as a plan of its own, which the child is bound
+   * to; every recorded step whose key it leaves unchanged still replays.
+   */
+  readonly input?: Schema.Json | undefined
+  /** The flow modules a host would load, for planning an edited input; tests supply them. */
+  readonly modules?: NativeControl.ModuleRegistration | undefined
+}
+
+/**
+ * Resolve local history using the CLI's project and environment rules.
+ * @since 1.0.0
+ * @category constructors
+ */
+export { localRoot } from "../Project.vibe"
+
+/** A history request this CLI refuses: whose problem it is, a stable code, and the sentence. */
+const refused = (fault: CliError.Fault, code: string, message: string): CliError.Refused =>
+  new CliError.Refused({ fault, code, message })
+
+/** The journal answered the same page twice, so reading on would never end. */
+const stalledPagination = (): CliError.Refused =>
+  refused(
+    "bug",
+    "history_pagination_stalled",
+    "The run history stopped advancing while it was being read. Not your fault."
+  )
+
+const requireDatabase = (root: string): string => {
+  const file = NodeControl.executionDatabasePath(root)
+  if (!DatabaseLocation.exists(file)) throw refused("user", "history_missing", `No execution history at ${file}`)
+  return file
+}
+
+const readStorage = (root: string) =>
+  Layer.mergeAll(SqlJournal.layer({ capacity: 1024, overflow: "reject" }), RunStore.layer, CacheStore.layer).pipe(
+    Layer.provideMerge(
+      DurableWriter.layer().pipe(Layer.provideMerge(NodeDatabase.layer({
+        filename: requireDatabase(root),
+        readOnly: true
+      })))
+    )
+  )
+
+const readerLayer = (root: string) => TimeTravel.readOnly.pipe(Layer.provideMerge(readStorage(root)))
+const writerLayer = (root: string, workspace: string) => {
+  const persistent = SqlTimeTravelStore.layer.pipe(
+    Layer.provideMerge(NodeRuntime.storage(requireDatabase(root), workspace))
+  )
+  // Startup recovery may restore a worktree. Only recover audits belonging
+  // to the worktree bound to this service; other hosts will recover theirs.
+  const recovering = Layer.effect(TimeTravelStore) {
+    const store = TimeTravelStore()
+    return {
+      ...store,
+      pendingAudits: () => {
+        const audits = store.pendingAudits()
+        return Effect.filter(audits, (audit) =>
+          sync(
+            async (root, runId, workspace) => await Workspace.workspaceFor(root, runId) === workspace,
+            root,
+            audit.runId,
+            workspace
+          ))
+      }
+    }
+  }
+  const stores = recovering.pipe(Layer.provideMerge(persistent))
+  return TimeTravel.layerWith({ isAlive: Ownership.sameHostPidProbe }).pipe(
+    Layer.provideMerge(stores),
+    Layer.provide(NodeJj.layerAt(workspace)),
+    Layer.provide(NodeServices.layer),
+    Layer.provide(NodeCrypto.layer)
+  )
+}
+
+const lineageOf = (entry: Entry): string | undefined => {
+  const meta = entry.meta as { readonly lineageId?: unknown } | null
+  return typeof meta?.lineageId === "string" ? meta.lineageId : undefined
+}
+
+/** Resolves an exact stored frame; a supplied sequence must exist in this run. */
+const resolvePosition = (runId: string, options: Options) => {
+  const runs = RunStore.RunStore()
+  const row = runs.get(runId)
+  const journal = Journal.Journal()
+  let after: Seq | undefined
+  let target: Entry | undefined
+  let first: Entry | undefined
+  let count = 0
+  const limit = options.limit ?? 10_000
+  while (true) {
+    const page = journal.entries({
+      runId: runId as RunId,
+      limit: 250,
+      ...(after === undefined ? {} : { after })
+    })
+    for (const entry of page.entries) {
+      first ??= entry
+      if (options.sequence !== undefined && entry.seq > options.sequence) break
+      if (++count > limit) {
+        // A throw inside the TypeScript generator is a defect.
+        return die(new CliError.UsageError({ message: `History exceeds --limit ${limit}; increase it explicitly` }))
+      }
+      if (options.lineage === undefined || lineageOf(entry) === options.lineage) target = entry
+    }
+    const tail = page.entries.at(-1)?.seq
+    if (!page.hasMore || tail === undefined || (options.sequence !== undefined && tail >= options.sequence)) break
+    if (after !== undefined && tail <= after) return die(stalledPagination())
+    after = tail
+  }
+  const sequence = options.sequence ?? target?.seq
+  const lineage = options.lineage ?? (target === undefined ? undefined : lineageOf(target)) ??
+    (first === undefined ? undefined : lineageOf(first))
+  if (sequence === undefined || lineage === undefined) {
+    return die(refused("user", "history_frame_missing", `Run ${runId} has no addressable execution history`))
+  }
+  if (sequence !== 0 && target?.seq !== sequence) {
+    return die(refused(
+      "user",
+      "history_frame_missing",
+      `Run ${runId} has no frame at sequence ${sequence} in this lineage`
+    ))
+  }
+  return { row, position: { runId, frame: { lineageId: lineage, seq: sequence } } satisfies Position }
+}
+
+/**
+ * Reads the stored prefix without executing effects or startup recovery.
+ * @since 1.0.0
+ * @category constructors
+ */
+export const read = (root: string, runId: string, options: Options, replay: boolean, signal?: AbortSignal) =>
+  // A-2/E-4: the async runner boundary stays TypeScript (HistoryBoundary.ts).
+  Boundary.runThunk(() =>
+    Effect.scoped(() => {
+      provide readerLayer(root) {
+        const { row, position } = resolvePosition(runId, options)
+        const reader = ReadOnlyTimeTravel()
+        const fold = Projection.make(replay)
+        const result = fold.finish(
+          position.frame.seq === 0
+            ? fold.initial
+            : reader.replay(position, fold, { maxHistoryEntries: options.limit ?? 10_000 })
+        )
+        return {
+          position,
+          // S7-21: JSON.parse's throw stays a defect, as in TypeScript.
+          executionFlow: sync((text) => JSON.parse(text) as { flowName?: string } | null, row.stateJson)?.flowName,
+          status: row.status,
+          parentRunId: row.parentRunId,
+          ...result,
+          ...(replay ? {} : { events: undefined })
+        }
+      }
+    }), signal)
+
+/**
+ * Lists exactly the suffix/effects a rewind would cross; never mutates it.
+ * @since 1.0.0
+ * @category constructors
+ */
+export const preview = (root: string, runId: string, options: Options, signal?: AbortSignal) =>
+  // A-2/E-4: the async runner boundary stays TypeScript (HistoryBoundary.ts).
+  Boundary.runThunk(() =>
+    Effect.scoped(() => {
+      provide readStorage(root) {
+        const { row, position } = resolvePosition(runId, options)
+        const journal = Journal.Journal()
+        const entries: Array<Entry> = []
+        let after = position.frame.seq as Seq
+        while (true) {
+          const page = journal.entries({ runId: runId as RunId, after, limit: 250 })
+          entries.push(...page.entries)
+          if (entries.length > (options.limit ?? 10_000)) {
+            // A throw inside the TypeScript generator is a defect.
+            return die(new CliError.UsageError({ message: "Rewind suffix exceeds --limit" }))
+          }
+          const tail = page.entries.at(-1)?.seq
+          if (!page.hasMore || tail === undefined) break
+          if (tail <= after) return die(stalledPagination())
+          after = tail
+        }
+        const effects = EffectBoundary.fromEntries(entries)
+        return {
+          preview: true,
+          position,
+          status: row.status,
+          entriesToArchive: entries.length,
+          effects,
+          blockedEffects: effects.filter((effect) => effect.tier !== "sealed"),
+          active: row.owner !== null || row.claim !== null,
+          requiresConfirmation: true
+        }
+      }
+    }), signal)
+
+const clients = (root: string) => {
+  const file = NodeControl.databasePath(root)
+  if (!DatabaseLocation.exists(file)) {
+    return die(refused(
+      "user",
+      "history_unsupported_run",
+      "This operation requires a public CLI run with an approved control plan"
+    ))
+  }
+  const control = Context.get(
+    Layer.build(
+      ControlDatabaseMigrations.layer.pipe(Layer.provideMerge(NodeDatabase.layer({ filename: file })))
+    ),
+    SqlClient
+  )
+  const engine = Context.get(Layer.build(NodeDatabase.layer({ filename: requireDatabase(root) })), SqlClient)
+  return { engine, control }
+}
+
+const hasTable = (sql: SqlClient, name: string) => Dialect.tables(sql)().some((row) => row.name === name)
+const controlSummary = (sql: SqlClient, runId: string, allowActive = false) => {
+  const [row] = sql<
+    { state_json: string; status: string; owner_nonce: string | null; claim_nonce: string | null }
+  >`SELECT state_json,status,owner_nonce,claim_nonce FROM flows_runs WHERE run_id=${runId}`()
+  if (row === undefined) {
+    return die(refused(
+      "user",
+      "history_unsupported_run",
+      `No control-plane run ${runId}; use the TimeTravel API for standalone engine executions`
+    ))
+  }
+  if (!allowActive && (row.status === "running" || row.owner_nonce !== null || row.claim_nonce !== null)) {
+    return die(refused("wait", "run_active", `Run ${runId} is active or claimed; park it before changing history`))
+  }
+  // S7-21: JSON.parse's throw stays a defect, as in TypeScript.
+  const summary = sync((text) => JSON.parse(text) as Record<string, unknown>, row.state_json)
+  if (typeof summary.planId !== "string" || typeof summary.flowId !== "string") {
+    return die(refused("policy", "plan_not_approved", `Run ${runId} has no approved public CLI plan`))
+  }
+  const [plan] = sql<{ decision: string }>`SELECT decision FROM control_plans WHERE plan_id=${summary.planId}`()
+  if (plan?.decision !== "approved") {
+    return die(refused("policy", "plan_not_approved", `Run ${runId}'s plan is not approved`))
+  }
+  return summary
+}
+
+const parkedSummary = (summary: Record<string, unknown>, runId: string, parentRunId?: string) => ({
+  ...summary,
+  runId,
+  status: "parked",
+  updatedAt: Date.now(),
+  ...(parentRunId === undefined ? {} : { parentRunId, createdAt: Date.now() }),
+  ownerId: undefined,
+  parkedBy: undefined,
+  waitingReason: undefined
+})
+
+const parkControl = (sql: SqlClient, runId: string, summary: Record<string, unknown>) => {
+  const changed = sql`UPDATE flows_runs SET status='suspended', state_json=${
+    JSON.stringify(parkedSummary(summary, runId))
+  }, finished_at_ms=NULL, cancel_requested_at_ms=NULL, waiting_reason='history', waiting_wake_at_ms=NULL, waiting_token=NULL WHERE run_id=${runId} AND status <> 'running' AND owner_nonce IS NULL AND claim_nonce IS NULL RETURNING run_id`()
+  if (changed.length !== 1) {
+    return die(refused("wait", "run_active", `Run ${runId} acquired an owner during history reconciliation`))
+  }
+  if (hasTable(sql, "control_run_resumes")) sql`DELETE FROM control_run_resumes WHERE run_id=${runId}`()
+}
+
+/** The identity a run bound to an approved plan records: its card's digest and execution digest. */
+const approvedBinding = (control: SqlClient, planId: string) => {
+  const [plan] = control<
+    { card_json: string; decision: string }
+  >`SELECT card_json,decision FROM control_plans WHERE plan_id=${planId}`()
+  if (plan?.decision !== "approved") {
+    return die(refused("policy", "plan_not_approved", `Plan ${planId} is not approved`))
+  }
+  // S7-21: JSON.parse's throw stays a defect, as in TypeScript.
+  const card = sync((text) => JSON.parse(text) as { digest: string; executionDigest?: string }, plan.card_json)
+  return {
+    planId,
+    planDigest: card.digest,
+    ...(card.executionDigest === undefined ? {} : { executionDigest: card.executionDigest })
+  }
+}
+
+/**
+ * The engine child a module run executes its flow in, and the execution digest
+ * its id was derived from, when the run spawned one (`AgentSession.moduleExecutionId`).
+ */
+const moduleChild = (engine: SqlClient, control: SqlClient, runId: string, summary: Record<string, unknown>) => {
+  const [plan] = control<{ card_json: string }>`SELECT card_json FROM control_plans WHERE plan_id=${summary
+    .planId as string}`()
+  const digests = [
+    plan === undefined
+      ? undefined
+      // S7-21: JSON.parse's throw stays a defect, as in TypeScript.
+      : sync((text) => (JSON.parse(text) as { executionDigest?: unknown }).executionDigest, plan.card_json),
+    summary.executionDigest
+  ].filter((digest): digest is string => typeof digest === "string")
+  for (const executionDigest of digests) {
+    const runIdOfChild = AgentSession.moduleExecutionId(runId, executionDigest)
+    if (engine`SELECT 1 FROM flows_runs WHERE run_id=${runIdOfChild}`().length > 0) {
+      return { runId: runIdOfChild, executionDigest }
+    }
+  }
+  return undefined
+}
+
+/**
+ * Plans and approves `input` as a new plan of the run's flow, the way `flow
+ * start` does, under the budget the run was approved with.
+ */
+const planInput = (root: string, runId: string, input: Schema.Json, modules: Options["modules"]) =>
+  Effect.scoped(() => {
+    const { control } = readClients(root)
+    const summary = controlSummary(control, runId)
+    const [plan] = control<{ card_json: string }>`SELECT card_json FROM control_plans WHERE plan_id=${summary
+      .planId as string}`()
+    // S7-21: JSON.parse's throw stays a defect, as in TypeScript.
+    const budget = sync(
+      (text) => (JSON.parse(text) as { envelope: { budget: Control.PlanInput["budget"] } }).envelope.budget,
+      plan!.card_json
+    )
+    // The project root is also the persisted history's state location. Give
+    // planning and the native engine the same database authority, while keeping
+    // execution-only settings on the application composition.
+    const config = {
+      root,
+      stateRoot: root,
+      startsRuns: false,
+      plansFlows: true,
+      evaluator: Evaluator.layerUnavailable()
+    }
+    const registry = NodeControl.layerRegistry(root)
+    const engine = NodeControl.engineDurable(root, registry, config)
+    provide Layer.merge(NodeControl.layerControl(config, registry, engine, modules), engine.runtime) {
+      const service = Control.Control()
+      const card = service.plan({ flowId: summary.flowId as string, input, budget })
+      if (card.envelope.capabilities.includes("*")) {
+        // A throw inside the TypeScript generator is a defect.
+        return die(refused(
+          "policy",
+          "plan_not_approved",
+          `The edited input's plan grants every capability ("*"); review it with \`smthrs flow plan\` and approve it`
+        ))
+      }
+      service.approve({ ...card.approval, scope: "run" })
+      // The input as the plan stores it, after its schema's defaults: what
+      // the run reads back and what its module child is invoked with.
+      const stored = ControlRuntime.ControlRuntime().getPlan(card.planId)
+      return {
+        planId: card.planId,
+        executionDigest: card.executionDigest,
+        input: stored.decodedInput as Schema.Json
+      }
+    }
+  })
+
+const linkFork = (engine: SqlClient, control: SqlClient, root: string, childId: string, parentId: string) => {
+  const summary = controlSummary(control, parentId, true)
+  const workspace = Boundary.join(Project.stateDirectory(root), "forks", forkWorkspaceName(childId))
+  if (!Boundary.existsSync(Boundary.join(workspace, ".jj"))) {
+    return die(refused("user", "fork_unavailable", `Fork ${childId} has no retained workspace at ${workspace}`))
+  }
+  const existing = control`SELECT 1 FROM flows_runs WHERE run_id=${childId}`()
+  if (existing.length === 0) {
+    const [row] = engine<
+      { state_json: string; status: string }
+    >`SELECT state_json,status FROM flows_runs WHERE run_id=${childId}`()
+    if (row === undefined || row.status === "running") {
+      return die(refused("user", "fork_unavailable", `Fork ${childId} is absent or already active`))
+    }
+    // S7-21: JSON.parse's throw stays a defect, as in TypeScript.
+    const state = sync(
+      (text) => JSON.parse(text) as { flowName?: unknown; payload?: { planId?: unknown } } | null,
+      row.state_json
+    )
+    if (state?.flowName !== "agent/run") {
+      return die(refused(
+        "user",
+        "history_unsupported_run",
+        `Fork ${childId} is not a public agent flow and cannot be resumed by this CLI`
+      ))
+    }
+    // A fork with an edited input runs under the plan that input was
+    // approved as, and its own engine payload names it. Reading it from
+    // there rather than from the caller keeps a crash between the engine
+    // commit and this link on the same plan.
+    const planId = state.payload?.planId
+    const bound = typeof planId === "string" && planId !== summary.planId
+      ? { ...summary, ...approvedBinding(control, planId) }
+      : summary
+    control`INSERT INTO flows_runs(run_id,status,created_at_ms,parent_run_id,state_json) VALUES(${childId},'suspended',${Date.now()},${parentId},${
+      JSON.stringify(parkedSummary(bound, childId, parentId))
+    })`()
+  }
+  engine.withTransaction(() => {
+    engine`CREATE TABLE IF NOT EXISTS smthrs_history_workspaces(run_id TEXT PRIMARY KEY, workspace TEXT NOT NULL)`()
+    engine`INSERT INTO smthrs_history_workspaces(run_id,workspace) VALUES(${childId},${workspace}) ON CONFLICT(run_id) DO NOTHING`()
+  })
+  return workspace
+}
+
+/** The payload the run's engine execution was started with. */
+const enginePayload = (engine: SqlClient, runId: string) => {
+  const [row] = engine<{ state_json: string }>`SELECT state_json FROM flows_runs WHERE run_id=${runId}`()
+  // S7-21: JSON.parse's throw stays a defect, as in TypeScript.
+  const payload = sync((text) => (JSON.parse(text) as { payload?: unknown }).payload, row!.state_json)
+  return typeof payload === "object" && payload !== null ? payload as Record<string, unknown> : {}
+}
+
+const readOnly = (filename: string) => NodeDatabase.layer({ filename, readOnly: true })
+
+/** Both stores opened read-only, for a scan that must not write. */
+const readClients = (root: string) => {
+  const control = Context.get(Layer.build(readOnly(NodeControl.databasePath(root))), SqlClient)
+  const engine = Context.get(Layer.build(readOnly(requireDatabase(root))), SqlClient)
+  return { engine, control }
+}
+
+/** Committed engine history the control projection has not caught up with. */
+const gaps = (engine: SqlClient, control: SqlClient) => {
+  // An unmigrated control.db projects nothing yet: every fork edge and
+  // completed audit is pending, so the writable pass migrates and rescans.
+  const projected = hasTable(control, "flows_runs")
+  const forks: Array<{ child_run_id: string; parent_run_id: string }> = []
+  if (hasTable(engine, "flows_time_travel_edges")) {
+    for (
+      const fork of engine<
+        { child_run_id: string; parent_run_id: string }
+      >`SELECT child_run_id,parent_run_id FROM flows_time_travel_edges WHERE kind='fork' ORDER BY rowid`()
+    ) {
+      if (!projected) {
+        forks.push(fork)
+        continue
+      }
+      if (control`SELECT 1 FROM flows_runs WHERE run_id=${fork.child_run_id}`().length > 0) continue
+      if (control`SELECT 1 FROM flows_runs WHERE run_id=${fork.parent_run_id}`().length === 0) continue
+      forks.push(fork)
+    }
+  }
+  const audits: Array<{ id: string; run_id: string }> = []
+  if (hasTable(engine, "flows_time_travel_audits")) {
+    // A control.db from before the history rung has no ledger: every audit is pending.
+    const ledger = projected && hasTable(control, "smthrs_history_applied")
+    for (
+      const audit of engine<
+        { id: string; run_id: string }
+      >`SELECT id,run_id FROM flows_time_travel_audits WHERE status='completed' ORDER BY rowid`()
+    ) {
+      if (ledger && control`SELECT 1 FROM smthrs_history_applied WHERE audit_id=${audit.id}`().length > 0) {
+        continue
+      }
+      audits.push(audit)
+    }
+  }
+  return { forks, audits }
+}
+
+/** Repairs committed engine history and its durable control projection.
+ *
+ * The stores are scanned read-only first; a writable connection, and the
+ * control migrations it runs, are opened only when a gap is pending.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const reconcile = (root: string): Promise<void> =>
+  // A-2/E-4: the async body and its runner stay TypeScript (HistoryBoundary.ts).
+  Boundary.promised(() => {
+    if (
+      !DatabaseLocation.exists(NodeControl.executionDatabasePath(root)) ||
+      !DatabaseLocation.exists(NodeControl.databasePath(root))
+    ) return undefined
+    return Boundary.runThunk(() => {
+      const pending = Effect.scoped(() => {
+        const { control, engine } = readClients(root)
+        return gaps(engine, control)
+      })
+      if (pending.forks.length === 0 && pending.audits.length === 0) return
+      Effect.scoped(() => {
+        const { engine, control } = clients(root)
+        control.withTransaction(() => {
+          const { forks, audits } = gaps(engine, control)
+          for (const fork of forks) linkFork(engine, control, root, fork.child_run_id, fork.parent_run_id)
+          for (const audit of audits) {
+            const [row] = engine<{ status: string }>`SELECT status FROM flows_runs WHERE run_id=${audit.run_id}`()
+            if (row?.status === "suspended") {
+              parkControl(control, audit.run_id, controlSummary(control, audit.run_id))
+            }
+            control`INSERT INTO smthrs_history_applied(audit_id) VALUES(${audit.id})`()
+          }
+        })
+      })
+    })
+  })
+
+/**
+ * The transaction a fork or rewind commits, after `mutate` has read the frame,
+ * found the workspace and planned an edited input.
+ */
+const mutationOf = (
+  root: string,
+  runId: string,
+  options: Options,
+  operation: "fork" | "rewind",
+  observed: { readonly position: Position },
+  workspace: string,
+  edited: Effect.Success<ReturnType<typeof planInput>> | undefined
+) =>
+  Effect.scoped(() => {
+    const { engine, control } = clients(root)
+    return control.withTransaction(() => {
+      const summary = controlSummary(control, runId)
+      if (operation === "fork") Boundary.makeDirectory(Boundary.join(Project.stateDirectory(root), "forks"))
+      const payload = operation === "fork" ? enginePayload(engine, runId) : undefined
+      const child = operation === "fork" ? moduleChild(engine, control, runId, summary) : undefined
+      const travel = () => {
+        const service = TimeTravel()
+        return operation === "fork" ?
+          {
+            kind: "fork" as const,
+            result: service.fork(observed.position, {
+              workspaceRoot: Boundary.join(Project.stateDirectory(root), "forks"),
+              retainWorkspace: true,
+              maxHistoryEntries: options.limit ?? 10_000,
+              ...(options.override === undefined ? {} : { override: options.override }),
+              // The child is a run of its own: its payload names it, so its
+              // module execution is its own child rather than the parent's,
+              // and carries the steps the parent's recorded.
+              rebind: (childRunId) =>
+                Effect.succeed({
+                  payload: {
+                    ...payload,
+                    runId: childRunId,
+                    ...(edited === undefined ? {} : { planId: edited.planId })
+                  },
+                  children: child === undefined ? [] : [
+                    {
+                      from: child.runId,
+                      to: AgentSession.moduleExecutionId(
+                        childRunId,
+                        edited?.executionDigest ?? child.executionDigest
+                      ),
+                      ...(edited === undefined ? {} : { payload: { input: edited.input } })
+                    } satisfies CarriedChild
+                  ]
+                })
+            })
+          } :
+          {
+            kind: "rewind" as const,
+            result: service.rewind(observed.position, {
+              maxHistoryEntries: options.limit ?? 10_000,
+              ...(options.wholeRepo === true ? { wholeRepo: true } : {})
+            })
+          }
+      }
+      const result = Effect.scoped(() => {
+        provide writerLayer(root, workspace) {
+          return travel()
+        }
+      })
+      if (result.kind === "fork") {
+        const childWorkspace = linkFork(engine, control, root, result.result.runId, runId)
+        return {
+          ...result.result,
+          workspace: childWorkspace,
+          status: "parked",
+          next: `smthrs runs resume ${result.result.runId}`
+        }
+      }
+      parkControl(control, runId, summary)
+      control`INSERT INTO smthrs_history_applied(audit_id) VALUES(${result.result.auditId}) ON CONFLICT DO NOTHING`()
+      return { ...result.result, runId, status: "parked", next: `smthrs runs resume ${runId}` }
+    })
+  })
+
+/** Fork or rewind a run and reconcile its durable control identity.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const mutate = Boundary.makeMutate({ read, refused, planInput, mutation: mutationOf })
+
+/** Resolves a committed workspace before resuming execution.
+ * @category constructors
+ * @since 1.0.0
+ */
+// A-2/E-4: the async body stays TypeScript (HistoryBoundary.ts).
+export const prepare = Boundary.makePrepare({ reconcile, refused })

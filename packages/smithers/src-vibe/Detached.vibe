@@ -1,0 +1,241 @@
+/**
+ * `smthrs up -d`: launch a run in a process that outlives this one.
+ *
+ * The 0.x launcher's hard-won rule is carried over unchanged: a detached
+ * launch returns only after the child has *proved* it persisted the run row,
+ * never on spawn success. A launcher that returns on spawn reports a run id
+ * for a process that may already have died on a missing credential, and the
+ * operator finds out minutes later from an empty `ps`.
+ *
+ * The child writes one line to its own log the moment the control plane hands
+ * back an `Accepted` receipt (see {@link admissionLine}). The line is the
+ * wake-up; the proof is the run row. The log is the child's whole
+ * stdout/stderr, which every tool, agent and shell the run spawns shares, and
+ * those processes inherit the nonce, so any id in the log is a claim, not a
+ * fact. The parent asks its own control store, through
+ * {@link Options.admission}, whether each announced id is a run row that
+ * belongs to this launch, and only then renames the log onto the run id and
+ * prints the receipt. A child that exits before an announced id is confirmed,
+ * or that is still unconfirmed at the deadline, is reported as a failed launch
+ * with the log's tail attached.
+ *
+ * @since 1.0.0
+ */
+
+import type { ControlSchema } from "@smthrs/control"
+import { Effect } from "effect"
+import type { ChildProcess } from "node:child_process"
+import * as DetachedNode from "./DetachedNode.ts"
+
+/**
+ * The environment name that tells a `smthrs run` child it was launched
+ * detached, and which nonce to stamp its admission line with.
+ *
+ * Internal parent-to-child handoff: never set it by hand.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const admissionVariable = "SMITHERS_INTERNAL_DETACHED_ADMISSION"
+
+/**
+ * How long a launch waits for the admission line before giving up, and the
+ * multiple of that window a *live* child is granted on top.
+ *
+ * A child that is still alive at the deadline is booting slowly, not stuck:
+ * module-graph parse alone can exceed the window on a loaded machine. Only a
+ * child that is both silent and alive past the grace window is terminated.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const defaultTimeoutMs = 30_000
+
+/**
+ * Grace given to each of SIGTERM and SIGKILL during failed-launch cleanup.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const defaultTerminationGraceMs = 2_000
+
+/**
+ * The line a detached child writes once its run row is durable.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const admissionLine = (nonce: string, runId: string): string =>
+  `SMITHERS_DETACHED_ADMISSION=run:${nonce} runId=${runId}`
+
+/**
+ * Announces durable admission to the detached parent through its nonce-bound log.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const announceAdmission = (receipt: ControlSchema.Receipt) =>
+  // E-7: process.env and process.stderr are platform APIs (EK4402).
+  sync((receipt, admissionVariable, admissionLine) => {
+    const nonce = process.env[admissionVariable]
+    if (nonce === undefined || nonce === "" || receipt._tag !== "Accepted" || receipt.runId === undefined) return
+    process.stderr.write(`${admissionLine(nonce, receipt.runId)}\n`)
+  }, receipt, admissionVariable, admissionLine)
+
+/**
+ * The run-id shapes admitted onto a log filename.
+ *
+ * The id is parsed out of the child's combined stdout/stderr — a stream that
+ * workflow code, agent transcripts, and tool output all write to — so it is
+ * untrusted input at a path boundary: it becomes the filename the pending log
+ * is renamed onto, and the name any earlier log at that path is moved aside
+ * under. One filename component is the whole contract: alphanumerics, dot,
+ * underscore and dash, starting alphanumeric, bounded so the `.log` and
+ * `.superseded-<nonce>.log` suffixes stay inside filename limits. Anything
+ * else (`../`, absolute, separator-bearing) would rename files outside the
+ * log directory and is treated as no admission line at all. Every id the
+ * control plane mints (`run-<sequence>`, uuids) fits this shape.
+ */
+const filenameSafeRunId = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
+
+/**
+ * Every distinct filename-safe run id announced in a log tail under this
+ * nonce's admission line, in order of first appearance.
+ *
+ * Each id is a candidate only: the log is untrusted, so a forged line can
+ * appear before, after, or instead of the honest one. {@link launch} confirms
+ * a candidate against the control store before it trusts it.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const announcedRunIds = (tail: string, nonce: string): ReadonlyArray<string> => {
+  const marker = `SMITHERS_DETACHED_ADMISSION=run:${nonce} runId=`
+  const found: Array<string> = []
+  let start = tail.indexOf(marker)
+  while (start >= 0) {
+    const rest = tail.slice(start + marker.length)
+    const end = rest.search(/\s/)
+    const runId = end < 0 ? rest : rest.slice(0, end)
+    if (filenameSafeRunId.test(runId) && !found.includes(runId)) found.push(runId)
+    start = tail.indexOf(marker, start + marker.length)
+  }
+  return found
+}
+
+/**
+ * Reads the last bytes of a log file, or `""` when there is nothing to read.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const logTail = (file: string, maxBytes: number = DetachedNode.tailBytes): string =>
+  DetachedNode.logTail(file, maxBytes)
+
+/**
+ * Terminates and reaps a child that never reached admission.
+ *
+ * On POSIX the group, not just its leader, must disappear before this resolves.
+ * A cooperative group gets SIGTERM; a group still present after the grace
+ * window gets SIGKILL and another bounded reap window. The boolean is false
+ * when the host could not confirm containment, so a caller never reports an
+ * orphan-prone launch as successfully terminated.
+ *
+ * `platform` is the host whose process model the containment is judged against,
+ * and it is a parameter for the same reason `@smthrs/flows`'s containment
+ * options take one: Windows has no process groups, so the handle is the only
+ * thing that can be signalled there, and a host that runs its coverage on POSIX
+ * has no other way to exercise what it ships to Windows.
+ *
+ * @category destructors
+ * @since 1.0.0
+ */
+export const terminate = (
+  child: ChildProcess,
+  graceMs: number = defaultTerminationGraceMs,
+  platform?: NodeJS.Platform
+): Promise<boolean> => DetachedNode.terminate(child, graceMs, platform)
+
+/**
+ * A successful detached launch.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Launched {
+  readonly runId: string
+  readonly logFile: string
+  readonly pid: number | undefined
+}
+
+/**
+ * A launch that never reached admission.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Rejected {
+  readonly reason: string
+  readonly tail: string
+  readonly logFile: string
+}
+
+/**
+ * Arguments accepted by {@link launch}.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Options {
+  /** The project root; the log lands under its `.flows/logs`. */
+  readonly root: string
+  /** The serialized plan approval payload the child runs. */
+  readonly payload: string
+  /** Extra arguments handed to the child, such as `--remote`. */
+  readonly passthrough?: ReadonlyArray<string> | undefined
+  /** Cancellation owns the child until the admission result is handed back. */
+  readonly signal?: AbortSignal | undefined
+  readonly timeoutMs?: number | undefined
+  readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+  /** The Node executable and CLI entry the child re-executes. */
+  readonly execPath?: string | undefined
+  readonly entry?: string | undefined
+  readonly intervalMs?: number | undefined
+  /**
+   * Whether `runId` names a durable run row that belongs to this launch, read
+   * from the parent's own control store. The log only nominates candidates;
+   * this is the proof. `false` refuses the candidate for good: the child
+   * announces only after the row commits, so an honest id is visible on its
+   * first check. A rejected promise means the store could not answer, and the
+   * candidate is asked again on the next poll.
+   */
+  readonly admission: (runId: string) => Promise<boolean>
+  /** Grace given to each cleanup signal before admission ownership transfers. */
+  readonly terminationGraceMs?: number | undefined
+  /** Where a slow-boot notice goes; stderr in production. */
+  readonly onSlowBoot?: ((message: string) => void) | undefined
+}
+
+/**
+ * Launches an approved plan in a detached process and waits until an id it
+ * announces is confirmed by {@link Options.admission}.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const launch = (options: Options): Promise<Launched | Rejected> => DetachedNode.launch(options)
+
+/**
+ * Removes a rejected launch's pending log.
+ *
+ * @category destructors
+ * @since 1.0.0
+ */
+export const discard = (rejected: Rejected): void => DetachedNode.discard(rejected)
+
+/**
+ * Whether a `Launched` was produced, as opposed to a `Rejected`.
+ *
+ * @category guards
+ * @since 1.0.0
+ */
+export const isLaunched = (result: Launched | Rejected): result is Launched => "runId" in result

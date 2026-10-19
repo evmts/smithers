@@ -1,0 +1,47 @@
+/** Durable workspace routing shared by the CLI and every engine host.
+ * @since 1.0.0
+ */
+
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import { Context, Effect, Layer } from "effect"
+import { SqlClient } from "effect/sql/SqlClient"
+import { databasePath } from "../internal/ControlDatabasePath.ts"
+import * as DatabaseLocation from "../internal/DatabaseLocation.ts"
+import { executionDatabasePath } from "../internal/ExecutionDatabasePath.ts"
+import * as WorkspaceRouting from "../internal/WorkspaceRouting.vibe"
+// A-2/E-4 (D38): the Promise-returning runner bodies stay TypeScript.
+import * as Boundary from "./WorkspaceBoundary.ts"
+
+const routing = (root: string) => {
+  const engine = Context.get(
+    Layer.build(NodeDatabase.layer({
+      filename: executionDatabasePath(root),
+      readOnly: true
+    })),
+    SqlClient
+  )
+  const control = DatabaseLocation.exists(databasePath(root))
+    ? Context.get(
+      Layer.build(NodeDatabase.layer({
+        filename: databasePath(root),
+        readOnly: true
+      })),
+      SqlClient
+    )
+    : undefined
+  return WorkspaceRouting.make({ root, engine, control })
+}
+
+/** Undefined means a fork has not finished linking its retained workspace.
+ * @category getters
+ * @since 1.0.0
+ */
+export const workspaceFor = (root: string, runId: string): Promise<string | undefined> =>
+  Boundary.workspaceFor(root, runId, routing)
+
+/** Only the host bound to a committed workspace identity may execute its run.
+ * @category guards
+ * @since 1.0.0
+ */
+export const canExecute = (root: string, workspace: string, runId: string): Promise<boolean> =>
+  Boundary.canExecute(root, workspace, runId, routing)

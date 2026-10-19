@@ -1,0 +1,890 @@
+/** Shared native agent equipment; the platform supplies its request executor.
+ * @since 1.0.0
+ */
+
+import * as FlowEngineLike from "@smthrs/agent/FlowEngineLike"
+import * as Seat from "@smthrs/agent/Seat"
+import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as SeatRouter from "@smthrs/agent/SeatRouter"
+import * as StandardFlows from "@smthrs/agent/StandardFlows"
+import type * as FlowBinding from "@smthrs/harness/FlowBinding"
+import type * as Sandbox from "@smthrs/harness/Sandbox"
+import * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
+import * as Auth from "@smthrs/model/Auth"
+import * as Endpoint from "@smthrs/model/Endpoint"
+import * as Evaluator from "@smthrs/model/Evaluator"
+import * as EvaluatorBackup from "@smthrs/model/EvaluatorBackup"
+import type * as ModelError from "@smthrs/model/ModelError"
+import * as OpenAIChatGPT from "@smthrs/model/OpenAIChatGPT"
+import * as RequestExecutor from "@smthrs/model/RequestExecutor"
+import * as Route from "@smthrs/model/Route"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
+import { ContainerSandbox } from "@smthrs/sandbox"
+import type * as Checkpoints from "@smthrs/std/Checkpoints"
+import * as Container from "@smthrs/std/Container"
+import * as TestRunner from "@smthrs/std/TestRunner"
+import { Clock, Context, Effect, FileSystem, Layer, Path, Redacted } from "effect"
+import type { Result, Scope } from "effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
+import { statSync } from "node:fs"
+import { homedir } from "node:os"
+import { join } from "node:path"
+import type * as Application from "../Application.vibe"
+import * as CliError from "../CliError.vibe"
+import * as Environment_ from "../Environment.ts"
+import * as Providers from "../Providers.vibe"
+import * as ClaudeCode from "./ClaudeCode.vibe"
+import * as CodexLogin from "./CodexLogin.vibe"
+import * as MeteredDispatch from "./MeteredDispatch.vibe"
+import {
+  type AccountPool,
+  type AccountPoolRoute,
+  accountPoolOf,
+  accountPoolVariable,
+  aliasSeat,
+  bunVersion,
+  credential,
+  hostOf,
+  isAbsolutePath,
+  openaiAuthVariable,
+  origin,
+  poolFirst,
+  poolRouteOf,
+  relativePath,
+  seatCandidates as seatCandidatesBoundary,
+  subscriptionSeat
+} from "./NativeEquipmentBoundary.ts"
+import * as Telemetry from "./Telemetry.vibe"
+
+const accountPoolRoutesTtlMillis = 30_000
+
+/**
+ * Whether a configured pool owns its route outright: a ChatGPT seat never falls
+ * back to an ambient key, while an anthropic seat with no connected key keeps
+ * the host's own Anthropic credential.
+ */
+const poolOwnsRoute = (route: AccountPoolRoute): boolean => route === "chatgpt"
+
+// D-4: a named function type keeps `retain` a plain callback.
+type Retain = (close: () => void) => void
+
+/**
+ * The native seat resolver: it turns a `provider:modelId` seat into a live model
+ * route, with the API key read from the given environment, usually
+ * `process.env`, passed in as a value so nothing below this composition touches
+ * the process directly.
+ *
+ * A seat with no separator is a bare model id on the Anthropic route, which is
+ * the one provider convention this host assumes. A `claude-code:<model>` seat
+ * runs on the user's own signed-in Claude Code (see `ClaudeCode`), and so does
+ * a Claude alias (`opus`, `sonnet`, `fable`) when no Anthropic key is set.
+ *
+ * `SMITHERS_OPENAI_AUTH=chatgpt` swaps the `openai` provider's credential source
+ * from `OPENAI_API_KEY` to the local Codex login (`$CODEX_HOME/auth.json`), as
+ * `codex:<model>` does. The seat calls the ChatGPT backend directly, with the
+ * run's cache key as its session id (#3808). Smithers reads the login's access
+ * token and never writes the file: the Codex CLI refreshes its own login when
+ * asked (`CodexLogin`). One store per login file is shared by every seat that
+ * signs with it, so they ask for one refresh at a time.
+ *
+ * A Claude Code seat keeps its sessions open between turns. `retain` receives
+ * each such seat's `close`, so the host can end the sessions when it shuts down.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const seatResolver = (
+  environment: Readonly<Record<string, string | undefined>>,
+  executor: RequestExecutor.RequestExecutor,
+  retain: Retain = () => {}
+): SeatResolver.Service => {
+  const ambient = withAliases(providerSeats(environment, executor, retain), hostOf(environment))
+  const accounts = new Map<string, SeatResolver.Service>()
+  const resolveDeclared = (declared: string) => {
+    const separator = declared.indexOf("@")
+    if (separator < 0) return ambient.resolve(declared)
+    const seat = declared.slice(0, separator)
+    const account = declared.slice(separator + 1)
+    const refuse = (message: string) =>
+      new Seat.SeatUnresolved({
+        seat: declared,
+        message: `Account ${account || "(empty)"}: ${message}`
+      })
+    if (seat === "" || !/^(claude|codex)-[A-Za-z0-9][A-Za-z0-9_-]*$/.test(account)) {
+      throw refuse("Invalid account-pinned seat; use <seat>@<claude-account|codex-account>.")
+    }
+    const claude = account.startsWith("claude-")
+    const expanded = Providers.expandSeat(seat)
+    if (
+      claude ?
+        !(expanded !== seat && expanded.startsWith("anthropic:")) && !seat.startsWith("claude-code:")
+        : !expanded.startsWith("openai:") && !expanded.startsWith("codex:")
+    ) {
+      throw refuse("This login cannot serve the declared seat.")
+    }
+    // E-7: homedir and join are platform calls (EK4402).
+    const directory = sync((account, environment, read) =>
+      account === "codex-default"
+        ? join(homedir(), ".codex")
+        : join(
+          read(environment, "SMITHERS_ACCOUNTS_DIR") ?? join(homedir(), ".smithers", "accounts"),
+          account
+        ), account, environment, Environment_.read)
+    // E-7: statSync is a platform call (EK4402).
+    const exists = sync((directory) => {
+      let exists = false
+      try {
+        exists = statSync(directory).isDirectory()
+      } catch { /* Unknown accounts refuse before consulting any ambient login. */ }
+      return exists
+    }, directory)
+    if (!exists) throw refuse(`Unknown account at ${directory}.`)
+    let resolver = accounts.get(directory)
+    if (resolver === undefined) {
+      const selected: Record<string, string | undefined> = { ...environment }
+      // A pin names a local login, so neither an ambient credential nor a
+      // remote pool/proxy may choose a different account for this seat.
+      delete selected[accountPoolVariable]
+      delete selected[Endpoint.modelProxyVariable]
+      if (claude) {
+        selected.CLAUDE_CONFIG_DIR = directory
+        delete selected.ANTHROPIC_API_KEY
+        delete selected.ANTHROPIC_AUTH_TOKEN
+        delete selected.CLAUDE_CODE_OAUTH_TOKEN
+        delete selected.ANTHROPIC_BASE_URL
+        delete selected.CLAUDE_CODE_USE_BEDROCK
+        delete selected.CLAUDE_CODE_USE_VERTEX
+        delete selected.CLAUDE_CODE_USE_FOUNDRY
+        delete selected.ANTHROPIC_FOUNDRY_BASE_URL
+      } else {
+        delete selected.OPENAI_API_KEY
+        delete selected.CODEX_API_KEY
+        delete selected.OPENAI_BASE_URL
+        selected.CODEX_HOME = directory
+        selected[openaiAuthVariable] = "chatgpt"
+      }
+      resolver = withAliases(providerSeats(selected, executor, retain), hostOf(selected))
+      accounts.set(directory, resolver)
+    }
+    let resolved: Seat.Seat
+    try {
+      resolved = resolver.resolve(seat)
+    } catch (error) {
+      throw refuse(error.message)
+    }
+    return Seat.make({ ...resolved, id: declared })
+  }
+  return SeatResolver.make({
+    resolve: (declared) => {
+      const resolved = resolveDeclared(declared)
+      Telemetry.startUp.mark("seat")
+      return resolved
+    }
+  })
+}
+
+/**
+ * Resolves a seat alias (`luna`, `sol`, ...) as the seat {@link aliasSeat}
+ * names, keeping the declared id on the journaled seat, and refuses Jev, which
+ * answers classifier questions and never runs an agent turn.
+ */
+const withAliases = (base: SeatResolver.Service, host: Providers.Host): SeatResolver.Service =>
+  SeatResolver.make({
+    resolve: (declared) => {
+      if (Providers.isDecisionSeat(declared)) {
+        throw new Seat.SeatUnresolved({ seat: declared, message: Providers.seatRefusal(declared)! })
+      }
+      const seat = sync(async (aliasSeat, declared, host) => aliasSeat(declared, host), aliasSeat, declared, host)
+      const resolved = poolFirst(declared, seat, host)
+        ? (base.resolve(Providers.expandSeat(declared)) catch (_error) => base.resolve(seat))
+        : base.resolve(seat)
+      return seat === declared
+        ? resolved
+        : Seat.make({ ...resolved, id: declared })
+    }
+  })
+
+const providerSeats = (
+  environment: Readonly<Record<string, string | undefined>>,
+  executor: RequestExecutor.RequestExecutor,
+  retain: Retain
+): SeatResolver.Service => {
+  const pool = accountPoolOf(environment)
+  let served: { readonly until: number; readonly routes: ReadonlyArray<string> } | undefined
+  // A configured pool owns the chatgpt route. An empty or unavailable pool
+  // refuses resolution unless provisioning names a platform fallback. It never
+  // falls through to an ambient provider key (see poolOwnsRoute).
+  const pooled = (route: AccountPoolRoute, modelId: string) => {
+    if (pool === undefined || !pool.routes.includes(route)) return undefined
+    const now = Clock.currentTimeMillis()
+    if (served === undefined || served.until <= now) {
+      // Only an answer that lists the route sends a seat to the pool: a
+      // pool that does not answer refuses its seats until the next ask.
+      const routes = accountPoolRoutes(pool, executor, modelId) catch ([] as ReadonlyArray<string>)
+      served = { until: now + accountPoolRoutesTtlMillis, routes }
+    }
+    return served.routes.includes(route) ? pool : undefined
+  }
+  const host = hostOf(environment)
+  // One store per login file: every seat signing with it shares one refresh flight.
+  const codexLogins = new Map<string, CodexLogin.Store>()
+  const codexLogin = (file: string): CodexLogin.Store => {
+    let store = codexLogins.get(file)
+    if (store === undefined) {
+      store = CodexLogin.make({
+        file,
+        refresh: CodexLogin.cliRefresh({ environment }),
+        record: (resolution) => {
+          Telemetry.record(Telemetry.signInEvent, resolution)
+        }
+      })
+      codexLogins.set(file, store)
+    }
+    return store
+  }
+  // One Claude Code model per model and executable: an agent step resolves its
+  // seat on every frame, and each model holds its own pool of sessions.
+  const claudeModels = new Map<string, ReturnType<typeof ClaudeCode.make>>()
+  const claudeModel = (options: Parameters<typeof ClaudeCode.make>[0]) => {
+    const key = `${options.model}\0${options.executable}\0${options.hijackable === true}`
+    const cached = claudeModels.get(key)
+    if (cached !== undefined) return cached
+    const made = ClaudeCode.make(options)
+    claudeModels.set(key, made)
+    retain(made.close)
+    return made
+  }
+  return SeatResolver.make({
+    resolve: (seat) => {
+      const separator = seat.indexOf(":")
+      const provider = separator < 0 ? "anthropic" : seat.slice(0, separator)
+      const modelId = Seat.modelIdOf(seat)
+      // Behind a Smithers account pool with accounts for this provider the
+      // pool owns the credential: it picks an account per request and signs
+      // it. The host holds only the pool credential.
+      const poolRoute = poolRouteOf(provider, environment)
+      if (
+        poolRoute !== undefined && origin(Environment_.read(environment, accountPoolVariable)) !== undefined &&
+        pool === undefined
+      ) {
+        throw new Seat.SeatUnresolved({ seat, message: "The subscription pool configuration is incomplete." })
+      }
+      const accounts = poolRoute === undefined ? undefined : pooled(poolRoute, modelId)
+      if (accounts !== undefined && poolRoute === "anthropic") {
+        return seatOf(
+          Route.anthropic({ apiKey: Redacted.make(accounts.key), baseUrl: `${accounts.origin}/anthropic` }),
+          executor,
+          seat,
+          modelId
+        )
+      }
+      if (accounts !== undefined) {
+        return seatOf(
+          OpenAIChatGPT.make({
+            auth: Auth.bearer(Redacted.make(accounts.key)),
+            baseUrl: `${accounts.origin}/chatgpt`
+          }),
+          executor,
+          seat,
+          modelId
+        )
+      }
+      const platformFallback = environment.SMITHERS_CODING_FALLBACK_MODEL === seat &&
+        Endpoint.proxyOrigin(provider, environment) !== undefined
+      if (
+        pool !== undefined && poolRoute !== undefined && pool.routes.includes(poolRoute) &&
+        poolOwnsRoute(poolRoute) &&
+        !platformFallback
+      ) {
+        throw new Seat.SeatUnresolved({
+          seat,
+          message: "The configured subscription pool has no available account for this seat."
+        })
+      }
+      const signed = sync(async (credential, provider, host) => credential(provider, host), credential, provider, host)
+      switch (signed._tag) {
+        case "Refused":
+          throw new Seat.SeatUnresolved({ seat, message: signed.refusal(seat) })
+        case "Compatible":
+          return seatOf(
+            Route.openaiChatCompatible({
+              id: provider,
+              providerName: provider === "gemini" ? "gcp.gemini" : provider,
+              // A provider the model proxy fronts honors SMITHERS_MODEL_PROXY_URL.
+              baseUrl: Object.hasOwn(Endpoint.providerOrigins, provider)
+                ? Endpoint.providerOrigin(provider as Endpoint.ProxiedProvider, environment)
+                : Providers.compatible[provider]!.baseUrl,
+              path: Providers.compatible[provider]!.path,
+              apiKey: Redacted.make(signed.key)
+            }),
+            executor,
+            seat,
+            modelId
+          )
+        case "Pooled":
+          return seatOf(
+            OpenAIChatGPT.make({ auth: Auth.bearer(Redacted.make(signed.key)), baseUrl: signed.origin }),
+            executor,
+            seat,
+            modelId
+          )
+        case "Codex":
+          // The subscription backend, called directly: the request carries
+          // the run's cache key and session id, and reasoning returns with it.
+          return seatOf(
+            OpenAIChatGPT.make({ auth: codexLogin(signed.file).auth }),
+            executor,
+            seat,
+            Providers.codexModel(modelId)
+          )
+        case "ClaudeCode": {
+          const model = Providers.claudeCodeModel(modelId)
+          const claude = claudeModel({
+            model,
+            executable: signed.executable,
+            environment,
+            // A host whose runs a person can take over keeps each session for `claude --resume`.
+            hijackable: environment["SMITHERS_HIJACKABLE"] === "1"
+          })
+          return Seat.make({
+            id: seat,
+            modelId: model,
+            model: claude,
+            route: ClaudeCode.route(model),
+            contextWindowTokens: SeatResolver.contextWindowTokensFor(model)
+          })
+        }
+      }
+      const key = signed.key
+      // The provider routes have distinct body types, so each branch is
+      // erased into the seat shape on its own rather than through a union.
+      // OpenRouter is the OpenAI Responses surface at a different origin, so
+      // its seats spell the model as `openrouter:vendor/model` and route
+      // through the compatible constructor.
+      if (provider === "anthropic") {
+        return seatOf(
+          Route.anthropic({ apiKey: Redacted.make(key), baseUrl: Endpoint.providerOrigin("anthropic", environment) }),
+          executor,
+          seat,
+          modelId
+        )
+      }
+      if (provider === "openrouter") {
+        return seatOf(
+          Route.openaiResponsesCompatible({
+            id: "openrouter",
+            providerName: "openrouter",
+            baseUrl: Endpoint.providerOrigin("openrouter", environment),
+            apiKey: Redacted.make(key)
+          }),
+          executor,
+          seat,
+          modelId
+        )
+      }
+      if (environment.SMITHERS_OPENAI_COMPATIBLE_BASE_URL) {
+        return seatOf(
+          Route.openaiChatCompatible({
+            id: "openai",
+            providerName: "openai",
+            baseUrl: environment.SMITHERS_OPENAI_COMPATIBLE_BASE_URL,
+            apiKey: Redacted.make(key)
+          }),
+          executor,
+          seat,
+          modelId
+        )
+      }
+      return seatOf(
+        Route.openai({ apiKey: Redacted.make(key), baseUrl: Endpoint.providerOrigin("openai", environment) }),
+        executor,
+        seat,
+        modelId
+      )
+    }
+  })
+}
+
+/** Asks the pool which routes have connected accounts right now. */
+const accountPoolRoutes = (
+  pool: AccountPool,
+  executor: RequestExecutor.RequestExecutor,
+  modelId: string
+): Effect.Effect<ReadonlyArray<string>, unknown, never> =>
+  Effect.scoped(() => {
+    const request = HttpClientRequest.get(`${pool.origin}/routes`).pipe(
+      HttpClientRequest.bearerToken(pool.key),
+      HttpClientRequest.acceptJson
+    )
+    const response = executor.execute(request, { modelId })
+    const text = response.text() catch (_error) => {
+      throw { message: "the answer could not be read" }
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      parsed = undefined
+    }
+    const routes = typeof parsed === "object" && parsed !== null ? (parsed as { routes?: unknown }).routes : undefined
+    if (!Array.isArray(routes)) {
+      throw { message: "the answer named no routes" }
+    }
+    return routes.filter((route): route is string => typeof route === "string")
+  })
+
+/**
+ * A startup default from the pool's currently connected, host-permitted routes.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const accountPoolDefaultModel = (environment: Readonly<Record<string, string | undefined>>) => {
+  const pool = accountPoolOf(environment)
+  if (pool === undefined) return undefined
+  const executor = RequestExecutor.RequestExecutor()
+  const routes = accountPoolRoutes(pool, executor, "coding/implement") catch ([] as ReadonlyArray<string>)
+  // The backend's default per provider (workspaceCodingModels), in its order.
+  const defaults = [["chatgpt", "openai:gpt-6-luna"], ["anthropic", "anthropic:claude-sonnet-4-6"]] as const
+  return defaults.find(([route]) => pool.routes.includes(route) && routes.includes(route))?.[1]
+}
+
+const seatOf = <Body, Frame, Event, State>(
+  configured: Result.Result<Route.Route<Body, Frame, Event, State>, ModelError.ModelError>,
+  executor: RequestExecutor.RequestExecutor,
+  seat: string,
+  modelId: string
+): Effect.Effect<Seat.Seat, Seat.SeatUnresolved, never> => {
+  const routeConfig = Effect.fromResult(configured) catch (error) => {
+    throw new Seat.SeatUnresolved({ seat, message: error.message })
+  }
+  const model = Effect.provideService(
+    Route.toModel(routeConfig),
+    // The process's start-up ends at the first model request a seat hands its transport.
+    RequestExecutor.RequestExecutor,
+    {
+      execute: (request, options) => {
+        Telemetry.startUp.firstRequest()
+        return executor.execute(request, options)
+      }
+    }
+  )
+  return Seat.make({
+    id: seat,
+    modelId,
+    model,
+    route: FlowEngineLike.routeResolver(routeConfig),
+    contextWindowTokens: SeatResolver.contextWindowTokensFor(modelId)
+  })
+}
+
+/**
+ * {@link seatResolver} bound to the current scope: closing the scope ends every
+ * Claude Code session its seats still hold, so an idle session cannot keep the
+ * host process alive after its runs finish.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const scopedSeatResolver = (
+  environment: Readonly<Record<string, string | undefined>>,
+  executor: RequestExecutor.RequestExecutor
+): Effect.Effect<SeatResolver.Service, never, Scope.Scope> => {
+  const closes = new Set<() => void>()
+  Effect.addFinalizer(() => {
+    sync((closes) => closes.forEach((close) => close()), closes)
+  })
+  return seatResolver(environment, executor, (close) => closes.add(close))
+}
+
+/**
+ * Provides {@link scopedSeatResolver} over the composition's request dispatcher.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layerSeatResolver = (
+  environment: Readonly<Record<string, string | undefined>>
+): Layer.Layer<SeatResolver.SeatResolver, never, RequestExecutor.RequestExecutor> =>
+  Layer.effect(SeatResolver.SeatResolver) {
+    const executor = RequestExecutor.RequestExecutor()
+    return scopedSeatResolver(environment, executor)
+  }
+
+/**
+ * The routing graph's seats (`SeatRouter.seats`) an `auto` run may be routed
+ * to on this host: each whose {@link aliasSeat} {@link seatResolver} holds a
+ * credential for, so a Claude seat is offered on an Anthropic key or on a
+ * Claude subscription signed in to Claude Code.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const seatCandidates: (host: Providers.Host) => Promise<ReadonlyArray<string>> = seatCandidatesBoundary
+
+/**
+ * Provides the {@link SeatRouter.Catalog} of {@link seatCandidates} over the
+ * given environment, read afresh each time a run is routed, with
+ * {@link SeatRouter.defaultVariants}.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layerSeatCatalog = (
+  environment: Readonly<Record<string, string | undefined>>
+): Layer.Layer<SeatRouter.Catalog> => {
+  // D262/D265: an annotated local const holds the candidates program, read afresh each run.
+  const candidates: Effect.Effect<ReadonlyArray<string>> = () =>
+    sync(async (seatCandidates, host) => seatCandidates(host), seatCandidates, hostOf(environment))
+  return SeatRouter.layer({
+    candidates,
+    variants: SeatRouter.defaultVariants
+  })
+}
+
+/**
+ * Jev's evaluation endpoint for this environment. A self-hosted Flow host
+ * holds a per-binding credential, not a gateway key, so it must judge through
+ * the backend's metered proxy: an explicit `SMITHERS_EVALUATOR_BASE_URL` wins,
+ * otherwise the gateway origin honors `SMITHERS_MODEL_PROXY_URL` (and its
+ * provider list) through `Endpoint.providerOrigin`.
+ */
+const jevBaseUrl = (environment: Readonly<Record<string, string | undefined>>): string => {
+  const explicit = environment["SMITHERS_EVALUATOR_BASE_URL"]?.trim()
+  return explicit !== undefined && explicit !== ""
+    ? explicit
+    : `${Endpoint.providerOrigin("vercel", environment)}/v4/ai/evaluation-model`
+}
+
+/**
+ * Routers: one key serves every vendor's model by its `vendor/model` id
+ * (`vercel:` is the AI Gateway).
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const routers: ReadonlyArray<string> = ["vercel", "openrouter"]
+
+/**
+ * The models a router judges or reviews on, by `vendor/model`, in order:
+ * coding/review takes the first whose vendor is not the implementer's, and
+ * the judge's backup takes the first.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const routedReviewModels: ReadonlyArray<string> = ["anthropic/claude-sonnet-4.5", "openai/gpt-5.1"]
+
+/**
+ * The host's judge. With `AI_GATEWAY_API_KEY` it is Jev through the Vercel AI
+ * Gateway, and a subscription judges in its place only when Jev is
+ * unreachable, times out, or stays unavailable (5xx or 429) through its
+ * retries. With no key the subscription is the judge itself.
+ *
+ * A subscription judges through the model-to-judge adapter
+ * (`EvaluatorBackup.fromModel`), on the first of: Claude Haiku on a signed-in
+ * Claude Code, GPT-6 Luna on the account pool or a ChatGPT session, then the
+ * first router with a key on its first {@link routedReviewModels} model, so an
+ * install with only its Gateway key still judges through a Jev outage. The
+ * choice is read at each judgment, so an account connected after startup
+ * counts. It never judges on a provider API key: a host that holds nothing
+ * else fails `unconfigured`.
+ *
+ * Jev speaks over `jevHttp`, by default the environment's egress client on
+ * Node and fetch on Bun, not the model executor: the gateway's own statuses, retries and deadline stay
+ * Jev's, and its outages never count against the model transport.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layerSeatEvaluator = (
+  environment: Readonly<Record<string, string | undefined>>,
+  jevHttp: Layer.Layer<HttpClient.HttpClient> = bunVersion() === undefined
+    ? EgressHttpClient.layer(environment)
+    // Keep the evaluator's existing Bun fetch transport and its native proxy policy.
+    : FetchHttpClient.layer
+): Layer.Layer<Evaluator.Evaluator, never, RequestExecutor.RequestExecutor> =>
+  Layer.effect(Evaluator.Evaluator) {
+    const executor = RequestExecutor.RequestExecutor()
+    const resolver = seatResolver(environment, executor)
+    const key = environment["AI_GATEWAY_API_KEY"]?.trim()
+    const keyed = key !== undefined && key !== ""
+    // Claude Haiku on this machine's Claude Code first, by Claude Code's own
+    // `haiku` alias: asked for `claude-haiku-4-5` by id on 2026-10-13, it
+    // fenced its JSON in 13 of 13 readings, which the adapter refuses, and the
+    // alias in none of 15. Else Luna on a subscription: the account pool or a
+    // ChatGPT session. Else a router key (an install's AI Gateway key, through
+    // the model proxy) on the router's second-vendor model, as coding/review's
+    // default seats do. Never a provider API key.
+    const subscription: Evaluator.Evaluator = Evaluator.Evaluator.of({
+      evaluate: (request) => {
+        const seat = sync(async (subscriptionSeat, environment) => subscriptionSeat(environment), subscriptionSeat, environment)
+        if (seat === undefined) {
+          throw new Evaluator.EvaluatorError({
+            code: "unconfigured",
+            message: `${
+              keyed ? "No" : "AI_GATEWAY_API_KEY is not set and no"
+            } subscription can judge. ${Evaluator.unconfiguredMessage}`
+          })
+        }
+        let resolved: Seat.Seat
+        try {
+          resolved = resolver.resolve(seat)
+        } catch {
+          throw new Evaluator.EvaluatorError({ code: "unreachable", message: Evaluator.unreachableMessage })
+        }
+        return EvaluatorBackup.fromModel(resolved.model, resolved.modelId).evaluate(request)
+      }
+    })
+    if (!keyed) return subscription
+    const jev = Context.get(
+      Layer.build(
+        Evaluator.layerVercelGateway({ apiKey: Redacted.make(key), baseUrl: jevBaseUrl(environment) }).pipe(
+          // A judgment through the install's metered proxy names the engine
+          // dispatch it ran under, as every other model call does.
+          Layer.provide(
+            Layer.provide(
+              Layer.effect(HttpClient.HttpClient) {
+                const client = HttpClient.HttpClient()
+                return MeteredDispatch.attributeClient(client, environment[Endpoint.modelProxyVariable])
+              },
+              jevHttp
+            )
+          )
+        )
+      ),
+      Evaluator.Evaluator
+    )
+    return EvaluatorBackup.withFallback(jev, subscription)
+  }
+
+/**
+ * The explicit sandbox budget every locally executed cell runs under. Never
+ * unlimited: an unbounded QuickJS cell can hang the frame.
+
+ * @since 1.0.0
+ * @private
+ */
+export const cellLimits: Sandbox.Limits = {
+  memoryBytes: 256 * 1024 * 1024,
+  steps: 50_000_000
+}
+
+/**
+ * The declared mount's name for a directory inside the repository, or
+ * `undefined` when the mount cannot name it. `TestRun` derives its baseline
+ * worktree's container path the same way, from the same pair of roots.
+ */
+const mountedAs = (mount: string, root: string, directory: string): string | undefined => {
+  const inside = relativePath(root, directory)
+  if (inside === "") return mount
+  if (inside.startsWith("..") || isAbsolutePath(inside)) return undefined
+  return `${mount.replace(/\/+$/, "")}/${inside}`
+}
+
+/**
+ * The repository's own test invocation, as this host declares it.
+ *
+ * `TestRun` is a declaration flow: a caller selects *which* tests, never *how*
+ * to run them, so the composition has to supply the how. This host reads it off
+ * the environment, which is the same place it reads a seat's credentials, and
+ * the only field that decides anything is the command. The rest describe where
+ * that command runs.
+ *
+ * `undefined` means this host knows of no runner, and then the `test` flow is
+ * not bound at all. That is the rule the r91 wave broke in the other direction:
+ * `StandardFlows.tests` existed, the cell contract's doctrine assumed it, and
+ * no composition offered it, so all 45 graded runs saw zero `test` calls. A
+ * flow no composition offers is a flow that does not exist, and a flow bound
+ * over a declaration that can only refuse is worse, because the catalog then
+ * advertises a call whose every answer is "not configured".
+ *
+ * `workspaceRoot` is the checkout this executor actually runs in, which is not
+ * `root` once a resumed history fork binds the run to its own worktree. The
+ * runner has to name that checkout, or the suite grades the files the forked
+ * agent never touched. `root` still decides the *container's* name for the
+ * tree: `SMITHERS_TEST_CWD` is the mount the project root is reachable at, so
+ * a workspace inside the project is reachable at the same relative path under
+ * that mount. A workspace the mount cannot name at all declares no runner,
+ * because the only alternative is a `test` call that silently runs elsewhere.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const testRunner = (
+  environment: Readonly<Record<string, string | undefined>>,
+  root: string,
+  workspaceRoot: string = root
+): TestRunner.Runner | undefined => {
+  const command = Environment_.read(environment, "SMITHERS_TEST_COMMAND")?.trim()
+  if (command === undefined || command === "") return undefined
+  const container = Environment_.read(environment, "SMITHERS_TEST_CONTAINER")?.trim()
+  const declared = Environment_.read(environment, "SMITHERS_TEST_CWD")?.trim()
+  const timeout = Environment_.readMilliseconds(environment, "SMITHERS_TEST_TIMEOUT_MS")
+  // The runner's directory and the workspace's are the same path until a
+  // container gives the tree a second name; `root` stays a host path, because
+  // that is where a baseline worktree is checked out from.
+  const cwd = declared === undefined || declared === ""
+    ? workspaceRoot
+    : mountedAs(declared, root, workspaceRoot)
+  if (cwd === undefined) return undefined
+  return {
+    command,
+    baseline: false,
+    cwd,
+    root: workspaceRoot,
+    ...(container === undefined || container === "" ? {} : { container }),
+    ...(timeout === undefined ? {} : { timeoutMs: timeout })
+  }
+}
+
+/**
+ * The one container this host's `bash` may reach, when the host is sealed.
+ *
+ * `SMITHERS_BASH_CONTAINER` names it. A sealed host refuses every `bash` call
+ * that names another container or none (`Bash.sealed`), and its file flows act
+ * on that container's files, so a cell cannot read the host at all. A
+ * benchmark host sets it: the host holds other tasks' tests and reference
+ * solutions, and a task's agent may touch only the task's container.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.1
+ */
+export const sealedContainer = (
+  environment: Readonly<Record<string, string | undefined>>
+): string | undefined => {
+  const container = Environment_.read(environment, "SMITHERS_BASH_CONTAINER")?.trim()
+  return container === undefined || container === "" ? undefined : container
+}
+
+/**
+ * The sandbox providers the CLI host offers a flow's `sandbox:` selection.
+ *
+ * `SMITHERS_SANDBOX_IMAGE` names the image `provider: container` runs in,
+ * through the `docker` CLI, with the selection's network and limits. No other
+ * provider is configured from the environment, and without the image a
+ * container-sandboxed flow is refused rather than run on this host.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const sandboxProvidersFrom = (
+  environment: Readonly<Record<string, string | undefined>>
+): Application.SandboxProviders => {
+  const image = Environment_.read(environment, "SMITHERS_SANDBOX_IMAGE")?.trim()
+  return image === undefined || image === "" ? {} : {
+    container: (selection, host) =>
+      ContainerSandbox.make({
+        spawner: host.spawner,
+        image,
+        network: selection.network,
+        limits: { cpus: selection.cpus, memoryMib: selection.memoryMib, timeoutSecs: selection.timeoutSecs }
+      })
+  }
+}
+
+/**
+ * What an in-run `ask` does on this host.
+ *
+ * `SMITHERS_ASKS` names it. `park`, the default, parks the run on an approval
+ * an operator answers with `smithers approve`. `refuse` declares a host nobody
+ * answers — a benchmark, a cron, a CI lane — and every `ask` fails at once with
+ * `ApprovalUnavailable`, which the cell reads and the journal records as the
+ * call's failure. Nothing is approved on anyone's behalf. An unattended
+ * benchmark trial that parked here spent the rest of its hour waiting.
+ * Any other value throws a `UsageError` naming the variable.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.1
+ */
+export const askPolicy = (environment: Readonly<Record<string, string | undefined>>): "park" | "refuse" => {
+  const value = Environment_.read(environment, "SMITHERS_ASKS")?.trim() ?? ""
+  if (value === "" || value === "park") return "park"
+  if (value === "refuse") return "refuse"
+  throw new CliError.UsageError({ message: `SMITHERS_ASKS must be park or refuse, not ${JSON.stringify(value)}` })
+}
+
+/**
+ * Where this host pins the trees a run checkpoints, and where a container sees
+ * them.
+ *
+ * The same two paths {@link testRunner} reads, for the same reason: a
+ * checkpoint is materialized as a directory under the repository, and a
+ * container reaches that directory through the mount it already has.
+ * `SMITHERS_TEST_CWD` is the container's name for the repository when there is
+ * one, and the workspace root is the host's. A host that declares neither
+ * still pins, and pins on one path under both names.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const checkpointStore = (
+  environment: Readonly<Record<string, string | undefined>>,
+  root: string
+): Checkpoints.GitOptions => {
+  const cwd = Environment_.read(environment, "SMITHERS_TEST_CWD")?.trim()
+  return { root, ...(cwd === undefined || cwd === "" ? {} : { cwd }) }
+}
+
+/**
+ * The host services the standard tool bindings close over, and no others.
+ *
+ * `FlowBinding.provide` lays a binding's context over the calling run's, so a
+ * whole ambient capture taken at registration would put the registration's
+ * journal, run store, notification queue, raw flow runtime, scope and loggers
+ * over the ones each tool call runs under. Each context is picked to exactly
+ * the services its bindings declare (#2930).
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const toolServices: Effect.Effect<{
+  mutable filesystem: Context.Context<FileSystem.FileSystem | Path.Path>
+  mutable shell: Context.Context<KernelChildProcessSpawner.ChildProcessSpawner | Path.Path>
+  mutable judge: Context.Context<Evaluator.Evaluator>
+}, never, KernelChildProcessSpawner.ChildProcessSpawner | Evaluator.Evaluator | FileSystem.FileSystem | Path.Path> = () => {
+  const filesystem = Effect.context<FileSystem.FileSystem | Path.Path>()
+  const shell = Effect.context<KernelChildProcessSpawner.ChildProcessSpawner | Path.Path>()
+  const judge = Effect.context<Evaluator.Evaluator>()
+  return {
+    filesystem: Context.pick(FileSystem.FileSystem, Path.Path)(filesystem),
+    shell: Context.pick(KernelChildProcessSpawner.ChildProcessSpawner, Path.Path)(shell),
+    judge: Context.pick(Evaluator.Evaluator)(judge)
+  }
+}
+
+/**
+ * The `test` flow's binding source, or none when this host declares no runner.
+ *
+ * Named rather than spread inline because the r91 wave's whole finding about
+ * this flow is that the *composition* was the untried link: the flow, its
+ * declaration and its handler were all tested, and no test asked whether any
+ * host offered them. This is that question, in the one place it can be asked
+ * without booting a run.
+ *
+ * The runner's container is added to the same context, so the suite reaches the
+ * image through the transport `bash` already uses. The `Evaluator` comes in
+ * with it: the flow attributes a non-zero exit with Jev, and the host builds
+ * that judge through `layerSeatEvaluator`, for this flow and
+ * for the completion brake alike.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const testFlows = (
+  services: Context.Context<
+    Evaluator.Evaluator | KernelChildProcessSpawner.ChildProcessSpawner | Path.Path
+  >,
+  container: Container.Container,
+  runner: TestRunner.Runner | undefined
+): ReadonlyArray<FlowBinding.Source> =>
+  runner === undefined ? [] : [
+    StandardFlows.tests(
+      Context.add(
+        Context.add(services, TestRunner.TestRunner, TestRunner.make(runner)),
+        Container.Container,
+        container
+      )
+    )
+  ]

@@ -1,0 +1,307 @@
+/**
+ * File-backed evaluation commands over the public fixed-suite APIs.
+ *
+ * @since 1.0.0
+ */
+
+import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
+import * as DurableWriter from "@smthrs/database/DurableWriter"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import { Baseline, CaseExecutor, Gate, Regression, Runner, Suite } from "@smthrs/evals"
+import { EvalError } from "@smthrs/evals/EvalError"
+import * as ScorerRunner from "@smthrs/scorers/Runner"
+import * as RunnerLive from "@smthrs/scorers/RunnerLive"
+import type { ScorerError } from "@smthrs/scorers/ScorerError"
+import * as SqlScoreStore from "@smthrs/scorers/SqlScoreStore"
+import { Effect, Layer } from "effect"
+import { z } from "incur"
+import * as CliError from "../CliError.vibe"
+import type * as Environment from "../Environment.ts"
+import * as DatabaseLocation from "../internal/DatabaseLocation.ts"
+import { executionDatabasePath } from "../internal/ExecutionDatabasePath.ts"
+import * as Project from "../Project.vibe"
+import * as Boundary from "./EvaluationBoundary.ts"
+
+/**
+ * Executable suite modules export this value as default, or export its two fields.
+ * @category models
+ * @since 1.0.0
+ */
+export interface EvaluationModule {
+  readonly suite: Suite.Suite | Promise<Suite.Suite> | Effect.Effect<Suite.Suite, unknown>
+  readonly executor: CaseExecutor.Service
+}
+
+/**
+ * Project selection accepted by local evaluation operations.
+ * @category models
+ * @since 1.0.0
+ */
+export interface Options {
+  readonly root?: string | undefined
+  readonly remote?: string | undefined
+}
+
+/**
+ * Resolves the local project root and refuses remote execution.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const localRoot = (options: Options, environment?: Environment.Source): string =>
+  Project.localRoot(options, environment ?? Boundary.hostEnvironment())
+
+/**
+ * Discovery does not import modules or run any suite/executor code.
+ * @category constructors
+ * @since 1.0.0
+ */
+// A-2/E-4, E-7: asynchronous file-system discovery stays TypeScript (EvaluationBoundary.ts).
+export const list = Boundary.list
+
+/**
+ * Loads and validates one discovered evaluation module.
+ * @category constructors
+ * @since 1.0.0
+ */
+// A-2/E-4, E-7: the dynamic import and its runner boundary stay TypeScript (EvaluationBoundary.ts).
+export const load = Boundary.load
+
+/** Non-empty identity shared by persisted evaluation records. */
+const identity = z.string().min(1)
+/** Fields common to score and inconclusive observations. */
+const observationBase = {
+  case: identity,
+  scorer: identity,
+  scorerName: z.string().optional(),
+  stepKey: identity,
+  at: identity,
+  reason: z.string().optional(),
+  meta: z.unknown().optional()
+}
+/** Persisted observation schema. */
+const observation = z.discriminatedUnion("kind", [
+  z.object({ ...observationBase, kind: z.literal("score"), score: z.number().finite().min(0).max(1) }),
+  z.object({ ...observationBase, kind: z.literal("inconclusive"), reason: z.string() })
+])
+
+/**
+ * Artifacts intentionally exclude executable flow/scorer objects.
+ * @category schemas
+ * @since 1.0.0
+ */
+export const RunArtifact = z.object({
+  version: z.literal(1),
+  runId: identity,
+  suite: identity,
+  cases: z.array(z.object({
+    case: identity,
+    error: z.object({ code: z.string(), message: z.string() }).optional(),
+    observations: z.array(observation),
+    trials: z.object({
+      n: z.number(),
+      passes: z.number(),
+      rate: z.number(),
+      passAt1: z.number(),
+      passAtK: z.number(),
+      passHatK: z.number(),
+      stderr: z.number()
+    }).optional()
+  })),
+  observations: z.array(observation),
+  trials: z.object({
+    cases: z.number(),
+    passAt1: z.number(),
+    passAtK: z.number(),
+    passHatK: z.number(),
+    allPass: z.number(),
+    perCase: z.record(
+      z.string(),
+      z.object({
+        n: z.number(),
+        passes: z.number(),
+        rate: z.number(),
+        passAt1: z.number(),
+        passAtK: z.number(),
+        passHatK: z.number(),
+        stderr: z.number()
+      })
+    )
+  }).optional(),
+  k: z.number().optional()
+})
+/**
+ * JSON-safe result of an evaluation run.
+ * @category models
+ * @since 1.0.0
+ */
+export type RunArtifact = z.infer<typeof RunArtifact>
+
+/**
+ * Removes executable values from a runner result for persistence.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const artifactOf = (run: Runner.RunResult): RunArtifact =>
+  RunArtifact.parse({
+    version: 1,
+    runId: run.runId,
+    suite: run.suite,
+    cases: run.cases.map((result) => ({
+      case: result.case,
+      ...(result.error === undefined ? {} : { error: { code: result.error.code, message: result.error.message } }),
+      observations: result.observations,
+      ...(result.trials === undefined ? {} : { trials: result.trials })
+    })),
+    observations: run.observations,
+    ...(run.trials === undefined ? {} : { trials: run.trials, k: run.k })
+  })
+
+/**
+ * Rehydrates a persisted artifact for baseline and regression APIs.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const runOf = (artifact: RunArtifact): Runner.RunResult => ({
+  runId: artifact.runId,
+  suite: artifact.suite,
+  cases: artifact.cases.map((result) => ({
+    case: result.case,
+    observations: result.observations,
+    ...(result.trials === undefined ? {} : { trials: result.trials }),
+    ...(result.error === undefined ? {} : {
+      error: new EvalError({ code: "executor", message: `${result.error.code}: ${result.error.message}` })
+    })
+  })),
+  observations: artifact.observations,
+  ...(artifact.trials === undefined ? {} : { trials: artifact.trials, k: artifact.k })
+})
+
+/**
+ * A caller-supplied identity cannot escape the artifact directory.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const runPath = (root: string, runId: string): string => {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(runId)) {
+    throw new CliError.UsageError({ message: "Run IDs must contain only letters, digits, '.', '_' or '-'" })
+  }
+  return Boundary.joinPath(Project.stateDirectory(root), "evals", "runs", `${runId}.json`)
+}
+
+/**
+ * Writes a JSON artifact atomically and refuses replacement by default.
+ * @category constructors
+ * @since 1.0.0
+ */
+// A-2/E-4, E-7: the asynchronous atomic file write stays TypeScript (EvaluationBoundary.ts).
+export const writeJson = Boundary.writeJson
+
+/**
+ * The scorer runner a project's evaluations use.
+ *
+ * With an engine store, observations are recorded through the store-backed
+ * scorer runner into that database, after applying the score-store
+ * migrations, so later runs and gates can read them back. Without one, scoring
+ * stays in process and nothing is recorded.
+ * @category layers
+ * @since 1.0.0
+ */
+export const scoring = (root: string): Layer.Layer<Runner.Runner, ScorerError> => {
+  const filename = executionDatabasePath(root)
+  if (!DatabaseLocation.exists(filename)) return Runner.layerInline
+  const runner = Layer.effect(Runner.Runner) {
+    return ScorerRunner.Runner()
+  }
+  return runner.pipe(
+    Layer.provide(RunnerLive.layer()),
+    Layer.provide(SqlScoreStore.layer),
+    Layer.provide(DurableWriter.layer().pipe(Layer.provideMerge(NodeDatabase.layer({ filename }))))
+  )
+}
+
+/**
+ * Executes a suite and returns its persistable artifact.
+ *
+ * `options.root` selects the project whose {@link scoring} the run uses;
+ * without it the run scores in process.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const execute = (
+  suite: Suite.Suite,
+  executor: CaseExecutor.Service,
+  options: {
+    readonly runId: string
+    readonly at: string
+    readonly trials?: number
+    readonly k?: number
+    readonly root?: string
+  },
+  runtime: RuntimeConfig = {}
+): Promise<RunArtifact> =>
+  // A-2/E-4: the async runner boundary stays TypeScript (EvaluationBoundary.ts).
+  Boundary.runAsync(() => {
+    const { root, ...runOptions } = options
+    const layer = root === undefined ? Runner.layerInline : scoring(root)
+    const scored = () => {
+      provide layer {
+        provide CaseExecutor.CaseExecutor = executor {
+          return Runner.run(suite, runOptions)
+        }
+      }
+    }
+    return artifactOf(scored())
+  }, { signal: runtime.signal })
+
+/**
+ * Reads a saved run by identity or path.
+ * @category constructors
+ * @since 1.0.0
+ */
+// A-2/E-4, E-7: the asynchronous file read stays TypeScript (EvaluationBoundary.ts).
+export const readRun = Boundary.makeReadRun({ runPath, RunArtifact })
+
+/**
+ * Reads a committed baseline file.
+ * @category constructors
+ * @since 1.0.0
+ */
+// A-2/E-4, E-7: the asynchronous file read stays TypeScript (EvaluationBoundary.ts).
+export const readBaseline = Boundary.readBaseline
+
+/**
+ * Returns the committed baseline path for a suite.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const defaultBaselinePath = (root: string, suite: string): string => {
+  const safeName = encodeURIComponent(suite)
+  return Boundary.joinPath(root, "evals", `${safeName}.baseline.json`)
+}
+
+/**
+ * Serializes a complete run as a baseline.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const baseline = (run: RunArtifact): Promise<string> =>
+  // A-2/E-4: the async runner boundary stays TypeScript (EvaluationBoundary.ts).
+  Boundary.runAsync(() => Baseline.write(Baseline.fromRun(runOf(run))))
+
+/**
+ * Compares a run with a baseline and returns its CI verdict.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const compare = (
+  run: RunArtifact,
+  source: string,
+  options: Gate.Options = {}
+) =>
+  // A-2/E-4: the async runner boundary stays TypeScript (EvaluationBoundary.ts).
+  Boundary.runAsync(() => {
+    const committed = Baseline.load(source)
+    const report = Regression.compare(committed, runOf(run))
+    const verdict = Gate.check(report, options)
+    return { report, verdict, ...Gate.ciGrade(verdict) }
+  })

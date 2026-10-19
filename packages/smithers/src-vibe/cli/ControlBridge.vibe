@@ -1,0 +1,268 @@
+/**
+ * Adapts the existing Effect command handlers to the unified Incur surface.
+ *
+ * @since 1.0.0
+ */
+
+import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
+import { ApprovalAuthority, Control } from "@smthrs/control"
+import type * as Evaluator from "@smthrs/model/Evaluator"
+import type * as Registry from "@smthrs/registry/Registry"
+import { Effect, Layer, Stream } from "effect"
+import { z } from "incur"
+import * as CliError from "../CliError.vibe"
+import * as DatabaseLocation from "../internal/DatabaseLocation.ts"
+import * as NodeControl from "../NodeControl.vibe"
+import * as Project from "../Project.vibe"
+import type * as Serve from "../Serve.vibe"
+import type * as Ui from "../Ui.vibe"
+import * as Boundary from "./ControlBridgeBoundary.ts"
+import * as Presentation from "./Presentation.ts"
+
+/**
+ * Shared connection options for commands that reach the control plane.
+ * @category schemas
+ * @since 1.0.0
+ */
+export const connectionOptions = z.object({
+  root: z.string().optional().describe("Project directory; defaults to the nearest Smithers project"),
+  remote: z.string().optional().describe("Remote control plane URL; defaults to SMITHERS_REMOTE"),
+  mcpConfig: z.string().optional().describe("Path to the configured MCP servers"),
+  quiet: z.boolean().default(false).describe("Suppress progress messages")
+})
+
+/**
+ * Parsed control-plane connection options.
+ * @category models
+ * @since 1.0.0
+ */
+export type ConnectionOptions = z.output<typeof connectionOptions>
+
+/**
+ * Host inputs used while invoking an adapted command.
+ * @category models
+ * @since 1.0.0
+ */
+export interface Runtime extends RuntimeConfig {
+  /** Explicit judge for an embedded or offline CLI host; otherwise select the gateway. */
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
+  /** Host-owned delegation for local commands and the served gateway, never a request argument. */
+  readonly approvalAuthority?: ApprovalAuthority.Service | undefined
+  readonly executionRoot?: string | undefined
+  readonly signal?: AbortSignal | undefined
+  readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+  readonly exit?: ((code: number) => void) | undefined
+}
+
+/**
+ * Renders connection options as arguments for the Effect CLI.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const connectionArguments = (options: ConnectionOptions): Array<string> => {
+  const args: Array<string> = []
+  for (
+    const [flag, value] of [
+      ["root", options.root],
+      ["remote", options.remote],
+      ["mcp-config", options.mcpConfig]
+    ] as const
+  ) {
+    if (value !== undefined) args.push(`--${flag}`, value)
+  }
+  if (options.quiet) args.push("--quiet")
+  return args
+}
+
+// The control plane an MCP session reaches, and the credential it presents,
+// are host configuration. Honouring them as tool arguments would let any
+// connected client aim the host's SMITHERS_TOKEN at a server it chose.
+// Refuse the override rather than silently substituting the host destination,
+// so a caller is never told it queried a plane it did not.
+const hostConnection = (options: ConnectionOptions): ConnectionOptions => {
+  if (Presentation.current()?.transport !== "mcp") return options
+  for (const flag of ["remote"] as const) {
+    if (options[flag] !== undefined) {
+      throw new CliError.UsageError({
+        message:
+          `--${flag} is not accepted over MCP; the host selects the control plane with SMITHERS_REMOTE and SMITHERS_TOKEN`
+      })
+    }
+  }
+  return options
+}
+
+const resolved = (options: ConnectionOptions, runtime: Runtime) =>
+  NodeControl.makeConfig(
+    connectionArguments(hostConnection(options)),
+    runtime.environment ?? Boundary.processEnvironment(),
+    Boundary.workingDirectory()
+  )
+
+/**
+ * Resolves transport and execution roots for an adapted command.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const configuration = (options: ConnectionOptions, runtime: Runtime) => {
+  const config = resolved(options, runtime)
+  if (config.remote === undefined) Project.assertRoot(config.root ?? Boundary.workingDirectory())
+  return {
+    ...config,
+    ...(runtime.evaluator === undefined ? {} : { evaluator: runtime.evaluator }),
+    executionRoot: runtime.executionRoot,
+    approvalAuthority: runtime.approvalAuthority,
+    principal: Presentation.current()?.transport === "mcp" ? { id: "mcp", kind: "agent" as const } : undefined
+  }
+}
+
+/**
+ * Whether this invocation targets a remote control plane.
+ * @category predicates
+ * @since 1.0.0
+ */
+export const isRemote = (options: ConnectionOptions, runtime: Runtime): boolean =>
+  resolved(options, runtime).remote !== undefined
+
+/**
+ * Whether there are durable records to observe: a remote control plane, or a
+ * local project whose control store exists. Observing verbs answer empty
+ * without opening, and so creating, a local store that does not.
+ * @category predicates
+ * @since 1.0.0
+ */
+export const hasRecords = (options: ConnectionOptions, runtime: Runtime): boolean => {
+  const config = configuration(options, runtime)
+  return config.remote !== undefined ||
+    DatabaseLocation.exists(NodeControl.databasePath(config.root ?? Boundary.workingDirectory()))
+}
+
+/**
+ * Reuses the tested flow control handlers without starting a second process.
+ * @category constructors
+ * @since 1.0.0
+ * @deprecated Use query, launch or read with shared command Effects; removed in #3634 phase 2.
+ */
+export const invoke: (args: ReadonlyArray<string>, options: ConnectionOptions, runtime?: Runtime) => Promise<unknown> = Boundary.invoke
+
+/**
+ * Runs a typed verb against the same local or remote host as flow commands.
+ *
+ * The host layer also carries the project references, so a verb that reads
+ * `Project.ProjectRoot` or the 0.x snapshot sees the host's answer.
+ *
+ * The host observes runs and drives none, so it opens with no gateway key: a
+ * flow listing, a run diagnosis, a pending-approval listing and a bulk cancel
+ * all work in a project that has never had one. An operation that starts or
+ * resumes a run does not belong here and its launch would die on the observing
+ * executor; route one through {@link launch}.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const query: <A, E>(operation: Effect.Effect<A, E, Control.Control | Ui.Ui>, options: ConnectionOptions, runtime?: Runtime, hostOptions?: {
+  readonly plansFlows?: boolean
+}) => Promise<A> = Boundary.query
+
+/**
+ * Runs a typed launch with an executor and host-owned settlement status.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const launch: <A, E>(operation: Effect.Effect<A, E, Control.Control | Ui.Ui>, options: ConnectionOptions, runtime?: Runtime) => Promise<A> = Boundary.launch
+
+/**
+ * Runs a read-only verb over the project's existing stores.
+ *
+ * Nothing is created, migrated, recovered or reaped, and the reads answer
+ * while another process holds the writer. Only a verb that changes nothing
+ * belongs here; one that cancels, signals or decides goes through
+ * {@link query} or {@link launch}.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const read: <A, E>(operation: Effect.Effect<A, E, Control.Control | Ui.Ui>, options: ConnectionOptions, runtime?: Runtime) => Promise<A> = Boundary.read
+
+/**
+ * Runs a typed verb on the project alone, without opening the control host or
+ * building the flow registry. The project references are the host's.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const project: <A, E>(operation: Effect.Effect<A, E, Ui.Ui>, options: ConnectionOptions, runtime?: Runtime) => Promise<A> = Boundary.project
+
+/**
+ * Runs a typed verb on the project alone, without opening the control host:
+ * the 0.x migration, garbage collection, and the registry check. The project
+ * references and the flow registry are the host's.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const local: <A, E>(operation: Effect.Effect<A, E, Registry.Registry | Ui.Ui>, options: ConnectionOptions, runtime?: Runtime) => Promise<A> = Boundary.local
+
+/**
+ * A scoped stream closes its transports when the consumer stops following.
+ *
+ * Reading events changes nothing, so it observes the stores as {@link read} does.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const events = (
+  runId: string,
+  follow: boolean,
+  options: ConnectionOptions,
+  runtime: Runtime = {},
+  afterSequence?: number
+) => {
+  // C-8/D-10: explicit thunks keep this factory plain; the stream's programs
+  // run when it is consumed, as in ControlBridge.ts.
+  const stream = Stream.unwrap(() => {
+    const control = Control.Control()
+    let cursor = afterSequence
+    const watch = (live: boolean) =>
+      control.watch({
+        runId,
+        follow: live,
+        ...(cursor === undefined ? {} : { afterSequence: cursor })
+      })
+    if (!follow) return watch(false)
+    const terminal = () => {
+      while (true) {
+        const page = control.list({ _tag: "runs", filters: { runId } })
+        if (
+          page._tag === "runs" &&
+          page.items.some((run) =>
+            run.runId === runId && (run.status === "completed" || run.status === "failed" || run.status === "cancelled")
+          )
+        ) return
+        sleep("250 millis")
+      }
+    }
+    // A terminal run may have no event after the caller's cursor. Observe its
+    // durable status too, then drain once more after the last delivered event
+    // so interrupting the live transport cannot lose its final buffered rows.
+    return watch(true).pipe(
+      Stream.interruptWhen(terminal()),
+      Stream.tap((event) => {
+        cursor = event.sequence
+      }),
+      Stream.concat(Stream.unwrap(() => watch(false)))
+    )
+  }).pipe(Stream.provide(NodeControl.layerObserve(configuration(options, runtime))))
+  const signal = runtime.signal
+  if (signal === undefined) return Stream.toAsyncIterable(stream)
+  return Stream.toAsyncIterable(stream.pipe(Stream.interruptWhen(() =>
+    callback((signal, resume: Resume<void, never>) => {
+      const abort = () => resume(undefined)
+      if (signal.aborted) abort()
+      else signal.addEventListener("abort", abort, { once: true })
+      return () => signal.removeEventListener("abort", abort)
+    }, signal)
+  )))
+}
+
+/**
+ * Serves the gateway and durable trigger scheduler on one shared local Control host.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const host: (bind: Serve.Bind, options: ConnectionOptions, runtime?: Runtime) => Promise<void> = Boundary.host

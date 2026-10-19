@@ -1,0 +1,350 @@
+/**
+ * Scoped Smithers Cloud workspaces for any sandbox-backed flow.
+ *
+ * @since 1.0.0
+ */
+
+import { CommandSandbox, RemoteChildProcessSpawner, type Sandbox } from "@smthrs/sandbox"
+import { Duration, Effect, Schedule } from "effect"
+import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { createHash } from "node:crypto"
+import { processEnvironment } from "./CloudSandboxNode.ts"
+import { APIError, Client, object } from "./internal/backend/Client.ts"
+import { workspaceSshPrefix } from "./internal/backend/WorkspaceSsh.ts"
+
+/**
+ * Workspace control transport. Supply a fake for deterministic lifecycle tests;
+ * ordinary hosts use the CLI's authenticated API client and pinned SSH prefix.
+ * Implementations must honor the supplied abort signal, including time bounds.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface WorkspaceApi {
+  request(method: "POST" | "GET" | "DELETE", path: string, body: unknown, signal: AbortSignal): Promise<unknown>
+  sshPrefix(reference: string, signal: AbortSignal): Promise<ReadonlyArray<string>>
+}
+
+/**
+ * The ordinary workspace transport: the CLI's authenticated control client and
+ * pinned SSH prefix, resolved from `environment`.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const workspaceApi = (environment: Readonly<Record<string, string | undefined>>): WorkspaceApi => {
+  const client = new Client({ environment })
+  return {
+    request: (method, path, body, signal) => client.request(method, path, body, { signal }),
+    sshPrefix: (reference, signal) => workspaceSshPrefix(environment, reference, signal)
+  }
+}
+
+/**
+ * One repository and machine shape, shared by independently named sessions.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Options {
+  /** Local host spawner, used to run the SSH client. */
+  readonly persistence?: "ephemeral" | "sticky" | undefined
+  /** Workspace lease; scoped work renews continuously, retained work on attach. Default 900 seconds. */
+  readonly clientLeaseSeconds?: number | undefined
+  readonly spawner: ChildProcessSpawner["Service"]
+  /** Cloud repository, OWNER/REPO. */
+  readonly repository: string
+  /** The CLI's origin and login settings; defaults to process.env. */
+  readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+  /** Repository bookmark to check out; defaults to the repository default. */
+  readonly sourceBookmark?: string | undefined
+  /** Absolute guest checkout path; defaults to /home/developer/workspace. */
+  readonly workdir?: string | undefined
+  /** Prefix for the SHA-256 session name; defaults to smthrs-. */
+  readonly namePrefix?: string | undefined
+  /** Provisioning status cadence; defaults to 3 seconds. */
+  readonly pollInterval?: Duration.Input | undefined
+  /** Maximum wait for running; defaults to 10 minutes. */
+  readonly readyTimeout?: Duration.Input | undefined
+  /** Requested machine size: vCPUs, memory in MiB, writable disk in GiB. */
+  readonly resources?: { readonly vcpu?: number; readonly memory_mib?: number; readonly disk_gib?: number } | undefined
+  /** Optional workspace transport for alternate hosts and lifecycle tests. */
+  readonly api?: WorkspaceApi | undefined
+}
+
+// The deployed workspace image bakes root's per-user locations into every
+// session (plue#742, fixed in the image but not yet released), so uid
+// developer cannot read its jj config or write npm and bun caches. Pin each
+// of those names to the workspace user; a command's own env overrides them.
+const guestHome = [
+  "HOME=/home/developer",
+  "XDG_CONFIG_HOME=/home/developer/.config",
+  "XDG_CACHE_HOME=/home/developer/.cache",
+  "XDG_DATA_HOME=/home/developer/.local/share",
+  "XDG_STATE_HOME=/home/developer/.local/state",
+  "NPM_CONFIG_CACHE=/home/developer/.cache/npm",
+  "BUN_INSTALL=/home/developer/.bun",
+  "BUN_INSTALL_CACHE_DIR=/home/developer/.cache/bun"
+]
+
+const transient = (error: unknown): boolean => {
+  if (error instanceof APIError) {
+    return error.status === 408 || error.status === 429 || error.status >= 500 && error.status <= 599
+  }
+  const code = object(error).code
+  return error instanceof TypeError || error instanceof Error && error.name === "TimeoutError" ||
+    ["backend_unavailable", "backend_timed_out", "ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "ENOTFOUND", "EAI_AGAIN"]
+      .includes(String(code))
+}
+
+const failure = (message: string, code: RemoteChildProcessSpawner.ProviderErrorCode = "unavailable") =>
+  new RemoteChildProcessSpawner.ProviderError({ code, message: `cloud-sandbox: ${message}` })
+
+/**
+ * Creates or resumes a Cloud workspace by its stable session name, waits until
+ * running, and projects CommandSandbox over freshly acquired SSH grants.
+ * Closing the acquiring scope attempts bounded deletion, including when readiness
+ * or SSH setup fails or the caller is interrupted. Unavailable cleanup is logged
+ * and left to the client lease reaper without losing completed work. Concurrent holders must use
+ * distinct session keys; reusing a key is an exclusive resume claim.
+ *
+ * Credentials are resolved locally by the existing CLI transport, never placed
+ * in workspace creation metadata or provider failures. Agent credentials are
+ * supplied separately by the caller to each command.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const make = (options: Options): Sandbox.Provider => {
+  if (!/^[\w.-]+\/[\w.-]+$/.test(options.repository)) throw new TypeError("cloud-sandbox: expected OWNER/REPO")
+  const workdir = options.workdir ?? "/home/developer/workspace"
+  if (!workdir.startsWith("/") || workdir.includes("\0")) {
+    throw new TypeError("cloud-sandbox: workdir must be an absolute guest path")
+  }
+  const prefix = options.namePrefix ?? "smthrs-"
+  if (!/^[\w-]{0,64}$/.test(prefix)) throw new TypeError("cloud-sandbox: namePrefix must be at most 64 safe characters")
+  const poll = Duration.fromInputUnsafe(options.pollInterval ?? "3 seconds")
+  const timeout = Duration.fromInputUnsafe(options.readyTimeout ?? "10 minutes")
+  if (
+    !Number.isFinite(Duration.toMillis(poll)) || Duration.toMillis(poll) <= 0 ||
+    !Number.isFinite(Duration.toMillis(timeout)) || Duration.toMillis(timeout) <= 0
+  ) {
+    throw new TypeError("cloud-sandbox: polling and readiness durations must be finite and positive")
+  }
+  const resources = options.resources === undefined ? undefined : {
+    ...(options.resources.vcpu === undefined ? {} : { vcpu: options.resources.vcpu }),
+    ...(options.resources.memory_mib === undefined ? {} : { memory_mib: options.resources.memory_mib }),
+    ...(options.resources.disk_gib === undefined ? {} : { disk_gib: options.resources.disk_gib })
+  }
+  for (const [field, value] of Object.entries(resources ?? {})) {
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      throw new TypeError(`cloud-sandbox: resources.${field} must be a positive integer`)
+    }
+  }
+  const resourceKey = resources && Object.keys(resources).length ? JSON.stringify(resources) : ""
+  // E-7: process.env is a platform read (CloudSandboxNode.ts).
+  const api = options.api ?? workspaceApi(options.environment ?? processEnvironment())
+  const base = `/api/repos/${options.repository.split("/").map(encodeURIComponent).join("/")}/workspaces`
+  const request = (method: "POST" | "GET" | "DELETE", path: string, body: unknown, message: string) =>
+    try(
+      async (api, method, path, body, signal) =>
+        api.request(method, path, body, AbortSignal.any([signal, AbortSignal.timeout(30_000)])),
+      (error) =>
+        error instanceof APIError && error.detail.code === "workspace_resources_exceeded"
+          ? failure(`${message}: workspace_resources_exceeded`, "spawn_error")
+          : failure(message, error instanceof APIError && error.status === 404 ? "not_found" : "unavailable"),
+      api,
+      method,
+      path,
+      body
+    )
+  const sticky = options.persistence === "sticky"
+  const lease = options.clientLeaseSeconds ?? 900
+  if (!Number.isInteger(lease) || lease < 60 || lease > 86400) {
+    throw new TypeError("cloud-sandbox: clientLeaseSeconds must be between 60 and 86400")
+  }
+  const retry = Schedule.exponential(poll).pipe(Schedule.upTo({ times: 3 }))
+  const remove = (id: string) => {
+    try {
+      Effect.retry(() => {
+        // E-7: the deadline is a platform timer, made per attempt as in Effect.suspend.
+        const deadline = sync(AbortSignal.timeout(30_000))
+        return try(
+          async (api, path, deadline, signal) => api.request("DELETE", path, undefined, AbortSignal.any([signal, deadline])),
+          (cause) => cause,
+          api,
+          `${base}/${encodeURIComponent(id)}`,
+          deadline
+        )
+      }, { while: (cause) => !(cause instanceof APIError && cause.status === 404), schedule: retry })
+    } catch (cause) {
+      if (cause instanceof APIError && cause.status === 404) return
+      throw failure("could not delete workspace")
+    }
+  }
+  const acquire = (session: string, existing?: string) => {
+    if (!session.trim()) throw failure("session must not be empty", "spawn_error")
+    const name = prefix +
+      // E-7: createHash is a platform API (EK4402).
+      sync(
+        (material) => createHash("sha256").update(material).digest("hex"),
+        resourceKey ? JSON.stringify([session, resourceKey]) : session
+      )
+    // Mask interruption until the returned id has a registered finalizer.
+    // Aborting a creation after admission would lose the id and leak a VM.
+    const create = () => {
+      const response = request("POST", base, {
+        name,
+        client_lease_seconds: lease,
+        ...(resourceKey ? { resources } : {}),
+        ...(options.sourceBookmark === undefined ? {} : { source_bookmark: options.sourceBookmark })
+      }, "could not create workspace")
+      const id = object(response).id
+      if (typeof id === "string" && /^[\w-]+$/.test(id)) return id
+      throw failure("workspace creation response omitted a valid id")
+    }
+    const id = existing !== undefined
+      ? existing
+      : Effect.acquireRelease(create(), (id) => {
+        if (sticky) return
+        try {
+          remove(id)
+        } catch (_) {
+          logWarning(`cloud-sandbox: could not delete workspace ${id}; retained for client lease expiry`)
+        }
+      })
+    if (!sticky) {
+      // Renew independently of guest commands, including a single long command.
+      // The scope stops this fiber before attempting workspace deletion.
+      Effect.forkScoped(() => {
+        for (;;) {
+          sleep(Duration.seconds(lease / 3))
+          try {
+            request(
+              "POST",
+              `${base}/${encodeURIComponent(id)}/lease`,
+              undefined,
+              "could not renew workspace lease"
+            )
+          } catch (_) {
+            logWarning(`cloud-sandbox: could not renew workspace ${id} client lease`)
+          }
+        }
+      })
+    }
+    if (sticky) {
+      request("POST", `${base}/${encodeURIComponent(id)}/lease`, undefined, "could not renew workspace lease")
+    }
+    let lastReadFailure: string | undefined
+    // A failed read does not prove provisioning failed. Retry transient
+    // control-plane failures within the existing readiness deadline.
+    const readStatus = () => {
+      try {
+        return Effect.retry(() => {
+          // E-7: the deadline is a platform timer, made per attempt as in Effect.suspend.
+          const deadline = sync(AbortSignal.timeout(30_000))
+          return try(
+            async (api, path, deadline, signal) => api.request("GET", path, undefined, AbortSignal.any([signal, deadline])),
+            (error) => {
+              const status = error instanceof APIError ? error.status : undefined
+              const code = object(error).code
+              const timedOut = deadline.aborted || error instanceof Error && error.name === "TimeoutError"
+              const retryable = timedOut || transient(error)
+              const category = timedOut ? "timeout" : status !== undefined ?
+                `HTTP ${status}` :
+                code === "backend_unavailable" || code === "backend_timed_out"
+                ? String(code)
+                : undefined
+              lastReadFailure = `could not read workspace status${category ? ` (${category})` : ""}`
+              return {
+                transient: retryable,
+                error: failure(lastReadFailure, status === 404 ? "not_found" : "unavailable")
+              }
+            },
+            api,
+            `${base}/${encodeURIComponent(id)}`,
+            deadline
+          )
+        }, {
+          while: (error) => error.transient,
+          schedule: retry
+        })
+      } catch (error) {
+        throw error.error
+      }
+    }
+    Effect.timeoutOrElse(() => {
+      for (;;) {
+        const workspace = object(readStatus())
+        lastReadFailure = undefined
+        if (workspace.id !== id) throw failure("workspace status response has a different id")
+        if (workspace.status === "running") return
+        if (existing !== undefined) {
+          throw failure(
+            `workspace ${id} is ${workspace.status}`,
+            ["failed", "error", "deleted", "stopped"].includes(String(workspace.status))
+              ? "not_found"
+              : "unavailable"
+          )
+        }
+        if (["failed", "error", "deleted"].includes(String(workspace.status))) {
+          throw failure(`workspace ${id} became ${workspace.status}`)
+        }
+        if (
+          !["pending", "creating", "provisioning", "starting", "stopped", "suspended"].includes(
+            String(workspace.status)
+          )
+        ) {
+          throw failure("workspace status response omitted a valid status")
+        }
+        sleep(poll)
+      }
+    }, {
+      duration: timeout,
+      orElse: () => {
+        throw failure(
+          `workspace did not become running${lastReadFailure ? `; ${lastReadFailure}` : ""}`,
+          lastReadFailure ? "unavailable" : "timeout"
+        )
+      }
+    })
+    // D262/D265: the SSH prefix is a program CommandSandbox runs per grant.
+    const sshPrefix: Effect.Effect<Array<string>, RemoteChildProcessSpawner.ProviderError, never> = () => {
+      let granted: ReadonlyArray<string>
+      try {
+        granted = Effect.retry(() => {
+          // E-7: the deadline is a platform timer, made per attempt as in Effect.suspend.
+          const deadline = sync(AbortSignal.timeout(30_000))
+          return try(
+            async (api, reference, deadline, signal) => api.sshPrefix(reference, AbortSignal.any([signal, deadline])),
+            (error) => ({ transient: deadline.aborted || transient(error) }),
+            api,
+            `${options.repository}/${id}`,
+            deadline
+          )
+        }, { while: (error) => error.transient, schedule: retry })
+      } catch (_) {
+        throw failure("could not obtain workspace SSH access")
+      }
+      return [...granted, "env", ...guestHome]
+    }
+    const provider = CommandSandbox.make({
+      spawner: options.spawner,
+      workdir,
+      name: id,
+      prefix: sshPrefix
+    })
+    return provider.acquire(session)
+  }
+  return {
+    acquire: (session) => acquire(session),
+    ...sticky ?
+      {
+        retained: true as const,
+        jobDirectory: "/home/developer/.local/state/smthrs-jobs",
+        attach: (session: { readonly id: string; readonly remoteId: string }) => acquire(session.id, session.remoteId),
+        destroy: (session: { readonly id: string; readonly remoteId: string }) => remove(session.remoteId)
+      } :
+      {}
+  }
+}

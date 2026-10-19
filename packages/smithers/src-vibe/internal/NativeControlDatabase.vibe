@@ -1,0 +1,49 @@
+/** Private control persistence over the selected native SQL adapter.
+ * @since 1.0.0
+ */
+
+import * as DurableWriter from "@smthrs/database/DurableWriter"
+import { Effect, FileSystem, Layer, Path } from "effect"
+import type { SqlClient } from "effect/sql/SqlClient"
+import * as Migrations from "./ControlDatabaseMigrations.ts"
+
+// D-4: a named function type keeps the adapter a plain callback.
+type Database = (filename: string) => Layer.Layer<SqlClient>
+
+/** Uses injected filesystem and path services, and opens only the supplied SQL adapter.
+ * @since 1.0.0
+ * @private
+ */
+export const make = (database: Database) => (file: string) => {
+  // Memoize the entire asynchronous adapter construction. Layer.unwrap only
+  // memoizes its factory effect; its generated dependency graph can otherwise
+  // acquire a distinct client for the journal, writer and runtime.
+  const sql = Layer.suspend(() =>
+    Layer.unwrap(() => {
+      const fs = FileSystem.FileSystem()
+      const path = Path.Path()
+      const directory = path.dirname(file)
+      fs.makeDirectory(directory, { recursive: true, mode: 0o700 })
+      // E-7: process.platform is a platform read (EK4402).
+      if (sync(process.platform) !== "win32") fs.chmod(directory, 0o700)
+      return database(file)
+    })
+  )
+  return Layer.provideMerge(Migrations.layer, Layer.provideMerge(DurableWriter.layer(), sql)).pipe(
+    Layer.tap(() => {
+      if (sync(process.platform) === "win32") return
+      const fs = FileSystem.FileSystem()
+      for (const filename of [file, `${file}-wal`, `${file}-shm`]) {
+        if (fs.exists(filename)) fs.chmod(filename, 0o600)
+      }
+    })
+  )
+}
+
+/** Opens an existing store with the supplied read-only SQL adapter: no directory,
+ * migration or permission change.
+ * @since 1.0.0
+ * @private
+ */
+export const observe = (database: Database) => (file: string) =>
+  Layer.provideMerge(DurableWriter.layer(), database(file))

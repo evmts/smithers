@@ -1,0 +1,237 @@
+/**
+ * Shared document-returning CLI control Effects.
+ *
+ * @since 1.0.0
+ */
+
+import * as Canonical from "@smthrs/canonical/Canonical"
+import { Control as ControlService, ControlSchema } from "@smthrs/control"
+import * as Sha256 from "@smthrs/crypto/Sha256"
+import { Effect, Option, Schema, SchemaIssue } from "effect"
+import { randomUUID } from "node:crypto"
+import { readFile } from "node:fs/promises"
+import { text } from "node:stream/consumers"
+import * as CliError from "../CliError.vibe"
+import type * as FeaturedFlows from "../internal/FeaturedFlows.ts"
+import * as NodeOutput from "../NodeOutput.ts"
+import * as Project from "../Project.vibe"
+import * as Ui from "../Ui.vibe"
+import * as Unsupported from "../Unsupported.ts"
+import * as FlowCatalog from "./FlowCatalog.vibe"
+import * as RunReads from "./RunReads.vibe"
+import * as Settlement from "./Settlement.vibe"
+/**
+ * Resolve a supplied flow name or an interactive selection.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const selectedFlow = (value: string) => {
+  if (value !== "") return value
+  const ui = Ui.prompting()
+  const control = ControlService.Control()
+  const catalog = flowCatalog(control)
+  const flows = catalog.items.filter((item) => !Unsupported.isReservedFlow(item.flowId))
+  if (flows.length === 0) {
+    throw new CliError.UsageError({ message: "No flows discovered; run smthrs init to create one" })
+  }
+  const selected = ui.pickSuggestion(flows, {
+    message: "Choose a flow",
+    label: (flow) => flow.flowId,
+    hint: (flow) => flow.description
+  })
+  if (Option.isNone(selected)) return interrupt()
+  return selected.value.flowId
+}
+
+const malformedJson = (label: string): CliError.UsageError =>
+  new CliError.UsageError({ message: `${label} must be valid JSON` })
+
+const formatSchemaIssue = SchemaIssue.makeFormatterDefault()
+
+const schemaMismatch = (label: string, issue: SchemaIssue.Issue): CliError.UsageError => {
+  // Approval payloads can carry capability material. Input reporting stays
+  // disabled at the decoder, and this bounded formatter keeps only the path
+  // and expectation an operator needs to repair one field.
+  const detail = formatSchemaIssue(issue).split("\n").slice(0, 4).join("\n").slice(0, 800)
+  return new CliError.UsageError({
+    message: `${label} must match the expected payload schema:\n${detail}`
+  })
+}
+
+const decodeJson = <A>(
+  label: string,
+  serialized: string,
+  decode: (value: unknown) => Effect.Effect<A, Schema.SchemaError>
+): Effect.Effect<A, CliError.UsageError, never> => {
+  const decoded = try((serialized) => JSON.parse(serialized) as unknown, () => malformedJson(label), serialized)
+  try {
+    return decode(decoded)
+  } catch (error) {
+    throw schemaMismatch(label, error.issue)
+  }
+}
+
+/**
+ * Merge JSON input over positional key=value entries.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const decodeInput = (
+  entries: ReadonlyArray<string>,
+  raw: Option.Option<string>
+): Effect.Effect<unknown, CliError.UsageError, never> => {
+  const pairs = Object.fromEntries(entries.map((entry) => {
+    const separator = entry.indexOf("=")
+    return separator < 1 ? [entry, true] : [entry.slice(0, separator), entry.slice(separator + 1)]
+  }))
+  if (Option.isNone(raw)) return pairs
+  const source = raw.value
+  // E-7: stdin and node:fs/promises are platform APIs (EK4402).
+  const serialized = source === "-"
+    ? try(
+      async () => text(process.stdin),
+      () => new CliError.UsageError({ message: "Could not read --data from stdin" })
+    )
+    : source.startsWith("@")
+    ? try(
+      async (file: string) => readFile(file, "utf8"),
+      () => new CliError.UsageError({ message: `Could not read --data file ${source.slice(1)}` }),
+      source.slice(1)
+    )
+    : source
+  const decoded = try((value) => JSON.parse(value) as unknown, () => malformedJson("--data"), serialized)
+  return decoded !== null && typeof decoded === "object" && !Array.isArray(decoded)
+    ? { ...pairs, ...(decoded as Record<string, unknown>) }
+    : { ...pairs, data: decoded }
+}
+
+/**
+ * Decode an approval without exposing capability payloads in errors.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const approval = (serialized: string): Effect.Effect<ControlService.ApprovalInput, CliError.UsageError, never> =>
+  decodeJson(
+    "approval",
+    serialized,
+    Schema.decodeUnknownEffect(ControlSchema.ApprovalPayload, { reportInput: false })
+  )
+
+/**
+ * Decode a named signal payload.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const signal = (serialized: string): Effect.Effect<ControlSchema.SignalPayload, CliError.UsageError, never> =>
+  decodeJson(
+    "signal-json",
+    serialized,
+    Schema.decodeUnknownEffect(ControlSchema.SignalPayload, { reportInput: false })
+  )
+
+const flowCatalog = FlowCatalog.read
+/**
+ * Identify one signal mutation by its canonical payload digest.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const signalKey = (runId: string, payload: ControlSchema.SignalPayload): string => {
+  const encoded = Schema.encodeSync(ControlSchema.SignalPayload)(payload)
+  const canonical = Schema.decodeUnknownSync(Canonical.Canonical)(encoded)
+  return `cli:signal:${runId}:${Sha256.digestSync(canonical)}`
+}
+
+/**
+ * Compile a non-reserved flow with its decoded input.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const plan = (flow: string, entries: ReadonlyArray<string>, data: Option.Option<string>) => {
+  const input = decodeInput(entries, data)
+  const flowId = selectedFlow(flow)
+  if (Unsupported.isReservedFlow(flowId)) {
+    throw Unsupported.reservedFlowError("flow plan", flowId)
+  }
+  const control = ControlService.Control()
+  return control.plan({ flowId, input })
+}
+/**
+ * Read the complete project flow listing.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const listFlows: Effect.Effect<{
+  mutable _tag: "flows"
+  mutable items: ReadonlyArray<FeaturedFlows.Presented>
+  mutable apps?: ReadonlyArray<FeaturedFlows.App>
+}, import("@smthrs/control/ControlError").AlreadyResolved | import("@smthrs/control/ControlError").ClaimLost | import("@smthrs/control/ControlError").CodeDrift | import("@smthrs/control/ControlError").CredentialConflict | import("@smthrs/control/ControlError").EnvelopeMismatch | import("@smthrs/control/ControlError").FlowNotFound | import("@smthrs/control/ControlError").InvalidInput | import("@smthrs/control/ControlError").LaunchFailed | import("@smthrs/control/ControlError").NoMatchingWait | import("@smthrs/notifications/NotificationQueue").NotificationError | import("@smthrs/control/ControlError").PersistenceError | import("@smthrs/control/ControlError").PlanDenied | import("@smthrs/control/ControlError").PlanDigestMismatch | import("@smthrs/control/ControlError").PlanNotFound | CliError.ResourceLimitError | import("@smthrs/control/ControlError").RunNotFound | import("@smthrs/control/ControlError").TransportError | import("@smthrs/control/ControlError").Unauthorized | import("@smthrs/control/ControlError").Unavailable | CliError.UnsupportedError, ControlService.Control> = () => {
+  const control = ControlService.Control()
+  const catalog = FlowCatalog.read(control)
+  const { items, apps } = FlowCatalog.listing(catalog.items, Project.ProjectRoot())
+  return { _tag: "flows" as const, items, ...(apps === undefined ? {} : { apps }) }
+}
+/**
+ * Read projected output for a run or one node.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const output = (runId: string, nodeId?: string) => {
+  const control = ControlService.Control()
+  RunReads.existing(control, runId)
+  const nodes = NodeOutput.project(RunReads.events(control, runId))
+  if (nodeId === undefined) return nodes
+  const node = nodes.find((candidate) => candidate.nodeId === nodeId)
+  if (node === undefined) {
+    throw new CliError.UsageError({ message: NodeOutput.notFound(runId, nodeId, nodes) })
+  }
+  return node
+}
+const reportTerminal = (receipt: ControlSchema.Receipt) =>
+  Settlement.report(receipt._tag === "Terminal" ? { kind: `control.run.${receipt.status}` } : undefined)
+
+/**
+ * Cancel a run with a stable mutation key.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const cancel = (runId: string) => {
+  const control = ControlService.Control()
+  const receipt = control.cancel({ runId, idempotencyKey: `cli:cancel:${runId}` })
+  reportTerminal(receipt)
+  return receipt
+}
+/**
+ * Deliver a signal with a payload-specific mutation key.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const deliverSignal = (runId: string, serialized: string) => {
+  const payload = signal(serialized)
+  const control = ControlService.Control()
+  const receipt = control.signal({ runId, signal: payload, idempotencyKey: signalKey(runId, payload) })
+  reportTerminal(receipt)
+  return receipt
+}
+/**
+ * Deliver an attributed operator steering message.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const steer = (runId: string, body: string) => {
+  const control = ControlService.Control()
+  const stamp = Date.now()
+  // E-7: node:crypto is a platform API (EK4402).
+  const messageId = `cli:steer:${runId}:${sync(randomUUID())}`
+  return control.steer({
+    runId,
+    message: {
+      kind: "Message",
+      messageId,
+      runId,
+      principal: { kind: "operator", id: "cli", stampedAt: stamp },
+      createdAt: stamp,
+      body
+    },
+    idempotencyKey: messageId
+  })
+}

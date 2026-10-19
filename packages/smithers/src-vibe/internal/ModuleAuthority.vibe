@@ -1,0 +1,353 @@
+/**
+ * Restores approved control authority at native handler boundaries, including resume.
+ * @since 1.0.0
+ */
+
+import * as AgentAction from "@smthrs/agent/AgentAction"
+import * as AgentSession from "@smthrs/agent/AgentSession"
+import * as Budget from "@smthrs/agent/Budget"
+import * as EventSink from "@smthrs/agent/EventSink"
+import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
+import { LaunchFailed, RunNotFound } from "@smthrs/control/ControlError"
+import { ControlRuntime } from "@smthrs/control/ControlRuntime"
+import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
+import { EventTypes } from "@smthrs/engine-store/EventTypes"
+import * as RunState from "@smthrs/engine-store/RunState"
+import { FlowRuntime } from "@smthrs/flow"
+import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as Notifications from "@smthrs/harness/Notifications"
+import * as Steering from "@smthrs/harness/Steering"
+import { Journal, JournalEvent } from "@smthrs/journal"
+import * as CapabilitySet from "@smthrs/kernel/CapabilitySet"
+import { NotificationQueue } from "@smthrs/notifications"
+import * as Descriptor from "@smthrs/registry/Descriptor"
+import type * as Executable from "@smthrs/registry/Executable"
+import * as Registry from "@smthrs/registry/Registry"
+import { RunStore } from "@smthrs/run-store"
+import { Cause, Effect, Exit, Option, RcMap, Schema } from "effect"
+import { ModuleOwner } from "./ModuleOwner.vibe"
+
+/**
+ * Composes existing host authority services without another run ledger.
+ * @since 1.0.0
+ * @private
+ */
+export const make = (
+  catalog: Effect.Effect<Executable.Catalog>,
+  actionHost: AgentAction.Host,
+  budgetHost: {
+    /** The owning control run's journal, where budget requests and decisions live. */
+    readonly controlJournal: Journal.Service
+    /** Whether a refused `park` budget may ask an operator, as the session's `asks` says. */
+    readonly parks: boolean
+    readonly reenterModules?: ReadonlyArray<string> | undefined
+    readonly beforeSteeringDrain?: ((runId: string, flowId: string) => Effect.Effect<void, HarnessError>) | undefined
+    readonly weights?: Budget.Weights | undefined
+  }
+) => {
+  const authorityContext = Effect.context<never>()
+  const engine = FlowRuntime.FlowRuntime()
+  const state = DurableEngineState.DurableEngineState()
+  const runs = RunStore.RunStore()
+  const control = ControlRuntime()
+  const journal = Journal.Journal()
+  const quota = QuotaPolicy.QuotaClassifier()
+  const registry = Registry.Registry()
+  // Executable already imported a verified, private copy of a module's
+  // measured closure. Keep that exact loaded identity for this host/root,
+  // rather than making later children depend on edits to the live tree.
+  // No approval, refreshed executable, or restarted host inherits it.
+  const verifiedModules = new Map<string, { readonly digest: string; readonly executable: Executable.Executable }>()
+  // Native execution has its own journal, but the queue is the existing
+  // owning control queue, captured before any handler context is installed.
+  const notifications = NotificationQueue.NotificationQueue()
+  const refuse = (runId: string, message: string) => die(new LaunchFailed({ runId, message }))
+
+  /**
+   * Whether the engine ever released this execution by interrupting it: a
+   * lease lapse or a host shutdown stopped it mid-flight, so entering it
+   * again retries whatever effect it had started.
+   */
+  const released = (executionId: string) => {
+    let after: Journal.EntriesOptions["after"]
+    for (;;) {
+      const page = Effect.orDie(journal.entries({
+        runId: JournalEvent.RunId.make(executionId),
+        eventTypes: [EventTypes.runDecision],
+        limit: 1_000,
+        ...(after === undefined ? {} : { after })
+      }))
+      if (
+        page.entries.some((entry) =>
+          (entry.payload as { readonly decision?: unknown } | null)?.decision === "interrupt-released"
+        )
+      ) return true
+      const last = page.entries.at(-1)
+      if (last === undefined || !page.hasMore) return false
+      after = last.seq
+    }
+  }
+
+  /**
+   * The approved authority an execution runs under, refusing one it may not.
+   *
+   * A completed control run still admits the detached descendants it
+   * launched: their first drive can land after the root settled, and their
+   * later rounds (a wake after a park) follow it. The outcome is the same
+   * whichever finishes first (#3209). What a completed root does not admit
+   * is a retry of an execution the engine released mid-flight: nothing
+   * supervises that work any more, so its interrupted effect never runs a
+   * second time (#3072). A cancelled or failed root admits nothing.
+   * `admission` is false for a caller that already admitted a descendant and
+   * only reads the root's authority again.
+   */
+  const owner = (executionId: string, admission = true) =>
+    // Ownership and pinned source verification are host admission work.
+    // A module need not grant itself filesystem reads to let the host
+    // verify its source; its handler retains the execution ceiling below.
+    Effect.updateContext<never, never>(() => authorityContext)(() => {
+      const pending = [executionId]
+      const visited = new Set<string>()
+      const roots = new Set<string>()
+      while (pending.length > 0) {
+        const id = pending.pop()!
+        if (visited.has(id)) continue
+        if (visited.size >= 1_024) {
+          return refuse(executionId, "Module ancestry exceeds the host traversal limit")
+        }
+        visited.add(id)
+        const run = Effect.orDie(() =>
+          Option.some(control.getRun(id)) catch (error) => match (error) {
+            when RunNotFound: Option.none();
+            default: throw error;
+          }
+        )
+        if (Option.isSome(run)) {
+          const row = Effect.orDie(runs.get(id))
+          const native = try(
+            (Schema, RunState, stateJson) => Schema.decodeUnknownSync(RunState.RunState)(JSON.parse(stateJson)),
+            Schema,
+            RunState,
+            row.stateJson
+          ) catch (_error) => refuse(executionId, "The control ancestor has invalid native state")
+          // Time-travel forks copy the old payload's runId. AgentSession
+          // takes identity from this native row, not from that copied field.
+          const payload = native.payload as { readonly planId?: unknown } | null
+          if (
+            native.flowName !== "agent/run" || payload?.planId !== run.value.planId ||
+            native.parentExecutionId !== undefined || state.runParents(id).length !== 0
+          ) {
+            return refuse(executionId, "The native ancestor is not its owning control wrapper")
+          }
+          roots.add(id)
+          continue
+        }
+        const parents = state.runParents(id)
+        if (parents.length > 0) {
+          for (const parent of parents) pending.push(parent.parentId)
+        } else {
+          // A trampoline predecessor is distinct from an ordinary spawn edge.
+          const row = Effect.orDie(runs.get(id))
+          if (row.parentRunId !== null) pending.push(row.parentRunId)
+          else return refuse(executionId, "Module execution has no recorded control ancestor")
+        }
+      }
+      if (roots.size !== 1) return refuse(executionId, "Module execution has ambiguous control authority")
+      const rootId = [...roots][0]!
+      const run = Effect.orDie(control.getRun(rootId))
+      if (run.planId === undefined || run.status === "cancelled" || run.status === "failed") {
+        return refuse(executionId, "The owning control run is not active")
+      }
+      if (
+        run.status === "completed" && admission &&
+        (executionId === rootId || released(executionId))
+      ) {
+        return refuse(executionId, "The owning control run is not active")
+      }
+      const plan = Effect.orDie(control.getPlan(run.planId))
+      if (plan.decision !== "approved" || run.planDigest !== plan.card.digest) {
+        return refuse(executionId, "The owning control plan is not the approved plan")
+      }
+      const card = plan.card
+      // The code an operator adopted with `runs resume --allow-code-drift`
+      // is recorded on the run and binds it from then on; otherwise the
+      // plan's digest does (#1807).
+      const approved = run.executionDigest ?? card.executionDigest
+      const live = Option.getOrUndefined(Effect.orDie(registry.getOption(card.flowId)))
+      let snapshot
+      if (approved === undefined || registry.snapshots === undefined) {
+        snapshot = undefined
+      } else {
+        try {
+          snapshot = registry.snapshots.descriptor(approved)
+        } catch (error) {
+          if (error.code === "missing") snapshot = undefined
+          else snapshot = refuse(executionId, `The approved module snapshot is unavailable: ${error.code}`)
+        }
+      }
+      const descriptor = snapshot ?? live
+      const executable = catalog().executables.find((entry) =>
+        entry.descriptor.name === card.flowId && Descriptor.executionDigest(entry.descriptor) === approved
+      )
+      if (
+        approved === undefined || descriptor === undefined || Descriptor.executionDigest(descriptor) !== approved ||
+        executable === undefined ||
+        (executable.delegate !== undefined && !card.envelope.flows.includes(executable.delegate))
+      ) {
+        return refuse(executionId, "The module no longer matches its approved executable identity")
+      }
+      const measuredModule = descriptor.body._tag === "Module" && executable.delegate === undefined
+      const verified = verifiedModules.get(rootId)
+      if (!measuredModule || verified?.digest !== approved || verified.executable !== executable) {
+        Effect.orDie(registry.loadBody(card.flowId, approved))
+        // Publication precedes the first handler effect. An abrupt host death
+        // can therefore never leave admitted work without its source receipt.
+        if (measuredModule) {
+          const snapshots = registry.snapshots
+          if (snapshots !== undefined) Effect.orDie(snapshots.pin(executable))
+          verifiedModules.set(rootId, { digest: approved, executable })
+        } else verifiedModules.delete(rootId)
+      }
+      let launchOrdinal: number | undefined
+      if (budgetHost.reenterModules?.includes(card.flowId) === true) {
+        const launches = Effect.orDie(budgetHost.controlJournal.entries({
+          runId: JournalEvent.RunId.make(rootId),
+          eventTypes: ["control.module.launched"],
+          limit: 1_000
+        }))
+        if (launches.hasMore) {
+          return refuse(executionId, "Retained module launches exceed the ancestry lookup limit")
+        }
+        for (const entry of launches.entries) {
+          const marker = Schema.decodeUnknownOption(Schema.Struct({
+            ordinal: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+            executionDigest: Schema.String,
+            executionId: Schema.String
+          }))(entry.payload)
+          if (Option.isSome(marker) && visited.has(marker.value.executionId)) {
+            if (launchOrdinal !== undefined || marker.value.executionDigest !== approved) {
+              return refuse(executionId, "Retained module launch does not match its approved ancestry")
+            }
+            launchOrdinal = marker.value.ordinal
+          }
+        }
+      }
+      return { rootId, flowId: card.flowId, envelope: card.envelope, launchOrdinal }
+    })
+
+  const parking = AgentSession.budgetParking(budgetHost.controlJournal, control)
+  // Concurrent descendants share one existing Budget accumulator. RcMap
+  // holds it until all handlers release it; later acquisition recovers the
+  // existing journal's usage, including after a process restart. The
+  // ceiling is the approved card's with every approved budget raise applied,
+  // so a resumed module spends against what the operator granted (#2739).
+  const budgets = RcMap.make({
+    lookup: (rootId: string) => {
+      const { envelope } = owner(rootId, false)
+      const spending = Effect.orDie(AgentSession.approvedEnvelope(budgetHost.controlJournal, rootId, envelope))
+      const budget = Effect.orDie(Budget.make(Budget.policyFromEnvelope(spending, { weights: budgetHost.weights })))
+      return { budget, envelope: spending }
+    }
+  })
+
+  // Construction closes the service dependency but grants no root identity.
+  // Every admitted handler installs the real queue source below, once.
+  const unownedFailure = new HarnessError({
+    code: "assembly_failed",
+    message: "Native steering requires an approved execution context"
+  })
+  // D262: the one failing program both members return.
+  const unowned: Effect.Effect<never, HarnessError, never> = () => {
+    throw unownedFailure
+  }
+  const steering = Steering.make({
+    read: () => unowned(),
+    drain: () => unowned()
+  })
+  const runtime = FlowRuntime.FlowRuntime.of({
+    ...engine,
+    register: (flow, handler, options) =>
+      engine.register(flow, (payload, executionId) =>
+        Effect.scoped(() => {
+          const { rootId, flowId, envelope, launchOrdinal } = owner(executionId)
+          const notificationsForRoot = Effect.provideService(
+            Notifications.make({ runId: rootId, lineageId: rootId }),
+            NotificationQueue.NotificationQueue,
+            notifications
+          )
+          const handlerSteering = Steering.make({
+            read: notificationsForRoot.read,
+            drain: (input) => {
+              budgetHost.beforeSteeringDrain?.(rootId, flowId)
+              return notificationsForRoot.drain({
+                ...input,
+                boundary: JSON.stringify([executionId, input.boundary])
+              })
+            }
+          })
+          const { budget, envelope: spending } = Effect.orDie(RcMap.get(budgets, rootId))
+          const instance = FlowRuntime.FlowInstance()
+          const trace = EventSink.durable(journal)
+          const accountingInstance = { ...instance, executionId: rootId }
+          const key = (step: string) => JSON.stringify([executionId, step])
+          const account = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+            Effect.provideService(
+              Effect.provideService(effect, FlowRuntime.FlowInstance, accountingInstance),
+              Journal.Journal,
+              journal
+            )
+          const shared: Budget.Service = {
+            check: (step) => account(budget.check(step === undefined ? undefined : key(step))),
+            reserve: (step) => account(budget.reserve(key(step))),
+            admitReading: (step) => account(budget.admitReading(key(step))),
+            record: (step, usage, modelId) => account(budget.record(key(step), usage, modelId)),
+            usage: account(budget.usage),
+            usageOf: (id) => account(budget.usageOf(id)),
+            suspend: account(budget.suspend),
+            resume: (at) => account(budget.resume(at))
+          }
+          // A native wait parks no harness, so nothing else records it: an
+          // execution that suspends on a HumanTask, an approval, or a timer
+          // opens the root's suspension span here, and entering again closes
+          // it, so the wait is not charged as task time. Entering is the
+          // run executing again, and it does no work until that is recorded:
+          // an open span would subtract the work as parked time.
+          Effect.orDie(shared.resume())
+          const exited = () =>
+            Effect.onExit(() => handler(payload, executionId), (exit) => {
+              if (
+                instance.suspended || (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) ||
+                (Exit.isSuccess(exit) && flow._tag.startsWith("registry/entry/") &&
+                  flow._tag.endsWith(`/${flowId}`) &&
+                  budgetHost.reenterModules?.includes(flowId) === true)
+              ) {
+                // Without the record the wait is charged, the conservative side.
+                Effect.catchCause(
+                  () => shared.suspend(),
+                  (cause) => Effect.logWarning("A budget suspension could not be recorded", cause)
+                )
+              }
+            })
+          // A `park` budget parks the owning control run, as a prompt
+          // run's does; a host that refuses asks fails it instead.
+          // S10-2: each branch is a call, never `cond ? provideService(...) : heldProgram`.
+          const parked = () => {
+            if (budgetHost.parks) return Effect.provideService(exited(), Budget.Parking, parking(rootId, spending))
+            return exited()
+          }
+          const attenuated = () => CapabilitySet.attenuate(AgentSession.patterns(envelope.capabilities))(parked())
+          const hosted = () =>
+            Effect.provideService(attenuated(), AgentAction.Host, {
+              ...actionHost,
+              capabilityEnvelope: AgentSession.patterns(envelope.capabilities)
+            })
+          const budgeted = () => Effect.provideService(hosted(), Budget.Budget, shared)
+          const owned = () => Effect.provideService(budgeted(), ModuleOwner, { rootId, flowId, launchOrdinal })
+          const queued = () => Effect.provideService(owned(), NotificationQueue.NotificationQueue, notifications)
+          const steered = () => Effect.provideService(queued(), Steering.Source, handlerSteering)
+          const classified = () => Effect.provideService(steered(), QuotaPolicy.QuotaClassifier, quota)
+          return Effect.provideService(classified(), EventSink.EventSink, trace)
+        }), options)
+  })
+  return { runtime, steering }
+}

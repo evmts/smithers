@@ -1,0 +1,79 @@
+/** Retained workspace bytes keep the project's approved locator identity.
+ * @since 1.0.0
+ */
+
+import { Registry } from "@smthrs/registry"
+import * as Descriptor from "@smthrs/registry/Descriptor"
+import { RegistryError } from "@smthrs/registry/RegistryError"
+import { Effect, Layer, Option } from "effect"
+import { locator as relocate, resolvePath } from "./RegistryWorkspaceNode.ts"
+
+/** Private composition: relocation changes loading, never executable identity.
+ * @since 1.0.0
+ * @private
+ */
+export const layer = (
+  registry: Layer.Layer<Registry.Registry>,
+  identityRoot: string,
+  workspaceRoot: string
+): Layer.Layer<Registry.Registry> => {
+  // E-7: path resolution and relocation are node:path/node:url calls (RegistryWorkspaceNode.ts).
+  const identity = resolvePath(identityRoot)
+  const workspace = resolvePath(workspaceRoot)
+  if (identity === workspace) return registry
+  const locator = relocate(identity, workspace)
+  const project = (value: Descriptor.FlowDescriptor): Descriptor.FlowDescriptor =>
+    Object.freeze(
+      new Descriptor.FlowDescriptor({
+        ...value,
+        path: locator(value.path),
+        body: value.body._tag === "Markdown"
+          ? new Descriptor.BodyRefMarkdown({
+            ...value.body,
+            path: locator(value.body.path),
+            baseDirectory: locator(value.body.baseDirectory)
+          })
+          : new Descriptor.BodyRefModule({ ...value.body, path: locator(value.body.path) }),
+        input: value.input._tag === "Module"
+          ? new Descriptor.SchemaRefModule({ ...value.input, path: locator(value.input.path) })
+          : value.input,
+        output: value.output._tag === "Module"
+          ? new Descriptor.SchemaRefModule({ ...value.output, path: locator(value.output.path) })
+          : value.output,
+        provenance: Object.freeze({ ...value.provenance, root: locator(value.provenance.root) })
+      })
+    )
+  const owned = (value: Descriptor.FlowDescriptor) => {
+    const entry = project(value)
+    Object.freeze(entry.body)
+    Object.freeze(entry.input)
+    Object.freeze(entry.output)
+    return entry
+  }
+  const relocated = Layer.effect(Registry.Registry) {
+    const physical = Registry.Registry()
+    return Registry.Registry.of({
+      ...physical,
+      list: () => physical.list().map(owned),
+      visible: () => physical.visible().map(owned),
+      get: (name) => owned(physical.get(name)),
+      getOption: (name) => Option.map(physical.getOption(name), owned),
+      loadBody: (name, expected) => {
+        const entry = physical.get(name)
+        // The underlying registry enforces the same reviewed digest, over
+        // its physical locators. A wrong identity must still be refused there.
+        const digest = Descriptor.executionDigest(project(entry))
+        if (expected !== undefined && expected !== digest) {
+          throw new RegistryError({
+            code: "execution_changed",
+            method: "loadBody",
+            path: project(entry).body.path,
+            message: `Flow "${name}" does not match its approved project identity`
+          })
+        }
+        return physical.loadBody(name, Descriptor.executionDigest(entry))
+      }
+    })
+  }
+  return relocated.pipe(Layer.provide(registry))
+}

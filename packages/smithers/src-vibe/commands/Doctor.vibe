@@ -1,0 +1,150 @@
+/**
+ * `smthrs doctor`: the report, from either catalog source.
+ *
+ * @since 1.0.0
+ */
+
+import { openPackageIndex } from "@smthrs/build-cli/Cli"
+import { findWorkspaceRoot } from "@smthrs/build-cli/PackageDiscovery"
+import { Control as ControlService } from "@smthrs/control"
+import * as ResolveJj from "@smthrs/jj/node/resolveJjBinary"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
+import type * as Registry from "@smthrs/registry/Registry"
+import * as RegistryError from "@smthrs/registry/RegistryError"
+import * as Target from "@smthrs/targets/Target"
+import { Effect, type Layer } from "effect"
+import * as Doctor from "../Doctor.ts"
+import * as NodeControl from "../NodeControl.vibe"
+import * as Project from "../Project.vibe"
+import * as Unsupported from "../Unsupported.ts"
+import * as FlowCatalog from "./FlowCatalog.vibe"
+import * as Globals from "./Globals.vibe"
+
+/**
+ * A catalog the registry could not produce, reported as a failed check.
+ * @category models
+ * @since 1.0.0
+ */
+export interface DiscoveryFailed {
+  readonly failure: string
+}
+
+/**
+ * The report for one already-read catalog.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const report = (
+  catalog: Pick<FlowCatalog.FlowPage, "items" | "warnings"> | DiscoveryFailed,
+  globals: Globals.Options,
+  inspectLifecycle = true
+): Effect.Effect<Doctor.Report, never, never> => {
+  // Doctor owns the unsupported-backend check. The shared guard would fail
+  // before the report exists, so this verb prints the notices and lets
+  // `Doctor.failed` decide the command status from the complete report.
+  Globals.notices(globals)
+  // E-7: process.env is a platform read (EK4402).
+  const environment = globals.environment ?? sync(process.env)
+  const projectRoot = Project.ProjectRoot()
+  const inspected = Doctor.inspect({
+    root: projectRoot,
+    environment: globals.backend === undefined ? environment : { ...environment, SMITHERS_BACKEND: globals.backend },
+    jj: ResolveJj.resolveJjBinary(),
+    legacyPaths: Project.LegacyState(),
+    ...("failure" in catalog
+      ? { discoveryFailure: catalog.failure }
+      : {
+        discoveredFlows: catalog.items.filter((item) => !Unsupported.isReservedFlow(item.flowId)),
+        discoveryWarnings: catalog.warnings
+      })
+  })
+  const lifecycle = sync(
+    async (inspectLifecycle: boolean, projectRoot: string): Promise<ReadonlyArray<Doctor.Check>> => {
+      if (!inspectLifecycle || await findWorkspaceRoot(projectRoot) === undefined) return []
+      try {
+        const index = await openPackageIndex({ workspace: projectRoot })
+        if (index.factory?.factory.lifecycle !== undefined) return []
+        const artifacts = index.resolve("//...").filter((row) => Target.metadata(row.target).lifecycle === "artifact")
+        return artifacts.length === 0 ? [] : [{
+          name: "artifact lifecycle",
+          level: "warn",
+          detail: `${artifacts.length} artifact targets declared without a lifecycle policy in FACTORY.ts`
+        }]
+      } catch {
+        return [{
+          name: "artifact lifecycle",
+          level: "warn",
+          detail: "Cannot inspect target lifecycle; run smthrs index //... for declaration diagnostics"
+        }]
+      }
+    },
+    inspectLifecycle,
+    projectRoot
+  )
+  return { ...inspected, checks: [...inspected.checks, ...lifecycle] }
+}
+
+/**
+ * Resolves the filesystem helper as an operation would. Flow discovery reads
+ * through the host platform and never starts the helper, so a missing or
+ * unusable `smithers-jj-export` would otherwise pass as `registry: ok` and
+ * fail later, when a flow's module is first loaded. The failure text is a
+ * discovery error's, carrying the helper's own diagnosis and install hint.
+ */
+const checkHelper = (root: string): string | undefined => {
+  try {
+    AtomicFileSystem.resolveHelper()
+    return undefined
+  } catch (cause) {
+    return RegistryError.discoveryError({
+      code: "read_failed",
+      module: "AtomicFileSystem",
+      method: "resolveHelper",
+      path: root,
+      description: cause instanceof Error ? cause.message : String(cause),
+      cause
+    }).message
+  }
+}
+
+// D-4: a named function type keeps the registry factory a plain callback.
+type RegistryLayer = (root: string) => Layer.Layer<Registry.Registry>
+
+/**
+ * Local diagnostics use the discovery snapshot without opening execution
+ * databases. A registry that discovery cannot build, such as one whose
+ * filesystem helper is missing, is a failed `registry` check rather than a
+ * crash; any other defect still crashes.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const fromRegistry = (
+  globals: Globals.Options,
+  registry: RegistryLayer = NodeControl.layerRegistry
+): Effect.Effect<Doctor.Report, never, never> => {
+  const helper = checkHelper(Project.ProjectRoot())
+  if (helper !== undefined) return report({ failure: helper }, globals)
+  const layer = registry(Project.ProjectRoot())
+  const catalog = Effect.catchDefect(
+    () => {
+      provide layer {
+        return FlowCatalog.discovered()
+      }
+    },
+    (defect): Effect.Effect<DiscoveryFailed, never, never> => {
+      if (defect instanceof RegistryError.DiscoveryError) return { failure: defect.message }
+      return die(defect)
+    }
+  )
+  return report(catalog, globals)
+}
+
+/**
+ * Remote diagnostics read the catalog the selected control plane serves.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const fromControl = (globals: Globals.Options) => {
+  const control = ControlService.Control()
+  return report(FlowCatalog.read(control), globals, false)
+}

@@ -1,0 +1,133 @@
+/**
+ * Durable flow, run, and approval commands for the unified CLI.
+ * @since 1.0.0
+ */
+
+import { Control, ControlFacts, type ControlSchema } from "@smthrs/control"
+import { Effect, Schema } from "effect"
+import { cancelAll, unexpectedRunList } from "../commands/CancelAll.vibe"
+import * as Forensics from "../Forensics.vibe"
+import * as BoundedEvents from "../internal/BoundedEvents.vibe"
+// E-5 (D38): the incur command groups are async handlers; see the boundary.
+import * as Boundary from "./ControlCommandsBoundary.ts"
+
+export { cancelAll }
+
+/**
+ * The flow catalog and explicit plan/start lifecycle.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const createFlowCli = Boundary.createFlowCli
+
+/**
+ * Canonical commands for existing durable run records.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const createRunsCli = Boundary.createRunsCli
+
+const isIncident = Schema.is(ControlFacts.GuardIncident)
+
+/**
+ * The latest request a budget or time guard parked the run on, decided or not.
+ *
+ * A run that parks again after a Continue holds a newer request, so the
+ * latest is the one an operator answers. The request's `incident` carries the
+ * facts the guard froze when it tripped.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const guardIncident = (runId: string) => {
+  const control = Control.Control()
+  const events = BoundedEvents.collect(control.watch({ runId, follow: false }), {
+    operation: "guard incident",
+    subject: runId
+  })
+  const rows = ControlFacts.fold(events).approvals.flatMap((row) => {
+    const incident = (row.request as { readonly incident?: unknown } | null)?.incident
+    return row.runId === runId && isIncident(incident) ? [{ ...row, incident }] : []
+  })
+  return rows.at(-1)
+}
+
+/**
+ * What a human wait asks, read off the run summary rather than the journal.
+ *
+ * A `HumanTask` journals nothing: it parks its own execution and declares the
+ * question on the parked row, which the control plane rolls onto the root run
+ * as `pendingWaits`. A digest of the root's events therefore has no parked
+ * question at all for one — `smthrs approvals list` printed a run and no
+ * question beside it (run-3, `coding-clarification`).
+ */
+const declaredQuestion = (run: ControlSchema.RunSummary): string | undefined => {
+  for (const wait of run.pendingWaits ?? []) {
+    const request = wait.request
+    const prompt = typeof request === "object" && request !== null && !Array.isArray(request)
+      ? (request as Record<string, unknown>)["prompt"]
+      : undefined
+    if (typeof prompt === "string") return prompt
+    if (wait.name !== undefined) return `Answer needed — ${wait.name}`
+  }
+  return undefined
+}
+
+/**
+ * Pending in-run approvals, including pages beyond the first.
+ *
+ * A run whose whole TREE is waiting on a person is one of these: the control
+ * plane rolls a nested `HumanTask` park up to `waiting-approval`, so the
+ * filter finds the root, and `waits` names the open questions beneath it.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const pendingApprovals = (runId?: string) => {
+  const control = Control.Control()
+  const runs: Array<ControlSchema.RunSummary> = []
+  let cursor: string | undefined
+  do {
+    const page = control.list({
+      _tag: "runs",
+      filters: { status: "waiting-approval", ...(runId ? { runId } : {}) },
+      ...(cursor ? { cursor } : {})
+    })
+    if (page._tag !== "runs") throw unexpectedRunList()
+    runs.push(...page.items)
+    cursor = page.nextCursor
+  } while (cursor !== undefined)
+  return Effect.forEach(runs, (run) => {
+    const events = BoundedEvents.collect(control.watch({ runId: run.runId, follow: false }), {
+      operation: "pending approval",
+      subject: run.runId
+    })
+    const digest = Forensics.digest(events, run.runId)
+    const waits = run.pendingWaits ?? []
+    return {
+      runId: run.runId,
+      flowId: run.flowId,
+      question: digest.parkedQuestion ?? declaredQuestion(run),
+      approval: digest.parkedApproval,
+      ...(digest.parkedIncident === undefined ? {} : { incident: digest.parkedIncident }),
+      // The open human waits in this run's tree, each naming the execution
+      // holding it and the wait point a signal addresses.
+      ...(waits.length === 0 ? {} : {
+        waits: waits.map((wait) => ({
+          runId: wait.runId,
+          ...(wait.flowId === undefined ? {} : { flowId: wait.flowId }),
+          ...(wait.name === undefined ? {} : { name: wait.name }),
+          ...(wait.attempt === undefined ? {} : { attempt: wait.attempt }),
+          ...(wait.request === undefined ? {} : { request: wait.request })
+        }))
+      })
+    }
+  })
+}
+
+/**
+ * Pending decisions and approval payload submission.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const createApprovalsCli = Boundary.createApprovalsCli
