@@ -39,6 +39,12 @@ describe("repository path ownership", () => {
     }
   })
 
+  test("bug reports belong to the site", () => {
+    expect(RESERVED_SITE_SEGMENTS).toContain("bug")
+    expect(isRepositoryPath("/bug/report")).toBe(false)
+    expect(repositorySubjectRoot("/bug/report/issues/1")).toBeUndefined()
+  })
+
   test("GitHub slug boundaries and exactly two segments are required", () => {
     for (const path of ["/a/b/", "/nope/nope", "/Some-Owner/repo_name.git", `/${"a".repeat(39)}/${"r".repeat(100)}`]) {
       expect(isRepositoryPath(path)).toBe(true)

@@ -209,6 +209,7 @@ test("the hosted root opens on the launcher for a signed-in person, with their r
   const launcher = launcherOf(page)
   await expect(launcher).toBeVisible()
   // The transcript says what it opened on, and it is not the live edge.
+  await expect(page.locator('meta[name="smithers-build-sha"]')).toHaveAttribute("content", /[a-f0-9]{40}|unknown/)
   await expect(page.locator('[data-slot="chat-transcript"]')).toHaveAttribute("data-opening", "launcher")
   await expect(page.locator('[data-slot="chat-transcript"]')).not.toHaveAttribute("data-login", /.*/)
 
