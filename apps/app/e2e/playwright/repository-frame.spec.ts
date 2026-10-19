@@ -73,7 +73,7 @@ for (const member of [false, true]) for (const width of [1440, 1280, 390]) for (
     expect(reached.size).toBe(visible.length)
     const branchMenu = page.locator(".repo-code-home-toolbar details").first()
     await branchMenu.locator("summary").click()
-    await expect(branchMenu.getByRole("link", {name:"docs/ui", exact:true})).toHaveAttribute("href", "/maya/tinyhttp/tree/docs%2Fui")
+    await expect(branchMenu.getByRole("link", {name:"docs/ui", exact:true})).toHaveAttribute("href", "/maya/tinyhttp/tree/docs/ui")
     await expect(page.getByText("2 branches", {exact:true})).toBeVisible()
     const filter = branchMenu.getByRole("textbox", {name:"Filter branches or enter full SHA"})
     await filter.fill("abcdef1")

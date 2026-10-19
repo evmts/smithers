@@ -39,7 +39,7 @@ export function CodeHome({ repo, branch, branches, headCommit, changes = [], onB
   const commit = latestSha === undefined ? undefined : changes.find(change => change.repoId.toLowerCase() === repo.toLowerCase() && change.commitId?.toLowerCase() === latestSha.toLowerCase())
   const openAsk = useContext(RepositoryAskContext)
   const base = `/${repo}`
-  const ref = branch === undefined ? undefined : encodeURIComponent(branch)
+  const ref = branch === undefined ? undefined : branch.split("/").map(encodeURIComponent).join("/")
   const readme = home?.kind === "readme" ? home.markdown : home?.kind === "blocks" ? home.blocks.flatMap(block => block.type === "markdown" && /readme/i.test(block.path) ? [block.markdown] : [])[0] : undefined
   const blockOrder = { text: 0, prompt: 1, links: 2, stack: 3, markdown: 4, app: 5, flows: 6, view: 7 }
   const declaredHome = home?.kind === "blocks" ? { ...home, blocks: home.blocks
@@ -52,7 +52,7 @@ export function CodeHome({ repo, branch, branches, headCommit, changes = [], onB
         <input className="repo-ui-input" aria-label="Filter branches or enter full SHA" placeholder="Find a branch or full SHA…" value={filter} onChange={event => setFilter(event.target.value)}/>
         {branches?.state === "loading" && <p role="status">Loading…</p>}
         {branches?.state === "failed" && <FailureNotice failure={unavailableFailure("repository.branches", "Couldn’t load branches.", branches.error ?? "")} />}
-        {names.filter(name => name.toLowerCase().includes(filter.toLowerCase())).map(name => <a key={name} className="repo-ui-menu-item" aria-label={name} href={`${base}/tree/${encodeURIComponent(name)}`}><span>{name}</span>{branches?.commits?.[name] && <code>{branches.commits[name]}</code>}</a>)}
+        {names.filter(name => name.toLowerCase().includes(filter.toLowerCase())).map(name => <a key={name} className="repo-ui-menu-item" aria-label={name} href={`${base}/tree/${name.split("/").map(encodeURIComponent).join("/")}`}><span>{name}</span>{branches?.commits?.[name] && <code>{branches.commits[name]}</code>}</a>)}
         {fullSha && <a className="repo-ui-menu-item" href={`${base}/tree/${filter}`}>{filter}</a>}
         {branches?.state === "ready" && !fullSha && !names.some(name => name.toLowerCase().includes(filter.toLowerCase())) && <p className="repo-ui-muted">No branches found.</p>}
       </div></details>}
