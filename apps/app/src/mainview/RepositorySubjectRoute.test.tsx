@@ -8,7 +8,7 @@ import App from "./App"
 import { RepositoryCodeView } from "./repository/RepositoryCodeView"
 import { ControllerTestProvider } from "./ControllerContext"
 import { beginRepositoryEntry, openRequestedRepo, requestedTarget, signInReturnTo } from "./RepoLink"
-import { codeReadKey, repositoryCodeReads } from "./repository/RepositoryCodeRead"
+import { codeReadKey, latestCommitKey, repositoryCodeReads, repositoryLatestCommits } from "./repository/RepositoryCodeRead"
 import { openRequestedSubject } from "./RepositorySubjectEntry"
 import type { AppController as AppControllerType } from "./state/AppController"
 import { createAppStore } from "./state/AppStore"
@@ -943,4 +943,85 @@ test("Code home reload re-reads the branch count for a restored repository selec
     while (mounted.length > 0) mounted.pop()?.()
     await controller.dispose()
   }
+})
+
+/*
+ * Design (H): a tree or blob view carries the latest-commit bar from the same
+ * P-1 commits read the Code home makes (CommitsSeam), at the ref the view
+ * shows and keyed by it; the view's branch button is the home's own
+ * (Design (F)), never a native select.
+ */
+const commitsAtRef = (request: Request) => {
+  const ref = new URL(request.url).searchParams.get("ref")
+  return json(200, { items: [{ sha: "c".repeat(40), short_sha: "ccccccc", title: `Newest on ${ref}\n\nPrivate body.`, author: "Maya", committed_at: "2026-10-18T10:00:00Z", parents: [] }] })
+}
+
+test("a tree view reads the latest commit at the ref it shows, keyed by that ref, and heads its box with it under the home's branch button", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/bookmarks`]: bookmarks("main", "release/1.2"),
+    [`${ROOT}/contents/apps`]: json(200, [{ name: "server", path: "apps/server", type: "dir" }]),
+    [`${ROOT}/commits`]: commitsAtRef
+  })
+  const { store, controller, refusal } = await enter(`/${REPO}/tree/release/1.2/apps`, backend)
+  expect(refusal).toBeUndefined()
+  expect(backend.seen).toContain(`${ROOT}/commits?limit=1&ref=release%2F1.2`)
+  const requestId = store.session().repositoryEntry!.requestId
+  expect(repositoryLatestCommits.get(latestCommitKey(REPO, requestId, "release/1.2"))?.commit)
+    .toEqual({ sha: "c".repeat(40), shortSha: "ccccccc", title: "Newest on release/1.2", author: "Maya", committedAt: "2026-10-18T10:00:00Z" })
+  // The home's own row (no ref) is not this view's.
+  expect(repositoryLatestCommits.get(latestCommitKey(REPO, requestId))).toBeUndefined()
+  const { host } = mount(controller)
+  await settled()
+  const box = host.querySelector(".repository-code-box")!
+  const bar = box.firstElementChild!
+  expect(bar.getAttribute("aria-label")).toBe("Latest commit")
+  expect(bar.textContent).toContain("Maya")
+  expect(bar.textContent).toContain("Newest on release/1.2")
+  expect(bar.textContent).toContain("ccccccc")
+  expect(bar.textContent).not.toContain("Private body")
+  expect(bar.textContent).not.toMatch(/[0-9a-f]{40}/i)
+  expect(bar.querySelector("a")).toBeNull()
+  expect(box.querySelector('[role="table"]')).not.toBeNull()
+  const header = host.querySelector(".repo-code-path-header")!
+  expect(header.querySelector("select")).toBeNull()
+  const picker = header.querySelector("details.repo-ui-dropdown")!
+  expect(picker.querySelector("summary")?.textContent).toBe("release/1.2")
+  expect(picker.querySelector("summary")?.classList.contains("repo-ui-btn")).toBe(true)
+  expect(picker.querySelector('a[aria-label="main"]')?.getAttribute("href")).toBe(`/${REPO}/tree/main/apps`)
+  expect(picker.querySelector('a[aria-label="release/1.2"]')?.getAttribute("href")).toBe(`/${REPO}/tree/release/1.2/apps`)
+})
+
+test("a blob view whose commits read is refused falls back to its own ref's change record, as the home does", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/bookmarks`]: bookmarks("main", "release/1.2"),
+    [`${ROOT}/contents/apps/server/src/edge.ts`]: fileContents("export const edge = 1\n"),
+    [`${ROOT}/commits`]: json(404, { status: "error", code: "not_found" }),
+    [`${ROOT}/changes/chg-1`]: json(200, { change_id: "chg-1", commit_id: "d".repeat(40), description: "Cut release 1.2\n\nNotes.", author_name: "Ben", timestamp: "2026-10-18T09:00:00Z" })
+  })
+  const { store, refusal } = await enter(`/${REPO}/blob/release/1.2/apps/server/src/edge.ts`, backend)
+  expect(refusal).toBeUndefined()
+  expect(backend.seen).toContain(`${ROOT}/commits?limit=1&ref=release%2F1.2`)
+  expect(backend.seen).toContain(`${ROOT}/changes/chg-1`)
+  expect(backend.seen).not.toContain(`${ROOT}/changes/chg-0`)
+  const requestId = store.session().repositoryEntry!.requestId
+  expect(repositoryLatestCommits.get(latestCommitKey(REPO, requestId, "release/1.2"))?.commit)
+    .toEqual({ sha: "d".repeat(40), shortSha: "ddddddd", title: "Cut release 1.2", author: "Ben", committedAt: "2026-10-18T09:00:00Z" })
+})
+
+test("a commit permalink names no bookmark: without the commits route it gets no latest-commit row, never a bare id", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/bookmarks`]: bookmarks("main"),
+    [`${ROOT}/contents/apps`]: json(200, [{ name: "server", path: "apps/server", type: "dir" }]),
+    [`${ROOT}/commits`]: json(404, { status: "error", code: "not_found" })
+  })
+  const { store, controller, refusal } = await enter(`/${REPO}/tree/${COMMIT}/apps`, backend)
+  expect(refusal).toBeUndefined()
+  expect(backend.seen).toContain(`${ROOT}/commits?limit=1&ref=${COMMIT}`)
+  expect(backend.seen.some(path => path.startsWith(`${ROOT}/changes/`))).toBe(false)
+  const requestId = store.session().repositoryEntry!.requestId
+  expect(repositoryLatestCommits.get(latestCommitKey(REPO, requestId, COMMIT))).toBeUndefined()
+  const { host } = mount(controller)
+  await settled()
+  expect(host.querySelector('[aria-label="Latest commit"]')).toBeNull()
+  expect(host.querySelector(".repository-code-box")?.textContent).not.toMatch(/[0-9a-f]{40}/i)
 })

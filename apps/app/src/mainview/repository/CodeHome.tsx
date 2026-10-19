@@ -2,10 +2,12 @@ import { flowAction, flowProps, dynamicFlowProps } from "../flows/FlowAction"
 import { flowArgs } from "../flows/FlowArgs"
 import { FailureNotice, unavailableFailure } from "../FailureNotice"
 import { markdownBlockParser } from "@smthrs/ui/markdown"
-import { cloneElement, createElement, isValidElement, useContext, useId, useState, type ReactNode } from "react"
-import { ChevronRight, CircleDot, Clock, ExternalLink, FileText, Folder, GitBranch, GitPullRequest } from "lucide-react"
+import { cloneElement, createElement, isValidElement, useContext, useId, type ReactNode } from "react"
+import { ChevronRight, CircleDot, Clock, ExternalLink, FileText, Folder, GitPullRequest } from "lucide-react"
 import { ageLabel } from "../Timestamps"
 import { ControllerContext } from "../ControllerContext"
+import { BranchPicker } from "./BranchPicker"
+import { opensInPlace } from "./homeLinks"
 import { RepositoryAskContext, RepositoryAskOpenContext } from "./RepoFrame"
 import type { RepositoryBranches } from "../state/seams/RepositoryBranchesSeam"
 import type { LatestCommit } from "../state/seams/LatestCommitSeam"
@@ -44,6 +46,21 @@ export const signInToAskLabel = (title: string): string =>
 
 const Box = ({ header, children }: { header?: ReactNode; children: ReactNode }) =>
   <div className="repo-ui-box">{header && <div className="repo-ui-box-header">{header}</div>}{children}</div>
+
+/**
+ * The latest commit's row (repo-ui-spec views 1 and 2; mock views/code/shared.tsx
+ * LatestCommit): message, author and age, the id as text (this host has no
+ * commit view to link it to). It heads the Code home's file box and, from the
+ * same P-1 read at the view's ref, the tree and blob boxes (Design (H)). No
+ * record read for this viewer, no row: never a bare commit id.
+ */
+export const LatestCommitRow = ({ commit }: { commit: LatestCommit }) =>
+  <div className="repo-code-home-latest" role="group" aria-label="Latest commit">
+    {commit.author && <strong>{commit.author}</strong>}
+    <span className="repo-code-home-latest-title">{commit.title}</span>
+    <code className="repo-code-home-sha">{commit.shortSha}</code>
+    {commit.committedAt && <time className="repo-ui-time" dateTime={commit.committedAt}>{ageLabel(commit.committedAt)}</time>}
+  </div>
 
 /**
  * The prompt block (Design (B)): the home's own title; signed out, ONE quiet
@@ -97,9 +114,9 @@ const HomeApps = ({ blocks, onRunCommand }: { blocks: ReadonlyArray<AppBlock>; o
 
 const HomeLinks = ({ block }: { block: Extract<HomeBlock, { type: "links" }> }) => {
   const nav = <nav className="repo-code-home-links" aria-label={block.title ?? "Repository links"}>
-    {block.links.map(link => /^https?:/i.test(link.url)
-      ? <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer">{link.label}<ExternalLink size={13} aria-hidden="true" /></a>
-      : <a key={link.url} href={link.url}>{link.label}<ChevronRight size={13} aria-hidden="true" /></a>)}
+    {block.links.map(link => opensInPlace(link.url)
+      ? <a key={link.url} href={link.url}>{link.label}<ChevronRight size={13} aria-hidden="true" /></a>
+      : <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer">{link.label}<ExternalLink size={13} aria-hidden="true" /></a>)}
   </nav>
   return block.title === undefined ? nav : <Box header={block.title}><div className="repo-code-home-block">{nav}</div></Box>
 }
@@ -116,13 +133,10 @@ export function CodeHome({ repo, branch, branches, latestCommit, onBranchesOpen,
   /** The repository README read from the tree, for a declared home that carries none (RepositorySubjectEntry): its state, so a failed read is shown as one, never as no README. */
   readme?: { readonly state: "loading" | "ready" | "failed"; readonly name: string; readonly markdown?: string; readonly error?: string }
 }) {
-  const [filter, setFilter] = useState("")
   const controller = useContext(ControllerContext)
   const openAsk = useContext(RepositoryAskContext)
   // A block's chat.open opens the frame's Ask (the disclosure the frame owns), as the header's Ask does; every other flow runs as it is.
   const run: RunDynamicCommand = (flow, args) => { if (flow === "chat.open" && openAsk) openAsk(onRunCommand); else onRunCommand(flow, args) }
-  const names = branches?.state === "ready" ? branches.names : branch ? [branch] : []
-  const fullSha = /^[a-f0-9]{40}$/i.test(filter)
   const base = `/${repo}`
   const ref = branch === undefined ? undefined : branch.split("/").map(encodeURIComponent).join("/")
   // The server's README answer first, then the declared home's README block, then the tree's own README for a declared home without one.
@@ -139,14 +153,7 @@ export function CodeHome({ repo, branch, branches, latestCommit, onBranchesOpen,
   const apps = blocks.filter((block): block is AppBlock => block.type === "app")
   return <div className="repo-code-home-layout"><div className="repo-code-home-main">
     <div className="repo-code-home-toolbar">
-      {branch && <details className="repo-ui-dropdown" onToggle={event => { if (event.currentTarget.open) onBranchesOpen?.() }}><summary className="repo-ui-btn"><GitBranch size={16}/>{branch}</summary><div className="repo-ui-menu repo-ui-branch-menu">
-        <input className="repo-ui-input" aria-label="Filter branches or enter full SHA" placeholder="Find a branch or full SHA…" value={filter} onChange={event => setFilter(event.target.value)}/>
-        {branches?.state === "loading" && <p role="status">Loading…</p>}
-        {branches?.state === "failed" && <FailureNotice failure={unavailableFailure("repository.branches", "Couldn’t load branches.", branches.error ?? "")} />}
-        {names.filter(name => name.toLowerCase().includes(filter.toLowerCase())).map(name => <a key={name} className="repo-ui-menu-item" aria-label={name} href={`${base}/tree/${name.split("/").map(encodeURIComponent).join("/")}`}><span>{name}</span>{branches?.commits?.[name] && <code>{branches.commits[name]}</code>}</a>)}
-        {fullSha && <a className="repo-ui-menu-item" href={`${base}/tree/${filter}`}>{filter}</a>}
-        {branches?.state === "ready" && !fullSha && !names.some(name => name.toLowerCase().includes(filter.toLowerCase())) && <p className="repo-ui-muted">No branches found.</p>}
-      </div></details>}
+      {branch && <BranchPicker branch={branch} branches={branches} onOpen={onBranchesOpen} href={name => `${base}/tree/${name.split("/").map(encodeURIComponent).join("/")}`} />}
       {branches?.state === "ready" && <span className="repo-ui-muted">{branches.names.length} {branches.names.length === 1 ? "branch" : "branches"}</span>}
       <div className="repo-code-home-toolbar-spacer"/>
       <details className="repo-ui-dropdown repo-code-home-code-menu"><summary className="repo-ui-btn">Code</summary><div className="repo-ui-menu"><h3>Clone</h3><div className="repo-code-home-command"><code>{`git clone ${REPOSITORY_CLONE_HOST}/${repo}.git`}</code><button className="repo-ui-btn" aria-label="Copy clone URL" {...flowAction(onRunCommand, "chat.copy-message", flowArgs("chat.copy-message", { text: `git clone ${REPOSITORY_CLONE_HOST}/${repo}.git` }))}>Copy</button></div></div></details>
@@ -166,13 +173,7 @@ export function CodeHome({ repo, branch, branches, latestCommit, onBranchesOpen,
     })}
     {apps.length > 0 && <HomeApps blocks={apps} onRunCommand={run} />}
     <section className="repo-ui-box repo-code-home-files" aria-label="Files">
-      {/* The head's own record: message, author and age, the id as text (this host has no commit view to link it to). No record read for this viewer, no row: never a bare commit id. */}
-      {latestCommit && <div className="repo-code-home-latest" role="group" aria-label="Latest commit">
-        {latestCommit.author && <strong>{latestCommit.author}</strong>}
-        <span className="repo-code-home-latest-title">{latestCommit.title}</span>
-        <code className="repo-code-home-sha">{latestCommit.shortSha}</code>
-        {latestCommit.committedAt && <time className="repo-ui-time" dateTime={latestCommit.committedAt}>{ageLabel(latestCommit.committedAt)}</time>}
-      </div>}
+      {latestCommit && <LatestCommitRow commit={latestCommit} />}
       {!treeAvailable ? <div className="repo-frame-state" role="alert"><h2>Couldn't load repository files.</h2></div> : tree === undefined || tree.state === "loading" ? <div className="repo-frame-state" role="status">Loading…</div> : tree.state === "failed" ? <FailureNotice className="repo-frame-state" failure={unavailableFailure("repository.files", "Couldn’t load repository files.", tree.error ?? "")} /> : tree.entries.length === 0 ? <div className="repo-frame-state"><h2>This repository is empty.</h2></div> : <div role="table" aria-label="Repository files"><div className="repo-ui-sr" role="row"><span role="columnheader">Name</span></div>{tree.entries.map(entry => <div className="repo-code-home-file-row" role="row" key={entry.name}><span role="cell">{ref ? <a href={`${base}/${entry.kind === "dir" ? "tree" : "blob"}/${ref}/${encodeURIComponent(entry.name)}`}>{entry.kind === "dir" ? <Folder size={16}/> : <FileText size={16}/>} {entry.name}</a> : <>{entry.kind === "dir" ? <Folder size={16}/> : <FileText size={16}/>} {entry.name}</>}</span></div>)}</div>}
     </section>
     {readme !== undefined && <section className="repo-ui-box" aria-label="README"><div className="repo-ui-box-header">{readme.name}</div><div className="repo-code-home-readme"><RepositoryMarkdown content={readme.markdown}/></div></section>}

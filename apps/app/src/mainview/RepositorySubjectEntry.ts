@@ -231,7 +231,7 @@ const unresolvedNotice = (
  * repository.
  */
 const openRequestedFile = async (
-  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches" | "readRepositoryFilePage">,
+  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches" | "readRepositoryFilePage" | "readRepositoryChange" | "readLatestCommit">,
   repo: string,
   subject: Extract<RepositorySubject, { readonly kind: "tree" | "blob" }>,
   owner: string | null | undefined,
@@ -271,6 +271,8 @@ const openRequestedFile = async (
     })
     return
   }
+  // The view's latest-commit bar (Design (H)): the same P-1 read the home makes, at the ref this view shows.
+  void readHeadCommit(controller, repo, target, owner, options, located.ref)
   if (subject.kind === "blob") {
     try {
       const page = await controller.readRepositoryFilePage(target, located.path, located.ref)
@@ -318,24 +320,31 @@ export const readmeToRead = (
  * admission, so a repeat visit reads it again (#4342). A read nobody can make
  * for this viewer leaves no row behind: the home then shows no latest-commit
  * row, never a bare commit id.
+ *
+ * A tree or blob view (Design (H)) makes the same read at `viewRef`, the ref
+ * it shows, keyed by that ref; its fallback is that bookmark's change record
+ * from the list already read. A commit id names no bookmark, so without the
+ * commits route it gets no row.
  */
 const readHeadCommit = async (
   controller: Pick<AppController, "store" | "repositoryBranches" | "readRepositoryChange" | "readLatestCommit">,
   repo: string,
   target: string,
   owner: string | null | undefined,
-  options: SubjectEntryOptions
+  options: SubjectEntryOptions,
+  viewRef?: string
 ): Promise<void> => {
-  const key = latestCommitKey(repo, options.requestId)
+  const key = latestCommitKey(repo, options.requestId, viewRef)
   const live = () => !options.signal?.aborted && admitted(controller.store, repo, options.requestId, owner)
-  const ref = controller.store.collections.repositories.get(target)?.head?.bookmark
+  const ref = viewRef ?? controller.store.collections.repositories.get(target)?.head?.bookmark
   const commit = await controller.readLatestCommit(target, ref).catch(() => ({ error: "unread" }))
   if (!live()) return
   if (!("error" in commit)) { setLatestCommit(key, commit); return }
   try { await controller.repositoryBranches.load(target) } catch { /* the branch read's own refusal stays on its row */ }
   if (!live()) return
   const head = controller.store.collections.repositories.get(target)?.head
-  const changeId = (head?.bookmark === undefined ? undefined : controller.repositoryBranches.rows.get(target)?.changeIds?.[head.bookmark]) ?? head?.changeId ?? undefined
+  const bookmark = viewRef ?? head?.bookmark
+  const changeId = (bookmark === undefined ? undefined : controller.repositoryBranches.rows.get(target)?.changeIds?.[bookmark]) ?? (viewRef === undefined ? head?.changeId ?? undefined : undefined)
   if (changeId === undefined) return
   const change = await controller.readRepositoryChange(target, changeId).catch(() => undefined)
   if (!live() || change === undefined || "error" in change || change.commitId === null) return

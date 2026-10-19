@@ -147,10 +147,20 @@ export const signInReturnTo = (location: Pick<Location, "pathname" | "search">):
   return new TextEncoder().encode(withSearch).byteLength > RETURN_TO_MAX_BYTES ? location.pathname : withSearch
 }
 
-/** The same location without the repo parameter; other parameters and the fragment stay. */
+/**
+ * `?ask=1` on a repository path asks the frame to open Ask once it is on the
+ * page (Design d-fbhqgy): a signed-out visitor's Ask leads to sign-in that
+ * returns here, and the return reopens Ask. Boot takes the marker into the
+ * repository entry and drops it from the address, so it is never replayed.
+ */
+export const ASK_PARAM = "ask"
+export const askRequested = (search: string): boolean => new URLSearchParams(search).get(ASK_PARAM) === "1"
+
+/** The same location without the entry's repo and ask parameters; other parameters and the fragment stay. */
 export const withoutRepoParam = (location: Pick<Location, "pathname" | "search" | "hash">): string => {
   const params = new URLSearchParams(location.search)
   params.delete(REPO_PARAM)
+  params.delete(ASK_PARAM)
   const search = queryString(params)
   return `${location.pathname}${search === "" ? "" : `?${search}`}${location.hash}`
 }
@@ -267,10 +277,10 @@ export const loadPublicCatalog = async (
 }
 
 /** Record the URL before the controller starts any background inventory work. */
-export const beginRepositoryEntry = (store: AppStore, requested: string | null): string | undefined => {
+export const beginRepositoryEntry = (store: AppStore, requested: string | null, ask = false): string | undefined => {
   const requestId = requested === null ? undefined : randomUuid()
   store.dispatch({ type: "repository.entry.changed", actor: "system", entry: requested === null ? null : {
-    requestId: requestId!, repo: requested, phase: "pending"
+    requestId: requestId!, repo: requested, phase: "pending", ...(ask ? { ask: true } : {})
   } })
   return requestId
 }
@@ -354,7 +364,9 @@ export const openRequestedRepo = async (
       requestId, repo: requested, phase: error === undefined ? "ready" : "failed", ...(error === undefined ? {} : { error, failureKind }),
       ...(publicRepositories === undefined ? {} : { publicRepositories: [...publicRepositories] }), diagnostics,
       ...(githubSync === undefined ? {} : { githubSync }),
-      ...(canWrite === true ? { canWrite } : {})
+      ...(canWrite === true ? { canWrite } : {}),
+      // The entry's Ask request outlives the admission: the frame reads it once it is on the page.
+      ...(entry()?.ask === true ? { ask: true as const } : {})
     } as const
     if (options.scope === "command") {
       const owned = controller.store.session().repositoryCommandEntry

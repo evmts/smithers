@@ -12,9 +12,12 @@ import { controlTabKey, expect,test } from "./browserTest"
  * Repository routes (Will's 2026-10-18 decision; CEO ruling a-e1tbtp; PM gap
  * list row 15): `/owner/repo` is the repository frame. Signed out it offers no
  * composer (guest access is off); its one primary action, Ask, leads to
- * sign-in carrying return_to, and nothing redirects on load. The slash-command
- * doors a signed-out visitor types still park with one prompt in the
- * transcript: state/signed-out-doors.test.ts pins each command's prompt.
+ * sign-in carrying return_to, and nothing redirects on load. The Ask door's
+ * return_to is `/owner/repo/?ask=1` (Design d-fbhqgy): the page reopens Ask
+ * when `ask=1` is present and drops the parameter from the address; the
+ * header's Sign in returns to the bare page. The slash-command doors a
+ * signed-out visitor types still park with one prompt in the transcript:
+ * state/signed-out-doors.test.ts pins each command's prompt.
  */
 
 
@@ -74,8 +77,95 @@ test("repository frame sign-in is keyboard reachable from Ask and carries return
   await page.route("**/api/auth/github**", route => route.fulfill({ body: "Sign-in handoff" }))
   const request = page.context().waitForEvent("request", request => new URL(request.url()).pathname === APPLICATION_SIGN_IN_PATH)
   await page.keyboard.press("Enter")
+  expect(new URL((await request).url()).searchParams.get("return_to")).toBe("/smithersai/smithers/?ask=1")
+})
+
+test("the header's Sign in returns to the bare repository page; only the Ask door asks for Ask", async ({ page }) => {
+  await signedOutVisitor(page)
+  await publicRepository(page)
+  await page.goto("/smithersai/smithers/")
+  await page.route("**/api/auth/github**", route => route.fulfill({ body: "Sign-in handoff" }))
+  const request = page.context().waitForEvent("request", request => new URL(request.url()).pathname === APPLICATION_SIGN_IN_PATH)
+  await page.getByRole("button", { name: "Sign in", exact: true }).click()
   expect(new URL((await request).url()).searchParams.get("return_to")).toBe("/smithersai/smithers/")
 })
+
+/*
+ * The return: `/owner/repo/?ask=1` opens Ask for a viewer who can Ask (a
+ * member, at 1280 where the Ask starts collapsed) and drops the parameter
+ * from the address; signed out it opens nothing and redirects nowhere.
+ */
+for (const width of [1280, 390]) {
+  test(`?ask=1 reopens Ask for a member and leaves the address bare ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await signedOutVisitor(page)
+    await publicRepository(page)
+    await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", identityRoute())
+    await page.route("**/api/user/repos**", route => route.fulfill({ json: [{ owner: "smithersai", name: "smithers", full_name: "smithersai/smithers", default_bookmark: "main" }] }))
+    await page.route("**/api/user/orgs**", route => route.fulfill({ json: [] }))
+    const redirects = signInRequests(page)
+    await page.goto("/smithersai/smithers/?ask=1")
+    await expect(page.getByRole("button", { name: "Ask", exact: true })).toHaveAttribute("aria-expanded", "true")
+    await expect(page.getByRole("complementary", { name: "Ask", exact: true })).toBeVisible()
+    await expect(page.getByRole("complementary", { name: "Ask", exact: true }).getByTestId("composer-input")).toBeVisible()
+    // Design (K): the Ask says what it is about.
+    await expect(page.getByRole("complementary", { name: "Ask", exact: true })).toContainText("Asking about smithersai/smithers at main")
+    // Design (J) and (I), painted: the header's Ask is not filled while the Ask is open; Send is the brand's tinted control, 40% with nothing to send; one ring.
+    const painted = (locator: import("@playwright/test").Locator) => locator.evaluate(node => {
+      const probe = document.createElement("span"); node.append(probe)
+      const read = (value: string) => { probe.style.color = value; return getComputedStyle(probe).color }
+      const style = getComputedStyle(node)
+      const result = { background: style.backgroundColor, color: style.color, brand: read("var(--brand)"), brandSoft: read("var(--brand-soft)"), surface2: read("var(--surface-2)"), opacity: style.opacity, outline: style.outlineStyle, border: style.borderColor, shadow: style.boxShadow }
+      probe.remove(); return result
+    })
+    const askPaint = await painted(page.getByRole("button", { name: "Ask", exact: true }))
+    expect(askPaint.background).toBe(askPaint.surface2)
+    expect(askPaint.background).not.toBe(askPaint.brand)
+    const send = page.getByTestId("composer-send")
+    const sendPaint = await painted(send)
+    // The mock's tinted Send (frame.css .repo-frame-send): the brand's soft surface and the brand's ink, not a second full fill.
+    expect(sendPaint.background).toBe(sendPaint.brandSoft)
+    expect(sendPaint.color).toBe(sendPaint.brand)
+    expect(sendPaint.opacity).toBe("0.4")
+    const input = page.getByTestId("composer-input")
+    await input.focus()
+    await page.keyboard.type("hello")
+    expect((await painted(send)).opacity).toBe("1")
+    expect((await painted(input)).outline).toBe("none")
+    // The composer's border carries the brand (its glass surface may add an alpha); the channels are what the eye reads.
+    // The library composer eases its border over .15s (`.sui-chat-composer` transition), so the settled color is the one read.
+    const channels = (color: string) => color.match(/[\d.]+/g)!.slice(0, 3).map(Number)
+    await expect.poll(async () => {
+      const wrapper = await painted(page.locator(".repository-chat .smithers-composer").first())
+      return Math.max(...channels(wrapper.border).map((channel, index) => Math.abs(channel - channels(wrapper.brand)[index]!)))
+    }).toBeLessThanOrEqual(2)
+    // One ring: the mock's 1px brand ring, never the library's 4px focus halo under it. The composer eases box-shadow
+    // with its border, so the settled shadow is the one read.
+    const ring = async () => (await painted(page.locator(".repository-chat .smithers-composer").first())).shadow
+    await expect.poll(ring).toMatch(/^rgba?\([^)]*\) 0px 0px 0px 1px$/)
+    expect(await ring()).not.toMatch(/\b4px\b/)
+    await expect(page).toHaveURL(url => url.pathname === "/smithersai/smithers/" && url.searchParams.get("ask") === null)
+    expect(redirects).toEqual([])
+    // A reload of the bare address is the ordinary page: the Ask starts collapsed below 1440.
+    await page.reload()
+    await expect(page.getByRole("button", { name: "Ask", exact: true })).toHaveAttribute("aria-expanded", "false")
+  })
+
+  test(`?ask=1 signed out opens nothing, redirects nowhere and leaves the address bare ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await signedOutVisitor(page)
+    await publicRepository(page)
+    const redirects = signInRequests(page)
+    await page.goto("/smithersai/smithers/?ask=1")
+    const ask = page.getByRole("button", { name: "Ask", exact: true })
+    await expect(ask).toBeVisible()
+    await expect(ask).toHaveAttribute("aria-expanded", "false")
+    await expect(page.getByTestId("composer-input")).toBeHidden()
+    await expect(page.getByRole("region", { name: "README", exact: true })).toBeVisible()
+    await expect(page).toHaveURL(url => url.pathname === "/smithersai/smithers/" && url.searchParams.get("ask") === null)
+    expect(redirects).toEqual([])
+  })
+}
 
 /*
  * Signed out, the repository frame has no composer to type a slash command into
@@ -102,7 +192,7 @@ test("signed out, the repository frame keeps the visitor on the page and Ask lea
   await page.route("**/api/auth/github**", route => route.fulfill({ body: "Sign-in handoff" }))
   const request = page.context().waitForEvent("request", request => new URL(request.url()).pathname === APPLICATION_SIGN_IN_PATH)
   await ask.click()
-  expect(new URL((await request).url()).searchParams.get("return_to")).toBe("/smithersai/smithers/")
+  expect(new URL((await request).url()).searchParams.get("return_to")).toBe("/smithersai/smithers/?ask=1")
 })
 
 // The Wiki is core (D-09b) and the web host seeds no World page; the default chrome has no icon rail (#3334).

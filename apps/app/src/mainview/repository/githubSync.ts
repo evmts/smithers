@@ -12,8 +12,11 @@
  * at all: no chip, never an invented "up to date". `synced` reads "Synced with
  * GitHub" (no age, so the chip never ticks); `behind` with refs outstanding is
  * stale, "Synced <age>"; `behind` with 0/0 refs renders as synced; `failed`
- * names the reason, then the last success's age. A status word this app does
- * not know is no claim either.
+ * names the reason, and the repo header's chip shows no "Last success" (the
+ * mock's): last_mirror_at is stamped on failed status reports too, so it is not
+ * a last-success time (Platform d-yhg0yo, PM d-h7mx7b); that segment returns
+ * with a single-writer last_mirror_success_at after launch. A status word this
+ * app does not know is no claim either.
  *
  * What last_mirror_at means on a failure depends on who wrote it: the git
  * mirror sync-run finisher keeps it as the last verified success
@@ -23,6 +26,20 @@
  * success" is the failed run's own time. The chip shows the document's field
  * and does not guess which path wrote it.
  */
+
+import * as Redaction from "@smthrs/journal/Redaction"
+
+/**
+ * A failed mirror's reason, made safe to show a member (Security d-n86ki8): last_mirror_error is
+ * the run's raw git or GitHub output, and the mirror strips only its own transport credentials.
+ * Redact first (the journal's diagnostic rules: provider keys, GitHub and Slack tokens, AWS keys,
+ * URL userinfo, Bearer values), then mask Smithers' own `smithers_` tokens, which those rules do
+ * not name, then bound it: bounding before redacting can cut a secret past its marker.
+ */
+export const mirrorFailureReason = (text: string): string => {
+  const masked = String(Redaction.redactDiagnostic(text)).replace(/\bsmithers_[A-Za-z0-9_.-]+/g, "[REDACTED]")
+  return masked.length > 300 ? `${masked.slice(0, 299)}…` : masked
+}
 
 /** The document's mirror health, as the admission read it. */
 export interface GitHubSync {
@@ -65,7 +82,7 @@ export const syncAge = (iso: string, now: number = Date.now()): string => {
 export const githubSyncChip = (sync: GitHubSync | undefined, now: number = Date.now()): GitHubSyncChip | null => {
   if (sync === undefined || sync.status === "" || sync.lastMirrorAt === null || Number.isNaN(Date.parse(sync.lastMirrorAt))) return null
   const age = syncAge(sync.lastMirrorAt, now)
-  if (sync.status === "failed") return { state: "failed", failure: sync.lastMirrorError === null ? "GitHub sync failed" : `GitHub sync failed: ${sync.lastMirrorError}`, age }
+  if (sync.status === "failed") return { state: "failed", failure: sync.lastMirrorError === null ? "GitHub sync failed" : `GitHub sync failed: ${mirrorFailureReason(sync.lastMirrorError)}`, age }
   if (sync.status === "behind") return sync.behindRefs > 0 || sync.failedRefs > 0 ? { state: "stale", age } : { state: "synced" }
   if (sync.status === "synced") return { state: "synced" }
   return null

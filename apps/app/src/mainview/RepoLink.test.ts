@@ -1,5 +1,6 @@
 import { describe,expect,test } from "bun:test"
 import {
+askRequested,
 beginRepositoryEntry,
 catalogRepositories,
 catalogRepository,
@@ -295,6 +296,16 @@ describe("signInReturnTo", () => {
     )
   })
 
+  // Design d-fbhqgy: the Ask door's return reopens Ask; boot reads the marker and the address drops it.
+  test("the Ask door's ?ask=1 returns with the page and is spent at boot", () => {
+    expect(signInReturnTo({ pathname: "/smithersai/smithers/", search: "?ask=1" })).toBe("/smithersai/smithers/?ask=1")
+    expect(askRequested("?ask=1")).toBe(true)
+    expect(askRequested("?auth=ok&ask=1")).toBe(true)
+    for (const search of ["", "?ask=0", "?ask", "?repo=a/b"]) expect(askRequested(search)).toBe(false)
+    expect(withoutRepoParam({ pathname: "/smithersai/smithers/", search: "?ask=1", hash: "" })).toBe("/smithersai/smithers/")
+    expect(withoutRepoParam({ pathname: "/smithersai/smithers/", search: "?ask=1&source=github", hash: "" })).toBe("/smithersai/smithers/?source=github")
+  })
+
   test("spent auth markers never replay", () => {
     expect(signInReturnTo({ pathname: "/smithersai/smithers", search: "?signed-in=github" })).toBe("/smithersai/smithers")
     expect(signInReturnTo({ pathname: "/smithersai/smithers", search: "?auth=failed&tab=issues" })).toBe(
@@ -442,7 +453,16 @@ describe("openRequestedRepo", () => {
     expect(resolveTargetRepo(store, undefined)).toHaveProperty("error")
     await openRequestedRepo(controller, publicHTTP, "smithersai/smithers", requestId)
     expect(store.session().repositoryEntry).toMatchObject({ requestId, phase: "ready" })
+    expect(store.session().repositoryEntry).not.toHaveProperty("ask")
     expect(resolveTargetRepo(store, undefined)).toEqual({ repo: "smithersai/smithers" })
+  })
+
+  test("an entry that asked for Ask keeps the request through admission", async () => {
+    const { store, controller } = await fixture()
+    const requestId = beginRepositoryEntry(store, "smithersai/smithers", true)
+    expect(store.session().repositoryEntry).toMatchObject({ requestId, phase: "pending", ask: true })
+    await openRequestedRepo(controller, publicHTTP, "smithersai/smithers", requestId)
+    expect(store.session().repositoryEntry).toMatchObject({ requestId, phase: "ready", ask: true })
   })
 
   test("reopening the repository URL keeps its selected cloud computer", async () => {
@@ -1188,6 +1208,26 @@ describe("the repository document's can_write is carried onto the row", () => {
       await openRequestedRepo(controller, documentHTTP({ full_name: "smithersai/smithers", is_public: false, default_bookmark: "main", can_write: true }), "smithersai/smithers")
       expect(store.session().repositoryEntry?.diagnostics).toMatchObject({ source: "member-document" })
       expect(store.collections.repositories.get("smithersai/smithers")).toMatchObject({ documentOwner: "reader", canWrite: true })
+    } finally { await store.dispose?.() }
+  })
+})
+
+describe("the entry's sync health", () => {
+  // The repo header's sync chip reads the document's mirror fields off the entry: one read, at admission.
+  test("a public document's mirror fields ride on the ready entry; a document without them leaves it absent", async () => {
+    const { store, controller } = await fixture()
+    try {
+      const health = { mirror_status: "behind", behind_refs: 2, failed_refs: 1, last_mirror_at: "2026-10-18T19:00:00Z", last_mirror_error: null }
+      await openRequestedRepo(controller, async (input) => String(input).toLowerCase() === "/api/repos/smithersai/smithers"
+        ? jsonResponse({ ...publicDocument, ...health }) : jsonResponse({}, 404), "smithersai/smithers", undefined, { activate: false })
+      expect(store.session().repositoryEntry).toMatchObject({ repo: "smithersai/smithers", phase: "ready",
+        githubSync: { status: "behind", behindRefs: 2, failedRefs: 1, lastMirrorAt: "2026-10-18T19:00:00Z", lastMirrorError: null } })
+      await openRequestedRepo(controller, publicHTTP, "smithersai/smithers", undefined, { activate: false })
+      expect(store.session().repositoryEntry?.phase).toBe("ready")
+      expect(store.session().repositoryEntry?.githubSync).toEqual({ status: "", behindRefs: 0, failedRefs: 0, lastMirrorAt: null, lastMirrorError: null })
+      await openRequestedRepo(controller, async () => jsonResponse({}, 404), "smithersai/smithers", undefined, { activate: false })
+      expect(store.session().repositoryEntry?.phase).toBe("failed")
+      expect(store.session().repositoryEntry?.githubSync).toBeUndefined()
     } finally { await store.dispose?.() }
   })
 })

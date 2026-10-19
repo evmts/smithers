@@ -3,6 +3,7 @@ import type { RunDynamicCommand } from "../cards/CardFamily"
 import { WORDMARK } from "../Wordmark"
 import { createContext, useCallback, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
 import { BookOpen, X } from "lucide-react"
+import { githubSyncChip, type GitHubSync } from "./githubSync"
 import "./ui.css"
 import "./frame.css"
 import "./repository.css"
@@ -37,6 +38,26 @@ const tabs = [
 ] as const
 
 /**
+ * The GitHub sync chip (mock RepoFrame.tsx GitHubSyncChip; the rule and the
+ * strings in githubSync.ts). A member's chip links to Settings -> GitHub sync
+ * (`/settings/sync`, mounted by the frame's Settings tab); everyone else reads
+ * it as text (mock: `flags.role === "member"`). A failure's reason is the
+ * mirror run's raw git or GitHub error (last_mirror_error), so only a member
+ * reads it; a visitor reads "GitHub sync failed".
+ */
+function GitHubSyncChip({ sync, settingsHref }: { sync: GitHubSync; settingsHref?: string }) {
+  const chip = githubSyncChip(sync)
+  if (chip === null) return null
+  const className = `repo-frame-github${chip.state === "failed" ? " repo-frame-sync-error" : ""}`
+  const content = <>
+    <span className="repo-frame-sync-separator" aria-hidden="true">·</span>
+    {chip.state === "failed" && <X size={16} aria-hidden="true" />}
+    {chip.state === "failed" ? settingsHref === undefined ? "GitHub sync failed" : chip.failure : chip.state === "stale" ? `Synced ${chip.age}` : "Synced with GitHub"}
+  </>
+  return settingsHref === undefined ? <span className={className}>{content}</span> : <a className={className} href={settingsHref}>{content}</a>
+}
+
+/**
  * The session's guest-conversation admission names this repository. The
  * projection writes `guest:<repo>:<session>` only while the visitor is signed
  * out and the server's `/guest` read allowed the repository (AppProjection
@@ -50,13 +71,20 @@ export const guestAdmission = (conversation: string | undefined, repo: string): 
  * Repository route shell. `children` is the plain content slot shared by repo views.
  * `guest` is this repository's guest-conversation admission (`guestAdmission`):
  * an admitted guest opens Ask like a member; signed out without it, Ask leads
- * to sign-in (PM gap list row 15).
+ * to sign-in (PM gap list row 15) that returns to this page with `?ask=1`, and
+ * `askRequested` (the entry's reading of that marker, RepoLink.askRequested)
+ * opens Ask on arrival for a viewer who can Ask. Signed out it opens nothing:
+ * nothing redirects on load.
  */
-export function RepoFrame({ repo, login, guest, publicRepo, member = false, ask, onRunCommand, children, issueCount, pullCount }: {
+export function RepoFrame({ repo, login, guest, publicRepo, member = false, sync, ask, onRunCommand, children, issueCount, pullCount, askRequested, askTitle, askContext }: {
   issueCount?: number; pullCount?: number
-  repo: string; login?: string; guest?: boolean; publicRepo?: boolean
+  repo: string; login?: string; guest?: boolean; publicRepo?: boolean; askRequested?: boolean
   /** The repository document's can_write for this viewer (RepositoryEntry.canWrite); only a member sees Settings. */
   member?: boolean
+  /** The document's GitHub mirror health off the entry (RepositoryEntry.githubSync), for the header's sync chip. */
+  sync?: GitHubSync
+  /** The Ask heading: the home's own prompt title when it declares one (else "Ask"), and what the Ask is about, "<repo> at <ref>" (Design (K)). */
+  askTitle?: string; askContext?: string
   onRunCommand: RunDynamicCommand; ask: ReactNode | ((visible: boolean) => ReactNode); children: ReactNode
 }) {
   const frame = useRef<HTMLDivElement>(null)
@@ -68,7 +96,8 @@ export function RepoFrame({ repo, login, guest, publicRepo, member = false, ask,
     return () => observer.disconnect()
   }, [])
   const docked = useSyncExternalStore(subscribeWidth, () => (frame.current?.clientWidth ?? 0) >= 1440, () => false)
-  const [open, setOpen] = useState<boolean | undefined>(undefined)
+  // Transient chrome (the Ask's disclosure); its first value is the entry's one Ask request.
+  const [open, setOpen] = useState<boolean | undefined>(askRequested === true ? true : undefined)
   const canAsk = Boolean(login) || guest === true
   const expanded = canAsk && (open ?? docked)
   // Transient chrome: the mounted notice region's node, for the Ask's notices while it is collapsed.
@@ -84,7 +113,17 @@ export function RepoFrame({ repo, login, guest, publicRepo, member = false, ask,
     if (path === "pulls") return /^\/pulls?(?:\/|$)/.test(below)
     return below === `/${path}` || below.startsWith(`/${path}/`)
   }
-  const openAsk = (runCommand = onRunCommand) => { if (!canAsk) { runCommand("sign-in"); return }; setOpen(true); runCommand("chat.open") }
+  const openAsk = (runCommand = onRunCommand) => {
+    if (!canAsk) {
+      // The Ask door's sign-in returns to this page with Ask open: the marker rides the address sign-in reads its return from (RepoLink.signInReturnTo). No draft travels.
+      const search = new URLSearchParams(window.location.search)
+      search.set("ask", "1")
+      window.history.replaceState(window.history.state, "", `${window.location.pathname}?${search}${window.location.hash}`)
+      runCommand("sign-in")
+      return
+    }
+    setOpen(true); runCommand("chat.open")
+  }
   // A notice's action reveals the Ask its target lives in; never sign-in, which only the Ask button and ⌘K lead to.
   const reveal = () => { if (canAsk) openAsk() }
   const close = (runCommand = onRunCommand) => { runCommand("chat.close"); setOpen(false); trigger.current?.focus() }
@@ -109,7 +148,7 @@ export function RepoFrame({ repo, login, guest, publicRepo, member = false, ask,
     </header>
     <div className="repo-frame-workspace"><div className="repo-frame-page">
       <header className="repo-frame-repo-header">
-        <div className="repo-frame-repo-title-row"><div className="repo-frame-repo-title"><BookOpen size={20} aria-hidden="true"/><h1><a href="/">{owner}</a><span>/</span><a href={base}>{name}</a></h1>{publicRepo && <span className="repo-frame-visibility">Public</span>}</div>
+        <div className="repo-frame-repo-title-row"><div className="repo-frame-repo-title"><BookOpen size={20} aria-hidden="true"/><h1><a href="/">{owner}</a><span>/</span><a href={base}>{name}</a></h1>{publicRepo && <span className="repo-frame-visibility">Public</span>}{sync !== undefined && <GitHubSyncChip sync={sync} settingsHref={member ? `${base}/settings/sync` : undefined} />}</div>
           <button ref={trigger} className={`repo-ui-btn ${fileRoute ? "repo-ui-btn-quiet" : "repo-ui-btn-primary"} repo-frame-ask-button`} aria-label="Ask" aria-controls="repo-ask" aria-expanded={expanded} {...flowProps(canAsk ? "chat.open" : "sign-in")} onClick={() => openAsk(onRunCommand)}>Ask <kbd>⌘K</kbd></button>
         </div>
         <nav className="repo-ui-tabs" aria-label="Repository">{navigation.map(([path, label]) => <a className="repo-ui-tab" key={path} href={`${base}${path ? `/${path}` : ""}`} aria-current={active(path) ? "page" : undefined}>{label}{(path === "issues" ? issueCount : path === "pulls" ? pullCount : undefined) !== undefined && <span className="repo-ui-counter">{path === "issues" ? issueCount : pullCount}</span>}</a>)}</nav>
@@ -122,7 +161,7 @@ export function RepoFrame({ repo, login, guest, publicRepo, member = false, ask,
       if (expanded || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return
       event.preventDefault(); event.stopPropagation(); openAsk()
     }}>
-      <div className="repo-frame-ask-heading"><h2>Ask</h2><button className="repo-ui-icon-btn" aria-label="Close Ask" {...flowProps("chat.close")} onClick={() => close(onRunCommand)}><X size={18}/></button></div>
+      <div className="repo-frame-ask-heading"><div><h2>{askTitle ?? "Ask"}</h2>{askContext !== undefined && <p>Asking about {askContext}</p>}</div><button className="repo-ui-icon-btn" aria-label="Close Ask" {...flowProps("chat.close")} onClick={() => close(onRunCommand)}><X size={18}/></button></div>
       <div className="repository-chat"><RepositoryNoticesContext.Provider value={expanded || notices === null ? null : { host: notices, reveal }}>{typeof ask === "function" ? ask(expanded) : ask}</RepositoryNoticesContext.Provider></div>
     </aside></div>
     </div>

@@ -25,13 +25,18 @@ export const repositoryReadmeReads = createCollection(localOnlyCollectionOptions
   error?: string
 }, string>({ id: "repository-readme-reads", getKey: row => row.id }))
 
-/** The latest commit the Code home shows (repo-ui-spec view 1), read per admission so a repeat visit reads it again (#4342). */
+/**
+ * The latest commit the Code home shows (repo-ui-spec view 1), and the tree and
+ * blob views at their own ref (view 2, Design (H)), read per admission so a
+ * repeat visit reads it again (#4342).
+ */
 export const repositoryLatestCommits = createCollection(localOnlyCollectionOptions<{
   id: string
   commit: LatestCommit
 }, string>({ id: "repository-latest-commits", getKey: row => row.id }))
 
-export const latestCommitKey = (repo: string, requestId?: string) => `${requestId ?? ""}/${repo.toLowerCase()}`
+/** The home's row has no ref (the default bookmark); a code view's row is keyed by the ref it shows. */
+export const latestCommitKey = (repo: string, requestId?: string, ref?: string) => `${requestId ?? ""}/${repo.toLowerCase()}${ref === undefined ? "" : `/${ref}`}`
 export function setLatestCommit(id: string, commit: LatestCommit) {
   if (repositoryLatestCommits.has(id)) repositoryLatestCommits.update(id, draft => { draft.commit = commit })
   else repositoryLatestCommits.insert({ id, commit })

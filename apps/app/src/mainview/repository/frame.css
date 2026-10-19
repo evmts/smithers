@@ -146,7 +146,8 @@
   .repo-frame-content :is(.repo-issues-confirm, .repo-pulls-form-card, .repo-runs-confirm, .repo-flows-run-card, .repo-wiki-confirm, .repo-evals-confirm, [data-repo-action]) { scroll-margin-top: 66px; }
 }
 
-.repo-frame .repo-frame-ask-button[aria-pressed="true"] { background: var(--surface-2); border-color: var(--border-strong); color: var(--text); }
+/* Design (J): the header's Ask does not stay filled while the Ask is open (the composer holds the focus). */
+.repo-frame .repo-frame-ask-button[aria-pressed="true"], .repo-frame .repo-frame-ask-button[aria-expanded="true"] { background: var(--surface-2); border-color: var(--border-strong); color: var(--text); }
 .repo-frame-github.repo-frame-sync-error { color: var(--danger); flex-wrap: wrap; white-space: normal; }
 .repo-frame-last-sync { color: var(--text-muted); font-size: 12px; }
 .repo-frame-composer-foot > .repo-ui-btn-primary { min-height: 40px; white-space: normal; }

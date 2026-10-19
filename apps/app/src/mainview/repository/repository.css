@@ -80,3 +80,14 @@
 .repo-frame-scroll { height:100%; overflow-y:auto; overflow-x:hidden; }
 .repo-frame-global,.repo-frame-page { width:100cqw; }
 
+/* Design (I), CSS only: in the repository frame the composer's Send is 40% when it has nothing to send, and the placeholder takes the mock's size. The Queue label stays. */
+/* Send is the mock's tinted control (design-mocks frame/frame.css .repo-frame-send; Design f-fmez3k), so the open Ask shows one fill, the confirm card's own primary act. */
+.repo-frame .repository-chat .smithers-composer .sui-chat-composer-send { background: var(--brand-soft); border: 1px solid var(--brand-border); color: var(--brand); }
+.repo-frame .repository-chat .smithers-composer .sui-chat-composer-send:hover, .repo-frame .repository-chat .smithers-composer .sui-chat-composer-send:active:not(:disabled) { background: var(--surface-2); color: var(--brand); }
+.repo-frame .repository-chat .smithers-composer .sui-chat-composer-send:disabled { opacity: .4; }
+.repo-frame .repository-chat .smithers-composer .sui-chat-composer-input::placeholder { font-size: var(--fs-2); }
+/* One ring: the composer's own border carries focus in the frame (as the mock's composer does: a brand border plus a 1px brand ring,
+   design-mocks frame/frame.css), so the textarea draws no second outline and the library's 4px :focus-within halo
+   (packages/smithers/ui uiCss.ts, injected after the app's sheets) is replaced: this selector's (0,4,0) outranks its (0,2,0). */
+.repo-frame .repository-chat .smithers-composer:focus-within { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+.repo-frame .repository-chat .smithers-composer .sui-chat-composer-input:focus-visible { outline: none; }
