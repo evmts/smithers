@@ -99,7 +99,7 @@ func TestBootstrapTemplatesSmokeCLIAsDeveloperAndReportFailure(t *testing.T) {
 				rendered := renderBootstrapTemplate(t, raw, vars)
 				const tail = "npm CLI package absent\" >&2\nfi\n"
 				section := scriptSection(t, rendered, "# Install the deployed npm package", tail) + tail
-				script := strings.ReplaceAll(section, "/tmp/smithers-workspace-cli-help.log", filepath.Join(root, "cli-help.log"))
+				script := strings.ReplaceAll(section, "$smithers_log_dir/cli-help.log", filepath.Join(root, "cli-help.log"))
 
 				var stderr bytes.Buffer
 				cmd := exec.Command("bash", "-c", "set -euo pipefail\n"+script)

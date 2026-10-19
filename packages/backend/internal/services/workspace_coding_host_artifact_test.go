@@ -273,7 +273,7 @@ func TestWorkspaceNpmCLIStagingExecutes(t *testing.T) {
 			bootstrap = strings.ReplaceAll(bootstrap, workspaceCLIPackageB64Path, payload)
 			bootstrap = strings.ReplaceAll(bootstrap, workspaceCLIPackageDir, filepath.Join(dir, "installed"))
 			bootstrap = strings.ReplaceAll(bootstrap, defaultWorkspaceGuestLayout.localBinDir(), bin)
-			bootstrap = strings.ReplaceAll(bootstrap, "/tmp/smithers-workspace-cli-help.log", filepath.Join(dir, "help.log"))
+			bootstrap = strings.ReplaceAll(bootstrap, "$smithers_log_dir/cli-help.log", filepath.Join(dir, "help.log"))
 			// The smoke runs as the developer; a test cannot switch users, so
 			// this runuser runs the command after "--" as the caller.
 			shims := filepath.Join(dir, "shims")

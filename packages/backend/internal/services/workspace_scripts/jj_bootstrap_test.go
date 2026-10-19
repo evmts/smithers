@@ -58,7 +58,7 @@ func TestBootstrapReplacesIncompatibleJJ(t *testing.T) {
 			if start < 0 || end < start {
 				t.Fatal("JJ bootstrap section missing")
 			}
-			script := strings.NewReplacer("/var/tmp/smithers-jj-release.tar.gz", filepath.Join(dir, "download.tar.gz"), "/var/tmp/smithers-jj-release", extract, "/usr/local/bin/jj", filepath.Join(bin, "jj"), "/tmp/smithers-workspace-jj-bootstrap.log", filepath.Join(dir, "download.log")).Replace(rendered[start:end])
+			script := strings.NewReplacer("/var/tmp/smithers-jj-release", extract, "/usr/local/bin/jj", filepath.Join(bin, "jj"), "$smithers_log_dir/jj-bootstrap.log", filepath.Join(dir, "download.log")).Replace(rendered[start:end])
 			cmd := exec.Command("bash", "-c", "set -euo pipefail\n"+script)
 			cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin")
 			out, err := cmd.CombinedOutput()
@@ -68,6 +68,10 @@ func TestBootstrapReplacesIncompatibleJJ(t *testing.T) {
 			_, downloadErr := os.Stat(filepath.Join(dir, "downloaded"))
 			if (downloadErr == nil) != tc.download {
 				t.Fatalf("download=%v want=%v", downloadErr == nil, tc.download)
+			}
+			// Root's scratch is a fresh mktemp -d directory, removed after use.
+			if leftovers, _ := filepath.Glob(extract + ".*"); len(leftovers) != 0 && tc.download {
+				t.Fatalf("download scratch left behind: %v", leftovers)
 			}
 			if !tc.fails {
 				version, err := exec.Command(filepath.Join(bin, "jj"), "--version").Output()

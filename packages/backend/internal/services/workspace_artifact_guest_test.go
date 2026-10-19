@@ -44,7 +44,9 @@ func (c *artifactGuestClient) scriptContent(t *testing.T) string {
 // be reopened by another under fs.protected_regular, which silently stopped the
 // detached bootstrap from starting on a shared test host.
 func (c *artifactGuestClient) local(p string) string {
-	return strings.NewReplacer(workspaceArtifactRoot, c.root, workspaceClaudeScriptPath, c.script, workspaceArtifactLaunchLog, c.launchLog()).Replace(p)
+	// The launch log sits under the artifact root; it is listed first so it
+	// maps to the client's own log, not into the root it shares a prefix with.
+	return strings.NewReplacer(workspaceArtifactLaunchLog, c.launchLog(), workspaceArtifactRoot, c.root, workspaceClaudeScriptPath, c.script).Replace(p)
 }
 
 func (c *artifactGuestClient) launchLog() string { return c.root + ".launch.log" }

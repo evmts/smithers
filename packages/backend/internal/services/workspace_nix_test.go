@@ -65,7 +65,7 @@ func TestBuildWorkspaceVMRequestContainerKindIsUnchanged(t *testing.T) {
 	assert.Empty(t, req.Image, "container workspaces keep the deployment default image")
 	assert.Equal(t, defaultWorkspacePackages, req.Packages)
 	assert.Empty(t, resolver.calls, "container kind never consults the image registry")
-	assert.Contains(t, req.Files[workspaceClaudeScriptPath].Content, "SMITHERS_NODE_INDEX_URL", "container bootstrap downloads node")
+	assert.Contains(t, req.Files[workspaceClaudeScriptPath].Content, "SMITHERS_NODE_VERSION", "container bootstrap downloads node")
 }
 
 func TestBuildWorkspaceVMRequestVMKindBootsClosureImage(t *testing.T) {
@@ -82,7 +82,7 @@ func TestBuildWorkspaceVMRequestVMKindBootsClosureImage(t *testing.T) {
 	script := req.Files[workspaceClaudeScriptPath]
 	assert.True(t, script.Executable)
 	assert.Contains(t, script.Content, "nix-ld", "NixOS bootstrap variant is rendered")
-	assert.NotContains(t, script.Content, "SMITHERS_NODE_INDEX_URL", "NixOS bootstrap never downloads node")
+	assert.NotContains(t, script.Content, "SMITHERS_NODE_VERSION", "NixOS bootstrap never downloads node")
 	assert.NotContains(t, script.Content, "smithers-desktop-start", "vm kind has no desktop service")
 	_, hasPassword := req.Files["/run/smithers-desktop/password"]
 	assert.False(t, hasPassword)

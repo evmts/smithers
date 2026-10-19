@@ -49,8 +49,10 @@ const workspaceArtifactBootstrapLog = workspaceArtifactCurrent + "/bootstrap.log
 // workspaceArtifactLaunchLog collects the detached launcher's own output. The
 // launch opens it before it records a pending attempt, so a guest user that
 // cannot open it fails the launch instead of starting nothing while the wait
-// polls "pending" until its deadline.
-const workspaceArtifactLaunchLog = "/tmp/smithers-workspace-bootstrap.log"
+// polls "pending" until its deadline. Root opens it, so it lives in the
+// root-owned artifact root, never at a fixed /tmp name a developer could plant
+// a symlink at (Security d-evwgfi).
+const workspaceArtifactLaunchLog = workspaceArtifactRoot + "/launch.log"
 
 // workspaceArtifactLockBusy is the exit status of a publication that could
 // not take the bootstrap lock within workspaceArtifactPublishLockWait. The

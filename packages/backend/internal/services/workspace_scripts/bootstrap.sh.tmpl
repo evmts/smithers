@@ -1,11 +1,31 @@
 #!/bin/bash
 set -euo pipefail
+# Root runs this on every provision, resume, reprovision and live staging. The
+# developer can write ~/.local/bin and the rest of their home, so root resolves
+# tools on root-owned system directories only (the artifact guest PATH without
+# the NixOS profile), never on a PATH it inherited (Security s-qizs0e).
+PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/sbin:/usr/local/bin
+export PATH
+# Root follows no symlink a developer plants in a sticky directory and chowns
+# no hardlink to a file the developer does not own (Security d-evwgfi). No
+# systemd-sysctl runs on a container guest, so root sets both first, and says
+# so if the guest kernel refuses.
+for smithers_sysctl in fs/protected_symlinks fs/protected_hardlinks; do
+  echo 1 >"/proc/sys/$smithers_sysctl" 2>/dev/null || true
+  if [ "$(cat "/proc/sys/$smithers_sysctl" 2>/dev/null)" != 1 ]; then
+    echo "smithers workspace bootstrap: $smithers_sysctl is not 1 on this guest kernel" >&2
+  fi
+done
+# Root's logs live in a fresh directory only root can enter: a fixed /tmp name
+# lets the developer plant a symlink that root then writes through.
+smithers_log_dir="$(mktemp -d /tmp/smithers-workspace-logs.XXXXXX)"
+echo "smithers workspace bootstrap: logs in $smithers_log_dir" >&2
 install -d -o {{.User}} -g {{.User}} -m 700 {{.Home}}/.smithers
 install -d -o {{.User}} -g {{.User}} -m 755 {{.LocalDir}}
 install -d -o {{.User}} -g {{.User}} -m 755 {{.LocalBinDir}}
 # Bun remains available for repository tools.
 if ! command -v bun >/dev/null 2>&1; then
-  npm install -g --prefix /usr/local bun@{{.BunVersion}} >/tmp/smithers-workspace-bun-install.log 2>&1 || \
+  npm install -g --prefix /usr/local bun@{{.BunVersion}} >"$smithers_log_dir/bun-install.log" 2>&1 || \
     echo "smithers workspace bootstrap: bun install failed; continuing without bun" >&2
 fi
 
@@ -16,21 +36,25 @@ smithers_jj_compatible() {
 }
 if ! smithers_jj_compatible && command -v node >/dev/null 2>&1; then
   # Microsandbox mounts /tmp as a deliberately small tmpfs. Release archives
-  # and their extracted trees belong on the writable OCI disk instead.
-  export SMITHERS_JJ_ARCHIVE="/var/tmp/smithers-jj-release.tar.gz"
-  export SMITHERS_JJ_EXTRACT_DIR="/var/tmp/smithers-jj-release"
+  # and their extracted trees belong on the writable OCI disk instead. /var/tmp
+  # is world-writable, so root works in a fresh directory only it can enter:
+  # a fixed name would let the developer plant the archive whose jj root
+  # installs and runs, or a symlink that root writes through.
+  smithers_jj_tmp="$(mktemp -d /var/tmp/smithers-jj-release.XXXXXX)"
+  export SMITHERS_JJ_ARCHIVE="$smithers_jj_tmp/jj.tar.gz"
+  export SMITHERS_JJ_EXTRACT_DIR="$smithers_jj_tmp/extract"
   export SMITHERS_JJ_RELEASE_API_URL={{printf "%q" .JJReleaseAPIURL}}
   export SMITHERS_DOWNLOAD_MODE=jj
-  rm -rf "$SMITHERS_JJ_ARCHIVE" "$SMITHERS_JJ_EXTRACT_DIR"
-  mkdir -p "$SMITHERS_JJ_EXTRACT_DIR"
-  node -e {{printf "%q" "void eval(Buffer.from(process.argv[1], \"base64\").toString(\"utf8\"));"}} {{printf "%q" .DownloadScript}} >/tmp/smithers-workspace-jj-bootstrap.log 2>&1 || true
+  mkdir "$SMITHERS_JJ_EXTRACT_DIR"
+  node -e {{printf "%q" "void eval(Buffer.from(process.argv[1], \"base64\").toString(\"utf8\"));"}} {{printf "%q" .DownloadScript}} >"$smithers_log_dir/jj-bootstrap.log" 2>&1 || true
   if [ -f "$SMITHERS_JJ_ARCHIVE" ]; then
-    tar -xzf "$SMITHERS_JJ_ARCHIVE" -C "$SMITHERS_JJ_EXTRACT_DIR" >/tmp/smithers-workspace-jj-bootstrap.log 2>&1 || true
+    tar -xzf "$SMITHERS_JJ_ARCHIVE" -C "$SMITHERS_JJ_EXTRACT_DIR" >"$smithers_log_dir/jj-bootstrap.log" 2>&1 || true
     jj_bin="$(find "$SMITHERS_JJ_EXTRACT_DIR" -type f -name jj | head -n 1)"
     if [ -n "${jj_bin:-}" ] && [ -f "$jj_bin" ]; then
       install -m 755 "$jj_bin" /usr/local/bin/jj || true
     fi
   fi
+  rm -rf "$smithers_jj_tmp"
 fi
 if ! smithers_jj_compatible; then
   echo "smithers workspace bootstrap: required JJ 0.39.0 could not be installed" >&2
@@ -38,6 +62,14 @@ if ! smithers_jj_compatible; then
 fi
 # Reuse the image's toolchain when its major matches the workspace contract.
 # npm must execute successfully: an executable symlink alone is insufficient.
+# The developer owns ~/.local and can plant anything there, so the developer,
+# not root, checks that toolchain and installs Node {{.NodeMajor}} into it
+# (Security s-qizs0e): root never runs ~/.local/bin/node or writes through a
+# path the developer controls. The drop keeps the inherited environment, as
+# the smokes below do: the download needs the guest's HTTPS_PROXY and
+# CURL_CA_BUNDLE. PATH is the system's only, in the artifact guest PATH order.
+smithers_developer_node() { cat <<'SMITHERS_AS_DEVELOPER'
+set -euo pipefail
 smithers_node_compatible() {
   [ -x "$1/node" ] && [ -x "$1/npm" ] &&
     "$1/node" --version 2>/dev/null | grep -Eq {{printf "%q" (printf "^v%s\\.[0-9]+\\.[0-9]+$" .NodeMajor)}} &&
@@ -57,13 +89,21 @@ if ! smithers_node_compatible {{printf "%q" .LocalBinDir}}; then
 fi
 if ! smithers_node_compatible {{printf "%q" .LocalBinDir}}; then
   if command -v node >/dev/null 2>&1; then
-    export SMITHERS_NODE_ARCHIVE="/var/tmp/smithers-node-release.tar.gz"
-    export SMITHERS_NODE_EXTRACT_DIR="/var/tmp/smithers-node-release"
-    export SMITHERS_NODE_INDEX_URL={{printf "%q" .NodeDistIndexURL}}
-    export SMITHERS_NODE_MAJOR={{printf "%q" .NodeMajor}}
+    # A fresh directory: /var/tmp is shared, and an earlier root bootstrap
+    # left root-owned scratch at the old fixed names.
+    smithers_node_tmp="$(mktemp -d /var/tmp/smithers-node-release.XXXXXX)"
+    export SMITHERS_NODE_ARCHIVE="$smithers_node_tmp/node.tar.gz"
+    export SMITHERS_NODE_EXTRACT_DIR="$smithers_node_tmp/extract"
+    # Exactly this release, refused unless its SHA-256 matches the pin.
+    export SMITHERS_NODE_DIST_URL={{printf "%q" .NodeDistURL}}
+    export SMITHERS_NODE_VERSION={{printf "%q" .NodeVersion}}
+    export SMITHERS_NODE_SHA256_X64={{printf "%q" .NodeSHA256X64}}
+    export SMITHERS_NODE_SHA256_ARM64={{printf "%q" .NodeSHA256ARM64}}
     export SMITHERS_DOWNLOAD_MODE=node
-    rm -rf "$SMITHERS_NODE_ARCHIVE" "$SMITHERS_NODE_EXTRACT_DIR" {{printf "%q" .LocalNodeDir}}
-    mkdir -p "$SMITHERS_NODE_EXTRACT_DIR"
+    rm -rf {{printf "%q" .LocalNodeDir}}
+    mkdir "$SMITHERS_NODE_EXTRACT_DIR"
+    # An earlier root bootstrap may have left a root-owned log here.
+    rm -f {{.NodeInstallLog}}
     node -e {{printf "%q" "void eval(Buffer.from(process.argv[1], \"base64\").toString(\"utf8\"));"}} {{printf "%q" .DownloadScript}} >{{.NodeInstallLog}} 2>&1 || true
     node_dir=""
     if tar -xzf "$SMITHERS_NODE_ARCHIVE" -C "$SMITHERS_NODE_EXTRACT_DIR" >>{{.NodeInstallLog}} 2>&1; then
@@ -75,7 +115,13 @@ if ! smithers_node_compatible {{printf "%q" .LocalBinDir}}; then
       ln -sfn ../node/bin/npm {{printf "%q" (printf "%s/npm" .LocalBinDir)}}
       ln -sfn ../node/bin/npx {{printf "%q" (printf "%s/npx" .LocalBinDir)}}
     fi
+    rm -rf "$smithers_node_tmp"
   fi
+fi
+SMITHERS_AS_DEVELOPER
+}
+if ! runuser -u {{.User}} -- env HOME={{.Home}} USER={{.User}} LOGNAME={{.User}} PATH=/usr/bin:/bin:/usr/local/bin /bin/bash -c "$(smithers_developer_node)"; then
+  echo "smithers workspace bootstrap: Node {{.NodeMajor}} setup as {{.User}} failed; its log is the developer's ~/.smithers/node-install.log" >&2
 fi
 # The configured coding host is separate from the interactive/general CLI.
 # Failure leaves the workspace usable; a bound gateway preflight refuses it.
@@ -92,9 +138,9 @@ if [ -s {{printf "%q" .CodingHostB64Path}}.part00000000 ]; then
     # Same contract as the jj export helper below: diagnostic only, inherited
     # environment (nix-ld reads NIX_LD), and never delete a staged binary
     # because it could not be exec'd during the pre-activation window.
-    if ! runuser -u {{.User}} -- env HOME={{.Home}} USER={{.User}} LOGNAME={{.User}} PATH={{.LocalBinDir}}:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin {{printf "%q" .CodingHostPath}} --help >/tmp/smithers-workspace-coding-host-smoke.log 2>&1; then
+    if ! runuser -u {{.User}} -- env HOME={{.Home}} USER={{.User}} LOGNAME={{.User}} PATH={{.LocalBinDir}}:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin {{printf "%q" .CodingHostPath}} --help >"$smithers_log_dir/coding-host-smoke.log" 2>&1; then
       echo "smithers workspace bootstrap: coding host runtime smoke failed; keeping the staged binary" >&2
-      sed -e "s|^|smithers workspace bootstrap: coding host smoke: |" /tmp/smithers-workspace-coding-host-smoke.log >&2 || true
+      sed -e "s|^|smithers workspace bootstrap: coding host smoke: |" "$smithers_log_dir/coding-host-smoke.log" >&2 || true
     fi
   fi
 fi
@@ -121,9 +167,9 @@ if [ -s {{printf "%q" .JJExportB64Path}}.part00000000 ]; then
     # strands every coding flow on the guest with no way back (prod
     # 2026-09-15 19:31Z: "jj export helper runtime smoke failed" on a kind=vm
     # guest whose nix-ld loader link appeared 2.2s AFTER the bootstrap ran).
-    if ! runuser -u {{.User}} -- env HOME={{.Home}} USER={{.User}} LOGNAME={{.User}} PATH={{.LocalBinDir}}:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin {{printf "%q" .JJExportPath}} --version >/tmp/smithers-workspace-jj-export-smoke.log 2>&1; then
+    if ! runuser -u {{.User}} -- env HOME={{.Home}} USER={{.User}} LOGNAME={{.User}} PATH={{.LocalBinDir}}:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin {{printf "%q" .JJExportPath}} --version >"$smithers_log_dir/jj-export-smoke.log" 2>&1; then
       echo "smithers workspace bootstrap: jj export helper runtime smoke failed; keeping the staged binary" >&2
-      sed -e "s|^|smithers workspace bootstrap: jj export smoke: |" /tmp/smithers-workspace-jj-export-smoke.log >&2 || true
+      sed -e "s|^|smithers workspace bootstrap: jj export smoke: |" "$smithers_log_dir/jj-export-smoke.log" >&2 || true
     else
       echo "smithers workspace bootstrap: installed jj export helper" >&2
     fi
@@ -142,9 +188,9 @@ if [ -s {{printf "%q" .CLIPackageB64Path}}.part00000000 ]; then
     # on the ~/.local/bin/node they get. A failure copies the CLI's own words
     # into bootstrap.log (prod 2026-10-19 msb_f11acdd6 needed an exec to read
     # "smthrs needs Node 26.4.0 or later; ... is Node 24.19.0").
-    if ! runuser -u {{.User}} -- env HOME={{.Home}} USER={{.User}} LOGNAME={{.User}} PATH={{.LocalBinDir}}:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin {{.LocalBinDir}}/smithers --help >/tmp/smithers-workspace-cli-help.log 2>&1; then
-      echo "smithers workspace bootstrap: npm CLI smoke failed; see /tmp/smithers-workspace-cli-help.log" >&2
-      sed -e "s|^|smithers workspace bootstrap: cli smoke: |" /tmp/smithers-workspace-cli-help.log >&2 || true
+    if ! runuser -u {{.User}} -- env HOME={{.Home}} USER={{.User}} LOGNAME={{.User}} PATH={{.LocalBinDir}}:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin {{.LocalBinDir}}/smithers --help >"$smithers_log_dir/cli-help.log" 2>&1; then
+      echo "smithers workspace bootstrap: npm CLI smoke failed; see $smithers_log_dir/cli-help.log" >&2
+      sed -e "s|^|smithers workspace bootstrap: cli smoke: |" "$smithers_log_dir/cli-help.log" >&2 || true
     fi
   else
     echo "smithers workspace bootstrap: npm CLI package extraction failed" >&2
@@ -152,8 +198,10 @@ if [ -s {{printf "%q" .CLIPackageB64Path}}.part00000000 ]; then
 else
   echo "smithers workspace bootstrap: npm CLI package absent" >&2
 fi
+# Root chowns nothing under the developer's home: a hardlink planted there to a
+# root-owned file would change hands (Security d-evwgfi). Root creates only
+# directories with install -d -o {{.User}} and symlinks there.
 if [ -x {{printf "%q" (printf "%s/claude" .LocalBinDir)}} ] || command -v claude >/dev/null 2>&1; then
-  chown -R {{.User}}:{{.User}} {{.LocalDir}} {{.Home}}/.smithers
   exit 0
 fi
 if [ ! -x {{printf "%q" (printf "%s/npm" .LocalBinDir)}} ]; then
@@ -164,4 +212,3 @@ if command -v runuser >/dev/null 2>&1; then
 else
   su - {{.User}} -c {{printf "%q" .ClaudeInstallScript}} || exit 0
 fi
-chown -R {{.User}}:{{.User}} {{.LocalDir}} {{.Home}}/.smithers

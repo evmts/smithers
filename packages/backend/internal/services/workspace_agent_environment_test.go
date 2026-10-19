@@ -67,20 +67,39 @@ func (s *agentEnvironmentWorkspaceSandbox) Execute(_ context.Context, _ string, 
 	if strings.HasPrefix(strings.TrimPrefix(req.Command, workspaceArtifactGuestPath), "tail -c ") {
 		return sandbox.ExecResult{StatusCode: new(int32), Stdout: s.bootstrapLog}, nil
 	}
-	if strings.Contains(req.Command, "mkdir -p") {
-		return sandbox.ExecResult{StatusCode: &s.prepareStatus}, nil
+	if strings.Contains(req.Command, "mktemp -d") {
+		return sandbox.ExecResult{StatusCode: &s.prepareStatus, Stdout: agentEnvironmentTestRunDir + "\n"}, nil
 	}
-	if strings.Contains(req.Command, workspaceAgentEnvironmentWrapperPath) && !strings.Contains(req.Command, "rm -f") {
+	if strings.Contains(req.Command, "/bin/bash ") && strings.Contains(req.Command, workspaceAgentEnvironmentWrapperName) && !strings.Contains(req.Command, "rm -f") {
 		s.setupCallCount++
-		delete(s.files, workspaceAgentEnvironmentWrapperPath)
-		delete(s.files, workspaceAgentEnvironmentSetupPath)
+		s.removeRun()
 		response := s.setupResponse
 		response.StatusCode = &s.setupStatus
 		return response, nil
 	}
-	delete(s.files, workspaceAgentEnvironmentWrapperPath)
-	delete(s.files, workspaceAgentEnvironmentSetupPath)
+	s.removeRun()
 	return sandbox.ExecResult{StatusCode: &s.cleanupStatus}, nil
+}
+
+// agentEnvironmentTestRunDir is the run directory this fake's mktemp returns.
+const agentEnvironmentTestRunDir = workspaceAgentEnvironmentRunDirPrefix + "Test01"
+
+func (s *agentEnvironmentWorkspaceSandbox) removeRun() {
+	for path := range s.files {
+		if strings.HasPrefix(path, workspaceAgentEnvironmentRunDirPrefix) {
+			delete(s.files, path)
+		}
+	}
+}
+
+// staged reports whether a run file with this name is still in the guest.
+func (s *agentEnvironmentWorkspaceSandbox) staged(name string) bool {
+	for path := range s.files {
+		if strings.HasPrefix(path, workspaceAgentEnvironmentRunDirPrefix) && strings.HasSuffix(path, "/"+name) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestWorkspaceAgentEnvironment_SetupSecretsAreStrippedBeforeSuccess(t *testing.T) {
@@ -103,10 +122,8 @@ func TestWorkspaceAgentEnvironment_SetupSecretsAreStrippedBeforeSuccess(t *testi
 	assert.Equal(t, 1, sandbox.setupCallCount)
 	assert.Contains(t, sandbox.files[workspaceAgentEnvironmentProfilePath], "NODE_ENV")
 	assert.NotContains(t, sandbox.files[workspaceAgentEnvironmentProfilePath], "setup-only-value")
-	_, wrapperExists := sandbox.files[workspaceAgentEnvironmentWrapperPath]
-	_, setupExists := sandbox.files[workspaceAgentEnvironmentSetupPath]
-	assert.False(t, wrapperExists)
-	assert.False(t, setupExists)
+	assert.False(t, sandbox.staged(workspaceAgentEnvironmentWrapperName))
+	assert.False(t, sandbox.staged(workspaceAgentEnvironmentSetupName))
 	for _, command := range sandbox.commands {
 		assert.NotContains(t, command, "setup-only-value")
 		assert.NotContains(t, command, "SETUP_TOKEN=")
@@ -135,8 +152,7 @@ func TestWorkspaceAgentEnvironment_SetupFailureIsSanitizedAndStaged(t *testing.T
 	assert.NotContains(t, err.Error(), "setup-only-value")
 	assert.NotContains(t, err.Error(), "echoed")
 	assert.Equal(t, []string{"toolchain_bootstrap", "environment_setup", "environment_setup_failed"}, queries.stages)
-	_, wrapperExists := sandbox.files[workspaceAgentEnvironmentWrapperPath]
-	assert.False(t, wrapperExists)
+	assert.False(t, sandbox.staged(workspaceAgentEnvironmentWrapperName))
 }
 
 func TestWorkspaceAgentEnvironment_ToolchainFailureIsItsOwnStageWithRedactedLog(t *testing.T) {
@@ -163,8 +179,7 @@ func TestWorkspaceAgentEnvironment_ToolchainFailureIsItsOwnStageWithRedactedLog(
 	assert.Contains(t, err.Error(), "npm ERR! 404 Not Found")
 	assert.NotContains(t, err.Error(), "npm_abcdefghijklmnopqrstuvwxyz0123456789")
 	assert.Equal(t, 0, sandbox.setupCallCount, "the repository setup script never runs on a failed toolchain")
-	_, secretStaged := sandbox.files[workspaceAgentEnvironmentWrapperPath]
-	assert.False(t, secretStaged)
+	assert.False(t, sandbox.staged(workspaceAgentEnvironmentWrapperName))
 }
 
 func TestWorkspaceAgentEnvironment_CleanupMustBeConfirmedBeforeReady(t *testing.T) {

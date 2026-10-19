@@ -51,22 +51,30 @@ func workspaceChildrenTokenScopes(repositoryID int64, workspaceID string) string
 
 // workspaceChildrenTokenInstallCommand writes the credential from the exec's
 // secret environment, never its command line, readable by the workspace user
-// alone.
+// alone. The workspace user writes it: root never creates, chowns or moves a
+// file in a directory the developer controls, where the developer could swap
+// the entry for a symlink or a hardlink between two root steps (Security
+// d-7lu7ja). The token reaches the developer's shell on standard input only
+// (printf is a shell builtin), and env -i keeps the secret variable out of the
+// developer's environment.
 func workspaceChildrenTokenInstallCommand(user string) string {
 	dir := workspaceChildrenTokenPath[:strings.LastIndex(workspaceChildrenTokenPath, "/")]
-	return strings.Join([]string{
-		"set -eu",
+	asDeveloper := strings.Join([]string{
 		"umask 077",
-		"install -d -m 700 -o " + shellQuote(user) + " -g " + shellQuote(user) + " " + shellQuote(dir),
+		"mkdir -p " + shellQuote(dir),
+		"chmod 700 " + shellQuote(dir),
 		"tmp=$(mktemp " + shellQuote(dir+"/.token.XXXXXX") + ")",
-		`printf '%s' "$` + workspaceChildrenTokenEnv + `" > "$tmp"`,
-		`chown ` + shellQuote(user+":"+user) + ` "$tmp"`,
+		`cat >"$tmp"`,
 		`chmod 600 "$tmp"`,
 		`mv -f "$tmp" ` + shellQuote(workspaceChildrenTokenPath),
+	}, " && ")
+	return strings.Join([]string{
+		"set -eu",
+		`printf '%s' "$` + workspaceChildrenTokenEnv + `" | runuser -u ` + shellQuote(user) + ` -- env -i HOME=` + shellQuote(defaultWorkspaceHome) +
+			` PATH=/run/current-system/sw/bin:/usr/bin:/bin /bin/sh -c ` + shellQuote(asDeveloper),
 	}, "\n")
 }
 
-// installWorkspaceChildrenToken replaces the workspace's children credential.
 // A workspace that cannot spawn children, or that another person may write
 // into, gets none.
 func (s *WorkspaceService) installWorkspaceChildrenToken(ctx context.Context, workspace db.Workspace, vmID string) error {

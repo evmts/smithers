@@ -5,7 +5,8 @@
 // JavaScript (require(), no `import`, no type annotations). Using ESM `import`
 // here throws "Cannot use import statement outside a module" and silently breaks
 // the jj/node install, which makes workspace clones fail.
-const { createWriteStream } = require("node:fs");
+const { createWriteStream, writeFileSync } = require("node:fs");
+const { createHash } = require("node:crypto");
 const { finished } = require("node:stream/promises");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
@@ -75,40 +76,30 @@ async function downloadJJ() {
   await finished(file);
 }
 
+// Node is pinned (Security f-ye4hz9): one exact release, written only after
+// its SHA-256 matches the digest the bootstrap pins for this architecture. A
+// mismatch writes no archive, so the bootstrap installs nothing.
 async function downloadNode() {
   const targetMap = {
     x64: "linux-x64",
     arm64: "linux-arm64",
+  };
+  const digests = {
+    x64: process.env.SMITHERS_NODE_SHA256_X64,
+    arm64: process.env.SMITHERS_NODE_SHA256_ARM64,
   };
 
   const target = targetMap[os.arch()];
   if (!target) {
     throw new Error("unsupported architecture: " + os.arch());
   }
-
-  const indexUrl =
-    process.env.SMITHERS_NODE_INDEX_URL || "https://nodejs.org/dist/index.json";
-  const major = process.env.SMITHERS_NODE_MAJOR || "22";
-  const indexResponse = await request(indexUrl);
-  const indexChunks = [];
-  for await (const chunk of indexResponse) {
-    indexChunks.push(Buffer.from(chunk));
+  const version = process.env.SMITHERS_NODE_VERSION || "";
+  if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(version)) {
+    throw new Error("SMITHERS_NODE_VERSION must be an exact version, got: " + version);
   }
-  const releases = JSON.parse(Buffer.concat(indexChunks).toString("utf8"));
-  const release = Array.isArray(releases)
-    ? releases.find(
-        (candidate) =>
-          candidate &&
-          typeof candidate.version === "string" &&
-          candidate.version.startsWith("v" + major + ".") &&
-          Array.isArray(candidate.files) &&
-          candidate.files.includes(target),
-      )
-    : null;
-  if (!release || !release.version) {
-    throw new Error(
-      "Node.js release not found for major " + major + " and target " + target,
-    );
+  const expected = String(digests[os.arch()] || "").toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(expected)) {
+    throw new Error("no pinned SHA-256 for Node " + version + " " + target);
   }
 
   const archivePath = process.env.SMITHERS_NODE_ARCHIVE;
@@ -116,18 +107,22 @@ async function downloadNode() {
     throw new Error("SMITHERS_NODE_ARCHIVE is required");
   }
 
+  const distUrl = process.env.SMITHERS_NODE_DIST_URL || "https://nodejs.org/dist";
   const archiveUrl =
-    "https://nodejs.org/dist/" +
-    release.version +
-    "/node-" +
-    release.version +
-    "-" +
-    target +
-    ".tar.gz";
-  const archiveResponse = await request(archiveUrl);
-  const file = createWriteStream(archivePath);
-  archiveResponse.pipe(file);
-  await finished(file);
+    distUrl + "/v" + version + "/node-v" + version + "-" + target + ".tar.gz";
+  const chunks = [];
+  for await (const chunk of await request(archiveUrl)) {
+    chunks.push(Buffer.from(chunk));
+  }
+  const archive = Buffer.concat(chunks);
+  const actual = createHash("sha256").update(archive).digest("hex");
+  if (actual !== expected) {
+    throw new Error(
+      "refusing Node " + version + " " + target + ": SHA-256 " + actual +
+        " does not match the pinned " + expected,
+    );
+  }
+  writeFileSync(archivePath, archive, { flag: "wx" });
 }
 
 (async () => {

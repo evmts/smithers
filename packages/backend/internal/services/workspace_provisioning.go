@@ -39,7 +39,10 @@ type bootstrapVars struct {
 	LocalBinDir         string
 	LocalNodeDir        string
 	JJReleaseAPIURL     string
-	NodeDistIndexURL    string
+	NodeDistURL         string
+	NodeVersion         string
+	NodeSHA256X64       string
+	NodeSHA256ARM64     string
 	NodeMajor           string
 	NodeInstallLog      string
 	ClaudeInstallScript string
@@ -92,7 +95,10 @@ func buildWorkspaceClaudeBootstrapScript(layout workspaceGuestLayout) string {
 		LocalBinDir:         layout.localBinDir(),
 		LocalNodeDir:        layout.localNodeDir(),
 		JJReleaseAPIURL:     workspaceJJReleaseAPIURL,
-		NodeDistIndexURL:    workspaceNodeDistIndexURL,
+		NodeDistURL:         workspaceNodeDistURL,
+		NodeVersion:         workspaceNodeVersion,
+		NodeSHA256X64:       workspaceNodeSHA256LinuxX64,
+		NodeSHA256ARM64:     workspaceNodeSHA256LinuxARM,
 		NodeMajor:           workspaceNodeMajor,
 		NodeInstallLog:      layout.nodeInstallLog(),
 		ClaudeInstallScript: claudeInstallScript,
@@ -1986,8 +1992,13 @@ func buildForkBookmarkSwitchCommand(token, bookmark string) string {
 	// Install jj before exporting these variables so the bootstrap process and
 	// its network calls never inherit a repository credential.
 	lines = append(lines, gitBearerAuthEnvExports(token)...)
+	// The working copy is the developer's, so root hands .jj over without
+	// following a symlink and skips every regular file with a second link: a
+	// hardlink planted there to a root-owned file must not change hands
+	// (Security d-evwgfi).
+	handJJ := "find -P " + shellQuote(path+"/.jj") + " -xdev ! -user " + shellQuote(user) + " \\( -type d -o -type l -o \\( -type f -links 1 \\) \\) -exec chown -h " + shellQuote(user+":"+user) + " {} +"
 	lines = append(lines,
-		"if [ -d "+shellQuote(path+"/.jj")+" ]; then chown -R "+shellQuote(user)+":"+shellQuote(user)+" "+shellQuote(path+"/.jj")+"; else "+asDev+"jj git init --colocate "+shellQuote(path)+"; fi",
+		"if [ -d "+shellQuote(path+"/.jj")+" ]; then "+handJJ+"; else "+asDev+"jj git init --colocate "+shellQuote(path)+"; fi",
 		asDev+"git -C "+shellQuote(path)+" fetch origin",
 		asDev+"jj -R "+shellQuote(path)+" git import",
 		asDev+"jj -R "+shellQuote(path)+" bookmark track "+shellQuote(bookmark+"@origin")+" 2>/dev/null || true",

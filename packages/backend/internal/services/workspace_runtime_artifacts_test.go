@@ -249,6 +249,26 @@ func TestRuntimeWorkspaceCLIProbeDropsToDeveloperAsRoot(t *testing.T) {
 	}
 }
 
+// A root caller without runuser must fail closed, never fall back to running
+// the developer's CLI as root (Security s-qizs0e). The planted CLI writes its
+// marker with a shell redirection, so it needs no tool from PATH.
+func TestRuntimeWorkspaceCLIProbeRefusesRootWithoutRunuser(t *testing.T) {
+	layout := defaultWorkspaceGuestLayout
+	bin, fake := t.TempDir(), t.TempDir()
+	ranAsRoot := filepath.Join(t.TempDir(), "ran-as-root")
+	command := strings.ReplaceAll(workspaceRuntimeCLIProbe(layout), layout.localBinDir(), bin)
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "smithers"), []byte("#!/bin/sh\n: >"+ranAsRoot+"\necho 1.0.0\n"), 0755))
+	require.NoError(t, os.Symlink("smithers", filepath.Join(bin, "smthrs")))
+	require.NoError(t, os.WriteFile(filepath.Join(fake, "id"), []byte("#!/bin/sh\necho 0\n"), 0755))
+	probe := exec.Command("/bin/sh", "-c", command)
+	// Only the fake id: no runuser anywhere on PATH.
+	probe.Env = append(os.Environ(), "PATH="+fake)
+	output, err := probe.CombinedOutput()
+	require.Error(t, err, string(output))
+	require.NoFileExists(t, ranAsRoot, "root ran the developer's CLI itself")
+	require.Contains(t, string(output), "refusing to run the developer CLI as root")
+}
+
 func (*artifactRuntime) Isolation() workspaceapi.IsolationLevel {
 	return workspaceapi.IsolationSandboxed
 }

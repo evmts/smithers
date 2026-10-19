@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -14,11 +15,21 @@ import (
 
 const (
 	workspaceAgentEnvironmentProfilePath = "/etc/profile.d/10-smithers-agent-environment.sh"
-	workspaceAgentEnvironmentSetupPath   = "/tmp/smithers-agent-environment-setup.sh"
-	workspaceAgentEnvironmentSecretDir   = "/run/smithers-agent-environment"
-	workspaceAgentEnvironmentWrapperPath = workspaceAgentEnvironmentSecretDir + "/setup-with-secrets.sh"
-	workspaceAgentEnvironmentTimeoutMS   = int64(15 * 60 * 1000)
+	// Each setup run stages its two files in a fresh directory made by
+	// `mktemp -d` (mode 0700) under root-owned /run. No name is known in
+	// advance and nobody else can create, replace or link an entry there, so
+	// a symlink planted at a fixed name can no longer turn the repository's
+	// script into a root-owned file anywhere (Security d-7lu7ja). The
+	// developer never opens either file: the wrapper hands the setup script to
+	// the developer's shell on standard input.
+	workspaceAgentEnvironmentRunDirPrefix = "/run/smithers-agent-environment."
+	workspaceAgentEnvironmentSetupName    = "setup.sh"
+	workspaceAgentEnvironmentWrapperName  = "setup-with-secrets.sh"
+	workspaceAgentEnvironmentRootPath     = "PATH=/run/current-system/sw/bin:/usr/sbin:/usr/bin:/sbin:/bin; export PATH; "
+	workspaceAgentEnvironmentTimeoutMS    = int64(15 * 60 * 1000)
 )
+
+var workspaceAgentEnvironmentRunDirPattern = regexp.MustCompile(`^/run/smithers-agent-environment\.[A-Za-z0-9]{6,}$`)
 
 // AgentEnvironmentProvisioningProvider is the one internal path allowed to
 // retrieve plaintext setup secrets. Implementations must never log or
@@ -100,32 +111,33 @@ func (s *WorkspaceService) runWorkspaceAgentEnvironmentSetup(ctx context.Context
 		return pkgerrors.Internal("invalid agent environment for workspace setup").WithCause(err)
 	}
 	prepareResponse, prepareErr := client.Execute(ctx, vmID, sandbox.ExecRequest{
-		Command: "PATH=/run/current-system/sw/bin:/usr/sbin:/usr/bin:/sbin:/bin; export PATH; mkdir -p -- " + shellQuote(workspaceAgentEnvironmentSecretDir) +
-			" && chmod 700 " + shellQuote(workspaceAgentEnvironmentSecretDir),
+		Command:   workspaceAgentEnvironmentRootPath + "mktemp -d " + shellQuote(workspaceAgentEnvironmentRunDirPrefix+"XXXXXX"),
 		TimeoutMS: agentEnvironmentInt64Ptr(30_000),
 	})
-	if prepareErr != nil || !successfulExecStatus(prepareResponse) {
-		s.cleanupWorkspaceAgentEnvironmentFiles(ctx, client, vmID)
+	runDir := strings.TrimSpace(prepareResponse.Stdout)
+	if prepareErr != nil || !successfulExecStatus(prepareResponse) || !workspaceAgentEnvironmentRunDirPattern.MatchString(runDir) {
+		s.cleanupWorkspaceAgentEnvironmentFiles(ctx, client, vmID, runDir)
 		s.setWorkspaceProvisioningStageBestEffort(ctx, workspace.ID, "environment_setup_failed")
 		return pkgerrors.Internal("prepare agent environment setup")
 	}
-	if err := client.WriteFile(ctx, vmID, workspaceAgentEnvironmentSetupPath, sandbox.WriteFileRequest{Content: setupScript}); err != nil {
-		s.cleanupWorkspaceAgentEnvironmentFiles(ctx, client, vmID)
+	setupPath, wrapperPath := runDir+"/"+workspaceAgentEnvironmentSetupName, runDir+"/"+workspaceAgentEnvironmentWrapperName
+	if err := client.WriteFile(ctx, vmID, setupPath, sandbox.WriteFileRequest{Content: setupScript}); err != nil {
+		s.cleanupWorkspaceAgentEnvironmentFiles(ctx, client, vmID, runDir)
 		s.setWorkspaceProvisioningStageBestEffort(ctx, workspace.ID, "environment_setup_failed")
 		return pkgerrors.Internal("stage agent environment setup").WithCause(err)
 	}
-	if err := client.WriteFile(ctx, vmID, workspaceAgentEnvironmentWrapperPath, sandbox.WriteFileRequest{Content: wrapper}); err != nil {
+	if err := client.WriteFile(ctx, vmID, wrapperPath, sandbox.WriteFileRequest{Content: wrapper}); err != nil {
 		// No secret-bearing file was successfully staged when WriteFile fails.
-		s.cleanupWorkspaceAgentEnvironmentFiles(ctx, client, vmID)
+		s.cleanupWorkspaceAgentEnvironmentFiles(ctx, client, vmID, runDir)
 		s.setWorkspaceProvisioningStageBestEffort(ctx, workspace.ID, "environment_setup_failed")
 		return pkgerrors.Internal("stage agent environment secrets").WithCause(err)
 	}
 
 	setupResponse, setupErr := client.Execute(ctx, vmID, sandbox.ExecRequest{
-		Command:   "PATH=/run/current-system/sw/bin:/usr/sbin:/usr/bin:/sbin:/bin; export PATH; chmod 600 " + shellQuote(workspaceAgentEnvironmentWrapperPath) + " && /bin/bash " + shellQuote(workspaceAgentEnvironmentWrapperPath),
+		Command:   workspaceAgentEnvironmentRootPath + "chmod 600 " + shellQuote(wrapperPath) + " && /bin/bash " + shellQuote(wrapperPath) + " " + shellQuote(runDir),
 		TimeoutMS: agentEnvironmentInt64Ptr(workspaceAgentEnvironmentTimeoutMS),
 	})
-	cleanupOK := s.cleanupWorkspaceAgentEnvironmentFiles(ctx, client, vmID)
+	cleanupOK := s.cleanupWorkspaceAgentEnvironmentFiles(ctx, client, vmID, runDir)
 	if setupErr != nil || !cleanupOK || !successfulExecStatus(setupResponse) {
 		s.setWorkspaceProvisioningStageBestEffort(ctx, workspace.ID, "environment_setup_failed")
 		return pkgerrors.Internal("agent environment setup failed")
@@ -133,11 +145,18 @@ func (s *WorkspaceService) runWorkspaceAgentEnvironmentSetup(ctx context.Context
 	return s.setWorkspaceProvisioningStage(ctx, workspace.ID, "ready")
 }
 
-func (s *WorkspaceService) cleanupWorkspaceAgentEnvironmentFiles(ctx context.Context, client workspaceAgentEnvironmentVMClient, vmID string) bool {
+// cleanupWorkspaceAgentEnvironmentFiles removes one run's directory after
+// confirming both of its files are gone. A run that never got a directory has
+// nothing to remove.
+func (s *WorkspaceService) cleanupWorkspaceAgentEnvironmentFiles(ctx context.Context, client workspaceAgentEnvironmentVMClient, vmID, runDir string) bool {
+	if !workspaceAgentEnvironmentRunDirPattern.MatchString(runDir) {
+		return true
+	}
+	setupPath, wrapperPath := runDir+"/"+workspaceAgentEnvironmentSetupName, runDir+"/"+workspaceAgentEnvironmentWrapperName
 	response, err := client.Execute(ctx, vmID, sandbox.ExecRequest{
-		Command: "PATH=/run/current-system/sw/bin:/usr/sbin:/usr/bin:/sbin:/bin; export PATH; rm -f -- " + shellQuote(workspaceAgentEnvironmentWrapperPath) + " " + shellQuote(workspaceAgentEnvironmentSetupPath) +
-			" && test ! -e " + shellQuote(workspaceAgentEnvironmentWrapperPath) + " && test ! -e " + shellQuote(workspaceAgentEnvironmentSetupPath) +
-			" && rmdir --ignore-fail-on-non-empty " + shellQuote(workspaceAgentEnvironmentSecretDir),
+		Command: workspaceAgentEnvironmentRootPath + "rm -f -- " + shellQuote(wrapperPath) + " " + shellQuote(setupPath) +
+			" && test ! -e " + shellQuote(wrapperPath) + " && test ! -e " + shellQuote(setupPath) +
+			" && rmdir -- " + shellQuote(runDir),
 		TimeoutMS: agentEnvironmentInt64Ptr(30_000),
 	})
 	return err == nil && successfulExecStatus(response)
@@ -215,6 +234,8 @@ func renderWorkspaceAgentEnvironmentSetupWrapper(config AgentEnvironmentProvisio
 
 	var b strings.Builder
 	b.WriteString("#!/bin/bash\nset -euo pipefail\nexport PATH=/run/current-system/sw/bin:/usr/sbin:/usr/bin:/sbin:/bin\numask 077\n")
+	// The run's root-only directory is the wrapper's one argument.
+	b.WriteString("run_dir=$1\n")
 	b.WriteString("cleanup() {\n  status=$?\n  trap - EXIT HUP INT TERM\n")
 	if len(names) > 0 {
 		b.WriteString("  unset")
@@ -224,7 +245,7 @@ func renderWorkspaceAgentEnvironmentSetupWrapper(config AgentEnvironmentProvisio
 		}
 		b.WriteByte('\n')
 	}
-	b.WriteString("  rm -f -- " + shellQuote(workspaceAgentEnvironmentWrapperPath) + " " + shellQuote(workspaceAgentEnvironmentSetupPath) + "\n")
+	b.WriteString("  rm -f -- \"$run_dir/" + workspaceAgentEnvironmentWrapperName + "\" \"$run_dir/" + workspaceAgentEnvironmentSetupName + "\"\n")
 	b.WriteString("  exit \"$status\"\n}\ntrap cleanup EXIT HUP INT TERM\n")
 	b.WriteString("export HOME=" + shellQuote(defaultWorkspaceHome) + " USER=" + shellQuote(defaultWorkspaceUser) + " LOGNAME=" + shellQuote(defaultWorkspaceUser) + "\n")
 	for _, name := range names {
@@ -236,7 +257,11 @@ func renderWorkspaceAgentEnvironmentSetupWrapper(config AgentEnvironmentProvisio
 	// setup in its own process group and terminate any descendants it leaves
 	// behind before unsetting the secret-bearing wrapper environment.
 	b.WriteString("set +e\n")
-	b.WriteString("setsid runuser -u " + shellQuote(defaultWorkspaceUser) + " --preserve-environment -- /bin/bash -c 'export PATH=/home/agent/.local/bin:/usr/local/bin:$PATH; cd \"$1\" && exec /bin/bash \"$2\"' smithers \"$workdir\" " + shellQuote(workspaceAgentEnvironmentSetupPath) + " >/dev/null 2>&1 &\n")
+	// The developer runs the script without opening it: root opens it in the
+	// root-only run directory as the shell's standard input, the developer's
+	// shell reads it whole, then gives the script /dev/null for input as a
+	// background job always had, no positional arguments, and the workdir.
+	b.WriteString("setsid runuser -u " + shellQuote(defaultWorkspaceUser) + " --preserve-environment -- /bin/bash -c 'export PATH=/home/agent/.local/bin:/usr/local/bin:$PATH; IFS= read -r -d \"\" smithers_setup || true; exec </dev/null; cd \"$1\" || exit; shift; eval \"$smithers_setup\"' smithers-agent-environment-setup \"$workdir\" <\"$run_dir/" + workspaceAgentEnvironmentSetupName + "\" >/dev/null 2>&1 &\n")
 	b.WriteString("setup_pid=$!\nwait \"$setup_pid\"\nsetup_status=$?\nset -e\n")
 	b.WriteString("kill -TERM -- \"-$setup_pid\" >/dev/null 2>&1 || true\n")
 	b.WriteString("sleep 0.1\nkill -KILL -- \"-$setup_pid\" >/dev/null 2>&1 || true\n")

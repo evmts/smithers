@@ -121,8 +121,10 @@ const (
 	// Smoke-run logs for the two staged binaries. The bootstrap templates name
 	// these paths literally; the artifact tests redirect them to a temp dir and
 	// assert the constants stay in step with the rendered script.
-	workspaceCodingHostSmokeLog = "/tmp/smithers-workspace-coding-host-smoke.log"
-	workspaceJJExportSmokeLog   = "/tmp/smithers-workspace-jj-export-smoke.log"
+	// They sit in the bootstrap's root-only mktemp log directory, never at a
+	// fixed /tmp name a developer could plant a symlink at (Security d-evwgfi).
+	workspaceCodingHostSmokeLog = "$smithers_log_dir/coding-host-smoke.log"
+	workspaceJJExportSmokeLog   = "$smithers_log_dir/jj-export-smoke.log"
 	workspaceJJExportPath       = "/usr/local/bin/smithers-jj-export"
 	// WorkspaceJJExportGuestPath is the executable installed by every workspace
 	// bootstrap. Hosted Flow hosts run inside that guest, not in the API image.
@@ -131,8 +133,16 @@ const (
 	workspaceJJExportBinaryEnv   = "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"
 	workspaceDefaultJJExportPath = "/usr/local/lib/smithers/smithers-jj-export"
 	workspaceJJReleaseAPIURL     = "https://api.github.com/repos/jj-vcs/jj/releases/tags/v0.39.0"
-	workspaceNodeDistIndexURL    = "https://nodejs.org/dist/index.json"
-	workspaceNodeMajor           = "26"
+	// The container bootstrap installs exactly this Node when the image has
+	// no compatible one (Security f-ye4hz9): at least the CLI floor 26.4.0,
+	// released 2026-07-08 (the 7-day rule), and the release plue's agent-vm
+	// image and both repos' .node-version pin. The digests are nodejs.org
+	// SHASUMS256.txt values for the .tar.gz archives the download fetches.
+	workspaceNodeDistURL        = "https://nodejs.org/dist"
+	workspaceNodeVersion        = "26.5.0"
+	workspaceNodeSHA256LinuxX64 = "22b5f47ad6ae78837e4c2b846019965ce1a06ba143de176102294a1bf44fc677"
+	workspaceNodeSHA256LinuxARM = "308e5fe89a82461ba5a6cf15ff5221b2cdbd7ae87600aa72bb3c3fbdc66412d1"
+	workspaceNodeMajor          = "26"
 	// workspaceBunVersion pins the bun runtime installed into workspace VMs
 	// (via the npm `bun` package); keep in sync with BUN_VERSION in
 	// scripts/create-agent-snapshot.ts.
