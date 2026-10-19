@@ -16,6 +16,8 @@ full API; the name in each table links to the best starting page.
 | Job | Library | Call |
 | --- | --- | --- |
 | Call a model: streaming, any provider, OpenAI-compatible APIs | `@smthrs/model` | `Route.openaiChatCompatible`, `Route.anthropic`, `Route.layer`, then `Model.Model` and `model.stream(request)` |
+| Serve a model to browsers or other hosts over HTTP, and stream from one as a `Model` | `@smthrs/model` | `ModelProxy.serve({ prepare: ModelProxy.policy(...) })` on the server, `ModelProxy.layerClient({ url })` on the client |
+| Pick a host's model from configuration, with keys kept on their origin | `@smthrs/model-host` | `HostModel.layerConfig("CHAT_MODEL", fallback)`, then `yield* HostModel` |
 | Decide inside a flow: classify, filter, rank, yes or no over items | `@smthrs/model` | `Classifier.make` with the host `Evaluator`, one request with one question per item, never a model seat |
 | Run an agent loop with tools | `@smthrs/agent` | `AgentAction.make` for one typed step; `AgentSession.layer` for a run an operator can steer and approve |
 | Give an agent standard tools: read, edit, grep, bash, tests, fetch, web search | `@smthrs/std` | `Manifest.flows`, `Manifest.handlers`, `Read.run`, `Bash.run` |
@@ -41,6 +43,7 @@ full API; the name in each table links to the best starting page.
 | Follow a run's events live in a browser | `@smthrs/sync` | `SyncClient.layer`, `SyncServer.layer` |
 | Queue notifications or send coalesced alerts | `@smthrs/notifications` | `NotificationQueue.layer`, `Alerts.layerWebhook` |
 | Send logs, metrics and traces to OpenTelemetry | `@smthrs/observability` | `Otlp.layerFetch`, `Logger.layerStructuredJson`, `JournalLogger.layerJournalForwarding` |
+| Receive a browser's OTLP telemetry in your own Worker and log it | `@smthrs/observability` | `OtlpRelay.serve()` under `/api/telemetry` |
 | Hash, canonicalize JSON or derive a stable key | `@smthrs/crypto`, `@smthrs/canonical`, `@smthrs/keys` | `digest`, `canonicalize`, `deriveKey` |
 | Test a flow without a live model | `@smthrs/testing` | `ScriptedModel.make`, `CachedModel.make`, `TestHost.layer`, `PlanAssertions`, `JournalAssertions` |
 | Run an eval suite against a committed baseline | `@smthrs/evals`, `@smthrs/scorers` | `Suite.make`, `Runner.run`, `Regression.compare`, `Gate.check`; `Scorer.make`, `Rubric.make` |
