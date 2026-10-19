@@ -1,0 +1,16 @@
+import * as Model from "@smthrs/model/Model"
+import { Effect, Stream } from "effect"
+import type { ModelOptions } from "./TurnGate.vibe"
+export const model = (inner: Model.Model, options: ModelOptions): Model.Model =>
+  Model.make({
+    ...(inner.providerName === undefined ? {} : { providerName: inner.providerName }),
+    stream: (request) => {
+      const key = options.key(request)
+      const stream = inner.stream(request)
+      if (key === undefined) return stream
+      return Stream.unwrap(() => {
+        options.gate.hold(key)
+        return stream
+      })
+    }
+  })

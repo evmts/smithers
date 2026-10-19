@@ -1,0 +1,24 @@
+import * as Model from "@smthrs/model/Model"
+import { ModelError } from "@smthrs/model/ModelError"
+import type * as ModelEvent from "@smthrs/model/ModelEvent"
+import { Effect, type Layer, Option, Stream } from "effect"
+import { canonicalRequestDigest, type Fixture, index, type RecordedCall, recordedRequest } from "./Fixture.vibe"
+import type { FixtureStore } from "./FixtureStore.vibe"
+import type { ModelErrorLike, ModelRequestLike, RecordedRequestLike } from "./ModelLike.vibe"
+import * as RecordingModel from "./RecordingModel.vibe"
+import { UnscriptedModelError } from "./TestingError.vibe"
+import type {Options} from "./CachedModel.vibe"
+import {select} from "./cachedSelection.vibe"
+export const make = (options: Options): Model.Model => {
+  const normalize = options.normalize ?? ((request: RecordedRequestLike) => request)
+  const miss = options.live === undefined
+    ? (request: ModelRequestLike) => Stream.die(new UnscriptedModelError({ modelId: request.modelId, messageCount: request.messages.length, toolNames: request.tools.map((tool) => tool.name) }))
+    : RecordingModel.make(options.live, (call) => options.fixture.append({ ...call, request: normalize(call.request) }))
+      .stream
+  return Model.make({
+    ...(options.live?.providerName === undefined ? {} : { providerName: options.live.providerName }),
+    stream: (request) =>
+      Stream.unwrap(() => select(options, normalize, miss, request))
+  })
+}
+export const layer = (options: Options): Layer.Layer<Model.Model> => Model.layer(make(options))

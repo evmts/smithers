@@ -1,0 +1,35 @@
+import {combine, grade, type Verdict, type ScoreSample} from "@smthrs/scorers/ScoreGate"
+import type {SuiteReport} from "../../src/internal/ScoreSuite.ts"
+export const graded = (
+  caseCount: number,
+  samples: ReadonlyArray<ScoreSample>,
+  verdicts: ReadonlyArray<Verdict>,
+  environmentFaults: ReadonlyArray<string>
+): Verdict => {
+  if (caseCount === 0) return { _tag: "Inconclusive", reasons: ["The suite declared no cases"] }
+  const unmeasured = samples.filter((sample) => sample.kind === "inconclusive")
+  if (verdicts.length === 0 && unmeasured.length === samples.length) {
+    return {
+      _tag: "Inconclusive",
+      reasons: [
+        ...new Set([
+          ...unmeasured.map((sample) => sample.reason),
+          ...environmentFaults,
+          "The suite produced no score observations"
+        ])
+      ]
+    }
+  }
+  return combine(verdicts, [...environmentFaults, ...unmeasured.map((sample) => sample.reason)])
+}
+export const ciGrade = (report: SuiteReport): { readonly exitCode: 0 | 1 | 5; readonly summary: string } => {
+  const graded = grade(report.verdict)
+  return graded.exitCode === 0
+    ? {
+      exitCode: 0,
+      summary: `passed: ${report.cases.length} case(s), ${
+        report.samples.filter((sample) => sample.kind === "score").length
+      } sample(s)`
+    }
+    : graded
+}

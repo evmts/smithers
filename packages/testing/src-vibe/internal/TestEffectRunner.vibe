@@ -1,0 +1,27 @@
+/**
+ * Runs one layered Effect body behind the Vitest cancellation boundary.
+ *
+ * This module is internal: `./internal/*` is null-mapped in the export map and
+ * carries no compatibility promise.
+ *
+ * @since 0.0.0
+ */
+
+import type * as Effect from "effect/Effect"
+import { runEffectTest as runEffectTestHatch } from "./runEffectTestHatch.ts"
+
+/**
+ * An Effect test body supplied directly or through a lazy callback.
+ *
+ * @private
+ * @since 0.0.0
+ */
+export type Body<A, E, R> = Effect.Effect<A, E, R> | (() => Effect.Effect<A, E, R>)
+
+/**
+ * Runs one layered body and converts signal abortion to fiber interruption.
+ *
+ * @private
+ * @since 0.0.0
+ */
+export const runEffectTest = runEffectTestHatch

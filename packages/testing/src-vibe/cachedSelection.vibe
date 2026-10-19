@@ -1,0 +1,47 @@
+import * as Model from "@smthrs/model/Model"
+import { ModelError } from "@smthrs/model/ModelError"
+import type * as ModelEvent from "@smthrs/model/ModelEvent"
+import { Effect, type Layer, Option, Stream } from "effect"
+import { canonicalRequestDigest, type Fixture, index, type RecordedCall, recordedRequest } from "./Fixture.vibe"
+import type { FixtureStore } from "./FixtureStore.vibe"
+import type { ModelErrorLike, ModelRequestLike, RecordedRequestLike } from "./ModelLike.vibe"
+import * as RecordingModel from "./RecordingModel.vibe"
+import { UnscriptedModelError } from "./TestingError.vibe"
+import type {Options} from "./CachedModel.vibe"
+import type {ModelRequest} from "@smthrs/model/ModelRequest"
+const hit = (fixture: Fixture, request: RecordedRequestLike): Option.Option<RecordedCall> =>
+  Option.fromUndefinedOr(index(fixture).get(canonicalRequestDigest(request)))
+const asModelError = (failure: ModelErrorLike): ModelError =>
+  new ModelError({
+    code: failure.code,
+    message: failure.message,
+    path: failure.path,
+    retryAfterMillis: failure.retryAfterMillis,
+    resetAtEpochMillis: failure.resetAtEpochMillis,
+    resetSource: failure.resetSource,
+    quotaScope: failure.quotaScope,
+    providerCode: failure.providerCode,
+    requestId: failure.requestId,
+    httpStatus: failure.httpStatus
+  })
+const replay = (call: RecordedCall): Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure> => {
+  const events: Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure> = Stream.fromIterable(call.events)
+  return call.failure === undefined
+    ? events
+    : Stream.concat(Stream.fail(asModelError(call.failure)))(events)
+}
+const unscripted = (request: ModelRequestLike): Stream.Stream<never> =>
+  Stream.die(
+    new UnscriptedModelError({
+      modelId: request.modelId,
+      messageCount: request.messages.length,
+      toolNames: request.tools.map((tool) => tool.name)
+    })
+  )
+type Normalizer = (request: RecordedRequestLike) => RecordedRequestLike
+type Miss = (request: ModelRequest) => Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure>
+export function select(options: Options, normalize: Normalizer, miss: Miss, request: ModelRequest): Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure>!! {
+  const loaded = options.fixture.load()
+  const found = Option.flatMap(loaded, (fixture) => hit(fixture, normalize(recordedRequest(request))))
+  return Option.isNone(found) ? miss(request) : replay(found.value)
+}

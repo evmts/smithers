@@ -1,0 +1,49 @@
+import * as Digest from "@smthrs/core/Digest"
+import type * as Flow from "@smthrs/flow/Flow"
+import * as Graph from "@smthrs/flow/Graph"
+import type * as Placement from "@smthrs/plan/Placement"
+import type * as PlanPackage from "@smthrs/plan/Plan"
+import * as StepKey from "@smthrs/plan/StepKey"
+import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
+import { compare } from "./internal/Structural.vibe"
+import type { PlanLike, PlanNodeLike, PlanPlacementLike } from "./PlanLike.vibe"
+export const canonical = (value: unknown, seen: Set<object> = new Set()): unknown => {
+  if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
+    return value
+  }
+  if (value === undefined) return null
+  if (typeof value === "bigint") return { _tag: "BigInt", value: String(value) }
+  if (typeof value === "symbol") return { _tag: "Symbol", value: value.description ?? null }
+  if (typeof value === "function") return { _tag: "Function" }
+  if (seen.has(value)) return { _tag: "Circular" }
+  seen.add(value)
+  try {
+    if (Array.isArray(value)) return value.map((item) => canonical(item, seen))
+    const result: Record<string, unknown> = {}
+    for (const [key, item] of Object.entries(value).sort(([left], [right]) => compare(left, right))) {
+      if (item !== undefined) result[key] = canonical(item, seen)
+    }
+    return result
+  } finally {
+    seen.delete(value)
+  }
+}
+export const entryText = (entry: unknown): string => typeof entry === "string" ? entry : JSON.stringify(canonical(entry))
+export const declaredEffects = (declaration: PlanPackage.NodeEffects | undefined): ReadonlyArray<string> =>
+  declaration === undefined ? [] : [
+    ...declaration.reads.map((entry) => `read:${entryText(entry)}`),
+    ...declaration.writes.map((entry) => `write:${entryText(entry)}`),
+    ...(declaration.removes ?? []).map((entry) => `remove:${entryText(entry)}`)
+  ].sort()
+export const placementProjection = (placement: Placement.Placement): PlanPlacementLike => {
+  const { _tag, ...rest } = placement as { readonly _tag: string } & Record<string, unknown>
+  return {
+    tag: _tag,
+    options: Object.fromEntries(
+      Object.entries(rest)
+        .filter(([, value]) => value !== undefined)
+        .sort(([left], [right]) => compare(left, right))
+    )
+  }
+}

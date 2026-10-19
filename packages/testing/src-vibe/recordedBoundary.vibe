@@ -1,0 +1,6 @@
+type Project<S> = (selected: S, request: ModelRequestLike) => Stream.Stream<ModelEventLike, ModelLikeError>
+import {Effect, Stream} from "effect"
+import {ModelLike, type ModelRequestLike, type ModelEventLike, type ModelLikeError} from "./ModelLike.vibe"
+export const model = <S>(claim: (request: ModelRequestLike) => Effect.Effect<S>, project: Project<S>): ModelLike => ModelLike.of({
+  stream: request => Stream.unwrap(() => Effect.map(claim(request), selected => project(selected, request)))
+})

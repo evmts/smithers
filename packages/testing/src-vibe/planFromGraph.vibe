@@ -1,0 +1,33 @@
+import * as Graph from "@smthrs/flow/Graph"
+import type * as Placement from "@smthrs/plan/Placement"
+import type * as PlanPackage from "@smthrs/plan/Plan"
+import type { PlanLike, PlanNodeLike } from "./PlanLike.vibe"
+import {declaredEffects, placementProjection} from "./planPresentation.vibe"
+import type {FromGraphOptions} from "./Plan.vibe"
+import { keys } from "./planGraph.ts"
+export const fromGraph = (graph: Graph.Graph, options: FromGraphOptions = {}): PlanLike => {
+  const derived = options.key === undefined ? keys(graph, { runId: options.runId }) : undefined
+  return {
+    nodes: Graph.nodes(graph).map((node): PlanNodeLike => {
+      // The draft's own effects are defaulted for a node that declared none;
+      // the material carries the declaration only when there was one, which is
+      // what keeps "undeclared" distinguishable from "declared empty".
+      const declaration = node.draft.material.effects as PlanPackage.NodeEffects | undefined
+      return {
+        id: node.id,
+        key: options.key === undefined ? derived![node.id]! : options.key(node),
+        kind: node.kind,
+        ...(node.placement === undefined
+          ? {}
+          : { placement: placementProjection(node.placement as Placement.Placement) }),
+        effects: declaredEffects(declaration),
+        ...(declaration === undefined ? {} : { mode: declaration.boundaryMode }),
+        tier: node.draft.material.kind,
+        sealed: node.draft.material.kind === "sealed"
+      }
+    }),
+    edges: Graph.edges(graph).map(({ from, to }) => ({ from, to })),
+    ...(options.envelope === undefined ? {} : { envelope: options.envelope }),
+    ...(options.digest === undefined ? {} : { digest: options.digest })
+  }
+}

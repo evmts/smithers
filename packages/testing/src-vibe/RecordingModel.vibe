@@ -1,0 +1,60 @@
+/**
+ * A live model wrapped so every call it makes is recorded.
+ *
+ * This is the other half of `RecordedModel`: it produces the fixtures that
+ * module replays. The recorder is a `/model/Model`, not a `ModelLike`, because
+ * it wraps the real provider seam the code under test already talks to.
+ *
+ * @since 0.0.0
+ */
+
+import { defaultRules } from "@smthrs/journal/Redaction"
+import * as Model from "@smthrs/model/Model"
+import { ModelError } from "@smthrs/model/ModelError"
+import { Effect, Exit, type Layer, Stream } from "effect"
+import { type RecordedCall, recordedRequest } from "./Fixture.vibe"
+import { snapshot } from "./internal/Structural.vibe"
+import type { ModelErrorLike, ModelEventLike } from "./ModelLike.vibe"
+
+/**
+ * Where a recorder sends each completed call.
+ *
+ * The sink cannot fail and needs no services, so wrapping a model never widens
+ * its stream's error channel or its requirements.
+ *
+ * @category models
+ * @since 0.0.0
+ */
+export type Sink = (call: RecordedCall) => Effect.Effect<void>
+
+import {make as makePlain, layer as layerPlain} from "./recordingBoundary.vibe"
+/**
+ * Wraps a live model so each call is written to `sink` when its stream ends.
+ *
+ * The recorder flushes only on an exhausted stream and on a provider failure,
+ * and stays silent otherwise. Interruption, a defect, and a consumer that stops
+ * pulling early all leave a truncated exchange: recording one would write a
+ * stream with no `settle` event, which replays as an aborted turn and poisons
+ * any cache built from the same fixture. A `PermissionRequired`,
+ * `PermissionDenied`, or `GrantStoreError` failure is not recorded either,
+ * because the kernel refused the call before the provider saw it, so there is
+ * no provider exchange to record; the failure still reaches the caller
+ * unchanged.
+ *
+ * A call whose serialized form holds a credential-shaped value (a private key
+ * block, a JWT, or an `sk-`, `ghp_`, `github_pat_`, `AKIA`, `xox`, or `AIza`
+ * key, including one streamed across several deltas) never reaches `sink`:
+ * the stream dies with a defect naming the rule, not the value, so a recording
+ * run cannot write a secret into a fixture.
+ *
+ * @category constructors
+ * @since 0.0.0
+ */
+export const make: (live: Model.Model, sink: Sink) => Model.Model = makePlain
+/**
+ * Provides a recording model over a live one.
+ *
+ * @category layers
+ * @since 0.0.0
+ */
+export const layer: (live: Model.Model, sink: Sink) => Layer.Layer<Model.Model> = layerPlain

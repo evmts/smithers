@@ -1,0 +1,108 @@
+/**
+ * The assertion and waiting vocabulary every conformance pin is written in.
+ *
+ * `fail`, `assert`, and `invoke` were copied verbatim into all four pin
+ * modules, and `waitUntil` and `awaitFiber` into two of them. One copy is the
+ * source of truth here, so a bound schedule or a span attribute cannot be
+ * fixed in one pin and left wrong in the next.
+ *
+ * This module is internal: `./internal/*` is null-mapped in the export map and
+ * carries no compatibility promise.
+ *
+ * @since 0.0.0
+ */
+
+import * as Effect from "effect/Effect"
+import type * as Exit from "effect/Exit"
+import type * as Fiber from "effect/Fiber"
+import * as Schedule from "effect/Schedule"
+import * as TestClock from "effect/testing/TestClock"
+import { ConformanceViolation } from "../TestingError.vibe"
+
+/**
+ * Fails a pin with its stable `conformance_violation` code, naming the pin and
+ * carrying the expectation and the observation as typed fields.
+ *
+ * @since 0.0.0
+ * @category assertions
+ */
+export function fail(
+  pin: string,
+  message: string,
+  expected?: unknown,
+  actual?: unknown
+): never!ConformanceViolation {
+  throw (
+    new ConformanceViolation({
+      pin,
+      message,
+      ...(expected === undefined ? {} : { expected }),
+      ...(actual === undefined ? {} : { actual })
+    })
+  )
+}
+
+/**
+ * Fails with {@link fail} unless `condition` holds.
+ *
+ * @since 0.0.0
+ * @category assertions
+ */
+export function assert(
+  pin: string, condition: boolean, message: string, expected?: unknown, actual?: unknown
+): void!ConformanceViolation {
+  if (!condition) fail(pin, message, expected, actual)
+}
+
+/**
+ * Runs one subject operation inside a span named for it, so a failing pin can
+ * be attributed to the operation that produced it.
+ *
+ * @since 0.0.0
+ * @category assertions
+ */
+export function invoke<A, E>(pin: string, operation: string, evaluate: () => Effect.Effect<A, E>): A!E {
+  return withSpan(evaluate(), `testing.${operation}`, { attributes: { pin } })
+}
+
+type Probe<A> = () => A | undefined
+type Predicate = () => boolean
+
+/**
+ * Polls `probe` on a bounded live-clock schedule and returns its first defined
+ * value, failing the pin rather than hanging when no value arrives.
+ *
+ * @since 0.0.0
+ * @category assertions
+ */
+export function pollUntil<A>(pin: string, probe: Probe<A>, message: string): A!ConformanceViolation {
+  function attempt(): A!undefined {
+    const value = sync((read) => read(), probe)
+    if (value === undefined) throw undefined
+    return value
+  }
+  return TestClock.withLive(retry(attempt(), { schedule: Schedule.spaced("10 millis"), times: 99 }))
+    catch fail(pin, message, "settlement within one second of live time", "still pending")
+}
+
+/**
+ * Polls `predicate` on the bounded live-clock schedule {@link pollUntil} uses,
+ * failing the pin rather than hanging when the condition never holds.
+ *
+ * @since 0.0.0
+ * @category assertions
+ */
+export function waitUntil(pin: string, predicate: Predicate, message: string): void!ConformanceViolation {
+  pollUntil(pin, () => predicate() ? true : undefined, message)
+}
+
+/**
+ * Waits for `fiber` to settle within the bounded budget {@link waitUntil}
+ * uses, and returns its exit.
+ *
+ * @since 0.0.0
+ * @category assertions
+ */
+export function awaitFiber<A, E>(pin: string, fiber: Fiber.Fiber<A, E>, message: string): Exit.Exit<A, E>!ConformanceViolation {
+  return pollUntil(pin, () => fiber.pollUnsafe(), message)
+}

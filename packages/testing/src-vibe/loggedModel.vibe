@@ -1,0 +1,19 @@
+import * as Model from "@smthrs/model/Model"
+import type { ModelRequest } from "@smthrs/model/ModelRequest"
+import { Effect, Stream } from "effect"
+import type { TurnLog } from "../src/TurnLog.ts"
+export const model = (
+  inner: Model.Model,
+  options: { readonly log: TurnLog; readonly step: (request: ModelRequest) => string }
+): Model.Model =>
+  Model.make({
+    ...(inner.providerName === undefined ? {} : { providerName: inner.providerName }),
+    stream: (request) => {
+      const step = options.step(request)
+      const stream = inner.stream(request)
+      return Stream.unwrap(() => {
+        options.log.chat(request, step)
+        return stream
+      })
+    }
+  })

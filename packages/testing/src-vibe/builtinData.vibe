@@ -1,0 +1,16 @@
+type Json = any
+export const flags = {
+  ask: "ASK",
+  fail: "FAIL",
+  failOnce: "FAILONCE",
+  restore: "RESTORE",
+  fixed: "FIXED",
+  noResolve: "NORESOLVE",
+  flowEdit: "FLOWEDIT",
+  changelog: "CHANGELOG",
+  probeReview: "PROBEREVIEW"
+} as const
+export const key = /^[A-Za-z0-9._-]+$/
+export const path = /^[A-Za-z0-9._/-]+$/
+export const isObject = (value: unknown): value is Record<string, Json> =>
+  value !== null && typeof value === "object" && !Array.isArray(value)

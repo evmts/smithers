@@ -1,0 +1,9 @@
+import * as Model from "@smthrs/model/Model"
+import {Stream, type Layer} from "effect"
+import type {Sink} from "./RecordingModel.vibe"
+import {stream} from "./recordingBody.vibe"
+export const make = (live: Model.Model, sink: Sink): Model.Model => Model.make({
+  ...(live.providerName === undefined ? {} : {providerName: live.providerName}),
+  stream: (request) => Stream.unwrap(() => stream(live, sink, request))
+})
+export const layer = (live: Model.Model, sink: Sink): Layer.Layer<Model.Model> => Model.layer(make(live, sink))

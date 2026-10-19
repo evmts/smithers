@@ -1,0 +1,279 @@
+/**
+ * Adapts a low-level `Encoded` implementation into the typed `FlowRuntime`
+ * port `@smthrs/flow` declares.
+ *
+ * The two long-running concerns this adapter delegates to live beside it:
+ * `Trampoline.ts` follows a lineage of rounds for `execute`, and
+ * `Dispatch.ts` allocates, admits, and retries one action for
+ * `actionExecute`.
+ *
+ * @since 0.1.0
+ */
+
+import { Deadline, type DurableClock, type DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as Option from "effect/Option"
+import * as Schema from "effect/Schema"
+import * as Scope from "effect/Scope"
+import * as Semaphore from "effect/Semaphore"
+import { renderDiagnostic } from "../internal/Diagnostic.ts"
+import { toJsonExit } from "../internal/JsonExit.vibe"
+import { makeActionExecute, resetActionContext } from "./Dispatch.vibe"
+import type { Encoded } from "./Encoded.vibe"
+import { placeExecute, placeInterrupt, placeResume } from "./Placed.vibe"
+import { type Declarations, makeExecute } from "./Trampoline.vibe"
+
+/** Recursive admission violates the registration ownership invariant. */
+class RegistrationFault extends Schema.TaggedError<RegistrationFault>()("@smthrs/engine/RegistrationFault", {
+  flowName: Schema.String,
+  message: Schema.String
+}) {}
+
+const CurrentRegistrations = Context.Reference<ReadonlyArray<{ readonly owner: object; readonly name: string }>>(
+  "@smthrs/engine/CurrentRegistrations",
+  { defaultValue: () => [] }
+)
+
+/**
+ * Builds a typed `FlowRuntime` service from a low-level encoded
+ * implementation.
+ *
+ * **When to use**
+ *
+ * Use when wiring a trusted low-level flow engine implementation into the
+ * typed `FlowRuntime` port.
+ *
+ * **Gotchas**
+ *
+ * The implementation must correctly persist, resume, and encode flow state.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const makeUnsafe = (options: Encoded): FlowRuntime.FlowRuntime["Service"] => {
+  // A handoff crosses the journal by tag; retain its declaration to decode
+  // the next round's payload and read its round budget.
+  const declarations: Declarations = new Map()
+  const registrationGates = new Map<string, { readonly semaphore: Semaphore.Semaphore; mutable users: number }>()
+  function withRegistrationGate<A, E, R>(name: string, effect: Effect.Effect<A, E, R>) {
+    const ancestors = CurrentRegistrations()
+    if (ancestors.some((entry) => entry.owner === registrationGates && entry.name === name)) {
+      return die(
+        new RegistrationFault({
+          flowName: name,
+          message: `Flow ${name} cannot recursively register itself while admission is in progress`
+        })
+      )
+    }
+    return Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const gate = registrationGates.get(name) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 }
+        registrationGates.set(name, gate)
+        gate.users++
+        return gate
+      }),
+      (gate) =>
+        gate.semaphore.withPermit(effect) |>
+          Effect.provideService(%, CurrentRegistrations, [...ancestors, { owner: registrationGates, name }]),
+      (gate) =>
+        Effect.sync(() => {
+          // Include waiters in the lifetime so cancellation cannot replace
+          // the lock while another admission still owns or awaits it.
+          if (--gate.users === 0) registrationGates.delete(name)
+        })
+    )
+  }
+  return FlowRuntime.FlowRuntime.of({
+    // Untraced because registering a flow recursively re-enters the engine.
+    register: (flow, execute, registrationOptions) =>
+      withRegistrationGate(
+        flow._tag,
+        Effect.uninterruptibleMask((restore) => {
+          const context = Effect.context<FlowRuntime.FlowRuntime>()
+          const services = context.pipe(Context.omit(CurrentRegistrations))
+          const parent = Effect.scope()
+          // The registration gate keeps a losing lazy admission behind the real
+          // handler's construction. Skipping acquires no registration resources.
+          if (registrationOptions?.ifAbsent === true && declarations.has(flow._tag)) return
+          const scope = Scope.fork(parent)
+          const registration = { flow, scope }
+          const entries = declarations.get(flow._tag) ?? []
+          declarations.set(flow._tag, entries)
+          entries.push(registration)
+          Scope.addFinalizer(
+            scope,
+            Effect.sync(() => {
+              entries.splice(entries.indexOf(registration), 1)
+              if (entries.length === 0) declarations.delete(flow._tag)
+            })
+          )
+          const bounded = Deadline.bound({ flowName: flow._tag, deadline: flow.deadline })
+          const settled = (payload: object, executionId: string) => {
+            let value: unknown
+            try {
+              value = bounded(execute(payload, executionId))
+            } catch (error) {
+              try {
+                flow.errorSchema.makeEffect(error)
+              } catch {
+                // A body failure outside the flow's declared error schema is a
+                // defect, and the defect is the ERROR, not the schema issue
+                // about it. `orDie` on the validation reported only the
+                // mismatch: for a flow declaring no error the whole report was
+                // `InvalidType(<Never>)`, which erased the one message the
+                // operator needed — the interpreter's refusal naming the
+                // action it could not resolve. Dying with the error itself
+                // keeps that message, and keeps it durably: the driver encodes
+                // a settled exit through `Flow.Result({ success, error:
+                // flow.errorSchema })`, whose defect channel is
+                // `Schema.Defect`, so an undeclared failure delivered as a
+                // FAILURE could not be encoded at all and left the run row
+                // `running` and owned forever.
+                //
+                // The raw error stays IN THIS PROCESS. `FlowProxyServer` is
+                // the boundary that must not republish it: a defect crossing
+                // that boundary is rewritten to a redacted refusal there.
+                Effect.logError("A flow body failed with an error outside its declared error schema") |>
+                  Effect.annotateLogs(%, { flow: flow._tag, error: renderDiagnostic(error) })
+                die(error)
+              }
+              throw error
+            }
+            const instance = FlowRuntime.FlowInstance()
+            // A handoff has no success value for this round. Its handler
+            // returns `undefined` only to leave through `Flow.intoResult`,
+            // which replaces that value with the recorded handoff.
+            if (instance.handoff === undefined) Effect.orDie(flow.successSchema.makeEffect(value))
+            return value
+          }
+          restore(
+            options.register(
+              flow,
+              (payload, executionId) =>
+                settled(payload, executionId) |>
+                  Flow.attenuateCapabilities(Flow.capabilityCeilings(flow.annotations))(%) |>
+                  Effect.updateContext(
+                    %,
+                    (input: Context.Context<FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime>) =>
+                      resetActionContext(
+                        Context.merge(services, input.pipe(Context.omit(CurrentRegistrations)))
+                      ) as Context.Context<any>
+                  )
+            ) |> Effect.provideService(%, Scope.Scope, scope)
+          ) |> Effect.onError(%, (cause) => Scope.close(scope, Exit.failCause(cause)))
+        })
+      ),
+    // A placement the `Hosts` table binds elsewhere runs on that engine.
+    execute: placeExecute(makeExecute(options, declarations)),
+    poll: options.poll,
+    interrupt: placeInterrupt(options.interrupt),
+    interruptUnsafe: options.interruptUnsafe,
+    resume: placeResume(options.resume),
+    actionExecute: makeActionExecute(options),
+    // Untraced because the explicit span below carries deferred attributes.
+    deferredResult: <Success extends Schema.Constraint, Error extends Schema.Constraint>(
+      deferred: DurableDeferred.DurableDeferred<Success, Error>
+    ) => {
+      return withSpan("FlowEngine.deferredResult", {
+        attributes: { name: deferred.name },
+        captureStackTrace: false
+      }) {
+        const instance = FlowRuntime.FlowInstance()
+        Effect.annotateCurrentSpan({
+          executionId: instance.executionId
+        })
+        const recorded = options.deferredResult(deferred)
+        if (Option.isNone(recorded)) {
+          return Option.none()
+        }
+        // A persisted result means the annotated wait (if any) resolved: the
+        // waiting annotation is consumed here so a replayed
+        // `annotateWaiting` cannot classify a later, unrelated suspension
+        // (issue #42).
+        instance.waiting = undefined
+        // The decoder is retyped as plain and its program cast back, the one
+        // spelling that erases the dynamic schema requirements as the source
+        // cast does (C-7, S8-1, S7-11).
+        const decode = Schema.decodeEffect(deferred.exitSchema) as (input: unknown) => unknown
+        return Option.some(
+          Effect.orDie(decode(toJsonExit(recorded.value)) as Effect.Effect<
+            Exit.Exit<Success["Type"], Error["Type"]>,
+            Schema.SchemaError
+          >)
+        )
+      }
+    },
+    // Untraced because the explicit span below carries completion attributes.
+    deferredDone: <Success extends Schema.Constraint, Error extends Schema.Constraint>(
+      deferred: DurableDeferred.DurableDeferred<Success, Error>,
+      opts: {
+        readonly flowName: string
+        readonly executionId: string
+        readonly deferredName: string
+        readonly exit: Exit.Exit<Success["Type"], Error["Type"]>
+      }
+    ) => {
+      return withSpan("FlowEngine.deferredDone", {
+        attributes: { name: opts.deferredName, executionId: opts.executionId },
+        captureStackTrace: false
+      }) {
+        // Retyped as plain and cast back as the source casts it (C-7, S8-1).
+        const encode = Schema.encodeEffect(deferred.exitSchema) as (input: unknown) => unknown
+        return options.deferredDone({
+          flowName: opts.flowName,
+          executionId: opts.executionId,
+          deferredName: opts.deferredName,
+          exit: (encode(opts.exit) as Effect.Effect<Exit.Exit<unknown, unknown>>)()
+        })
+      }
+    },
+    deferredDoneIfWaiting: <Success extends Schema.Constraint, Error extends Schema.Constraint>(
+      deferred: DurableDeferred.DurableDeferred<Success, Error>,
+      opts: {
+        readonly flowName: string
+        readonly executionId: string
+        readonly deferredName: string
+        readonly reason: string
+        readonly token: string
+        readonly exit: Exit.Exit<Success["Type"], Error["Type"]>
+      }
+    ) => {
+      return withSpan("FlowEngine.deferredDoneIfWaiting", {
+        attributes: { name: opts.deferredName, executionId: opts.executionId, reason: opts.reason },
+        captureStackTrace: false
+      }) {
+        if (options.deferredDoneIfWaiting === undefined) return "NotWaiting" as const
+        // Retyped as plain and cast back as the source casts it (C-7, S8-1).
+        const encode = Schema.encodeEffect(deferred.exitSchema) as (input: unknown) => unknown
+        return options.deferredDoneIfWaiting({
+          flowName: opts.flowName,
+          executionId: opts.executionId,
+          deferredName: opts.deferredName,
+          reason: opts.reason,
+          token: opts.token,
+          exit: (encode(opts.exit) as Effect.Effect<Exit.Exit<unknown, unknown>>)()
+        })
+      }
+    },
+    // Untraced because the explicit span below carries clock attributes.
+    scheduleClock: (
+      flow: Flow.Any,
+      opts: { readonly executionId: string; readonly clock: DurableClock.DurableClock }
+    ) => {
+      return withSpan("FlowEngine.scheduleClock", {
+        attributes: { executionId: opts.executionId, name: opts.clock.name },
+        captureStackTrace: false
+      }) {
+        return options.scheduleClock(flow, opts)
+      }
+    },
+    // Forwarded only when the store keeps history. Left absent the property
+    // is absent on the typed port too, which is what the interpreter reads to
+    // decide whether to build records at all: a store with no journal must
+    // not pay for a graph summary nobody will store.
+    ...(options.recordNode === undefined ? {} : { recordNode: options.recordNode }),
+    ...(options.nodeRecordBytes === undefined ? {} : { nodeRecordBytes: options.nodeRecordBytes })
+  })
+}
