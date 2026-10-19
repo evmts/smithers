@@ -69,3 +69,22 @@ test("signed out, revealing a notice runs no command and the notice stays in the
     act(() => root.unmount())
   }
 })
+
+test("tabs follow Monday's order: Flows for everyone, Settings for members only, each current on its own routes", () => {
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  const tabs = () => [...host.querySelectorAll<HTMLAnchorElement>('nav[aria-label="Repository"] a')].map(tab => [tab.textContent, tab.getAttribute("href"), tab.getAttribute("aria-current")])
+  const at = (path: string) => (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM.setURL(`https://smithers.sh${path}`)
+  const before = window.location.href
+  try {
+    at("/ada/widgets/flows/review")
+    act(() => root.render(<RepoFrame repo="ada/widgets" onRunCommand={() => {}} ask={null}>content</RepoFrame>))
+    expect(tabs()).toEqual([["Code", "/ada/widgets", null], ["Issues", "/ada/widgets/issues", null], ["Pull requests", "/ada/widgets/pulls", null], ["Flows", "/ada/widgets/flows", "page"]])
+    at("/ada/widgets/settings/sync")
+    act(() => root.render(<RepoFrame repo="ada/widgets" login="ben" member onRunCommand={() => {}} ask={null}>content</RepoFrame>))
+    expect(tabs().map(([label, , current]) => [label, current])).toEqual([["Code", null], ["Issues", null], ["Pull requests", null], ["Flows", null], ["Settings", "page"]])
+    act(() => root.render(<RepoFrame repo="ada/widgets" login="ben" onRunCommand={() => {}} ask={null}>content</RepoFrame>))
+    expect(tabs().map(([label]) => label)).not.toContain("Settings")
+  } finally { act(() => root.unmount()); host.remove(); (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM.setURL(before) }
+})

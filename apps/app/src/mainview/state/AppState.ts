@@ -965,6 +965,25 @@ export const RepositoryEntrySchema = z.object({
   }).optional(),
   /** Alternatives from this entry's live catalog receipt, never a build-time roster. */
   publicRepositories: z.array(z.string()).optional(),
+  /**
+   * The repository document's GitHub mirror health, off the admission's one
+   * read (repository/githubSync.ts): the repo header's sync chip reads it here
+   * and never reads the document again. Absent when the read answered no
+   * document.
+   */
+  githubSync: z.object({
+    status: z.string(),
+    behindRefs: z.number().int().nonnegative(),
+    failedRefs: z.number().int().nonnegative(),
+    lastMirrorAt: z.string().nullable(),
+    lastMirrorError: z.string().nullable()
+  }).optional(),
+  /**
+   * The same document's `can_write` for this viewer: true makes the viewer a
+   * member (the Settings tab and route). Absent or false fails closed; the
+   * account's repository inventory is never membership.
+   */
+  canWrite: z.boolean().optional(),
   error: z.string().optional()
 })
 export type RepositoryEntry = z.infer<typeof RepositoryEntrySchema>

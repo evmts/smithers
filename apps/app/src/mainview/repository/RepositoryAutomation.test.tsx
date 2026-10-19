@@ -132,6 +132,20 @@ test("Settings: sign-in for visitors, not-found for readers, and only the two me
   expect(unknown.querySelector("h2")?.textContent).toBe("Setting not found.")
 })
 
+test("Settings while the session read is pending is the loading skeleton; a failed session read is an error, never not-found", () => {
+  const pending = render(<RepositorySettings repo="a/b" access="loading" section="sync" onRunCommand={run} sync={{ state: "failed", failure: "private reason", age: "1 h ago" }} />)
+  expect(pending.querySelector('[role="status"][aria-label="Loading"]')).not.toBeNull()
+  expect(pending.querySelector(".repo-frame-skeleton-title")).not.toBeNull()
+  expect(pending.querySelectorAll(".repo-frame-skeleton-row")).toHaveLength(5)
+  expect(pending.querySelector("a, button, select, h1, h2")).toBeNull()
+  expect(pending.textContent).toBe("Loading…")
+  const unavailable = render(<RepositorySettings repo="a/b" access="unavailable" onRunCommand={run} sync={{ state: "synced" }} />)
+  expect(unavailable.querySelector('[role="alert"] h2')?.textContent).toBe("Couldn't load settings.")
+  expect(unavailable.textContent).toContain("Sign-in is unavailable on this host.")
+  expect(unavailable.textContent).not.toContain("Page not found.")
+  expect(unavailable.querySelector("a, button, select, nav")).toBeNull()
+})
+
 test("Settings words GitHub sync exactly as the header chip rule does, and claims nothing without a mirror run", () => {
   const now = Date.parse("2026-10-19T12:00:00Z")
   const at = new Date(now - 3 * 3600_000).toISOString()

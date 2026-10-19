@@ -7,6 +7,7 @@ import type { AppController } from "./state/AppController"
 import type { AppStore } from "./state/AppStore"
 import { accountOwnerOf } from "./state/AccountOwner"
 import { parseRepoSelection,repoTreeRowId,sharedCopyIdOf, type CloudRepository, type RepositoryEntry } from "./state/AppState"
+import { githubSyncOf, type GitHubSync } from "./repository/githubSync"
 import { randomUuid } from "./runtime/RandomUuid"
 
 /*
@@ -340,12 +341,20 @@ export const openRequestedRepo = async (
   const current = () => entry()?.requestId === requestId && (options.isCurrent?.() ?? true) &&
     (identityAtStart?.state !== "signed-in" || sameAccount())
   const diagnostics: NonNullable<RepositoryEntry["diagnostics"]> = { stage: "document" }
+  // The document's mirror health rides on the entry for the repo header's sync chip: one read, here.
+  let githubSync: GitHubSync | undefined
+  // The viewer's write access, as this document answered it (`can_write`, per viewer); unknown when it
+  // did not. The repository row carries it for Code home; the entry carries `true` for the frame's
+  // Settings tab. Never the inventory.
+  let canWrite: boolean | undefined
   const finish = (error?: string, failureKind: "unavailable" | "not-public" = "unavailable", publicRepositories?: ReadonlyArray<string>): string | void => {
     if (!current()) return
     if (error === undefined) diagnostics.stage = "complete"
     const result = {
       requestId, repo: requested, phase: error === undefined ? "ready" : "failed", ...(error === undefined ? {} : { error, failureKind }),
-      ...(publicRepositories === undefined ? {} : { publicRepositories: [...publicRepositories] }), diagnostics
+      ...(publicRepositories === undefined ? {} : { publicRepositories: [...publicRepositories] }), diagnostics,
+      ...(githubSync === undefined ? {} : { githubSync }),
+      ...(canWrite === true ? { canWrite } : {})
     } as const
     if (options.scope === "command") {
       const owned = controller.store.session().repositoryCommandEntry
@@ -357,8 +366,6 @@ export const openRequestedRepo = async (
   let memberDocument: { full_name: string; description?: unknown; default_bookmark?: unknown } | undefined
   let guest: { sessionId: string; landingId:string; revision: string } | undefined
   let declaration: RepositoryDeclaration = {}
-  // The viewer's write access, as this document answered it (`can_write`, per viewer); unknown when it did not.
-  let canWrite: boolean | undefined
   try {
     const path = `/api/repos/${requested.split("/").map(encodeURIComponent).join("/")}`
     const response = await http(path, { headers: { accept: "application/json" }, credentials: "same-origin" })
@@ -385,6 +392,7 @@ export const openRequestedRepo = async (
       ? { githubSource: "unavailable" }
       : repositoryDeclaration(typeof document?.full_name === "string" && document.full_name.toLowerCase() === requested.toLowerCase() ? document : undefined)
     declaration = { issueTracker: read.issueTracker, githubSource: read.githubSource }
+    githubSync = githubSyncOf(document)
     canWrite = typeof document?.full_name === "string" && document.full_name.toLowerCase() === requested.toLowerCase() && typeof document.can_write === "boolean" ? document.can_write : undefined
     catalog = { repos: document?.is_public === true ? [{ name: canonical, summary: document.description }] : [] }
     if (document?.is_public === false && typeof document.full_name === "string" &&

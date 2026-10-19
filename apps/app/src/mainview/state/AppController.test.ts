@@ -187,6 +187,7 @@ describe("the controller's command surface", () => {
       "readRepositoryFilePage",
       "readRepositoryChange",
       "readLatestCommit",
+      "repositoryContents",
       "repositoryBranches",
       "chatArchives",
       "archiveLabel",

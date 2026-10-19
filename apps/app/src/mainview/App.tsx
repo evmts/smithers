@@ -5,6 +5,10 @@ import { guestAdmission, RepoFrame } from "./repository/RepoFrame"
 import { CodeHome } from "./repository/CodeHome"
 import { latestCommitKey, readmeReadKey, repositoryLatestCommits, repositoryReadmeReads } from "./repository/RepositoryCodeRead"
 import { RepositoryCodeView } from "./repository/RepositoryCodeView"
+import { RepositoryFlow, RepositoryFlows } from "./repository/RepositoryFlows"
+import { flowReadKey, repositoryFlowReads } from "./repository/RepositoryFlowRead"
+import { RepositorySettings } from "./repository/RepositorySettings"
+import { githubSyncChip } from "./repository/githubSync"
 import { pathTarget as codePathTarget } from "./RepoLink"
 import { rememberComposerFocus, restoreComposerFocus } from "./runtime/ComposerFocus"
 import { useSharedConversation } from "./state/useSharedConversation"
@@ -128,6 +132,7 @@ function AppContent() {
   )
   const { data: worldDocumentRows } = useLiveQuery(collections.worldDocuments)
   const { data: codeBranchRows } = useLiveQuery(controller.repositoryBranches.rows)
+  const { data: flowReadRows } = useLiveQuery(repositoryFlowReads)
   const cardRows = useCardRows(collections.cards)
   const cardHistories = useCardHistoryRows(collections.cardHistories)
   const workflowCatalogs = useWorkflowCatalogRows(collections.cards)
@@ -776,19 +781,32 @@ function AppContent() {
   const rootRoute = window.location.pathname.replace(/\/$/, "") === `/${bootRepository}`
   const issueMatch = /^\/issues(?:\/(\d+))?\/?$/.exec(window.location.pathname.slice(bootRepository.length + 1))
   const pullMatch = /^\/(pulls|pull\/(\d+)(?:\/(commits|checks|files))?)\/?$/.exec(window.location.pathname.slice(bootRepository.length + 1))
-  if (!rootRoute && !codeRoute && !issueMatch && !pullMatch) return chat()
+  // Flows (read-only, everyone) and Settings (members) mount through the same predicate, from the router's subject.
+  const routeSubject = codeTarget?.repo.toLowerCase() === bootRepository.toLowerCase() ? codeTarget.subject : undefined
+  const flowsRoute = routeSubject?.kind === "flows" ? routeSubject : undefined
+  const settingsRoute = routeSubject?.kind === "settings" ? routeSubject : undefined
+  if (!rootRoute && !codeRoute && !issueMatch && !pullMatch && !flowsRoute && !settingsRoute) return chat()
+  // Membership is the admission document's can_write for this signed-in viewer; absent fails closed.
+  const member = identity?.state === "signed-in" && bootEntry?.canWrite === true
+  const flowRead = flowsRoute ? flowReadRows.find(row => row.id === flowReadKey(bootRepository, flowsRoute.name, bootEntry?.requestId))?.value : undefined
   const pullKey = pullMatch?.[2] ? JSON.stringify(["pr", bootRepository, Number(pullMatch[2])]).slice(0, -1) + "," : `prs-${bootRepository}`
   const issueCard = [...cardRows].reverse().find(card => card.viewRepo?.toLowerCase() === bootRepository.toLowerCase() && matchesIssueReadKey(card.viewKey, bootRepository, issueMatch?.[1] ? Number(issueMatch[1]) : undefined))
   const pullCard = [...cardRows].reverse().find(card => card.viewRepo?.toLowerCase() === bootRepository.toLowerCase() && (pullMatch?.[2] ? card.viewKey?.toLowerCase().startsWith(pullKey.toLowerCase()) : card.viewKey?.toLowerCase() === pullKey.toLowerCase()))
   const retainedLists = [...cardRows].reverse().flatMap(card => [card, ...[...(cardHistories.find(history => history.id === card.id)?.entries ?? [])].reverse()])
   const issueList = retainedLists.find(card => card.kind === "issue-list" && card.viewRepo?.toLowerCase() === bootRepository.toLowerCase() && matchesIssueReadKey(card.viewKey, bootRepository))
   const pullList = retainedLists.find(card => card.kind === "pr-list" && card.viewRepo?.toLowerCase() === bootRepository.toLowerCase() && card.viewKey?.toLowerCase() === `prs-${bootRepository}`.toLowerCase())
-  return <RepoFrame onRunCommand={controller.runCommand} pullCount={pullList?.kind === "pr-list" ? pullList.payload.landings.filter(row => isOpenPull(row.state)).length : undefined} issueCount={issueList?.kind === "issue-list" ? issueList.payload.issues.filter(row => row.state === "open").length : undefined} repo={bootRepository} publicRepo={repository?.catalog === true}
+  return <RepoFrame onRunCommand={controller.runCommand} member={member} pullCount={pullList?.kind === "pr-list" ? pullList.payload.landings.filter(row => isOpenPull(row.state)).length : undefined} issueCount={issueList?.kind === "issue-list" ? issueList.payload.issues.filter(row => row.state === "open").length : undefined} repo={bootRepository} publicRepo={repository?.catalog === true}
     login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
     guest={guestAdmission(session.guestConversation, bootRepository)}
     ask={(visible: boolean) => chat(visible)}>
     {codeRoute ? <RepositoryCodeView onRunCommand={controller.runCommand} repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
-      admitted={bootEntry?.phase === "ready"} requestId={bootEntry?.requestId} error={bootUnavailable ? bootEntry?.error : undefined} onAsk={text => controller.changeDraft(text)} /> : pullMatch ? <PullViews repo={bootRepository} number={pullMatch[2] ? Number(pullMatch[2]) : undefined} tab={pullMatch[3] as "commits" | "checks" | "files" | undefined} card={pullCard} onRunCommand={controller.runCommand}/> : issueMatch ? <IssueViews repo={bootRepository} number={issueMatch[1] ? Number(issueMatch[1]) : undefined} card={issueCard} signedIn={identity?.state === "signed-in"} onRunCommand={controller.runCommand}/> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
+      admitted={bootEntry?.phase === "ready"} requestId={bootEntry?.requestId} error={bootUnavailable ? bootEntry?.error : undefined} onAsk={text => controller.changeDraft(text)} /> : flowsRoute ? flowsRoute.name === undefined
+      ? <RepositoryFlows repo={bootRepository} revision={flowRead?.ref} onRunCommand={controller.runCommand} read={flowRead?.kind === "list" ? flowRead.read : { state: "loading" }}/>
+      : <RepositoryFlow key={flowsRoute.name} repo={bootRepository} name={flowsRoute.name} revision={flowRead?.ref} onRunCommand={controller.runCommand} read={flowRead?.kind === "flow" ? flowRead.read : { state: "loading" }}/>
+    : settingsRoute ? <RepositorySettings repo={bootRepository} section={settingsRoute.section} onRunCommand={controller.runCommand}
+      access={identity?.state === "signed-in" ? member ? "member" : "reader" : identity?.state === "signed-out" || identity?.state === "unavailable" ? identity.state : "loading"}
+      sync={githubSyncChip(bootEntry?.githubSync)}/>
+    : pullMatch ? <PullViews repo={bootRepository} number={pullMatch[2] ? Number(pullMatch[2]) : undefined} tab={pullMatch[3] as "commits" | "checks" | "files" | undefined} card={pullCard} onRunCommand={controller.runCommand}/> : issueMatch ? <IssueViews repo={bootRepository} number={issueMatch[1] ? Number(issueMatch[1]) : undefined} card={issueCard} signedIn={identity?.state === "signed-in"} onRunCommand={controller.runCommand}/> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
       branches={codeBranchRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())}
       onBranchesOpen={() => { void controller.repositoryBranches.load(bootRepository) }}
       latestCommit={latestCommits.find(row => row.id === latestCommitKey(bootRepository, bootEntry?.requestId))?.commit}

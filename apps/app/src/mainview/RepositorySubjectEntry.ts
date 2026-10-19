@@ -1,4 +1,6 @@
 import { codeReadKey, latestCommitKey, readmeReadKey, setCodeRead, setLatestCommit, setReadmeRead } from "./repository/RepositoryCodeRead"
+import { readFlow, readFlows } from "./repository/FlowContents"
+import { flowReadKey, setFlowRead } from "./repository/RepositoryFlowRead"
 import type { RefLocation, RepositorySubject } from "@smthrs/rpc/RepositorySubjectPath"
 import { isCommitRevision, resolveRefLocation } from "@smthrs/rpc/RepositorySubjectPath"
 import type { RepositoryHome } from "@smthrs/rpc/RepositoryHome"
@@ -400,13 +402,39 @@ const openRequestedHome = (
 }
 
 /**
+ * Read the flow definitions a `flows` URL names, once the repository has been
+ * admitted: the `.smithers/flows` listing, or one flow's source, at the
+ * repository's default bookmark. Contents reads only; no chat card opens and
+ * nothing runs. The answer is stored under this admission's request, and only
+ * while the admission is still this page's.
+ */
+const openRequestedFlows = async (
+  controller: Pick<AppController, "store" | "repositoryContents">,
+  repo: string,
+  subject: Extract<RepositorySubject, { readonly kind: "flows" }>,
+  owner: string | null | undefined,
+  options: SubjectEntryOptions
+): Promise<void> => {
+  const key = flowReadKey(repo, subject.name, options.requestId)
+  const target = selectedRepoId(controller.store, repo)
+  const bookmark = controller.store.collections.repositories.get(target)?.head?.bookmark
+  const ref = typeof bookmark === "string" && bookmark !== "" ? bookmark : undefined
+  const at = ref === undefined ? {} : { ref }
+  setFlowRead(key, subject.name === undefined ? { kind: "list", ...at, read: { state: "loading" } } : { kind: "flow", ...at, read: { state: "loading" } })
+  const answer = subject.name === undefined
+    ? { kind: "list" as const, ...at, read: await readFlows(controller.repositoryContents, target, ref).catch(() => ({ state: "error" as const, reason: "The flow definitions couldn't be read." })) }
+    : { kind: "flow" as const, ...at, read: await readFlow(controller.repositoryContents, target, subject.name, ref).catch(() => ({ state: "error" as const, reason: "The flow source couldn't be read." })) }
+  if (!options.signal?.aborted && admitted(controller.store, repo, options.requestId, owner)) setFlowRead(key, answer)
+}
+
+/**
  * Open the subject a repository URL asked for, once that repository has been
  * admitted. Returns the read's own refusal when it failed, so the caller can
  * report it the way every other command failure is reported; returns nothing
  * when the URL named no subject or when the admission is not this request's.
  */
 export const openRequestedSubject = async (
-  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches" | "readRepositoryFilePage" | "readRepositoryChange" | "readLatestCommit">,
+  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches" | "readRepositoryFilePage" | "readRepositoryChange" | "readLatestCommit" | "repositoryContents">,
   repo: string,
   subject: RepositorySubject | undefined,
   options: SubjectEntryOptions
@@ -415,6 +443,7 @@ export const openRequestedSubject = async (
   if (!admitted(controller.store, repo, options.requestId, owner)) return
   if (subject === undefined) { openRequestedHome(controller, repo, owner, options); return }
   if (subject.kind === "tree" || subject.kind === "blob") return openRequestedFile(controller, repo, subject, owner, options)
+  if (subject.kind === "flows") return openRequestedFlows(controller, repo, subject, owner, options)
   // The default repo UI projects the other subjects directly from RepositoryRouter.
   // Never turn an unserved or newly mounted subject into an issues-list read.
   if (subject.kind !== "pull" && subject.kind !== "pulls" && subject.kind !== "issue" && subject.kind !== "issues") return

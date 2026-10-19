@@ -3,7 +3,7 @@ import type { RunDynamicCommand } from "../cards/CardFamily"
 import { flowAction } from "../flows/FlowAction"
 import { hrefFor, navigate } from "../RepositoryRouter"
 import type { GitHubSyncChip } from "./githubSync"
-import { RepositoryLoading } from "./RepositoryFlows"
+import { RepositoryFailed, RepositoryLoading } from "./RepositoryFlows"
 import "./repository-automation.css"
 
 export const MODELS_HELD = "Hosted coding runs on Cerebras Qwen; locally, smthrs uses your login."
@@ -35,15 +35,23 @@ export function RepositorySyncStatus({ sync }: { sync: GitHubSyncChip | null }) 
   </div></div>
 }
 
+/** The viewer's access to Settings: the session's state plus the document's can_write. */
+export type SettingsAccess = "member" | "reader" | "signed-out" | "loading" | "unavailable"
+
 /**
  * Members only (the repository document's can_write). Signed out is the mock's
  * sign-in state; a signed-in reader gets the frame's not-found state, because
- * the reader screen's Request access has no backend on Monday.
+ * the reader screen's Request access has no backend on Monday. Until the session
+ * read answers, membership is unknown: the mock's settings-loading skeleton,
+ * never not-found and never a member's sections. When the session read fails or
+ * this host has no sign-in, the mock's settings-error shape with the app's own
+ * words for that state; no Retry, because no act re-reads the session.
  */
 export function RepositorySettings({ repo, access, section, sync, onRunCommand }: {
-  repo: string; access: "member" | "reader" | "signed-out" | "loading"; section?: string; sync: GitHubSyncChip | null; onRunCommand: RunDynamicCommand
+  repo: string; access: SettingsAccess; section?: string; sync: GitHubSyncChip | null; onRunCommand: RunDynamicCommand
 }) {
   if (access === "loading") return <RepositoryLoading detail />
+  if (access === "unavailable") return <RepositoryFailed what="settings" reason="Sign-in is unavailable on this host." />
   if (access === "signed-out") return <section className="repo-frame-state" aria-label="Settings">
     <h2>Sign in to open repository settings.</h2>
     <button type="button" className="repo-ui-btn repo-ui-btn-primary" {...flowAction(onRunCommand, "sign-in")}>Sign in with GitHub</button>

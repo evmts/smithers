@@ -56,8 +56,9 @@ for (const member of [false, true]) for (const width of [1440, 1280, 390]) for (
     const layoutWidth = await page.locator(".repo-code-home-layout").evaluate(element => element.getBoundingClientRect().width)
     expect(mainWidth).toBe(layoutWidth)
     const navigation = page.getByRole("navigation", { name: "Repository", exact: true })
-    for (const label of ["Code", "Issues", "Pull requests"]) await expect(navigation.getByRole("link", { name: label, exact: true })).toBeVisible()
-    for (const label of ["Runs", "Wiki", "Flows", "Settings"]) await expect(navigation.getByRole("link", { name: label, exact: true })).toHaveCount(0)
+    for (const label of ["Code", "Issues", "Pull requests", "Flows"]) await expect(navigation.getByRole("link", { name: label, exact: true })).toBeVisible()
+    // Runs and Wiki are cut; Settings is a member's (the document's can_write), which this document does not grant.
+    for (const label of ["Runs", "Wiki", "Settings"]) await expect(navigation.getByRole("link", { name: label, exact: true })).toHaveCount(0)
     await expect(page.getByText("Waiting on you", { exact: true })).toHaveCount(0)
     await expect(page.getByRole("region", { name: "README", exact: true }).getByRole("heading", { name: "tinyhttp", level: 1 })).toBeVisible()
     await expect(page.getByRole("region", { name: "Files", exact: true }).getByRole("link", { name: "src", exact: true })).toBeVisible()
