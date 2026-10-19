@@ -3045,6 +3045,7 @@ type Workspace struct {
 	CleanupPendingHead      string             `json:"cleanup_pending_head"`
 	CleanupPendingCaptureID string             `json:"cleanup_pending_capture_id"`
 	DiskReclaimedAt         pgtype.Timestamptz `json:"disk_reclaimed_at"`
+	AgentBoxDirtyVmID       string             `json:"agent_box_dirty_vm_id"`
 }
 
 type WorkspaceChild struct {
