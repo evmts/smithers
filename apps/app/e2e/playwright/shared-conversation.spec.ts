@@ -232,7 +232,7 @@ test("a capacity-deferred turn waits honestly and keeps its long diagnostic insi
   const startedAt = Date.now() - 206_802
   // The receipt's own words, with the kind of unbroken machine line a host
   // appends to them. Only the typed code may choose the sentence on top.
-  const sentence = "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
+  const sentence = "Chat is busy right now. Nothing here was lost; try again in a moment."
   const diagnostic = `${sentence} host_no_capacity sandbox.create.${"x".repeat(400)}`
   let frames: AgentTurnFrame[] = [], state = "running", finishedAt: number | undefined
   // The turn is the signed-in owner's own, as production turn 83bca322 was:
@@ -256,13 +256,14 @@ test("a capacity-deferred turn waits honestly and keeps its long diagnostic insi
   const turn = page.locator('[data-shared-turn="capacity-turn"]')
   const duration = turn.locator("[data-turn-elapsed]")
   await expect(duration).toHaveAttribute("data-turn-elapsed", "waiting")
-  await expect(duration).toContainText("Waiting for a model host")
+  await expect(duration).toContainText("Waiting for a free machine · ")
   await expect(turn).not.toContainText("Working for")
   state = "failed"; finishedAt = startedAt + 206_802
   frames = [{ runId: "capacity-run", type: "done", code: "host_no_capacity", error: diagnostic }]
   publish()
   const notice = turn.locator('[data-failure="HostNoCapacity"]')
-  await expect(notice.locator("p").first()).toHaveText("Every model host is busy. Nothing here was lost; send it again in a moment.")
+  await expect(notice.locator("p").first()).toHaveText(sentence)
+  await expect(notice.getByRole("button", { name: "Try again" })).toHaveAttribute("data-flow-args", "Short reply please")
   await expect(turn).not.toContainText("Smithers could not finish that")
   await expect(duration).toHaveText("Failed after 3m 26s")
   const details = notice.locator("details")

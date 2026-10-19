@@ -27,8 +27,7 @@ describe("AgentTurnFrame — proxy family", () => {
       runId: "r1",
       type: "done",
       code: "host_no_capacity",
-      error:
-        "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
+      error: "Chat is busy right now. Nothing here was lost; try again in a moment."
     }],
     ["done, cancelled with an error", {
       runId: "r1",
@@ -140,7 +139,7 @@ describe("AgentTurnFrame — proxy family", () => {
    */
   test("every done code the chat producer seals a turn with decodes", () => {
     const sealed = (code: string) => ({ runId: "r1", type: "done", code, error: "the receipt's own sentence" })
-    for (const code of ["credential_missing", "credential_issuer_unavailable", "author_revoked", "host_no_capacity"]) {
+    for (const code of ["credential_missing", "credential_issuer_unavailable", "author_revoked", "host_no_capacity", "chat_guests_busy"]) {
       expect([code, decodeAgentTurnFrame(sealed(code))]).toEqual([code, sealed(code)])
     }
   })

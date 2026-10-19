@@ -8,6 +8,7 @@ import { PlaceholderAvatarUrl } from "@smthrs/rpc/CardPrimitives"
 import { CopyMessageButton, TranscriptMessage } from "./TranscriptMessage"
 import { answerActions } from "./flows/AnswerActions"
 import { flowArgs } from "./flows/FlowArgs"
+import { flowAction } from "./flows/FlowAction"
 import { DiffAction } from "./cards/views/DiffAction"
 import { cardActions } from "./flows/cardActions"
 import { contextActions } from "./flows/contextActions"
@@ -39,7 +40,7 @@ function TurnElapsed({ state, startedAt, finishedAt, produced }: { state: string
   // shared yet, not that nothing ran, and a host may well be working.
   if (working) return startedAt === undefined ? null
     : produced ? <p className="turn-elapsed" data-turn-elapsed="working">Working for {elapsed(live * 1000)}</p>
-    : <p className="turn-elapsed" data-turn-elapsed="waiting">Waiting for a model host · {elapsed(live * 1000)}</p>
+    : <p className="turn-elapsed" data-turn-elapsed="waiting">Waiting for a free machine · {elapsed(live * 1000)}</p>
   const label = state === "completed" ? "Worked" : state === "cancelled" ? "Stopped" : state === "failed" ? "Failed" : "Interrupted"
   const duration = startedAt === undefined || finishedAt === undefined ? undefined : elapsed(finishedAt - startedAt)
   if (state === "completed" && duration === undefined) return null
@@ -55,9 +56,12 @@ function TurnElapsed({ state, startedAt, finishedAt, produced }: { state: string
 type DoneFrame = Extract<AgentTurnFrame, { type: "done" }>
 const SHARED_TURN_FAILED = { fault: "infra", sentence: "Smithers could not finish that. Not your fault.", actions: [] } as const
 /* The fleet refused the launch before anything ran, so nothing of theirs is gone. */
-const HOST_NO_CAPACITY = { fault: "infra", sentence: "Every model host is busy. Nothing here was lost; send it again in a moment.", actions: [] } as const
+const HOST_NO_CAPACITY = { fault: "infra", sentence: "Chat is busy right now. Nothing here was lost; try again in a moment.", actions: ["retry"] } as const
+/* The person's own cap on chats answering at once refused it: nothing is broken, one has to finish. */
+const CHAT_GUESTS_BUSY = { fault: "wait", sentence: "You have 2 chats answering right now. Wait for one to finish, then try again.", actions: ["retry"] } as const
 const sharedTurnFailure = (failure: DoneFrame & { error: string }) => failure.code === "host_no_capacity"
   ? describedFailure("HostNoCapacity", HOST_NO_CAPACITY, failure.error)
+  : failure.code === "chat_guests_busy" ? describedFailure("ChatGuestsBusy", CHAT_GUESTS_BUSY, failure.error)
   : describedFailure("SharedTurnFailed", SHARED_TURN_FAILED, failure.error)
 
 /** Output only: no tool-call frame can invoke a browser command. */
@@ -107,6 +111,9 @@ export function SharedConversation({ source, localCardIds, localEntries = [] }: 
         { tag: "run.inspect", label: "Inspect", command_input: { id: turn.runId } }
       ] : [])
       const answers = turn.state === "completed" && text.trim() ? answerActions((name, input) => controller.commands.submit({ name, payload: (input ?? {}) as Record<string, unknown>, actor: "user", ...(name === "wiki.save" ? { display: flowArgs("wiki.save", input as { name?: string; text?: string }) } : {}) }), text, controller.commands) : undefined
+      // Try again sends the turn's own words through the composer's flow, so
+      // only its author is offered it: anyone else would send them as theirs.
+      const retry = turn.authorLogin === owner ? { retry: { ...flowAction(controller.runCommand, "chat.send", turn.prompt), label: "Try again" } } : undefined
       // The sender is Smithers; the reply quote, not the name, attributes the prompt (M-34).
       const answer = { kind: "agent" as const, id: turn.runId, agent: "smithers" as const, avatar_url: PlaceholderAvatarUrl, color_index: color }
       const reply = <blockquote className="turn-reply" data-reply-to={`${turn.id}:prompt`}><span className="turn-reply-author">{person.name}</span><span className="turn-reply-text">{turn.prompt}</span></blockquote>
@@ -128,7 +135,7 @@ export function SharedConversation({ source, localCardIds, localEntries = [] }: 
       return <div key={turn.id} data-shared-turn={turn.id} data-state={turn.state}>
         {turn.subject ? null : <>
           <MessageScrollerItem style={{ contentVisibility: "visible" }} messageId={`${turn.id}:prompt`}><EntryRow kind="prompt" author={{ kind: "person", ...person, color_index: color }} title="" tone="quiet" card={<div data-composer-prompt={sessions[0]?.requests?.find(row => row.turnId === turn.id)?.id ?? turn.id}><Markdown content={turn.prompt} /></div>} onAction={() => {}} /></MessageScrollerItem>
-          <MessageScrollerItem style={{ contentVisibility: "visible" }} messageId={`${turn.id}:answer`}><EntryRow kind="answer" author={answer} title="" tone="quiet" action={inspect.actions[0]} contextActions={turn.context ? contextActions(turn.context, (tag, input) => controller.runCommand(tag, JSON.stringify(input)), contextOpenAction) : undefined} context={turn.context ? { count: turn.context.length, items: turn.context } : undefined} card={<>{reply}<TurnElapsed state={turn.state} startedAt={turn.startedAt} finishedAt={turn.finishedAt} produced={frames.length > 0 || turn.authorLogin !== owner} />{trace}{answers && answers.actions.length > 0 ? <div className="message-answer-actions">{answers.actions.map(action => <DiffAction key={action.tag} action={action} onAction={answers.onAction} />)}</div> : null}<span className="message-actions"><CopyMessageButton text={text} onCopy={value => controller.runCommandForResult("chat.copy-message", value)} /></span>{failure?.type === "done" && failure.error ? <FailureNotice role="status" failure={sharedTurnFailure({ ...failure, error: failure.error })} /> : null}</>} onAction={inspect.onAction} /></MessageScrollerItem>
+          <MessageScrollerItem style={{ contentVisibility: "visible" }} messageId={`${turn.id}:answer`}><EntryRow kind="answer" author={answer} title="" tone="quiet" action={inspect.actions[0]} contextActions={turn.context ? contextActions(turn.context, (tag, input) => controller.runCommand(tag, JSON.stringify(input)), contextOpenAction) : undefined} context={turn.context ? { count: turn.context.length, items: turn.context } : undefined} card={<>{reply}<TurnElapsed state={turn.state} startedAt={turn.startedAt} finishedAt={turn.finishedAt} produced={frames.length > 0 || turn.authorLogin !== owner} />{trace}{answers && answers.actions.length > 0 ? <div className="message-answer-actions">{answers.actions.map(action => <DiffAction key={action.tag} action={action} onAction={answers.onAction} />)}</div> : null}<span className="message-actions"><CopyMessageButton text={text} onCopy={value => controller.runCommandForResult("chat.copy-message", value)} /></span>{failure?.type === "done" && failure.error ? <FailureNotice role="status" failure={sharedTurnFailure({ ...failure, error: failure.error })} actions={retry} /> : null}</>} onAction={inspect.onAction} /></MessageScrollerItem>
         </>}
         {turn.subject ? frames.flatMap(frame => frame.type === "card" ? [renderCard(frame.card.id)] : []) : null}
       </div>
