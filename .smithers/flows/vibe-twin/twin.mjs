@@ -682,10 +682,11 @@ const apiCheck = (pkg, work, twinned = [], privates = { ts: new Map(), twin: new
     typeDiffers: [], valueDiffers: [], nominal: [], assignable: [], errors: [], privateProjection: [], docsDiffer: []
   }
   const lines = [
-    "type Eq<A, B> = (<G>() => G extends A ? 1 : 2) extends (<G>() => G extends B ? 1 : 2) ? true : false",
+    // Exported, so a package compiled with noUnusedLocals doesn't flag an unused helper (S21-1).
+    "export type Eq<A, B> = (<G>() => G extends A ? 1 : 2) extends (<G>() => G extends B ? 1 : 2) ? true : false",
     // A class with private members is nominal per declaration, so no twin of it is ever identical.
     // Pub keeps what a caller can reach: call and construct signatures, public members (E-6, S9-1).
-    "type Pub<X> = X extends abstract new (...args: infer A) => infer I ? (abstract new (...args: A) => { [K in keyof I]: I[K] }) : X extends (...args: infer A) => infer R ? (...args: A) => Pub<R> : X"
+    "export type Pub<X> = X extends abstract new (...args: infer A) => infer I ? (abstract new (...args: A) => { [K in keyof I]: I[K] }) : X extends (...args: infer A) => infer R ? (...args: A) => Pub<R> : X"
   ]
   const projected = []
   const checks = new Map()
