@@ -333,3 +333,81 @@ func TestWikiPlanningSelectionComposedRoutePostgres(t *testing.T) {
 	})
 	require.Zero(t, f.hostCalls.Load())
 }
+
+// The wiki flag gates every wiki run (a-hsooxl). Through the composed router
+// and real PostgreSQL: with the flag off, as on hosted production, the
+// history bootstrap and the wiki refresh request are refused before their
+// handlers, and neither records a stack, a request, a run or a box. With the
+// flag on, as on every install, both are accepted as before.
+func TestWikiRunDoorsFollowTheWikiFlagPostgres(t *testing.T) {
+	for _, on := range []bool{true, false} {
+		t.Run(fmt.Sprintf("wiki flag %v", on), func(t *testing.T) {
+			f := newLandingGateFixtureWithFactory(t, nil, "", true)
+			cfg := testConfigAllFlagsOn()
+			cfg.FeatureFlags.Wiki = on
+			cfg.Auth.Mode, cfg.Auth.SessionCookieName = "selfhost", "session"
+			cfg.Server.PublicURL = "http://example.com"
+			cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
+			mythical := services.NewMythicalService(f.pool, nil)
+			mythical.SetWikiRefresh(on)
+			router := buildRouterCompat(cfg, f.q, f.pool,
+				&routes.RepoHandler{}, &routes.AuthHandler{}, &routes.UserHandler{}, &routes.SSHKeyHandler{}, &routes.LabelHandler{},
+				&routes.OrgHandler{}, &routes.LandingHandler{}, &routes.SearchHandler{Service: &mockRouterSearchService{}}, &routes.IssueHandler{}, nil, &routes.GitSmartHandler{Service: &mockRouterGitService{}},
+				nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &routes.WorkspaceHandler{}, nil, nil, nil, nil, nil, nil,
+				routerExtras{Mythical: &routes.MythicalHandler{Service: mythical}})
+			// The repository's admin, signed in.
+			const session = "wiki-runs-session"
+			hash := sha256.Sum256([]byte(session))
+			_, err := f.q.CreateAuthSession(f.ctx, db.CreateAuthSessionParams{UserID: f.owner.ID, Username: f.owner.Username, SessionKey: hex.EncodeToString(hash[:]), ExpiresAt: time.Now().Add(time.Hour)})
+			require.NoError(t, err)
+			post := func(path string) (int, string) {
+				t.Helper()
+				req := httptest.NewRequest("POST", "http://example.com/api/repos/gate-owner/app/mythical/"+path, strings.NewReader(`{}`))
+				req.AddCookie(&http.Cookie{Name: "smithers_local_session", Value: session})
+				req.AddCookie(&http.Cookie{Name: "smithers_local_csrf", Value: "csrf"})
+				req.Header.Set("X-CSRF-Token", "csrf")
+				req.Header.Set("Origin", "http://example.com")
+				req.Header.Set("Content-Type", "application/json")
+				out := httptest.NewRecorder()
+				router.ServeHTTP(out, req)
+				return out.Code, out.Body.String()
+			}
+			count := func(query string) int {
+				t.Helper()
+				var n int
+				require.NoError(t, f.pool.QueryRow(f.ctx, query, f.repoID).Scan(&n))
+				return n
+			}
+			runs := func() int { return count(`SELECT count(*) FROM workflow_runs WHERE repository_id=$1`) }
+			boxes := func() int { return count(`SELECT count(*) FROM workspaces WHERE repository_id=$1`) }
+			beforeRuns, beforeBoxes := runs(), boxes()
+
+			status, body := post("bootstrap")
+			stacks := count(`SELECT count(*) FROM mythical_stacks WHERE repository_id=$1`)
+			if on {
+				require.Equal(t, http.StatusAccepted, status, body)
+				require.Equal(t, 1, stacks, "the bootstrap request is recorded")
+			} else {
+				require.Equal(t, http.StatusForbidden, status, body)
+				require.Zero(t, stacks, "no stack is requested")
+			}
+
+			// A repository whose stack and wiki already exist.
+			_, err = f.pool.Exec(f.ctx, `INSERT INTO mythical_stacks(repository_id,actor_user_id,state) VALUES($1,$2,'active') ON CONFLICT (repository_id) DO NOTHING`, f.repoID, f.owner.ID)
+			require.NoError(t, err)
+			_, err = f.pool.Exec(f.ctx, `INSERT INTO mythical_wikis(repository_id,state) VALUES($1,'idle')`, f.repoID)
+			require.NoError(t, err)
+			status, body = post("wiki")
+			requested := count(`SELECT count(*) FROM mythical_wikis WHERE repository_id=$1 AND requested`)
+			if on {
+				require.Equal(t, http.StatusAccepted, status, body)
+				require.Equal(t, 1, requested, "the refresh request is recorded")
+			} else {
+				require.Equal(t, http.StatusForbidden, status, body)
+				require.Zero(t, requested, "no refresh is requested")
+			}
+			require.Equal(t, beforeRuns, runs(), "no run is recorded by the doors themselves")
+			require.Equal(t, beforeBoxes, boxes(), "no box is made")
+		})
+	}
+}

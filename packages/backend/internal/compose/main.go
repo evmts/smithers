@@ -1496,6 +1496,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	gitHubMainPullService.SetSynced(services.NewLandingGitHubMergeService(queries, repoHostClient, repoConnectionService, webhookDispatcher).Reconcile)
 	gitHubWebhookEventWorker.SetMythical(mythicalService)
 	mythicalService.SetWiki(wikiService)
+	// Wiki runs follow the wiki flag, which an install always turns on.
+	mythicalService.SetWikiRefresh(cfg.FeatureFlags.Wiki)
 	mythicalService.SetLearningWiki(wikiService)
 	mythicalService.SetOrchestration(services.NewMythicalGitHub(queries, repoConnectionService, gitHubUserReposService, repoConnectionService),
 		nil, services.NewWorkspaceMythicalLanes(workspaceService))

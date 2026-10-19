@@ -95,6 +95,7 @@ type MythicalService struct {
 	launcher             mythicalLauncher
 	lanes                mythicalLanes
 	wikiStore            mythicalWikiStore
+	wikiOn               bool // only SetWikiRefresh(true) lets a wiki run start
 	learningWiki         *WikiService
 	learningJobs         *jobs.Store
 	learningMachines     LearningMachines

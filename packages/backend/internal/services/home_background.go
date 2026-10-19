@@ -213,7 +213,14 @@ func (s *MythicalService) SetHomeBackground(provider *HomeBackground) {
 
 // wikiRefreshes reports whether the merge-refresh worker can run a refresh.
 func (s *MythicalService) wikiRefreshes() bool {
-	return s != nil && s.launcher != nil && s.lanes != nil
+	return s != nil && s.wikiOn && s.launcher != nil && s.lanes != nil
+}
+
+// SetWikiRefresh turns wiki runs on with the wiki flag. Until it is called
+// with true, no fold, request or Retry starts one; the composition sets it
+// from the flag.
+func (s *MythicalService) SetWikiRefresh(enabled bool) {
+	s.wikiOn = enabled
 }
 
 func (s *MythicalService) BackgroundRuns(ctx context.Context, repository int64) ([]map[string]any, error) {
