@@ -229,3 +229,14 @@ export const repoLabel = (repo: string): string => repo
 
 /** The chat and repository views share the same open pull lifecycle. */
 export const isOpenPull = (state: string): boolean => !["closed", "merged", "landed"].includes(state.toLowerCase())
+
+/**
+ * The one door a pull request tab offers a signed-out visitor when its read
+ * needs a GitHub account (the payload's `signInTabs`), in the chat card and
+ * the repository page alike.
+ */
+export const SIGN_IN_TO_SEE: Readonly<Record<"commits" | "checks" | "files", string>> = {
+  commits: "Sign in to see commits",
+  checks: "Sign in to see checks",
+  files: "Sign in to see files"
+}

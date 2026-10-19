@@ -1545,6 +1545,8 @@ const FIXTURES: Record<
       checks: [{ context: "typecheck", state: "success" }],
       readErrors: { commits: "Reading commits failed (500)", files: "Reading files failed (500)" },
       readLimits: { commits: "Showing 250 of 412 commits.", checks: "Showing 100 of 240 check runs." },
+      // Signed out, a GitHub source's tab is not read and asks for sign-in.
+      signInTabs: ["checks"],
       branch: "serve-files",
       baseBranch: "main",
       draft: false,
@@ -3004,6 +3006,13 @@ describe("every persisted card kind", () => {
       .toBe("Showing 250 of 412 commits.")
     expect(CardSchema.safeParse(card("pr", { ...FIXTURES.pr.full, readLimits: { commits: 250 } })).success).toBe(false)
     expect(CardSchema.safeParse(card("pr", { ...FIXTURES.pr.full, readLimits: {} })).success).toBe(true)
+
+    // The tabs that wait on sign-in are named by tab, and only these three.
+    const signIn = CardSchema.safeParse(card("pr", { ...FIXTURES.pr.full, signInTabs: ["commits", "checks", "files"] }))
+    expect(signIn.success && signIn.data.kind === "pr" ? signIn.data.payload.signInTabs : undefined)
+      .toEqual(["commits", "checks", "files"])
+    expect(CardSchema.safeParse(card("pr", { ...FIXTURES.pr.full, signInTabs: ["conversation"] })).success).toBe(false)
+    expect(CardSchema.safeParse(card("pr", { ...FIXTURES.pr.full, signInTabs: "commits" })).success).toBe(false)
   })
 })
 

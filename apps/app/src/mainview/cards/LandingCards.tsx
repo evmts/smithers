@@ -31,6 +31,7 @@ import {
   RelativeTime,
   repoLabel,
   SideSection,
+  SIGN_IN_TO_SEE,
   StateIcon,
   StatePill,
   TONE_CLASS,
@@ -220,6 +221,17 @@ const ReadLimit = ({ tab, detail, retry }: { readonly tab: "commits" | "checks";
     failure={describedFailure(`LandingLimit.${tab}`, LANDING_READ_LIMITS[tab], detail)} actions={{ retry }} />
 )
 
+/*
+ * A tab not read for a signed-out visitor (`signInTabs`): it goes through a
+ * GitHub credential the visitor does not have. One quiet sign-in door, never
+ * a failure with a Retry that cannot help.
+ */
+const SignInTab = ({ tab, onRunCommand }: { readonly tab: "commits" | "checks" | "files" } & LandingCardActions) => (
+  <p className="ghc-tab-empty" data-testid={`landing-${tab}-sign-in`}>
+    <Button size="sm" variant="outline" {...flowAction(onRunCommand, "sign-in")}>{SIGN_IN_TO_SEE[tab]}</Button>
+  </p>
+)
+
 const CommitsTab = ({ commits, error, limit, retry }: { readonly commits: ReadonlyArray<LandingCommit> | undefined; readonly error?: string; readonly limit?: string; readonly retry: ReturnType<typeof flowAction> }) => {
   if (error !== undefined) return <ReadFailure tab="commits" detail={error} retry={retry} />
   if (commits === undefined) return <p className="ghc-tab-empty">Commits unavailable.</p>
@@ -294,6 +306,7 @@ export const LandingCardBody = ({
 }: { readonly card: Extract<Card, { kind: "pr" }> } & LandingCardActions) => {
   const { repo, number, title, state, author, prBody, reviews, checks } = card.payload
   const extra = card.payload
+  const signIn = (name: "commits" | "checks" | "files"): boolean => extra.signInTabs?.includes(name) === true
   const actionable = extra.sourceRepo === undefined && ["open", "draft", "failed"].includes(state.toLowerCase())
   const summary = checksSummary(checks, extra.readLimits?.checks === undefined)
   const additions = (extra.files ?? []).reduce((sum, file) => sum + (file.additions ?? 0), 0)
@@ -309,7 +322,7 @@ export const LandingCardBody = ({
   const tabs: ReadonlyArray<readonly [PrTab, string, "comment" | "git-commit" | "check" | "file-diff", number | undefined]> = [
     ["conversation", "Conversation", "comment", extra.sourceRepo === undefined ? reviews.length : undefined],
     ["commits", "Commits", "git-commit", extra.commits?.length],
-    ["checks", "Checks", "check", extra.readErrors?.checks === undefined ? checks.length : undefined],
+    ["checks", "Checks", "check", extra.readErrors?.checks === undefined && !signIn("checks") ? checks.length : undefined],
     ["files", "Files changed", "file-diff", extra.files?.length]
   ]
   const tab = card.payload.tab ?? "conversation"
@@ -394,15 +407,16 @@ export const LandingCardBody = ({
               </>
             ) :
             null}
-          {tab === "commits" ?
+          {tab !== "conversation" && signIn(tab) ? <SignInTab tab={tab} onRunCommand={onRunCommand} /> : null}
+          {tab === "commits" && !signIn("commits") ?
             <CommitsTab commits={extra.commits} error={extra.readErrors?.commits} limit={extra.readLimits?.commits} retry={retry} /> :
             null}
-          {tab === "files" ? <FilesTab files={extra.files} error={extra.readErrors?.files} retry={retry} /> : null}
-          {tab === "checks" && extra.readErrors?.checks !== undefined ?
+          {tab === "files" && !signIn("files") ? <FilesTab files={extra.files} error={extra.readErrors?.files} retry={retry} /> : null}
+          {tab === "checks" && !signIn("checks") && extra.readErrors?.checks !== undefined ?
             <ReadFailure tab="checks" detail={extra.readErrors.checks} retry={retry} /> :
             null}
           {/* Checks that were read but are not all of them; the box follows. */}
-          {tab === "checks" && extra.readErrors?.checks === undefined && extra.readLimits?.checks !== undefined ?
+          {tab === "checks" && !signIn("checks") && extra.readErrors?.checks === undefined && extra.readLimits?.checks !== undefined ?
             <ReadLimit tab="checks" detail={extra.readLimits.checks} retry={retry} /> :
             null}
           {/*
@@ -411,7 +425,7 @@ export const LandingCardBody = ({
             * source gets the checks its head commit reported and no actions,
             * and a refused checks read is answered above instead.
             */}
-          {extra.readErrors?.checks === undefined && (tab === "checks" || (extra.sourceRepo === undefined && tab === "conversation")) ?
+          {extra.readErrors?.checks === undefined && !signIn("checks") && (tab === "checks" || (extra.sourceRepo === undefined && tab === "conversation")) ?
             (
               <section className="ghc-box ghc-merge" aria-label={extra.sourceRepo === undefined ? "Checks and landing" : "Checks"}>
                 <header className={`ghc-merge-head ${TONE_CLASS[summary.tone]}`}>

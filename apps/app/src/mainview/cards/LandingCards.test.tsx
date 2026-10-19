@@ -299,3 +299,30 @@ test("PR branch sentences describe open, merged and closed states without attrib
     await act(async () => root.unmount())
   }
 })
+
+/*
+ * A GitHub-source tab not read for a signed-out visitor (`signInTabs`) asks
+ * for sign-in in the chat card too: no failure, no Retry, and a Checks tab
+ * with nothing read claims neither "No checks reported" nor a count of 0.
+ */
+test("a tab that waits on sign-in offers the sign-in door, never a failure or an empty answer", () => {
+  for (const [tab, prompt] of [["commits", "Sign in to see commits"], ["checks", "Sign in to see checks"], ["files", "Sign in to see files"]] as const) {
+    const html = renderTab({ tab, sourceRepo: "owner/repo", signInTabs: ["commits", "checks", "files"] })
+    expect(html).toContain(`data-testid="landing-${tab}-sign-in"`)
+    expect(html).toContain('data-flow="sign-in"')
+    expect(html).toContain(prompt)
+    expect(html).not.toContain('role="alert"')
+    expect(html).not.toContain(">Retry</button>")
+    expect(html).not.toContain("unavailable")
+    expect(html).not.toContain("No checks reported")
+    expect(html).not.toContain("No commits in this stack.")
+    expect(html).not.toContain("No file changes in this pull request.")
+    expect(html).not.toMatch(/Checks<span class="ghc-tab-count">/)
+  }
+  // The count the assertion above rules out is the one a read Checks tab draws.
+  expect(renderTab({ tab: "checks", sourceRepo: "owner/repo" })).toMatch(/Checks<span class="ghc-tab-count">0<\/span>/)
+  // Only the named tab waits; a refused read beside it keeps its own Retry.
+  const mixed = renderTab({ tab: "commits", sourceRepo: "owner/repo", signInTabs: ["checks"], readErrors: { commits: "Commits unavailable (Read failed (HTTP 500).)" } })
+  expect(mixed).toContain(">Retry</button>")
+  expect(mixed).not.toContain("Sign in to see")
+})
