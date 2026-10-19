@@ -37,6 +37,14 @@ type agentDispatch struct {
 	ctx                    context.Context
 	input                  DispatchAgentRunInput
 
+	// sandboxOwner is the billing owner the turn's box is charged to, with
+	// its plan's running-machine limit, and sandboxEntitlement the plan read
+	// at admission; nil when no finite limit applies. reserveOwnerSandbox
+	// reserves the box against that limit and sets sandboxReserved.
+	sandboxOwner       *db.AgentSandboxOwner
+	sandboxEntitlement SandboxEntitlement
+	sandboxReserved    bool
+
 	// Accumulated state from each step
 	wfDef          db.WorkflowDefinition
 	run            db.WorkflowRun
@@ -387,14 +395,43 @@ func (d *agentDispatch) enforceConcurrencyCap() error {
 			return err
 		}
 	}
-	if err := authorizeSandboxStartForUser(d.ctx, d.svc.billing, d.input.UserID); err != nil {
-		return err
+	// A turn's box is charged to its repository's payer, as the box's own
+	// start is (workspaceBillingContext): the person for a personal
+	// repository, the organization for an organization's.
+	billingCtx := d.ctx
+	payer, payerKnown := sandbox.BillingOwner{}, false
+	if d.workspaceMode() && d.svc.billing != nil {
+		if payers, ok := d.svc.workspaces.(agentSandboxPayer); ok {
+			ctx, owner, err := payers.workspaceBillingContext(d.ctx, d.input.UserID, d.input.RepositoryID)
+			if err != nil {
+				return err
+			}
+			billingCtx, payer, payerKnown = ctx, owner, true
+		}
+	}
+	// With the payer known, its running machines are counted once, in the
+	// locked reservation (reserveOwnerSandbox), which never counts the
+	// session's own box against it. Today's hours are checked here.
+	if !payerKnown {
+		if err := authorizeSandboxStartForUser(billingCtx, d.svc.billing, d.input.UserID); err != nil {
+			return err
+		}
 	}
 	d.sandboxConfig = d.svc.sandboxConfig
 	if d.svc.billing != nil {
-		entitlement, err := sandboxEntitlementForUser(d.ctx, d.svc.billing, d.input.UserID)
+		entitlement, err := sandboxEntitlementForUser(billingCtx, d.svc.billing, d.input.UserID)
 		if err != nil {
 			return err
+		}
+		if payerKnown {
+			if hours := sandboxDailyHoursError(entitlement); hours != nil {
+				return hours
+			}
+			if entitlement.ConcurrentSandboxes < unlimitedBillingQuantity {
+				d.sandboxEntitlement = entitlement
+				d.sandboxOwner = &db.AgentSandboxOwner{Type: payer.Type, ID: payer.ID,
+					ServicePayerOrgIDs: sandbox.ServicePayerOrgsFromContext(billingCtx), Limit: entitlement.ConcurrentSandboxes}
+			}
 		}
 		d.sandboxStartAuthorized = true
 		if entitlement.IdleTimeoutSecs != 0 {
@@ -428,8 +465,15 @@ func (d *agentDispatch) upsertWorkflowDefinition() error {
 
 func (d *agentDispatch) createWorkflowRun() error {
 	commit := func(ctx context.Context, conn db.DBTX) error {
-		if err := d.beginDispatch(); err != nil {
-			return err
+		// A turn its owner's machine limit refuses must not have started its
+		// external effect (beforeDispatch): the message worker then parks or
+		// refuses it as never started. In an admission transaction the box is
+		// reserved first and the effect follows it.
+		reserveFirst := d.sandboxOwner != nil && conn != nil
+		if !reserveFirst {
+			if err := d.beginDispatch(); err != nil {
+				return err
+			}
 		}
 		queries := d.svc.dispatchQ
 		if conn != nil {
@@ -469,6 +513,23 @@ func (d *agentDispatch) createWorkflowRun() error {
 				return pkgerrors.Internal("link session to workflow run: " + err.Error())
 			}
 			return pkgerrors.Conflict("agent session already has an active run")
+		}
+		if d.sandboxOwner != nil {
+			if err := d.reserveOwnerSandbox(ctx, conn); err != nil {
+				if conn == nil {
+					// The run is already durable; fail it, never the session,
+					// which waits for its owner's machine.
+					cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+					d.svc.markAgentDispatchInfrastructureFailed(cleanupCtx, 0, 0, run.ID, "", "agent box not reserved")
+					cancel()
+				}
+				return err
+			}
+		}
+		if reserveFirst {
+			if err := d.beginDispatch(); err != nil {
+				return err
+			}
 		}
 		// Retain the identity before COMMIT: a lost commit acknowledgment must
 		// not make cleanup forget a run that the database already persisted.
@@ -1276,6 +1337,11 @@ func (d *agentDispatch) createVM() error {
 // transition on 'done', or the session reaper.
 func (d *agentDispatch) reserveFleetSlot() (retErr error) {
 	defer func() { d.meterReservedAgentUsage(retErr) }()
+	if d.sandboxReserved {
+		// Reserved at admission, fleet slot included; the turn's clock
+		// restarts as its box allocation begins.
+		return d.setSessionStartedAt()
+	}
 	if d.svc.concurrencyCounter == nil || d.svc.concurrencyMax <= 0 {
 		return d.setSessionStartedAt()
 	}
@@ -1288,6 +1354,51 @@ func (d *agentDispatch) reserveFleetSlot() (retErr error) {
 	if !reserved {
 		return pkgerrors.QuotaExceeded("concurrent agent session limit reached")
 	}
+	return nil
+}
+
+// agentSandboxPayer names the payer a repository's box is charged to
+// (WorkspaceService.workspaceBillingContext).
+type agentSandboxPayer interface {
+	workspaceBillingContext(ctx context.Context, userID, repositoryID int64) (context.Context, sandbox.BillingOwner, error)
+}
+
+// reserveOwnerSandbox reserves the turn's box against its billing owner's
+// running-machine limit and the fleet cap, with the session's claim, in the
+// admission transaction conn (db.ReserveAgentSessionSandboxIn), before any box
+// or external effect exists. The plan check used to read without a lock, so
+// two turns one owner started at once both passed it and each built a box;
+// each box's coding host start then counted the other and refused, and
+// neither turn ran (QA b-jpt11m). Now one turn reserves and every other gets
+// sandboxLimitError and builds nothing. Without conn it reserves in a
+// transaction of its own.
+func (d *agentDispatch) reserveOwnerSandbox(ctx context.Context, conn db.DBTX) error {
+	fleetMax := 0
+	if d.svc.concurrencyCounter != nil {
+		fleetMax = d.svc.concurrencyMax
+	}
+	arg := db.ReserveAgentSessionSandboxParams{SessionID: d.input.SessionID, StartedAt: turnStartedAt(), FleetMax: fleetMax, Owner: d.sandboxOwner}
+	var reservation db.AgentSessionSandboxReservation
+	var err error
+	switch {
+	case conn != nil:
+		reservation, err = db.ReserveAgentSessionSandboxIn(ctx, conn, arg)
+	case d.svc.messagePool != nil:
+		reservation, err = db.New(d.svc.messagePool).ReserveAgentSessionSandbox(ctx, arg)
+	default:
+		return pkgerrors.Internal("reserve agent box: no database to reserve it in")
+	}
+	switch {
+	case err != nil:
+		return pkgerrors.Internal("reserve agent box: " + err.Error())
+	case reservation.FleetFull:
+		return pkgerrors.QuotaExceeded("concurrent agent session limit reached")
+	case !reservation.Reserved:
+		entitlement := d.sandboxEntitlement
+		entitlement.ConcurrentInUse = reservation.OwnerInUse
+		return sandboxLimitError(entitlement)
+	}
+	d.sandboxReserved = true
 	return nil
 }
 

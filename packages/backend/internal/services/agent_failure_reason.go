@@ -287,6 +287,10 @@ func agentSessionFailureForFlow(checkpoint flowdispatch.RuntimeCheckpoint) agent
 			failure.Reason = detail + " Nothing ran, and trying again will not help."
 		}
 		return failure
+	case code == string(pkgerrors.CodePlanLimitExceeded):
+		// The payer's plan refused the box's start (sandboxPlanRefusal in
+		// compose): the run ends as a dispatch refused by the plan would.
+		return agentSessionFailureForError(&pkgerrors.APIError{Code: pkgerrors.CodePlanLimitExceeded, Message: strings.TrimSpace(checkpoint.FailureDetail)})
 	case code == flowhost.WorkspaceInitializingCode || code == "wake_timeout" || code == string(pkgerrors.CodeGuestNotReady):
 		return agentSessionBoxNotReady
 	case code == "isolation_required" || code == "host_lease_lost" || code == "http_refused" || code == "health_refused" ||

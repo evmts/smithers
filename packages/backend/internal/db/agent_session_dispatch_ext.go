@@ -109,46 +109,11 @@ WHERE id = $1 AND deleted_at IS NULL
 // Returns false when the fleet is at capacity; an error when the session is not
 // in a reservable state (missing, tombstoned, or not active).
 func (q *Queries) ReserveAgentSessionVMSlot(ctx context.Context, sessionID string, maxActive int, startedAt time.Time) (bool, error) {
-	tx, err := q.BeginTx(ctx)
-	if err != nil {
-		return false, fmt.Errorf("reserve agent session vm slot: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('agent_session_vm_fleet_cap'))`); err != nil {
-		return false, err
-	}
-
-	var count int
-	if err := tx.QueryRow(ctx, `
-SELECT COUNT(*)
-FROM agent_sessions
-WHERE status = 'active'
-  AND started_at IS NOT NULL
-  AND deleted_at IS NULL
-`).Scan(&count); err != nil {
-		return false, err
-	}
-	if count >= maxActive {
+	if maxActive <= 0 {
 		return false, nil
 	}
-
-	tag, err := tx.Exec(ctx, `
-UPDATE agent_sessions
-SET started_at = $2, updated_at = NOW()
-WHERE id = $1 AND status = 'active' AND deleted_at IS NULL
-`, sessionID, startedAt)
-	if err != nil {
-		return false, err
-	}
-	if tag.RowsAffected() == 0 {
-		return false, fmt.Errorf("agent session %s is not active", sessionID)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return false, err
-	}
-	return true, nil
+	reservation, err := q.ReserveAgentSessionSandbox(ctx, ReserveAgentSessionSandboxParams{SessionID: sessionID, StartedAt: startedAt, FleetMax: maxActive})
+	return reservation.Reserved, err
 }
 
 // FailNeverStartedAgentSession preserves the session result while the generated
