@@ -17,6 +17,8 @@ import (
 	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/jobs"
 )
 
@@ -178,6 +180,38 @@ func agentFlowScope(repositoryID, userID int64) jobs.Scope {
 
 func agentFlowRequestID(workflowRunID int64) string {
 	return "agent-run:" + strconv.FormatInt(workflowRunID, 10)
+}
+
+// hostedCodingNotOpenMessage is the one sentence a refused user reads, on
+// the API error and on the session.
+const hostedCodingNotOpenMessage = "Hosted coding isn't open for your account yet"
+
+// refuseUnlistedCodingUser refuses a hosted coding turn for a user the
+// deployment has not admitted (agents.hosted_coding_user_ids). The user is
+// the one dispatching the turn: the session's own user, whom message
+// admission has already matched to the caller.
+//
+// The step runs right after ensureNoActiveRun, before any row, token, Flow
+// admission, workspace or box exists, and before the durable message worker
+// starts its external effect, so a refusal settles that message as failed
+// rather than uncertain. With no run to fail, the session itself records the
+// refusal where its owner reads it. ensureNoActiveRun has just shown no live
+// run owns the session, so failing it does not strand one.
+func (dispatch *agentDispatch) refuseUnlistedCodingUser() error {
+	if !dispatch.codingDispatchEnabled() || dispatch.svc.hostedCodingUsers.Allows(dispatch.input.UserID) {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(dispatch.ctx), 30*time.Second)
+	defer cancel()
+	session, updated, err := dispatch.svc.transitionAgentSessionTerminalStatusWithReason(ctx, dispatch.input.SessionID, "failed", pgtype.Int8{}, hostedCodingNotOpenMessage)
+	if err != nil {
+		middleware.LoggerWithAgentSession(ctx, dispatch.input.SessionID).
+			Error("failed to record the hosted coding refusal on the session", "user_id", dispatch.input.UserID, "error", err)
+	} else if updated {
+		dispatch.svc.observeAgentSessionCompletion("failed")
+		dispatch.svc.archiveAgentTranscript(ctx, session, "failed")
+	}
+	return pkgerrors.New(pkgerrors.CodeHostedCodingNotOpen, hostedCodingNotOpenMessage)
 }
 
 // admitCodingTurn commits the durable product request before repository

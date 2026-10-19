@@ -217,6 +217,13 @@ const (
 	CodeAgentLoopRetired Code = "agent_loop_retired"
 )
 
+// Hosted coding admission. A multitenant deployment runs hosted coding turns
+// only for the accounts its operator lists (agents.hosted_coding_user_ids);
+// everyone else is refused before anything is provisioned.
+const (
+	CodeHostedCodingNotOpen Code = "hosted_coding_not_open"
+)
+
 // Repositories, landings, imports and sharing.
 const (
 	CodeForkNotNeeded             Code = "fork_not_needed"
@@ -521,6 +528,9 @@ var registry = map[Code]Entry{
 	CodeCodingGuestFailure: {Status: http.StatusServiceUnavailable, Fault: FaultBug, Class: ClassInfra, RetryAfter: 0, Doc: "The guest's coding helper failed. The guest's own sentence is logged server-side, never returned."},
 
 	CodeAgentLoopRetired: {Status: http.StatusNotImplemented, Fault: FaultBug, Class: ClassInfra, RetryAfter: 0, Doc: "plue's own 0.x agent loop was retired and the Smithers 1.0 replacement has no entrypoint for a single dispatched task yet. Nothing the caller did."},
+	// A multitenant deployment refused a hosted coding turn for an account
+	// its operator has not listed.
+	CodeHostedCodingNotOpen: {Status: http.StatusForbidden, Fault: FaultUser, Class: ClassPermission, RetryAfter: 0, Doc: "This deployment runs hosted coding only for the accounts its operator lists, and the caller's account is not one of them yet."},
 	// Another coding operation holds the box's reporter lock.
 	CodeCodingWorkspaceBusy: {Status: http.StatusServiceUnavailable, Fault: FaultWait, Class: ClassCapacity, RetryAfter: 1, Doc: "Another coding operation holds the box's reporter lock."},
 	// The box's reporter is older than the operation requires; it upgrades

@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -425,6 +426,10 @@ type AgentService struct {
 	concurrencyMax     int
 	watchdogsMu        sync.Mutex
 	watchdogs          map[string]*agentRuntimeWatchdog
+
+	// hostedCodingUsers is who may run a hosted coding turn
+	// (agents.hosted_coding_user_ids). The zero value admits nobody.
+	hostedCodingUsers config.HostedCodingUsers
 }
 
 // AgentServiceOption configures optional dependencies for AgentService.
@@ -567,6 +572,14 @@ func WithAgentEnvironmentVariables(loader AgentEnvironmentVariablesLoader) Agent
 func WithAgentSandboxConfig(cfg AgentSandboxConfig) AgentServiceOption {
 	return func(s *AgentService) {
 		s.sandboxConfig = cfg
+	}
+}
+
+// WithAgentHostedCodingUsers sets who may run a hosted coding turn. Without
+// it nobody may: the gate fails closed.
+func WithAgentHostedCodingUsers(users config.HostedCodingUsers) AgentServiceOption {
+	return func(s *AgentService) {
+		s.hostedCodingUsers = users
 	}
 }
 
