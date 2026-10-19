@@ -13,9 +13,10 @@ test.beforeEach(async ({ page }) => {
 
 test("Cmd+K opens the composer from a focused text input, and typing still works", async ({ page }) => {
   await page.goto("/smithersai/smithers/?design=off")
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+  // The repository route opens in its frame, whose Ask panel holds Chat (59f7a91e).
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
   await page.keyboard.press("Control+k")
-  const composer = page.getByTestId("composer-input")
+  const composer = page.getByRole("complementary", { name: "Ask", exact: true }).getByTestId("composer-input")
   await composer.fill("/file")
   await composer.press("Enter")
   const path = page.locator(".flow-form[data-flow-name='file']").getByTestId("flow-form-path")
