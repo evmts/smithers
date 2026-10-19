@@ -1095,7 +1095,7 @@ describe("TodoSeam — the TODO list Home reads where no `home` topic is served 
   test("an absent HTTP route stops automatic reads and a new reader can recover", async () => {
     const requests: string[] = []
     let served = false
-    const server = Bun.serve({ hostname: "127.0.0.1", port: 49400 + Math.floor(Math.random() * 2000), fetch: request => {
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: request => {
       requests.push(new URL(request.url).pathname)
       return served ? json([], 200) : new Response("404 page not found", { status: 404 })
     } })
