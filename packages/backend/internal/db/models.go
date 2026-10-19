@@ -465,6 +465,7 @@ type ChatTurn struct {
 	SummaryRev             int64              `json:"summary_rev"`
 	SummaryPendingSince    pgtype.Timestamptz `json:"summary_pending_since"`
 	EntrySubject           []byte             `json:"entry_subject"`
+	Progress               json.RawMessage    `json:"progress"`
 }
 
 type ChatTurnBatch struct {
@@ -3076,6 +3077,14 @@ type WorkspaceProviderUseRow struct {
 	Model        string    `json:"model"`
 	Calls        int64     `json:"calls"`
 	LastUsedAt   time.Time `json:"last_used_at"`
+}
+
+type WorkspaceProvisioningLease struct {
+	WorkspaceID string    `json:"workspace_id"`
+	ClaimToken  string    `json:"claim_token"`
+	ClaimKind   string    `json:"claim_kind"`
+	ClaimedAt   time.Time `json:"claimed_at"`
+	ExpiresAt   time.Time `json:"expires_at"`
 }
 
 type WorkspaceServicePreview struct {

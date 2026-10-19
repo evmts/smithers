@@ -249,6 +249,10 @@ export const RunTraceBody = ({
     ran.calls > 0 ? count(ran.calls, "call") : undefined,
     whole.counts.spans > 0 ? durationWords(ran.wall) : undefined
   ].filter((fact) => fact !== undefined)
+  if (card.payload.workflow === "chat") return <div className="run-trace" data-testid={`run-trace-${runId}`}>
+    <RunTraceSummary card={card} model={whole} facts={facts} onRunCommand={onRunCommand} admin={admin} />
+    {phase === "no-capacity" && card.payload.error ? <p role="status" data-failure="HostNoCapacity" data-fault="infra">{card.payload.error} <a href="/docs/installation/">Run on your machine</a></p> : null}
+  </div>
   /* What started the run, as it was recorded (RunTrigger.ts): the message, the pinned pushed ref, the schedule, each approval decision. Never inferred. */
   const triggers = runTriggersOf(card)
   const scrub = card.payload.liveTail === false ? (

@@ -131,19 +131,19 @@ const (
 	// waiting for a second that is not there.
 	corePoolStagePoolHeadroom corePoolStage = "pool_headroom"
 	// acquire_connection: the pool itself could not serve an acquire this duty
-	// made inside its written bound, either for the transaction that holds the
-	// advisory lock or for a read nested inside it.
+	// made inside its written bound: for the transaction that holds its lock
+	// or writes its lease, or for a read nested inside it.
 	corePoolStageAcquireConnection corePoolStage = "acquire_connection"
-	// claim_lock: the advisory lock statement a claim issues on the
-	// connection its transaction already holds. It asks the pool for nothing,
-	// so a refusal here is a network or lock wait and never an exhausted
-	// pool — which is why it is a stage of its own rather than
-	// acquire_connection.
+	// claim_lock: the lease statement and commit a provisioning claim issues
+	// on the connection its lease transaction already holds, or the advisory
+	// lock it takes on a lent transaction. It asks the pool for nothing, so a
+	// refusal here is a network or lock wait and never an exhausted pool —
+	// which is why it is a stage of its own rather than acquire_connection.
 	corePoolStageClaimLock corePoolStage = "claim_lock"
-	// claim_row_read: a read the duty made INSIDE its own hold, after the
-	// first fenced read and with the transaction and advisory lock still
-	// open. It is distinct from acquire_connection because the hold already
-	// existed: this is the stage that used to park forever.
+	// claim_row_read: a read the duty made inside its claim, after the claim
+	// was taken. It is distinct from acquire_connection because the claim
+	// already existed: this is the stage that used to park forever, when the
+	// claim held its transaction across its work.
 	corePoolStageClaimRowRead corePoolStage = "claim_row_read"
 	// claim_receipt_write: the write that records what a duty already did —
 	// the fenced receipt of a physical stop that has ALREADY happened. A

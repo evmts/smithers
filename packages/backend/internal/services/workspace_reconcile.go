@@ -49,6 +49,9 @@ type workspaceProvisionTasks struct {
 	// refusals is each refused asynchronous claim's last logged outcome, by
 	// workspace ID: see recordAsyncProvisionOutcome.
 	refusals asyncProvisionRefusals
+	// unreleased is, by workspace ID, the token of a lease this process's own
+	// ended claim could not delete: see releaseProvisionLease.
+	unreleased sync.Map
 
 	// mu guards reserved, and is held ACROSS the pool measurement that
 	// justifies a reservation: see reserve.
@@ -66,41 +69,47 @@ func newWorkspaceProvisionTasks() *workspaceProvisionTasks {
 // THE CONNECTION BUDGET, written down, because the gate in front of these
 // claims used to be a bare constant that did not know the pool's size.
 //
-// One claim needs TWO core-pool connections at the same time and holds the
-// first while it waits for the second: withWorkspaceProvisionLock begins a
-// transaction (connection one), takes the provisioning advisory lock on it,
-// and then every read and fenced write inside the callback goes through s.q,
-// which is the SAME pool (compose/main.go hands one pool to both). Holding a
-// connection while acquiring another is only safe while the pool can serve
-// both, and pgxpool.Acquire waits until its context is done — a reconciler
-// tick carries no deadline — so past that point the claim parks forever with
-// its transaction, and its advisory lock, still open. That is the core-pool
-// invariant in core_pool_duty.go, and this is one of the duties that has to
-// satisfy it.
+// A claim holds no connection across the work it admits: its lease is a
+// committed row (#4294; see withWorkspaceProvisionLock). It still USES core
+// connections, one statement at a time: the lease transaction and the fenced
+// re-read before the work starts, and during the work a lease renewal beside
+// whatever query the callback is making through s.q, which is the SAME pool
+// (compose/main.go hands one pool to both). A claim is admitted only when the
+// pool, measured at admission, can serve that peak of two, and the gate admits
+// no more claims than the pool could serve at that peak at once.
+//
+// Before #4294 the claim was an advisory lock on a transaction left open
+// across the boot, so it held connection one while every callback query
+// waited for connection two; past the pool's size that parked forever. The
+// reservation below still keeps two of this process's claimants from being
+// admitted against the same free connections. It lasts until the claim's
+// lease is committed and its row re-read, and across the work only for a
+// claim made under a caller's held transaction, which still waits while that
+// transaction holds its connection.
 //
 // What this file does NOT claim: that a provisioning claim is what absorbed
-// the serving worker. The closed wait aggregate named the long-held operations
-// and none of them was this one — no TryLockWorkspaceProvisioning row appears
-// in it at all, and its four interesting connections are a server-wide census
-// that attributes nothing to one process or one pool. What is proved here is a
-// general hazard in this claim path, reproduced against real PostgreSQL at the
-// shipped pool size, and that a pool filled by ANY other duty used to park
-// this reconciler silently. The duties the aggregate did name are bounded
-// where this process owns them: see GitHubAppInstallationReconcileHoldBudget.
+// the serving worker on 10-17. The closed wait aggregate named the long-held
+// operations and none of them was this one — no TryLockWorkspaceProvisioning
+// row appears in it at all, and its four interesting connections are a
+// server-wide census that attributes nothing to one process or one pool. The
+// duties the aggregate did name are bounded where this process owns them: see
+// GitHubAppInstallationReconcileHoldBudget. On 10-18 the open claim
+// transactions were seen directly (#4294), and the claim no longer has one.
 const (
 	// workspaceProvisionConnectionsPerClaim is how many core-pool connections
-	// one admitted claim can need at once: the transaction holding the
-	// advisory lock, plus the deepest query the callback makes through the
-	// store while that transaction is still open.
+	// one admitted claim can use at once: a lease renewal beside the deepest
+	// query the callback makes through the store.
 	workspaceProvisionConnectionsPerClaim = 2
 
 	// workspaceProvisionConnectionsPerHeldClaim is the same claim made under
 	// a mutation transaction its caller already holds for this workspace: a
-	// person's start of a branch the machine service owns. The advisory lock
-	// goes on that transaction, whose connection the pool already counts, so
-	// the claim needs only the connection for its deepest store query.
-	// Beginning a second transaction there asked a pool of four, two of them
-	// residents, for three connections at once (plue#839).
+	// person's start of a branch the machine service owns. That transaction's
+	// connection is the caller's and the pool already counts it; beside it
+	// the claim needs one connection at a time, for its lease transaction and
+	// then for each store query. It keeps that one reserved across the work,
+	// because the lent transaction holds its connection while they wait.
+	// Asking for more there asked a pool of four, two of them residents, for
+	// three connections at once (plue#839).
 	workspaceProvisionConnectionsPerHeldClaim = 1
 
 	// workspaceProvisionMaxClaims is the ceiling the gate keeps when the pool
@@ -110,7 +119,7 @@ const (
 )
 
 // WorkspaceProvisionConnectionsPerClaim is the most core-pool connections one
-// provisioning claim needs at once. Composition sizes its pool floor from it.
+// provisioning claim uses at once. Composition sizes its pool floor from it.
 const WorkspaceProvisionConnectionsPerClaim = workspaceProvisionConnectionsPerClaim
 
 // workspaceProvisionAcquireTimeout bounds each core-pool acquire a claim
@@ -120,8 +129,8 @@ const WorkspaceProvisionConnectionsPerClaim = workspaceProvisionConnectionsPerCl
 // holds stays held, nothing is ever released, the reconcile loop never
 // completes another iteration, and no fence is ever reached that could record
 // a reason — which is exactly why fifteen minutes of production stall produced
-// no log line at all. With it, exhaustion is a finite, classified refusal, any
-// transaction and advisory lock are released, and the next tick re-drives.
+// no log line at all. With it, exhaustion is a finite, classified refusal,
+// anything the claim holds is released, and the next tick re-drives.
 const workspaceProvisionAcquireTimeout = 15 * time.Second
 
 // workspaceProvisionClaimBudget is the gate's ceiling for a pool of maxConns:
@@ -167,8 +176,10 @@ func workspaceProvisionClaimBudget(maxConns int32) int {
 // the decision and the commitment are one step.
 //
 // reserveProvisionClaim returns the reservation of need connections to release
-// when the claim ends. A source that cannot report its capacity is admitted on
-// the gate alone, as it always was; only a real pool can be measured.
+// once the claim can no longer wait while holding (see
+// withWorkspaceProvisionLock). A source that cannot report its capacity is
+// admitted on the gate alone, as it always was; only a real pool can be
+// measured.
 func (s *WorkspaceService) reserveProvisionClaim(need int) (*provisionClaimReservation, bool) {
 	if s.provisionTasks == nil {
 		return nil, true
@@ -313,8 +324,8 @@ func corePoolDutyContext(ctx context.Context, duty corePoolDuty) context.Context
 // workspaceProvisionClaimStall is a step of a claim that did not finish inside
 // workspaceProvisionAcquireTimeout. It carries the sub-stage so the refusal
 // names which step stalled, because "claim_owner_row" covered the slot wait,
-// the connection acquire, the advisory lock and the fenced re-read alike — and
-// a pool stall and a contended lock are different operator actions. The cause
+// the connection acquire, the lease and the fenced re-read alike — and a pool
+// stall and a contended claim are different operator actions. The cause
 // is wrapped, never rendered: see interruptedReleaseStopOutcome.
 //
 // THE STAGE IS NOT THE EVIDENCE, and this type carries only the stage.
@@ -322,8 +333,8 @@ func corePoolDutyContext(ctx context.Context, duty corePoolDuty) context.Context
 // A bound that refused says only that a step did not finish inside it. It does
 // NOT say the core pool had nothing to give. Three separate reasons why:
 //
-//   - A step that already holds its connection — the advisory lock statement,
-//     or any statement on the claim's own transaction — asks the pool for
+//   - A step that already holds its connection — the lease statement and its
+//     commit, or the advisory lock on a lent transaction — asks the pool for
 //     nothing at all.
 //   - pgxpool.Begin is an Acquire AND a BEGIN on the connection it got, and a
 //     query through the pool is an Acquire AND a round trip, so an opaque
@@ -395,8 +406,9 @@ func (s *WorkspaceService) WaitForProvisioning(ctx context.Context) error {
 	}
 }
 
-// WithWorkspaceTransactions lets the service hold a workspace's provisioning
-// lock across processes. Without it provisioning is serialized per process.
+// WithWorkspaceTransactions lets the service claim a workspace's provisioning
+// across processes, through a committed lease. Without it provisioning is
+// serialized per process.
 func WithWorkspaceTransactions(transactions RepositoryJobTransactions) WorkspaceServiceOption {
 	return func(s *WorkspaceService) {
 		s.transactions = transactions
@@ -462,14 +474,33 @@ func (s *WorkspaceService) observeProvisionClaim(kind workspaceProvisionClaimKin
 	}
 }
 
-// Ownership is a database connection's advisory transaction lock, so an API
-// crash releases it immediately. Row age is never evidence of failure.
+// THE CLAIM IS A COMMITTED LEASE (#4294), and the work it admits runs holding
+// no connection, no transaction and no snapshot.
+//
+// A claimant writes its row in workspace_provisioning_leases in one short
+// transaction and commits it, then renews the lease every
+// workspaceProvisionLeaseHeartbeat while fn boots a guest and clones the
+// repository. The claim used to be an advisory lock on a transaction left idle
+// for that whole time, up to half an hour: each in-flight lane held one
+// core-pool connection, a few concurrent starts exhausted the pool, the idle
+// transaction pinned backend_xmin, and a session PostgreSQL ended took the
+// lock with it while the guest was still booting.
+//
+// A live, renewed lease is never taken, however long the work runs. A holder
+// that stops renewing (a crashed API) loses its row when its lease expires,
+// after at most workspaceProvisionLeaseTTL. A holder that cannot confirm a
+// renewal before its last confirmed expiry cancels the claim context it handed
+// fn, slightly before that expiry (see keepLease), so its own work stops
+// before another replica can be admitted.
 //
 // A caller that already holds a mutation transaction over this workspace (a
-// person's start of a machine-owned branch) lends it to the claim: the
-// advisory lock is taken on that transaction and released when its owner
-// commits or rolls back, and the claim never begins, holds or ends a
-// transaction of its own.
+// person's start of a machine-owned branch) lends it to the claim. The claim
+// still writes its lease on a transaction of its own, because a lease written
+// on the lent transaction would be invisible to every other claimant until
+// that transaction ended. It also takes the provisioning advisory lock on the
+// lent transaction, which keeps it until its owner commits or rolls back, and
+// every lease claim checks that lock, so the next claimant still waits until
+// the lent transaction's writes are visible.
 func (s *WorkspaceService) withWorkspaceProvisionLock(ctx context.Context, kind workspaceProvisionClaimKind, workspace db.Workspace, fn func(claim context.Context, current db.Workspace) (db.Workspace, error)) (db.Workspace, error) {
 	if s.transactions == nil || s.provisionTasks == nil {
 		return fn(ctx, workspace)
@@ -514,9 +545,9 @@ func (s *WorkspaceService) withWorkspaceProvisionLock(ctx context.Context, kind 
 		need = workspaceProvisionConnectionsPerHeldClaim
 	}
 	// Measured, not assumed: a claim the pool cannot serve WHOLE is refused
-	// before it begins a transaction, so it never holds one connection and an
-	// advisory lock while waiting for a second that other duties are sitting
-	// on. See admitProvisionClaim.
+	// before it begins a transaction, so it never holds one connection while
+	// waiting for a second that other duties are sitting on. See
+	// admitProvisionClaim.
 	reservation, admitted := s.reserveProvisionClaim(need)
 	if !admitted {
 		s.observeProvisionClaimStall(corePoolDutyWorkspaceProvisionClaim, corePoolStagePoolHeadroom)
@@ -530,64 +561,75 @@ func (s *WorkspaceService) withWorkspaceProvisionLock(ctx context.Context, kind 
 			stage: interruptedReleaseStageAcquireConnection, cause: errCorePoolHeadroom})
 	}
 	defer reservation.release()
-	tx := held
-	if tx == nil {
-		begun, err := s.transactions.Begin(gate)
-		if err != nil {
-			if gate.Err() != nil && ctx.Err() == nil {
-				s.observeProvisionClaimStall(corePoolDutyWorkspaceProvisionClaim, corePoolStageAcquireConnection)
-				outcome = string(corePoolStageAcquireConnection)
-				// Begin is an acquire followed by a BEGIN on the connection it
-				// got, so an opaque deadline over it cannot say which half did
-				// not finish. The stage names the step; the reason stays the
-				// ordinary deadline.
-				err = workspaceProvisionClaimStall{stage: interruptedReleaseStageAcquireConnection, cause: err}
-			}
-			return workspace, workspaceProvisionInProgress(err)
+	tx, err := s.transactions.Begin(gate)
+	if err != nil {
+		if gate.Err() != nil && ctx.Err() == nil {
+			s.observeProvisionClaimStall(corePoolDutyWorkspaceProvisionClaim, corePoolStageAcquireConnection)
+			outcome = string(corePoolStageAcquireConnection)
+			// Begin is an acquire followed by a BEGIN on the connection it
+			// got, so an opaque deadline over it cannot say which half did
+			// not finish. The stage names the step; the reason stays the
+			// ordinary deadline.
+			err = workspaceProvisionClaimStall{stage: interruptedReleaseStageAcquireConnection, cause: err}
 		}
-		tx = begun
+		return workspace, workspaceProvisionInProgress(err)
+	}
+	if held == nil {
 		// One reserved connection is now a real one, counted by the pool itself.
 		reservation.acquired()
-		releaseHeld := corePoolDutyHold(s.corePoolDuties(), corePoolDutyWorkspaceProvisionClaim)
-		defer releaseHeld()
-		defer func() {
-			// Detached, because a cancelled caller must still release the lock,
-			// and finite, because an unbounded release keeps the very connection
-			// it was called to give back.
-			release, cancel := corePoolRelease(ctx)
-			defer cancel()
-			_ = begun.Rollback(release)
-		}()
 	}
-	// The lock statement runs on the connection this transaction already
-	// holds, so it asks the pool for nothing — but it still waits on the
-	// network under a context that, on a reconciler tick, is the process's.
-	// It gets the claim's written budget like every other step.
+	// The lease statement and its commit run on the connection this
+	// transaction already holds, so they ask the pool for nothing, but they
+	// still wait on the network under a context that, on a reconciler tick,
+	// is the process's. They get the claim's written budget like every other
+	// step.
 	claimLock, cancelClaimLock := context.WithTimeout(ctx, workspaceProvisionAcquireTimeout)
 	defer cancelClaimLock()
-	acquired, err := db.New(tx).TryLockWorkspaceProvisioning(claimLock, workspace.ID)
+	lease, err := s.commitProvisionLease(claimLock, tx, kind, workspace.ID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		outcome = workspaceClaimContended
+		return workspace, workspaceProvisionInProgress(nil)
+	}
 	if err != nil {
 		if claimLock.Err() != nil && ctx.Err() == nil {
 			// THIS STEP ASKS THE POOL FOR NOTHING. It runs on the connection
-			// the transaction above already holds, so its deadline is a
-			// network or lock wait and never an exhausted pool. Reporting it
-			// as acquire_connection/core_pool_exhausted sent an operator to
-			// the pool gauges for a claim that already had its connection.
+			// the lease transaction already holds, so its deadline is a
+			// network or lock wait and never an exhausted pool.
 			s.observeProvisionClaimStall(corePoolDutyWorkspaceProvisionClaim, corePoolStageClaimLock)
 			outcome = string(corePoolStageClaimLock)
 			err = workspaceProvisionInProgress(workspaceProvisionClaimStall{
 				stage: interruptedReleaseStageClaimLock, cause: err})
 		}
+		// The commit's outcome can be unknown, so a lease may stand. It
+		// expires on its own; release it now if it does.
+		s.releaseProvisionLease(ctx, workspaceProvisionLease{workspaceID: workspace.ID, token: lease.token})
 		return workspace, err
 	}
-	if !acquired {
-		outcome = workspaceClaimContended
-		return workspace, workspaceProvisionInProgress(nil)
+	// Released last, after the heartbeat below has stopped, and detached and
+	// finite like every other release: a release that cannot finish leaves a
+	// lease that expires on its own.
+	defer s.releaseProvisionLease(ctx, lease)
+	if held != nil {
+		// Kept on the lent transaction until its owner ends it; it asks the
+		// pool for nothing.
+		locked, err := db.New(held).TryLockWorkspaceProvisioning(claimLock, workspace.ID)
+		if err != nil {
+			if claimLock.Err() != nil && ctx.Err() == nil {
+				s.observeProvisionClaimStall(corePoolDutyWorkspaceProvisionClaim, corePoolStageClaimLock)
+				outcome = string(corePoolStageClaimLock)
+				err = workspaceProvisionInProgress(workspaceProvisionClaimStall{
+					stage: interruptedReleaseStageClaimLock, cause: err})
+			}
+			return workspace, err
+		}
+		if !locked {
+			outcome = workspaceClaimContended
+			return workspace, workspaceProvisionInProgress(nil)
+		}
 	}
-	// The fenced re-read is the claim's SECOND core-pool acquire, made while
-	// this transaction still holds the first one and the advisory lock. It is
-	// bounded on its own budget rather than the gate's remainder, so a slot
-	// that waited does not shorten the read that actually fences the row.
+	// The fenced re-read is bounded on its own budget rather than the gate's
+	// remainder, so a slot that waited does not shorten the read that
+	// actually fences the row.
 	read, cancelRead := context.WithTimeout(corePoolDutyContext(ctx, corePoolDutyWorkspaceProvisionClaim), workspaceProvisionAcquireTimeout)
 	defer cancelRead()
 	current, err := s.q.GetWorkspace(read, workspace.ID)
@@ -606,39 +648,199 @@ func (s *WorkspaceService) withWorkspaceProvisionLock(ctx context.Context, kind 
 		return current, pgx.ErrNoRows
 	}
 	outcome = workspaceClaimAdmitted
+	if held == nil {
+		// Admitted, and holding nothing from here on: the lease is committed
+		// and the connection that wrote it is back in the pool. A claim that
+		// holds nothing cannot wait while holding, so it keeps no reservation
+		// either. Kept across the boot, the reservation would still refuse
+		// other claims core_pool_exhausted, as the open claim transactions
+		// refused the failed-start reap on 10-18, with no connection held. A
+		// lent transaction still holds its connection while fn's queries
+		// wait, so a held claim keeps its one.
+		reservation.release()
+	}
 	// THE CLAIM CONTEXT IS HANDED TO THE CALLBACK, not kept here.
 	//
-	// Everything above this line is bounded, and everything below it used to
-	// be a closure over whatever context its enclosing function happened to
-	// hold — on a reconciler tick, the process's. The claim's transaction, its
-	// connection and its advisory lock are all still open while fn runs, so an
-	// unbounded database acquire inside fn parks exactly like the one before
-	// Begin did, except now it parks while HOLDING. A timeout created here and
-	// not passed to fn would bound nothing at all, which is why fn receives
-	// the claim context and bounds each of its own steps on it: see
-	// insideClaim.
-	//
-	// The claim context carries no single whole-callback deadline, and must
-	// not: fn is also the provisioning path, which boots a guest under its own
+	// fn bounds each of its own steps on the claim context: see insideClaim.
+	// The claim context ends when the lease is lost, so the work this claim
+	// admitted stops before another replica can be admitted to the row. It
+	// carries no single whole-callback deadline, and must not: fn is also the
+	// provisioning path, which boots a guest under its own
 	// workspaceProvisionTimeout, and the recovery path, whose physical stop
 	// and confirming read keep their own separate written budgets. One
 	// deadline over all of them would either break provisioning or silently
 	// shorten a physical stop.
-	return fn(ctx, current)
+	claim, endClaim := context.WithCancelCause(ctx)
+	stopHeartbeat := s.keepProvisionLease(claim, endClaim, kind, lease)
+	defer stopHeartbeat()
+	result, err := fn(claim, current)
+	if err != nil && errors.Is(context.Cause(claim), errWorkspaceProvisionLeaseLost) && ctx.Err() == nil {
+		// The row may already belong to another replica, so this is not a
+		// verdict on the workspace: callers treat it as provisioning that
+		// another API owns, and the next tick re-drives the row if nobody does.
+		return result, workspaceProvisionInProgress(errors.Join(errWorkspaceProvisionLeaseLost, err))
+	}
+	return result, err
 }
 
-// insideClaim runs ONE database step of a claim that is ALREADY holding a
-// core-pool connection and an advisory lock, on the claim's own written
-// acquire bound.
+// errWorkspaceProvisionLeaseLost is the cause a claim context ends with when
+// its lease could not be renewed: it expired or another claimant took it.
+var errWorkspaceProvisionLeaseLost = errors.New("workspace provisioning lease lost")
+
+// workspaceProvisionLease is one committed provisioning claim.
+type workspaceProvisionLease struct {
+	workspaceID string
+	token       string
+	expiresAt   time.Time
+}
+
+// The lease a provisioning claim writes, and how often its holder renews it.
+// A renewal every thirty seconds gives a healthy holder several chances
+// through a transient database error before the two-minute lease ends; a
+// crashed holder's row is claimable two minutes after its last renewal.
+const (
+	workspaceProvisionLeaseTTL       = 2 * time.Minute
+	workspaceProvisionLeaseHeartbeat = 30 * time.Second
+)
+
+// provisionLease is the lease length and renewal interval this service uses.
+// Tests shorten both; production uses the constants above.
+func (s *WorkspaceService) provisionLease() (ttl, heartbeat time.Duration) {
+	ttl, heartbeat = s.provisionLeaseTTL, s.provisionLeaseHeartbeat
+	if ttl <= 0 {
+		ttl = workspaceProvisionLeaseTTL
+	}
+	if heartbeat <= 0 {
+		heartbeat = workspaceProvisionLeaseHeartbeat
+	}
+	return ttl, heartbeat
+}
+
+// commitProvisionLease writes this claimant's lease on tx and commits it.
+// pgx.ErrNoRows means another claimant owns the workspace. tx has ended when
+// it returns.
+//
+// A lease this process's own ended claim could not release is taken over at
+// once rather than left to expire: its claim is over, so nothing runs under
+// it, and the next tick after a starved pool recovers re-drives the row.
+func (s *WorkspaceService) commitProvisionLease(ctx context.Context, tx pgx.Tx, kind workspaceProvisionClaimKind, workspaceID string) (workspaceProvisionLease, error) {
+	ttl, _ := s.provisionLease()
+	stale, _ := s.provisionTasks.unreleased.Load(workspaceID)
+	reclaim, _ := stale.(string)
+	lease := workspaceProvisionLease{workspaceID: workspaceID}
+	err := s.inProvisionLeaseTransaction(ctx, tx, func(q *db.Queries) error {
+		row, err := q.ClaimWorkspaceProvisioningLease(ctx, db.ClaimWorkspaceProvisioningLeaseParams{
+			WorkspaceID: workspaceID, ClaimKind: string(kind), LeaseSeconds: ttl.Seconds(), ReclaimToken: reclaim})
+		lease.token, lease.expiresAt = row.ClaimToken, row.ExpiresAt
+		return err
+	})
+	if err == nil && reclaim != "" {
+		s.provisionTasks.unreleased.CompareAndDelete(workspaceID, reclaim)
+	}
+	return lease, err
+}
+
+// inProvisionLeaseTransaction runs one lease statement on tx and commits it.
+// The connection is held, and counted against the claim duty, only for that
+// statement. tx has ended when it returns.
+func (s *WorkspaceService) inProvisionLeaseTransaction(ctx context.Context, tx pgx.Tx, step func(*db.Queries) error) error {
+	releaseHeld := corePoolDutyHold(s.corePoolDuties(), corePoolDutyWorkspaceProvisionClaim)
+	defer releaseHeld()
+	defer func() {
+		// Detached, because a cancelled caller must still give the connection
+		// back, and finite, because an unbounded release keeps it. After a
+		// commit this does nothing.
+		release, cancel := corePoolRelease(ctx)
+		defer cancel()
+		_ = tx.Rollback(release)
+	}()
+	if err := step(db.New(tx)); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// beginProvisionLeaseTransaction runs one lease statement in a short
+// transaction of its own.
+func (s *WorkspaceService) beginProvisionLeaseTransaction(ctx context.Context, step func(*db.Queries) error) error {
+	tx, err := s.transactions.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	return s.inProvisionLeaseTransaction(ctx, tx, step)
+}
+
+// releaseProvisionLease ends a claim's lease if the claim still owns it. It is
+// detached from the caller, because a cancelled caller must still release,
+// and finite, because a release that cannot finish leaves only a lease that
+// expires on its own. A starved pool is the usual reason it cannot, so the
+// token is kept for this process's next claim of the row to take over (see
+// commitProvisionLease); every other process waits out the expiry.
+func (s *WorkspaceService) releaseProvisionLease(ctx context.Context, lease workspaceProvisionLease) {
+	if lease.token == "" {
+		return
+	}
+	release, cancel := corePoolRelease(corePoolDutyContext(ctx, corePoolDutyWorkspaceProvisionClaim))
+	defer cancel()
+	err := s.beginProvisionLeaseTransaction(release, func(q *db.Queries) error {
+		return q.ReleaseWorkspaceProvisioningLease(release, db.ReleaseWorkspaceProvisioningLeaseParams{
+			WorkspaceID: lease.workspaceID, ClaimToken: lease.token})
+	})
+	if err != nil {
+		s.provisionTasks.unreleased.Store(lease.workspaceID, lease.token)
+		return
+	}
+	s.provisionTasks.unreleased.CompareAndDelete(lease.workspaceID, lease.token)
+}
+
+// keepProvisionLease renews lease while claim lasts and ends claim with
+// errWorkspaceProvisionLeaseLost when the lease is lost. The returned stop
+// ends claim and waits for the heartbeat to finish, so no renewal can follow
+// the lease's release.
+func (s *WorkspaceService) keepProvisionLease(claim context.Context, endClaim context.CancelCauseFunc, kind workspaceProvisionClaimKind, lease workspaceProvisionLease) (stop func()) {
+	ttl, heartbeat := s.provisionLease()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		loss, _ := keepLease(claim, heartbeat, lease.expiresAt, func(renewCtx context.Context) (time.Time, error) {
+			renew := corePoolDutyContext(renewCtx, corePoolDutyWorkspaceProvisionClaim)
+			var renewedUntil time.Time
+			err := s.beginProvisionLeaseTransaction(renew, func(q *db.Queries) error {
+				var err error
+				renewedUntil, err = q.RenewWorkspaceProvisioningLease(renew, db.RenewWorkspaceProvisioningLeaseParams{
+					LeaseSeconds: ttl.Seconds(), WorkspaceID: lease.workspaceID, ClaimToken: lease.token})
+				return err
+			})
+			return renewedUntil, err
+		}, func(err error) {
+			// Finite fields, never the error: see workspaceRecoveryRefusal.
+			slog.Warn("workspace provisioning lease renewal failed", "workspace_id", lease.workspaceID,
+				"kind", string(kind), "reason", string(interruptedReleaseStopReasonFor(err)))
+		})
+		if loss == leaseReleased {
+			return
+		}
+		slog.Warn("workspace provisioning lease lost; ending its claim", "workspace_id", lease.workspaceID,
+			"kind", string(kind), "expired", loss == leaseExpired)
+		endClaim(errWorkspaceProvisionLeaseLost)
+	}()
+	return func() {
+		endClaim(nil)
+		<-done
+	}
+}
+
+// insideClaim runs ONE database step inside an admitted claim, on the claim's
+// own written acquire bound.
 //
 // It is the bound the claim path was missing. The gate, the headroom
 // measurement and the fenced re-read all protect a claim that has not started;
-// this protects the steps a started claim makes, which are the ones that park
-// while holding. A refusal here releases the transaction, the connection and
-// the advisory lock, names the duty and the stage, and leaves the row for the
-// next tick — including when the physical effect has already happened and only
-// its receipt is missing, which is a state the next tick re-confirms rather
-// than re-decides.
+// this protects the steps a started claim makes, which under a caller's held
+// transaction still wait while that transaction holds its connection. A
+// refusal here ends the claim and releases its lease, names the duty and the
+// stage, and leaves the row for the next tick — including when the physical
+// effect has already happened and only its receipt is missing, which is a
+// state the next tick re-confirms rather than re-decides.
 // The refusal names the STEP, not an acquire. A bound over a whole query
 // cannot tell an acquire that never completed from a query that acquired at
 // once and then waited on SQL, a row lock or the network, so the stage is the
@@ -685,7 +887,7 @@ func (s *WorkspaceService) ReconcileWorkspaceProvisioning(ctx context.Context) e
 	// unbounded — and why leaving them unbounded was the part that made a full
 	// pool silent. They are the FIRST core-pool acquires a tick makes, so when
 	// the pool is already held by other duties the tick parks here, before the
-	// claim gate, before any advisory lock, and before any fence that could
+	// claim gate, before any lease, and before any fence that could
 	// record a reason. RunProvisioningReconciler reads its ticker only after
 	// reconcile RETURNS, so a tick parked here is not a slow loop: it is the
 	// last iteration the loop ever runs. Fifteen elapsed minutes were never
@@ -944,8 +1146,8 @@ func (s *WorkspaceService) reconcileWorkspaceRelease(ctx context.Context, worksp
 	_, err := s.withWorkspaceProvisionLock(ctx, workspaceClaimRelease, workspace, func(claim context.Context, current db.Workspace) (db.Workspace, error) {
 		unlock := s.lockRuntimeWorkspace(current.ID)
 		defer unlock()
-		// Bounded on the claim this read is nested INSIDE: the transaction,
-		// the connection and the advisory lock are all held while it runs.
+		// Bounded on the claim this read is nested INSIDE, like every step
+		// the claim makes.
 		if err := s.insideClaim(claim, corePoolStageClaimRowRead, func(read context.Context) error {
 			var err error
 			current, err = s.q.GetWorkspace(read, current.ID)
@@ -1188,7 +1390,7 @@ func workspaceStoredFailureText(stored string) string {
 }
 
 // retainedGuestTransitionUnchanged reports that the row this attempt holds
-// under the advisory lock is still the TRANSITION it was listed for.
+// under its claim is still the TRANSITION it was listed for.
 //
 // It exists because every other conjunct can read identical across a real
 // advance. The listing read is taken before the lock, and the cohort's own
@@ -1292,8 +1494,9 @@ func (s *WorkspaceService) reconcileRetainedGuestStop(ctx context.Context, works
 		defer unlock()
 		// The row this attempt fences on, read INSIDE the claim it already
 		// holds. Unbounded, this is where a claim parked forever with its
-		// transaction and advisory lock open, after the pool had been filled
-		// by other duties between the gate and here.
+		// transaction and advisory lock open (before #4294 made the claim a
+		// lease), after the pool had been filled by other duties between the
+		// gate and here.
 		if err := s.insideClaim(claim, corePoolStageClaimRowRead, func(read context.Context) error {
 			var err error
 			current, err = s.q.GetWorkspace(read, current.ID)
@@ -1317,7 +1520,7 @@ func (s *WorkspaceService) reconcileRetainedGuestStop(ctx context.Context, works
 		}
 		// ... and the SAME placement under the same door is not evidence that
 		// the row did not move. See retainedGuestTransitionUnchanged: the
-		// listing read happens before the advisory lock, so a transition can
+		// listing read happens before the claim, so a transition can
 		// land in between that leaves every conjunct above reading identical.
 		if !retainedGuestTransitionUnchanged(workspace, current) {
 			return current, nil
@@ -1338,8 +1541,8 @@ func (s *WorkspaceService) reconcileRetainedGuestStop(ctx context.Context, works
 		// a stop, it does not re-decide why the release failed.
 		// THE RECEIPT, bounded. The guest is already down at this point, so a
 		// write that parks here leaves a stopped guest with no record that it
-		// stopped — and leaves the claim holding its connection and advisory
-		// lock while it waits. Bounded, the compute stays back, the row stays
+		// stopped — and keeps the claim and its lease while it waits.
+		// Bounded, the compute stays back, the row stays
 		// in the cohort, and the next tick re-confirms and records it.
 		var updated db.Workspace
 		err = s.insideClaim(claim, corePoolStageClaimReceiptWrite, func(write context.Context) error {
@@ -1404,8 +1607,8 @@ const workspaceReleaseStopTimeout = 30 * time.Second
 type interruptedReleaseStopStage string
 
 const (
-	// claim_owner_row: the advisory lock, the re-read inside it, or the
-	// placement fence. Nothing was asked of the runtime yet.
+	// claim_owner_row: the lease, the re-read after it, or the placement
+	// fence. Nothing was asked of the runtime yet.
 	interruptedReleaseStageClaim interruptedReleaseStopStage = "claim_owner_row"
 	// await_claim_slot: the claim never entered. The process already has
 	// workspaceProvisionClaimBudget claims admitted, and this one aged out of
@@ -1414,7 +1617,7 @@ const (
 	interruptedReleaseStageAwaitClaimSlot interruptedReleaseStopStage = "await_claim_slot"
 	// acquire_connection: the core pool itself could not serve this claim
 	// inside workspaceProvisionAcquireTimeout, either for the transaction that
-	// holds the advisory lock or for the fenced re-read nested inside it.
+	// writes its lease or for the fenced re-read after it.
 	//
 	// This is the stage the serving worker's stall had no name for. Its whole
 	// census was connections acquired by THIS process and never returned, and
@@ -1422,17 +1625,17 @@ const (
 	// working, queued, or parked in Acquire behind a lease that will not end.
 	//
 	// It is used for the two steps whose FIRST act is an acquire: the
-	// measured-headroom refusal and the transaction that holds the advisory
-	// lock. A step that already has its connection gets its own stage below.
+	// measured-headroom refusal and the transaction that writes the lease. A
+	// step that already has its connection gets its own stage below.
 	interruptedReleaseStageAcquireConnection interruptedReleaseStopStage = "acquire_connection"
-	// claim_lock: the advisory lock statement itself. It runs on the
-	// connection the claim's transaction already holds, so it asks the pool
-	// for nothing and its refusal is a network or lock wait — never an
-	// exhausted pool.
+	// claim_lock: the lease statement and its commit, or the advisory lock on
+	// a lent transaction. Each runs on a connection its transaction already
+	// holds, so it asks the pool for nothing and its refusal is a network or
+	// lock wait — never an exhausted pool.
 	interruptedReleaseStageClaimLock interruptedReleaseStopStage = "claim_lock"
-	// claim_row_read: a read the claim made INSIDE its own hold, with its
-	// transaction and advisory lock still open. Distinct from
-	// acquire_connection because the hold already existed, and distinct from
+	// claim_row_read: a read the claim made after its lease was written: the
+	// fenced re-read, or a read inside its work. Distinct from
+	// acquire_connection because the claim already existed, and distinct from
 	// the pool's own refusal because a read can acquire at once and then wait
 	// on SQL or a row lock.
 	interruptedReleaseStageClaimRowRead interruptedReleaseStopStage = "claim_row_read"
@@ -1525,7 +1728,7 @@ func interruptedReleaseStopReasonFor(err error) interruptedReleaseStopReason {
 	//
 	// Only the measured-headroom refusal gets here, and it is identified by
 	// its own cause rather than by a flag any caller could set. A bounded step
-	// that refused without that evidence — the advisory lock on a connection
+	// that refused without that evidence — the lease statement on a connection
 	// already held, an opaque Begin, a read or a fenced write that waited on
 	// SQL, a row lock or the network, the gate that was full while the pool
 	// was never asked — falls through to deadline_exceeded and is told apart
@@ -1575,8 +1778,8 @@ type interruptedReleaseStopOutcome struct {
 func (o interruptedReleaseStopOutcome) failed(err error) (interruptedReleaseStopOutcome, error) {
 	o.reason = interruptedReleaseStopReasonFor(err)
 	// A claim that stalled on an acquire names the acquire, not the whole
-	// claim: claim_owner_row covered the slot wait, the connection, the
-	// advisory lock and the re-read alike.
+	// claim: claim_owner_row covered the slot wait, the connection, the lease
+	// and the re-read alike.
 	if stage, ok := workspaceProvisionClaimStage(err); ok && o.stage == interruptedReleaseStageClaim {
 		o.stage = stage
 	}

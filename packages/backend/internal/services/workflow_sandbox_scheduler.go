@@ -34,10 +34,6 @@ const (
 	// healthy worker has several chances to renew through a transient database
 	// error, while a crashed worker becomes reclaimable promptly.
 	workflowSandboxClaimHeartbeatInterval = 30 * time.Second
-	// Stop accepting work slightly before the database lease expires. This
-	// absorbs ordinary clock skew and response latency so a replacement worker
-	// cannot reclaim the row while the previous sandbox is still executing.
-	workflowSandboxClaimExpirySafetyMargin = 5 * time.Second
 )
 
 // WorkflowSandboxSchedulerQuerier is the DB contract needed by the sandbox scheduler.
@@ -352,27 +348,12 @@ func (w *WorkflowSandboxSchedulerWorker) PollOnce(ctx context.Context) error {
 	return nil
 }
 
-// workflowSandboxClaimCancellationDeadline returns a conservative local
-// deadline derived from the database-authoritative lease expiry. Short test
-// leases use a proportional margin so the watchdog remains deterministic.
-func workflowSandboxClaimCancellationDeadline(expiresAt, now time.Time) time.Time {
-	remaining := expiresAt.Sub(now)
-	if remaining <= 0 {
-		return now
-	}
-	margin := workflowSandboxClaimExpirySafetyMargin
-	if proportional := remaining / 4; margin > proportional {
-		margin = proportional
-	}
-	return expiresAt.Add(-margin)
-}
-
 // maintainClaimLease keeps both executing and not-yet-started claims in a
 // batch alive. Losing the token/generation or reaching the last confirmed
 // database lease expiry cancels the run context so a stale worker tears down
 // its VM and its fenced finalizer becomes a no-op. Renewal calls themselves
 // are bounded by that deadline, so a wedged database connection cannot strand
-// the watchdog inside the query past ownership expiry.
+// the watchdog inside the query past ownership expiry. See keepLease.
 func (w *WorkflowSandboxSchedulerWorker) maintainClaimLease(
 	ctx context.Context,
 	claim workflowSandboxRunClaim,
@@ -382,57 +363,29 @@ func (w *WorkflowSandboxSchedulerWorker) maintainClaimLease(
 	if interval <= 0 {
 		interval = workflowSandboxClaimHeartbeatInterval
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	deadline := workflowSandboxClaimCancellationDeadline(claim.LeaseExpiresAt, time.Now())
-
-	for {
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			w.logger.Warn("workflow sandbox claim lease expired; canceling execution", "run_id", claim.Run.ID, "generation", claim.Generation)
-			cancelClaim()
-			return
+	loss, err := keepLease(ctx, interval, claim.LeaseExpiresAt, func(renewCtx context.Context) (time.Time, error) {
+		renewedUntil, err := w.queries.RenewWorkflowSandboxClaim(renewCtx, claim.renewalParams())
+		if err != nil {
+			return time.Time{}, err
 		}
-		expiryTimer := time.NewTimer(remaining)
-
-		select {
-		case <-ctx.Done():
-			expiryTimer.Stop()
-			return
-		case <-expiryTimer.C:
-			w.logger.Warn("workflow sandbox claim lease expired; canceling execution", "run_id", claim.Run.ID, "generation", claim.Generation)
-			cancelClaim()
-			return
-		case <-ticker.C:
-			if !expiryTimer.Stop() {
-				select {
-				case <-expiryTimer.C:
-				default:
-				}
-			}
-			renewCtx, cancelRenew := context.WithDeadline(ctx, deadline)
-			renewedUntil, err := w.queries.RenewWorkflowSandboxClaim(renewCtx, claim.renewalParams())
-			cancelRenew()
-			if err != nil {
-				if ctx.Err() != nil {
-					return
-				}
-				if stdErrors.Is(err, pgx.ErrNoRows) {
-					w.logger.Info("workflow sandbox claim lost; canceling stale execution", "run_id", claim.Run.ID, "generation", claim.Generation)
-					cancelClaim()
-					return
-				}
-				w.logger.Warn("failed to renew workflow sandbox claim", "run_id", claim.Run.ID, "generation", claim.Generation, "error", err)
-				continue
-			}
-			if !renewedUntil.Valid {
-				w.logger.Warn("workflow sandbox claim renewal returned no expiry; canceling execution", "run_id", claim.Run.ID, "generation", claim.Generation)
-				cancelClaim()
-				return
-			}
-			deadline = workflowSandboxClaimCancellationDeadline(renewedUntil.Time, time.Now())
+		if !renewedUntil.Valid {
+			return time.Time{}, errLeaseRenewalWithoutExpiry
 		}
+		return renewedUntil.Time, nil
+	}, func(err error) {
+		w.logger.Warn("failed to renew workflow sandbox claim", "run_id", claim.Run.ID, "generation", claim.Generation, "error", err)
+	})
+	switch {
+	case loss == leaseExpired:
+		w.logger.Warn("workflow sandbox claim lease expired; canceling execution", "run_id", claim.Run.ID, "generation", claim.Generation)
+	case loss == leaseTaken && stdErrors.Is(err, errLeaseRenewalWithoutExpiry):
+		w.logger.Warn("workflow sandbox claim renewal returned no expiry; canceling execution", "run_id", claim.Run.ID, "generation", claim.Generation)
+	case loss == leaseTaken:
+		w.logger.Info("workflow sandbox claim lost; canceling stale execution", "run_id", claim.Run.ID, "generation", claim.Generation)
+	default:
+		return
 	}
+	cancelClaim()
 }
 
 // pollOnceRecovering converts a panicking poll into an ordinary error so the

@@ -20,6 +20,8 @@ const (
 	ChatStageHostResponse   ChatStage = "host_response"
 	ChatStageHostBody       ChatStage = "host_body"
 	ChatStageCleanup        ChatStage = "host_cleanup"
+	ChatStageCloning        ChatStage = "cloning"
+	ChatStageVerifying      ChatStage = "verifying"
 )
 
 // ChatProgress is metadata about one turn's current execution stage. SandboxID
@@ -27,9 +29,19 @@ const (
 // Route names the model the turn resolved, in the bounded form described on
 // ReportChatModelRoute.
 type ChatProgress struct {
-	Stage     ChatStage
-	SandboxID string
-	Route     string
+	Stage         ChatStage
+	SandboxID     string
+	Route         string
+	MachineID     string
+	ReservationID string
+}
+
+// ReportChatAllocation correlates provider-issued allocation identities. Values
+// must be opaque ids, never connection URLs, launch payloads or bearer tokens.
+func ReportChatAllocation(ctx context.Context, stage ChatStage, sandboxID, machineID, reservationID string) {
+	if observe, ok := ctx.Value(chatProgressKey{}).(func(ChatProgress)); ok && observe != nil {
+		observe(ChatProgress{Stage: stage, SandboxID: sandboxID, MachineID: machineID, ReservationID: reservationID})
+	}
 }
 
 type chatProgressKey struct{}

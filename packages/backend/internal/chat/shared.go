@@ -43,6 +43,7 @@ type SharedTurn struct {
 	Preflight       *SharedContextPreflight `json:"preflight,omitempty"`
 	StartedAt       int64                   `json:"startedAt,omitempty"`
 	FinishedAt      int64                   `json:"finishedAt,omitempty"`
+	Progress        []ProgressRecord        `json:"progress,omitempty"`
 	externalActor   map[string]any
 	externalAt      int64
 	externalOrdinal int
@@ -221,6 +222,13 @@ func (s *Store) sharedEntries(ctx context.Context, scope Scope, branch string, w
 			cursor = page.Next
 		}
 		if withTrace && !externalTurn(turn) {
+			var progress []byte
+			if err := tx.QueryRow(ctx, `SELECT progress FROM chat_turns WHERE id=$1`, turn.ID).Scan(&progress); err != nil {
+				return result, err
+			}
+			if err := json.Unmarshal(progress, &entry.Progress); err != nil {
+				return result, ErrCorrupt
+			}
 			var terminalAt *time.Time
 			if turn.Terminal {
 				if err := tx.QueryRow(ctx, `SELECT max(created_at) FROM chat_turn_batches WHERE turn_id=$1`, turn.ID).Scan(&terminalAt); err != nil {
@@ -324,6 +332,13 @@ func (h *Handler) Conversation(w http.ResponseWriter, r *http.Request) {
 			publicError(w, err)
 		}
 		return
+	}
+	// Older trace clients decode a strict response. Execution metadata is an
+	// additive opt-in, independent of the requester's private trace audience.
+	if r.Header.Get("X-Smithers-Chat-Progress") != "1" {
+		for i := range result.Entries {
+			result.Entries[i].Progress = nil
+		}
 	}
 	if h.Store.OnConversationRead != nil {
 		_ = h.Store.OnConversationRead(r.Context(), scope, branch)

@@ -38,7 +38,7 @@ export const RunTraceSummary = ({ card, model, facts, onRunCommand: send, admin 
     : current.condition === "thrashing" ? "Thrashing" : current.condition === "runaway" ? "Runaway"
     : current.condition === "blocked" || action === "resume" ? "Blocked" : undefined
   const status = verdict ?? phase
-  const activity = verdict === undefined && (phase === "running" || phase === "waiting-approval") ? current.activity : undefined
+  const activity = verdict === undefined && (phase === "running" || phase === "waiting-approval" || phase === "launching" && card.payload.workflow === "chat") ? current.activity : undefined
   const needsHelp = latestNeedsHelp(model.journal)
   const onRunCommand = runSourceCommand(card.id, send)
   // A change that started from the caller's pushed ref (#1964) says which.
@@ -46,9 +46,10 @@ export const RunTraceSummary = ({ card, model, facts, onRunCommand: send, admin 
   const shown = source === undefined ? facts : [`from ${source}`, ...facts]
   const meter = runMeterOf(card.payload.events ?? [])
   const parts = meter === undefined ? undefined : runMeterParts(meter)
+  const verdictLabel = verdict === "no-capacity" && card.payload.workflow === "chat" ? "Capacity paused" : verdict === undefined ? undefined : words[verdict]
   return <header className="run-outcome" data-phase={status} data-testid={`run-outcome-${runId}`} aria-label="Current run status">
     <span className="run-outcome-dot" data-status={status} aria-hidden />
-    <span className="run-outcome-words" title={incident?.facts.message}>{incident !== undefined ? incident.facts.classification : verdict === undefined ? activity ?? words[phase] ?? phase : words[verdict]}</span>
+    <span className="run-outcome-words" title={incident?.facts.message}>{incident !== undefined ? incident.facts.classification : verdict === undefined ? activity ?? words[phase] ?? phase : verdictLabel}</span>
     {condition === undefined || condition === words[phase] && activity === undefined ? null
       : <span className="run-outcome-condition" data-condition={current.condition ?? (action === "approval" ? "approval" : "blocked")}>{condition}</span>}
     {needsHelp === undefined || needsHelp === "none" ? null : (

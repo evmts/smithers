@@ -106,3 +106,7 @@ ALTER TABLE chat_turns ADD COLUMN summary_pending_since timestamptz;
 ALTER TABLE chat_turns ADD COLUMN entry_subject jsonb;
 ALTER TABLE chat_turns ADD CONSTRAINT chat_turns_entry_subject_object
  CHECK (entry_subject IS NULL OR jsonb_typeof(entry_subject) = 'object');
+
+-- Producer stages are metadata, separate from the model's sealed frame cursor.
+ALTER TABLE chat_turns ADD COLUMN progress jsonb NOT NULL DEFAULT '[]'::jsonb
+    CHECK (jsonb_typeof(progress) = 'array');

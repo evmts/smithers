@@ -1,0 +1,8 @@
+@@ -208,6 +208,7 @@
+ 	{170, "migrations/0170_chat_turn_progress.sql"},
+ 	{171, "migrations/0171_github_source_visibility.sql"},
+ 	{172, "migrations/0172_github_reconcile_schedule.sql"},
++	{173, "migrations/0173_workspace_provisioning_leases.sql"},
+ }
+ 
+ type migration struct {
