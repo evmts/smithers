@@ -747,7 +747,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     if (refusal !== undefined) return { issues: [], meta: { source: "refused", syncedAt: null, stale: false, syncError: null, refusal } }
     let response: Response
     try {
-      response = await (signedInOwner() === undefined ? fetchRepositoryMetadata(ctx, githubSourceIssuesPath(repo, filter)) : ctx.http(githubSourceIssuesPath(repo, filter)))
+      response = await (signedInOwner() === undefined ? fetchRepositoryMetadata(ctx, githubSourceIssuesPath(repo, filter), repo) : ctx.http(githubSourceIssuesPath(repo, filter)))
     } catch {
       // The tapped fetch recorded the thrown request; its text is not copy.
       return { issues: [], meta: { source: "unreachable", syncedAt: null, stale: false, syncError: null, refusal: "Could not reach GitHub." } }
@@ -782,7 +782,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     if (refusal !== undefined) return refusal
     let response: Response
     try {
-      response = await (signedInOwner() === undefined ? fetchRepositoryMetadata(ctx, githubSourceIssuesPath(repo, filter)) : ctx.http(githubSourceIssuesPath(repo, filter)))
+      response = await (signedInOwner() === undefined ? fetchRepositoryMetadata(ctx, githubSourceIssuesPath(repo, filter), repo) : ctx.http(githubSourceIssuesPath(repo, filter)))
     } catch (error) {
       return unreachable(`list issues for ${repo} from its GitHub source`, error)
     }
@@ -828,7 +828,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     let notice: string | undefined
     for (let page = 1; page <= 50; page += 1) {
       let response: Response
-      try { response = await (signedInOwner() === undefined ? fetchRepositoryMetadata(ctx, `${listPath}&per_page=100&page=${page}`) : ctx.http(`${listPath}&per_page=100&page=${page}`)) }
+      try { response = await (signedInOwner() === undefined ? fetchRepositoryMetadata(ctx, `${listPath}&per_page=100&page=${page}`, repo) : ctx.http(`${listPath}&per_page=100&page=${page}`)) }
       catch (error) { return unreachable(`load GitHub issue #${number} in ${repo}`, error) }
       if (!response.ok) return readErrorMessage(response, `Loading GitHub issue #${number} failed (${response.status})`)
       notice = repositoryMetadataNotice(response) ?? notice
@@ -844,7 +844,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     const commentsPath = `${listPath.split("?")[0]}/${number}/comments`
     for (let page = 1; page <= 50; page += 1) {
       let response: Response
-      try { response = await (signedInOwner() === undefined ? fetchRepositoryMetadata(ctx, `${commentsPath}?per_page=100&page=${page}`) : ctx.http(`${commentsPath}?per_page=100&page=${page}`)) }
+      try { response = await (signedInOwner() === undefined ? fetchRepositoryMetadata(ctx, `${commentsPath}?per_page=100&page=${page}`, repo) : ctx.http(`${commentsPath}?per_page=100&page=${page}`)) }
       catch (error) { return unreachable(`load comments for GitHub issue #${number} in ${repo}`, error) }
       if (!response.ok) return readErrorMessage(response, `Loading GitHub issue comments failed (${response.status})`)
       notice = repositoryMetadataNotice(response) ?? notice
