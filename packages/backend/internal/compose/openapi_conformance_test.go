@@ -139,19 +139,21 @@ func openAPIConformanceRouter(cfg *config.Config) chi.Router {
 
 // Shared production-router fixture: host HTTP tests use real PostgreSQL queries.
 type conformanceServices struct {
-	auth      *routes.AuthHandler
-	flowRuns  *services.InstallFlowRuns
-	user      *routes.UserHandler
-	mythical  *routes.MythicalHandler
-	pool      *pgxpool.Pool
-	billing   *routes.BillingHandler
-	jobs      *routes.RepositoryJobHandler
-	terminal  *routes.WorkspaceTerminalHandler
-	members   *routes.MembersHandler
-	secret    *routes.SecretHandler
-	live      *routes.LiveHandler
-	wiki      *services.WikiService
-	workspace *routes.WorkspaceHandler
+	landing      *routes.LandingHandler
+	agentSession *routes.AgentSessionHandler
+	auth         *routes.AuthHandler
+	flowRuns     *services.InstallFlowRuns
+	user         *routes.UserHandler
+	mythical     *routes.MythicalHandler
+	pool         *pgxpool.Pool
+	billing      *routes.BillingHandler
+	jobs         *routes.RepositoryJobHandler
+	terminal     *routes.WorkspaceTerminalHandler
+	members      *routes.MembersHandler
+	secret       *routes.SecretHandler
+	live         *routes.LiveHandler
+	wiki         *services.WikiService
+	workspace    *routes.WorkspaceHandler
 }
 
 func hostStatusProductionRouter(cfg *config.Config, queries *db.Queries, host *services.InstallCapacityService, supplied ...conformanceServices) chi.Router {
@@ -195,13 +197,19 @@ func hostStatusProductionRouter(cfg *config.Config, queries *db.Queries, host *s
 	if config.IsMultitenant(cfg.Auth) {
 		fastGateway = &modelproxy.FastGateway{}
 	}
+	if deps.landing == nil {
+		deps.landing = &routes.LandingHandler{}
+	}
+	if deps.agentSession == nil {
+		deps.agentSession = &routes.AgentSessionHandler{}
+	}
 	router := buildRouter(cfg, queries, deps.pool,
 		&routes.RepoHandler{}, &routes.GitMirrorSyncHandler{}, authHandler, deps.user, &routes.SSHKeyHandler{}, &routes.DeployKeyHandler{}, &routes.LabelHandler{},
-		&routes.OrgHandler{}, &routes.LandingHandler{}, &routes.BuildCacheHandler{}, &routes.StackHandler{}, &routes.SearchHandler{}, &routes.IssueHandler{},
+		&routes.OrgHandler{}, deps.landing, &routes.BuildCacheHandler{}, &routes.StackHandler{}, &routes.SearchHandler{}, &routes.IssueHandler{},
 		wiki, &routes.GitSmartHandler{}, &routes.NotificationHandler{}, &routes.AdminUserHandler{}, &routes.AdminOrgHandler{}, &routes.AdminRepoHandler{}, &routes.AdminGitHubAppHandler{}, &routes.AdminAuditHandler{},
 		&routes.WebhookHandler{}, deps.secret, &routes.ProviderConnectionHandler{}, &routes.VariableHandler{}, deps.billing,
 		&routes.ProtectedBookmarkHandler{}, &routes.CommitStatusHandler{}, &routes.LFSHandler{}, &routes.JJVCSHandler{}, &routes.AgentInternalHandler{},
-		&routes.AgentSessionHandler{}, &routes.AgentSessionStreamHandler{}, &routes.ApprovalsHandler{}, &routes.InternalPushHookHandler{},
+		deps.agentSession, &routes.AgentSessionStreamHandler{}, &routes.ApprovalsHandler{}, &routes.InternalPushHookHandler{},
 		&routes.WorkflowHandler{}, &routes.WorkflowCacheHandler{}, &routes.WorkflowArtifactHandler{},
 		&routes.IssueEventHandler{}, workspaceHandler, &routes.WorkspaceInternalHandler{}, deps.jobs, &routes.GitHubProxyHandler{},
 		&routes.GitHubRepoListHandler{}, &routes.GitHubUserReposHandler{}, &routes.GitHubSyncedReposHandler{}, &routes.GitHubImportHandler{},

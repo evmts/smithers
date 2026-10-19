@@ -3,9 +3,9 @@
   "producer": null,
   "output": {
     "path": "packages/backend/docs/github-app.md",
-    "digest": "b90bac35e8186442764260a62e6268875e07fc20c4eeb63774c4c7e3a1610dcc"
+    "digest": "b54920294ae62f8c7d8437b42b7bce8be7ee517b6af879f96b98706ed1e63ae9"
   },
-  "closure": "55d85bf67d9b4b0016429e4c9efd6b23e424799d736c849ccaf49bd662643414",
+  "closure": "fd5d7321f8821e438d129b0fc0ea806e977b39e337b3d68f44a6ead53169b5e5",
   "inputs": [
     {
       "path": "docs/api/openapi/install.yaml",
@@ -49,7 +49,7 @@
     },
     {
       "path": "packages/backend/internal/compose/main.go",
-      "digest": "3fd85f076e7a5b106eaf96ee6c3d17839ce9cb8bcaf70ef5a85cbe33da3ef4f4"
+      "digest": "c8b302c5c47937050e32cb405b18c3ff8cd9cf777510c013fd586298fab95ea7"
     },
     {
       "path": "packages/backend/internal/compose/runtime_helpers.go",
@@ -69,7 +69,7 @@
     },
     {
       "path": "packages/backend/internal/pkg/errors/registry.go",
-      "digest": "3acebab5643a6cf70ee6fa54399b1ef751c8d915ba03d99c215f5c2dad88a87f"
+      "digest": "66e98a624fbf0e842fcbd88ceeab88e7954859cc5b0252801f91dfcbfadb195a"
     },
     {
       "path": "packages/backend/internal/repohost/refs.go",
@@ -217,7 +217,7 @@
     },
     {
       "path": "packages/backend/internal/services/landing_github_pull.go",
-      "digest": "e6bdf94102687716e153127e6aae2e7ed2d69f44f5074b7470a566059e0e8b2a"
+      "digest": "6bfb78f4f2af0123aea2f00c08dfac2c63a111fd5a2ddf14815a4e4db90523ea"
     },
     {
       "path": "packages/backend/internal/services/member_poll.go",

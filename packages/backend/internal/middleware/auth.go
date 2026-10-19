@@ -744,6 +744,7 @@ var installMemberRoutes = []struct {
 	{http.MethodDelete, "denied", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/landings/[^/]+/auto-land$`)},
 	{http.MethodPost, "agent.turn", regexp.MustCompile(`^/api/agent/turn/erase$`)},
 	{http.MethodPost, "flow.run", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/agent/sessions$`)},
+	{http.MethodPost, "denied", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/agent/sessions/[^/]+/landing$`)},
 	{http.MethodPost, "denied", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/changes/[^/]+/revert$`)},
 	{http.MethodPatch, "issue.comment", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/issues/comments/[^/]+$`)},
 	// The repository's own GitHub issue tracker. Each act is the catalog's

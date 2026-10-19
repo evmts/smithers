@@ -156,6 +156,36 @@ func joinAdditional(value any, extra map[string]json.RawMessage) ([]byte, error)
 	return json.Marshal(all)
 }
 
+// SessionLanding is generated from docs/api/openapi.yaml.
+type SessionLanding struct {
+	LandingNumber int64  `json:"landing_number"`
+	Branch        string `json:"branch"`
+	PullNumber    int64  `json:"pull_number"`
+	PullURL       string `json:"pull_url"`
+	HeadCommit    string `json:"head_commit"`
+	Tested        bool   `json:"tested"`
+	Passed        bool   `json:"passed"`
+}
+
+// AgentSessionRead is generated from docs/api/openapi.yaml.
+type AgentSessionRead struct {
+	ID           string          `json:"id"`
+	RepositoryID int64           `json:"repository_id"`
+	UserID       int64           `json:"user_id"`
+	Title        string          `json:"title"`
+	Status       string          `json:"status"`
+	MessageCount int64           `json:"message_count"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	Metadata     AnyJSON         `json:"metadata"`
+	WorkspaceID  *string         `json:"workspace_id,omitempty"`
+	Workspace    json.RawMessage `json:"workspace"`
+	Run          json.RawMessage `json:"run"`
+	ReasonCode   *string         `json:"reason_code"`
+	Reason       *string         `json:"reason"`
+	Retryable    bool            `json:"retryable"`
+}
+
 // AppBootstrap is generated from docs/api/openapi.yaml.
 type AppBootstrap struct {
 	APIVersion   int64           `json:"apiVersion"`
@@ -2853,6 +2883,11 @@ type PostAPIReposOwnerRepoWorkspacesIDChildrenChildIDStopResponse struct {
 	ExpiresAt      time.Time  `json:"expires_at"`
 }
 
+// PostAPIReposOwnerRepoAgentSessionsSessionIDLandingBody is generated from docs/api/openapi.yaml.
+type PostAPIReposOwnerRepoAgentSessionsSessionIDLandingBody struct {
+	ReplyID *int64 `json:"reply_id,omitempty"`
+}
+
 // GetAPIRunsIDParams is the query of GET /api/runs/{id}.
 type GetAPIRunsIDParams struct {
 	At *int64
@@ -4959,8 +4994,8 @@ func (c *Client) DeleteAPIReposOwnerRepoAgentEnvironmentSecretsName(ctx context.
 }
 
 // GetAPIReposOwnerRepoAgentSessionsID calls GET /api/repos/{owner}/{repo}/agent/sessions/{id}.
-func (c *Client) GetAPIReposOwnerRepoAgentSessionsID(ctx context.Context, owner string, repo string, id string) (AnyJSON, error) {
-	var out AnyJSON
+func (c *Client) GetAPIReposOwnerRepoAgentSessionsID(ctx context.Context, owner string, repo string, id string) (AgentSessionRead, error) {
+	var out AgentSessionRead
 	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/agent/sessions/"+url.PathEscape(id), nil, nil, &out)
 	return out, err
 }
@@ -6876,6 +6911,13 @@ func (c *Client) PostAPIReposOwnerRepoWorkspacesIDChildren(ctx context.Context, 
 func (c *Client) PostAPIReposOwnerRepoWorkspacesIDChildrenChildIDStop(ctx context.Context, owner string, repo string, id string, childID string) (PostAPIReposOwnerRepoWorkspacesIDChildrenChildIDStopResponse, error) {
 	var out PostAPIReposOwnerRepoWorkspacesIDChildrenChildIDStopResponse
 	err := c.do(ctx, "POST", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/workspaces/"+url.PathEscape(id)+"/children/"+url.PathEscape(childID)+"/stop", nil, nil, &out)
+	return out, err
+}
+
+// PostAPIReposOwnerRepoAgentSessionsSessionIDLanding calls POST /api/repos/{owner}/{repo}/agent/sessions/{session_id}/landing.
+func (c *Client) PostAPIReposOwnerRepoAgentSessionsSessionIDLanding(ctx context.Context, owner string, repo string, sessionID string, body PostAPIReposOwnerRepoAgentSessionsSessionIDLandingBody) (SessionLanding, error) {
+	var out SessionLanding
+	err := c.do(ctx, "POST", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/agent/sessions/"+url.PathEscape(sessionID)+"/landing", nil, body, &out)
 	return out, err
 }
 

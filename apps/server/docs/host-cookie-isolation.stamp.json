@@ -3,9 +3,9 @@
   "producer": null,
   "output": {
     "path": "apps/server/docs/host-cookie-isolation.md",
-    "digest": "cb4824053fbe9cacd9f438f28b9e578a6015824f97e1364e417ccb793740849e"
+    "digest": "61958044604f3681afb566a8935c471ca422bfb7c340ad4e0f56798a1282f52e"
   },
-  "closure": "deea926bfd69934e24f586cb80f0a22e9d81a8c7268df29d7a2b4ecb35e11112",
+  "closure": "a3ecaae4e01a3166fe842ece360ba800100d0c1e067f752f0276f49ac301304b",
   "inputs": [
     {
       "path": "apps/server/scripts/cutover/host-cookie-workerd.mjs",
@@ -17,7 +17,7 @@
     },
     {
       "path": "packages/backend/internal/middleware/auth.go",
-      "digest": "e564967859a29f766587a0dea4975d0b7e4f8a9bd03175dd99c2d450fa14f347"
+      "digest": "340f0e0833e74d2706243428794854e64ecad412220f85b795468902d540804a"
     },
     {
       "path": "packages/backend/internal/middleware/csrf.go",

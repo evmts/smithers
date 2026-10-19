@@ -19,3 +19,18 @@ Send `idempotency_key` in the JSON body of either endpoint:
 Use a stable key for each source review or comment, such as its provider object ID. The key is scoped to the authenticated user and landing request, separately for reviews and comments. A retry with the same key and input returns `201` and the original object ID. A changed input with the same key returns `409`; no second object is created. Two source objects with the same text need different keys.
 
 The server stores the key and a digest of the normalized create input with the object. The key is optional for interactive creates. The response does not include the key or digest. Keep the existing source-to-destination mapping guard when syncing, and reconcile GitHub reviews by their GitHub IDs because GitHub does not offer the same create-key contract.
+
+## Publish a GitHub pull request
+
+Hosted publication requires a person's credential on both
+`PUT /api/repos/{owner}/{repo}/landings/{number}/github/pull` and
+`POST /api/repos/{owner}/{repo}/agent/sessions/{session_id}/landing`.
+Box-host, agent-session, run, bot and service credentials receive
+`403 agent_credential_refused` before repository lookup. The publisher repeats
+that check. The install factory retains its existing OpenPull credential path
+under the Security/PM Tuesday ruling.
+
+The hosted session POST checks the exact configured Origin for browser sessions
+as well as the CSRF cookie/header. Personal tokens retain the stateless CSRF
+exemption. Missing sessions and sessions owned by another person both return
+`404 session_not_found` with the same body.
