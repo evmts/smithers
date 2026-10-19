@@ -8,7 +8,7 @@ import { createAppController } from "../AppController"
 import type { AppServices } from "../AppController"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
-import { fileOptions } from "./FilesSeam"
+import { createFilesSeam, fileOptions } from "./FilesSeam"
 const PAGE_COMMIT = "a".repeat(40)
 
 // The install catalog requires the authenticated roster, independently of
@@ -962,4 +962,28 @@ test("a capped read retains original bytes independently of the displayed portio
   await controller.readFile("big.txt", "will/flows")
   expect(fileCard(store, "file-will/flows-big.txt")?.payload).toMatchObject({ truncated: true, originalSize: BIG_TEXT.length })
   expect(fileCard(store, "file-will/flows-big.txt")?.payload.content.length).toBe(16 * 1024)
+})
+
+
+test("repository contents preserves source beyond the chat cap without opening a card", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  await ready(store)
+  const text = "é".repeat(20_000)
+  const calls: string[] = []
+  const seam = createFilesSeam({
+    store, baseUrl: "https://example.test", actor: () => "user", nextOrdinal: () => 0,
+    dispatch: () => { throw new Error("A repository read must not open a chat card") },
+    http: async input => {
+      calls.push(String(input))
+      return json(200, { type: "file", content: base64(text), encoding: "base64", size: Buffer.byteLength(text) })
+    }
+  })
+  try {
+    const answer = await seam.contents.readFile(".smithers/flows/review/flow.ts", "will/flows", undefined, "main")
+    expect(typeof answer).not.toBe("string")
+    if (typeof answer === "string" || answer.card.kind !== "file") throw new Error("Expected source")
+    expect(answer.card.payload.content).toBe(text)
+    expect(answer.card.payload.truncated).toBe(false)
+    expect(calls).toEqual(["https://example.test/api/repos/will/flows/contents/.smithers/flows/review/flow.ts?ref=main"])
+  } finally { store.dispose?.() }
 })
