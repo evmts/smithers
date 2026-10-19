@@ -35,6 +35,8 @@ func TestRepoGitHubSourceRequiresOneReadyImport(t *testing.T) {
 	require.Nil(t, source, "a failed import cannot select review source")
 	require.False(t, ambiguous)
 	insert("upstream", "project", "ready")
+	_, err := pool.Exec(ctx, `INSERT INTO github_synced_repos(owner_login,owner_login_lower,repo_name,repo_name_lower,github_private) VALUES('upstream','upstream','project','project',false)`)
+	require.NoError(t, err)
 	source, ambiguous = read()
 	require.Equal(t, &GitHubSource{Owner: "upstream", Repo: "project"}, source)
 	require.False(t, ambiguous)

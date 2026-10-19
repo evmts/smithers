@@ -50,10 +50,13 @@ func (s *RepoService) ReadPublicRepositoryMetadata(ctx context.Context, viewer *
 	}
 	store := db.New(s.pool)
 	registry, err := store.GetGitHubSyncedRepo(ctx, db.GetGitHubSyncedRepoParams{OwnerLogin: source.Owner, RepoName: source.Repo})
+	if err == nil && (!registry.GithubPrivate.Valid || registry.GithubPrivate.Bool) {
+		return GitHubRepoMetadataResult{}, pkgerrors.NotFound("repository not found")
+	}
 	if err != nil || !registry.SyncMetadata || registry.SyncState == "disabled" || !registry.LastSyncedAt.Valid {
 		return GitHubRepoMetadataResult{}, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "Metadata mirror unavailable")
 	}
-	// The public repository permission above is the authority for this read.
+	// Both the local repository and the GitHub source are confirmed public.
 	// This grant is request-local, never persisted as a person's GitHub grant.
 	grant := GitHubRepoReadGrant{ok: true, owner: source.Owner, repo: source.Repo}
 	reader := NewGitHubSyncedRepoService(store)

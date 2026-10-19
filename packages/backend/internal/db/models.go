@@ -944,26 +944,29 @@ type GithubSyncedIssueComment struct {
 }
 
 type GithubSyncedRepo struct {
-	ID                  int64              `json:"id"`
-	OwnerLogin          string             `json:"owner_login"`
-	OwnerLoginLower     string             `json:"owner_login_lower"`
-	RepoName            string             `json:"repo_name"`
-	RepoNameLower       string             `json:"repo_name_lower"`
-	InstallationID      pgtype.Int8        `json:"installation_id"`
-	GithubRepositoryID  pgtype.Int8        `json:"github_repository_id"`
-	SyncRefs            bool               `json:"sync_refs"`
-	SyncMetadata        bool               `json:"sync_metadata"`
-	SyncState           string             `json:"sync_state"`
-	EnrolledVia         string             `json:"enrolled_via"`
-	MirrorOwner         pgtype.Text        `json:"mirror_owner"`
-	MirrorRepo          pgtype.Text        `json:"mirror_repo"`
-	LastSyncedAt        pgtype.Timestamptz `json:"last_synced_at"`
-	LastWebhookAt       pgtype.Timestamptz `json:"last_webhook_at"`
-	SyncingSince        pgtype.Timestamptz `json:"syncing_since"`
-	SyncError           pgtype.Text        `json:"sync_error"`
-	ConsecutiveFailures int32              `json:"consecutive_failures"`
-	CreatedAt           time.Time          `json:"created_at"`
-	UpdatedAt           time.Time          `json:"updated_at"`
+	ID                    int64              `json:"id"`
+	OwnerLogin            string             `json:"owner_login"`
+	OwnerLoginLower       string             `json:"owner_login_lower"`
+	RepoName              string             `json:"repo_name"`
+	RepoNameLower         string             `json:"repo_name_lower"`
+	InstallationID        pgtype.Int8        `json:"installation_id"`
+	GithubRepositoryID    pgtype.Int8        `json:"github_repository_id"`
+	SyncRefs              bool               `json:"sync_refs"`
+	SyncMetadata          bool               `json:"sync_metadata"`
+	SyncState             string             `json:"sync_state"`
+	EnrolledVia           string             `json:"enrolled_via"`
+	MirrorOwner           pgtype.Text        `json:"mirror_owner"`
+	MirrorRepo            pgtype.Text        `json:"mirror_repo"`
+	LastSyncedAt          pgtype.Timestamptz `json:"last_synced_at"`
+	LastWebhookAt         pgtype.Timestamptz `json:"last_webhook_at"`
+	SyncingSince          pgtype.Timestamptz `json:"syncing_since"`
+	SyncError             pgtype.Text        `json:"sync_error"`
+	ConsecutiveFailures   int32              `json:"consecutive_failures"`
+	CreatedAt             time.Time          `json:"created_at"`
+	UpdatedAt             time.Time          `json:"updated_at"`
+	GithubPrivate         pgtype.Bool        `json:"github_private"`
+	NextReconcileAt       pgtype.Timestamptz `json:"next_reconcile_at"`
+	ReconcileSkipLoggedAt pgtype.Timestamptz `json:"reconcile_skip_logged_at"`
 }
 
 type GithubSyncedRepoReadGrant struct {

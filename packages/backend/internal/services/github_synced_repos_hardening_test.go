@@ -117,6 +117,7 @@ func TestSyncedRepos_ReconcilerSweepsStaleRepoWithInstallationToken(t *testing.T
 func TestSyncedRepos_ReconcilerRespectsHeartbeatAndCredentialGaps(t *testing.T) {
 	store := newFakeSyncedRepoStore()
 	now := time.Now()
+	store.now = func() time.Time { return now }
 	var calls atomic.Int64
 	service := NewGitHubSyncedRepoService(store, WithGitHubSyncedRepoNow(func() time.Time { return now }))
 	service.SetFetcherFactory(func(row db.GithubSyncedRepo) GitHubSyncedRepoPageFetcher {
@@ -132,6 +133,7 @@ func TestSyncedRepos_ReconcilerRespectsHeartbeatAndCredentialGaps(t *testing.T) 
 	require.NoError(t, err)
 	require.NoError(t, store.MarkGitHubSyncedRepoSynced(context.Background(), withApp.ID))
 	require.NoError(t, store.TouchGitHubSyncedRepoWebhook(context.Background(), withApp.ID))
+	store.repos[syncedRepoKey("octo", "widget")].GithubPrivate.Valid = true
 	_, err = service.EnrollGitHubRepo(context.Background(), EnrollGitHubRepoInput{
 		Owner: "octo", Repo: "no-app", // no installation -> no reconciler credential
 	})

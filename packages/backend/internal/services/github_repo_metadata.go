@@ -313,7 +313,12 @@ func (s *GitHubUserReposService) SyncedRepoInstallationFetcherFactory(issuer Git
 			if err != nil {
 				return nil, err
 			}
-			result, err := s.requestGitHubRepoMetadata(ctx, token.Token, owner, repo, resource, query)
+			var result GitHubRepoMetadataResult
+			if resource == "" {
+				result, err = s.requestGitHubRepoObject(ctx, token.Token, owner, repo)
+			} else {
+				result, err = s.requestGitHubRepoMetadata(ctx, token.Token, owner, repo, resource, query)
+			}
 			if err != nil {
 				return nil, err
 			}
