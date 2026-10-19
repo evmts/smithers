@@ -1,6 +1,7 @@
 package db
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 )
@@ -19,24 +20,97 @@ func (u AgentWorkspaceUse) InUse() bool {
 	return len(u.Sessions) > 0 || u.Terminals > 0 || u.StackLane
 }
 
-// AgentWorkspaceUse reads every use of workspaceID other than the agent
-// session finishedSessionID. A finished run releases its box only when this
-// reads none.
-func (q *Queries) AgentWorkspaceUse(ctx context.Context, workspaceID, finishedSessionID string) (AgentWorkspaceUse, error) {
+// agentWorkspaceUse reads every use of workspaceID other than the finished
+// run: the agent session finishedSessionID while its current run is still
+// finishedRunID or it has none. The same session's next turn is a different
+// run and counts as use. A finishedRunID of 0 excludes the session outright.
+// A finished run releases its box only when this reads none.
+func agentWorkspaceUse(ctx context.Context, conn DBTX, workspaceID, finishedSessionID string, finishedRunID int64) (AgentWorkspaceUse, error) {
 	var use AgentWorkspaceUse
-	err := q.db.QueryRow(ctx, `
+	err := conn.QueryRow(ctx, `
 SELECT
   COALESCE((SELECT array_agg(s.id::text ORDER BY s.id) FROM agent_sessions s
             WHERE s.workspace_id = $1::uuid AND s.status = 'active' AND s.deleted_at IS NULL
-              AND s.id::text <> $2), '{}'::text[]),
+              AND NOT (s.id::text = $2 AND ($3::bigint <= 0 OR s.workflow_run_id IS NULL OR s.workflow_run_id = $3::bigint))), '{}'::text[]),
   (SELECT count(*) FROM workspace_sessions t
     WHERE t.workspace_id = $1::uuid AND t.status IN ('pending', 'starting', 'running')),
   EXISTS (SELECT 1 FROM mythical_lanes l WHERE l.workspace_id = $1::text AND l.retired_at IS NULL)
-`, workspaceID, finishedSessionID).Scan(&use.Sessions, &use.Terminals, &use.StackLane)
+`, workspaceID, finishedSessionID, finishedRunID).Scan(&use.Sessions, &use.Terminals, &use.StackLane)
 	if err != nil {
 		return AgentWorkspaceUse{}, fmt.Errorf("read agent workspace use: %w", err)
 	}
 	return use, nil
+}
+
+// flowHostRevokedCredentialHash marks a Flow host binding whose control
+// credential was revoked: no credential hashes to 32 zero bytes, so
+// flowhost.VerifyHostCredential and flowhost.VerifyModelCredential (an HMAC of
+// that credential) refuse every credential the binding issued, and the next
+// start rotates it (flowhost acquire, PrepareStart).
+var flowHostRevokedCredentialHash = make([]byte, 32)
+
+// IsFlowHostCredentialRevoked reports a binding credential hash
+// RetireFlowHostCredentials revoked.
+func IsFlowHostCredentialRevoked(hash []byte) bool {
+	return bytes.Equal(hash, flowHostRevokedCredentialHash)
+}
+
+// RetireFlowHostCredentials revokes everything a Flow host binding's start
+// issued, only while the binding is still at ownerGeneration (a host started
+// since mints credentials under the same names, and they are not the
+// release's to revoke): userID's access tokens named names (its landing and
+// cache tokens), and the binding's control credential, with the model
+// credential derived from it. It reads back that none is left live and fails
+// when one is.
+func (q *Queries) RetireFlowHostCredentials(ctx context.Context, bindingID string, ownerGeneration, userID int64, names []string) (int64, error) {
+	const owned = `t.user_id = $3 AND t.name = ANY($4::text[])
+  AND EXISTS (SELECT 1 FROM flow_runtime_host_bindings b WHERE b.id = $1::uuid AND b.owner_generation = $2)`
+	tag, err := q.db.Exec(ctx, `DELETE FROM access_tokens t WHERE `+owned, bindingID, ownerGeneration, userID, names)
+	if err != nil {
+		return 0, fmt.Errorf("retire flow host credentials: %w", err)
+	}
+	if _, err := q.db.Exec(ctx, `UPDATE flow_runtime_host_bindings SET credential_hash = $3, updated_at = clock_timestamp()
+WHERE id = $1::uuid AND owner_generation = $2`, bindingID, ownerGeneration, flowHostRevokedCredentialHash); err != nil {
+		return tag.RowsAffected(), fmt.Errorf("revoke flow host control credential: %w", err)
+	}
+	var live int64
+	var controlLive bool
+	if err := q.db.QueryRow(ctx, `SELECT
+  (SELECT count(*) FROM access_tokens t WHERE `+owned+`),
+  EXISTS (SELECT 1 FROM flow_runtime_host_bindings WHERE id = $1::uuid AND owner_generation = $2 AND credential_hash <> $5)`,
+		bindingID, ownerGeneration, userID, names, flowHostRevokedCredentialHash).Scan(&live, &controlLive); err != nil {
+		return tag.RowsAffected(), fmt.Errorf("read back flow host credentials: %w", err)
+	}
+	if live > 0 || controlLive {
+		return tag.RowsAffected(), fmt.Errorf("retire flow host credentials: %d tokens still live, control credential live: %t", live, controlLive)
+	}
+	return tag.RowsAffected(), nil
+}
+
+// ListDirtyAgentBoxes lists running boxes of unknown state, oldest first:
+// marked unreaped, or held by a release lease older than
+// AgentBoxLeaseSeconds (the release died). The sweep retries their cleaning
+// until their credentials are revoked and they are retired.
+func (q *Queries) ListDirtyAgentBoxes(ctx context.Context, limit int32) ([]string, error) {
+	rows, err := q.db.Query(ctx, `
+SELECT id::text FROM workspaces
+WHERE status = 'running' AND deleted_at IS NULL
+  AND (provisioning_stage = $1 OR (provisioning_stage LIKE 'agent_box_releasing:%' AND NOT `+agentBoxLeaseFreshSQL+`))
+ORDER BY updated_at, id
+LIMIT $2`, AgentBoxUnreapedStage, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list dirty agent boxes: %w", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // FlowHostStopPending marks a Flow host binding whose guest service a
@@ -134,14 +208,17 @@ LIMIT $2`, idleSeconds, limit)
 
 // RetireAgentBox records a running agent box retired after its guest was
 // deleted: asleep with no guest and no head token, marked for reconstruction
-// from its recorded branch head. Returns false when the box is no longer
-// running.
-func (q *Queries) RetireAgentBox(ctx context.Context, workspaceID string) (bool, error) {
+// from its recorded branch head. It writes only while the release still holds
+// lease and the box names no head token, the one the release revoked: a token
+// named since belongs to a turn the release must not touch. Returns false
+// otherwise.
+func (q *Queries) RetireAgentBox(ctx context.Context, workspaceID, lease string) (bool, error) {
 	tag, err := q.db.Exec(ctx, `
 UPDATE workspaces
-SET status = 'suspended', vm_id = '', head_push_token_id = NULL, disk_reclaimed_at = NOW(),
+SET status = 'suspended', vm_id = '', disk_reclaimed_at = NOW(),
     suspended_at = NOW(), provisioning_stage = $2, updated_at = NOW()
-WHERE id = $1::uuid AND status = 'running' AND deleted_at IS NULL`, workspaceID, AgentBoxRetiredStage)
+WHERE id = $1::uuid AND status = 'running' AND deleted_at IS NULL
+  AND provisioning_stage = $3 AND head_push_token_id IS NULL`, workspaceID, AgentBoxRetiredStage, lease)
 	if err != nil {
 		return false, err
 	}
@@ -153,16 +230,3 @@ WHERE id = $1::uuid AND status = 'running' AND deleted_at IS NULL`, workspaceID,
 // is refused until the box is reaped or retired, so no credential is minted
 // beside a process the last run left.
 const AgentBoxUnreapedStage = "agent_box_unreaped"
-
-// MarkAgentBoxUnreaped records, or clears, that a running agent box still owes
-// the reap of its last run's processes.
-func (q *Queries) MarkAgentBoxUnreaped(ctx context.Context, workspaceID string, unreaped bool) error {
-	if unreaped {
-		_, err := q.db.Exec(ctx, `UPDATE workspaces SET provisioning_stage = $2, updated_at = NOW()
-WHERE id = $1::uuid AND status = 'running' AND deleted_at IS NULL`, workspaceID, AgentBoxUnreapedStage)
-		return err
-	}
-	_, err := q.db.Exec(ctx, `UPDATE workspaces SET provisioning_stage = '', updated_at = NOW()
-WHERE id = $1::uuid AND provisioning_stage = $2`, workspaceID, AgentBoxUnreapedStage)
-	return err
-}

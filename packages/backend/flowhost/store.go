@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/internal/database"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 type Store struct {
@@ -349,7 +350,10 @@ func (value *lease) loadOrCreate(ctx context.Context, authority Authority, catal
 		value.supersedes = &old
 		value.target = target
 	}
-	if value.credential == "" {
+	// A binding whose control credential a release revoked has no credential
+	// to open: nothing verifies against it, and the next PrepareStart mints
+	// the replacement.
+	if value.credential == "" && !db.IsFlowHostCredentialRevoked(credentialHash) {
 		credential, err := value.store.codec.DecryptString(encrypted)
 		if err != nil || strings.TrimSpace(credential) == "" {
 			return errors.New("open flow host credential")
