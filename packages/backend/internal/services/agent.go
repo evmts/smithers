@@ -444,6 +444,9 @@ type AgentService struct {
 	// codingTurnModel names the provider:model a dispatched coding turn runs
 	// on (SetCodingTurnModel); nil names none.
 	codingTurnModel func(context.Context) (string, error)
+	// codingTurns observes a completed coding turn's head and test receipt
+	// for its coding_result part. nil writes no part.
+	codingTurns CodingTurnObserver
 	// concurrencyCounter + concurrencyMax cap how many agent sandbox provider VMs may be
 	// allocated fleet-wide; enforced ONLY on the dispatch (VM-provision) path.
 	// A nil counter or max <= 0 disables the cap.

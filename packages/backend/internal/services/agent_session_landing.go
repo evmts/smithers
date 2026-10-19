@@ -148,7 +148,7 @@ func (s *AgentSessionLandingService) Open(ctx context.Context, actor *db.User, o
 	if title == "" {
 		title = "Coding change"
 	}
-	snapshot := &sessionPullSnapshot{title: title, body: "", target: target, changeID: *result.HeadChangeID}
+	snapshot := &sessionPullSnapshot{title: title, body: CodingResultSummary(result), target: target, changeID: *result.HeadChangeID}
 	var landingID, number int64
 	var storedTarget string
 	err = lockConn.QueryRow(ctx, `SELECT id, number, target_bookmark FROM landing_requests WHERE repository_id=$1 AND request_id=$2::uuid`, repository.ID, sessionLandingRequestID(sessionID, result.ReplyID)).Scan(&landingID, &number, &storedTarget)
@@ -198,9 +198,6 @@ func (s *AgentSessionLandingService) Open(ctx context.Context, actor *db.User, o
 		}
 		number = landing.Number
 	}
-	// TODO(lane B3): compose receipt copy using the binding Lane B3 section of
-	// ~/Smithers-Ops/Launch/2026-10-19/smithers/hosted-p0-ab-contract.md
-	// (Security d-cey74a). Sandbox results never claim independent verification.
 	runID := ""
 	if session.WorkflowRunID.Valid {
 		runID = strconv.FormatInt(session.WorkflowRunID.Int64, 10)

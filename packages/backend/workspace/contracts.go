@@ -434,6 +434,18 @@ type WorkspaceExecution interface {
 	StopService(ctx context.Context, workspaceID, name string) error
 }
 
+// WorkspaceOfflineCommandRunner is an optional facet for running untrusted
+// code the guest holds, such as a repository's tests, with nothing to reach.
+// RunOfflineAsDeveloper runs command as ExecuteCommand would (the guest's
+// developer account, in the checkout), but in its own network namespace with
+// only loopback, its own PID namespace (no other guest process is visible),
+// and its own mount namespace in which the guest's credential cache
+// directory is empty. A runtime that cannot provide all three does not
+// implement it. A context naming a guest (WithGuest) that is gone fails.
+type WorkspaceOfflineCommandRunner interface {
+	RunOfflineAsDeveloper(ctx context.Context, workspaceID string, command Command) (CommandResult, error)
+}
+
 // WorkspaceServiceCatalog is optional because not every execution backend can
 // enumerate its init system. A runtime advertising ManagedServices implements
 // it so the common product service can list real observations.

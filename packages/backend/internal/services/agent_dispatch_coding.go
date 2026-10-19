@@ -390,7 +390,9 @@ func (service *AgentService) ProjectFlowRuntime(ctx context.Context, update flow
 				"error", decodeErr)
 			return decodeErr
 		}
-		session, replies, err = service.completeCodingTurn(ctx, update, terminal, messages)
+		// Observe the box before the transaction and before release.
+		result := service.observeCodingTurn(ctx, owner, projection)
+		session, replies, err = service.completeCodingTurn(ctx, update, terminal, messages, result)
 	} else {
 		session, err = service.dispatchQ.UpdateAgentSessionTerminalStatusForFlow(ctx, terminal)
 	}
