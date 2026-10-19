@@ -242,10 +242,14 @@ async function fixture(page: Page, target: string, reader = false, signedOut = f
       ]
     })
   })
-  await page.route("**/api/repos/maya/tinyhttp/changes/turn-head/files", (route) =>
+  // The agent's head is unlanded: repo-host answers its commit and 404s its change id (QA b-zg9aml).
+  await page.route(/\/api\/repos\/maya\/tinyhttp\/changes\/turn-head(\/.*)?$/, (route) =>
+    route.fulfill({ status: 404, json: { code: "not_found", message: "commit not found" } })
+  )
+  await page.route(/\/api\/repos\/maya\/tinyhttp\/changes\/[0-9a-f]{40}\/files$/, (route) =>
     route.fulfill({ json: targetState === "no-change" ? [] : [{ path: "src/slug.ts" }, { path: "test/slug.test.ts" }] })
   )
-  await page.route(/\/api\/repos\/maya\/tinyhttp\/(changes\/turn-head|landings\/12)\/diff$/, (route) =>
+  await page.route(/\/api\/repos\/maya\/tinyhttp\/(changes\/[0-9a-f]{40}|landings\/12)\/diff$/, (route) =>
     route.fulfill({
       json: {
         file_diffs: [
