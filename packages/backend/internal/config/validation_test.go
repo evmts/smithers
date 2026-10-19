@@ -421,3 +421,17 @@ func TestValidateServerStartupInstallCallbackIsPerRequest(t *testing.T) {
 	validateOptionalProviders(cfg, &errs)
 	require.NotEmpty(t, errs, "hosted authentication still requires its configured callback")
 }
+
+func TestValidateServerStartup_AgentBoxIdleCapRefusesNegative(t *testing.T) {
+	t.Parallel()
+
+	cfg := validStartupConfig()
+	cfg.Sandbox.AgentBoxIdleCapSecs = -1
+	err := ValidateServerStartup(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sandbox.agent_box_idle_cap_seconds must be >= 0")
+
+	cfg = validStartupConfig()
+	cfg.Sandbox.AgentBoxIdleCapSecs = 0
+	require.NoError(t, ValidateServerStartup(cfg), "0 disables the cap")
+}

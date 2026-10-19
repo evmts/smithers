@@ -659,6 +659,9 @@ type WorkspaceService struct {
 	// leaseDeleteAfter is how long after a client lease lapses the abandon
 	// reaper deletes the workspace. See WithWorkspaceLeaseDeleteAfter.
 	leaseDeleteAfter time.Duration
+	// agentBoxIdleCap is how long a quiesced agent box may sit with no turn
+	// before it is retired; zero disables it. See WithAgentBoxIdleCap.
+	agentBoxIdleCap time.Duration
 }
 
 // WorkspaceServiceOption configures optional dependencies.

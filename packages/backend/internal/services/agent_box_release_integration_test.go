@@ -41,16 +41,27 @@ import (
 
 // hostedBoxRuntime is hosted's guest runtime: it keeps a stopped guest's disk,
 // advertises no cold snapshots, records the guest services it stops and
-// starts, and answers a later turn's join as an initialized checkout.
+// starts, and answers a later turn's join as an initialized checkout. A
+// deleted guest takes its disk with it; a created one starts empty, and the
+// double answers the commands that build its checkout.
 type hostedBoxRuntime struct {
 	*interruptedReleaseRuntime
+	pool       *pgxpool.Pool
 	serviceErr error
 	stopped    []string
 	started    []string
 	starts     int
+	creates    int
+	deleted    bool
+	fresh      bool
+	hasGit     bool
+	hasJJ      bool
+	receipt    []byte
+	commands   [][]string
 	cloneURL   string
 	bookmark   string
 	repository int64
+	head       string
 }
 
 func (*hostedBoxRuntime) Capabilities() workspaceapi.WorkspaceCapabilities {
@@ -58,6 +69,9 @@ func (*hostedBoxRuntime) Capabilities() workspaceapi.WorkspaceCapabilities {
 }
 
 func (r *hostedBoxRuntime) InspectWorkspace(ctx context.Context, id string) (workspaceapi.Workspace, error) {
+	if r.deleted {
+		return workspaceapi.Workspace{}, workspaceapi.ErrWorkspaceNotFound
+	}
 	observed, err := r.interruptedReleaseRuntime.InspectWorkspace(ctx, id)
 	observed.Home, observed.Root = "/home/developer", "/workspace/repo"
 	return observed, err
@@ -69,28 +83,88 @@ func (r *hostedBoxRuntime) StartWorkspace(_ context.Context, id string) (workspa
 	return workspaceapi.Workspace{ID: id, State: workspaceapi.WorkspaceRunning, Home: "/home/developer", Root: "/workspace/repo"}, nil
 }
 
-func (*hostedBoxRuntime) ListFiles(_ context.Context, _, dir string) ([]workspaceapi.FileEntry, error) {
-	if dir == ".git" {
-		return []workspaceapi.FileEntry{{Name: "smithers-workspace-initialization.json"}}, nil
+func (r *hostedBoxRuntime) DeleteWorkspace(ctx context.Context, id string) error {
+	if err := r.interruptedReleaseRuntime.DeleteWorkspace(ctx, id); err != nil {
+		return err
 	}
-	return []workspaceapi.FileEntry{{Name: ".git", IsDir: true}, {Name: ".jj", IsDir: true}}, nil
+	r.deleted, r.guest.state = true, workspaceapi.WorkspaceStopped
+	// As hosted's placement store does, the delete clears the row's placement.
+	_, err := r.pool.Exec(ctx, `UPDATE workspaces SET vm_id='' WHERE id=$1`, id)
+	return err
+}
+
+// CreateWorkspace places a new empty guest and publishes its placement on
+// the row, as hosted's placement store does.
+func (r *hostedBoxRuntime) CreateWorkspace(ctx context.Context, spec workspaceapi.WorkspaceSpec) (workspaceapi.Workspace, error) {
+	r.creates++
+	r.deleted, r.fresh, r.hasGit, r.hasJJ, r.receipt = false, true, false, false, nil
+	r.guest.state = workspaceapi.WorkspaceRunning
+	if _, err := r.pool.Exec(ctx, `UPDATE workspaces SET vm_id=$2 WHERE id=$1`, spec.ID, fmt.Sprintf("msb_new_%d", r.creates)); err != nil {
+		return workspaceapi.Workspace{}, err
+	}
+	return workspaceapi.Workspace{ID: spec.ID, State: workspaceapi.WorkspaceRunning, Home: "/home/developer", Root: "/workspace/repo"}, nil
+}
+
+func (r *hostedBoxRuntime) ListFiles(_ context.Context, _, dir string) ([]workspaceapi.FileEntry, error) {
+	if !r.fresh {
+		if dir == ".git" {
+			return []workspaceapi.FileEntry{{Name: "smithers-workspace-initialization.json"}}, nil
+		}
+		return []workspaceapi.FileEntry{{Name: ".git", IsDir: true}, {Name: ".jj", IsDir: true}}, nil
+	}
+	var entries []workspaceapi.FileEntry
+	switch {
+	case dir == ".git" && r.receipt != nil:
+		entries = append(entries, workspaceapi.FileEntry{Name: "smithers-workspace-initialization.json"})
+	case dir == "":
+		if r.hasGit {
+			entries = append(entries, workspaceapi.FileEntry{Name: ".git", IsDir: true})
+		}
+		if r.hasJJ {
+			entries = append(entries, workspaceapi.FileEntry{Name: ".jj", IsDir: true})
+		}
+	}
+	return entries, nil
 }
 
 func (r *hostedBoxRuntime) ReadFile(_ context.Context, workspaceID, _ string) ([]byte, error) {
+	if r.fresh {
+		return r.receipt, nil
+	}
 	return json.Marshal(workspaceRepositoryReceipt{Version: workspaceRepositoryReceiptVersion, WorkspaceID: workspaceID,
 		RepositoryID: r.repository, CloneURL: r.cloneURL, SourceBookmark: r.bookmark,
 		SourceRevision: strings.Repeat("a", 40), InitializedAt: time.Now().UTC()})
 }
 
-// ExecuteCommand answers the origin check, and reports the head publisher
-// running only once a join has started one, so a quiesced box gets a fresh
-// publisher with a fresh token.
+func (r *hostedBoxRuntime) WriteRepositoryReceipt(_ context.Context, _ string, content []byte) error {
+	r.receipt = append([]byte(nil), content...)
+	return nil
+}
+
+// ExecuteCommand answers the commands a checkout is built and checked with,
+// and reports the head publisher running only once a join has started one.
 func (r *hostedBoxRuntime) ExecuteCommand(_ context.Context, _ string, command workspaceapi.Command) (workspaceapi.CommandResult, error) {
-	if len(command.Args) >= 2 && command.Args[0] == "git" && command.Args[1] == "remote" {
-		return workspaceapi.CommandResult{Stdout: r.cloneURL + "\n"}, nil
-	}
+	r.commands = append(r.commands, command.Args)
 	if _, probe := command.Environment["SMITHERS_WORKSPACE_TOKEN_ID"]; probe && !slices.Contains(r.started, workspaceHeadReporterService) {
 		return workspaceapi.CommandResult{ExitCode: 1}, nil
+	}
+	head := r.head
+	if head == "" {
+		head = strings.Repeat("a", 40)
+	}
+	switch {
+	case len(command.Args) >= 3 && command.Args[0] == "git" && command.Args[1] == "remote":
+		return workspaceapi.CommandResult{Stdout: r.cloneURL + "\n"}, nil
+	case len(command.Args) >= 2 && command.Args[0] == "git" && command.Args[1] == "ls-remote":
+		return workspaceapi.CommandResult{Stdout: head + "\trefs/heads/main\n"}, nil
+	case len(command.Args) >= 2 && command.Args[0] == "git" && command.Args[1] == "clone":
+		r.hasGit = true
+	case len(command.Args) >= 3 && command.Args[0] == "jj" && command.Args[1] == "git" && command.Args[2] == "init":
+		r.hasJJ = true
+	case len(command.Args) >= 2 && command.Args[0] == "git" && command.Args[1] == "rev-parse":
+		return workspaceapi.CommandResult{Stdout: head + "\n"}, nil
+	case len(command.Args) >= 2 && command.Args[0] == "git" && command.Args[1] == "for-each-ref":
+		return workspaceapi.CommandResult{Stdout: "refs/remotes/origin/main\n"}, nil
 	}
 	return workspaceapi.CommandResult{}, nil
 }
@@ -181,7 +255,7 @@ func newAgentBoxRelease(t *testing.T, status string) *agentBoxRelease {
 		f.guest.state = workspaceapi.WorkspaceStopped
 	}
 	f.runtime = &interruptedReleaseRuntime{guest: f.guest}
-	f.hosted = &hostedBoxRuntime{interruptedReleaseRuntime: f.runtime, bookmark: "main", repository: repo}
+	f.hosted = &hostedBoxRuntime{interruptedReleaseRuntime: f.runtime, pool: pool, bookmark: "main", repository: repo}
 	slug, err := q.GetRepoOwnerSlugAndNameByID(ctx, repo)
 	require.NoError(t, err)
 	f.hosted.cloneURL = testWorkspaceGitBaseURL + "/" + slug.OwnerSlug + "/" + slug.RepoName + ".git"

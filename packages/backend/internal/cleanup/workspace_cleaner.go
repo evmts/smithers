@@ -14,13 +14,15 @@ type WorkspaceCleanupStore interface {
 	CleanupIdleWorkspaces(ctx context.Context) error
 	CleanupOverQuotaWorkspaces(ctx context.Context) error
 	CleanupStoppedAgentWorkspaceDisks(ctx context.Context) error
+	RetireIdleAgentBoxes(ctx context.Context) error
 	CleanupAbandonedWorkspaces(ctx context.Context) error
 	ReapWorkspaceChildren(ctx context.Context) error
 	CleanupOrphanFlowJournals(ctx context.Context) error
 }
 
 // WorkspaceCleaner periodically cleans up idle sessions, suspends idle or
-// over-quota workspaces, reclaims long-stopped agent workspace disks,
+// over-quota workspaces, reclaims long-stopped agent workspace disks, retires
+// agent boxes idle past their cap,
 // reclaims workspaces whose client lease lapsed, reaps child workspaces
 // whose parent stopped or whose batch expired, and drops the flow journals of
 // deleted workspaces.
@@ -59,6 +61,9 @@ func (c *WorkspaceCleaner) sweep(ctx context.Context) error {
 	}
 	if err := c.store.CleanupStoppedAgentWorkspaceDisks(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("reclaim stopped agent workspace disks: %w", err))
+	}
+	if err := c.store.RetireIdleAgentBoxes(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("retire idle agent boxes: %w", err))
 	}
 	if err := c.store.CleanupAbandonedWorkspaces(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("cleanup abandoned workspaces: %w", err))

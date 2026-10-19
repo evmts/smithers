@@ -306,6 +306,10 @@ type SandboxConfig struct {
 	AgentRootfsSizeMB      int64  `mapstructure:"agent_rootfs_size_mb"`
 	AgentMaxRuntimeSecs    int64  `mapstructure:"agent_max_runtime_seconds"`
 	AgentIdleTimeoutSecs   int64  `mapstructure:"agent_idle_timeout_seconds"`
+	// AgentBoxIdleCapSecs is how long a quiesced agent box may sit with no
+	// turn before it is retired and its next turn rebuilt from its recorded
+	// head; 0 disables the cap. Env: SMITHERS_SANDBOX_AGENT_BOX_IDLE_CAP_SECONDS.
+	AgentBoxIdleCapSecs int64 `mapstructure:"agent_box_idle_cap_seconds"`
 	// WorkspaceMemoryMB and WorkspaceVCPUCount size kind=vm/container workspaces.
 	WorkspaceMemoryMB  int32 `mapstructure:"workspace_memory_mb"`
 	WorkspaceVCPUCount int32 `mapstructure:"workspace_vcpu_count"`
@@ -532,6 +536,7 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("sandbox.agent_rootfs_size_mb", 2048)
 	v.SetDefault("sandbox.agent_max_runtime_seconds", 1800)
 	v.SetDefault("sandbox.agent_idle_timeout_seconds", 300)
+	v.SetDefault("sandbox.agent_box_idle_cap_seconds", 900)
 	// 0 = unlimited/disabled. Opt-in spend guard; enabling it (e.g. via
 	// SMITHERS_SANDBOX_AGENT_MAX_CONCURRENT in Helm) is a deliberate change.
 	v.SetDefault("sandbox.agent_max_concurrent", 0)
@@ -908,6 +913,7 @@ func Load(configFile string) (*Config, error) {
 		{"sandbox.agent_rootfs_size_mb", "SMITHERS_SANDBOX_AGENT_ROOTFS_SIZE_MB"},
 		{"sandbox.agent_max_runtime_seconds", "SMITHERS_SANDBOX_AGENT_MAX_RUNTIME_SECONDS"},
 		{"sandbox.agent_idle_timeout_seconds", "SMITHERS_SANDBOX_AGENT_IDLE_TIMEOUT_SECONDS"},
+		{"sandbox.agent_box_idle_cap_seconds", "SMITHERS_SANDBOX_AGENT_BOX_IDLE_CAP_SECONDS"},
 		{"sandbox.agent_max_concurrent", "SMITHERS_SANDBOX_AGENT_MAX_CONCURRENT"},
 		{"sandbox.workspace_idle_timeout", "SMITHERS_SANDBOX_WORKSPACE_IDLE_TIMEOUT"},
 		{"sandbox.workspace_lease_delete_after", "SMITHERS_SANDBOX_WORKSPACE_LEASE_DELETE_AFTER"},

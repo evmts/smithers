@@ -134,6 +134,7 @@ type Product interface {
 	ListCollaboratorsByRepo(ctx context.Context, repositoryID int64) ([]db.Collaborator, error)
 	ListExpiredLFSUploadReservationsByOwner(ctx context.Context, repositoryID int64) ([]db.LfsUploadReservation, error)
 	ListFlowHostBindingHolders(ctx context.Context, workspaceID string) ([]db.FlowHostBindingHolder, error)
+	ListIdleAgentBoxes(ctx context.Context, idleSeconds int64, limit int32) ([]string, error)
 	ListIdleWorkspaceSessions(ctx context.Context) ([]db.WorkspaceSession, error)
 	ListIdleWorkspaces(ctx context.Context) ([]db.Workspace, error)
 	ListLFSObjects(ctx context.Context, arg db.ListLFSObjectsParams) ([]db.LfsObject, error)
@@ -174,6 +175,7 @@ type Product interface {
 	ReleaseWorkflowArtifactDeletionClaim(ctx context.Context, arg db.ReleaseWorkflowArtifactDeletionClaimParams) error
 	ReleaseWorkflowCacheDeletionClaim(ctx context.Context, arg db.ReleaseWorkflowCacheDeletionClaimParams) error
 	ResetWorkspaceForReprovision(ctx context.Context, id string) (db.Workspace, error)
+	RetireAgentBox(ctx context.Context, workspaceID string) (bool, error)
 	ResumeWorkflowRun(ctx context.Context, id int64) error
 	ResumeWorkflowSteps(ctx context.Context, workflowRunID int64) error
 	ResumeWorkflowTasks(ctx context.Context, workflowRunID int64) error
