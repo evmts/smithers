@@ -82,6 +82,13 @@ func (s *faultyReleaseStore) DeleteAccessToken(ctx context.Context, arg db.Delet
 	return s.hostedProductStore.DeleteAccessToken(ctx, arg)
 }
 
+func (s *faultyReleaseStore) RevokeStoppedAgentBoxCredentials(ctx context.Context, arg db.RevokeStoppedAgentBoxCredentialsParams) (db.StoppedAgentBoxRevoke, error) {
+	if err := s.fail(ctx, "RevokeStoppedAgentBoxCredentials"); err != nil {
+		return db.StoppedAgentBoxRevoke{}, err
+	}
+	return s.hostedProductStore.RevokeStoppedAgentBoxCredentials(ctx, arg)
+}
+
 // useStore rebuilds the box's service over store, keeping its runtime.
 func (f *agentBoxRelease) useStore(store WorkspaceQuerier) {
 	boxes := newWorkspaceServiceForTests(store, WithWorkspaceRuntime(f.boxes.runtime), WithWorkspaceTransactions(f.pool),
