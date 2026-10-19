@@ -10,6 +10,7 @@ const request = "add slugify(text) with tests"
 const sha = "a".repeat(40)
 const stages = ["admitted", "allocating", "cloning", "model", "testing"]
 const failures = ["failed", "cancelled", "timed-out", "refused"]
+const POOL_FULL = "The agent pool is full right now. Nothing ran; start the agent again in a moment."
 const codingResult = (state: string, finishedAt: string) => ({
   head_commit: state === "no-change" ? "b".repeat(40) : sha,
   head_change_id: "turn-head",
@@ -132,16 +133,19 @@ async function fixture(page: Page, target: string, reader = false, signedOut = f
     const busy = (targetState === "box-busy" && starts <= 2) || targetState === "box-busy-exhausted"
     if (targetState === "queued") observed = "allocating"
     if (targetState === "box-busy" || targetState === "box-busy-exhausted") observed = busy ? "box-busy" : "ready"
+    // A full agent pool (8e d-xz0bfc): the first start's session ends box_unavailable; the visitor's Try again succeeds.
+    const poolFull = targetState === "box-unavailable" && starts <= 1
+    if (targetState === "box-unavailable") observed = poolFull ? "box-unavailable" : "ready"
     if (finalStage >= 0) observed = stages[Math.min(poll - 1, finalStage)]!
     const terminal = !stages.includes(observed),
-      failed = failures.includes(observed) || busy
+      failed = failures.includes(observed) || busy || poolFull
     return route.fulfill({
       json: {
         id: "hosted-session",
         message_count: observed === "model" || observed === "testing" || (terminal && !failed) ? 2 : 1,
         stage: targetState === "queued" ? "queued" : null,
         queued_at: targetState === "queued" ? iso(0) : null,
-        status: busy ? "failed" : failed
+        status: busy || poolFull ? "failed" : failed
           ? observed === "refused"
             ? "failed"
             : observed === "timed-out"
@@ -150,8 +154,10 @@ async function fixture(page: Page, target: string, reader = false, signedOut = f
           : terminal
             ? "completed"
             : "active",
-        reason_code: busy ? "box_busy" : failed ? "capacity" : null,
-        reason: busy ? "The workspace service is busy starting other boxes; try again in a moment." : failed
+        reason_code: busy ? "box_busy" : poolFull ? "box_unavailable" : failed ? "capacity" : null,
+        reason: busy ? "The workspace service is busy starting other boxes; try again in a moment." : poolFull
+          ? POOL_FULL
+          : failed
           ? observed === "refused"
             ? "Not started: no machine is free."
             : "The machine stopped before finishing the change."
@@ -340,7 +346,7 @@ async function shot(page: Page, state: string, width: number, scheme: string) {
   // Close the real notices through their native controls, including a live run notice.
   // Record unexpected errors before closing notices; assert after capture so a late failure keeps the still.
   const noticeFailures = await page.locator('.notice[data-tone="failed"] b').allTextContents()
-  const expectedFailure = [...failures, "reader", "slash-reader", "signed-out"].includes(state)
+  const expectedFailure = [...failures, "box-unavailable", "reader", "slash-reader", "signed-out"].includes(state)
   // Pointer clicks, as a person makes them. A notice can close itself between
   // the count and the click ("Agent finished" times out), so a click that finds
   // its notice gone moves on; the count check below fails if any notice stays.
@@ -375,6 +381,7 @@ const scenarios = [
   "no-change",
   "box-busy",
   "box-busy-exhausted",
+  "box-unavailable",
   "queued",
   "zero-tests",
   "count-unknown",
@@ -520,6 +527,19 @@ for (const [width, scheme] of [
         await expect(page.locator(".notice").filter({ hasText: "Starting agent…" })).toBeVisible()
         await shot(page, state, width, scheme)
         expect(f.accepted()).toBe(true)
+        return
+      }
+      if (state === "box-unavailable") {
+        // Not box_busy: no automatic retry. The sentence and a Try again that starts a fresh session (PM d-dfapae).
+        await expect(page.locator(".hosted-change-card [role=alert]")).toHaveText(POOL_FULL, { timeout: 20_000 })
+        const retry = page.locator(".hosted-change-card").getByRole("button", { name: "Try again", exact: true })
+        await expect(retry).toBeVisible()
+        await page.waitForTimeout(2_500)
+        expect(f.starts()).toBe(1)
+        await shot(page, state, width, scheme)
+        await retry.click()
+        await expect.poll(f.starts).toBe(2)
+        await expect(page.getByRole("button", { name: "Open pull request", exact: true })).toBeVisible({ timeout: 20_000 })
         return
       }
       if (failures.includes(state)) {
