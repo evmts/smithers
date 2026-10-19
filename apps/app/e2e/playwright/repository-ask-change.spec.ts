@@ -292,7 +292,8 @@ async function fixture(page: Page, target: string, reader = false, signedOut = f
       }
     })
   )
-  await page.goto(`${origin}/maya/tinyhttp`)
+  // ?design=off: a --mode test build (the browser shards) otherwise boots the design fixture instead of these routes.
+  await page.goto(`${origin}/maya/tinyhttp?design=off`)
   if (!signedOut) await page.getByRole("button", { name: "Ask", exact: true }).click()
   return {
     starts: () => starts,
@@ -516,6 +517,8 @@ for (const [width, scheme] of [
           await expect(page.locator('.hosted-change-stage[data-tone="done"]').filter({ hasText: "Admitted" })).toBeVisible()
           await expect(page.locator(".hosted-change-chip")).toHaveText("Running")
         }
+        // A live run's notice appears after the toast debounce; wait for it so shot() closes it.
+        await expect(page.locator(".notice").filter({ hasText: "Starting agent…" })).toBeVisible()
         await shot(page, state, width, scheme)
         expect(f.accepted()).toBe(true)
         return
