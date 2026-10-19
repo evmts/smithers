@@ -1,13 +1,9 @@
 import { expect, test, type Page } from "./browserTest"
 import { identityRoute } from "./identity"
+import { say } from "./composer"
 
-const command = async (page: Page, line: string) => {
-  const input = page.getByTestId("composer-input")
-  if (!await input.isVisible()) await page.keyboard.press("Control+k")
-  await input.fill(line)
-  await input.press("Enter")
-  await expect(input).toBeHidden()
-}
+// /owner/repo opens the repository frame; Chat is its Ask panel (59f7a91e, bf0ae9f8).
+const command = say
 
 const README = [
   "# Alpha",
@@ -44,7 +40,7 @@ const markdownFixture = async (page: Page, documentPath: string, markdown: strin
 test("Markdown source retains its own repository and never activates a source link", async ({ page }) => {
   const reads = await markdownFixture(page, "README.md", README)
   await page.goto("/beta/two/?design=off")
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
   const location = page.url()
   await command(page, "/file README.md alpha/one")
   const card = page.getByTestId("card-file-alpha/one-README.md")
@@ -63,7 +59,7 @@ test("nested Markdown source keeps parent links and fragments literal at its rep
   const markdown = "# Guide\n\n[Parent](../LICENSE) · [Next](next.md#usage) · [Escape](../../../LICENSE)"
   const reads = await markdownFixture(page, path, markdown)
   await page.goto("/beta/two/?design=off")
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
   const location = page.url()
   await command(page, `/file ${path} alpha/one`)
   const card = page.getByTestId(`card-file-alpha/one-${path}`)
@@ -80,7 +76,7 @@ test("a Markdown source line opens in the real editor without sending fragment b
   const section = lines.indexOf("## Section") + 1
   const reads = await markdownFixture(page, "README.md", lines.join("\n"))
   await page.goto("/beta/two/?design=off")
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
   const location = page.url()
   await command(page, `/file ${JSON.stringify({ path: "README.md", repo: "alpha/one", line: section })}`)
   const card = page.getByTestId("card-file-alpha/one-README.md")
