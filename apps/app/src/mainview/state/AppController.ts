@@ -1112,12 +1112,25 @@ export const createAppController = (
     const authorityIdentity = store.collections.identitySessions.subscribeChanges(secretAuthority.identityChanged)
     ctx.onDispose(() => authorityIdentity.unsubscribe())
   }
+  /* The route or command admission of `repo` has not settled (RepoLink.openRequestedRepo is reading its document). */
+  const admitting = (repo: string | undefined): boolean => {
+    if (repo === undefined) return false
+    const session = store.session()
+    return [session.repositoryEntry, session.repositoryCommandEntry].some(entry =>
+      entry != null && entry.repo.toLowerCase() === repo.toLowerCase() && entry.phase !== "ready")
+  }
   const membersRole = (requestedRepo?: string): "owner" | "maintainer" | "member" | undefined => {
     if (design.enabled) return designViewerRole(design)
     if (!installHost) {
       const repo = requestedRepo ?? activeRepositoryId(store) ?? undefined
       const authority = secretAuthority?.state(repo)
-      secretAuthority?.ensure(repo)
+      /*
+       * The rank is read from the same document admission reads. While that
+       * admission is unsettled the rank is unknowable, and asking again on
+       * every command only raced the retry (repository-readiness counted two
+       * admission requests for one command); the first ask after admission reads it once.
+       */
+      if (!admitting(repo)) secretAuthority?.ensure(repo)
       return authority?.phase === "ready" ? authority.role : undefined
     }
     const login = store.collections.identitySessions.get("identity")?.login?.toLowerCase()

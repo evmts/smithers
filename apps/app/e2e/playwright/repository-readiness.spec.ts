@@ -103,8 +103,9 @@ test("a command retries an unavailable admission in background and reconnects ac
   await expect(page.getByTestId("composer-input")).toHaveValue("Chat remains usable while retrying")
   await page.goto("/alpha/one/?design=off")
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
-  // Reload also refreshes the selected repository document, beside the resumed admission.
-  await expect.poll(() => pendingAdmissions).toBe(3)
+  // Reload admits the URL again; the resumed command waits on that one read (traced: the earlier
+  // expected 3 counted the hosted viewer-rank read of the same document racing the retry).
+  await expect.poll(() => pendingAdmissions).toBe(2)
   await expect(waiting).toBeVisible()
   release()
   await expect(page.locator('[data-kind="file"]').last()).toContainText("Retried alpha")
