@@ -6,12 +6,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
@@ -40,6 +42,19 @@ func TestAgentSessionCreatorOnlyComposedPostgres(t *testing.T) {
 		&routes.RepoHandler{}, &routes.AuthHandler{}, &routes.UserHandler{}, &routes.SSHKeyHandler{}, &routes.LabelHandler{},
 		&routes.OrgHandler{}, &routes.LandingHandler{}, &routes.SearchHandler{Service: &mockRouterSearchService{}}, &routes.IssueHandler{}, nil, &routes.GitSmartHandler{Service: &mockRouterGitService{}},
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, handler, stream, nil, nil, &routes.WorkspaceHandler{}, nil, nil, nil, nil, nil, nil)
+	// Admit a public visitor through the same guest handler mounted in production.
+	guest := newGuestFixture(t, config.AuthModeMultitenant, nil)
+	guest.handler.DB = f.pool
+	guest.handler.Source = guestRepositorySource{queries: f.q, host: guestMainHost{}}
+	guest.handler.Config.Repositories = []string{"gate-owner/app"}
+	guest.handler.Config.SponsorID = f.owner.ID
+	mountGuestPublic(router.(chi.Router), guest.handler, f.q, cfg)
+	boot := httptest.NewRecorder()
+	router.ServeHTTP(boot, httptest.NewRequest("GET", cfg.Server.PublicURL+"/api/repos/gate-owner/app/guest", nil))
+	require.Equal(t, 200, boot.Code, boot.Body.String())
+	require.Len(t, boot.Result().Cookies(), 1)
+	guestCookie := boot.Result().Cookies()[0]
+
 	session, err := agents.CreateSession(f.ctx, services.CreateAgentSessionInput{RepositoryID: f.repoID, UserID: f.owner.ID, Title: "private conversation"})
 	require.NoError(t, err)
 	reader, err := f.q.CreateUser(f.ctx, db.CreateUserParams{Username: "transcript-reader", LowerUsername: "transcript-reader"})
@@ -50,15 +65,19 @@ func TestAgentSessionCreatorOnlyComposedPostgres(t *testing.T) {
 	for _, actor := range []struct {
 		name string
 		user *db.User
-	}{{"creator", &f.owner}, {"member", &f.other}, {"reader", &reader}, {"anonymous", nil}} {
+	}{{"creator", &f.owner}, {"member", &f.other}, {"reader", &reader}, {"anonymous", nil}, {"guest", nil}} {
 		t.Run(actor.name, func(t *testing.T) {
 			cookie := ""
 			hash := ""
-			if actor.user != nil {
+			sessionUser := actor.user
+			if actor.name == "guest" {
+				sessionUser = &f.other
+			}
+			if sessionUser != nil {
 				cookie = "privacy-" + actor.name
 				sum := sha256.Sum256([]byte(cookie))
 				hash = hex.EncodeToString(sum[:])
-				_, err := f.q.CreateAuthSession(f.ctx, db.CreateAuthSessionParams{UserID: actor.user.ID, Username: actor.user.Username, SessionKey: hash, ExpiresAt: time.Now().Add(time.Hour)})
+				_, err := f.q.CreateAuthSession(f.ctx, db.CreateAuthSessionParams{UserID: sessionUser.ID, Username: sessionUser.Username, SessionKey: hash, ExpiresAt: time.Now().Add(time.Hour)})
 				require.NoError(t, err)
 			}
 			for _, suffix := range []string{"", "/" + session.ID, "/" + session.ID + "/messages", "/" + session.ID + "/stream"} {
@@ -66,7 +85,10 @@ func TestAgentSessionCreatorOnlyComposedPostgres(t *testing.T) {
 					continue
 				}
 				req := httptest.NewRequest("GET", cfg.Server.PublicURL+base+suffix, nil)
-				if cookie != "" {
+				if actor.name == "guest" {
+					req.AddCookie(guestCookie)
+				}
+				if actor.user != nil && cookie != "" {
 					req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: cookie})
 				}
 				out := httptest.NewRecorder()
@@ -76,12 +98,22 @@ func TestAgentSessionCreatorOnlyComposedPostgres(t *testing.T) {
 					want = 200
 				}
 				require.Equal(t, want, out.Code, out.Body.String())
+				if actor.name == "guest" {
+					anonymous := httptest.NewRecorder()
+					router.ServeHTTP(anonymous, httptest.NewRequest("GET", cfg.Server.PublicURL+base+suffix, nil))
+					require.Equal(t, anonymous.Code, out.Code)
+					require.Equal(t, anonymous.Body.String(), out.Body.String())
+					if suffix == "" {
+						require.NotContains(t, out.Body.String(), session.ID)
+						require.Contains(t, []string{"", "0"}, out.Header().Get("X-Total-Count"))
+					}
+				}
 				if suffix == "" && actor.user != nil && actor.name != "creator" {
 					require.JSONEq(t, `[]`, out.Body.String())
 					require.Equal(t, "0", out.Header().Get("X-Total-Count"))
 				}
 			}
-			if actor.user == nil {
+			if actor.name == "anonymous" {
 				return
 			}
 			for _, ticketAuth := range []bool{false, true} {
@@ -90,13 +122,19 @@ func TestAgentSessionCreatorOnlyComposedPostgres(t *testing.T) {
 					defer cancel()
 					path := server.URL + base + "/" + session.ID + "/stream"
 					if ticketAuth {
-						ticket, err := services.NewSSETicketService(f.q).CreateTicket(f.ctx, actor.user.ID, false, "", hash)
+
+						// Guests cannot mint person tickets. A non-creator's valid
+						// reconnect ticket must not disclose the creator's session.
+						ticket, err := services.NewSSETicketService(f.q).CreateTicket(f.ctx, sessionUser.ID, false, "", hash)
 						require.NoError(t, err)
 						path += "?ticket=" + ticket.Ticket
 					}
 					req, err := http.NewRequestWithContext(ctx, "GET", path, nil)
 					require.NoError(t, err)
-					if !ticketAuth {
+					if actor.name == "guest" {
+						req.AddCookie(guestCookie)
+					}
+					if !ticketAuth && actor.user != nil {
 						req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: cookie})
 					}
 					replayMarker := ""
@@ -116,6 +154,14 @@ func TestAgentSessionCreatorOnlyComposedPostgres(t *testing.T) {
 					require.NoError(t, err)
 					if actor.name != "creator" {
 						require.Equal(t, 404, response.StatusCode)
+						body, err := io.ReadAll(response.Body)
+						require.NoError(t, err)
+						anonymous := httptest.NewRecorder()
+						anonymousRequest := httptest.NewRequest("GET", cfg.Server.PublicURL+base+"/"+session.ID+"/stream", nil)
+						anonymousRequest.Header.Set("Last-Event-ID", req.Header.Get("Last-Event-ID"))
+						router.ServeHTTP(anonymous, anonymousRequest)
+						require.Equal(t, anonymous.Code, response.StatusCode)
+						require.Equal(t, anonymous.Body.String(), string(body))
 						response.Body.Close()
 						continue
 					}
