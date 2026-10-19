@@ -102,12 +102,21 @@ func (s *WorkspaceService) authorizeBranchMachine(ctx context.Context, tx pgx.Tx
 	if err := p.Authorize(ctx, tx, "branch.join", repositoryID, branch, actorID); err != nil {
 		return err
 	}
+	if workspaceID != "" {
+		box, err := s.requireSessionBoxPerson(ctx, tx, workspaceID, actorID)
+		if err != nil {
+			return err
+		}
+		if box {
+			// A session's box answers to its branch's lane authority.
+			workspaceID = ""
+		}
+	}
 	// A join by branch name resolves its existing lane before asking for
 	// lane authority. Only the stack's fresh lane creation uses an empty ID.
 	if workspaceID == "" && !StackLaneCreation(ctx) && tx != nil {
-		err := tx.QueryRow(ctx, `SELECT id::text FROM workspaces
-            WHERE repository_id=$1 AND target_bookmark=$2 AND deleted_at IS NULL`, repositoryID, branch).Scan(&workspaceID)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		var err error
+		if workspaceID, err = branchMachineID(ctx, tx, repositoryID, branch); err != nil {
 			return err
 		}
 	}
@@ -138,8 +147,16 @@ func (s *WorkspaceService) createBranchMachineRow(ctx context.Context, arg db.Cr
 	// the first one's machine.
 	lane := strings.TrimSpace(arg.Name)
 	stackLane := branch == MythicalBookmark && StackLaneCreation(ctx) && lane != ""
+	session := UUIDString(arg.AgentSessionID)
 	identity := fmt.Sprintf("branch-machine:%d:%s", arg.RepositoryID, branch)
-	if stackLane {
+	switch {
+	case session != "":
+		// An agent session's own box (plue#869): no other session, member or
+		// guest ever joins it. Git refuses ":" in a branch name, so no branch
+		// spells this key.
+		stackLane = false
+		identity = fmt.Sprintf("branch-machine:%d:session:%s", arg.RepositoryID, session)
+	case stackLane:
 		// Git refuses ":" in a branch name, so no branch spells this key.
 		identity += ":lane:" + lane
 	}
@@ -155,13 +172,16 @@ func (s *WorkspaceService) createBranchMachineRow(ctx context.Context, arg db.Cr
 		return db.Workspace{}, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "branch machine owner unavailable").WithCause(err)
 	}
 	var row db.Workspace
-	if stackLane {
+	switch {
+	case session != "":
+		row, err = sessionBoxWorkspace(ctx, tx, q, arg.RepositoryID, actorID, branch, session)
+	case stackLane:
 		row, err = stackLaneWorkspace(ctx, tx, q, arg.RepositoryID, lane)
-	} else {
+	default:
 		row, err = q.GetBranchWorkspace(ctx, db.GetBranchWorkspaceParams{RepositoryID: arg.RepositoryID, TargetBookmark: branch})
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
-		arg.UserID, arg.TargetBookmark, arg.AgentSessionID = owner, branch, pgUUIDFromString("")
+		arg.UserID, arg.TargetBookmark, arg.AgentSessionID = owner, branch, pgUUIDFromString(session)
 		row, err = q.CreateWorkspace(ctx, arg)
 	} else if err == nil {
 		row, err = joinBranchMachine(ctx, tx, q, row, arg, owner)
@@ -183,11 +203,93 @@ func (s *WorkspaceService) createBranchMachineRow(ctx context.Context, arg db.Cr
 func stackLaneWorkspace(ctx context.Context, tx pgx.Tx, q *db.Queries, repositoryID int64, lane string) (db.Workspace, error) {
 	var id string
 	if err := tx.QueryRow(ctx, `SELECT id::text FROM workspaces
-        WHERE repository_id = $1 AND target_bookmark = $2 AND name = $3 AND deleted_at IS NULL
+        WHERE repository_id = $1 AND target_bookmark = $2 AND name = $3
+        AND agent_session_id IS NULL AND deleted_at IS NULL
         ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, repositoryID, MythicalBookmark, lane).Scan(&id); err != nil {
 		return db.Workspace{}, err
 	}
 	return q.GetWorkspace(ctx, id)
+}
+
+// branchMachineID is the branch's own machine, never a session's box, or "".
+func branchMachineID(ctx context.Context, tx pgx.Tx, repositoryID int64, branch string) (string, error) {
+	var id string
+	err := tx.QueryRow(ctx, `SELECT id::text FROM workspaces
+        WHERE repository_id=$1 AND target_bookmark=$2 AND agent_session_id IS NULL AND deleted_at IS NULL`, repositoryID, branch).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}
+
+// sessionBoxWorkspace is the agent session's own box, or pgx.ErrNoRows before
+// its first turn. Only the session's person creates or joins it, on the
+// branch and repository the session is bound to.
+func sessionBoxWorkspace(ctx context.Context, tx pgx.Tx, q *db.Queries, repositoryID, actorID int64, branch, session string) (db.Workspace, error) {
+	var person, sessionRepository int64
+	if err := tx.QueryRow(ctx, `SELECT user_id, repository_id FROM agent_sessions
+        WHERE id = $1 AND deleted_at IS NULL FOR SHARE`, session).Scan(&person, &sessionRepository); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return db.Workspace{}, pkgerrors.Forbidden("agent session binding denied")
+		}
+		return db.Workspace{}, err
+	}
+	if person != actorID || sessionRepository != repositoryID {
+		return db.Workspace{}, pkgerrors.Forbidden("agent session binding denied")
+	}
+	var id string
+	if err := tx.QueryRow(ctx, `SELECT id::text FROM workspaces
+        WHERE agent_session_id = $1 AND deleted_at IS NULL FOR NO KEY UPDATE`, session).Scan(&id); err != nil {
+		return db.Workspace{}, err
+	}
+	row, err := q.GetWorkspace(ctx, id)
+	if err != nil {
+		return db.Workspace{}, err
+	}
+	if row.RepositoryID != repositoryID || row.TargetBookmark != branch {
+		return db.Workspace{}, pkgerrors.Forbidden("agent session branch binding denied")
+	}
+	return row, nil
+}
+
+// requireSessionBoxPerson refuses actorID on an agent session's box unless
+// it is that session's person; the machine service is admitted before this
+// is asked. It reports whether workspaceID is a session's box.
+func (s *WorkspaceService) requireSessionBoxPerson(ctx context.Context, tx pgx.Tx, workspaceID string, actorID int64) (bool, error) {
+	var box bool
+	var person int64
+	if tx != nil {
+		err := tx.QueryRow(ctx, `SELECT w.agent_session_id IS NOT NULL, COALESCE(a.user_id, 0)
+            FROM workspaces w LEFT JOIN agent_sessions a ON a.id = w.agent_session_id
+            WHERE w.id::text = $1`, workspaceID).Scan(&box, &person)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+	} else {
+		row, err := s.q.GetWorkspace(ctx, workspaceID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if box = row.AgentSessionID.Valid; box {
+			if sessions, ok := s.q.(interface {
+				GetAgentSession(context.Context, string) (db.AgentSession, error)
+			}); ok {
+				if session, err := sessions.GetAgentSession(ctx, UUIDString(row.AgentSessionID)); err == nil {
+					person = session.UserID
+				}
+			}
+		}
+	}
+	if box && (person == 0 || person != actorID) {
+		return true, pkgerrors.Forbidden("access denied")
+	}
+	return box, nil
 }
 
 // joinBranchMachine admits this create to the branch's existing machine.
@@ -342,13 +444,19 @@ func (s *WorkspaceService) attachBranchMachineSession(ctx context.Context, works
 	if row.RepositoryID != input.RepositoryID {
 		return pkgerrors.Forbidden("agent session repository binding denied")
 	}
+	// A session binds only its own box (plue#869).
+	if !row.AgentSessionID.Valid || row.AgentSessionID != pgUUIDFromString(input.SessionID) {
+		return pkgerrors.Forbidden("agent session binding denied")
+	}
 	if err := s.authorizeBranchMachine(ctx, tx, row.RepositoryID, input.UserID, row.TargetBookmark, row.ID); err != nil {
 		return err
 	}
-	// No cross-session, cross-repository or rebinding fallback. Multiple
-	// distinct sessions may point to this one workspace.
+	// No cross-session or cross-repository fallback. A session rebinds only
+	// from a box that no longer exists to its own.
 	result, err := tx.Exec(ctx, `UPDATE agent_sessions SET workspace_id=$1, updated_at=NOW()
-        WHERE id=$2 AND repository_id=$3 AND user_id=$4 AND deleted_at IS NULL AND status='active' AND (workspace_id IS NULL OR workspace_id=$1)`,
+        WHERE id=$2 AND repository_id=$3 AND user_id=$4 AND deleted_at IS NULL AND status='active'
+        AND (workspace_id IS NULL OR workspace_id=$1 OR NOT EXISTS (SELECT 1 FROM workspaces o
+            WHERE o.id=agent_sessions.workspace_id AND o.deleted_at IS NULL))`,
 		pgUUIDFromString(workspaceID), pgUUIDFromString(input.SessionID), row.RepositoryID, input.UserID)
 	if err != nil {
 		return err
@@ -483,6 +591,10 @@ func (s *WorkspaceService) validateBranchMachineSession(ctx context.Context, inp
 	}
 	if session.WorkspaceID.Valid {
 		row, err := db.New(tx).GetWorkspace(ctx, UUIDString(session.WorkspaceID))
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Its box is gone; the turn creates the session's next one.
+			return nil
+		}
 		if err != nil {
 			return err
 		}

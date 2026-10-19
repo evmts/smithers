@@ -57,7 +57,9 @@ func (s *WorkspaceService) CheckAgentWorkspaceQuota(ctx context.Context, userID 
 	return s.requireBranchMachineProviders()
 }
 
-// CreateAgentWorkspace attaches this session to the canonical branch machine.
+// CreateAgentWorkspace attaches this session to its own box on the branch
+// (plue#869). No other session, member or guest joins it, so nothing one
+// turn leaves on its box reaches another person's turn.
 func (s *WorkspaceService) CreateAgentWorkspace(ctx context.Context, input CreateAgentWorkspaceInput) (AgentWorkspaceResult, error) {
 	if err := s.requireBranchMachineProviders(); err != nil {
 		return AgentWorkspaceResult{}, err
@@ -79,8 +81,7 @@ func (s *WorkspaceService) CreateAgentWorkspace(ctx context.Context, input Creat
 	row, err := s.CreateWorkspace(ctx, CreateWorkspaceInput{
 		RepositoryID: input.RepositoryID, UserID: input.UserID,
 		RepoOwner: input.RepoOwner, RepoName: input.RepoName, SourceBookmark: input.SourceBookmark,
-		// The turn runs on the branch's machine as the branch sized it.
-		JoinsAnyMachineSize: true,
+		AgentSessionID: input.SessionID,
 	})
 	if err != nil {
 		return AgentWorkspaceResult{}, err

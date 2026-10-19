@@ -692,17 +692,18 @@ func (s *WorkspaceService) CreateWorkspace(ctx context.Context, input CreateWork
 	var workspace db.Workspace
 
 	if strings.TrimSpace(input.SnapshotID) == "" {
+		metadata := workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources, agentSessionID: input.AgentSessionID}
 		if input.SourceRef != "" {
-			workspace, err = s.createUserRefWorkspace(ctx, input, bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources})
+			workspace, err = s.createUserRefWorkspace(ctx, input, bookmark, metadata)
 		} else if bookmark == defaultBookmark {
-			workspace, err = s.findOrCreatePrimaryWorkspace(ctx, input.RepositoryID, input.UserID, strings.TrimSpace(input.Name), bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources})
+			workspace, err = s.findOrCreatePrimaryWorkspace(ctx, input.RepositoryID, input.UserID, strings.TrimSpace(input.Name), bookmark, metadata)
 		} else {
-			workspace, err = s.findOrCreateDerivedWorkspaceForBookmark(ctx, input.RepositoryID, input.UserID, strings.TrimSpace(input.Name), bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources})
+			workspace, err = s.findOrCreateDerivedWorkspaceForBookmark(ctx, input.RepositoryID, input.UserID, strings.TrimSpace(input.Name), bookmark, metadata)
 		}
 		if err != nil {
 			return WorkspaceResponse{}, err
 		}
-		if err := s.refuseJoinedMachineSizeMismatch(workspace, input); err != nil {
+		if err := s.refuseWorkspaceResourceMismatch(workspace, input.Resources); err != nil {
 			return WorkspaceResponse{}, err
 		}
 		if err = s.withWorkspaceMutationAuthority(ctx, workspace, input.UserID, func(authCtx context.Context) error {
@@ -816,17 +817,18 @@ func (s *WorkspaceService) CreateWorkspaceAsync(ctx context.Context, input Creat
 	var workspace db.Workspace
 
 	if strings.TrimSpace(input.SnapshotID) == "" {
+		metadata := workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources, agentSessionID: input.AgentSessionID}
 		if input.SourceRef != "" {
-			workspace, err = s.createUserRefWorkspace(ctx, input, bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources})
+			workspace, err = s.createUserRefWorkspace(ctx, input, bookmark, metadata)
 		} else if bookmark == defaultBookmark {
-			workspace, err = s.findOrCreatePrimaryWorkspace(ctx, input.RepositoryID, input.UserID, strings.TrimSpace(input.Name), bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources})
+			workspace, err = s.findOrCreatePrimaryWorkspace(ctx, input.RepositoryID, input.UserID, strings.TrimSpace(input.Name), bookmark, metadata)
 		} else {
-			workspace, err = s.findOrCreateDerivedWorkspaceForBookmark(ctx, input.RepositoryID, input.UserID, strings.TrimSpace(input.Name), bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources})
+			workspace, err = s.findOrCreateDerivedWorkspaceForBookmark(ctx, input.RepositoryID, input.UserID, strings.TrimSpace(input.Name), bookmark, metadata)
 		}
 		if err != nil {
 			return WorkspaceResponse{}, err
 		}
-		if err := s.refuseJoinedMachineSizeMismatch(workspace, input); err != nil {
+		if err := s.refuseWorkspaceResourceMismatch(workspace, input.Resources); err != nil {
 			return WorkspaceResponse{}, err
 		}
 		if err = s.withWorkspaceMutationAuthority(ctx, workspace, input.UserID, func(authCtx context.Context) error {
@@ -1102,6 +1104,7 @@ func (s *WorkspaceService) createBookmarkWorkspace(ctx context.Context, reposito
 		EnvironmentClosureHash: metadata.environment.ClosureHash, Status: "starting",
 	}
 	params.VcpuCount, params.MemoryMb, params.DiskMb = workspaceResourceColumns(metadata.resources)
+	params.AgentSessionID = pgUUIDFromString(metadata.agentSessionID)
 	return s.createWorkspaceRow(ctx, params)
 }
 
