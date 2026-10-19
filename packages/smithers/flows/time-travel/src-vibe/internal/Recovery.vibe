@@ -1,0 +1,485 @@
+/**
+ * Startup recovery for incomplete rewind audits.
+ *
+ * @since 0.1.0
+ */
+
+import type { Jj } from "@smthrs/jj"
+import * as Journal from "@smthrs/journal/Journal"
+import type * as JournalEvent from "@smthrs/journal/JournalEvent"
+import type { LivenessEvidence, OwnerId } from "@smthrs/run-store/Ownership"
+import * as RunStore from "@smthrs/run-store/RunStore"
+import * as Clock from "effect/Clock"
+import type * as Duration from "effect/Duration"
+import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as Schema from "effect/Schema"
+import { error, fromCause, type TimeTravelError as TimeTravelFailure } from "../TimeTravelError.vibe"
+import { type Audit, TimeTravelStore } from "../TimeTravelStore.vibe"
+import * as Compensation from "./Compensation.vibe"
+import type { EffectHandlerRegistry } from "./EffectHandlerRegistry.vibe"
+import * as Lease from "./Lease.vibe"
+import { AuditDetail } from "./Rewind.vibe"
+import * as RunRow from "./RunRow.vibe"
+
+/**
+ * Recovery construction options.
+ *
+ * @since 0.1.0
+ * @category models
+ */
+export interface Options {
+  readonly compensationTimeout?: Duration.Input | undefined
+  readonly owner: OwnerId
+  /**
+   * Proof that the owner a running run or child records is gone. `undefined`
+   * declines the takeover, and the audit stays `Busy` for a later pass.
+   */
+  readonly livenessEvidence: (
+    audit: Audit,
+    row: RunStore.RunRow,
+    owner: OwnerId,
+    nowMs: number
+  ) => Effect.Effect<LivenessEvidence | undefined, TimeTravelFailure>
+}
+
+/**
+ * Outcome for one recovered audit.
+ *
+ * `Busy` is a "not yet", not a failure: another process holds the run, or this
+ * pass could not give acquired ownership back, so the audit row stays
+ * `in_progress`, stays in `pendingAudits`, and remains recoverable. `Failed`
+ * is terminal and closes the audit.
+ *
+ * @since 0.1.0
+ * @category models
+ */
+export type Outcome =
+  | { readonly _tag: "Completed"; readonly auditId: string }
+  | { readonly _tag: "RolledBack"; readonly auditId: string }
+  | { readonly _tag: "Busy"; readonly auditId: string; readonly error: TimeTravelFailure }
+  | { readonly _tag: "Failed"; readonly auditId: string; readonly error: TimeTravelFailure }
+
+const isAuditDetail = Schema.is(AuditDetail)
+
+const sameOwner = (left: OwnerId, right: OwnerId): boolean =>
+  left.hostId === right.hostId &&
+  left.pid === right.pid &&
+  left.nonce === right.nonce
+
+const acquire = (
+  runs: RunStore.Service,
+  audit: Audit,
+  options: Options
+): Effect.Effect<RunStore.RunRow, TimeTravelFailure, never> => {
+  const row = runs.get(audit.runId) catch (cause) => throw RunRow.failure("read recovery run", cause)
+  if (row.status === "running" && row.owner !== null && sameOwner(row.owner, options.owner)) {
+    return row
+  }
+  if (row.claim !== null) {
+    throw error("busy", `run ${audit.runId} has an active claim`)
+  }
+
+  const nowMs = Clock.currentTimeMillis()
+  const running = row.status === "running"
+  let evidence: LivenessEvidence | undefined = undefined
+  if (running) {
+    const found = options.livenessEvidence(audit, row, options.owner, nowMs)
+    if (found === undefined) {
+      throw error("busy", `run ${audit.runId} is still live`)
+    }
+    evidence = found
+  }
+  Lease.claimAndActivate(runs, {
+    runId: audit.runId,
+    expected: RunRow.snapshotOf(row),
+    claimant: options.owner,
+    nowMs,
+    evidence,
+    operations: {
+      claim: running ? "steal recovery run" : "claim recovery run",
+      activate: "activate recovery run"
+    },
+    refused: () => error("busy", `run ${audit.runId} could not be claimed for recovery`),
+    lost: error("busy", `run ${audit.runId} lost its recovery claim`)
+  })
+  return row
+}
+
+const archiveCommitted = (
+  journal: Journal.Service,
+  store: TimeTravelStore["Service"],
+  audit: Audit,
+  detail: AuditDetail
+): Effect.Effect<boolean, TimeTravelFailure, never> => {
+  if (detail.phase === "archive_committed" || detail.phase === "completed") {
+    return true
+  }
+  if (detail.suffixCount === 0) return false
+  const page = journal.entries({
+    runId: audit.runId as JournalEvent.RunId,
+    after: audit.frame.seq as JournalEvent.Seq,
+    limit: 1
+  }) catch (cause) => throw error("unknown", `could not inspect archive commit for ${audit.id}`, cause)
+  if (page.entries.length > 0) return false
+  // An empty live suffix alone is not commit evidence: the suffix the
+  // audit recorded must actually be IN the archive. A journal missing
+  // rows on both sides is corruption, and recovery rolls it back rather
+  // than declaring an archive that never happened complete.
+  if (detail.suffixTailSeq === undefined) return false
+  return store.archivedAt(audit.runId, detail.suffixTailSeq)
+}
+
+// The durable child nonce identifies claims made by rewind or an earlier
+// recovery pass, even after recovery has replaced/released the parent owner.
+const protocolChildOwner = (owner: OwnerId | null, childRunId: string): boolean =>
+  owner !== null && (
+    owner.nonce.endsWith(`:rewind-child:${childRunId}`) ||
+    owner.nonce.endsWith(`:recovery-child:${childRunId}`)
+  )
+
+const childEvidence = (
+  audit: Audit,
+  row: RunStore.RunRow,
+  owner: OwnerId,
+  nowMs: number,
+  options: Options
+): Effect.Effect<LivenessEvidence, TimeTravelFailure, never> => {
+  const evidence = options.livenessEvidence(audit, row, owner, nowMs)
+  if (evidence === undefined) {
+    throw error("busy", `child ${row.runId} is still owned`)
+  }
+  return evidence
+}
+
+/**
+ * Resolves children an interrupted rewind had already planned to cancel.
+ * Before commit, release only protocol claims and park activated children.
+ * After commit, reclaim expired protocol owners and finish cancellation.
+ *
+ * The plan is durable on the audit detail before the archive commit, so this is
+ * a resumption rather than a new decision: a child already terminal is skipped,
+ * and one that cannot be claimed leaves the audit open with the remainder still
+ * pending, so a later pass retries it. Idempotent by construction, because
+ * `pendingChildren` clears only once every child is resolved.
+ */
+const resolvePending = (
+  runs: RunStore.Service,
+  audit: Audit,
+  detail: AuditDetail,
+  options: Options,
+  committed: boolean
+): Effect.Effect<AuditDetail, TimeTravelFailure, never> => {
+  const pending = detail.pendingChildren ?? []
+  if (pending.length === 0) return detail
+  const cancelled = [...detail.cancelledChildren]
+  for (const childRunId of pending) {
+    const row: RunStore.RunRow | undefined = runs.get(childRunId) catch (cause) =>
+      cause.code === "not_found_row"
+        ? undefined
+        : throw RunRow.failure(`read pending child ${childRunId}`, cause)
+    if (row === undefined || RunStore.isTerminalRunStatus(row.status)) continue
+    if (!committed && !protocolChildOwner(row.owner, childRunId) && !protocolChildOwner(row.claim, childRunId)) {
+      continue
+    }
+    const childOwner: OwnerId = {
+      ...options.owner,
+      nonce: `${options.owner.nonce}:recovery-child:${childRunId}`
+    }
+    if (row.claim !== null) {
+      if (!protocolChildOwner(row.claim, childRunId) || row.claimedAtMs === null) {
+        throw error("busy", `child ${childRunId} has an active claim`)
+      }
+      const nowMs = Clock.currentTimeMillis()
+      // An unactivated claim has its own identity and timestamp, independent
+      // of the run's original owner. Probe that lease and clear its exact CAS.
+      const evidence = childEvidence(
+        audit,
+        { ...row, owner: row.claim, heartbeatAtMs: row.claimedAtMs },
+        childOwner,
+        nowMs,
+        options
+      )
+      // A-16: a catch expression loses the narrowing of row.claim; a try statement keeps it.
+      let recovered
+      try {
+        recovered = runs.recoverClaim(
+          childRunId,
+          row.claim,
+          row.claimedAtMs,
+          childOwner,
+          nowMs,
+          evidence
+        )
+      } catch (cause) {
+        throw RunRow.failure(`recover pending child claim ${childRunId}`, cause)
+      }
+      if (recovered._tag !== "Recovered") {
+        throw error("busy", `child ${childRunId} could not release its stale claim`)
+      }
+    }
+    // Before commit only release ownership this protocol acquired. A child
+    // not yet activated keeps its original status and owner after claim CAS.
+    if (!committed && !protocolChildOwner(row.owner, childRunId)) continue
+    const nowMs = Clock.currentTimeMillis()
+    const running = row.status === "running"
+    let evidence: LivenessEvidence | undefined = undefined
+    if (running) {
+      if (!protocolChildOwner(row.owner, childRunId)) {
+        throw error("busy", `child ${childRunId} is owned outside rewind recovery`)
+      }
+      evidence = childEvidence(audit, row, childOwner, nowMs, options)
+    }
+    // The audit keeps the whole remaining plan: nothing is written on a
+    // `busy` refusal, so the next pass sees the same list and retries it.
+    Lease.claimAndActivate(runs, {
+      runId: childRunId,
+      expected: RunRow.snapshotOf(row),
+      claimant: childOwner,
+      nowMs,
+      evidence,
+      operations: {
+        claim: `${running ? "steal" : "claim"} pending child ${childRunId}`,
+        activate: `activate pending child ${childRunId}`
+      },
+      refused: () => error("busy", `child ${childRunId} could not be claimed for cancellation`),
+      lost: error("busy", `child ${childRunId} lost its cancellation claim`)
+    })
+    const done = runs.transitionOwned(childRunId, childOwner, committed ? "cancelled" : "suspended") catch (cause) =>
+      throw RunRow.failure(`cancel pending child ${childRunId}`, cause)
+    if (done._tag !== "Transitioned") {
+      throw error("busy", `child ${childRunId} lost its cancellation fence`)
+    }
+    if (committed) cancelled.push(childRunId)
+  }
+  // Reaching here means every planned child is resolved: cancelled, already
+  // terminal, gone, or released before commit. An unresolved child failed above
+  // and left the audit open with its plan intact.
+  return { ...detail, cancelledChildren: cancelled, pendingChildren: [] }
+}
+
+const terminalFailure = (
+  store: TimeTravelStore["Service"],
+  audit: Audit,
+  detail: AuditDetail | undefined,
+  failure: TimeTravelFailure
+): Effect.Effect<Outcome, never, never> => {
+  const written = exit(store.updateAudit(audit.id, {
+    status: "failed",
+    detail: detail === undefined
+      ? {
+        version: 1,
+        phase: "terminal_failure",
+        failure: failure.message
+      }
+      : {
+        ...detail,
+        phase: "terminal_failure",
+        failure: failure.message
+      }
+  }))
+  if (Exit.isFailure(written)) {
+    Effect.annotateLogs(
+      Effect.logWarning("time-travel: failed to persist recovery audit", written.cause),
+      { auditId: audit.id, runId: audit.runId, step: "terminal_failure" }
+    )
+  }
+  return { _tag: "Failed" as const, auditId: audit.id, error: failure }
+}
+
+const recoverOne = (
+  audit: Audit,
+  options: Options
+): Effect.Effect<
+  Outcome,
+  never,
+  EffectHandlerRegistry | Jj | Journal.Journal | RunStore.RunStore | TimeTravelStore
+> => {
+  const store = TimeTravelStore()
+  const runs = RunStore.RunStore()
+  const journal = Journal.Journal()
+  const decodedDetail = isAuditDetail(audit.detail) ? audit.detail : undefined
+  if (decodedDetail === undefined) {
+    return terminalFailure(
+      store,
+      audit,
+      undefined,
+      error("unknown", `audit ${audit.id} has no recoverable protocol detail`)
+    )
+  }
+  let detail: AuditDetail = decodedDetail
+
+  /**
+   * OWNERSHIP IS TAKEN, HELD, AND GIVEN BACK.
+   *
+   * `acquire` used to hand back an unclaimed suspended row and let the
+   * rollback run unfenced, so a concurrent engine could claim the run and
+   * start executing it while recovery restored the workspace underneath.
+   * It now claims every row it acts on. That makes the release the other half
+   * of the contract: a failure after the claim used to leave the run
+   * `running` under the recovery identity with a heartbeat nobody renews, so
+   * the ownership is restored on every exit path, and a heartbeat pulses for
+   * as long as the pass holds it.
+   */
+  let acquired: RunStore.RunRow | undefined
+  let releaseProblem: string | undefined
+  const release = (status: RunStore.RunStatus) => {
+    if (acquired === undefined) return
+    const stateJson = acquired.stateJson
+    const released = exit(runs.transitionOwned(
+      audit.runId,
+      options.owner,
+      // Pending cannot be restored directly; suspended releases ownership.
+      status === "pending" ? "suspended" : status,
+      stateJson
+    ))
+    if (Exit.isFailure(released)) {
+      releaseProblem = fromCause(released.cause).message
+    } else if (released.value._tag !== "Transitioned") {
+      releaseProblem = `ownership release returned ${released.value._tag}`
+    }
+  }
+  const attempt = () => {
+    const acquiredRow = acquire(runs, audit, options)
+    acquired = acquiredRow
+    // The release below is itself an owned transition, so it runs inside
+    // the held lease, before the heartbeat stops.
+    return Lease.withHeldLease(audit.runId, options.owner, (lease) => {
+      const resolve = () => {
+        const committed = archiveCommitted(journal, store, audit, detail)
+        if (committed) {
+          // The cancellations the rewind planned before its commit are
+          // finished here. Closing the audit without draining them dropped
+          // exactly the work `detachedChildren: "cancel"` was asked for.
+          const drained = resolvePending(runs, audit, detail, options, true)
+          // The live run row still carries the post-frame state the rewind
+          // truncated. Derive the state at the surviving frame just as the
+          // normal rewind path does; a history without a decision payload
+          // falls back to the row recovery acquired.
+          const frameState = store.stateAt(audit.runId, audit.frame)
+          lease.releasing()
+          const suspended = runs.transitionOwned(
+            audit.runId,
+            options.owner,
+            "suspended",
+            frameState ?? acquiredRow.stateJson
+          ) catch (cause) => throw RunRow.failure("finish recovered suspension", cause)
+          if (suspended._tag !== "Transitioned") {
+            throw error("busy", `run ${audit.runId} lost its recovery fence`)
+          }
+          store.updateAudit(audit.id, {
+            status: "completed",
+            detail: { ...drained, phase: "completed" }
+          })
+          return { _tag: "Completed" as const, auditId: audit.id }
+        }
+
+        if (detail.compensation !== undefined) {
+          const compensated = detail.compensation
+          const { compensation: _, ...stripped } = detail
+          // A successful rollback is a non-idempotent fact. Persist it
+          // before the ownership restoration can fail, so another recovery
+          // pass never repeats those handler rollbacks. The guard
+          // interrupts this body when the fence is lost, so the rollback
+          // and its record are one uninterruptible unit.
+          uninterruptible {
+            Compensation.rollback(compensated, options.compensationTimeout)
+            detail = stripped
+            store.updateAudit(audit.id, { detail: stripped })
+          }
+        }
+        detail = resolvePending(runs, audit, detail, options, false)
+        lease.releasing()
+        const restored = runs.transitionOwned(
+          audit.runId,
+          options.owner,
+          detail.originalStatus === "pending" ? "suspended" : detail.originalStatus,
+          acquiredRow.stateJson
+        ) catch (cause) => throw RunRow.failure("restore recovered run", cause)
+        if (restored._tag !== "Transitioned") {
+          throw error("busy", `run ${audit.runId} lost its rollback fence`)
+        }
+        acquired = undefined
+        store.updateAudit(audit.id, {
+          status: "failed",
+          detail: {
+            ...detail,
+            phase: "rolled_back",
+            failure: "startup recovery rolled back an uncommitted rewind"
+          }
+        })
+        return { _tag: "RolledBack" as const, auditId: audit.id }
+      }
+      try {
+        const outcome = lease.guard(resolve())
+        acquired = undefined
+        return outcome
+      } finally (settled) {
+        if (Exit.isFailure(settled)) release(detail.originalStatus)
+      }
+    })
+  }
+  const recoveryExit = exit(Effect.uninterruptible(attempt()))
+  if (Exit.isSuccess(recoveryExit)) return recoveryExit.value
+  const failure = fromCause(recoveryExit.cause)
+  if (releaseProblem !== undefined) {
+    return {
+      _tag: "Busy" as const,
+      auditId: audit.id,
+      error: error(
+        failure.code,
+        `${failure.message}; could not give ownership back: ${releaseProblem}`,
+        { recovery: recoveryExit.cause, release: releaseProblem }
+      )
+    }
+  }
+  // A `busy` refusal says only that someone else holds the run right now:
+  // an active claim, a live owner, a fence taken while this pass ran.
+  // Recording it as `failed` removed the audit from `pendingAudits`
+  // permanently, so a rewind interrupted after its compensation but before
+  // its archive commit could never be rolled back by any later pass, and
+  // the engine's stale-heartbeat steal would resume the run against a
+  // workspace this rewind had already rewound.
+  //
+  // Nothing is written on this path on purpose. The audit's detail is the
+  // live rewind's own bookkeeping; a recovery pass that stamped a message
+  // on it would clobber the phase the owner is still advancing.
+  if (failure.code === "busy") {
+    return { _tag: "Busy" as const, auditId: audit.id, error: failure }
+  }
+  return terminalFailure(store, audit, detail, failure)
+}
+
+/**
+ * Scans and resolves every pending rewind audit independently.
+ *
+ * A committed archive finishes the suspended transition. An uncommitted
+ * rewind restores its jj snapshot and handler receipts. Per-audit failures are
+ * returned as typed terminal outcomes and recorded on the same audit row;
+ * recovery never invents a run status.
+ *
+ * An audit whose run another process still holds is reported `Busy` and left
+ * untouched, so it is picked up by the next pass rather than closed on the
+ * strength of a race. {@link Options.livenessEvidence} is what turns "held by
+ * a process that died" back into progress; with none supplied, a run that is
+ * still `running` under a foreign owner is always refused.
+ *
+ * @since 0.1.0
+ * @category constructors
+ */
+export const recover = (
+  options: Options
+): Effect.Effect<
+  ReadonlyArray<Outcome>,
+  TimeTravelFailure,
+  EffectHandlerRegistry | Jj | Journal.Journal | RunStore.RunStore | TimeTravelStore
+> => {
+  return withSpan("Recovery.recover") {
+    Effect.annotateCurrentSpan({ ownerHostId: options.owner.hostId })
+    const store = TimeTravelStore()
+    const audits = store.pendingAudits()
+    return Effect.forEach(audits, (audit) => recoverOne(audit, options), {
+      concurrency: 1
+    })
+  }
+}
