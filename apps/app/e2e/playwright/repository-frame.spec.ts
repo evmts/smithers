@@ -79,7 +79,14 @@ for (const member of [false, true]) for (const width of [1440, 1280, 390]) for (
     expect(commitReads).toEqual(["?limit=1&ref=main", "?limit=1&ref=main"])
     await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeVisible()
     expect(await page.locator(".repo-code-home-file-row > span").first().evaluate(element => getComputedStyle(element).textAlign)).toBe("left")
-    await expect(page.locator(".repo-ui-btn-primary:visible")).toHaveCount(1)
+    // Design (5): the header's Ask is the mock's quiet repo-ui-btn on every route, never a fill, so the Code home has no filled button.
+    const askButton = page.getByRole("button", { name: "Ask", exact: true })
+    await expect(askButton).not.toHaveClass(/repo-ui-btn-(?:primary|quiet)/)
+    await expect(page.locator(".repo-ui-btn-primary:visible")).toHaveCount(0)
+    if (!(member && width >= 1440)) expect(await askButton.evaluate(node => {
+      const probe = document.createElement("span"); node.append(probe); probe.style.color = "var(--surface)"
+      const surface = getComputedStyle(probe).color; probe.remove(); return getComputedStyle(node).backgroundColor === surface
+    })).toBe(true)
     await expect(page.getByText("What should we work on?", { exact: true })).toHaveCount(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     // Every visible shell control participates in the native keyboard ring,
@@ -221,6 +228,13 @@ for (const viewer of ["signed-out", "signed-in", "writer"] as const) for (const 
     const readme = page.getByRole("region", { name: "README", exact: true })
     await expect(intro).toHaveText("Repository introduction")
     await expect(fixed).toContainText("#12 Resize widgets")
+    // Design (4): the Fixed by agents list has no bullets, so its text starts at the block's edge (under the box title), not 22px inside it.
+    expect(await fixed.locator(".sui-md-list").evaluate(list => {
+      const block = list.closest(".repo-code-home-block")!
+      const item = list.querySelector("li")!
+      return { bullets: getComputedStyle(list).listStyleType, padding: getComputedStyle(list).paddingLeft,
+        inset: item.getBoundingClientRect().left - block.getBoundingClientRect().left - parseFloat(getComputedStyle(block).paddingLeft) }
+    })).toEqual({ bullets: "none", padding: "0px", inset: 0 })
     await expect(readme.getByRole("heading", { name: "Project README", level: 1 })).toBeVisible()
     await expect(page.getByRole("region", { name: "README", exact: true })).toHaveCount(1)
     await expect(files.getByRole("link", { name: "README.md", exact: true })).toBeVisible()
@@ -295,6 +309,28 @@ for (const viewer of ["signed-out", "signed-in", "writer"] as const) for (const 
   })
 }
 
+/** The head of the smithers-canary README as smithers.sh serves it (apps/site/scripts/generate-project-copy.mjs). */
+const CANARY_BANNER = [
+  "███████╗███╗   ███╗██╗████████╗██╗  ██╗███████╗██████╗ ███████╗",
+  "██╔════╝████╗ ████║██║╚══██╔══╝██║  ██║██╔════╝██╔══██╗██╔════╝",
+  "███████╗██╔████╔██║██║   ██║   ███████║█████╗  ██████╔╝███████╗",
+  "╚════██║██║╚██╔╝██║██║   ██║   ██╔══██║██╔══╝  ██╔══██╗╚════██║",
+  "███████║██║ ╚═╝ ██║██║   ██║   ██║  ██║███████╗██║  ██║███████║",
+  "╚══════╝╚═╝     ╚═╝╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚══════╝"
+]
+const CANARY_README = [
+  "<!-- Generated from apps/site/src/data/project.json by apps/site/scripts/generate-project-copy.mjs. -->",
+  "",
+  '<pre align="center">', ...CANARY_BANNER, "</pre>",
+  "",
+  '<p align="center"><strong>Automate maintaining your codebase</strong></p>',
+  "",
+  "# Read me from the tree",
+  "",
+  "Open the repository in your browser.",
+  "Explore its files."
+].join("\n")
+
 /*
  * A declared home that carries no README block still shows the repository's
  * README below Files (CEO: README on every repo home; repo-ui-spec view 1),
@@ -317,7 +353,7 @@ for (const member of [false, true]) for (const width of [1280, 390]) for (const 
     const readmeReads: string[] = []
     await page.route(/\/api\/repos\/maya\/tinyhttp\/contents\/README\.md(?:\?.*)?$/, route => {
       readmeReads.push(route.request().url())
-      return route.fulfill({ json: { type: "file", content: "# Read me from the tree\n\nInstall it.", size: 36, encoding: "utf-8", commit_sha: "a".repeat(40), raw_url: "/api/repos/maya/tinyhttp/contents/README.md?raw=1" } })
+      return route.fulfill({ json: { type: "file", content: CANARY_README, size: CANARY_README.length, encoding: "utf-8", commit_sha: "a".repeat(40), raw_url: "/api/repos/maya/tinyhttp/contents/README.md?raw=1" } })
     })
     await page.route(/\/api\/repos\/maya\/tinyhttp\/contents(?:\?.*)?$/, route => route.fulfill({ json: [{ name: "src", path: "src", type: "dir" }, { name: "README.md", path: "README.md", type: "file", size: 36 }] }))
     await page.route(/\/api\/repos\/maya\/bare\/contents(?:\?.*)?$/, route => route.fulfill({ json: [{ name: "src", path: "src", type: "dir" }] }))
@@ -340,6 +376,18 @@ for (const member of [false, true]) for (const width of [1280, 390]) for (const 
     const readme = page.getByRole("region", { name: "README", exact: true })
     await expect(readme.getByRole("heading", { name: "Read me from the tree", level: 1 })).toBeVisible()
     await expect(readme).toContainText("README.md")
+    // The README is a document (Design review .16, items 1 and 2): no markup as text, the banner preformatted, soft breaks joined.
+    expect(await readme.textContent()).not.toContain("<")
+    expect(await readme.textContent()).not.toContain("Generated from")
+    await expect(readme.locator("strong", { hasText: "Automate maintaining your codebase" })).toBeVisible()
+    await expect(readme.getByText("Open the repository in your browser. Explore its files.", { exact: true })).toBeVisible()
+    const banner = readme.locator("pre")
+    await expect(banner).toHaveCount(1)
+    expect(await banner.evaluate(node => {
+      const style = getComputedStyle(node), code = node.querySelector("code")!
+      return { mono: /mono/i.test(style.fontFamily), overflowX: style.overflowX, whiteSpace: style.whiteSpace, text: node.textContent,
+        rows: Math.round(code.getBoundingClientRect().height / parseFloat(getComputedStyle(code).lineHeight)), scrolls: node.scrollWidth > node.clientWidth }
+    })).toEqual({ mono: true, overflowX: "auto", whiteSpace: "pre", text: CANARY_BANNER.join("\n"), rows: CANARY_BANNER.length, scrolls: width === 390 })
     expect((await home.boundingBox())!.y).toBeLessThan((await files.boundingBox())!.y)
     expect((await files.boundingBox())!.y).toBeLessThan((await readme.boundingBox())!.y)
     expect(readmeReads.map(url => new URL(url).search)).toEqual(["?ref=main"])

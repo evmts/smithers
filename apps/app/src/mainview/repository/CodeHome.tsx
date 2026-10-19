@@ -1,7 +1,7 @@
 import { flowAction, flowProps, dynamicFlowProps } from "../flows/FlowAction"
 import { flowArgs } from "../flows/FlowArgs"
 import { FailureNotice, unavailableFailure } from "../FailureNotice"
-import { markdownBlockParser } from "@smthrs/ui/markdown"
+import { markdownBlockParser, type MarkdownVariant } from "@smthrs/ui/markdown"
 import { cloneElement, createElement, isValidElement, useContext, useId, type ReactNode } from "react"
 import { ChevronRight, CircleDot, Clock, ExternalLink, FileText, Folder, GitPullRequest } from "lucide-react"
 import { ageLabel } from "../Timestamps"
@@ -19,7 +19,9 @@ import "./code-home.css"
 
 // Reuse the shared safe parser, substituting native heading elements for its
 // transcript typography wrappers. Fences, inline formatting and links stay shared.
-export function RepositoryMarkdown({ content }: { content: string }) {
+// A repository file (the README, a home markdown block) reads as a document:
+// GitHub's HTML subset and soft line breaks; issue and pull request text stays chat.
+export function RepositoryMarkdown({ content, variant = "chat" }: { content: string; variant?: MarkdownVariant }) {
   const semantic = (node: ReactNode): ReactNode => {
     if (Array.isArray(node)) return node.map(semantic)
     if (!isValidElement<{ className?: string; children?: ReactNode }>(node)) return node
@@ -27,7 +29,7 @@ export function RepositoryMarkdown({ content }: { content: string }) {
     if (level) return createElement(`h${level}`, { key: node.key, className: node.props.className }, node.props.children)
     return cloneElement(node, undefined, semantic(node.props.children))
   }
-  return <div className="repo-ui-markdown sui-md">{semantic(markdownBlockParser.render(content))}</div>
+  return <div className="repo-ui-markdown sui-md">{semantic(markdownBlockParser.render(content, undefined, variant))}</div>
 }
 
 export const REPOSITORY_CLONE_HOST = "https://api.smithers.sh"
@@ -166,7 +168,7 @@ export function CodeHome({ repo, branch, branches, latestCommit, onBranchesOpen,
         case "text": return <div key={key} className="repo-code-home-block repo-code-home-intro">{block.title !== undefined && <h2>{block.title}</h2>}<p>{block.text}</p></div>
         case "prompt": return <HomePrompt key={key} block={block} canAsk={canAsk} onRunCommand={onRunCommand} />
         case "links": return <HomeLinks key={key} block={block} />
-        case "markdown": return <Box key={key} header={block.title}><div className="repo-code-home-block"><RepositoryMarkdown content={block.markdown} /></div></Box>
+        case "markdown": return <Box key={key} header={block.title}><div className="repo-code-home-block"><RepositoryMarkdown content={block.markdown} variant="document" /></div></Box>
         case "app": return null
         default: return <RepositoryHomeView key={key} repo={repo} home={{ kind: "blocks", blocks: [block] }} treeCopyId={undefined} member={member} onRunCommand={run} />
       }
@@ -176,7 +178,7 @@ export function CodeHome({ repo, branch, branches, latestCommit, onBranchesOpen,
       {latestCommit && <LatestCommitRow commit={latestCommit} />}
       {!treeAvailable ? <div className="repo-frame-state" role="alert"><h2>Couldn't load repository files.</h2></div> : tree === undefined || tree.state === "loading" ? <div className="repo-frame-state" role="status">Loading…</div> : tree.state === "failed" ? <FailureNotice className="repo-frame-state" failure={unavailableFailure("repository.files", "Couldn’t load repository files.", tree.error ?? "")} /> : tree.entries.length === 0 ? <div className="repo-frame-state"><h2>This repository is empty.</h2></div> : <div role="table" aria-label="Repository files"><div className="repo-ui-sr" role="row"><span role="columnheader">Name</span></div>{tree.entries.map(entry => <div className="repo-code-home-file-row" role="row" key={entry.name}><span role="cell">{ref ? <a href={`${base}/${entry.kind === "dir" ? "tree" : "blob"}/${ref}/${encodeURIComponent(entry.name)}`}>{entry.kind === "dir" ? <Folder size={16}/> : <FileText size={16}/>} {entry.name}</a> : <>{entry.kind === "dir" ? <Folder size={16}/> : <FileText size={16}/>} {entry.name}</>}</span></div>)}</div>}
     </section>
-    {readme !== undefined && <section className="repo-ui-box" aria-label="README"><div className="repo-ui-box-header">{readme.name}</div><div className="repo-code-home-readme"><RepositoryMarkdown content={readme.markdown}/></div></section>}
+    {readme !== undefined && <section className="repo-ui-box" aria-label="README"><div className="repo-ui-box-header">{readme.name}</div><div className="repo-code-home-readme"><RepositoryMarkdown content={readme.markdown} variant="document"/></div></section>}
     {readmeFailed !== undefined && <section className="repo-ui-box" aria-label="README"><div className="repo-ui-box-header">{readmeFailed.name}</div><FailureNotice className="repo-frame-state" failure={unavailableFailure("repository.readme", "Couldn’t load this file.", readmeFailed.error ?? "")} /></section>}
   </div></div>
 }

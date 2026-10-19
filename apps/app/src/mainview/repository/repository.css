@@ -37,7 +37,6 @@
 .repo-frame-avatar-button { width:28px; height:28px; min-height:28px; border-radius:50%; padding:0; }
 .repo-frame-search { height:37px; }
 .repo-frame .repo-ui-tabs { height:52px; }
-.repo-frame-ask-button { background:var(--surface-2); color:var(--text); border-color:var(--border-strong); }
 
 /* Measured stage 1 frame: native account disclosure keeps the avatar box. */
 .repo-frame .repo-frame-avatar-button { font:inherit; padding:0; }

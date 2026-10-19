@@ -56,6 +56,8 @@
 .repo-code-home-setup .repo-code-home-command { width: min(100%, 650px); }
 .repo-code-home-import > a:last-child { color: var(--text-muted); font-size: var(--fs-2); display: flex; align-items: center; gap: 5px; }
 .repo-code-home-block { padding: 20px; display: grid; gap: 12px; }
+/* A home markdown block's list carries no bullets (the app's base styles reset list-style), so its text starts where the block's does, under the box title. */
+.repo-code-home-block > .repo-ui-markdown .sui-md-list { padding-left: 0; }
 .repo-code-home-links { display: flex; gap: 20px; flex-wrap: wrap; }
 .repo-code-home-links > a { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 14px; }
 .repo-code-home-links > a:hover { color: var(--brand); }

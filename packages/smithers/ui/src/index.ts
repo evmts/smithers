@@ -267,7 +267,7 @@ export {
   type FileTreeNodeProps,
   type FileTreeProps,
 } from "./file-tree";
-export { Markdown, type MarkdownProps, type MarkdownLinkClick } from "./primitives/markdown";
+export { Markdown, type MarkdownProps, type MarkdownLinkClick, type MarkdownVariant } from "./primitives/markdown";
 export { MessageResponse, type MessageResponseProps } from "./agentic/MessageResponse";
 export {
   AgentOutput,

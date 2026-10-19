@@ -56,7 +56,7 @@ const palette = async (page, text) => {
 
 const screens = {
   home: async (page) => {
-    await page.getByRole("heading", { name: "What should we work on?" }).waitFor()
+    await page.getByRole("heading", { name: "Ask about Smithers" }).waitFor()
     for (const title of ["Fix an issue", "Review a PR", "Ask the codebase", "Run it every night"]) {
       await page.getByTestId("app-tile").filter({ hasText: title }).waitFor()
     }
