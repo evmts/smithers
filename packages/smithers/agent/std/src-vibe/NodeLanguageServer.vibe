@@ -1,0 +1,1116 @@
+/**
+ * Host-backed Language Server Protocol client over the permission-checked
+ * process spawner.
+ *
+ * LSP is framed JSON-RPC over ordinary stdio pipes, so the client spawns
+ * through `@smthrs/kernel`'s `ChildProcessSpawner`; a terminal is never
+ * involved.
+ *
+ * @since 1.0.0
+ */
+
+import * as ChildProcessEnvironment from "@smthrs/kernel/ChildProcessEnvironment"
+import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
+import { Clock, Deferred, Effect, Fiber, Layer, Option, Queue, type Scope, Semaphore, Stream } from "effect"
+import * as ChildProcess from "effect/process/ChildProcess"
+import * as Host from "./internal/nodeHost.ts"
+import * as LanguageServer from "./LanguageServer.vibe"
+import * as StdError from "./StdError.vibe"
+
+/**
+ * Maximum frames buffered for a language server's standard input.
+ *
+ * Bounded offers apply backpressure, and each offer uses the request timeout
+ * so a server that stops reading produces a typed timeout instead of an
+ * unbounded queue or a new hang.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const MAX_QUEUED_FRAMES = 256
+
+/**
+ * Maximum concurrent JSON-RPC requests awaiting a response.
+ *
+ * Every entry already has a timeout, and process exit or stdout closure fails
+ * all entries. This cap is the last-resort bound for a host that fans out
+ * requests without limit.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const MAX_PENDING_REQUESTS = 512
+
+const DEFAULT_SETTLE_MS = 5_000
+const DEFAULT_QUIET_MS = 300
+
+/**
+ * A request every server must refuse at once: the specification has a server
+ * answer an unknown `$/` request with MethodNotFound.
+ */
+const BARRIER_METHOD = "$/smithers/barrier"
+/** A server that has not answered the barrier in this long is not asked again. */
+const BARRIER_TIMEOUT_MS = 1_000
+
+/**
+ * One host language-server process.
+ *
+ * Response headers may contain at most 8 KiB, and response bodies may contain
+ * at most 8 MiB.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Config {
+  /**
+   * The file extensions this server answers for, such as `[".ts", ".tsx"]`.
+   * A server without `extensions` answers every file no other server claims.
+   */
+  readonly extensions?: ReadonlyArray<string> | undefined
+  readonly command: string
+  readonly args?: ReadonlyArray<string> | undefined
+  readonly cwd: string
+  readonly environment?: Readonly<Record<string, string>> | undefined
+  /**
+   * Sent as `initializationOptions` on `initialize`. A host pins where the
+   * server loads its own code from here, for example
+   * `{ tsserver: { path: "<host copy>/tsserver.js" } }` for
+   * typescript-language-server, which otherwise runs the workspace's own
+   * `node_modules/typescript`.
+   */
+  readonly initializationOptions?: unknown
+  readonly timeoutMs?: number | undefined
+  /**
+   * How long `diagnostics` waits for a server without pull diagnostics to
+   * publish for the latest synced text, then fails with `timeout`. Defaults to
+   * 5 seconds. typescript-language-server publishes nothing for a change that
+   * leaves a file with no problems, so such a change always waits this long.
+   */
+  readonly settleMs?: number | undefined
+  /**
+   * After a publish, how long `diagnostics` waits for a later one before
+   * answering, within `settleMs`. A server may publish syntax errors before
+   * semantic ones: typescript-language-server does on the first open of a
+   * file. Defaults to 300 milliseconds.
+   */
+  readonly quietMs?: number | undefined
+}
+
+interface JsonRpcMessage {
+  readonly id?: unknown
+  readonly method?: unknown
+  readonly params?: unknown
+  readonly result?: unknown
+  readonly error?: unknown
+}
+
+/** JSON-RPC's code for a method the server does not implement. */
+const METHOD_NOT_FOUND = -32601
+
+const LANGUAGE_IDS: Readonly<Record<string, string>> = {
+  ".ts": "typescript",
+  ".mts": "typescript",
+  ".cts": "typescript",
+  ".tsx": "typescriptreact",
+  ".js": "javascript",
+  ".mjs": "javascript",
+  ".cjs": "javascript",
+  ".jsx": "javascriptreact",
+  ".py": "python",
+  ".rs": "rust",
+  ".go": "go",
+  ".rb": "ruby",
+  ".sh": "shellscript",
+  ".md": "markdown",
+  ".yml": "yaml",
+  ".cc": "cpp",
+  ".cpp": "cpp",
+  ".hpp": "cpp",
+  ".cs": "csharp"
+}
+
+const extensionOf = (path: string): string => Host.extname(path).toLowerCase()
+
+const languageId = (path: string): string => {
+  const extension = extensionOf(path)
+  return LANGUAGE_IDS[extension] ?? (extension.slice(1) || "plaintext")
+}
+
+interface FrameDecoder {
+  readonly push: (chunk: Uint8Array) => ReadonlyArray<FrameEvent>
+}
+
+type FrameEvent =
+  | { readonly _tag: "Message"; readonly value: unknown }
+  | { readonly _tag: "Failure"; readonly error: StdError.StdError; readonly id?: number | undefined }
+
+const failure = (code: StdError.Code, message: string): StdError.StdError => new StdError.StdError({ code, message })
+
+const maximumHeaderBytes = 8 * 1024
+const maximumFrameBytes = 8 * 1024 * 1024
+const headerEnd = new Uint8Array([13, 10, 13, 10])
+const contentLengthPrefix = new TextEncoder().encode("Content-Length:")
+
+const concatenate = (left: Uint8Array, right: Uint8Array): Uint8Array => {
+  const combined = new Uint8Array(left.length + right.length)
+  combined.set(left)
+  combined.set(right, left.length)
+  return combined
+}
+
+interface ChunkBuffer {
+  readonly length: number
+  readonly push: (chunk: Uint8Array) => void
+  readonly indexOf: (needle: Uint8Array) => number
+  // Counts come from delimiter offsets or validated Content-Length values.
+  // A reader can only be acquired for an available, nonnegative prefix.
+  readonly prefix: (length: number) => {
+    readonly take: () => Uint8Array
+    readonly discard: () => void
+  } | undefined
+}
+
+const makeChunkBuffer = (): ChunkBuffer => {
+  let chunks: Array<Uint8Array> = []
+  let head = 0
+  let headOffset = 0
+  let length = 0
+
+  const compact = (): void => {
+    if (head === chunks.length) {
+      chunks = []
+      head = 0
+      headOffset = 0
+    } else if (head >= 64 && head * 2 >= chunks.length) {
+      chunks = chunks.slice(head)
+      head = 0
+    }
+  }
+
+  const consume = (count: number, output?: Uint8Array): void => {
+    let remaining = count
+    let outputOffset = 0
+    for (const chunk of chunks.slice(head)) {
+      if (remaining === 0) break
+      const available = chunk.byteLength - headOffset
+      const consumed = Math.min(available, remaining)
+      if (output !== undefined) {
+        output.set(chunk.subarray(headOffset, headOffset + consumed), outputOffset)
+        outputOffset += consumed
+      }
+      headOffset += consumed
+      length -= consumed
+      remaining -= consumed
+      if (headOffset === chunk.byteLength) {
+        head++
+        headOffset = 0
+      }
+    }
+    compact()
+  }
+
+  return {
+    get length() {
+      return length
+    },
+    push: (chunk) => {
+      if (chunk.byteLength === 0) return
+      // Own the bytes so caller mutation or resizing cannot change buffered lengths.
+      chunks.push(chunk.slice())
+      length += chunk.byteLength
+    },
+    indexOf: (needle) => {
+      let absolute = 0
+      let matched = 0
+      for (let chunkIndex = head; chunkIndex < chunks.length; chunkIndex++) {
+        const chunk = chunks[chunkIndex]!
+        const start = chunkIndex === head ? headOffset : 0
+        for (let index = start; index < chunk.byteLength; index++) {
+          const byte = chunk[index]
+          if (byte === needle[matched]) matched++
+          else matched = byte === needle[0] ? 1 : 0
+          if (matched === needle.byteLength) return absolute - needle.byteLength + 1
+          absolute++
+        }
+      }
+      return -1
+    },
+    prefix: (count) => {
+      if (count > length) return undefined
+      return {
+        take: () => {
+          const output = new Uint8Array(count)
+          consume(count, output)
+          return output
+        },
+        discard: () => consume(count)
+      }
+    }
+  }
+}
+
+const malformedId = (body: string): number | undefined => {
+  const match = /"id"\s*:\s*(\d+)/.exec(body)
+  if (match === null) return undefined
+  const id = Number(match[1])
+  return Number.isSafeInteger(id) ? id : undefined
+}
+
+const makeFrameDecoder = (): FrameDecoder => {
+  const pending = makeChunkBuffer()
+  let bodyLength: number | undefined
+  let resynchronizing = false
+  return {
+    push: (chunk) => {
+      pending.push(chunk)
+      const events: Array<FrameEvent> = []
+      while (pending.length > 0 || bodyLength === 0) {
+        if (resynchronizing) {
+          const nextHeader = pending.indexOf(contentLengthPrefix)
+          if (nextHeader < 0) {
+            pending.prefix(Math.max(0, pending.length - contentLengthPrefix.byteLength + 1))!.discard()
+            break
+          }
+          pending.prefix(nextHeader)!.discard()
+          resynchronizing = false
+        }
+        if (bodyLength !== undefined) {
+          const reader = pending.prefix(bodyLength)
+          if (reader === undefined) break
+          const body = new TextDecoder().decode(reader.take())
+          bodyLength = undefined
+          try {
+            events.push({ _tag: "Message", value: JSON.parse(body) as unknown })
+          } catch {
+            events.push({
+              _tag: "Failure",
+              error: failure("request_failed", "Language server returned malformed JSON"),
+              id: malformedId(body)
+            })
+          }
+          continue
+        }
+        const delimiter = pending.indexOf(headerEnd)
+        if (delimiter < 0) {
+          if (pending.length > maximumHeaderBytes) {
+            events.push({
+              _tag: "Failure",
+              error: failure(
+                "request_failed",
+                `Language server frame header exceeded ${maximumHeaderBytes} bytes`
+              )
+            })
+            pending.prefix(1)!.discard()
+            resynchronizing = true
+            continue
+          }
+          break
+        }
+        if (delimiter > maximumHeaderBytes) {
+          events.push({
+            _tag: "Failure",
+            error: failure("request_failed", `Language server frame header exceeded ${maximumHeaderBytes} bytes`)
+          })
+          pending.prefix(delimiter + headerEnd.byteLength)!.discard()
+          resynchronizing = true
+          continue
+        }
+        const header = new TextDecoder().decode(pending.prefix(delimiter)!.take())
+        pending.prefix(headerEnd.byteLength)!.discard()
+        const match = /(?:^|\r\n)Content-Length:\s*(\d+)(?:\r\n|$)/i.exec(header)
+        if (match === null) {
+          events.push({
+            _tag: "Failure",
+            error: failure("request_failed", "Language server frame omitted Content-Length")
+          })
+          resynchronizing = true
+          continue
+        }
+        const length = Number(match[1])
+        if (!Number.isSafeInteger(length) || length < 0 || length > maximumFrameBytes) {
+          events.push({
+            _tag: "Failure",
+            error: failure("request_failed", `Language server frame exceeded ${maximumFrameBytes} bytes`)
+          })
+          resynchronizing = true
+          continue
+        }
+        bodyLength = length
+      }
+      return events
+    }
+  }
+}
+
+const asMessage = (value: unknown): JsonRpcMessage | undefined =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value
+    : undefined
+
+const frame = (message: unknown): Uint8Array => {
+  const body = new TextEncoder().encode(JSON.stringify(message))
+  const header = new TextEncoder().encode(`Content-Length: ${body.byteLength}\r\n\r\n`)
+  return concatenate(header, body)
+}
+
+const firstCallHierarchyItem = (value: unknown): unknown | undefined => Array.isArray(value) ? value[0] : undefined
+
+const isFile = (path: string): boolean => {
+  try {
+    return Host.stat(path)?.isFile() === true
+  } catch {
+    return false
+  }
+}
+
+/** Whether anything, a file or a directory, exists at `path`. */
+const exists = (path: string): boolean => {
+  try {
+    return Host.stat(path) !== undefined
+  } catch {
+    return false
+  }
+}
+
+const realPath = (path: string): string => {
+  try {
+    return Host.realpath(path)
+  } catch {
+    return Host.resolve(path)
+  }
+}
+
+const isWithin = (root: string, path: string): boolean => {
+  const relative = Host.relative(root, path)
+  return relative === "" || (relative !== ".." && !relative.startsWith(`..${Host.sep}`) &&
+    !Host.isAbsolute(relative))
+}
+
+/**
+ * Resolves the program a spawn would execute: a command containing a path
+ * separator against `cwd`, a bare name through the child's `PATH`, where an
+ * empty or relative entry is relative to `cwd`.
+ */
+const resolveCommand = (command: string, cwd: string, path: string | undefined): string | undefined => {
+  if (command.includes("/") || command.includes(Host.sep)) {
+    const candidate = Host.resolve(cwd, command)
+    return isFile(candidate) ? candidate : undefined
+  }
+  for (const entry of (path ?? "").split(Host.delimiter)) {
+    const candidate = Host.resolve(cwd, entry, command)
+    if (!isFile(candidate)) continue
+    try {
+      Host.accessExecutable(candidate)
+      return candidate
+    } catch {
+      continue
+    }
+  }
+  return undefined
+}
+
+/**
+ * Refuses a server whose program or any file-naming argument lies in the
+ * workspace. The server runs on the host as the host user, so a program the
+ * workspace supplies (its `node_modules/.bin`, a `./` script, a symlink it
+ * planted) would let workspace files choose what the host executes.
+ */
+/**
+ * Programs whose job is to run another program named in their arguments or
+ * found in the working directory: shells, `env`, and package runners. Their
+ * arguments are code or package names, not files, so the workspace check below
+ * cannot see what they would execute (`sh -c node_modules/.bin/x`, `npx x`).
+ */
+const LAUNCHERS = new Set([
+  "sh",
+  "bash",
+  "zsh",
+  "dash",
+  "ksh",
+  "fish",
+  "csh",
+  "tcsh",
+  "env",
+  "npx",
+  "pnpx",
+  "npm",
+  "pnpm",
+  "yarn",
+  "bunx",
+  "deno",
+  "cmd",
+  "powershell",
+  "pwsh"
+])
+
+/** Interpreter flags that take code or a module to load instead of a file path. */
+const CODE_FLAGS = new Set(["-e", "--eval", "-p", "--print", "-r", "--require", "--import", "--loader"])
+
+const launcher = (config: Config): string | undefined => {
+  const name = Host.basename(config.command).toLowerCase().replace(/\.(?:exe|cmd|bat|ps1)$/, "")
+  if (LAUNCHERS.has(name)) return name
+  if (name !== "node" && name !== "bun" && name !== "nodejs") return undefined
+  const args = config.args ?? []
+  if (name === "bun" && ["x", "run", "exec"].includes(args[0] ?? "")) return `bun ${args[0]}`
+  const flag = args.find((argument) => CODE_FLAGS.has(argument.split("=")[0]!) || argument === "--experimental-loader")
+  return flag === undefined ? undefined : `${name} ${flag.split("=")[0]}`
+}
+
+const workspaceProgram = (
+  config: Config,
+  path: string | undefined
+): StdError.StdError | undefined => {
+  const launching = launcher(config)
+  if (launching !== undefined) {
+    return failure(
+      "permission_denied",
+      `Language server command runs ${launching}, which executes a program its arguments or the workspace choose; name the server's own host binary instead`
+    )
+  }
+  const lexicalRoot = Host.resolve(config.cwd)
+  const realRoot = realPath(lexicalRoot)
+  const inWorkspace = (file: string): boolean =>
+    isWithin(lexicalRoot, file) || isWithin(realRoot, file) || isWithin(realRoot, realPath(file)) ||
+    isWithin(lexicalRoot, realPath(file))
+  const program = resolveCommand(config.command, lexicalRoot, path)
+  if (program !== undefined && inWorkspace(program)) {
+    return failure(
+      "permission_denied",
+      `Language server program ${program} is inside the workspace ${lexicalRoot}; run a host copy instead`
+    )
+  }
+  for (const argument of config.args ?? []) {
+    for (const value of [argument, argument.slice(argument.indexOf("=") + 1)]) {
+      if (value === "") continue
+      const candidate = Host.resolve(lexicalRoot, value)
+      // A directory counts: `node <dir>` runs `<dir>/index.js` or its package main.
+      if (exists(candidate) && inWorkspace(candidate)) {
+        return failure(
+          "permission_denied",
+          `Language server argument names ${candidate}, a path inside the workspace ${lexicalRoot}`
+        )
+      }
+    }
+  }
+  return undefined
+}
+
+interface PublishedDiagnostics {
+  readonly version: number | undefined
+  readonly sequence: number
+  readonly diagnostics: ReadonlyArray<unknown>
+}
+
+interface OpenDocument {
+  readonly version: number
+  /** The publish sequence number when this version was sent. */
+  readonly sentAt: number
+  /** The SHA-256 of the text last sent, so `refresh` resends only changed files. */
+  readonly digest: string
+}
+
+const digestOf = (text: string): string => Host.sha256Hex(text)
+
+/** Reads a file's text, or `undefined` when it cannot be read. */
+const readIfPresent = (path: string): string | undefined => {
+  try {
+    return Host.readText(path)
+  } catch {
+    return undefined
+  }
+}
+
+const makeClient = (
+  config: Config
+): Effect.Effect<
+  LanguageServer.LanguageServer,
+  StdError.StdError,
+  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
+> => {
+  const spawner = ChildProcessSpawner.ChildProcessSpawner()
+  const timeoutMs = config.timeoutMs ?? 30_000
+  const settleMs = config.settleMs ?? DEFAULT_SETTLE_MS
+  const quietMs = config.quietMs ?? DEFAULT_QUIET_MS
+  const env = ChildProcessEnvironment.make(Host.processEnv(), config.environment)
+  const refused = workspaceProgram(config, env.PATH)
+  if (refused !== undefined) throw refused
+  // The process's stdin is fed from this queue for the client's lifetime, so
+  // each request is one offered frame and the pipe never closes between them.
+  const input = Queue.bounded<Uint8Array>(MAX_QUEUED_FRAMES)
+  const handle = spawner.spawn(
+    ChildProcess.make(config.command, config.args ?? [], {
+      cwd: config.cwd,
+      env,
+      extendEnv: false,
+      stdin: { stream: Stream.fromQueue(input), endOnDone: false }
+    })
+  ) catch (error) =>
+    throw failure("provider_unavailable", `Language server process could not be started: ${error.message}`)
+  const pending = new Map<number, Deferred.Deferred<unknown, StdError.StdError>>()
+  const decoder = makeFrameDecoder()
+  let nextId = 1
+  let terminalError: StdError.StdError | undefined
+
+  // Keep draining stderr while requests run. Copy retained bytes so a small
+  // tail never holds a larger backing buffer alive.
+  const maximumStderrBytes = 64 * 1024
+  let stderrTail: Uint8Array = new Uint8Array(0)
+  const stderrFiber = Effect.forkScoped(() => {
+    try {
+      Stream.runForEach(handle.stderr, (chunk) => {
+        stderrTail = chunk.byteLength >= maximumStderrBytes
+          ? chunk.slice(-maximumStderrBytes)
+          : concatenate(
+            stderrTail.slice(Math.max(0, stderrTail.byteLength + chunk.byteLength - maximumStderrBytes)),
+            chunk
+          )
+      })
+    } catch (cause) {
+      logWarning("Language server stderr stream failed", cause)
+    }
+  }, { startImmediately: true })
+  const stderr = (): string => {
+    let start = 0
+    while (start < stderrTail.byteLength && start < 3 && (stderrTail[start]! & 0b1100_0000) === 0b1000_0000) start++
+    return new TextDecoder().decode(stderrTail.subarray(start))
+  }
+
+  const failPending = (error: StdError.StdError): void!! => {
+    const deferreds = [...pending.values()]
+    pending.clear()
+    for (const deferred of deferreds) Deferred.fail(deferred, error)
+  }
+
+  const failRequest = (id: number, error: StdError.StdError): void!! => {
+    const deferred = pending.get(id)
+    if (deferred === undefined) return
+    pending.delete(id)
+    Deferred.fail(deferred, error)
+  }
+
+  const closeWith = (error: StdError.StdError): void!! => {
+    // stdout EOF and process exit can arrive before the last stderr chunk.
+    // A bounded grace also handles servers that close stdout but stay alive.
+    Effect.timeoutOption(Fiber.await(stderrFiber), 100)
+    terminalError ??= error
+    failPending(terminalError)
+  }
+
+  const uriOf = (path: string): string => Host.fileUrl(Host.resolve(config.cwd, path))
+  const documents = new Map<string, OpenDocument>()
+  // Versions keep climbing across a close and reopen, so a late publish for
+  // the closed text never passes for the reopened one.
+  const versions = new Map<string, number>()
+  const published = new Map<string, PublishedDiagnostics>()
+  const listeners = new Map<string, Set<Deferred.Deferred<void>>>()
+  let publishSequence = 0
+  let pullUnsupported = false
+  let pullSupported = false
+  let versionedPublishes = false
+  let barrierAnswered = true
+
+  const publish = (params: unknown): void!! => {
+    const notification = asMessage(params) as {
+      readonly uri?: unknown
+      readonly version?: unknown
+      readonly diagnostics?: unknown
+    } | undefined
+    if (typeof notification?.uri !== "string" || !Array.isArray(notification.diagnostics)) return
+    const uri = notification.uri
+    const version = typeof notification.version === "number" ? notification.version : undefined
+    if (version !== undefined) versionedPublishes = true
+    const previous = published.get(uri)?.version
+    // A late publish for an older version never replaces a newer one.
+    if (version !== undefined && previous !== undefined && version < previous) return
+    published.set(uri, {
+      version,
+      sequence: ++publishSequence,
+      diagnostics: notification.diagnostics
+    })
+    const waiting = listeners.get(uri)
+    if (waiting === undefined) return
+    listeners.delete(uri)
+    for (const listener of waiting) Deferred.succeed(listener, undefined)
+  }
+
+  const receive = (value: unknown): void!! => {
+    const message = asMessage(value)
+    if (message?.method === "textDocument/publishDiagnostics") return publish(message.params)
+    if (message === undefined || typeof message.id !== "number") return
+    const deferred = pending.get(message.id)
+    if (deferred === undefined) return
+    pending.delete(message.id)
+    if (message.error === undefined) {
+      Deferred.succeed(deferred, message.result)
+      return
+    }
+    const error = asMessage(message.error) as {
+      readonly code?: unknown
+      readonly message?: unknown
+      readonly data?: unknown
+    } | undefined
+    Deferred.fail(
+      deferred,
+      new StdError.StdError({
+        code: "request_failed",
+        message: typeof error?.message === "string" ? error.message : "Language server returned a JSON-RPC error",
+        ...(typeof error?.code === "number" && typeof error.message === "string"
+          ? {
+            rpcError: {
+              code: error.code,
+              message: error.message,
+              ...(error.data === undefined ? {} : { data: error.data })
+            }
+          }
+          : {})
+      })
+    )
+  }
+
+  const receiveFrame = (event: FrameEvent): void!! => {
+    if (event._tag === "Message") return receive(event.value)
+    // A rejected frame has no trustworthy response id. Failing every
+    // waiter prevents another request from hanging behind corrupt framing.
+    if (event.id === undefined) return failPending(event.error)
+    failRequest(event.id, event.error)
+  }
+
+  Effect.forkScoped(() => {
+    try {
+      Stream.runForEach(handle.stdout, (chunk) => {
+        for (const event of decoder.push(chunk)) receiveFrame(event)
+      })
+    } catch (_) {
+      closeWith(failure("request_failed", "Language server output stream failed"))
+      return
+    }
+    closeWith(failure("request_failed", "Language server output stream closed"))
+  }, { startImmediately: true })
+
+  Effect.forkScoped(() => {
+    try {
+      const exitCode = handle.exitCode()
+      closeWith(failure("request_failed", `Language server process exited with code ${exitCode}`))
+    } catch (_) {
+      closeWith(failure("request_failed", "Language server process exited"))
+    }
+  }, { startImmediately: true })
+
+  const send = (message: unknown): void!StdError.StdError => {
+    if (terminalError !== undefined) throw terminalError
+    try {
+      Effect.timeout(Queue.offer(input, frame(message)), timeoutMs)
+    } catch (_) {
+      throw failure(
+        "timeout",
+        `Language server stdin is not being drained; frame offer exceeded ${timeoutMs}ms`
+      )
+    }
+  }
+
+  const request = (
+    method: string,
+    params: unknown
+  ): unknown!StdError.StdError => {
+    try {
+      const deferred = Deferred.make<unknown, StdError.StdError>()
+      if (terminalError !== undefined) throw terminalError
+      if (pending.size >= MAX_PENDING_REQUESTS) {
+        throw failure(
+          "request_failed",
+          `Language server reached the ${MAX_PENDING_REQUESTS} pending-request cap`
+        )
+      }
+      const id = nextId++
+      pending.set(id, deferred)
+      try {
+        send({ jsonrpc: "2.0", id, method, params })
+        return Effect.timeout(Deferred.await(deferred), timeoutMs) catch (cause) =>
+          throw (cause instanceof StdError.StdError
+            ? cause
+            : failure("timeout", `Language server request timed out: ${method}`))
+      } finally {
+        pending.delete(id)
+      }
+    } catch (error) {
+      throw new StdError.StdError({
+        ...error,
+        method,
+        message: error.rpcError === undefined ? error.message : `${method}: ${error.message}`,
+        ...(stderrTail.byteLength === 0 ? {} : { stderr: stderr() })
+      })
+    }
+  }
+
+  const notify = (method: string, params: unknown): void!StdError.StdError =>
+    send({ jsonrpc: "2.0", method, params })
+
+  request("initialize", {
+    processId: null,
+    rootUri: Host.fileUrl(config.cwd),
+    capabilities: {
+      textDocument: {
+        synchronization: { dynamicRegistration: false },
+        publishDiagnostics: { versionSupport: true },
+        diagnostic: { dynamicRegistration: false }
+      }
+    },
+    ...(config.initializationOptions === undefined ? {} : { initializationOptions: config.initializationOptions })
+  })
+  notify("initialized", {})
+
+  const positionParams = (position: LanguageServer.Position) => ({
+    textDocument: { uri: uriOf(position.path) },
+    position: { line: position.line, character: position.character }
+  })
+
+  // A publish without a version is read by arrival: it counts for the text
+  // sent before it. Before each sync, a request the server answers at once
+  // drains what it wrote earlier, such as the empty report
+  // typescript-language-server publishes when a file closes, so that report
+  // never passes for the reopened text. Unneeded once the server has pulled
+  // or versioned a publish, and dropped if the server does not answer it.
+  const barrier = (): void!! => {
+    if (pullSupported || versionedPublishes || !barrierAnswered) return
+    try {
+      const answer = Effect.timeoutOption(request(BARRIER_METHOD, null), Math.min(BARRIER_TIMEOUT_MS, timeoutMs))
+      if (Option.isNone(answer)) barrierAnswered = false
+    } catch (_) {
+      // The answer is MethodNotFound; any answer drains what came before it.
+    }
+  }
+
+  // One sync at a time, so versions reach the server in the order they are numbered.
+  const syncLock = Semaphore.make(1)
+  const sync = (path: string, text: string): void!StdError.StdError =>
+    syncLock.withPermit {
+      barrier()
+      const uri = uriOf(path)
+      const open = documents.get(uri)
+      const version = (versions.get(uri) ?? 0) + 1
+      const sentAt = publishSequence
+      if (open === undefined) {
+        notify("textDocument/didOpen", {
+          textDocument: { uri, languageId: languageId(path), version, text }
+        })
+      } else {
+        notify("textDocument/didChange", { textDocument: { uri, version }, contentChanges: [{ text }] })
+      }
+      versions.set(uri, version)
+      documents.set(uri, { version, sentAt, digest: digestOf(text) })
+    }
+
+  const closeUri = (uri: string): void!StdError.StdError => {
+    if (!documents.has(uri)) return
+    documents.delete(uri)
+    published.delete(uri)
+    notify("textDocument/didClose", { textDocument: { uri } })
+  }
+
+  const close = (path: string): void!StdError.StdError => syncLock.withPermit(closeUri(uriOf(path)))
+
+  // Re-reads every open document: a file changed on disk is resent, and a
+  // file that is gone is closed. What changed it (a shell command, say) is
+  // not something the server can see.
+  const refresh = (): void!StdError.StdError => {
+    for (const [uri, open] of [...documents]) {
+      const path = Host.filePath(uri)
+      const text = readIfPresent(path)
+      if (text === undefined) syncLock.withPermit(closeUri(uri))
+      else if (digestOf(text) !== open.digest) sync(path, text)
+    }
+  }
+
+  /** What the server published for the document's latest synced text, if it has. */
+  const current = (uri: string): PublishedDiagnostics | undefined => {
+    const entry = published.get(uri)
+    const open = documents.get(uri)
+    if (entry === undefined || open === undefined) return undefined
+    const fresh = entry.version === undefined ? entry.sequence > open.sentAt : entry.version >= open.version
+    return fresh ? entry : undefined
+  }
+
+  /** The first publish for the latest synced text whose sequence is past `after`. */
+  const awaitPublished = (uri: string, after = 0): PublishedDiagnostics!! => {
+    const entry = current(uri)
+    if (entry !== undefined && entry.sequence > after) return entry
+    const listener = Deferred.make<void>()
+    const waiting = listeners.get(uri) ?? new Set()
+    waiting.add(listener)
+    listeners.set(uri, waiting)
+    try {
+      listener.await()
+    } finally {
+      listeners.get(uri)?.delete(listener)
+    }
+    return awaitPublished(uri, after)
+  }
+
+  const pushedDiagnostics = (path: string): unknown!StdError.StdError => {
+    const uri = uriOf(path)
+    if (!documents.has(uri)) {
+      // A push-only server publishes only for open documents.
+      const text = try(
+        (file) => Host.readText(file),
+        () => new StdError.StdError({ code: "not_found", message: `File not found: ${path}`, path }),
+        Host.resolve(config.cwd, path)
+      )
+      sync(path, text)
+    }
+    const started = Clock.currentTimeMillis()
+    const entry = Effect.timeoutOption(awaitPublished(uri), settleMs)
+    if (Option.isNone(entry)) {
+      throw new StdError.StdError({
+        code: "timeout",
+        message: `Language server published no diagnostics for ${path} within ${settleMs}ms`,
+        method: "textDocument/publishDiagnostics",
+        path
+      })
+    }
+    // A later publish within the quiet window supersedes this one.
+    let latest = entry.value
+    for (;;) {
+      const remaining = settleMs - (Clock.currentTimeMillis() - started)
+      if (remaining <= 0) break
+      const next = Effect.timeoutOption(awaitPublished(uri, latest.sequence), Math.min(quietMs, remaining))
+      if (Option.isNone(next)) break
+      latest = next.value
+    }
+    return { kind: "full", items: latest.diagnostics }
+  }
+
+  const diagnostics = (path: string): unknown!StdError.StdError => {
+    if (pullUnsupported) return pushedDiagnostics(path)
+    try {
+      const answer = request("textDocument/diagnostic", { textDocument: { uri: uriOf(path) } })
+      pullSupported = true
+      return answer
+    } catch (error) {
+      if (error.rpcError?.code !== METHOD_NOT_FOUND) throw error
+      pullUnsupported = true
+      return pushedDiagnostics(path)
+    }
+  }
+
+  const prepareCallHierarchy = (position: LanguageServer.Position): unknown!StdError.StdError =>
+    request("textDocument/prepareCallHierarchy", positionParams(position))
+  const callHierarchy = (
+    method: "callHierarchy/incomingCalls" | "callHierarchy/outgoingCalls",
+    position: LanguageServer.Position
+  ): unknown!StdError.StdError => {
+    const item = firstCallHierarchyItem(prepareCallHierarchy(position))
+    if (item === undefined) return []
+    return request(method, { item })
+  }
+
+  return LanguageServer.make({
+    hover: (position) => request("textDocument/hover", positionParams(position)),
+    definition: (position) => request("textDocument/definition", positionParams(position)),
+    references: (position) =>
+      request("textDocument/references", {
+        ...positionParams(position),
+        context: { includeDeclaration: true }
+      }),
+    implementation: (position) => request("textDocument/implementation", positionParams(position)),
+    documentSymbols: (path) => request("textDocument/documentSymbol", { textDocument: { uri: uriOf(path) } }),
+    workspaceSymbols: (query) => request("workspace/symbol", { query }),
+    prepareCallHierarchy,
+    callHierarchyIncoming: (position) => callHierarchy("callHierarchy/incomingCalls", position),
+    callHierarchyOutgoing: (position) => callHierarchy("callHierarchy/outgoingCalls", position),
+    diagnostics,
+    sync,
+    close,
+    refresh: () => refresh()
+  })
+}
+
+const normalizeExtension = (extension: string): string =>
+  (extension.startsWith(".") ? extension : `.${extension}`).toLowerCase()
+
+type Client = (index: number) => Effect.Effect<LanguageServer.LanguageServer, StdError.StdError>
+type Started = (index: number) => LanguageServer.LanguageServer | undefined
+
+/**
+ * Routes each request to the client for its file's extension. `client`
+ * starts, or returns, the client at an index; `started` is that client only
+ * if it already runs, so `refresh` never starts a server.
+ */
+const routed = (
+  configs: ReadonlyArray<Config>,
+  client: Client,
+  started: Started
+): LanguageServer.LanguageServer => {
+  const claims = configs.map((entry) => entry.extensions?.map(normalizeExtension))
+  const fallback = claims.findIndex((claimed) => claimed === undefined)
+  const indexOf = (path: string): number!StdError.StdError => {
+    const extension = extensionOf(path)
+    const claimed = claims.findIndex((entry) => entry?.includes(extension) === true)
+    const index = claimed >= 0 ? claimed : fallback
+    if (index >= 0) return index
+    throw new StdError.StdError({
+      code: "unsupported",
+      message: `No language server is configured for ${extension || "extensionless"} files`,
+      path
+    })
+  }
+  const route = (path: string): LanguageServer.LanguageServer!StdError.StdError => client(indexOf(path))
+  const byPosition = (
+    method:
+      | "hover"
+      | "definition"
+      | "references"
+      | "implementation"
+      | "prepareCallHierarchy"
+      | "callHierarchyIncoming"
+      | "callHierarchyOutgoing"
+  ) =>
+  (position: LanguageServer.Position): unknown!StdError.StdError => route(position.path)[method](position)
+  const indices = configs.map((_, index) => index)
+  return LanguageServer.make({
+    hover: byPosition("hover"),
+    definition: byPosition("definition"),
+    references: byPosition("references"),
+    implementation: byPosition("implementation"),
+    prepareCallHierarchy: byPosition("prepareCallHierarchy"),
+    callHierarchyIncoming: byPosition("callHierarchyIncoming"),
+    callHierarchyOutgoing: byPosition("callHierarchyOutgoing"),
+    documentSymbols: (path) => route(path).documentSymbols(path),
+    diagnostics: (path) => route(path).diagnostics(path),
+    sync: (path, text) => route(path).sync(path, text),
+    // A server that never started holds no open file.
+    close: (path) => {
+      const server = started(indexOf(path))
+      if (server !== undefined) server.close(path)
+    },
+    refresh: () => {
+      for (const index of indices) {
+        const server = started(index)
+        if (server !== undefined) server.refresh()
+      }
+    },
+    workspaceSymbols: (query) => {
+      if (configs.length === 1) return client(0).workspaceSymbols(query)
+      const answers = Effect.forEach(
+        indices,
+        (index) => client(index).workspaceSymbols(query),
+        { concurrency: "unbounded" }
+      )
+      return answers.flatMap((answer) => Array.isArray(answer) ? answer : answer == null ? [] : [answer])
+    }
+  })
+}
+
+const configList = (
+  config: Config | ReadonlyArray<Config>
+): ReadonlyArray<Config>!StdError.StdError => {
+  const configs: ReadonlyArray<Config> = Array.isArray(config) ? config : [config as Config]
+  if (configs.length === 0) throw failure("invalid_input", "At least one language server must be configured")
+  return configs
+}
+
+/**
+ * Constructs scoped host language-server clients, one process per config, and
+ * routes each file to the server whose `extensions` include its extension, or
+ * else to the server that declares none. `workspaceSymbols` asks every server
+ * and concatenates their answers.
+ *
+ * Every client opens a file on its first `sync` and sends the full text on
+ * each later one. `diagnostics` pulls `textDocument/diagnostic`; a server that
+ * answers `MethodNotFound` is read from its `textDocument/publishDiagnostics`
+ * notifications instead, waiting up to `settleMs` for the latest synced text.
+ *
+ * Fails with `permission_denied`, before spawning, when the resolved program or
+ * a file or directory named by an argument lies under `config.cwd`, or when the command is a
+ * launcher (a shell, `env`, a package runner such as `npx` or `pnpm`, or `node`
+ * and `bun` given inline code or a preload) whose arguments choose what runs.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const make = (
+  config: Config | ReadonlyArray<Config>
+): Effect.Effect<
+  LanguageServer.LanguageServer,
+  StdError.StdError,
+  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
+> => {
+  const configs = configList(config)
+  const clients = Effect.forEach(configs, makeClient)
+  return routed(configs, (index) => clients[index]!, (index) => clients[index])
+}
+
+/**
+ * {@link make}, starting each server when the first request for one of its
+ * files arrives rather than up front, so a host can bind servers it may never
+ * need. A server starts with the services and authority of the fiber that
+ * built this service, not those of the request that first needs it. A server
+ * that fails to start fails that request and every later one for its files.
+ * `refresh` and `close` never start a server.
+ *
+ * The workspace-program refusals of {@link make} still apply up front.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const makeLazy = (
+  config: Config | ReadonlyArray<Config>
+): Effect.Effect<
+  LanguageServer.LanguageServer,
+  StdError.StdError,
+  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
+> => {
+  const configs = configList(config)
+  for (const entry of configs) {
+    const refused = workspaceProgram(entry, ChildProcessEnvironment.make(Host.processEnv(), entry.environment).PATH)
+    if (refused !== undefined) throw refused
+  }
+  const clients: Array<LanguageServer.LanguageServer | undefined> = configs.map(() => undefined)
+  // Each server starts in a fiber forked here, so it starts with the
+  // services and authority of whoever built this service, never those of
+  // the request that first needs it, and lives as long as this scope.
+  const starts = Effect.forEach(configs, (entry, index) => {
+    const wanted = Deferred.make<void>()
+    const ready = Deferred.make<LanguageServer.LanguageServer, StdError.StdError>()
+    const start = () => {
+      wanted.await()
+      const client = makeClient(entry)
+      clients[index] = client
+      return client
+    }
+    Effect.forkScoped(() => {
+      const outcome = exit(start())
+      Deferred.done(ready, outcome)
+    }, { startImmediately: true })
+    return () => {
+      Deferred.succeed(wanted, undefined)
+      return ready.await()
+    }
+  })
+  return routed(configs, (index) => starts[index]!(), (index) => clients[index])
+}
+
+/**
+ * Provides a scoped host language-server implementation.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layer = (
+  config: Config | ReadonlyArray<Config>
+): Layer.Layer<LanguageServer.LanguageServer, StdError.StdError, ChildProcessSpawner.ChildProcessSpawner> =>
+  Layer.effect(LanguageServer.LanguageServer) {
+    return make(config)
+  }
+
+/**
+ * Provides {@link makeLazy}.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layerLazy = (
+  config: Config | ReadonlyArray<Config>
+): Layer.Layer<LanguageServer.LanguageServer, StdError.StdError, ChildProcessSpawner.ChildProcessSpawner> =>
+  Layer.effect(LanguageServer.LanguageServer) {
+    return makeLazy(config)
+  }
