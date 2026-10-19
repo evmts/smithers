@@ -517,10 +517,14 @@ function MessageScrollerProviderImpl({
   }, [itemTopWithinViewport, measure, remember, refreshVisibilityFallback, setFollowing, tryRestore]);
 
   const requestUserRead = useCallback((event: MouseEvent) => {
-    if (readAnchorRef.current && event.target instanceof Element && event.target.closest("button[data-flow]")) {
-      userReadPendingRef.current = true;
+    if (event.target instanceof Element && event.target.closest("button[data-flow]")) {
+      // Activation (including Enter after Tab scrolled to an older control)
+      // is a fresh request to follow, even when the flow updates this same card.
+      // Do not leave a pending request that could override a later manual scroll.
+      userReadPendingRef.current = false;
+      scrollToBottom();
     }
-  }, []);
+  }, [scrollToBottom]);
 
   /**
    * Turn anchoring: a newly appended scrollAnchor row moves near the top with

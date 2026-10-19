@@ -3,10 +3,12 @@ import { fileArgs } from "@smthrs/rpc/FileRead"
 
 /** The typed input of every flow a card raises with structured values. */
 export interface FlowInput {
+  readonly "change.ask": { readonly repo: string; readonly request: string }
+  readonly "change.open-pull": { readonly repo: string; readonly session: string }
   readonly "chat.copy-message": { readonly text: string }
   readonly "code.view": { readonly pathname: string; readonly field: "raw" | "L"; readonly value: string }
   readonly "convert": import("../state/controller/conversion").ConversionRequest
-  readonly "diff": { readonly operation?: "change" | "change-diff" | "pins" | "checks" | "file"; readonly subject?: string; readonly branch?: string; readonly path?: string; readonly entry?: string; readonly changeId?: string; readonly rev?: number; readonly from?: string; readonly to?: string; readonly seq?: number; readonly cardId?: string }
+  readonly "diff": { readonly operation?: "change" | "change-diff" | "pins" | "checks" | "file" | "hosted-change"; readonly subject?: string; readonly branch?: string; readonly path?: string; readonly entry?: string; readonly changeId?: string; readonly rev?: number; readonly from?: string; readonly to?: string; readonly seq?: number; readonly cardId?: string }
   readonly "runs": NonNullable<import("@smthrs/rpc/CardAction").CardCommandInput["runs"]>
   readonly "github": NonNullable<import("@smthrs/rpc/CardAction").CardCommandInput["github"]>
   readonly "background.retry": { readonly id: string }
@@ -163,6 +165,8 @@ const graphLine = (payload: Payload, target: string, value: string): string => {
  * of the line.
  */
 const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } = {
+  "change.ask": payload => JSON.stringify(payload),
+  "change.open-pull": payload => JSON.stringify(payload),
   "chat.copy-message": payload => String(payload.text ?? ""),
   "code.view": payload => JSON.stringify(payload),
   "convert": payload => JSON.stringify(payload),

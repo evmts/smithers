@@ -7,6 +7,7 @@ import { ControllerTestProvider } from "../ControllerContext"
 import { readScopeOf, type Card } from "./AppState"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
+import type { HostedObservation } from "./seams/HostedChange"
 import { memoryStorage, silentAgent, waitFor } from "./TestFixtures"
 
 GlobalRegistrator.register()
@@ -46,7 +47,7 @@ beforeAll(() => {
       if (isViewport(this)) {
         return { ...base, top: 0, bottom: viewportMetrics.clientHeight, height: viewportMetrics.clientHeight, y: 0 } as DOMRect
       }
-      const geom = this.dataset.messageId ? geometry.get(this.dataset.messageId) : undefined
+      const geom = geometry.get(this.dataset.messageId ?? this.id)
       if (!geom) return { ...base, top: 0, bottom: 0, height: 0, y: 0 } as DOMRect
       const viewport = document.querySelector<HTMLElement>('[data-slot="message-scroller-viewport"]')
       const top = geom.top - (viewport?.scrollTop ?? 0)
@@ -269,4 +270,40 @@ test("a read belongs to the account, repository and branch that asked (#3813)", 
     await new Promise(resolve => setTimeout(resolve, 30))
     expect(viewport(host).scrollTop).toBeGreaterThanOrEqual(4560)
   } finally { flushSync(() => root.unmount()); host.remove(); await controller.dispose() }
+})
+
+
+test("hosted change completion updates App's end read after the failed-tests card grows", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async input => Response.json(String(input).endsWith("/view-state") ? {} : { id: "main", entries: [] })
+  })
+  const row: HostedObservation = { id: "anchor", repo: "maya/tinyhttp", request: "edit files", sessionId: "session", owner: "maya",
+    phase: "running", accepted: true, session: null, result: null, pull: null, files: [], filesRead: false, error: null, stages: {} }
+  const id = "hosted-change-anchor"
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host)
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "roninjin10", admin: false, scopesPlain: null }).isPersisted.promise
+    await store.dispatch({ type: "hosted.changes.changed", actor: "user", requests: [row] }).isPersisted.promise
+    await store.dispatch({ type: "card.upsert", actor: "user", card: { id, kind: "hosted-change", title: row.request, status: "active", createdAt: 1, ordinal: 1, payload: { repo: row.repo, sessionId: "session", request: row.request } } }).isPersisted.promise
+    await controller.sharedConversation!.read()
+    viewportMetrics = { scrollHeight: 1000, clientHeight: 400 }
+    geometry.set(id, { top: 100, height: 900 })
+    geometry.set(`${id}-end`, { top: 1000, height: 0 })
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    await waitFor(() => host.querySelector(`#${id}-end`) !== null)
+    viewport(host).scrollTop = 90
+    viewport(host).dispatchEvent(new Event("scroll"))
+    viewportMetrics.scrollHeight = 1400
+    geometry.set(id, { top: 100, height: 1300 })
+    geometry.set(`${id}-end`, { top: 1400, height: 0 })
+    await store.dispatch({ type: "hosted.changes.changed", actor: "system", requests: [{ ...row, phase: "done", filesRead: true,
+      files: [{path: "src/slug.ts"}], result: { head_commit: "abc", head_change_id: "c", test_receipt: { command: "bun test", exit_code: 1, commit: "abc", finished_at: "now", output_tail: "", tests_run: 33 } } }] }).isPersisted.promise
+    await waitFor(() => host.textContent?.includes("Open pull request") === true)
+    await waitFor(() => viewport(host).scrollTop === 1000)
+    expect(viewport(host).scrollTop).toBe(1000)
+  } finally {
+    flushSync(() => root.unmount()); host.remove(); await controller.dispose()
+  }
 })

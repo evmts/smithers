@@ -2757,6 +2757,51 @@
       }
     },
     {
+      "name": "change.ask",
+      "slash": "/change",
+      "cli": null,
+      "journey": [],
+      "group": "Ask",
+      "visibility": "core",
+      "actors": [
+        "person",
+        "app_agent"
+      ],
+      "minimumRole": "member",
+      "credentialScope": "write:repository",
+      "agent": "confirm",
+      "summary": "Start an agent on a change",
+      "http": null,
+      "payload": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "request": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "request"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
+    },
+    {
       "name": "change.facet",
       "slash": null,
       "cli": null,
@@ -2796,6 +2841,45 @@
           "required": [
             "changeId",
             "facet"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
+    },
+    {
+      "name": "change.open-pull",
+      "slash": null,
+      "cli": null,
+      "journey": [],
+      "group": "Ask",
+      "visibility": "in-card",
+      "actors": [
+        "person",
+        "app_agent"
+      ],
+      "minimumRole": "member",
+      "credentialScope": "write:repository",
+      "agent": "confirm",
+      "summary": "Open pull request",
+      "http": null,
+      "payload": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "minLength": 1
+            },
+            "session": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "repo",
+            "session"
           ],
           "additionalProperties": true
         },
@@ -4157,7 +4241,8 @@
                     "change-diff",
                     "pins",
                     "checks",
-                    "file"
+                    "file",
+                    "hosted-change"
                   ]
                 },
                 {

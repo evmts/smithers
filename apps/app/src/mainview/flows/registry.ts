@@ -536,7 +536,7 @@ export const slashTree = <C extends CatalogItem>(
     const recommended = slashItems(state, "", commands).filter((item) => item.recommended)
     const named = new Set(recommended.map((item) => item.flow.name))
     const bare = visible(offerable(state, commands))
-      .filter((command) => namespaceOf(command.name) === undefined && !named.has(command.name))
+      .filter((command) => (namespaceOf(command.name) === undefined || /^\/[a-z0-9_-]+$/.test(command.slash ?? "")) && !named.has(command.name))
       .map((flow, index): { flow: C; index: number } => ({ flow, index }))
       .map(({ flow }): SlashItem<C> => ({ flow, recommended: false }))
     return [...recommended.map(asFlow), ...bare.map(asFlow), ...namespaces.map(asNamespace)]
