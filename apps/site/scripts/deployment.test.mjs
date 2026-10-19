@@ -145,7 +145,7 @@ test("every shared-state stack plans against one record under stage prod", () =>
       "alchemy destroy --stage prod"
     ].sort(), pkg)
     assert.equal(packageScripts.deploy, qualifiedOnly
-      ? "node ../../flows/rollout/refuse-unqualified.mjs"
+      ? "node ../../.smithers/flows/rollout/refuse-unqualified.mjs"
       : "alchemy deploy --stage prod", pkg)
     if (qualifiedOnly) {
       for (const [name, script] of Object.entries(packageScripts)) {
