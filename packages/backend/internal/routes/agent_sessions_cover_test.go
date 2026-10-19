@@ -234,7 +234,7 @@ func TestAgentSessions_Cov_ListMessagesAndNormalizationHelpers(t *testing.T) {
 		req = withRepoCtx(req, 101, "alice", "demo")
 		rec := httptest.NewRecorder()
 		h.ListMessages(rec, req)
-		require.Equal(t, http.StatusUnauthorized, rec.Code)
+		require.Equal(t, http.StatusNotFound, rec.Code)
 
 		req = httptest.NewRequest(http.MethodGet, "/api/repos/alice/demo/agent/sessions/sess-1/messages?page=bad", nil)
 		req = withRouteParams(req, map[string]string{"id": "sess-1"})

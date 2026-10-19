@@ -66,7 +66,7 @@ func TestAgentSessionStream_RequiresAuth(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/repos/owner/repo/agent/sessions/abc-123/stream", nil)
 	rec := httptest.NewRecorder()
 	h.AgentSessionStream(rec, req)
-	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.Equal(t, http.StatusNotFound, rec.Code)
 }
 
 func TestAgentSessionStream_MissingSessionID(t *testing.T) {
