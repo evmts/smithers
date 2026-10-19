@@ -479,6 +479,9 @@ func (s *WorkspaceService) revokeAgentWorkspaceHeadToken(ctx context.Context, ro
 	ctx, cancel := agentBoxStep(ctx)
 	defer cancel()
 	s.revokeWorkspaceChildrenToken(ctx, row)
+	if err := s.revokeWorkspaceProviderPoolToken(ctx, row); err != nil {
+		return false
+	}
 	if row.HeadPushTokenID.Valid {
 		if store, ok := s.q.(workspaceHeadSwapStore); ok {
 			won, err := store.SwapWorkspaceHeadPushTokenID(ctx, row.ID, row.UserID, row.HeadPushTokenID, pgtype.Int8{})
