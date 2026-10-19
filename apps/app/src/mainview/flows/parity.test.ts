@@ -1329,7 +1329,8 @@ describe("launch-law parity: every affordance is a command", () => {
     )
     expect(counts).toEqual({
       "../repository/IssueViews.tsx": 3,
-      // PullViews delegates Retry to FailureNotice through flowAction; no direct handler.
+      // PullViews delegates Retry to FailureNotice through flowAction; its one handler is a tab's Sign in to see commits/checks/files.
+      "../repository/PullViews.tsx": 1,
       // Toast dismissal is owned by ToastStack; includes dock Close.
       // Close, Back and Next all dispatch onboarding.act through IntroSlidesShell.
       // The optional capability reel after the last lesson: its launch pill and its Back.
@@ -1412,7 +1413,7 @@ describe("launch-law parity: every affordance is a command", () => {
 
       "../cards/IssueCards.tsx": 11, // + the detail's comment box submit (issues.comment), the thread rows, the kind chips, the saved view toggles and the GitHub half's one Make TODO (todo.from-issue); the Cloud half offers no install act (#3864)
       "../cards/IssueThread.tsx": 3, // The chat body: composer submit and send, reaction toggles, Retry, Resolve an unknown delivery, the parent link, the state acts.
-      "../cards/LandingCards.tsx": 4, // Includes the durable PR tab flow.
+      "../cards/LandingCards.tsx": 5, // Includes the durable PR tab flow and a tab's Sign in to see commits/checks/files.
       "../cards/FileCards.tsx": 3, // File navigation retains its third canonical directory control.
       "../cards/ModelCards.tsx": 7, // Settings model-assignment controls include the current catalog action.
       /* A row's Test, Edit, Remove and select; New; and the attention row's Assign, Test or Edit. */

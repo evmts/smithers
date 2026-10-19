@@ -902,8 +902,19 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     // The pull request's own commit count: what the Commits tab's rows are
     // measured against, because the commit list alone cannot say it is whole.
     const githubCommitCount = isRecord(raw) ? boundedCount(raw.commits) : undefined
-    const github = source.kind === "github"
-      ? await fetchGitHubTabs(source.repo, number, githubHead, githubCommitCount)
+    /*
+     * Signed out (a guest admission included: it carries no GitHub token),
+     * those three reads go through a credential nobody has, and every one of
+     * them answers 401 (live on smithers-canary/smithers#3723, 2026-10-19).
+     * They are not asked for; each tab asks the visitor to sign in instead.
+     * Signed in, they are read as always, and a refusal (401 included) is
+     * that tab's `readErrors` entry.
+     */
+    const signedOut = ctx.store.collections.identitySessions.get("identity")?.state === "signed-out"
+    const github: { readonly checks?: ReadonlyArray<{ readonly context: string; readonly state: string }>; readonly tabs: Pick<PrPayload, "commits" | "files" | "readErrors" | "readLimits" | "signInTabs"> } | undefined = source.kind === "github"
+      ? signedOut
+        ? { tabs: { signInTabs: ["commits", "checks", "files"] } }
+        : await fetchGitHubTabs(source.repo, number, githubHead, githubCommitCount)
       : undefined
     const [reviews, checks, stack] = github !== undefined
       ? [[], { rows: github.checks ?? [], error: undefined }, github.tabs] as const

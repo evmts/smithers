@@ -1051,3 +1051,5 @@
 .repo-pulls-title-status { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:12px 0; font-size:14px; color:var(--text-muted); }
 .repo-pulls-title-status.repo-pulls-danger { color:var(--danger); }
 .repo-pulls-title-status .repo-ui-btn { margin-left:auto; }
+/* A tab that needs sign-in: one quiet button at the start of the pane, never a centered full-width call. */
+.repo-pulls-sign-in { padding: var(--sp-4) 0; }

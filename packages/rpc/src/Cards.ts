@@ -1624,9 +1624,19 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         checks: z.string().optional()
       }).optional(),
       /*
+       * The tabs not read for a signed-out visitor: a GitHub source's
+       * commits, checks and files go through the viewer's own GitHub
+       * credential, which a signed-out visitor (a guest included) does not
+       * have, so they are not asked for and each tab asks the visitor to sign
+       * in. It claims neither a failure nor an empty list. Signed in, a
+       * refused read is a `readErrors` entry as before. Optional, like
+       * `readErrors`.
+       */
+      signInTabs: z.array(z.enum(["commits", "checks", "files"])).optional(),
+      /*
        * GitHub-like facts and the Commits / Files changed tabs, when the read
        * carried them (see the issue-list row). All optional: an absent field
-       * has a matching readErrors entry, never an invented empty stack. Commits run
+       * has a matching readErrors or signInTabs entry, never an invented empty stack. Commits run
        * bottom → top (GET …/landings/{number}/changes); files merge the stack's
        * retained diffs (GET …/landings/{number}/diff) by path, with a patch only when one change
        * touched the file.
