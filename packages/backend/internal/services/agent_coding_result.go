@@ -20,6 +20,15 @@ type CodingResult struct {
 	HeadCommit   *string            `json:"head_commit"`
 	HeadChangeID *string            `json:"head_change_id"`
 	TestReceipt  *CodingTestReceipt `json:"test_receipt"`
+	// TestNotRun says why TestReceipt is null.
+	TestNotRun *CodingTestNotRun `json:"test_not_run"`
+}
+
+// CodingTestNotRun is why a coding turn has no test receipt. ReasonCode is
+// one of the codingTestNotRun* codes; Reason completes "Tests not run: ".
+type CodingTestNotRun struct {
+	ReasonCode string `json:"reason_code"`
+	Reason     string `json:"reason"`
 }
 
 // CodingTestReceipt records the command executed by the host at an immutable commit.
