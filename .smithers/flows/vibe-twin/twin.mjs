@@ -353,7 +353,10 @@ const compile = (project, cwd) => {
  * are VibeLang findings (C-3: EK4820 on a .ts generator) and do not stop the run.
  */
 export const splitTwinErrors = (errors) => {
-  const inTypeScript = (line) => /^(?!src-vibe\/|\.vibe-twin\/)[^(]*\.(?:ts|tsx|mts)\(\d+,\d+\)/.test(line)
+  // Unchanged TypeScript, or a dependency's declarations: zod's .d.cts reports TS5115 (circular
+  // instantiation) while the twin is checked (E-14), a finding about the checker, not the twin.
+  const inTypeScript = (line) =>
+    /^(?!src-vibe\/|\.vibe-twin\/)[^(]*\.(?:ts|tsx|mts|cts)\(\d+,\d+\)/.test(line) || /^[^(]*\/node_modules\/[^(]*\(\d+,\d+\)/.test(line)
   return { twin: errors.filter((l) => !inTypeScript(l)), typescript: errors.filter(inTypeScript) }
 }
 
@@ -725,7 +728,8 @@ const spawnLogged = (command, args, options, outputFile) => {
   const fd = openSync(log, "w")
   let child
   try {
-    child = spawnSync(command, args, { ...options, stdio: ["ignore", fd, fd] })
+    // A test run that never ends becomes a result instead of a hang: 20 minutes, then SIGKILL.
+    child = spawnSync(command, args, { ...options, stdio: ["ignore", fd, fd], timeout: 20 * 60 * 1000, killSignal: "SIGKILL" })
   } finally {
     closeSync(fd)
   }
