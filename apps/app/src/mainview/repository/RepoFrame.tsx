@@ -76,8 +76,10 @@ export const guestAdmission = (conversation: string | undefined, repo: string): 
  * opens Ask on arrival for a viewer who can Ask. Signed out it opens nothing:
  * nothing redirects on load.
  */
-export function RepoFrame({ repo, login, guest, publicRepo, member = false, sync, ask, onRunCommand, children, issueCount, pullCount, askRequested, askTitle, askContext }: {
+export function RepoFrame({ repo, login, guest, publicRepo, member = false, sync, ask, onRunCommand, children, issueCount, pullCount, issuesPartial, pullsPartial, askRequested, askTitle, askContext }: {
   issueCount?: number; pullCount?: number
+  /** The tab counts' lists are one page of more: each count is drawn as a floor, "30+". */
+  issuesPartial?: boolean; pullsPartial?: boolean
   repo: string; login?: string; guest?: boolean; publicRepo?: boolean; askRequested?: boolean
   /** The repository document's can_write for this viewer (RepositoryEntry.canWrite); only a member sees Settings. */
   member?: boolean
@@ -151,7 +153,7 @@ export function RepoFrame({ repo, login, guest, publicRepo, member = false, sync
         <div className="repo-frame-repo-title-row"><div className="repo-frame-repo-title"><BookOpen size={20} aria-hidden="true"/><h1><a href="/">{owner}</a><span>/</span><a href={base}>{name}</a></h1>{publicRepo && <span className="repo-frame-visibility">Public</span>}{sync !== undefined && <GitHubSyncChip sync={sync} settingsHref={member ? `${base}/settings/sync` : undefined} />}</div>
           <button ref={trigger} className={`repo-ui-btn ${fileRoute ? "repo-ui-btn-quiet" : "repo-ui-btn-primary"} repo-frame-ask-button`} aria-label="Ask" aria-controls="repo-ask" aria-expanded={expanded} {...flowProps(canAsk ? "chat.open" : "sign-in")} onClick={() => openAsk(onRunCommand)}>Ask <kbd>⌘K</kbd></button>
         </div>
-        <nav className="repo-ui-tabs" aria-label="Repository">{navigation.map(([path, label]) => <a className="repo-ui-tab" key={path} href={`${base}${path ? `/${path}` : ""}`} aria-current={active(path) ? "page" : undefined}>{label}{(path === "issues" ? issueCount : path === "pulls" ? pullCount : undefined) !== undefined && <span className="repo-ui-counter">{path === "issues" ? issueCount : pullCount}</span>}</a>)}</nav>
+        <nav className="repo-ui-tabs" aria-label="Repository">{navigation.map(([path, label]) => <a className="repo-ui-tab" key={path} href={`${base}${path ? `/${path}` : ""}`} aria-current={active(path) ? "page" : undefined}>{label}{(path === "issues" ? issueCount : path === "pulls" ? pullCount : undefined) !== undefined && <span className="repo-ui-counter">{path === "issues" ? issueCount : pullCount}{(path === "issues" ? issuesPartial : pullsPartial) && "+"}</span>}</a>)}</nav>
       </header>
       <main id="repo-content" tabIndex={-1} className="repo-frame-content" data-keyboard-pane="Repository"><RepositoryAskContext.Provider value={openAsk}><RepositoryAskOpenContext.Provider value={expanded}>{children}</RepositoryAskOpenContext.Provider></RepositoryAskContext.Provider></main>
     </div>

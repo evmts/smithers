@@ -19,7 +19,7 @@ type FileRow = NonNullable<PrPayload["files"]>[number]
 const STACK_CAP = 20
 import { resolveTargetRepo } from "../RepoContext"
 import type { SeamContext } from "./SeamContext"
-import { captureCloudOwner, readErrorMessage, readResult } from "./SeamContext"
+import { captureCloudOwner, pageIsPartial, readErrorMessage, readResult } from "./SeamContext"
 
 export interface LandingsSeam {
   readonly setTab: (cardId: string, tab: "conversation" | "commits" | "checks" | "files") => Promise<string | void>
@@ -1004,7 +1004,8 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
         status: "active",
         createdAt: Date.now(),
         ordinal: ctx.nextOrdinal(),
-        payload: { repo, landings }
+        // Both reads ask for 100 rows; a full page or a `rel="next"` link means more exist.
+        payload: { repo, ...(pageIsPartial(response, body.length, 100) ? { partial: true } : {}), landings }
       }
       return { card, ...readResult(landings.length === 0
         ? `No pull requests in ${repo}.`
