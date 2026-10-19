@@ -196,9 +196,12 @@ type RuntimeCheckpoint struct {
 	RunID               string                          `json:"runId,omitempty"`
 	Cursor              string                          `json:"cursor,omitempty"`
 	Run                 *flowruntime.FlowRuntimeRun     `json:"run,omitempty"`
-	FailureMissingTool  *CertifiedMissingTool           `json:"failureMissingTool,omitempty"`
-	FailureClass        string                          `json:"failureClass,omitempty"`
-	FailureCode         string                          `json:"failureCode,omitempty"`
+	// TerminalDrained records that the terminal observation's last journal page
+	// reached the projector. Settlement retries need no live host after this.
+	TerminalDrained    bool                  `json:"terminalDrained,omitempty"`
+	FailureMissingTool *CertifiedMissingTool `json:"failureMissingTool,omitempty"`
+	FailureClass       string                `json:"failureClass,omitempty"`
+	FailureCode        string                `json:"failureCode,omitempty"`
 	// FailureDetail is the product sentence a typed runtime failure wrote
 	// beside its code (FlowRuntimeDetail), never an adapter's error text.
 	FailureDetail     string `json:"failureDetail,omitempty"`
