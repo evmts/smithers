@@ -487,12 +487,22 @@ const sameNamedPair = (pkg, work, text) => {
     seen.set(key, new Set([...(seen.get(key) ?? []), side]))
   }
   const pairs = [...seen].filter(([, sides]) => sides.size === 2).map(([key]) => key.split("#"))
-  if (pairs.length === 0 || !/unique symbol|private|protected/.test(text)) return false
+  if (pairs.length === 0) return false
+  // A private brand keyed by a module-local unique symbol reports as "Property '[Brand]' is
+  // missing", never naming the symbol (S1-2). That is nominal too when the key is a private
+  // declaration with identical text in both modules.
+  const brandKeys = [...text.matchAll(/Property '\[([A-Za-z_$][\w$]*)\]' is missing/g)].map((m) => m[1])
+  if (!/unique symbol|private|protected/.test(text) && brandKeys.length === 0) return false
+  const dts = (dir, rel) => (existsSync(join(dir, `${rel}.d.ts`)) ? readFileSync(join(dir, `${rel}.d.ts`), "utf8") : "")
   return pairs.every(([rel, name]) => {
-    const read = (dir) => existsSync(join(dir, `${rel}.d.ts`)) ? parseDts(readFileSync(join(dir, `${rel}.d.ts`), "utf8")) : []
-    const a = read(join(work, "ts-dts")).find((e) => e.name === name)
-    const b = read(twinOutDir(pkg)).find((e) => e.name === name)
-    return a !== undefined && b !== undefined && normalizeDts(a.text) === normalizeDts(b.text)
+    const tsText = dts(join(work, "ts-dts"), rel)
+    const vbText = dts(twinOutDir(pkg), rel)
+    const a = parseDts(tsText).find((e) => e.name === name)
+    const b = parseDts(vbText).find((e) => e.name === name)
+    if (a === undefined || b === undefined || normalizeDts(a.text) !== normalizeDts(b.text)) return false
+    const tsLocals = localNames(tsText)
+    const vbLocals = localNames(vbText)
+    return brandKeys.every((key) => !tsLocals.has(key) && !vbLocals.has(key) ? true : tsLocals.get(key) === vbLocals.get(key) && tsLocals.has(key))
   })
 }
 
