@@ -1,5 +1,5 @@
 import type { StorageApi } from "@tanstack/db"
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, jest, test } from "bun:test"
 import { createAppController } from "../AppController"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { createAppStore } from "../AppStore"
@@ -10,6 +10,7 @@ import { createWorkspaceSeam as makeWorkspaceSeam, DEGRADED_WORKSPACE_REFUSAL } 
 import type { WorkspaceSeam } from "./WorkspaceSeam"
 import type { SeamContext } from "./SeamContext"
 import { INFRA_NOT_YOUR_FAULT } from "@smthrs/rpc/RefusalCopy"
+import { SIGN_OUT_REFUSAL } from "./CloudSignIn"
 import { USER_WORKSPACE_ROW } from "./fixtures/UserWorkspaceRow"
 
 /*
@@ -963,6 +964,122 @@ describe("workspace seam egress_proxy_unavailable", () => {
     expect(refusal).toContain("Not your fault")
     expect(refusal).not.toContain("@fucory")
     expect(refusal).not.toContain(INFRA_NOT_YOUR_FAULT)
+  })
+})
+
+/*
+ * G4.2 (CEO d-txbwh5): plue caps concurrent box starts per process and
+ * refuses the rest before it creates anything, with a retryable 503 — the
+ * shape services/workspace_mutation_slots.go writes: `service_unavailable`,
+ * Retry-After 5, and the session read's `box_busy` reason in `details`. The
+ * create is sent again after 2, 4, 8 and 16 s (a longer Retry-After wins)
+ * while the shared toast says the machine is starting; anything else stays
+ * one refusal.
+ */
+describe("workspace seam busy start (G4.2)", () => {
+  const CREATE = "POST api/repos/will/smithers/workspaces"
+  const BUSY_SENTENCE = "The workspace service is busy starting other boxes; try again in a moment."
+  const busy = (retryAfter?: number) => json(503, {
+    code: "service_unavailable", fault: "infra", ...(retryAfter === undefined ? {} : { retry_after: retryAfter }),
+    message: BUSY_SENTENCE, details: { reason_code: "box_busy", retryable: true }
+  }, retryAfter === undefined ? {} : { "retry-after": String(retryAfter) })
+  const creates = (requests: ReadonlyArray<string>) => requests.filter((key) => key === CREATE).length
+  const starting = (store: AppStore) => [...store.collections.toasts.values()].filter((toast) => toast.title === "Starting a machine, please wait…")
+  const settle = async () => { for (let turn = 0; turn < 25; turn++) await checkpoint() }
+  const advance = async (ms: number) => { jest.advanceTimersByTime(ms); await settle() }
+
+  test("a busy start is sent again after two seconds and creates the box", async () => {
+    const answers = [busy()]
+    const h = await harness({ [CREATE]: () => answers.shift() ?? json(201, WS_RUNNING) })
+    jest.useFakeTimers()
+    try {
+      const result = h.seam.openWorkspace("main", "will/smithers")
+      await settle()
+      expect(creates(h.requests)).toBe(1)
+      await advance(1_999)
+      expect(creates(h.requests)).toBe(1)
+      await advance(1)
+      expect(creates(h.requests)).toBe(2)
+      expect(await result).toEqual({ value: expect.stringContaining("is running on will/smithers") })
+      expect(h.store.collections.cloudWorkspaces.get("ws-1")?.status).toBe("running")
+      expect(cardOf(h.store)).toBeDefined()
+      expect(h.bodies.map(({ body }) => body)).toEqual([{ source_bookmark: "main" }, { source_bookmark: "main" }])
+    } finally { jest.useRealTimers() }
+  })
+
+  test("while it waits the shared toast says the machine is starting, at the server's Retry-After", async () => {
+    const answers = [busy(5)]
+    const h = await harness({ [CREATE]: () => answers.shift() ?? json(201, WS_RUNNING) })
+    jest.useFakeTimers()
+    try {
+      const result = h.seam.openWorkspace("main", "will/smithers")
+      await settle()
+      expect(starting(h.store).map(({ status }) => status)).toEqual(["running"])
+      await advance(4_999)
+      expect(creates(h.requests)).toBe(1)
+      await advance(1)
+      expect(creates(h.requests)).toBe(2)
+      expect(await result).toEqual({ value: expect.stringContaining("is running") })
+      expect(starting(h.store)).toEqual([])
+    } finally { jest.useRealTimers() }
+  })
+
+  test("after the last attempt the server's sentence is the answer, and Try again starts afresh", async () => {
+    let refuse = true
+    const h = await harness({ [CREATE]: () => refuse ? busy() : json(201, WS_RUNNING) })
+    jest.useFakeTimers()
+    try {
+      const result = h.seam.openWorkspace("main", "will/smithers")
+      await settle()
+      for (const [attempt, delay] of [2_000, 4_000, 8_000, 16_000].entries()) {
+        await advance(delay - 1)
+        expect(creates(h.requests)).toBe(attempt + 1)
+        await advance(1)
+        expect(creates(h.requests)).toBe(attempt + 2)
+      }
+      expect(await result).toBe(`service_unavailable — ${BUSY_SENTENCE}`)
+      expect(starting(h.store)).toEqual([])
+      await advance(60_000)
+      expect(creates(h.requests)).toBe(5)
+      refuse = false
+      expect(await h.seam.openWorkspace("main", "will/smithers")).toEqual({ value: expect.stringContaining("is running") })
+      expect(creates(h.requests)).toBe(6)
+    } finally { jest.useRealTimers() }
+  })
+
+  const final: ReadonlyArray<readonly [string, () => Response]> = [
+    ["a 409 conflict", () => json(409, { code: "conflict", fault: "user", message: "a box with this name exists" })],
+    ["a plan limit", () => json(402, { code: "plan_limit_exceeded", fault: "user", message: "Your plan allows 1 box", limit: 1, remaining: 0 })],
+    ["a missing egress proxy", () => json(503, { code: "egress_proxy_unavailable", fault: "infra", message: "service unavailable" })],
+    ["a full fleet", () => json(503, { code: "no_capacity", fault: "infra", retry_after: 30, message: "no capacity" }, { "retry-after": "30" })],
+    ["a 503 that asks for no retry", () => json(503, { code: "service_unavailable", fault: "infra", message: "workspace store unavailable" })]
+  ]
+  for (const [name, answer] of final) test(`${name} is never sent again`, async () => {
+    const h = await harness({ [CREATE]: answer })
+    jest.useFakeTimers()
+    try {
+      const result = await h.seam.openWorkspace("main", "will/smithers")
+      expect(typeof result).toBe("string")
+      await advance(60_000)
+      expect(creates(h.requests)).toBe(1)
+      expect(starting(h.store)).toEqual([])
+    } finally { jest.useRealTimers() }
+  })
+
+  test("sign-out or disposal during the wait sends nothing more", async () => {
+    for (const end of ["sign-out", "dispose"] as const) {
+      const h = await harness({ [CREATE]: () => busy() })
+      jest.useFakeTimers()
+      try {
+        const result = h.seam.openWorkspace("main", "will/smithers")
+        await settle()
+        if (end === "dispose") h.seam.dispose()
+        else await h.store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-out", username: null, expiresAt: null, scopes: null }).isPersisted.promise
+        await advance(60_000)
+        expect(await result).toBe(SIGN_OUT_REFUSAL)
+        expect(creates(h.requests)).toBe(1)
+      } finally { jest.useRealTimers() }
+    }
   })
 })
 
