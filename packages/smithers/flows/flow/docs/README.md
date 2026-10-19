@@ -142,6 +142,8 @@ program.
   non-retryable tags, and where the decision is made.
 - [Ask a person for a decision](./guides/ask-a-person.md): a human answer as a
   typed, durable step with a deadline.
+- [Signed answers](./guides/signed-answers.md): a passkey-signed JSON answer,
+  its challenge bytes, and what the receiving verifier must check.
 - [Run an external job](./guides/run-an-external-job.md): retained workers, durable probes,
   replacement generations and cancellation.
 - [Testing](./testing.md): topology, interpretation, and execution, and which
