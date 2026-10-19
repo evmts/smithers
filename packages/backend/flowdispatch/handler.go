@@ -55,7 +55,14 @@ func (service *Service) handleLaunch(ctx context.Context, lease *jobs.Lease) err
 			Version: 1, Target: payload.Target, FlowID: payload.FlowID, Projection: payload.Projection,
 		}
 	}
-	if checkpoint.FlowID != payload.FlowID || checkpoint.Target != payload.Target {
+	// Agent admission precedes provisioning. A retained checkpoint may carry
+	// the workspace subsequently authorized by the host resolver; all admitted
+	// binding and scope fields remain immutable, as does an explicitly pinned workspace.
+	admittedTarget := payload.Target
+	if admittedTarget.BindingKind == "agent-session" && admittedTarget.WorkspaceID == "" {
+		admittedTarget.WorkspaceID = checkpoint.Target.WorkspaceID
+	}
+	if checkpoint.FlowID != payload.FlowID || checkpoint.Target != admittedTarget {
 		return service.fail(lease, "checkpoint_request_mismatch", checkpoint)
 	}
 	// PostgreSQL may reorder JSON keys. Compare decoded correlation data,
@@ -103,6 +110,18 @@ func (service *Service) handleLaunch(ctx context.Context, lease *jobs.Lease) err
 	runtime, identity, err := service.resolve(ctx, checkpoint.Target, checkpoint.Identity)
 	if err != nil {
 		return service.runtimeError(lease, err, checkpoint)
+	}
+	// Fill both new and legacy blank checkpoints from the resolved binding,
+	// before operation.started or any product projection is written. Resolving
+	// an already pinned workspace must never silently move a run to another one.
+	if checkpoint.Target.BindingKind == "agent-session" {
+		if bound, ok := runtime.(flowruntime.WorkspaceRuntime); ok {
+			workspace := bound.RuntimeWorkspaceID()
+			if workspace == "" || (checkpoint.Target.WorkspaceID != "" && checkpoint.Target.WorkspaceID != workspace) {
+				return service.fail(lease, "runtime_workspace_replaced", checkpoint)
+			}
+			checkpoint.Target.WorkspaceID = workspace
+		}
 	}
 	// A pin rejection remains authoritative across a worker restart until
 	// its cancelled run settles. The admitted digest is not host evidence.

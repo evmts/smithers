@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -36,6 +37,8 @@ type runArchive struct {
 	// host is bound after the dispatcher it reads through is built.
 	host      runArchiveHost
 	summaries *services.ConversationSummaries
+	// Suppress repeated observation/checkpoint/settlement warnings for one run.
+	failures sync.Map
 }
 
 // runArchiveReader is the product database the archive is read from.
@@ -62,9 +65,23 @@ type archivedRun struct {
 const archivedEventsPage = 500
 
 // ProjectFlowRuntime keeps every observed page's events, and captures the
-// host's answers at each lifecycle change. Terminal observation waits for
-// durable retention; losing its last capture has no later page to repair it.
+// host's answers at each lifecycle change. Retention is best effort: even a
+// terminal archive failure must never prevent the product turn from settling.
 func (a *runArchive) ProjectFlowRuntime(ctx context.Context, update flowdispatch.ProjectionUpdate) error {
+	if a == nil || a.pool == nil {
+		return nil
+	}
+	if err := a.project(ctx, update); err != nil {
+		cp := update.Checkpoint
+		key := struct{ tenant, kind, binding, run string }{cp.Target.TenantID, cp.Target.BindingKind, cp.Target.BindingID, cp.RunID}
+		if _, logged := a.failures.LoadOrStore(key, struct{}{}); !logged {
+			slog.WarnContext(ctx, "run archive capture failed", "run_id", cp.RunID, "workspace_id", cp.Target.WorkspaceID, "error", err)
+		}
+	}
+	return nil
+}
+
+func (a *runArchive) project(ctx context.Context, update flowdispatch.ProjectionUpdate) error {
 	if a == nil || a.pool == nil {
 		return nil
 	}
@@ -84,16 +101,8 @@ func (a *runArchive) ProjectFlowRuntime(ctx context.Context, update flowdispatch
 		return a.keep(ctx, update)
 	}
 	if err := a.capture(ctx, update.Checkpoint, update); err != nil {
-		if terminal {
-			return err
-		}
-		if keepErr := a.keep(ctx, update); keepErr != nil {
-			return keepErr
-		}
-		if ctx.Err() == nil {
-			slog.Warn("run archive capture failed", "run_id", update.Checkpoint.RunID,
-				"workspace_id", update.Checkpoint.Target.WorkspaceID, "error", err)
-		}
+		// Preserve any valid journal page even when a snapshot was refused.
+		return errors.Join(err, a.keep(ctx, update))
 	}
 	return nil
 }
