@@ -12,7 +12,7 @@ run of it that answers without reading the file again.
 
 ## Prerequisites
 
-- Node.js 26.4.0 or later. It runs the TypeScript file below directly, with no
+- Node.js 22.19.0 or later. It runs the TypeScript file below directly, with no
   build step and no loader flag.
 
 The quickstart does not need jj. A compensable step or a time-travel fork

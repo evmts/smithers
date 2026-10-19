@@ -55,7 +55,7 @@ class, no registration call, and no inheritance.
 npm install @smthrs/plugin@next effect
 ```
 
-Node.js 26.4.0 or later is required. For the runtime requirements, the import
+Node.js 22.19.0 or later is required. For the runtime requirements, the import
 forms, and the subpaths the export map blocks, see
 [Installation](./installation.md).
 

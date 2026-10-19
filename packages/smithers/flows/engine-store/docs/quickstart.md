@@ -12,7 +12,7 @@ the whole point of the package.
 
 ## Prerequisites
 
-- Node.js 26.4.0 or later.
+- Node.js 22.19.0 or later.
 - A project with the packages installed:
 
   ```bash
