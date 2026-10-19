@@ -224,9 +224,9 @@ func (s *MythicalService) BackgroundRuns(ctx context.Context, repository int64) 
  LEFT JOIN workflow_run_flow_invocations i ON i.workflow_run_id=r.id
  LEFT JOIN product_job_requests j ON j.id::text=i.operation_id AND j.operation='flow.runtime.launch'
  LEFT JOIN product_job_dispatches dispatch ON dispatch.operation_id=j.id
- WHERE r.repository_id=$1 AND r.execution_plane='flow' AND r.dismissed_at IS NULL AND r.status IN ('queued','running','failure')
- AND (d.path<>$2 OR r.id=(SELECT max(l.id) FROM workflow_runs l WHERE l.repository_id=r.repository_id AND l.workflow_definition_id=r.workflow_definition_id))
- ORDER BY r.created_at,r.id`, repository, mythicalWikiRunPath)
+ WHERE r.repository_id=$1 AND may_view_workflow_run(r.id,$3) AND r.execution_plane='flow' AND r.dismissed_at IS NULL AND r.status IN ('queued','running','failure')
+ AND (d.path<>$2 OR r.id=(SELECT max(l.id) FROM workflow_runs l WHERE l.repository_id=r.repository_id AND l.workflow_definition_id=r.workflow_definition_id AND may_view_workflow_run(l.id,$3)))
+ ORDER BY r.created_at,r.id`, repository, mythicalWikiRunPath, runViewerID(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +282,7 @@ func (s *HomeBackground) Status(ctx context.Context, repo, id int64) (HomeBackgr
 		return HomeBackgroundReceipt{}, homeBackgroundError(503, "background_unavailable", "infra", "Background runs unavailable")
 	}
 	var state string
-	err := s.Pool.QueryRow(ctx, `SELECT status FROM workflow_runs WHERE repository_id=$1 AND id=$2 AND execution_plane='flow'`, repo, id).Scan(&state)
+	err := s.Pool.QueryRow(ctx, `SELECT status FROM workflow_runs WHERE repository_id=$1 AND id=$2 AND execution_plane='flow' AND may_view_workflow_run(id,$3)`, repo, id, runViewerID(ctx)).Scan(&state)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return HomeBackgroundReceipt{}, homeBackgroundError(404, "run_not_found", "user", "Run unavailable")
 	}
