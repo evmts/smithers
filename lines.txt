@@ -1,0 +1,2 @@
+go -C packages/backend vet ./internal/services 2>&1 | head -20
+bash packages/backend/scripts/with-test-postgres.sh go -C packages/backend test ./internal/services -run "TestSessionWritesWaitWhileABoxStartProvisions" -count=1 -v 2>&1 | grep -E "WAIT|start:|^\s*--- |^(ok|FAIL)|\.go:[0-9]+:[0-9]+:"

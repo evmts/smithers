@@ -32,9 +32,10 @@ var (
 // box's fence before the join opens its authorization transaction, so it
 // never needs a second connection while that transaction is held (Security
 // G4 finding 4). It waits while a release on any replica holds the box, ends
-// a dead release's lease, binds sessionID to the box, and cleans a box whose
-// state is unknown (plue#866). Its whole wait, including every pool
-// acquisition, is bounded by agentBoxJoinWait (finding 5).
+// a dead release's lease and binds sessionID to the box. The turn retired its
+// box's dirty guest before it got here (retireAgentSessionBoxForTurn). Its
+// whole wait, including every pool acquisition, is bounded by
+// agentBoxJoinWait (finding 5).
 func (s *WorkspaceService) admitAgentBoxJoin(ctx context.Context, workspaceID, sessionID string, userID int64) error {
 	fence, ok := s.q.(agentWorkspaceReleaseStore)
 	if !ok || s.machineAdmission != nil || !s.hasWorkspaceRuntime() || workspaceID == "" {
@@ -42,9 +43,7 @@ func (s *WorkspaceService) admitAgentBoxJoin(ctx context.Context, workspaceID, s
 	}
 	ctx, cancel := context.WithTimeout(ctx, agentBoxJoinWait)
 	defer cancel()
-	refused := func(cause error) error {
-		return pkgerrors.New(pkgerrors.CodeServiceUnavailable, "the box is still being released after its last turn; try again in a moment").WithCause(cause)
-	}
+	refused := errAgentBoxHeld
 	unlock := s.lockRuntimeWorkspace(workspaceID)
 	defer unlock()
 	for {
@@ -59,23 +58,7 @@ func (s *WorkspaceService) admitAgentBoxJoin(ctx context.Context, workspaceID, s
 			slog.WarnContext(ctx, "agent box lease of a release that died was ended", "workspace_id", workspaceID)
 		}
 		if !admission.Busy {
-			current, err := s.q.GetWorkspace(ctx, workspaceID)
-			if err != nil {
-				if ctx.Err() != nil {
-					return refused(ctx.Err())
-				}
-				return err
-			}
-			if current.Status != "running" || current.ProvisioningStage != db.AgentBoxUnreapedStage {
-				return nil
-			}
-			_, busy, err := s.cleanUnreapedAgentBoxLocked(ctx, fence, current)
-			if err != nil {
-				return err
-			}
-			if !busy {
-				return nil
-			}
+			return nil
 		}
 		select {
 		case <-ctx.Done():
@@ -86,18 +69,36 @@ func (s *WorkspaceService) admitAgentBoxJoin(ctx context.Context, workspaceID, s
 }
 
 // refuseHeldAgentBoxLocked refuses, retryably and without a database call, a
-// start of a box a release holds or whose state is unknown. An agent turn's
-// join passes the fence before its authorization transaction
-// (admitAgentBoxJoin); any other start waits for the release to end or the
-// sweep to clean the box.
+// start of a box a release holds. An agent turn's join passes the fence
+// before its authorization transaction (admitAgentBoxJoin); any other start
+// waits for the release to end. A start outside its session's turn is also
+// refused while the box's guest is dirty (refuseDirtySessionBoxStart).
 func (s *WorkspaceService) refuseHeldAgentBoxLocked(row db.Workspace) error {
 	if s.machineAdmission != nil || !s.hasWorkspaceRuntime() || row.Status != "running" {
 		return nil
 	}
-	if db.IsAgentBoxLease(row.ProvisioningStage) || row.ProvisioningStage == db.AgentBoxUnreapedStage {
-		return pkgerrors.New(pkgerrors.CodeServiceUnavailable, "the box is still being released after its last turn; try again in a moment")
+	if db.IsAgentBoxLease(row.ProvisioningStage) {
+		return errAgentBoxBusy()
 	}
 	return nil
+}
+
+// errAgentBoxBusy refuses a turn while a release still holds its box,
+// retryably.
+func errAgentBoxBusy() error {
+	return errAgentBoxHeld(nil)
+}
+
+// errAgentBoxHeld refuses a start or a join whose box a release, or another
+// transaction's lock, held past its wait: the typed retryable box_busy
+// refusal a full mutation slot gets (errWorkspaceMutationBusy), so a turn
+// retries it within its budget.
+func errAgentBoxHeld(cause error) error {
+	refused := pkgerrors.New(pkgerrors.CodeServiceUnavailable, "the box is still being released after its last turn; try again in a moment").
+		WithCause(errors.Join(errWorkspaceStartsBusy, cause))
+	refused.RetryAfter = workspaceMutationBusyRetryAfter
+	refused.Details = map[string]any{"reason_code": agentSessionBoxBusy.Code, "retryable": agentSessionBoxBusy.Retryable}
+	return refused
 }
 
 // errAgentBoxLost is a release that no longer holds its box: its lease
@@ -183,10 +184,13 @@ const (
 	// After a release renewed its lease, before it ends the guest's git
 	// credential cache.
 	agentBoxBeforeCredentialCache = "before_credential_cache"
-	// After a release renewed its lease, before it reaps the run's processes.
-	agentBoxBeforeReap = "before_reap"
 	// After a retirement renewed its lease, before it deletes the guest.
 	agentBoxBeforeDelete = "before_delete"
+	// Inside a start's authorization transaction, before it reads whether the
+	// box's guest is dirty outside its session's turn.
+	agentBoxBeforeStartCheck = "before_start_check"
+	// Right after that read, before the start mints anything.
+	agentBoxAfterStartCheck = "after_start_check"
 )
 
 func (s *WorkspaceService) agentBoxReleasePoint(point, workspaceID string) {

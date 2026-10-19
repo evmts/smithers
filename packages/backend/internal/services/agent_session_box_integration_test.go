@@ -79,6 +79,48 @@ type sessionBoxRuntime struct {
 	creates    int
 	cloneURL   string
 	repository int64
+	// deleted are the guests deleted, by vm id.
+	deleted []string
+	// failCheckouts fails that many checkouts, as a provision that fails
+	// after its guest was created does.
+	failCheckouts int
+	// head is the commit the guest's checkout answers with.
+	head string
+}
+
+// FencesGuests: the double honors workspaceapi.WithGuest as hosted's
+// placement adapter must (workspaceapi.WorkspaceGuestFence).
+func (*sessionBoxRuntime) FencesGuests() bool { return true }
+
+// goneLocked reports a call scoped to a guest the workspace no longer has.
+func (r *sessionBoxRuntime) goneLocked(ctx context.Context, id string) bool {
+	guest := workspaceapi.GuestFromContext(ctx)
+	if guest == "" {
+		return false
+	}
+	g := r.guests[id]
+	return g == nil || g.vm != guest
+}
+
+// DeleteWorkspace deletes the guest and its disk and, as hosted's placement
+// store does, clears the row's placement.
+func (r *sessionBoxRuntime) DeleteWorkspace(ctx context.Context, id string) error {
+	r.mu.Lock()
+	if r.goneLocked(ctx, id) {
+		r.mu.Unlock()
+		return workspaceapi.ErrGuestGone
+	}
+	g := r.guests[id]
+	if g != nil {
+		r.deleted = append(r.deleted, g.vm)
+		delete(r.guests, id)
+	}
+	r.mu.Unlock()
+	if g == nil {
+		return workspaceapi.ErrWorkspaceNotFound
+	}
+	_, err := r.pool.Exec(ctx, `UPDATE workspaces SET vm_id='' WHERE id=$1 AND vm_id=$2`, id, g.vm)
+	return err
 }
 
 func newSessionBoxRuntime(pool *pgxpool.Pool, repository int64, cloneURL string) *sessionBoxRuntime {
@@ -120,6 +162,20 @@ func (r *sessionBoxRuntime) CreateWorkspace(ctx context.Context, spec workspacea
 		return workspaceapi.Workspace{}, err
 	}
 	return workspaceapi.Workspace{ID: spec.ID, State: workspaceapi.WorkspaceRunning, Home: "/home/developer", Root: "/workspace/repo"}, nil
+}
+
+func (r *sessionBoxRuntime) StopWorkspace(ctx context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.goneLocked(ctx, id) {
+		return workspaceapi.ErrGuestGone
+	}
+	g := r.guests[id]
+	if g == nil {
+		return workspaceapi.ErrWorkspaceNotFound
+	}
+	g.state = workspaceapi.WorkspaceStopped
+	return nil
 }
 
 func (r *sessionBoxRuntime) InspectWorkspace(_ context.Context, id string) (workspaceapi.Workspace, error) {
@@ -181,12 +237,19 @@ func (r *sessionBoxRuntime) WriteRepositoryReceipt(_ context.Context, id string,
 
 // ExecuteCommand answers the commands a checkout is built and checked with,
 // and the head publisher's probe once a join started one.
-func (r *sessionBoxRuntime) ExecuteCommand(_ context.Context, id string, command workspaceapi.Command) (workspaceapi.CommandResult, error) {
+func (r *sessionBoxRuntime) ExecuteCommand(ctx context.Context, id string, command workspaceapi.Command) (workspaceapi.CommandResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.goneLocked(ctx, id) {
+		return workspaceapi.CommandResult{}, workspaceapi.ErrGuestGone
+	}
 	g := r.guests[id]
 	if g == nil {
 		return workspaceapi.CommandResult{}, workspaceapi.ErrWorkspaceNotFound
+	}
+	if len(command.Args) == 3 && command.Args[2] == agentBoxCredentialCacheEnd {
+		// The release ends the guest's git credential cache.
+		return workspaceapi.CommandResult{}, nil
 	}
 	if _, probe := command.Environment["SMITHERS_WORKSPACE_TOKEN_ID"]; probe {
 		if !g.services[workspaceHeadReporterService] {
@@ -194,13 +257,19 @@ func (r *sessionBoxRuntime) ExecuteCommand(_ context.Context, id string, command
 		}
 		return workspaceapi.CommandResult{}, nil
 	}
-	head := strings.Repeat("a", 40)
+	head := r.head
+	if head == "" {
+		head = strings.Repeat("a", 40)
+	}
 	args := command.Args
 	switch {
 	case len(args) >= 3 && args[0] == "git" && args[1] == "remote":
 		return workspaceapi.CommandResult{Stdout: r.cloneURL + "\n"}, nil
 	case len(args) >= 2 && args[0] == "git" && args[1] == "ls-remote":
 		return workspaceapi.CommandResult{Stdout: head + "\trefs/heads/main\n"}, nil
+	case len(args) >= 2 && args[0] == "git" && args[1] == "check-ref-format" && r.failCheckouts > 0:
+		r.failCheckouts--
+		return workspaceapi.CommandResult{ExitCode: 1, Stderr: "fatal: the checkout failed"}, nil
 	case len(args) >= 2 && args[0] == "git" && args[1] == "clone":
 		g.hasGit = true
 	case len(args) >= 3 && args[0] == "jj" && args[1] == "git" && args[2] == "init":
@@ -230,9 +299,12 @@ func (*sessionBoxRuntime) InspectService(context.Context, string, string) (works
 	return workspaceapi.ServiceObservation{State: workspaceapi.ServiceRunning}, nil
 }
 
-func (r *sessionBoxRuntime) StopService(_ context.Context, id, name string) error {
+func (r *sessionBoxRuntime) StopService(ctx context.Context, id, name string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.goneLocked(ctx, id) {
+		return workspaceapi.ErrGuestGone
+	}
 	if g := r.guests[id]; g != nil {
 		delete(g.services, name)
 	}
@@ -401,11 +473,13 @@ func TestAgentBoxTwoUsersSequential(t *testing.T) {
 		require.Equal(t, []string{pair.box}, published, "the head publisher names its own box")
 	}
 
-	// The same session's next turn joins its own box again.
+	// The same session's next turn gets its own box again, on a fresh guest:
+	// the guest its last turn minted on is dirty.
 	again, err := f.turn(f.alice, aliceSession)
 	require.NoError(t, err)
 	require.Equal(t, a.WorkspaceID, again.WorkspaceID)
-	require.Equal(t, 2, f.runtime.creates)
+	require.NotEqual(t, a.VMID, again.VMID)
+	require.Equal(t, 3, f.runtime.creates)
 }
 
 func TestAgentBoxTwoUsersConcurrent(t *testing.T) {
@@ -567,4 +641,36 @@ func (a *AgentBoxTurnsForTest) Turn(t *testing.T) AgentWorkspaceResult {
 	result, err := a.f.turn(a.Person, a.Session)
 	require.NoError(t, err)
 	return result
+}
+
+// Retire ends the turn: the release retires the session's box.
+func (a *AgentBoxTurnsForTest) Retire(t *testing.T, box string) {
+	t.Helper()
+	release, err := a.f.boxes.ReleaseAgentWorkspace(a.f.ctx, box, a.Session, 0)
+	require.NoError(t, err)
+	require.Equal(t, agentWorkspaceRetired, release.Outcome)
+}
+
+// The install's terminal, language-server and SSH doors (AuthorizeTerminalBranch)
+// and its branch roster keep a session's box to its person too (Security
+// d-b01lum).
+func TestAgentBoxTerminalDoorsAndRosterRefuseAnotherPerson(t *testing.T) {
+	f := newSessionBoxes(t)
+	ben := f.person(t, "ben-box")
+	a, err := f.turn(f.alice, f.session(t, f.alice))
+	require.NoError(t, err)
+
+	_, err = f.boxes.AuthorizeTerminalBranch(f.ctx, a.WorkspaceID, f.repo, ben)
+	var api *pkgerrors.APIError
+	require.ErrorAs(t, err, &api, "another member opens no terminal, language server or SSH on the box")
+	require.Equal(t, 403, api.Status)
+	_, err = f.boxes.AuthorizeTerminalBranch(f.ctx, a.WorkspaceID, f.repo, f.alice)
+	require.NoError(t, err, "the session's person may")
+
+	branches, total, err := f.boxes.ListBranches(f.ctx, f.repo, ben, 1, 30)
+	require.NoError(t, err)
+	for _, branch := range branches {
+		require.NotEqual(t, a.WorkspaceID, branch.Machine.ID, "the roster lists no session's box")
+	}
+	require.EqualValues(t, len(branches), total)
 }
