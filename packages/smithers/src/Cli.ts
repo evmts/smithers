@@ -85,7 +85,7 @@ export const makeCli = (
     silent: z.boolean().default(false),
     ui: z.enum(["auto", "tty", "stream", "plain"]).default("auto")
   })
-  const mcp = Cli.create("mcp", {
+  const mcp = Cli.create("smthrs mcp", {
     version: packageVersion,
     description: "Register the Smithers MCP server with an agent",
     globals: mcpGlobals
@@ -579,6 +579,15 @@ export const makeCli = (
     const literal = literalRest < 0 ? -1 : parsed.restIndices[literalRest]!
     if (literal >= 0 && argv[literal] === "--") argv = argv.slice(0, literal + 1)
     if (parsed.rest[offset] === "mcp" && index !== undefined && !parsed.mcp) {
+      // Integration overview and doctor help belong to Incur, not our add-only tree.
+      // Keep execution unchanged; only dispatch its explicit help to its owner.
+      if (
+        (parsed.rest[offset + 1] === undefined || parsed.rest[offset + 1]?.startsWith("-") ||
+          parsed.rest[offset + 1] === "doctor") &&
+        (argv.includes("--help") || argv.includes("-h"))
+      ) {
+        return invoke(argv, serveOptions)
+      }
       return mcp.serve([...argv.slice(0, index), ...argv.slice(index + 1)], serveOptions)
     }
     const typed = parsed.rest[offset]

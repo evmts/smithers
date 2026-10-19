@@ -168,3 +168,24 @@ test("the public installation entry gives the current npm path before planned ho
   assert.ok(installation.indexOf("## Install the CLI") < installation.indexOf("## Mac host (planned)"))
   assert.doesNotMatch(cli, /host start|smithersai\/tap/)
 })
+
+test("MCP doctor help describes the smoke test instead of registration", async () => {
+  const { installEffectResolution } = await import(join(root, "packages/smithers/build/build-cli/src/effect-resolution.js"))
+  installEffectResolution()
+  const { makeCli } = await import(join(root, "packages/smithers/src/Cli.ts"))
+  let output = ""
+  let status = 0
+  const cli = makeCli()
+  for (const [args, usage] of [
+    [["mcp", "doctor", "--help"], /Usage: smthrs mcp doctor/],
+    [["mcp", "--help"], /doctor\s+Validate MCP server startup/],
+    [["mcp", "add", "--help"], /Usage: smthrs mcp add/]
+  ]) {
+    output = ""
+    await cli.serve(args, {
+      stdout: text => { output += text }, exit: code => { status = code }
+    })
+    assert.equal(status, 0, output)
+    assert.match(output, usage)
+  }
+})

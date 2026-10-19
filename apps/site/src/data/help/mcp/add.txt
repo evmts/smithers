@@ -1,6 +1,6 @@
-mcp add — Register with Claude Code or Codex; omit --agent to configure both
+smthrs mcp add — Register with Claude Code or Codex; omit --agent to configure both
 
-Usage: mcp add [options]
+Usage: smthrs mcp add [options]
 
 Options:
   --root <string>        Project directory; defaults to the nearest Smithers project
