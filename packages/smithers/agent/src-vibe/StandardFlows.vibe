@@ -89,7 +89,7 @@ import type * as FileSystem from "effect/FileSystem"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as ChildFlows from "./ChildFlows.vibe"
-import * as FlowEngineLike from "./FlowEngineLike.ts"
+import * as FlowEngineLike from "./FlowEngineLike.vibe"
 import * as AgentTerminal from "./internal/AgentTerminal.vibe"
 import * as AgentTerminalCommand from "./internal/AgentTerminalCommand.ts"
 
@@ -385,6 +385,7 @@ export const tests = (
     )
   ])
 
+/**
 /**
  * Output for the agent's `recall` flow: the rows kept, and the rows Jev
  * withheld as unneeded.
