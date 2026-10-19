@@ -7,8 +7,9 @@
 # (.smithers/flows/land/engineering-gate-environment.mjs), so a raw `go test`
 # there silently skips every PostgreSQL test. This script starts a private
 # server for the one command: initdb into a fresh temporary directory with
-# trust authentication, listening only on 127.0.0.1 at a free port with no
-# Unix socket. It exports SMITHERS_TEST_DATABASE_URL and
+# SCRAM password authentication and a random password (trust would accept any
+# password, so password-rejection tests could not run), listening only on
+# 127.0.0.1 at a free port with no Unix socket. It exports SMITHERS_TEST_DATABASE_URL and
 # SMITHERS_REQUIRE_DATABASE_TESTS=1, so a database test that cannot reach the
 # server fails instead of skipping. It stops the server and removes the
 # directory on every exit, and exits with the command's status.
@@ -90,7 +91,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if ! "$bin/initdb" -D "$data" -U postgres --auth=trust --no-sync >"$dir/initdb.log" 2>&1; then
+password=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+(umask 077 && printf '%s\n' "$password" >"$dir/pwfile")
+if ! "$bin/initdb" -D "$data" -U postgres --auth=scram-sha-256 --pwfile="$dir/pwfile" --no-sync >"$dir/initdb.log" 2>&1; then
   echo "with-test-postgres: initdb failed:" >&2
   tail -n 40 "$dir/initdb.log" >&2 || true
   exit 70
@@ -126,6 +129,6 @@ if ! (
   exit 70
 fi
 
-export SMITHERS_TEST_DATABASE_URL="postgres://postgres@127.0.0.1:$port/postgres?sslmode=disable"
+export SMITHERS_TEST_DATABASE_URL="postgres://postgres:$password@127.0.0.1:$port/postgres?sslmode=disable"
 export SMITHERS_REQUIRE_DATABASE_TESTS=1
 "$@"
