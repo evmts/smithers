@@ -69,7 +69,7 @@ func TestSyncedRepos_ReconcilerDiscoversImportInstallation(t *testing.T) {
 					if outcome == "wrong-repo" {
 						name = "other"
 					}
-					fmt.Fprintf(w, `{"id":100,"name":%q,"owner":{"login":"acme"},"private":false}`, name)
+					fmt.Fprintf(w, `{"id":100,"name":%q,"owner":{"login":"acme"},"private":false,"visibility":"public"}`, name)
 					return
 				}
 				if r.Method == "GET" {
@@ -223,7 +223,7 @@ func TestSyncedRepos_FreshUnknownVisibilityReconciles(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/repos/acme/app" {
 					reads++
-					fmt.Fprint(w, `{"id":100,"private":false}`)
+					fmt.Fprint(w, `{"id":100,"private":false,"visibility":"public"}`)
 					return
 				}
 				upstream.Handler().ServeHTTP(w, r)
@@ -267,7 +267,7 @@ func TestSyncedRepos_VisibilityUnknownPrecedesStaleWithinBatch(t *testing.T) {
 	}
 	for i := 0; i < 25; i++ {
 		row := enroll(fmt.Sprintf("stale-%d", i))
-		_, err := pool.Exec(ctx, `UPDATE github_synced_repos SET last_synced_at=NOW()-INTERVAL '1 day',github_private=false WHERE id=$1`, row.ID)
+		_, err := pool.Exec(ctx, `UPDATE github_synced_repos SET last_synced_at=NOW()-INTERVAL '1 day',github_visibility='public',github_private=false WHERE id=$1`, row.ID)
 		require.NoError(t, err)
 	}
 	unknown := enroll("unknown")

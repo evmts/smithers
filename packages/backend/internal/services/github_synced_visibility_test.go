@@ -22,7 +22,7 @@ func TestGitHubSyncWritesSourceVisibility(t *testing.T) {
 		if r.URL.Path == "/repos/acme/app" {
 			require.NotEmpty(t, r.Header.Get("Authorization"))
 			reads++
-			fmt.Fprintf(w, `{"id":100,"private":%t}`, private)
+			fmt.Fprintf(w, `{"id":100,"private":%t,"visibility":%q}`, private, map[bool]string{true: "private", false: "public"}[private])
 			return
 		}
 		f.upstream.Handler().ServeHTTP(w, r)
@@ -66,7 +66,7 @@ func TestGitHubSyncVisibilityRejectsIncompleteRepository(t *testing.T) {
 func TestGitHubSyncVisibilityRateLimitKeepsReceipt(t *testing.T) {
 	f := newInstallPollFixture(t)
 	ctx := context.Background()
-	_, err := f.pool.Exec(ctx, `UPDATE github_synced_repos SET github_private=false WHERE id=$1`, f.row.ID)
+	_, err := f.pool.Exec(ctx, `UPDATE github_synced_repos SET github_visibility='public',github_private=false WHERE id=$1`, f.row.ID)
 	require.NoError(t, err)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/repos/acme/app" {
@@ -90,7 +90,7 @@ func testGitHubSyncVisibilityRejects(t *testing.T, status int, body string, warm
 	t.Helper()
 	f := newInstallPollFixture(t)
 	if warm {
-		_, err := f.pool.Exec(context.Background(), `UPDATE github_synced_repos SET github_private=false WHERE id=$1`, f.row.ID)
+		_, err := f.pool.Exec(context.Background(), `UPDATE github_synced_repos SET github_visibility='public',github_private=false WHERE id=$1`, f.row.ID)
 		require.NoError(t, err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -117,7 +117,7 @@ func testGitHubSyncVisibilityRejects(t *testing.T, status int, body string, warm
 func TestGitHubSyncVisibilityClearedOnRebind(t *testing.T) {
 	f := newInstallPollFixture(t)
 	ctx := context.Background()
-	_, err := f.pool.Exec(ctx, `UPDATE github_synced_repos SET github_private=false WHERE id=$1`, f.row.ID)
+	_, err := f.pool.Exec(ctx, `UPDATE github_synced_repos SET github_visibility='public',github_private=false WHERE id=$1`, f.row.ID)
 	require.NoError(t, err)
 	input := db.EnrollGitHubSyncedRepoParams{OwnerLogin: f.row.OwnerLogin, RepoName: f.row.RepoName, InstallationID: f.row.InstallationID, GithubRepositoryID: f.row.GithubRepositoryID, SyncMetadata: true, EnrolledVia: f.row.EnrolledVia}
 	row, err := db.New(f.pool).EnrollGitHubSyncedRepo(ctx, input)
@@ -140,7 +140,7 @@ func TestGitHubSyncWritesSourceVisibilityHosted(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/repos/acme/app" {
 			require.NotEmpty(t, r.Header.Get("Authorization"))
-			fmt.Fprintf(w, `{"id":100,"private":%t}`, private)
+			fmt.Fprintf(w, `{"id":100,"private":%t,"visibility":%q}`, private, map[bool]string{true: "private", false: "public"}[private])
 			return
 		}
 		upstream.Handler().ServeHTTP(w, r)

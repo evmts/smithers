@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 	"github.com/stretchr/testify/require"
@@ -35,7 +36,7 @@ func TestRepoGitHubSourceRequiresOneReadyImport(t *testing.T) {
 	require.Nil(t, source, "a failed import cannot select review source")
 	require.False(t, ambiguous)
 	insert("upstream", "project", "ready")
-	_, err := pool.Exec(ctx, `INSERT INTO github_synced_repos(owner_login,owner_login_lower,repo_name,repo_name_lower,github_private) VALUES('upstream','upstream','project','project',false)`)
+	_, err := pool.Exec(ctx, `INSERT INTO github_synced_repos(owner_login,owner_login_lower,repo_name,repo_name_lower,github_private,github_visibility) VALUES('upstream','upstream','project','project',false,'public')`)
 	require.NoError(t, err)
 	source, ambiguous = read()
 	require.Equal(t, &GitHubSource{Owner: "upstream", Repo: "project"}, source)
@@ -61,7 +62,7 @@ func TestRepoGitHubSourceRequiresOneReadyImport(t *testing.T) {
 	privateView, err := reader.GetRepoView(ctx, &db.User{ID: otherID}, "source-owner", "mirror")
 	require.NoError(t, err)
 	require.Nil(t, privateView.GitHubSource, "private read-only members cannot discover source coordinates")
-	require.True(t, privateView.GitHubSourceUnavailable)
+	require.False(t, privateView.GitHubSourceUnavailable)
 	insert("UPSTREAM", "PROJECT", "ready")
 	source, ambiguous = read()
 	require.Equal(t, &GitHubSource{Owner: "upstream", Repo: "project"}, source, "case variants name the same source")
@@ -74,7 +75,7 @@ func TestRepoGitHubSourceRequiresOneReadyImport(t *testing.T) {
 
 func TestRepoGitHubSourceWithoutImportStoreFailsClosed(t *testing.T) {
 	q := &mockRepoQuerier{getRepoByOwnerAndLowerNameFn: func(context.Context, db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
-		return db.Repository{ID: 3, Name: "mirror", LowerName: "mirror", IsPublic: true}, nil
+		return db.Repository{ID: 3, UserID: pgtype.Int8{Int64: 7, Valid: true}, Name: "mirror", LowerName: "mirror", IsPublic: true}, nil
 	}}
 	view, err := NewRepoService(q, &mockRepoHostClient{}, "s1").GetRepoView(context.Background(), &db.User{ID: 7, Username: "owner"}, "owner", "mirror")
 	require.NoError(t, err)

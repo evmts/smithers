@@ -967,6 +967,8 @@ type GithubSyncedRepo struct {
 	GithubPrivate         pgtype.Bool        `json:"github_private"`
 	NextReconcileAt       pgtype.Timestamptz `json:"next_reconcile_at"`
 	ReconcileSkipLoggedAt pgtype.Timestamptz `json:"reconcile_skip_logged_at"`
+	GithubVisibility      pgtype.Text        `json:"github_visibility"`
+	VisibilityGeneration  int64              `json:"visibility_generation"`
 }
 
 type GithubSyncedRepoReadGrant struct {
