@@ -242,16 +242,31 @@ export interface FilePage {
   readonly tooLarge: boolean
 }
 
+/**
+ * A repository contents response the file page cannot show, refused before any text is decoded.
+ * @since 0.1.0
+ * @category errors
+ */
+export class FilePageRejected extends Error {
+  readonly _tag = "FilePageRejected"
+  readonly code: "invalid_response" | "invalid_encoding"
+  constructor(code: "invalid_response" | "invalid_encoding", message: string) {
+    super(message)
+    this.code = code
+    this.name = "FilePageRejected"
+  }
+}
+
 /** Decode an immutable contents response without truncating its text.
  * @since 0.1.0
  * @category parsers
  */
 export const decodeFilePage = (value: unknown): FilePage => {
-  if (value === null || typeof value !== "object") throw new Error("Invalid file response")
+  if (value === null || typeof value !== "object") throw new FilePageRejected("invalid_response", "Invalid file response")
   const wire = value as Record<string, unknown>
   if (wire.type !== "file" || typeof wire.size !== "number" || !Number.isSafeInteger(wire.size) || wire.size < 0 ||
       typeof wire.content !== "string" || typeof wire.commit_sha !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(wire.commit_sha) ||
-      typeof wire.raw_url !== "string" || !wire.raw_url.startsWith("/api/repos/") || wire.raw_url.includes("\\")) throw new Error("Invalid file response")
+      typeof wire.raw_url !== "string" || !wire.raw_url.startsWith("/api/repos/") || wire.raw_url.includes("\\")) throw new FilePageRejected("invalid_response", "Invalid file response")
   const tooLarge = wire.too_large === true || wire.size > 512 * 1024
   let content: string | null = tooLarge ? null : wire.content
   let binary = false
@@ -261,7 +276,7 @@ export const decodeFilePage = (value: unknown): FilePage => {
       binary = bytes.includes(0)
       try { content = binary ? null : new TextDecoder("utf-8", { fatal: true }).decode(bytes) }
       catch { binary = true; content = null }
-    } else if (wire.encoding !== "utf-8" && wire.encoding !== "utf8") throw new Error("Invalid file encoding")
+    } else if (wire.encoding !== "utf-8" && wire.encoding !== "utf8") throw new FilePageRejected("invalid_encoding", "Invalid file encoding")
     if (content?.includes("\u0000")) { binary = true; content = null }
   }
   return { content, binary, size: wire.size, commitSha: wire.commit_sha, rawUrl: wire.raw_url, tooLarge }
