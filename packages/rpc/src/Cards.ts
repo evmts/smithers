@@ -30,7 +30,7 @@ import { DiffCardSchema } from "./DiffCard.ts"
 import { type DraftCard, DraftCardSchema } from "./DraftCard.ts"
 import { FactoryRuleSchema } from "./FactoryProjection.ts"
 import { FileCardSchema } from "./FileCard.ts"
-import { GatewayWorkspaceIdSchema } from "./GatewayWorkspace.ts"
+import { gatewayCardPayload, GatewayCardWorkspaceIdSchema } from "./GatewayWorkspace.ts"
 import { StatusRollupSchema } from "./Health.ts"
 import { HARNESS_IDS } from "./LocalApp.ts"
 import { LSP_DIAGNOSTICS_CAP, LspDiagnosticSchema, LspHoverSchema } from "./LocalLsp.ts"
@@ -955,7 +955,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
   z.object({
     ...cardBaseShape,
     kind: z.literal("approval"),
-    payload: z.object({
+    payload: gatewayCardPayload({
       capability: z.string(),
       detail: z.string().optional(),
       /*
@@ -991,7 +991,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       /** The loaded repository whose per-user gateway the run lives on. */
       repo: z.string().optional(),
       /** Owning gateway; omission keeps legacy cards unbound. */
-      workspaceId: GatewayWorkspaceIdSchema.optional(),
+      workspaceId: GatewayCardWorkspaceIdSchema.optional(),
       /** Version 1 records an explicit legacy route when workspaceId is absent. */
       gatewayBindingVersion: z.literal(1).optional(),
       decision: z.enum(["approved", "denied"]).optional(),
@@ -1163,11 +1163,11 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
   z.object({
     ...cardBaseShape,
     kind: z.literal("workflow-list"),
-    payload: z.object({
+    payload: gatewayCardPayload({
       repo: z.string(),
       catalogRequest: z.object({ id: z.string(), owner: z.string(), state: z.enum(["pending", "failed"]) }).optional(),
       /** The gateway that actually answered this executable catalog. */
-      workspaceId: GatewayWorkspaceIdSchema.optional(),
+      workspaceId: GatewayCardWorkspaceIdSchema.optional(),
       /** Version 1 distinguishes a recorded legacy gateway from missing provenance. */
       gatewayBindingVersion: z.literal(1).optional(),
       issueContext: z.object({ number: z.number(), title: z.string() }).optional(),
@@ -1196,10 +1196,10 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
   z.object({
     ...cardBaseShape,
     kind: z.literal("flow-plan"),
-    payload: z.object({
+    payload: gatewayCardPayload({
       repo: z.string(),
       /** The gateway that answered the plan. */
-      workspaceId: GatewayWorkspaceIdSchema.optional(),
+      workspaceId: GatewayCardWorkspaceIdSchema.optional(),
       flowId: z.string(),
       /** The input the plan was taken on, so the Run door launches the same thing. */
       input: z.record(z.string(), z.unknown()).optional(),
@@ -1257,13 +1257,13 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
   z.object({
     ...cardBaseShape,
     kind: z.literal("trigger-list"),
-    payload: z.object({
+    payload: gatewayCardPayload({
       repo: z.string(),
       /** Preparation outbox: the plan receipt is durable before its approval message is published. */
       preparations: z.array(z.object({
         id: z.string(),
         owner: z.string(),
-        workspaceId: GatewayWorkspaceIdSchema.optional(),
+        workspaceId: GatewayCardWorkspaceIdSchema.optional(),
         phase: z.enum(["requested", "planning", "ready", "prepared", "failed"]),
         draft: z.object({
           flow: z.string(),
@@ -1315,10 +1315,10 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
   z.object({
     ...cardBaseShape,
     kind: z.literal("run-list"),
-    payload: z.object({
+    payload: gatewayCardPayload({
       repo: z.string(),
       /** Owning gateway; omission keeps legacy cards unbound. */
-      workspaceId: GatewayWorkspaceIdSchema.optional(),
+      workspaceId: GatewayCardWorkspaceIdSchema.optional(),
       /** Version 1 records an explicit legacy route when workspaceId is absent. */
       gatewayBindingVersion: z.literal(1).optional(),
       /** Every status the unfiltered workspace carried when listed; the filter chips read it. Optional for older cards. */
@@ -1328,7 +1328,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         id: z.string(),
         owner: z.string(),
         repo: z.string(),
-        workspaceId: GatewayWorkspaceIdSchema.optional(),
+        workspaceId: GatewayCardWorkspaceIdSchema.optional(),
         status: z.string().optional(),
         flow: z.string().optional(),
         lineage: z.string().optional(),
@@ -1364,10 +1364,10 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
   z.object({
     ...cardBaseShape,
     kind: z.literal("approvals-inbox"),
-    payload: z.object({
+    payload: gatewayCardPayload({
       repo: z.string(),
       /** Owning gateway; omission keeps legacy cards unbound. */
-      workspaceId: GatewayWorkspaceIdSchema.optional(),
+      workspaceId: GatewayCardWorkspaceIdSchema.optional(),
       /** Version 1 records an explicit legacy route when workspaceId is absent. */
       gatewayBindingVersion: z.literal(1).optional(),
       approvals: z.array(

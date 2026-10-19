@@ -991,6 +991,7 @@ const FIXTURES: Record<
   approval: {
     minimal: { capability: "network" },
     full: {
+      localGateway: true,
       capability: "network",
       detail: "POST https://api.github.com",
       runId: "run-1",
@@ -1139,6 +1140,7 @@ const FIXTURES: Record<
       lastSeq: 0
     },
     full: {
+      localGateway: true,
       burndown: { filter: "failed", item: 3071 },
       signalRequest: { name: "resume", state: "failed", afterSeq: 41, error: "offline" },
       authoring: { requestId: "author-request-1", owner: "will", launchError: "offline" },
@@ -1220,6 +1222,7 @@ const FIXTURES: Record<
   "workflow-list": {
     minimal: { repo: "smithersai/smithers", workflows: [] },
     full: {
+      localGateway: true,
       repo: "smithersai/smithers",
       catalogRequest: { id: "catalog-request", owner: "smithersai", state: "pending" },
       workspaceId: gatewayWorkspaceId,
@@ -1237,6 +1240,7 @@ const FIXTURES: Record<
   "flow-plan": {
     minimal: { repo: "smithersai/smithers", flowId: "review", status: "pending" },
     full: {
+      localGateway: true,
       previousPlan: { planId: "plan-0", digest: "b".repeat(64), nodes: [] },
       sourceReceipt: { runCardId: "author-run-1", receipt: "copy:1:event" },
       repo: "smithersai/smithers",
@@ -1295,6 +1299,7 @@ const FIXTURES: Record<
   "trigger-list": {
     minimal: { repo: "smithersai/smithers", triggers: [] },
     full: {
+      localGateway: true,
       repo: "smithersai/smithers",
       preparations: [{
         id: "prep-1",
@@ -1322,6 +1327,7 @@ const FIXTURES: Record<
   "run-list": {
     minimal: { repo: "smithersai/smithers", runs: [] },
     full: {
+      localGateway: true,
       repo: "smithersai/smithers",
       workspaceId: gatewayWorkspaceId,
       gatewayBindingVersion: 1,
@@ -1357,6 +1363,7 @@ const FIXTURES: Record<
   "approvals-inbox": {
     minimal: { repo: "smithersai/smithers", approvals: [] },
     full: {
+      localGateway: true,
       repo: "smithersai/smithers",
       workspaceId: gatewayWorkspaceId,
       gatewayBindingVersion: 1,
@@ -3388,4 +3395,23 @@ test("hosted-change persists only its subject reference", () => {
   expect(CardSchema.parse(card)).toEqual(card)
   expect(CardSchema.safeParse({ ...card, payload: { repo: card.payload.repo } }).success).toBe(false)
   expect(CardSchema.parse({ ...card, payload: { ...card.payload, model: "invented", stages: [] } }).payload).toEqual(card.payload)
+})
+
+describe("local gateway card identity", () => {
+  test.each(
+    ["approval", "run-trace", "workflow-list", "flow-plan", "trigger-list", "run-list", "approvals-inbox"] as const
+  )(
+    "%s accepts a local hash only with an explicit local transport marker",
+    (kind) => {
+      const payload = structuredClone(FIXTURES[kind].full) as Record<string, unknown>
+      if (kind === "trigger-list") {
+        const preparations = payload.preparations as Array<Record<string, unknown>>
+        preparations[0]!.workspaceId = "0123456789abcdef"
+      } else payload.workspaceId = "0123456789abcdef"
+      payload.localGateway = true
+      expect(CardSchema.safeParse(card(kind, payload)).success).toBe(true)
+      delete payload.localGateway
+      expect(CardSchema.safeParse(card(kind, payload)).success).toBe(false)
+    }
+  )
 })

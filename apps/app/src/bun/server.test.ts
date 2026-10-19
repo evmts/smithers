@@ -661,3 +661,39 @@ test("an install model answer uses the authenticated shared backend without star
     expect(starts).toBe(0)
   } finally { await host.stop(); backend.stop(true) }
 })
+
+
+test("gateway mode refuses all remote routes without backend, identity or cloud egress", async () => {
+  const seen: string[] = []
+  const fake = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: req => { seen.push(req.url); return Response.json({}) } })
+  const upstream = `http://127.0.0.1:${fake.port}`
+  const local = await startLocalServer({
+    port: 0, distDir: dist, cloudMode: "hybrid", backendApi: upstream,
+    identityUpstream: upstream, cloudApi: upstream,
+    localGateway: { url: upstream, repo: "local/project", workspaceId: "0123456789abcdef", gatewayId: "test", root: dist, operatorToken: "private" }
+  })
+  try {
+    const headers = { "x-smithers-local-session": local.sessionToken, "content-type": "application/json" }
+    for (const [path, method, body] of [
+      ["/api/model/stream", "POST", { runId: "test", messages: [], instructions: "" }],
+      ["/api/live", "GET", undefined], ["/api/user/repos", "GET", undefined],
+      ["/api/cloud/workspaces", "GET", undefined], ["/api/auth/session", "GET", undefined]
+    ] as const) {
+      const response = await fetch(local.origin + path, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+      await response.body?.cancel()
+    }
+    expect(seen).toEqual([])
+  } finally { await local.stop(); await fake.stop(true) }
+})
+
+test("gateway mode serves a bootstrap the client accepts, naming the local workspace", async () => {
+  const local = await startLocalServer({
+    port: 0, distDir: dist, cloudMode: "offline",
+    localGateway: { url: "http://127.0.0.1:9", repo: "local/project", workspaceId: "0123456789abcdef", gatewayId: "test", root: dist, operatorToken: "private" }
+  })
+  try {
+    const response = await fetch(local.origin + APP_BOOTSTRAP_PATH, { headers: { "x-smithers-local-session": local.sessionToken } })
+    expect(response.status).toBe(200)
+    expect(AppBootstrapSchema.parse(await response.json()).gateway).toEqual({ repo: "local/project", workspaceId: "0123456789abcdef" })
+  } finally { await local.stop() }
+})

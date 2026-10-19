@@ -181,7 +181,10 @@ export const makeCli = (
       options: options.extend({
         host: z.string().default(Serve.defaultBind.host),
         port: z.number().int().min(0).max(65535).default(Serve.defaultBind.port),
-        listen: z.boolean().default(false)
+        listen: z.boolean().default(false),
+        operatorTokenFile: z.string().min(1).optional().describe(
+          "Write the session credential to a private file instead of stderr"
+        )
       }),
       run: (c) =>
         Presentation.guard(
@@ -192,6 +195,7 @@ export const makeCli = (
                 host: c.options.host,
                 port: c.options.port,
                 listen: c.options.listen,
+                operatorTokenFile: c.options.operatorTokenFile,
                 credential: (config.environment ?? process.env)["SMITHERS_TOKEN"]
               },
               c.options,

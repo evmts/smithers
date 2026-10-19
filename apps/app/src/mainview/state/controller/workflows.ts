@@ -1,3 +1,4 @@
+import { localGatewayCardFields } from "../RepoContext"
 import { prepareTriggerRegistration, readTriggerRegistrations } from "../seams/TriggersSeam"
 import type { TriggerRegistration } from "../WorkflowLaunch"
 import { cloudFailure } from "../seams/CloudClient"
@@ -354,7 +355,7 @@ export const createWorkflowController = (
       payload: {
         ...held,
         repo: args.repo,
-        gatewayBindingVersion: 1,
+        gatewayBindingVersion: 1, ...localGatewayCardFields(store, args.repo),
         workspaceId: args.workspaceId,
         runId: args.runId,
         workflow: args.workflow,
@@ -550,7 +551,7 @@ export const createWorkflowController = (
             repo: args.repo,
             flowId: args.name,
             status: "done",
-            workspaceId: args.binding.workspaceId,
+            workspaceId: args.binding.workspaceId, ...localGatewayCardFields(store, args.repo),
             ...(Object.keys(args.input).length === 0 ? {} : { input: args.input }),
             planId: planned.value.planId,
             digest: planned.value.digest,
@@ -639,7 +640,7 @@ export const createWorkflowController = (
       status: "failed",
       ...(args.request === undefined ? {} : { planRequest: args.request }),
       error: message,
-      workspaceId: args.binding.workspaceId,
+      workspaceId: args.binding.workspaceId, ...localGatewayCardFields(store, args.repo),
       ...(Object.keys(args.input).length === 0 ? {} : { input: args.input })
     }
   }
@@ -1030,7 +1031,7 @@ export const createWorkflowController = (
         flowId: name,
         status: "pending",
         planRequest: request,
-        workspaceId: binding.workspaceId,
+        workspaceId: binding.workspaceId, ...localGatewayCardFields(store, repo),
         ...(declaration === undefined ? {} : { inputSchema: declaration }),
         ...(Object.keys(input).length === 0 ? {} : { input }),
         // A re-plan keeps the graph it last drew, and the drawer the reader

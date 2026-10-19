@@ -102,6 +102,8 @@ export interface Bind {
   readonly port: number
   readonly listen: boolean
   readonly credential: string | undefined
+  /** A file that receives this session's approval credential (0600) instead of stderr. */
+  readonly operatorTokenFile?: string | undefined
   /** Ephemeral approval credential for this serve session. */
   readonly operatorToken?: string | undefined
 }

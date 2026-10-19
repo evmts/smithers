@@ -4,7 +4,7 @@
  */
 
 import { z } from "zod"
-import { GatewayWorkspaceIdSchema } from "./GatewayWorkspace.ts"
+import { gatewayCardPayload, GatewayCardWorkspaceIdSchema } from "./GatewayWorkspace.ts"
 import { StatusRollupSchema } from "./Health.ts"
 import { PLUE_FAULTS } from "./PlueFailureCodes.ts"
 
@@ -123,11 +123,11 @@ export const GraphDrawerSchema = z.object({
  * @since 1.0.0
  * @category schemas
  */
-export const LegacyRunTracePayloadSchema = z.object({
+export const LegacyRunTracePayloadSchema = gatewayCardPayload({
   statusRollup: StatusRollupSchema.optional(),
   repo: z.string(),
   /** Owning Plue gateway binding; omission identifies a legacy unbound run. */
-  workspaceId: GatewayWorkspaceIdSchema.optional(),
+  workspaceId: GatewayCardWorkspaceIdSchema.optional(),
   /** Version 1 records an explicit legacy route when workspaceId is absent. */
   gatewayBindingVersion: z.literal(1).optional(),
   runId: z.string(),
