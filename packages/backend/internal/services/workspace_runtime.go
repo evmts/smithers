@@ -431,8 +431,9 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Conte
 		return row, err
 	}
 	if retiredAgentBox(row) {
-		// The idle cap deleted this box's guest. Its next start builds a new
-		// one from the recorded head, as a create, so it needs no wake.
+		// A retirement deleted this box's guest. Its next start builds a new
+		// one, from the recorded head or afresh, as a create, so it needs no
+		// wake.
 		row.Status = "pending"
 	}
 	if err := s.refuseRebuildRequired(row); err != nil {
@@ -601,7 +602,15 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Conte
 	if row.Status != "running" || row.VmID != machine {
 		// Persist the verified runtime binding only after start and repository
 		// materialization succeed. Sleep and capture fence on this identity.
-		updated, updateErr := s.q.UpdateWorkspaceExecutionInfo(ctx, db.UpdateWorkspaceExecutionInfoParams{ID: row.ID, VmID: machine, Status: "running"})
+		var updated db.Workspace
+		var updateErr error
+		if guests, ok := s.q.(agentBoxGuestRecorder); ok && create && row.AgentSessionID.Valid {
+			// A new guest on an agent session's box: the one write that
+			// clears the box's dirty mark (plue#869).
+			updated, updateErr = guests.RecordAgentBoxGuest(ctx, db.RecordAgentBoxGuestParams{ID: row.ID, VmID: machine})
+		} else {
+			updated, updateErr = s.q.UpdateWorkspaceExecutionInfo(ctx, db.UpdateWorkspaceExecutionInfoParams{ID: row.ID, VmID: machine, Status: "running"})
+		}
 		if errors.Is(updateErr, pgx.ErrNoRows) {
 			return row, s.reclaimDeletedStart(ctx, row, requesterID)
 		}
