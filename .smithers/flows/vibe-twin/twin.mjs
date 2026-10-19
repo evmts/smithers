@@ -22,8 +22,53 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)))
 
 /** Relative import extensions differ by design (.vibe and .ts both emit .js). */
+/**
+ * Drops trailing `never` arguments of `Effect.Effect<A, E = never, R = never>`: the
+ * VibeLang emitter writes `Effect.Effect<A, E, never>` where TypeScript writes
+ * `Effect.Effect<A, E>`, the same type (D-3, plugin Resolve.resolve).
+ */
+export const dropDefaultNever = (text) => {
+  const head = "Effect.Effect<"
+  let out = ""
+  let i = 0
+  while (i < text.length) {
+    const at = text.indexOf(head, i)
+    if (at < 0 || (at > 0 && /[\w$.]/.test(text[at - 1]))) {
+      if (at < 0) return out + text.slice(i)
+      out += text.slice(i, at + 1)
+      i = at + 1
+      continue
+    }
+    const args = []
+    let depth = 0
+    let start = at + head.length
+    let j = start
+    for (; j < text.length; j++) {
+      const c = text[j]
+      if (c === '"' || c === "'" || c === "`") {
+        for (j++; j < text.length && text[j] !== c; j++) if (text[j] === "\\") j++
+      } else if ("<([{".includes(c)) depth++
+      else if (c === ">" && text[j - 1] === "=") continue
+      else if (">)]}".includes(c)) {
+        if (depth === 0) break
+        depth--
+      } else if (c === "," && depth === 0) {
+        args.push(text.slice(start, j))
+        start = j + 1
+      }
+    }
+    if (j >= text.length) return out + text.slice(i)
+    args.push(text.slice(start, j))
+    const inner = args.map(dropDefaultNever)
+    while (inner.length > 1 && inner[inner.length - 1].trim() === "never") inner.pop()
+    out += text.slice(i, at) + head + inner.join(",") + ">"
+    i = j + 1
+  }
+  return out
+}
+
 export const normalizeDts = (text) =>
-  text
+  dropDefaultNever(text)
     .replaceAll(/(from\s+["']\.{1,2}\/[^"']*?)\.(?:vibe|ts|tsx|js)(["'])/g, "$1.js$2")
     .replaceAll(/(import\(["']\.{1,2}\/[^"']*?)\.(?:vibe|ts|tsx|js)(["'])/g, "$1.js$2")
     .replaceAll(/^\/\/# sourceMappingURL=.*$/gm, "")
