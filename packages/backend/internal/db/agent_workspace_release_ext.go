@@ -87,17 +87,20 @@ WHERE id = $1::uuid AND owner_generation = $2`, bindingID, ownerGeneration, flow
 	return tag.RowsAffected(), nil
 }
 
-// ListDirtyAgentBoxes lists running boxes of unknown state, oldest first:
-// marked unreaped, or held by a release lease older than
+// ListDirtyAgentBoxes lists running boxes of unknown state that no turn is
+// using, oldest first: a guest its dirty mark names (a release that could not
+// retire it, or failed), or a box held by a release lease older than
 // AgentBoxLeaseSeconds (the release died). The sweep retries their cleaning
 // until their credentials are revoked and they are retired.
 func (q *Queries) ListDirtyAgentBoxes(ctx context.Context, limit int32) ([]string, error) {
 	rows, err := q.db.Query(ctx, `
-SELECT id::text FROM workspaces
-WHERE status = 'running' AND deleted_at IS NULL
-  AND (provisioning_stage = $1 OR (provisioning_stage LIKE 'agent_box_releasing:%' AND NOT `+agentBoxLeaseFreshSQL+`))
-ORDER BY updated_at, id
-LIMIT $2`, AgentBoxUnreapedStage, limit)
+SELECT w.id::text FROM workspaces w
+WHERE w.status = 'running' AND w.deleted_at IS NULL
+  AND ((w.agent_box_dirty_vm_id <> '' AND w.agent_box_dirty_vm_id = w.vm_id)
+       OR (w.provisioning_stage LIKE 'agent_box_releasing:%' AND NOT `+agentBoxLeaseFreshSQL+`))
+  AND NOT EXISTS (SELECT 1 FROM agent_sessions s WHERE s.workspace_id = w.id AND s.status = 'active' AND s.deleted_at IS NULL)
+ORDER BY w.updated_at, w.id
+LIMIT $1`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list dirty agent boxes: %w", err)
 	}
@@ -206,27 +209,27 @@ LIMIT $2`, idleSeconds, limit)
 	return ids, rows.Err()
 }
 
-// RetireAgentBox records a running agent box retired after its guest was
-// deleted: asleep with no guest and no head token, marked for reconstruction
-// from its recorded branch head. It writes only while the release still holds
-// lease and the box names no head token, the one the release revoked: a token
-// named since belongs to a turn the release must not touch. Returns false
-// otherwise.
+// RetireAgentBox records an agent box retired after its guest was deleted:
+// suspended with no guest and no head token, at AgentBoxRetiredStage, every
+// time, so a reader sees one state. A box that recorded a branch head is
+// marked for reconstruction from it; one that recorded none (a provision that
+// failed, a turn that published nothing) is built afresh from its branch. Its
+// failure and rebuild marks are cleared. The dirty mark is left as it is:
+// only recording the next guest clears it (RecordAgentBoxGuest). It writes
+// only while the release still holds lease and the box names no head token,
+// the one the release revoked: a token named since belongs to a turn the
+// release must not touch. Returns false otherwise.
 func (q *Queries) RetireAgentBox(ctx context.Context, workspaceID, lease string) (bool, error) {
 	tag, err := q.db.Exec(ctx, `
 UPDATE workspaces
-SET status = 'suspended', vm_id = '', disk_reclaimed_at = NOW(),
-    suspended_at = NOW(), provisioning_stage = $2, updated_at = NOW()
-WHERE id = $1::uuid AND status = 'running' AND deleted_at IS NULL
+SET status = 'suspended', vm_id = '', suspended_at = NOW(),
+    disk_reclaimed_at = CASE WHEN head_commit_id = '' THEN NULL ELSE NOW() END,
+    rebuild_required_at = NULL, failure_code = NULL, failure_message = NULL,
+    provisioning_stage = $2, updated_at = NOW()
+WHERE id = $1::uuid AND `+agentBoxLiveStatusSQL+` AND deleted_at IS NULL
   AND provisioning_stage = $3 AND head_push_token_id IS NULL`, workspaceID, AgentBoxRetiredStage, lease)
 	if err != nil {
 		return false, err
 	}
 	return tag.RowsAffected() == 1, nil
 }
-
-// AgentBoxUnreapedStage marks a running agent box whose run processes could
-// not be confirmed ended and which could not be retired either. Its next turn
-// is refused until the box is reaped or retired, so no credential is minted
-// beside a process the last run left.
-const AgentBoxUnreapedStage = "agent_box_unreaped"

@@ -69,6 +69,22 @@ func (h *AgentSessionHandler) ListEgressAudit(w http.ResponseWriter, r *http.Req
 		writeRouteError(w, r, svcErr)
 		return
 	}
+	// A session's box traffic is its person's alone (plue#869): anyone else
+	// is answered as if the session did not exist.
+	user, err := requireRouteUser(r)
+	if err != nil {
+		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
+		return
+	}
+	session, svcErr := h.Service.GetSession(r.Context(), sessionID)
+	if svcErr != nil {
+		writeRouteError(w, r, svcErr)
+		return
+	}
+	if session.UserID != user.ID {
+		pkgerrors.WriteError(w, pkgerrors.NotFound("agent session not found"))
+		return
+	}
 	serveSandboxEgressAudit(w, r, h.EgressAudit, "agent_session", sessionID)
 }
 

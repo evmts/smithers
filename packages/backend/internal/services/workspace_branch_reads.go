@@ -127,8 +127,19 @@ func (s *WorkspaceService) ListBranches(ctx context.Context, repositoryID, userI
 	if err != nil {
 		return nil, 0, err
 	}
+	// An agent session's own box is no branch of the roster (plue#869): only
+	// its session's person reaches it.
+	var boxes int64
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM workspaces WHERE repository_id=$1 AND user_id=$2
+        AND deleted_at IS NULL AND agent_session_id IS NOT NULL`, repositoryID, owner).Scan(&boxes); err != nil {
+		return nil, 0, err
+	}
+	total -= boxes
 	result := make([]BranchMachineResponse, 0, len(rows))
 	for _, row := range rows {
+		if row.AgentSessionID.Valid {
+			continue
+		}
 		branch, err := s.projectBranch(ctx, tx, q, row, s.toWorkspaceResponse(row))
 		if err != nil {
 			return nil, 0, err
