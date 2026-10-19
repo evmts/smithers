@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { spawnSync } from "node:child_process"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { spawn, spawnSync } from "node:child_process"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -9,9 +9,9 @@ import { fileURLToPath } from "node:url"
 const script = fileURLToPath(new URL("./with-test-postgres.sh", import.meta.url))
 
 // scratch is a private TMPDIR, so a test can prove the server's directory is gone.
-const scratch = (t) => {
+const scratch = (t, cleanup = true) => {
   const root = mkdtempSync(join(tmpdir(), "with-test-postgres-test-"))
-  t.after(() => rmSync(root, { recursive: true, force: true }))
+  if (cleanup) t.after(() => rmSync(root, { recursive: true, force: true }))
   const temp = join(root, "tmp")
   mkdirSync(temp)
   return { root, temp }
@@ -77,4 +77,76 @@ test("the command runs against a fresh required database and its status is kept"
   assert.match(result.stdout, /^1$/m)
   assert.match(result.stdout, /required=1 url=postgres:\/\/postgres@127\.0\.0\.1:\d+\/postgres\?sslmode=disable/)
   assert.deepEqual(readdirSync(temp), [], "the server is stopped and its directory removed")
+})
+
+const waitFor = async (probe, message) => {
+  const deadline = Date.now() + 15000
+  while (Date.now() < deadline) {
+    if (probe()) return
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  assert.fail(message)
+}
+
+const runningServer = async (t, locked = false) => {
+  const bin = realBin()
+  if (!bin) { t.skip("no PostgreSQL programs on this host"); return }
+  const { root, temp } = scratch(t, false)
+  const marker = join(root, "running")
+  const lock = join(root, "lock")
+  writeFileSync(lock, "")
+  const child = locked
+    ? spawn("bash", ["-c", `exec 9>"$1"; flock 9; exec bash "$2" bash -c 'exec 9>&-; touch "$1"; exec sleep 20' _ "$3"`, "_", lock, script, marker], {
+        env: { ...process.env, PG_BIN: bin, TMPDIR: temp }, stdio: "ignore" })
+    : spawn("bash", ["-c", `exec 9>"$1"; exec bash "$2" bash -c 'exec 9>&-; touch "$1"; exec sleep 20' _ "$3"`, "_", lock, script, marker], {
+        env: { ...process.env, PG_BIN: bin, TMPDIR: temp }, stdio: "ignore" })
+  let data
+  t.after(() => {
+    data ??= readdirSync(temp).map((entry) => join(temp, entry, "data"))[0]
+    // child is our directly spawned launcher; pg_ctl verifies the private data directory.
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
+    if (data && existsSync(join(data, "postmaster.pid")))
+      spawnSync(join(bin, "pg_ctl"), ["-D", data, "-m", "immediate", "-w", "stop"])
+    rmSync(root, { recursive: true, force: true })
+  })
+  await waitFor(() => existsSync(marker), "command did not start")
+  data = join(temp, readdirSync(temp)[0], "data")
+  const pid = Number(readFileSync(join(data, "postmaster.pid"), "utf8").split("\n")[0])
+  return { child, data, pid, lock }
+}
+
+test("SIGKILL of the launcher stops its postmaster and removes its directory", async (t) => {
+  const server = await runningServer(t)
+  if (!server) return
+  server.child.kill("SIGKILL")
+  await waitFor(() => {
+    try { process.kill(server.pid, 0); return false } catch (error) {
+      if (error.code !== "ESRCH") throw error
+      return !existsSync(join(server.data, ".."))
+    }
+  }, "orphaned postmaster or temporary directory survived launcher SIGKILL")
+})
+
+test("postmaster does not inherit the caller lock descriptor", async (t) => {
+  const flock = spawnSync("flock", ["--version"])
+  if (!flock.error) {
+    const server = await runningServer(t, true)
+    if (!server) return
+    assert.notEqual(spawnSync("flock", ["-n", server.lock, "true"]).status, 0,
+      "launcher must hold the test lock before it is killed")
+    // Release the launcher copy; the server must not retain fd 9.
+    server.child.kill("SIGKILL")
+    await new Promise((resolve) => server.child.once("exit", resolve))
+    process.kill(server.pid, 0)
+    assert.equal(spawnSync("flock", ["-n", server.lock, "true"]).status, 0,
+      "postmaster retained the caller lock")
+    process.kill(server.pid, 0)
+  } else {
+    if (spawnSync("lsof", ["-v"]).error) { t.skip("flock and lsof unavailable; cannot inspect postmaster descriptors"); return }
+    const server = await runningServer(t)
+    if (!server) return
+    const descriptors = spawnSync("lsof", ["-a", "-p", String(server.pid), "-d", "9", "-Fn"], { encoding: "utf8" })
+    assert.ok([0, 1].includes(descriptors.status), descriptors.stderr)
+    assert.equal(descriptors.stdout.includes(server.lock), false, "postmaster retained fd 9")
+  }
 })
