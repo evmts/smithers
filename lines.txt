@@ -1,0 +1,6 @@
+out=$(gofmt -l packages/backend/internal/services packages/backend/internal/compose); echo "GOFMT:$out"; test -z "$out"
+go -C packages/backend vet ./...
+bash packages/backend/scripts/with-test-postgres.sh go -C packages/backend test ./internal/compose -run "TestHostedInvokeAnswers503AndStartsNoHost|TestAQueuedInvokeOnHostedFailsOnceAndNeverRetries|TestRunCredentialCannotStartCacheSavingWorkflowRunsPostgres|TestTrustedMain" -count=1 -v
+bash packages/backend/scripts/with-test-postgres.sh go -C packages/backend test ./internal/services -run "TestHostedPushToMainStartsNoFlowLoadWhateverItsFlag|TestFlowLoad|TestInvokedFlow|TestHomeBackground|TestWorkflowInvoke" -count=1 -v
+bash packages/backend/scripts/with-test-postgres.sh go -C packages/backend test ./internal/compose -run "TestDebugAPI|TestHomeBackground|TestBackgroundMachine|TestTrustedMain|TestRunCredential" -count=1
+bash packages/backend/scripts/with-test-postgres.sh go -C packages/backend test ./internal/services -run "TestBilling|TestInvoke|TestWorkflowInvoke|TestInvokedFlow" -count=1

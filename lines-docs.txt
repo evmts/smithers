@@ -1,0 +1,1 @@
+pnpm exec smthrs docs //packages/backend:docs //apps/server:docs
