@@ -1,18 +1,12 @@
-import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import { afterAll, expect, test } from "bun:test"
-import { flushSync } from "react-dom"
-import { createRoot } from "react-dom/client"
+import { createRoot } from "./views/testDom"
+import { expect, test } from "bun:test"
+import { act } from "react"
 import { CardSchema } from "@smthrs/rpc/Cards"
 import { createBillingSeam, creditDollars } from "../state/seams/HostedBilling"
 import { createAppStore } from "../state/AppStore"
 import type { Card } from "../state/AppState"
 import { BillingPlansCardBody } from "./BillingCards"
 
-GlobalRegistrator.register()
-afterAll(async () => {
-  await new Promise(resolve => setTimeout(resolve, 0))
-  await GlobalRegistrator.unregister()
-})
 const plans = [
   { key: "free", display_name: "Free", price_cents: 0, concurrent: 1, idle: 1800, hours: 4 },
   { key: "pro", display_name: "Pro", price_cents: 1950, concurrent: 3, idle: 14400, hours: -1 },
@@ -33,8 +27,8 @@ const render = (card = fixture(), creditBalanceCents: number | null = null, cred
   const host = document.createElement("div")
   const calls: unknown[] = []
   const root = createRoot(host)
-  flushSync(() => root.render(<BillingPlansCardBody card={card} creditBalanceCents={creditBalanceCents} creditResetsAt={creditResetsAt} onRunCommand={(...args) => { calls.push(args) }} />))
-  return { host, calls, close: () => flushSync(() => root.unmount()) }
+  act(() => root.render(<BillingPlansCardBody card={card} creditBalanceCents={creditBalanceCents} creditResetsAt={creditResetsAt} onRunCommand={(...args) => { calls.push(args) }} />))
+  return { host, calls, close: () => act(() => root.unmount()) }
 }
 test("fixture renders plan columns, current plan, usage, and typed paid-plan buttons", () => {
   const { host, calls, close } = render()
