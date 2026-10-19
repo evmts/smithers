@@ -31,7 +31,10 @@ import { wiki } from "./deferrals/wiki"
 
 /** Journeys the release depends on. Only a real scenario can account for them. */
 export const RELEASE_CRITICAL_ACTIONS: readonly string[] = [
-  "approval.approve", "approval.deny", "change.land", "settings", "secrets"
+  "approval.approve", "approval.deny", "change.land", "settings", "secrets",
+  // Hosted P0 change flow (G1); live scenario = QA hosted walker (~/smithers-lanes/hosted-walk), both doors.
+  // A real-harness scenario for both is owed (#4365, owner effectscript-b5).
+  "change.ask", "change.open-pull"
 ]
 
 export type Deferral = "browser" | "diagnostics" | "owed" | "deferred: mvp.md §8/§16"
