@@ -3,10 +3,12 @@ import { execFileSync, spawn } from "node:child_process"
 import { readFile, writeFile, rm, symlink } from "node:fs/promises"
 import { once } from "node:events"
 import { resolve, join } from "node:path"
+import { tmpdir } from "node:os"
 
 test("the HumanTask fixture starts and parks with the source CLI in its disposable project", async () => {
   const repository = resolve(import.meta.dir, "../../../..")
-  const root = execFileSync("mktemp", ["-d", join(repository, ".gateway-fixture.XXXXXX")], { encoding: "utf8" }).trim()
+  // Outside the checkout, like the journey: an interrupted run must not leave a project for jj to track.
+  const root = execFileSync("mktemp", ["-d", join(tmpdir(), "smithers-gateway-fixture.XXXXXX")], { encoding: "utf8" }).trim()
   // Node from PATH: the toolchain preload (scripts/require-toolchain.mjs) already requires Node 26 there.
   const node = "node"
   const cli = join(repository, "packages/smithers/bin/smithers.mjs")
