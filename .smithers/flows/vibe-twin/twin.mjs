@@ -949,12 +949,12 @@ registerHooks({
     complete: false
   }
   // W46 covers the Effect code: a module that never imports effect may stay TypeScript.
-  const importsEffect = (dts) => {
-    const mod = dts.replace(/\.d\.ts$/, "")
-    const file = ["ts", "tsx", "mts"].map((x) => join(pkg, sourceRoot(pkg), `${mod}.${x}`)).find(existsSync)
-    return file !== undefined && /from\s+["'](?:effect|@effect\/)/.test(readFileSync(file, "utf8"))
-  }
-  receipt.api.missingEffectModules = api.missingModules.filter(importsEffect)
+  // Completeness counts source modules, not declarations: a module TypeScript can't declare
+  // (no .d.ts) must still have a twin (E-6, lane E: 14 such modules in .smithers/flows).
+  const twinnedSet = new Set(twinned)
+  receipt.api.missingEffectModules = srcModules(pkg)
+    .filter(({ rel, file }) => !twinnedSet.has(rel) && /from\s+["'](?:effect|@effect\/)/.test(readFileSync(file, "utf8")))
+    .map(({ rel }) => `${rel}.d.ts`)
   // A suite whose own process fails (an unhandled rejection, a crash) verifies nothing, even
   // when the twin matches it (guardian-review): COMPLETE needs a clean TypeScript run.
   receipt.baselineClean = baseline.ran && baseline.status === 0 && !baseline.signal && !baseline.error
