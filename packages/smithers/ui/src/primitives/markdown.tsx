@@ -14,6 +14,13 @@ import { useInjectUiCss } from "../styles";
  */
 const INLINE = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\n]+\*|\[[^\]]+\]\([^)]+\))/g;
 const LINK = /^\[([^\]]+)\]\(([^)]+)\)$/;
+/**
+ * Document mode also reads images, ahead of links: a linked image
+ * `[![alt](src)](href)` (a README badge) and a bare `![alt](src)`.
+ */
+const DOCUMENT_INLINE = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\n]+\*|\[!\[[^\]]*\]\([^)]*\)\]\([^)]+\)|!\[[^\]]*\]\([^)]*\)|\[[^\]]+\]\([^)]+\))/g;
+const LINKED_IMAGE = /^\[!\[([^\]]*)\]\([^)]*\)\]\(([^)]+)\)$/;
+const IMAGE = /^!\[([^\]]*)\]\([^)]*\)$/;
 
 /** Handler invoked when a rendered link is activated. */
 export type MarkdownLinkClick = (href: string, event: MouseEvent<HTMLAnchorElement>) => void;
@@ -24,7 +31,10 @@ export type MarkdownLinkClick = (href: string, event: MouseEvent<HTMLAnchorEleme
  * a repository file the way GitHub renders it: HTML comments are dropped, a
  * `<pre>` keeps its spacing, other HTML tags render only their text (keeping
  * bold, italic, code, line breaks and scheme-safe links), and a single newline
- * inside a paragraph is a space.
+ * inside a paragraph is a space. `>` lines are a blockquote, and one whose first
+ * line is exactly `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or
+ * `[!CAUTION]` is a GitHub alert. An image renders as its alt text: no `<img>`
+ * is created, so the source never makes the page fetch anything.
  */
 export type MarkdownVariant = "chat" | "document";
 
@@ -54,18 +64,20 @@ const keep = (text: string) => text;
  * output can't inject markup -- this lightweight renderer is XSS-safe by
  * construction, and link hrefs are additionally scheme-filtered. `text` maps
  * every run of prose (document mode decodes its HTML entities); code spans
- * stay verbatim.
+ * stay verbatim. `document` adds images: an image is its alt text (nothing when
+ * the alt is empty), and a linked image is a link labeled with that text.
  */
 function renderInline(
   text: string,
   keyPrefix: string,
   onLinkClick?: MarkdownLinkClick,
   prose: (text: string) => string = keep,
+  document = false,
 ): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   let i = 0;
-  for (const match of text.matchAll(INLINE)) {
+  for (const match of text.matchAll(document ? DOCUMENT_INLINE : INLINE)) {
     const idx = match.index ?? 0;
     if (idx > last) {
       out.push(prose(text.slice(last, idx)));
@@ -80,6 +92,13 @@ function renderInline(
       );
     } else if (token.startsWith("**")) {
       out.push(<strong key={key}>{prose(token.slice(2, -2))}</strong>);
+    } else if (document && LINKED_IMAGE.test(token)) {
+      const image = LINKED_IMAGE.exec(token)!;
+      const alt = prose(image[1]!);
+      if (alt !== "") out.push(linkNode(safeHref(image[2]!), alt, key, onLinkClick));
+    } else if (document && IMAGE.test(token)) {
+      const alt = prose(IMAGE.exec(token)![1]!);
+      if (alt !== "") out.push(alt);
     } else if (token.startsWith("[")) {
       const link = LINK.exec(token)!;
       out.push(linkNode(safeHref(link[2]!), prose(link[1]!), key, onLinkClick));
@@ -213,7 +232,7 @@ function renderFlow(source: string, keyPrefix: string, onLinkClick: MarkdownLink
   const text = (run: string) => {
     if (run === "") return;
     const spaced = run.replace(/[ \t\r\n]+/g, " ");
-    if (markdown && !stack.some((frame) => frame.tag.name === "code")) top().push(...renderInline(spaced, key(), onLinkClick, decodeEntities));
+    if (markdown && !stack.some((frame) => frame.tag.name === "code")) top().push(...renderInline(spaced, key(), onLinkClick, decodeEntities, true));
     else top().push(decodeEntities(spaced));
   };
   const tag = (token: string) => {
@@ -331,14 +350,44 @@ const tableAt = (lines: ReadonlyArray<string>, index: number): number | undefine
   return rowCells(header).length === cells.length ? cells.length : undefined;
 };
 
-/** The block kinds the scanner recognizes; `comment`, `pre` and `html` exist only in document mode. */
-type BlockKind = "fence" | "table" | "heading" | "bullet" | "ordered" | "paragraph" | "comment" | "pre" | "html";
+/** The block kinds the scanner recognizes; `comment`, `pre`, `html` and `blockquote` exist only in document mode. */
+type BlockKind = "fence" | "table" | "heading" | "bullet" | "ordered" | "paragraph" | "comment" | "pre" | "html" | "blockquote";
+
+/*
+ * Document mode's blockquotes, after CommonMark: a `>` line opens one, and it
+ * runs over the `>` lines that follow and over lazy lines, unquoted text that
+ * continues the quote's last paragraph. Its content is the lines with one `>`
+ * removed, read again as a document, so quotes nest.
+ */
+const isQuote = (line: string) => /^ {0,3}>/.test(line);
+const unquote = (line: string) => line.replace(/^ {0,3}> ?/, "");
+/** A quoted line's innermost content, every level of `>` removed. */
+const innermost = (line: string) => line.replace(/^(?: {0,3}> ?)+/, "");
+
+/** The five GitHub alerts, by the marker that must be a quote's whole first line. */
+const ALERTS: ReadonlyMap<string, { readonly kind: string; readonly title: string; readonly icon: ReactNode }> = new Map([
+  ["[!NOTE]", { kind: "note", title: "Note", icon: [<circle key="c" cx="12" cy="12" r="9" />, <path key="p" d="M12 11v6M12 7h.01" />] }],
+  ["[!TIP]", { kind: "tip", title: "Tip", icon: [<path key="p" d="M9 18h6M10 21h4M8 13a6 6 0 1 1 8 0c-1 1-1 2-1 3H9c0-1 0-2-1-3Z" />] }],
+  [
+    "[!IMPORTANT]",
+    {
+      kind: "important",
+      title: "Important",
+      icon: [
+        <path key="p" d="M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-8l-6 4v-4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />,
+        <path key="q" d="M12 7v4M12 14h.01" />,
+      ],
+    },
+  ],
+  ["[!WARNING]", { kind: "warning", title: "Warning", icon: [<path key="p" d="m12 3 10 18H2L12 3Z" />, <path key="q" d="M12 9v5M12 17h.01" />] }],
+  ["[!CAUTION]", { kind: "caution", title: "Caution", icon: [<path key="p" d="m8 2-6 6v8l6 6h8l6-6V8l-6-6H8Z" />, <path key="q" d="M12 7v6M12 17h.01" />] }],
+]);
 
 /*
  * Document mode's HTML blocks, after CommonMark: a comment runs to its `-->`,
  * a `<pre>` to its `</pre>`, and a line that opens with a block tag (or is one
- * whole tag) to the next blank line. Only the first two and a block tag may
- * interrupt a paragraph.
+ * whole tag) to the next blank line. Only the first two, a block tag and a
+ * blockquote may interrupt a paragraph.
  */
 const isCommentStart = (line: string) => /^ {0,3}<!--/.test(line);
 const isPreStart = (line: string) => /^ {0,3}<pre(?=[\s>]|$)/i.test(line);
@@ -350,7 +399,7 @@ const isWholeTagLine = (line: string) => {
   const trimmed = line.trim();
   return trimmed.startsWith("<") && new RegExp(`^${TAG.source}$`, "i").test(trimmed);
 };
-const interruptsParagraph = (line: string) => isCommentStart(line) || isPreStart(line) || isBlockTagStart(line);
+const interruptsParagraph = (line: string) => isCommentStart(line) || isPreStart(line) || isBlockTagStart(line) || isQuote(line);
 
 /**
  * One block of source, tagged with the kind that claimed it. `text` is the
@@ -363,7 +412,8 @@ type BlockSpan = { readonly kind: BlockKind; readonly lines: ReadonlyArray<strin
  * completed-block cache is keyed by their text, so a boundary rule is stated
  * once and a streaming block boundary cannot disagree with what is drawn.
  *
- * Priority is fence, table, heading, bullet, ordered, paragraph. A table wins
+ * Priority is fence, table, heading, bullet, ordered, paragraph (document mode
+ * adds blockquote, comment, `<pre>` and HTML right after fence). A table wins
  * over a list because the delimiter row is the stronger signal: `- a | b` above
  * `--- | ---` is a header row, not a bullet.
  *
@@ -396,6 +446,22 @@ function scanBlocks(content: string, variant: MarkdownVariant = "chat"): BlockSp
       i += 1;
       while (i < lines.length && !isFence(lines[i]!)) i += 1;
       if (i < lines.length) i += 1; // consume the closing fence (or run off the end)
+    } else if (document && isQuote(lines[i]!)) {
+      kind = "blockquote";
+      // `last` is the quote's latest content line; a lazy line may follow only a paragraph line.
+      let last = "";
+      let fenced = false;
+      while (i < lines.length) {
+        const line = lines[i]!;
+        const quoted = isQuote(line);
+        if (!quoted) {
+          const startsBlock = isFence(line) || isHeading(line) || isBullet(line) || isOrdered(line) || interruptsParagraph(line) || tableAt(lines, i) !== undefined;
+          if (fenced || last.trim() === "" || isHeading(last) || line.trim() === "" || startsBlock) break;
+        }
+        last = quoted ? innermost(line) : line;
+        if (quoted && isFence(last)) fenced = !fenced;
+        i += 1;
+      }
     } else if (document && isCommentStart(lines[i]!)) {
       kind = "comment";
       through((line, first) => (first ? line.slice(line.indexOf("<!--") + 4) : line).includes("-->"));
@@ -451,8 +517,17 @@ const preText = (body: string) =>
 const documentParagraph = (lines: ReadonlyArray<string>) =>
   lines.map((line, index) => (index < lines.length - 1 ? line.replace(/(?: {2,}|\\)$/, "<br>") : line).trim()).join(" ");
 
-/** Render one scanned span, dispatching on the kind the scanner gave it. */
-function renderSpan(span: BlockSpan, key: number, onLinkClick?: MarkdownLinkClick, variant: MarkdownVariant = "chat"): ReactNode {
+/**
+ * Render one scanned span, dispatching on the kind the scanner gave it.
+ * `quoted` says the span sits inside a blockquote, where GitHub draws no alert.
+ */
+function renderSpan(
+  span: BlockSpan,
+  key: number,
+  onLinkClick?: MarkdownLinkClick,
+  variant: MarkdownVariant = "chat",
+  quoted = false,
+): ReactNode {
   const lines = span.lines;
   const inline =
     variant === "document"
@@ -462,6 +537,43 @@ function renderSpan(span: BlockSpan, key: number, onLinkClick?: MarkdownLinkClic
   switch (span.kind) {
     case "comment":
       return null;
+
+    case "blockquote": {
+      const content = lines.map((line) => (isQuote(line) ? unquote(line) : line));
+      const alert = quoted ? undefined : ALERTS.get(content[0]!.trim());
+      const body = scanBlocks((alert ? content.slice(1) : content).join("\n"), "document").map((child, index) =>
+        renderSpan(child, index, onLinkClick, "document", true),
+      );
+      if (alert === undefined) {
+        return (
+          <blockquote className="sui-md-blockquote" key={key}>
+            {body}
+          </blockquote>
+        );
+      }
+      return (
+        <aside className="sui-md-alert" data-kind={alert.kind} key={key}>
+          <strong className="sui-md-alert-label" key="label">
+            <svg
+              key="icon"
+              width={16}
+              height={16}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              {alert.icon}
+            </svg>
+            {alert.title}
+          </strong>
+          {body}
+        </aside>
+      );
+    }
 
     case "pre": {
       const open = new RegExp(TAG.source, "i").exec(span.text)!;

@@ -374,6 +374,8 @@ describe("Markdown (document mode)", () => {
       "para\n<span>inline</span>\nmore",
       "- <b>one</b>\n- two\n\n| <i>a</i> | b |\n| --- | --- |\n| 1 | 2 |",
       "```html\n<p>kept verbatim</p>\n```",
+      "> [!TIP]\n> Ask your agent.\n\n> quote\nlazy\n> > nested",
+      "para\n> interrupts\n> ```\n> code\nafter",
     ];
     for (const content of inputs) {
       const cached = renderToStaticMarkup(<Markdown content={content} variant="document" />);
@@ -386,5 +388,140 @@ describe("Markdown (document mode)", () => {
     }
     // A fence keeps HTML as code, in either mode.
     expect(documentDom("```html\n<p>kept verbatim</p>\n```").textContent).toContain("<p>kept verbatim</p>");
+  });
+});
+
+/*
+ * Blockquotes, GitHub alerts and images, document mode only. The Tip is the
+ * smithers-canary README's own block, which rendered as "> [!TIP] > Ask your
+ * agent..." before quotes were read.
+ */
+const CANARY_TIP = [
+  "> [!TIP]",
+  "> Ask your agent to help you figure out how Smithers can help you and your project, based on everything it knows about you.",
+].join("\n");
+const ALERT_KINDS = [
+  ["[!NOTE]", "note", "Note"],
+  ["[!TIP]", "tip", "Tip"],
+  ["[!IMPORTANT]", "important", "Important"],
+  ["[!WARNING]", "warning", "Warning"],
+  ["[!CAUTION]", "caution", "Caution"],
+] as const;
+const PLAIN_QUOTE = ["> A quote with **bold**", "> on two lines", "lazy continuation", ">", "> - one", "> - two", ">", "> > Nested"].join("\n");
+const LATE_MARKER = "> Before\n> [!TIP]\n> after";
+const UNKNOWN_MARKER = "> [!FOO]\n> Some text";
+const IMAGES = "Logo: ![Smithers logo](https://smithers.sh/logo.png). Empty: ![](https://smithers.sh/spacer.gif). Badge: [![CI passing](https://smithers.sh/ci.svg)](https://smithers.sh/ci).";
+
+describe("Markdown (document mode): blockquotes, alerts and images", () => {
+  test("a plain blockquote holds its rendered paragraphs, lists, inline marks and nested quotes", () => {
+    const dom = documentDom(PLAIN_QUOTE);
+    const quote = dom.querySelector(":scope > .sui-md > blockquote.sui-md-blockquote")!;
+    expect(quote).not.toBeNull();
+    // `>` lines and the lazy line join into one paragraph, as GitHub does.
+    expect(quote.querySelector(":scope > p.sui-md-p")?.textContent).toBe("A quote with bold on two lines lazy continuation");
+    expect(quote.querySelector(":scope > p > strong")?.textContent).toBe("bold");
+    expect([...quote.querySelectorAll(":scope > ul.sui-md-list > li")].map((li) => li.textContent)).toEqual(["one", "two"]);
+    expect(quote.querySelector(":scope > blockquote.sui-md-blockquote > p")?.textContent).toBe("Nested");
+    expect(dom.textContent).not.toContain(">");
+    expect(dom.querySelector("aside")).toBeNull();
+    // A `>` line interrupts a paragraph; a blank line ends the quote.
+    const interrupted = documentDom("Before the quote\n> quoted\n\nAfter the quote");
+    expect([...interrupted.querySelectorAll(".sui-md > *")].map((node) => `${node.tagName.toLowerCase()}:${node.textContent}`)).toEqual([
+      "p:Before the quote",
+      "blockquote:quoted",
+      "p:After the quote",
+    ]);
+  });
+
+  test.each(ALERT_KINDS)("%s renders as an alert: its title, an icon and the body", (marker, kind, title) => {
+    const dom = documentDom(`> ${marker}\n> Body of the **${title}** alert.\n> Second line.`);
+    const alert = dom.querySelector(`:scope > .sui-md > aside.sui-md-alert[data-kind="${kind}"]`)!;
+    expect(alert).not.toBeNull();
+    expect(dom.querySelectorAll("aside")).toHaveLength(1);
+    expect(dom.querySelector("blockquote")).toBeNull();
+    const label = alert.querySelector(":scope > strong.sui-md-alert-label")!;
+    expect(label.textContent).toBe(title);
+    expect(label.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    const body = alert.querySelector(":scope > p.sui-md-p")!;
+    expect(body.textContent).toBe(`Body of the ${title} alert. Second line.`);
+    expect(body.querySelector("strong")?.textContent).toBe(title);
+    expect(dom.textContent).toBe(`${title}Body of the ${title} alert. Second line.`);
+  });
+
+  test("the canary README's Tip is a Tip alert with no marker or quote text", () => {
+    const dom = documentDom(`Intro.\n\n${CANARY_TIP}\n\n## Documentation`);
+    const alert = dom.querySelector('aside.sui-md-alert[data-kind="tip"]')!;
+    expect(alert.querySelector(".sui-md-alert-label")?.textContent).toBe("Tip");
+    expect(alert.querySelector("p")?.textContent).toBe(
+      "Ask your agent to help you figure out how Smithers can help you and your project, based on everything it knows about you.",
+    );
+    expect(dom.textContent).not.toContain("[!TIP]");
+    expect(dom.textContent).not.toContain(">");
+    expect(dom.querySelector(".sui-md-h2")?.textContent).toBe("Documentation");
+  });
+
+  test("[!TIP] that is not the quote's first line, or nested in a quote, stays a plain blockquote", () => {
+    const late = documentDom(LATE_MARKER);
+    expect(late.querySelector("aside")).toBeNull();
+    expect(late.querySelector("blockquote.sui-md-blockquote > p")?.textContent).toBe("Before [!TIP] after");
+    // GitHub draws alerts only at the top level.
+    const nested = documentDom("> > [!TIP]\n> > inner");
+    expect(nested.querySelector("aside")).toBeNull();
+    expect(nested.querySelector("blockquote > blockquote > p")?.textContent).toBe("[!TIP] inner");
+  });
+
+  test("an unknown [!FOO] marker stays a plain blockquote with its text", () => {
+    const dom = documentDom(UNKNOWN_MARKER);
+    expect(dom.querySelector("aside")).toBeNull();
+    expect(dom.querySelector("blockquote.sui-md-blockquote > p")?.textContent).toBe("[!FOO] Some text");
+    // The match is exact: a lowercase marker or trailing words are not an alert either.
+    for (const source of ["> [!tip]\n> body", "> [!TIP] inline words\n> body"]) {
+      expect(documentDom(source).querySelector("aside")).toBeNull();
+      expect(documentDom(source).querySelector("blockquote")).not.toBeNull();
+    }
+  });
+
+  test("an image renders its alt text and never an <img>, so nothing is fetched", () => {
+    const html = renderToStaticMarkup(<Markdown content={IMAGES} variant="document" />);
+    expect(html).not.toContain("<img");
+    for (const url of ["logo.png", "spacer.gif", "ci.svg"]) expect(html).not.toContain(url);
+    const dom = documentDom(IMAGES);
+    // An empty alt renders nothing; a linked badge is a link labeled with its alt.
+    expect(dom.querySelector("p")?.textContent).toBe("Logo: Smithers logo. Empty: . Badge: CI passing.");
+    const links = dom.querySelectorAll("a.sui-md-link");
+    expect(links).toHaveLength(1);
+    expect(links[0]!.getAttribute("href")).toBe("https://smithers.sh/ci");
+    expect(links[0]!.textContent).toBe("CI passing");
+    // A linked image with no alt leaves no empty link to tab to.
+    expect(documentDom("[![](https://smithers.sh/x.svg)](https://smithers.sh)").querySelector("a")).toBeNull();
+    // Images inside a quote, a list and a heading read the same way; a code span keeps its source.
+    const nested = documentDom("> ![Quoted](q.png)\n\n- ![Listed](l.png)\n\n# ![Titled](t.png)\n\n`![code](c.png)`");
+    expect(nested.querySelector("img")).toBeNull();
+    expect(nested.textContent).toBe("QuotedListedTitled![code](c.png)");
+  });
+
+  test("chat mode is unchanged for every one of these inputs", () => {
+    const chat = (content: string) => renderToStaticMarkup(<Markdown content={content} />);
+    const paragraph = (inner: string) => `<div data-slot="markdown" class="sui-md"><p class="sui-md-p">${inner}</p></div>`;
+    // The quote markers stay text and each line keeps its break, as before document mode read quotes.
+    expect(chat(CANARY_TIP)).toBe(
+      paragraph(
+        "&gt; [!TIP]<br/>&gt; Ask your agent to help you figure out how Smithers can help you and your project, based on everything it knows about you.",
+      ),
+    );
+    expect(chat(LATE_MARKER)).toBe(paragraph("&gt; Before<br/>&gt; [!TIP]<br/>&gt; after"));
+    expect(chat(UNKNOWN_MARKER)).toBe(paragraph("&gt; [!FOO]<br/>&gt; Some text"));
+    for (const [marker] of ALERT_KINDS) {
+      expect(chat(`> ${marker}\n> body`)).toBe(paragraph(`&gt; ${marker}<br/>&gt; body`));
+    }
+    // An image stays a "!" before a link, as chat always drew it.
+    expect(chat("![Smithers logo](https://smithers.sh/logo.png)")).toBe(
+      paragraph('!<a class="sui-md-link" href="https://smithers.sh/logo.png">Smithers logo</a>'),
+    );
+    for (const content of [PLAIN_QUOTE, IMAGES, CANARY_TIP]) {
+      const html = chat(content);
+      for (const absent of ["<blockquote", "<aside", "sui-md-alert", "<svg"]) expect(html).not.toContain(absent);
+      expect(renderToStaticMarkup(<Markdown content={content} variant="chat" />)).toBe(html);
+    }
   });
 });
