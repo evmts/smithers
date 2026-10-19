@@ -6,7 +6,7 @@ import { PlaceholderAvatarUrl } from "@smthrs/rpc/CardPrimitives"
  * their callback seam. Expected values are authored literals.
  */
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import { afterAll, afterEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test"
 import type { ReactNode } from "react"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
@@ -23,7 +23,7 @@ import { installFixture } from "./state/seams/InstallFixtures.test-support"
 import { fixtures as todoFixtures } from "@smthrs/rpc/fixtures/Todo"
 import type { Card, Message, Toast } from "./state/AppState"
 import { homeFailureModel } from "./cards/HomeContainer"
-import { RepositoryNoticesContext } from "./repository/RepoFrame"
+import { RepoFrame, RepositoryNoticesContext } from "./repository/RepoFrame"
 import { Timeline } from "./Timeline"
 import { ToastStack } from "./ToastStackView"
 
@@ -131,6 +131,81 @@ test("the rail's notices render in a repository notice region when the frame sup
   await waitFor(() => region.querySelectorAll(".notice").length === 0)
   expect(store.collections.toasts.get("toast-repository.ready")).toBeUndefined()
   expect(store.collections.toasts.get("toast-maya-todo")?.title).toBe("Needs Maya")
+})
+
+/*
+ * A notice's action in a collapsed repository Ask first reveals the Ask its
+ * target lives in, for a viewer who can Ask. The reveal is not the Ask button:
+ * signed out, it never starts sign-in, so a public notice's Retry only retries
+ * and a sign-in notice signs in exactly once, by its own action (guardian
+ * f-m5u7qt; before this, every notice action signed out ran sign-in first).
+ */
+describe("a portaled notice's action reveals the Ask only for a viewer who can Ask", () => {
+  const mountFrame = async ({ login, guest }: { login?: string; guest?: boolean }, toast: { key: string; title: string; detail: string; action: NonNullable<Toast["action"]> }) => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    await store.dispatch(login === undefined
+      ? { type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, admin: false, scopesPlain: null }
+      : { type: "identity.session.loaded", actor: "system", state: "signed-in", login, admin: false, scopesPlain: null }).isPersisted.promise
+    const controller = createAppController(store, silentAgent, {})
+    const run = spyOn(controller, "runCommand").mockReturnValue(true)
+    cleanups.push(() => run.mockRestore())
+    await store.dispatch({ type: "toast.shown", actor: "system", key: toast.key, title: toast.title }).isPersisted.promise
+    await store.dispatch({ type: "toast.resolved", actor: "system", key: toast.key, title: toast.title, detail: toast.detail, status: "failed", action: toast.action }).isPersisted.promise
+    const host = mount(<ControllerTestProvider controller={controller}><MessageScrollerProvider>
+      <RepoFrame repo="sponsor/public" login={login} guest={guest} publicRepo onRunCommand={(name, args) => controller.runCommand(name, args)}
+        ask={() => <ShellRail home={false} entries={[]} />}>content</RepoFrame>
+    </MessageScrollerProvider></ControllerTestProvider>)
+    const notice = () => host.querySelector(`[data-notice="toast-${toast.key}"]`)
+    await waitFor(() => notice() !== null)
+    expect(notice()?.closest(".repo-ui-toasts")).not.toBeNull()
+    return { host, run, notice, commands: () => run.mock.calls.map(call => call[0]) }
+  }
+
+  test("signed out, a public notice's Retry runs only the retry: no sign-in, the Ask stays collapsed", async () => {
+    const { host, notice, commands } = await mountFrame({}, { key: "background.branch-1", title: "Branch request failed", detail: "The host did not answer", action: { flow: "background.retry", args: "branch-1", label: "Retry" } })
+    expect(host.querySelector(".repo-frame")?.getAttribute("data-ask-open")).toBe("false")
+    click(notice()!.querySelector('[data-flow="background.retry"]'))
+    expect(commands()).toEqual(["background.retry", "toast.dismiss"])
+    expect(host.querySelector(".repo-frame")?.getAttribute("data-ask-open")).toBe("false")
+    expect(notice()?.closest(".repo-ui-toasts")).not.toBeNull()
+  })
+
+  test("a guest admitted to this repository is revealed to like a member: Retry opens the Ask, then retries, with no sign-in", async () => {
+    const { host, notice, commands } = await mountFrame({ guest: true }, { key: "background.branch-1", title: "Branch request failed", detail: "The host did not answer", action: { flow: "background.retry", args: "branch-1", label: "Retry" } })
+    expect(host.querySelector(".repo-frame")?.getAttribute("data-ask-open")).toBe("auto")
+    click(notice()!.querySelector('[data-flow="background.retry"]'))
+    expect(commands()).toEqual(["chat.open", "background.retry", "toast.dismiss"])
+    expect(host.querySelector(".repo-frame")?.getAttribute("data-ask-open")).toBe("true")
+    expect(notice()?.closest("aside[aria-label=Ask]")).not.toBeNull()
+    // The receipt is not an identity: the header keeps its Sign in door.
+    expect(host.querySelector('.repo-frame-global [data-flow="sign-in"]')?.textContent).toBe("Sign in")
+  })
+
+  test("an admitted guest's notice Open reveals the Ask, then opens the target", async () => {
+    const { host, notice, commands } = await mountFrame({ guest: true }, { key: "issue-7", title: "Issue could not be read", detail: "Try again", action: { flow: "issues.view", args: "7 sponsor/public", label: "Open" } })
+    click(notice()!.querySelector('[data-flow="issues.view"]'))
+    expect(commands()).toEqual(["chat.open", "issues.view", "toast.dismiss"])
+    expect(host.querySelector(".repo-frame")?.getAttribute("data-ask-open")).toBe("true")
+    expect(notice()?.closest("aside[aria-label=Ask]")).not.toBeNull()
+  })
+
+  test("signed out, a sign-in notice signs in exactly once", async () => {
+    const { host, notice, commands } = await mountFrame({}, { key: "auth.email.unavailable", title: "Email sign-in isn't available yet", detail: "Continue with GitHub for now.", action: { flow: "sign-in", label: "Continue with GitHub" } })
+    click(notice()!.querySelector('[data-flow="sign-in"]'))
+    expect(commands()).toEqual(["sign-in", "toast.dismiss"])
+    expect(commands().filter(name => name === "sign-in")).toHaveLength(1)
+    expect(host.querySelector(".repo-frame")?.getAttribute("data-ask-open")).toBe("false")
+  })
+
+  test("signed in, Open from a collapsed notice reveals the Ask, then opens the target", async () => {
+    const { host, notice, commands } = await mountFrame({ login: "ben" }, { key: "issue-7", title: "Issue could not be read", detail: "Try again", action: { flow: "issues.view", args: "7 sponsor/public", label: "Open" } })
+    expect(host.querySelector(".repo-frame")?.getAttribute("data-ask-open")).toBe("auto")
+    click(notice()!.querySelector('[data-flow="issues.view"]'))
+    expect(commands()).toEqual(["chat.open", "issues.view", "toast.dismiss"])
+    expect(host.querySelector(".repo-frame")?.getAttribute("data-ask-open")).toBe("true")
+    expect(notice()?.closest("aside[aria-label=Ask]")).not.toBeNull()
+    expect(host.querySelector(".repo-ui-toasts")?.childElementCount).toBe(0)
+  })
 })
 
 describe("ShellRail maps the conversation to the rail", () => {

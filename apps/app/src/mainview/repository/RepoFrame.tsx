@@ -14,8 +14,12 @@ export const RepositoryAskContext = createContext<((runCommand?: RunDynamicComma
  * collapsed: ShellRail portals its already filtered ToastStack there, so a live
  * or failed notice (repository loading, a background branch request) stays
  * visible outside a hidden Ask, and `reveal` opens the Ask before a notice's
- * action acts on a card inside it. Null while the Ask is open: the notices then
- * render inside it, as before.
+ * action acts on a card inside it, for a viewer who can Ask (a member, or a
+ * guest admitted to this repository). It is not the Ask button: a viewer who
+ * cannot Ask is never sent to sign-in by a notice's action
+ * (a public notice's Retry only retries; a sign-in notice signs in once, by its
+ * own action). Null while the Ask is open: the notices then render inside it,
+ * as before.
  */
 export const RepositoryNoticesContext = createContext<{ readonly host: HTMLElement; readonly reveal: () => void } | null>(null)
 
@@ -62,6 +66,8 @@ export function RepoFrame({ repo, login, guest, publicRepo, ask, onRunCommand, c
   const [owner, name] = repo.split("/")
   const fileRoute = /^\/(?:tree|blob)\//.test(window.location.pathname.slice(base.length))
   const openAsk = (runCommand = onRunCommand) => { if (!canAsk) { runCommand("sign-in"); return }; setOpen(true); runCommand("chat.open") }
+  // A notice's action reveals the Ask its target lives in; never sign-in, which only the Ask button and ⌘K lead to.
+  const reveal = () => { if (canAsk) openAsk() }
   const close = (runCommand = onRunCommand) => { runCommand("chat.close"); setOpen(false); trigger.current?.focus() }
   return <div ref={frame} className="repo-frame" data-ask-open={!canAsk ? "false" : open === undefined ? "auto" : String(open)} onKeyDown={event => {
     if (event.defaultPrevented) return
@@ -98,7 +104,7 @@ export function RepoFrame({ repo, login, guest, publicRepo, ask, onRunCommand, c
       event.preventDefault(); event.stopPropagation(); openAsk()
     }}>
       <div className="repo-frame-ask-heading"><h2>Ask</h2><button className="repo-ui-icon-btn" aria-label="Close Ask" {...flowProps("chat.close")} onClick={() => close(onRunCommand)}><X size={18}/></button></div>
-      <div className="repository-chat"><RepositoryNoticesContext.Provider value={expanded || notices === null ? null : { host: notices, reveal: () => openAsk() }}>{typeof ask === "function" ? ask(expanded) : ask}</RepositoryNoticesContext.Provider></div>
+      <div className="repository-chat"><RepositoryNoticesContext.Provider value={expanded || notices === null ? null : { host: notices, reveal }}>{typeof ask === "function" ? ask(expanded) : ask}</RepositoryNoticesContext.Provider></div>
     </aside></div>
     </div>
     <div ref={setNotices} className="repo-ui-toasts" data-keyboard-pane="Notifications" />

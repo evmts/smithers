@@ -45,3 +45,27 @@ test("a collapsed Ask shows its notices in the frame's notice region; an open As
     act(() => root.unmount())
   }
 })
+
+// Signed out, the Ask leads to sign-in, but a notice's reveal is not the Ask button: it never starts sign-in, so the
+// notice's own action (a Retry, a sign-in) is the only command that runs (guardian f-m5u7qt).
+test("signed out, revealing a notice runs no command and the notice stays in the frame's region", () => {
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  const commands: string[] = []
+  act(() => root.render(<RepoFrame repo="sponsor/public" onRunCommand={name => { commands.push(name) }} ask={() => <Notices />}>content</RepoFrame>))
+  const notice = () => host.querySelector('[data-notice="toast-repository.ready"]')
+  try {
+    expect(host.querySelector(".repo-frame")?.getAttribute("data-ask-open")).toBe("false")
+    expect(notice()?.closest(".repo-ui-toasts")).not.toBeNull()
+    act(() => (notice()!.querySelector("button") as HTMLButtonElement).click())
+    expect(commands).toEqual([])
+    expect(host.querySelector(".repo-frame")?.getAttribute("data-ask-open")).toBe("false")
+    expect(notice()?.closest(".repo-ui-toasts")).not.toBeNull()
+    // The Ask button itself still leads to sign-in.
+    act(() => (host.querySelector(".repo-frame-ask-button") as HTMLButtonElement).click())
+    expect(commands).toEqual(["sign-in"])
+  } finally {
+    act(() => root.unmount())
+  }
+})
