@@ -39,6 +39,13 @@ export const layer = Layer.mergeAll(
 `name` addresses the question. Two calls naming one question in one execution
 await one answer.
 
+Optional `requestId` identifies the ask for signed answers. It must be nonempty,
+well-formed text within 1024 JSON-encoded UTF-8 bytes, including quotes and
+escapes (the `maxTaskNameBytes` bound). It is carried unchanged in the approval
+request. Give each new ask using the same wait name its own requestId and retain
+it when replaying that ask. A flow verifying its own answers should set it so
+it knows the signing challenge's askId without reading runtime state.
+
 ## Choose the shape of the answer
 
 | `kind`    | What the person supplies                | Other fields |
@@ -51,7 +58,7 @@ await one answer.
 A `schema` supplied with any kind other than `json` is refused, because nothing
 would check it. The bounded schema subset is `type` (`object`, `array`, `string`,
 `number`, `integer`, `boolean`, `null`), `enum`, `properties`, `required`,
-`items`, `nullable`, `description`, and `title`. `enum` members may be any JSON
+`items`, `nullable`, `description`, `title`, and `format` (`webauthn-assertion` only). `enum` members may be any JSON
 value, including objects and arrays, and membership is compared structurally
 rather than by reference.
 
@@ -182,3 +189,5 @@ its own full reason, so the record shows what was actually said.
   and token machinery this is built on.
 - [Suspension and replay](../concepts/suspension-and-replay.md): what the
   `approval` park does to the run.
+
+See [Signed answers](signed-answers.md) for the assertion marker and verification protocol.

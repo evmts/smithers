@@ -505,6 +505,7 @@ const option = boundedText("option", maxOptionBytes)
 
 const payloadFields = {
   name: boundedText("task name", maxTaskNameBytes),
+  requestId: Schema.optional(boundedText("request id", maxTaskNameBytes).check(Schema.isMinLength(1))),
   kind: Kind,
   prompt: boundedText("prompt", maxPromptBytes),
   options: Schema.optional(
@@ -584,6 +585,7 @@ const declaredQuestion = (
     prompt: payload.prompt,
     attempt,
     maxAttempts,
+    ...(payload.requestId === undefined ? {} : { requestId: payload.requestId }),
     ...(payload.options === undefined ? {} : { options: [...payload.options] }),
     ...(payload.schema === undefined ? {} : { schema: payload.schema })
   })

@@ -329,24 +329,27 @@ A failed agent run, and a launch the executor refused, journal the fault on `con
 
 `HumanTask.action` is the declared `system/human-task` step: a typed question with re-asking and a deadline, built on `WaitFor`'s wait points and `DurableClock`.
 
-| Payload field | Meaning                                                                                                              |
-| ------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `name`        | addresses the question. Two calls naming one question in one execution await one answer                              |
-| `kind`        | `ask` (prose), `confirm` (a boolean), `select` (one of `options`), `json` (a value `schema` accepts)                 |
-| `prompt`      | what the person is asked                                                                                             |
-| `options`     | the choices a `select` offers                                                                                        |
-| `schema`      | a JSON Schema in the bounded subset, valid only with `kind: "json"`                                                  |
-| `maxAttempts` | how many answers may be refused before the task fails. Defaults to `defaultMaxAttempts` (10)                         |
-| `timeoutMs`   | how long the question stays open, across every attempt. A number of milliseconds from 0 to `Number.MAX_SAFE_INTEGER` |
+| Payload field | Meaning                                                                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`        | addresses the question. Two calls naming one question in one execution await one answer                                                       |
+| `requestId`   | optional per-ask identity; nonempty, well-formed text within 1024 JSON-encoded UTF-8 bytes, including quotes and escapes (`maxTaskNameBytes`) |
+| `kind`        | `ask` (prose), `confirm` (a boolean), `select` (one of `options`), `json` (a value `schema` accepts)                                          |
+| `prompt`      | what the person is asked                                                                                                                      |
+| `options`     | the choices a `select` offers                                                                                                                 |
+| `schema`      | a JSON Schema in the bounded subset, valid only with `kind: "json"`                                                                           |
+| `maxAttempts` | how many answers may be refused before the task fails. Defaults to `defaultMaxAttempts` (10)                                                  |
+| `timeoutMs`   | how long the question stays open, across every attempt. A number of milliseconds from 0 to `Number.MAX_SAFE_INTEGER`                          |
 
-The bounded schema subset is `type` (`object`, `array`, `string`, `number`, `integer`, `boolean`, `null`), `enum`, `properties`, `required`, `items`, `nullable`, `description`, and `title`. `enum` members may be any JSON value, including objects and arrays, and membership is compared structurally rather than by reference. A schema supplied with any kind other than `json` is refused as `request_invalid`, because nothing would check it.
+The bounded schema subset is `type` (`object`, `array`, `string`, `number`, `integer`, `boolean`, `null`), `enum`, `properties`, `required`, `items`, `nullable`, `description`, `title`, and `format` (`webauthn-assertion` only). `enum` members may be any JSON value, including objects and arrays, and membership is compared structurally rather than by reference. A schema supplied with any kind other than `json` is refused as `request_invalid`, because nothing would check it.
 
 Each attempt is its own durable wait point, `WaitFor/<name>#<attempt>`, so an answer is recorded through the ordinary durable deferred path and a refused answer stays recorded under the attempt that refused it. The refusal itself is recorded as a sealed step named `HumanTask/<name>#<attempt>/rejected`, carrying the task, the attempt, and the reason, so a reader of the journal sees why an answer was sent back. The run parks under the `approval` waiting reason carrying the current attempt's token, and `HumanTask.answer({ token, value })` records an answer against it. A re-driven round replays every answer it already has and parks on the first attempt that has none, so a restart between the park and the answer resumes on the same token.
 
 The park also publishes `WaitingAnnotation.request` as JSON text containing
 `task: "human"`, `name`, `kind`, `prompt`, `attempt`, `maxAttempts`, and any
-declared `options` or `schema`. It describes the question without including an
-answer. Durable readers use it to render pending questions, including waits
+declared `requestId`, `options` or `schema`. It describes the question without including an
+answer. Give each new ask using the same wait name its own requestId; retain it
+across replay. Flows verifying signed answers should set it to know askId without
+reading runtime state. Durable readers use it to render pending questions, including waits
 inside child executions; routing still uses the wait token.
 
 `HumanTaskFailed` carries `code`, `task`, `attempts`, the `rejections` it collected, and a message. `request_invalid` refuses an unanswerable question before anyone is asked: a `select` with no options, an attempt budget below one or above the documented ceiling, a `timeoutMs` that is not a length of time or is above `Number.MAX_SAFE_INTEGER`, a schema outside the subset, a schema past the depth or node bound, or a schema supplied with the wrong kind. `rejected` means the budget was spent on answers the task refused. `timeout` means the deadline passed with the question open.

@@ -7730,6 +7730,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/flows/flow/docs/guides/signed-answers.md"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/flow/docs/guides/use-a-prompt.md"
       },
       {
