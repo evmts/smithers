@@ -713,7 +713,9 @@ const apiCheck = (pkg, work, twinned = []) => {
  * Translation quality, report-only: how much of the twin is real VibeLang, and
  * what it adds that the TypeScript lacks. Casts and suppressions are counted
  * net of the TypeScript's own; `heldCalls` counts the B-1 workaround, a held
- * tagged template called by hand, which the rules forbid.
+ * tagged template called by hand, which the rules forbid. `constantConditionsAdded`
+ * counts `if (false)`-style guards beyond the TypeScript's own: the shape of an
+ * unrestored mutation check, which once disabled wiki-output's boundary check.
  */
 export const quality = (pkg) => {
   const count = (dir, re, ext) =>
@@ -725,6 +727,8 @@ export const quality = (pkg) => {
   const anyTs = /\.(?:ts|tsx|mts)$/
   const casts = /\bas unknown as\b|\bas any\b/g
   const suppress = /@ts-(?:ignore|expect-error|nocheck)|eslint-disable/g
+  // while (true) is an ordinary loop; only always-taken or never-taken guards count.
+  const constant = /\bif\s*\(\s*(?:true|false)\s*\)|\bwhile\s*\(\s*false\s*\)/g
   const vibeLines = lines(twin, /\.vibe$/)
   const hatchLines = lines(twin, anyTs)
   return {
@@ -733,7 +737,8 @@ export const quality = (pkg) => {
     hatchShare: vibeLines + hatchLines === 0 ? 0 : Math.round((1000 * hatchLines) / (vibeLines + hatchLines)) / 1000,
     castsAdded: count(twin, casts, /\.(?:vibe|ts|tsx)$/) - count(src, casts, anyTs),
     suppressionsAdded: count(twin, suppress, /\.(?:vibe|ts|tsx)$/) - count(src, suppress, anyTs),
-    heldCalls: count(twin, /`\s*\)\s*\(\s*\)/g, /\.vibe$/)
+    heldCalls: count(twin, /`\s*\)\s*\(\s*\)/g, /\.vibe$/),
+    constantConditionsAdded: count(twin, constant, /\.(?:vibe|ts|tsx)$/) - count(src, constant, anyTs)
   }
 }
 
@@ -1130,7 +1135,7 @@ registerHooks({
   // A regression is a test that passed on the TypeScript and did not pass on the
   // twin: it failed, or its file never loaded (Bun's JUnit report omits those).
   // The B-1 workaround (a held tagged template called by hand) hides a VibeLang bug: it fails.
-  const heldCalls = quality(pkg).heldCalls
+  const { heldCalls, constantConditionsAdded } = quality(pkg)
   const vibePassed = new Set((vibe.passed ?? []).map(stableName))
   const regressions = (baseline.passed ?? []).filter((name) => !vibePassed.has(stableName(name)))
   // A twin's unhandled rejection can fail the process while every test passes (guardian-review):
@@ -1153,7 +1158,7 @@ registerHooks({
     quality: quality(pkg),
     unverifiable: tests.unverifiable,
     ok: tests.unverifiable === undefined && compileOk && twin.errors.length === 0 && apiOk(api) && baseline.ran && baseline.pass > 0 && !baseline.signal && !baseline.error && vibe.ran
-      && regressions.length === 0 && vibe.pass >= baseline.pass && heldCalls === 0,
+      && regressions.length === 0 && vibe.pass >= baseline.pass && heldCalls === 0 && constantConditionsAdded <= 0,
     complete: false
   }
   // W46 covers the Effect code: a module that never imports effect may stay TypeScript.
@@ -1187,7 +1192,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         `  compile: ${receipt.compile.twinErrors.length} errors, ${receipt.compile.twinWarnings.length} warnings, ${receipt.compile.vibelangErrorsInTypeScript.length} VibeLang errors in unchanged TypeScript (findings, not blocking)`,
         ...receipt.compile.vibelangErrorsInTypeScript.slice(0, 5).map((e) => `  finding: ${e}`),
         `  api: ${receipt.api.modules} modules twinned (${receipt.api.identicalFiles} with identical .d.ts), ${receipt.api.missingEffectModules.length} Effect modules not yet (${receipt.api.missingModules.length} in all), ${receipt.api.checked} type checks`,
-        `  quality: ${receipt.quality.vibeLines} VibeLang lines, hatch share ${receipt.quality.hatchShare}, casts added ${receipt.quality.castsAdded}, suppressions added ${receipt.quality.suppressionsAdded}${receipt.quality.heldCalls ? `, ${receipt.quality.heldCalls} held-template calls (B-1 workaround)` : ""}`,
+        `  quality: ${receipt.quality.vibeLines} VibeLang lines, hatch share ${receipt.quality.hatchShare}, casts added ${receipt.quality.castsAdded}, suppressions added ${receipt.quality.suppressionsAdded}${receipt.quality.heldCalls ? `, ${receipt.quality.heldCalls} held-template calls (B-1 workaround)` : ""}${receipt.quality.constantConditionsAdded > 0 ? `, ${receipt.quality.constantConditionsAdded} constant conditions added (an unrestored mutation?)` : ""}`,
         `  tests: ts ${t.ts.pass} pass ${t.ts.fail} fail ${t.ts.skip} skip | vibe ${t.vibe.pass} pass ${t.vibe.fail} fail ${t.vibe.skip} skip`,
         ...receipt.compile.twinErrors.slice(0, 20).map((e) => `  ${e}`),
         ...["missingExports", "extraExports", "typeDiffers", "valueDiffers", "errors"].flatMap((k) =>
