@@ -28,6 +28,7 @@ import { listingValue } from "@smthrs/rpc/FileList"
 import { resolveTargetRepo } from "../RepoContext"
 import { loadEgressPage, workspaceEgressPath } from "./EgressSeam"
 import { cloudUnreachable, createCloudClient } from "./CloudClient"
+import type { CloudFailure, CloudResult } from "./CloudClient"
 import type { Refusal } from "@smthrs/rpc/Refusal"
 import { refusalSentence } from "@smthrs/rpc/RefusalCopy"
 import type { SeamContext } from "./SeamContext"
@@ -44,6 +45,24 @@ export const DEGRADED_WORKSPACE_REFUSAL =
  * itself: a paraphrase would hide which boundary failed.
  */
 export const EGRESS_PROXY_UNAVAILABLE = "egress_proxy_unavailable"
+
+/*
+ * G4.2 (CEO d-txbwh5; smithers#4347 removes the cap): plue admits a set
+ * number of concurrent box starts per process and refuses the rest before it
+ * creates anything, with a retryable 503 (services/workspace_mutation_slots.go):
+ * `service_unavailable`, a Retry-After, and the session read's `box_busy`
+ * reason in `details` under this sentence (hosted-p0-ab-contract). The
+ * desktop host restates the body and keeps only `code` and `retry_after`, so
+ * a `service_unavailable` that states a Retry-After is the same refusal.
+ * Every other refusal, 503s included, stays final.
+ */
+export const BUSY_START_SENTENCE = "The workspace service is busy starting other boxes; try again in a moment."
+const BUSY_START_TITLE = "Starting a machine, please wait…"
+/** About 30 s in all; a longer Retry-After wins, up to the last wait. */
+const BUSY_START_WAITS_MS = [2_000, 4_000, 8_000, 16_000] as const
+const isBusyStart = (failure: CloudFailure): boolean =>
+  failure.status === 503 && failure.code === "service_unavailable" && (failure.retryAfterSeconds !== null
+    || (isRecord(failure.details) && (failure.details.reason_code === "box_busy" || failure.details.retryable === true)))
 
 export type WorkspaceFacet = "terminal" | "files" | "services" | "egress"
 
@@ -928,6 +947,37 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     return { value: listing }
   }
 
+  /*
+   * The create, sent again after each wait while plue answers a busy start
+   * and `live` holds. `announce` puts the starting notice on the shared toast
+   * stack; a recovery already shows its own. Undefined: the account, the seam
+   * or the recovered row went away mid-wait, so nothing more is sent.
+   */
+  const createBox = async (path: string, body: Record<string, unknown>, live: () => boolean,
+    announce: boolean): Promise<CloudResult | undefined> => {
+    const key = `box.start:${randomUuid()}`
+    let shown = false
+    try {
+      for (let attempt = 0; ; attempt += 1) {
+        const created = await sendJson("POST", path, body)
+        const wait = BUSY_START_WAITS_MS[attempt]
+        if (!("error" in created) || wait === undefined || !isBusyStart(created)) return created
+        if (!live()) return undefined
+        if (announce && !shown) {
+          shown = true
+          ctx.dispatch({ type: "toast.shown", actor: "system", key, title: BUSY_START_TITLE })
+        }
+        const stated = Math.min((created.retryAfterSeconds ?? 0) * 1_000, BUSY_START_WAITS_MS[BUSY_START_WAITS_MS.length - 1])
+        const waited = await runtime.runPromise(Effect.sleep(Math.max(wait, stated))).then(() => true, () => false)
+        if (!waited || !live()) return undefined
+      }
+    } finally {
+      if (shown && ctx.isDisposed?.() !== true && ctx.store.collections.toasts.has(`toast-${key}`)) {
+        ctx.dispatch({ type: "toast.dismissed", actor: "system", id: `toast-${key}` })
+      }
+    }
+  }
+
   const openWorkspaceNow = async (bookmark?: string, repo?: string, kind?: WorkspaceKind, snapshot?: string,
     recovery?: { readonly oldId: string; readonly facts: WorkspaceRecovery }): Promise<string | void | { readonly value: string }> => {
     const refusal = gate()
@@ -952,12 +1002,13 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
      * app asserting a kind the human never picked. There is no environment or
      * image field — that default stands.
      */
-    const created = await sendJson("POST", repoPath(target.repo, "/workspaces"), {
+    const live = (): boolean => accountCurrent() && (recovery === undefined || ctx.store.collections.cloudWorkspaces.has(recovery.oldId))
+    const created = await createBox(repoPath(target.repo, "/workspaces"), {
       ...(source === undefined ? {} : { source_bookmark: source }),
       ...(kind === undefined ? {} : { kind }),
       ...(snapshot === undefined ? {} : { snapshot_id: snapshot }),
       ...(recovery === undefined ? {} : { name: recovery.facts.request!.name })
-    })
+    }, live, recovery === undefined)
     /*
      * The code travels in the answer itself: a creation refused for the
      * missing egress proxy names `egress_proxy_unavailable`, exactly, beside
@@ -972,7 +1023,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
      * registered for kind vm") is the honest state of the system, so it
      * reads as plue wrote it.
      */
-    if (!accountCurrent()) return SIGN_OUT_REFUSAL
+    if (created === undefined || !accountCurrent()) return SIGN_OUT_REFUSAL
     if ("error" in created) {
       if (recovery !== undefined) {
         const facts = recovery.facts
@@ -986,8 +1037,12 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
         if (ctx.store.collections.cards.get(cardIdOf(row.id)) === undefined) continue
         renderWorkspace(row)
       }
-      /* One sentence for every refusal: the code, plue's own words, then whose fault it was. */
-      return refusalSentence(created.refusal)
+      /*
+       * One sentence for every refusal: the code, plue's own words, then whose
+       * fault it was. A 5xx body's words never reach the screen, so a busy
+       * start that outlasted its waits states the contract's sentence.
+       */
+      return isBusyStart(created) ? `${created.code} — ${BUSY_START_SENTENCE}` : refusalSentence(created.refusal)
     }
     const workspace = parseWorkspaceWire(created.body, target.repo)
     if (workspace === null) {
