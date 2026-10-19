@@ -495,6 +495,10 @@ func (m *runMonitors) serveReads(w http.ResponseWriter, r *http.Request, repo in
 		}
 		at = &n
 	}
+	var actor int64
+	if user := middleware.UserFromContext(r.Context()); user != nil {
+		actor = user.ID
+	}
 	if id == "" {
 		cps, e := m.checkpoints(r.Context(), repo, "")
 		if e != nil {
@@ -506,6 +510,14 @@ func (m *runMonitors) serveReads(w http.ResponseWriter, r *http.Request, repo in
 		// last observation, never hiding it from the list.
 		rows := []json.RawMessage{}
 		for _, cp := range cps {
+			hidden, e := m.sessionBoxOfAnother(r.Context(), cp.Target.WorkspaceID, actor)
+			if e != nil {
+				browserFlowTyped(w, 503, "run_unavailable", "Run unavailable")
+				return
+			}
+			if hidden {
+				continue
+			}
 			id := cp.Target.WorkspaceID + ":" + cp.RunID
 			v, e := m.read(r.Context(), repo, id, nil)
 			if e != nil {
@@ -523,6 +535,15 @@ func (m *runMonitors) serveReads(w http.ResponseWriter, r *http.Request, repo in
 		browserFlowJSON(w, 200, rows)
 		return
 	}
+	workspace, _, _ := strings.Cut(id, ":")
+	if hidden, e := m.sessionBoxOfAnother(r.Context(), workspace, actor); e != nil || hidden {
+		if e != nil {
+			browserFlowTyped(w, 503, "run_unavailable", "Run unavailable")
+			return
+		}
+		browserFlowTyped(w, 404, "run_not_found", "Run unavailable")
+		return
+	}
 	raw, e := m.read(r.Context(), repo, id, at, strings.HasSuffix(r.URL.Path, "/trace"))
 	if errors.Is(e, pgx.ErrNoRows) {
 		browserFlowTyped(w, 404, "run_not_found", "Run unavailable")
@@ -533,6 +554,27 @@ func (m *runMonitors) serveReads(w http.ResponseWriter, r *http.Request, repo in
 		return
 	}
 	browserFlowJSON(w, 200, json.RawMessage(raw))
+}
+
+// sessionBoxOfAnother reports whether workspaceID is an agent session's own
+// box (plue#869) whose session belongs to someone other than actor: its runs
+// are that person's alone, so another reader is answered as if they did not
+// exist.
+func (m *runMonitors) sessionBoxOfAnother(ctx context.Context, workspaceID string, actor int64) (bool, error) {
+	if m.pool == nil || strings.TrimSpace(workspaceID) == "" {
+		return false, nil
+	}
+	var person int64
+	err := m.pool.QueryRow(ctx, `SELECT COALESCE(s.user_id, 0) FROM workspaces w
+ LEFT JOIN agent_sessions s ON s.id = w.agent_session_id
+ WHERE w.id::text = $1 AND w.agent_session_id IS NOT NULL`, workspaceID).Scan(&person)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return person == 0 || person != actor, nil
 }
 
 // monitorRunState is a recorded run status in the monitor's words (the

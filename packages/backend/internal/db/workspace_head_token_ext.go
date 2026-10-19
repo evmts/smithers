@@ -18,7 +18,12 @@ func (q *Queries) SwapWorkspaceHeadPushTokenID(ctx context.Context, id string, u
 	err := q.db.QueryRow(ctx, `
 WITH swapped AS (
   UPDATE workspaces
-  SET head_push_token_id = $4::bigint, updated_at = NOW()
+  SET head_push_token_id = $4::bigint,
+      -- Recording a token on an agent session's box marks its guest dirty
+      -- (plue#869); only a retired box's new guest clears it.
+      agent_box_dirty_vm_id = CASE WHEN $4::bigint IS NOT NULL AND agent_session_id IS NOT NULL AND vm_id <> ''
+          THEN vm_id ELSE agent_box_dirty_vm_id END,
+      updated_at = NOW()
   WHERE id = $1
     AND head_push_token_id IS NOT DISTINCT FROM $3::bigint
   RETURNING id
