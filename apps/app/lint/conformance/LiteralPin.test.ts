@@ -704,6 +704,10 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
   {
     literal: "api-", file: "e2e/real/todo/reference.ts",
     reason: "Playwright JSON attachment filename prefix supplied to attachJson; never an application card ID."
+  },
+  {
+    literal: "webauthn.get", file: "e2e/playwright/answer-signing.spec.ts",
+    reason: "W3C WebAuthn clientDataJSON.type for an assertion, written by the browser; the test-only verifier checks it, never an app flow."
   }
 ]
 
