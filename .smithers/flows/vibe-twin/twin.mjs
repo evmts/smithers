@@ -1073,9 +1073,13 @@ registerHooks({
   // Completeness counts source modules, not declarations: a module TypeScript can't declare
   // (no .d.ts) must still have a twin (E-6, lane E: 14 such modules in .smithers/flows).
   const twinnedSet = new Set(twinned)
+  // A React component stays .tsx: VibeLang has no JSX, and components call their .vibe logic
+  // through its TypeScript API (D63; effectscript-4a d-q7gqcv, finding F-5).
+  const isComponent = (file) => file.endsWith(".tsx") && /<[A-Za-z][\w.]*[\s/>]|<\/|<>/.test(readFileSync(file, "utf8"))
   receipt.api.missingEffectModules = srcModules(pkg)
-    .filter(({ rel, file }) => !twinnedSet.has(rel) && /from\s+["'](?:effect|@effect\/)/.test(readFileSync(file, "utf8")))
+    .filter(({ rel, file }) => !twinnedSet.has(rel) && !isComponent(file) && /from\s+["'](?:effect|@effect\/)/.test(readFileSync(file, "utf8")))
     .map(({ rel }) => `${rel}.d.ts`)
+  receipt.api.componentsOutOfScope = srcModules(pkg).filter(({ rel, file }) => !twinnedSet.has(rel) && isComponent(file)).length
   // A suite whose own process fails (an unhandled rejection, a crash) verifies nothing, even
   // when the twin matches it (guardian-review): COMPLETE needs a clean TypeScript run.
   receipt.baselineClean = baseline.ran && baseline.status === 0 && !baseline.signal && !baseline.error
