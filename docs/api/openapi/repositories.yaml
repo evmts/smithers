@@ -387,7 +387,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AnyJSON'
+                $ref: '#/components/schemas/AgentSessionRead'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -13179,6 +13179,68 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/repos/{owner}/{repo}/agent/sessions/{session_id}/landing:
+    post:
+      summary: Open a person's pull request from a coding turn
+      operationId: post_api_repos_owner_repo_agent_sessions_session_id_landing
+      tags:
+        - Repositories
+      description: Uses the recorded turn head. Never merges or changes main. Agent credentials and guests are refused.
+      parameters:
+        - {name: owner, in: path, required: true, schema: {type: string}}
+        - {name: repo, in: path, required: true, schema: {type: string}}
+        - {name: session_id, in: path, required: true, schema: {type: string}}
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reply_id: {type: integer, format: int64, minimum: 1}
+      responses:
+        '201':
+          description: Pull request opened
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionLanding'
+        '401':
+          description: sign_in_required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403':
+          description: guest_refused, push_permission_required, or agent_credential_refused
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404':
+          description: session_not_found
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '409':
+          description: head_receipt_mismatch or already_landed (details contains the existing SessionLanding)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422':
+          description: no_coding_result or no_turn_head
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '429':
           $ref: '#/components/responses/RateLimited'
         '500':

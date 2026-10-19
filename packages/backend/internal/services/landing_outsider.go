@@ -21,11 +21,14 @@ type landingProvenanceStore interface {
 // recordLandingSource keeps the workspace named by the creating landing
 // credential. A replayed create records it again, idempotently.
 func (s *LandingService) recordLandingSource(ctx context.Context, landingID int64) error {
-	info := middleware.AuthInfoFromContext(ctx)
-	if info == nil || !info.IsTokenAuth {
-		return nil
+	workspaceID := ""
+	if source, ok := ctx.Value(sessionLandingSourceKey{}).(sessionLandingSource); ok {
+		workspaceID = source.workspaceID
 	}
-	workspaceID := middleware.ParseTokenLandingWorkspace(info.RawScopes)
+	info := middleware.AuthInfoFromContext(ctx)
+	if workspaceID == "" && info != nil && info.IsTokenAuth {
+		workspaceID = middleware.ParseTokenLandingWorkspace(info.RawScopes)
+	}
 	if workspaceID == "" {
 		return nil
 	}
@@ -186,4 +189,28 @@ func (s *LandingService) refuseOutsiderLandingPaths(ctx context.Context, owner, 
 		}
 	}
 	return refuseProtectedPaths(ctx, s.repoHost, owner, repo, target, touched)
+}
+
+// Session landings persist their source before the idempotent creation
+// transaction commits. A failed post-create response can then be retried
+// without losing the contributor trust boundary on the existing landing.
+func recordSessionLandingSourceInTx(ctx context.Context, tx landingCreateTx, landingID int64) error {
+	source, ok := ctx.Value(sessionLandingSourceKey{}).(sessionLandingSource)
+	if !ok || source.workspaceID == "" {
+		return nil
+	}
+	recorder, ok := tx.(interface {
+		RecordLandingSourceWorkspace(context.Context, int64, string) error
+	})
+	if !ok {
+		return pkgerrors.Internal("transactional landing provenance unavailable")
+	}
+	if err := recorder.RecordLandingSourceWorkspace(ctx, landingID, source.workspaceID); err != nil {
+		return pkgerrors.Internal("record session landing provenance").WithCause(err)
+	}
+	return nil
+}
+
+func (t *pgxLandingCreateTx) RecordLandingSourceWorkspace(ctx context.Context, landingID int64, workspaceID string) error {
+	return t.q.RecordLandingSourceWorkspace(ctx, landingID, workspaceID)
 }
