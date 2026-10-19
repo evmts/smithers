@@ -3,6 +3,7 @@ package flowdispatch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/jobs"
+	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
@@ -546,6 +548,35 @@ func TestIsolationRefusalPersistsInfrastructureClass(t *testing.T) {
 	require.NoError(t, json.Unmarshal(projected, &checkpoint))
 	require.Equal(t, "isolation_required", checkpoint["failureCode"])
 	require.Equal(t, "infra", checkpoint["failureClass"])
+}
+
+// A host too large to stage reaches the product projection with its own code
+// and the sentence its typed error wrote, so the session can say what failed.
+func TestTooLargeHostRefusalProjectsItsCodeAndDetail(t *testing.T) {
+	store, _ := newFlowDispatchStore(t)
+	projector := &recordingProjector{}
+	service, err := New(Config{Store: store, Projector: projector,
+		Resolver: flowruntime.ResolverFunc(func(context.Context, flowruntime.Target) (flowruntime.Runtime, error) {
+			return nil, fmt.Errorf("flow host: %w", workspaceapi.ManagedHostTooLargeError{Bytes: 58987479, Limit: 48 << 20})
+		}),
+	})
+	require.NoError(t, err)
+	request := testLaunchRequest("host-too-large", ApprovalManual)
+	receipt, err := service.Admit(context.Background(), request)
+	require.NoError(t, err)
+	startTestWorker(t, service, "host-too-large")
+	operation := waitOperation(t, store, request.Scope, receipt.OperationID, func(operation jobs.Operation) bool { return operation.State == jobs.StateFailed })
+	var terminal map[string]any
+	require.NoError(t, json.Unmarshal(operation.TerminalReceipt, &terminal))
+	require.Equal(t, workspaceapi.ManagedHostTooLargeCode, terminal["errorCode"], "not retried: the same bytes are refused again")
+	projector.mu.Lock()
+	defer projector.mu.Unlock()
+	require.NotEmpty(t, projector.updates)
+	last := projector.updates[len(projector.updates)-1]
+	require.Equal(t, jobs.StateFailed, last.State)
+	require.Equal(t, workspaceapi.ManagedHostTooLargeCode, last.Checkpoint.FailureCode)
+	require.Equal(t, "The coding host (56.3 MiB) exceeds the sandbox staging limit (48 MiB).", last.Checkpoint.FailureDetail)
+	require.Empty(t, runtimeFailureDetail(errors.New("packaged Flow host is 58987479 bytes")), "untyped adapter text is never product copy")
 }
 
 func TestOldRuntimeCheckpointRemainsReadableWithoutClass(t *testing.T) {

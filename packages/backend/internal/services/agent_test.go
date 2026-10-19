@@ -1074,7 +1074,7 @@ type mockAgentDispatchQuerier struct {
 	getAgentSessionForFlowProjectionFn    func(ctx context.Context, arg db.GetAgentSessionForFlowProjectionParams) (db.AgentSession, error)
 	updateAgentSessionTerminalForFlowFn   func(ctx context.Context, arg db.UpdateAgentSessionTerminalStatusForFlowParams) (db.AgentSession, error)
 	updateAgentSessionTimedOutFn          func(ctx context.Context, arg db.UpdateAgentSessionTimedOutParams) (db.AgentSession, error)
-	recordAgentSessionFailureReasonFn     func(ctx context.Context, sessionID, reason string) (db.AgentSession, bool, error)
+	recordAgentSessionFailureFn           func(ctx context.Context, sessionID string, failure db.AgentSessionFailure) (db.AgentSessionFailureRecord, bool, error)
 	insertWorkflowRunLogFn                func(ctx context.Context, arg db.InsertWorkflowRunLogNextSequenceParams) (db.InsertWorkflowRunLogNextSequenceRow, error)
 	notifyWorkflowRunLogFn                func(ctx context.Context, arg db.NotifyWorkflowRunLogParams) error
 }
@@ -1345,14 +1345,14 @@ func (m *mockAgentDispatchQuerier) UpdateAgentSessionTimedOut(ctx context.Contex
 	return s, nil
 }
 
-func (m *mockAgentDispatchQuerier) RecordAgentSessionFailureReason(ctx context.Context, sessionID, reason string) (db.AgentSession, bool, error) {
-	if m.recordAgentSessionFailureReasonFn != nil {
-		return m.recordAgentSessionFailureReasonFn(ctx, sessionID, reason)
+func (m *mockAgentDispatchQuerier) RecordAgentSessionFailure(ctx context.Context, sessionID string, failure db.AgentSessionFailure) (db.AgentSessionFailureRecord, bool, error) {
+	if m.recordAgentSessionFailureFn != nil {
+		return m.recordAgentSessionFailureFn(ctx, sessionID, failure)
 	}
 	s := sampleDBAgentSession(sessionID, 101, 1, "default")
 	s.Status = "failed"
-	s.Metadata = []byte(`{"failure_reason":` + strconv.Quote(reason) + `}`)
-	return s, true, nil
+	s.Metadata = []byte(`{"failure_reason":` + strconv.Quote(failure.Reason) + `,"failure_reason_code":` + strconv.Quote(failure.Code) + `,"failure_retryable":` + strconv.FormatBool(failure.Retryable) + `}`)
+	return db.AgentSessionFailureRecord{Session: s}, true, nil
 }
 
 func (m *mockAgentDispatchQuerier) InsertWorkflowRunLogNextSequence(ctx context.Context, arg db.InsertWorkflowRunLogNextSequenceParams) (db.InsertWorkflowRunLogNextSequenceRow, error) {

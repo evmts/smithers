@@ -179,6 +179,10 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 		// Model access wrote, on the owner's key through the proxy.
 		hosts.codingModel = ownerCodingSeat(db.New(pool), modelSeats)
 	}
+	if agents != nil {
+		// The session records the model its turn runs on (metadata.model).
+		agents.SetCodingTurnModel(codingTurnModel(catalogs[0].ImplementationModel, hosts.codingModel))
+	}
 	admitted, err := hosts.launcher(launcher)
 	if err != nil {
 		return nil, err
@@ -593,4 +597,18 @@ func installFlowRuns(queries *db.Queries, flow *flowComposition) *services.Insta
 		return nil
 	}
 	return &services.InstallFlowRuns{Pool: flow.pool, Queries: queries, Dispatcher: flow.dispatcher, Jobs: flow.jobs}
+}
+
+// codingTurnModel answers the provider:model a coding host runs a dispatched
+// turn on, as ConfigureFlowHost picks it: the coding catalog's pinned
+// implementation model, else the install's coding seat; "" when neither names
+// one.
+func codingTurnModel(pinned string, install func(context.Context) (string, error)) func(context.Context) (string, error) {
+	pinned = strings.TrimSpace(pinned)
+	return func(ctx context.Context) (string, error) {
+		if pinned != "" || install == nil {
+			return pinned, nil
+		}
+		return install(ctx)
+	}
 }

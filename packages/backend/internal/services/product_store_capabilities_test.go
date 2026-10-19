@@ -67,6 +67,7 @@ var productStoreCapabilities = map[string]func(any) bool{
 	"workspaceUnchangedFailureQuerier":     storeImplements[workspaceUnchangedFailureQuerier],
 	"workspaceVMRegistrar":                 storeImplements[workspaceVMRegistrar],
 	"workspaceVisibilityQuerier":           storeImplements[workspaceVisibilityQuerier],
+	"agentSessionModelRecorder":            storeImplements[agentSessionModelRecorder],
 	"interface{GetRepoByID}": storeImplements[interface {
 		GetRepoByID(context.Context, int64) (db.Repository, error)
 	}],

@@ -40,6 +40,25 @@ type AgentSessionResponse struct {
 	Metadata     json.RawMessage `json:"metadata"`
 	// WorkspaceID is the kind=agent workspace this run executes in (RFD-004).
 	WorkspaceID string `json:"workspace_id,omitempty"`
+	// ReasonCode, Reason and Retryable state why the session failed: a code
+	// from the closed vocabulary in agent_failure_reason.go, one sentence for
+	// the person, and whether trying again can succeed without a code or
+	// configuration change. A session that did not fail answers null, null
+	// and false.
+	ReasonCode *string `json:"reason_code"`
+	Reason     *string `json:"reason"`
+	Retryable  bool    `json:"retryable"`
+}
+
+// withFailure fills the response's failure fields from the session metadata
+// RecordAgentSessionFailure wrote.
+func (response AgentSessionResponse) withFailure() AgentSessionResponse {
+	failure, ok := agentSessionFailureFromMetadata(response.Metadata)
+	if !ok {
+		return response
+	}
+	response.ReasonCode, response.Reason, response.Retryable = &failure.Code, &failure.Reason, failure.Retryable
+	return response
 }
 
 // AgentPartResponse is the API representation of a message part.
@@ -65,10 +84,12 @@ type AgentSessionEvent struct {
 	Action    string                `json:"action"`
 	Message   *AgentMessageResponse `json:"message,omitempty"`
 	Status    string                `json:"status,omitempty"`
-	// Reason is the user-facing sentence for a terminal status a watcher could
-	// not have predicted. It saves a client from re-polling the session just to
-	// read metadata.failure_reason.
-	Reason string `json:"reason,omitempty"`
+	// Reason, ReasonCode and Retryable repeat a failed session's typed reason
+	// on its terminal status, so a watching client need not re-poll the
+	// session to learn why.
+	Reason     string `json:"reason,omitempty"`
+	ReasonCode string `json:"reason_code,omitempty"`
+	Retryable  bool   `json:"retryable,omitempty"`
 }
 
 func AgentSessionMessageEvent(msg AgentMessageResponse) AgentSessionEvent {
@@ -264,10 +285,10 @@ type AgentDispatchQuerier interface {
 	GetAgentSessionForFlowProjection(ctx context.Context, arg db.GetAgentSessionForFlowProjectionParams) (db.AgentSession, error)
 	UpdateAgentSessionTerminalStatusForFlow(ctx context.Context, arg db.UpdateAgentSessionTerminalStatusForFlowParams) (db.AgentSession, error)
 	UpdateAgentSessionTimedOut(ctx context.Context, arg db.UpdateAgentSessionTimedOutParams) (db.AgentSession, error)
-	// RecordAgentSessionFailureReason stores the one sentence a failed session
-	// shows its owner. The session's own routes carry no error field, so without
-	// it a refused dispatch is indistinguishable from any other failure.
-	RecordAgentSessionFailureReason(ctx context.Context, sessionID, reason string) (db.AgentSession, bool, error)
+	// RecordAgentSessionFailure stores a failed session's typed reason and ends
+	// its turn with that sentence. Without it a refused dispatch or a failed
+	// turn is indistinguishable from any other failure.
+	RecordAgentSessionFailure(ctx context.Context, sessionID string, failure db.AgentSessionFailure) (db.AgentSessionFailureRecord, bool, error)
 	// The run's own log is the only place the Steps view reads. A dispatch
 	// that fails before its task runs writes nothing there otherwise, so the
 	// run page shows a red node with no line at all.
@@ -418,6 +439,9 @@ type AgentService struct {
 	// canonical TypeScript host. Deployment composition supplies either the
 	// trusted owner or isolated Plue runtime resolver behind it.
 	flowDispatcher AgentFlowDispatcher
+	// codingTurnModel names the provider:model a dispatched coding turn runs
+	// on (SetCodingTurnModel); nil names none.
+	codingTurnModel func(context.Context) (string, error)
 	// concurrencyCounter + concurrencyMax cap how many agent sandbox provider VMs may be
 	// allocated fleet-wide; enforced ONLY on the dispatch (VM-provision) path.
 	// A nil counter or max <= 0 disables the cap.
@@ -1188,7 +1212,11 @@ func (s *AgentService) IngestRunnerEvent(ctx context.Context, input IngestRunner
 			finalStatus = "failed"
 		}
 
-		session, updated, err := s.transitionAgentSessionTerminalStatus(ctx, input.SessionID, finalStatus, pgtype.Int8{})
+		var failure *agentSessionFailure
+		if finalStatus == "failed" {
+			failure = &agentSessionTurnFailed
+		}
+		session, updated, err := s.transitionAgentSessionTerminalStatusWithFailure(ctx, input.SessionID, finalStatus, pgtype.Int8{}, failure)
 		if err != nil {
 			return pkgerrors.Internal("update session status: " + err.Error())
 		}
@@ -1208,22 +1236,22 @@ func (s *AgentService) IngestRunnerEvent(ctx context.Context, input IngestRunner
 // A caller that knows the cause is actionable (the pool had no room) should use
 // markAgentDispatchInfrastructureFailedWithReason instead.
 func (s *AgentService) markAgentDispatchInfrastructureFailed(ctx context.Context, taskID, stepID, workflowRunID int64, sessionID, message string) {
-	s.markAgentDispatchInfrastructureFailedWithReason(ctx, taskID, stepID, workflowRunID, sessionID, message, agentSessionStartFailureMessage)
+	s.markAgentDispatchInfrastructureFailedWithReason(ctx, taskID, stepID, workflowRunID, sessionID, message, agentSessionStartFailure)
 }
 
-// markAgentDispatchInfrastructureFailedWithReason is the same, with the one
-// sentence the session's owner reads chosen by the caller.
+// markAgentDispatchInfrastructureFailedWithReason is the same, with the typed
+// reason the session's owner reads chosen by the caller.
 //
 // message is the operator string: it lands in the workflow task's last_error
-// and the log, and may carry a provider's error chain. reason is user-facing
+// and the log, and may carry a provider's error chain. failure is user-facing
 // and is stored on the session where the API returns it.
-func (s *AgentService) markAgentDispatchInfrastructureFailedWithReason(ctx context.Context, taskID, stepID, workflowRunID int64, sessionID, message, reason string) {
+func (s *AgentService) markAgentDispatchInfrastructureFailedWithReason(ctx context.Context, taskID, stepID, workflowRunID int64, sessionID, message string, failure agentSessionFailure) {
 	// Several callers reach here without having logged anything (the cleanup
 	// sweep and the session-claim loser among them), so a failed session left
 	// no trace at all under its own id. One line, correlated to the session and
 	// the run, is what makes a production failure findable afterwards.
 	middleware.LoggerWithAgentSessionAndWorkflowRun(ctx, sessionID, workflowRunID).
-		Error("agent dispatch infrastructure failed", "reason", reason, "detail", message, "task_id", taskID, "step_id", stepID)
+		Error("agent dispatch infrastructure failed", "reason_code", failure.Code, "reason", failure.Reason, "detail", message, "task_id", taskID, "step_id", stepID)
 	if s.dispatchQ != nil {
 		run, runErr := s.dispatchQ.GetWorkflowRunByRunID(ctx, workflowRunID)
 		if runErr != nil && !stdErrors.Is(runErr, pgx.ErrNoRows) {
@@ -1264,10 +1292,10 @@ func (s *AgentService) markAgentDispatchInfrastructureFailedWithReason(ctx conte
 		// session, or a newer run has claimed it before cleanup arrives.
 		s.revokeAgentSessionToken(ctx, pgtype.Int8{Int64: workflowRunID, Valid: true})
 	}
-	s.appendAgentDispatchFailureLog(ctx, workflowRunID, stepID, reason)
+	s.appendAgentDispatchFailureLog(ctx, workflowRunID, stepID, failure.Reason)
 	if s.dispatchQ != nil && strings.TrimSpace(sessionID) != "" {
 		s.cancelAgentRuntimeWatchdogForRun(sessionID, workflowRunID)
-		session, updated, err := s.transitionAgentSessionTerminalStatusWithReason(ctx, sessionID, "failed", pgtype.Int8{Int64: workflowRunID, Valid: true}, reason)
+		session, updated, err := s.transitionAgentSessionTerminalStatusWithFailure(ctx, sessionID, "failed", pgtype.Int8{Int64: workflowRunID, Valid: true}, &failure)
 		if err == nil && updated {
 			s.observeAgentSessionCompletion("failed")
 			s.archiveAgentTranscript(ctx, session, "failed")
@@ -1742,7 +1770,7 @@ func toAgentSessionResponse(s db.AgentSession) AgentSessionResponse {
 		UpdatedAt:    s.UpdatedAt,
 		Metadata:     s.Metadata,
 		WorkspaceID:  UUIDString(s.WorkspaceID),
-	}
+	}.withFailure()
 }
 
 func toAgentSessionWithCountResponse(s db.GetAgentSessionWithMessageCountRow) AgentSessionResponse {
@@ -1757,7 +1785,7 @@ func toAgentSessionWithCountResponse(s db.GetAgentSessionWithMessageCountRow) Ag
 		UpdatedAt:    s.UpdatedAt,
 		Metadata:     s.Metadata,
 		WorkspaceID:  UUIDString(s.WorkspaceID),
-	}
+	}.withFailure()
 }
 
 func toAgentSessionListResponse(s db.ListAgentSessionsByRepoWithMessageCountRow) AgentSessionResponse {
@@ -1772,5 +1800,5 @@ func toAgentSessionListResponse(s db.ListAgentSessionsByRepoWithMessageCountRow)
 		UpdatedAt:    s.UpdatedAt,
 		Metadata:     s.Metadata,
 		WorkspaceID:  UUIDString(s.WorkspaceID),
-	}
+	}.withFailure()
 }
