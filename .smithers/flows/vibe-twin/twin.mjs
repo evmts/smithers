@@ -251,7 +251,7 @@ export const parseDts = (text) => {
 /**
  * Where the twin's compiled modules land. The twin compiles with the repository as rootDir,
  * because a module may import TypeScript outside its package (apps/app imports
- * .smithers/flows/coding schemas, F-2); every output then stays under .vibe-twin/out/.
+ * .smithers/flows/coding schemas, F-2); every output then stays under .vibe-twin/src/.
  */
 // The emitted twin lives under .vibe-twin/src/: framework code that recognizes its own stack
 // frames by a /packages/smithers/**/src/ path (flows/flow DeclarationSite) must recognize the
@@ -1201,7 +1201,7 @@ export default mergeConfig(base, {
       // Any importer outside node_modules gets the twin: a package's tests may live beside it
       // (.smithers/flows/coding is tested from .smithers/flows/test).
       if (!importer || importer.includes("/node_modules/")) return null
-      if (importer.includes("/.vibe-twin/out/")) return fallbackFor(source, importer, pkg) ?? null
+      if (importer.includes("/.vibe-twin/src/")) return fallbackFor(source, importer, pkg) ?? null
       const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
       return resolved && twinFor(resolved.id, pkg) ? twinFor(resolved.id, pkg) : null
     }
@@ -1240,7 +1240,16 @@ plugin({
     )
   }
   const register = join(work, "node-register.mjs")
+  // The TypeScript run loads an identical hook that resolves normally: the hook's startup cost
+  // reaches every child node through NODE_OPTIONS (about 110 ms), and only one side paying it
+  // failed coding-agent-terminal's 300 ms timeouts in the twin run alone (S16-1).
+  const baselineRegister = join(work, "node-register-baseline.mjs")
   if (suiteList.some((suite) => suite.kind === "node")) {
+    writeFileSync(baselineRegister, `import { registerHooks } from "node:module"
+import { fallbackFor, twinFor } from ${JSON.stringify(fileURLToPath(import.meta.url))}
+void fallbackFor, void twinFor
+registerHooks({ resolve: (specifier, context, next) => next(specifier, context) })
+`)
     // module.registerHooks runs in-thread and prints nothing; module.register is deprecated in
     // Node 26 and writes DEP0205 to stderr, which changes what subprocess tests see (E-11).
     writeFileSync(register, `import { registerHooks } from "node:module"
@@ -1257,7 +1266,7 @@ registerHooks({
       return twin ? { ...resolved, url: pathToFileURL(twin).href, shortCircuit: true } : resolved
     }
     if (parent.includes("/node_modules/")) return next(specifier, context)
-    if (parent.includes("/.vibe-twin/out/")) {
+    if (parent.includes("/.vibe-twin/src/")) {
       const fallback = fallbackFor(specifier, parent, pkg)
       return fallback ? next(pathToFileURL(fallback).href, context) : next(specifier, context)
     }
@@ -1286,7 +1295,7 @@ registerHooks({
     return suite.kind === "bun"
       ? bunTest(pkg, suite.args, twinRun ? preload : undefined, out)
       : suite.kind === "node"
-      ? nodeTest(pkg, suite.args, twinRun ? register : undefined, out)
+      ? nodeTest(pkg, suite.args, twinRun ? register : baselineRegister, out)
       : vitest(pkg, twinRun ? config : undefined, out, suite.args)
   }
   const merge = (results) => ({
