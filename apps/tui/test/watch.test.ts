@@ -8,6 +8,8 @@ import * as fsPromises from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Log from "../src/log.ts"
+import * as Failures from "../src/failures.ts"
+import { FlowDiscoveryFailed } from "../src/flows.ts"
 import * as Watch from "../src/watch.ts"
 
 const { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } = fs
@@ -23,7 +25,7 @@ export default Flow.make("review", {
 })
 `
 
-const fixture = (existing = true, initialSource?: string, prepare?: (cwd: string) => void) => {
+const fixture = (existing = true, initialSource?: string, prepare?: (cwd: string) => void, refresh?: () => void) => {
   const cwd = mkdtempSync(join(tmpdir(), "tui-watch-"))
   const directory = join(cwd, ".smithers", "flows")
   const source = join(directory, "review", "flow.ts")
@@ -37,6 +39,7 @@ const fixture = (existing = true, initialSource?: string, prepare?: (cwd: string
   let receive: (() => void) | undefined
   const watcher = Watch.flows(cwd, () => {
     refreshes++
+    refresh?.()
     receive?.()
   }, 100)
   return {
@@ -437,7 +440,13 @@ it("keeps one scan in flight and stops reading or refreshing after disposal", as
 it.skipIf(process.getuid?.() === 0)(
   "reports unreadable flow trees safely, retains diagnostics, and recovers",
   async () => {
-    const test = fixture()
+    // The renderer announces the refreshed controller's discovery failure.
+    let listing = Promise.resolve()
+    const test = fixture(true, undefined, undefined, () => {
+      listing = discover(test.cwd).then(() => {}, (cause) => {
+        Log.alert("flow.discovery", Failures.line("flow", new FlowDiscoveryFailed(cause)))
+      })
+    })
     const previous = process.env.SMITHERS_TUI_SESSION_DIR
     process.env.SMITHERS_TUI_SESSION_DIR = join(test.cwd, "diagnostics")
     let unsubscribe = () => {}
@@ -455,7 +464,7 @@ it.skipIf(process.getuid?.() === 0)(
       expect(message).not.toContain(test.cwd)
       expect(message).not.toContain("EACCES")
       await test.quiet()
-      expect(test.count()).toBe(0)
+      expect(test.count()).toBe(1)
       const records = readFileSync(Log.path(), "utf8").trim().split("\n").map((line) => JSON.parse(line))
       const diagnostics = records.filter((record) => record.tag === "failure.flow")
       expect(diagnostics).toHaveLength(1)
@@ -466,8 +475,9 @@ it.skipIf(process.getuid?.() === 0)(
       mkdirSync(join(test.directory, "review"))
       writeFileSync(test.source, flow())
       await recovered
-      expect(test.count()).toBe(1)
+      expect(test.count()).toBe(2)
     } finally {
+      await listing
       unsubscribe()
       chmodSync(test.directory, 0o755)
       test.close()
@@ -566,3 +576,18 @@ it("retries a failed native install and ignores errors from a replaced handle", 
     else process.env.SMITHERS_TUI_SESSION_DIR = previous
   }
 }, 20000)
+
+it("refreshes the controller when a previously readable root fails", async () => {
+  const test = fixture()
+  try {
+    const failed = test.next()
+    rmSync(test.directory, { recursive: true })
+    symlinkSync("flows", test.directory)
+    await failed
+    expect(test.count()).toBe(1)
+    await test.quiet()
+    expect(test.count()).toBe(1)
+  } finally {
+    test.close()
+  }
+}, 10000)

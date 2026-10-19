@@ -138,6 +138,31 @@ it("announces the same failure again after a successful listing", async () => {
   await tui!.press(key.backspace.repeat(6))
   renameSync(where.flows, where.working)
   symlinkSync("flows", where.flows)
-  await submit("/new")
+  // Within a second the flows watcher refreshes the controller, which announces
+  // the failure again. A `/new` after that keeps its own acknowledgment (the
+  // next case, #4334), so none is submitted here.
   await tui!.until((screen) => screen.includes(failure), 20_000, "failure after recovery")
+}, 90_000)
+
+it("keeps the new acknowledgment after the watcher reports a recovered failure", async () => {
+  const where = await start()
+  rmSync(where.flows)
+  renameSync(where.working, where.flows)
+  await submit("/new")
+  await tui!.until((screen) => screen.includes("New conversation started"), 5_000, "new conversation")
+  await tui!.type("/flow ")
+  await tui!.until((screen) => screen.includes("Greets once"), 20_000, "a successful listing")
+  await tui!.press(key.escape)
+  await tui!.press(key.backspace.repeat(6))
+  renameSync(where.flows, where.working)
+  symlinkSync("flows", where.flows)
+  await tui!.until((screen) => screen.includes(failure), 20_000, "watcher announcement")
+  await afterListing(where.sessions, () => submit("/new"), "New conversation started")
+  const until = Date.now() + 1_000
+  do {
+    const screen = await tui!.screen()
+    expect(screen).toContain("New conversation started")
+    expect(screen).not.toContain(failure)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  } while (Date.now() < until)
 }, 90_000)

@@ -92,7 +92,13 @@ export const flows = (cwd: string, refresh: () => void, debounce = debounceMs): 
       if (!closed) Log.alert("flow.watch", message)
     })
   }
-  const report = (cause: unknown) => announce(new FlowDiscoveryFailed(cause))
+  const report = (cause: unknown) => {
+    // The controller owns listing notices across conversations: refresh it, and its
+    // notice path announces the failure, so an unchanged one cannot bury a later
+    // acknowledgment.
+    Log.write("flow.watch", cause)
+    changed()
+  }
   const observerFailed = (cause: unknown) => {
     if (closed) return
     Log.write("flow.watch", cause)
