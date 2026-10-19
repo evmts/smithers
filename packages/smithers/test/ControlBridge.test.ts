@@ -4,7 +4,7 @@ import { Unavailable } from "@smthrs/control/ControlError"
 import * as TestControl from "@smthrs/control/test/TestControl"
 import { Console, Effect, Layer, Logger, References, Stream } from "effect"
 import { getEventListeners } from "node:events"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, statSync, readFileSync, existsSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, relative, resolve } from "node:path"
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -822,7 +822,11 @@ describe("control bridge transport scope", () => {
     const ready = new Promise<void>((resolve) => {
       started = resolve
     })
-    service = { ...service, list: () => Effect.succeed({ _tag: "runs", items: [] }), watch: () => Stream.fromEffect(Effect.sync(started).pipe(Effect.andThen(Effect.never))) }
+    service = {
+      ...service,
+      list: () => Effect.succeed({ _tag: "runs", items: [] }),
+      watch: () => Stream.fromEffect(Effect.sync(started).pipe(Effect.andThen(Effect.never)))
+    }
     const iterator = Bridge.events("r", true, local, { ...runtime, signal: abort.signal })[Symbol.asyncIterator]()
     const waiting = iterator.next()
     await ready
@@ -863,29 +867,57 @@ describe("control bridge transport scope", () => {
     const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true)
     const stdout = vi.fn()
     const codes: number[] = []
-    await makeCli(runtime).serve(["serve", "--root", directory, "--port", "0", "--operator-token-file", operatorTokenFile, ...(quiet ? ["--quiet"] : [])], {
-      env: {}, stdout, exit: code => { codes.push(code) }
+    await makeCli(runtime).serve([
+      "serve",
+      "--root",
+      directory,
+      "--port",
+      "0",
+      "--operator-token-file",
+      operatorTokenFile,
+      ...(quiet ? ["--quiet"] : [])
+    ], {
+      env: {},
+      stdout,
+      exit: (code) => {
+        codes.push(code)
+      }
     })
-    expect(codes.every(code => code === 0)).toBe(true)
+    expect(codes.every((code) => code === 0)).toBe(true)
     expect(ports.serve).toHaveBeenCalledOnce()
     expect(statSync(operatorTokenFile).mode & 0o777).toBe(0o600)
     const token = readFileSync(operatorTokenFile, "utf8").trim()
     expect(token).toMatch(/^[0-9a-f]{64}$/)
     expect(ports.serve.mock.calls[0]![0]).toMatchObject({ operatorToken: token, operatorTokenFile })
-    expect(stderr.mock.calls.map(call => String(call[0])).join("")).not.toMatch(/^  approval token  /m)
-    expect(stderr.mock.calls.map(call => String(call[0])).join("")).not.toContain(token)
-    expect(stdout.mock.calls.map(call => String(call[0])).join("")).not.toContain(token)
-    if (quiet) { expect(stderr).not.toHaveBeenCalled(); expect(stdout).not.toHaveBeenCalled() }
+    expect(stderr.mock.calls.map((call) => String(call[0])).join("")).not.toMatch(/^  approval token  /m)
+    expect(stderr.mock.calls.map((call) => String(call[0])).join("")).not.toContain(token)
+    expect(stdout.mock.calls.map((call) => String(call[0])).join("")).not.toContain(token)
+    if (quiet) {
+      expect(stderr).not.toHaveBeenCalled()
+      expect(stdout).not.toHaveBeenCalled()
+    }
   })
 
   it("real serve CLI refuses a public bind before publishing the token file", async () => {
     const operatorTokenFile = join(directory, "refused.token")
     vi.spyOn(process.stderr, "write").mockReturnValue(true)
     const codes: number[] = []
-    await makeCli(runtime).serve(["serve", "--root", directory, "--host", "0.0.0.0", "--operator-token-file", operatorTokenFile], {
-      env: {}, stdout: () => {}, exit: code => { codes.push(code) }
+    await makeCli(runtime).serve([
+      "serve",
+      "--root",
+      directory,
+      "--host",
+      "0.0.0.0",
+      "--operator-token-file",
+      operatorTokenFile
+    ], {
+      env: {},
+      stdout: () => {},
+      exit: (code) => {
+        codes.push(code)
+      }
     })
-    expect(codes.some(code => code !== 0)).toBe(true)
+    expect(codes.some((code) => code !== 0)).toBe(true)
     expect(existsSync(operatorTokenFile)).toBe(false)
     expect(ports.serve).not.toHaveBeenCalled()
   })
