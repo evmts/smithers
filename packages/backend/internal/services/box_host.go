@@ -610,6 +610,9 @@ func (s *WorkspaceService) ReleaseFailedFlowHostMachine(ctx context.Context, bin
 		}
 		_, err = s.q.UpdateWorkspaceStatus(ctx, db.UpdateWorkspaceStatusParams{ID: row.ID, Status: "stopped"})
 		if err == nil {
+			// A stopped machine keeps no live head token (the 2026-10-18
+			// spike's token 63979 outlived this stop).
+			s.revokeWorkspaceHeadToken(ctx, row)
 			s.notifyWorkspace(ctx, row.ID, "stopped")
 		}
 		return err
