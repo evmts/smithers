@@ -129,9 +129,11 @@ type DispatchAgentRunInput struct {
 // ChangesetMaterializedMember is one member repository of a changeset pinned
 // at the commit the changeset recorded.
 type ChangesetMaterializedMember struct {
-	Owner    string
-	Repo     string
-	CommitID string
+	// RepositoryID binds the member's clone credential to this repository.
+	RepositoryID int64
+	Owner        string
+	Repo         string
+	CommitID     string
 }
 
 // AgentChangesetMaterializer resolves a changeset into the member repositories

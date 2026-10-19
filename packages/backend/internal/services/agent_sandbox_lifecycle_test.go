@@ -74,7 +74,7 @@ func TestDispatchAgentRun_FullVMLifecycleFlow(t *testing.T) {
 			}
 			dbCallOrder = append(dbCallOrder, "create_clone_token")
 			assert.Equal(t, "sandbox-agent-clone", arg.Name)
-			assert.Equal(t, "read:repository", arg.Scopes)
+			assert.Equal(t, "read:repository,repo:101", arg.Scopes)
 			return db.AccessToken{ID: 99, UserID: arg.UserID, Name: arg.Name}, nil
 		},
 		deleteAccessTokenFn: func(ctx context.Context, arg db.DeleteAccessTokenParams) error {

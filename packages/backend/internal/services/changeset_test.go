@@ -573,8 +573,8 @@ func TestChangesetService_MaterializeChangeset(t *testing.T) {
 	members, err := svc.MaterializeChangeset(context.Background(), 1, created.ID)
 	require.NoError(t, err)
 	assert.Equal(t, []ChangesetMaterializedMember{
-		{Owner: "acme", Repo: "api", CommitID: strings.Repeat("a", 40)},
-		{Owner: "acme", Repo: "web", CommitID: strings.Repeat("b", 40)},
+		{RepositoryID: 11, Owner: "acme", Repo: "api", CommitID: strings.Repeat("a", 40)},
+		{RepositoryID: 12, Owner: "acme", Repo: "web", CommitID: strings.Repeat("b", 40)},
 	}, members)
 
 	_, err = svc.MaterializeChangeset(context.Background(), 2, created.ID)

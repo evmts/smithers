@@ -493,7 +493,7 @@ func (s *ChangesetService) MaterializeChangeset(ctx context.Context, userID, cha
 		if m.LandedCommitID != "" && cs.State == changesetStateLanded {
 			commit = m.LandedCommitID
 		}
-		out = append(out, ChangesetMaterializedMember{Owner: org.Name, Repo: repo.Name, CommitID: commit})
+		out = append(out, ChangesetMaterializedMember{RepositoryID: repo.ID, Owner: org.Name, Repo: repo.Name, CommitID: commit})
 	}
 	return out, nil
 }

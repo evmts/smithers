@@ -378,7 +378,7 @@ func TestWorkspaceProvisioning_Cov_VMProvisioningBranches(t *testing.T) {
 			return sandbox.ExecResult{StatusCode: &code, Stdout: "stdout detail", Stderr: "stderr detail"}, nil
 		},
 	}))
-	err = svc.switchForkedWorkspaceBookmark(ctx, "vm-fork", CreateWorkspaceSessionInput{UserID: 1, SourceBookmark: "feature"})
+	err = svc.switchForkedWorkspaceBookmark(ctx, "vm-fork", 101, CreateWorkspaceSessionInput{UserID: 1, SourceBookmark: "feature"})
 	requireAPIErrorStatus(t, err, http.StatusInternalServerError)
 	assert.Contains(t, err.Error(), "stderr detail")
 	assert.Contains(t, err.Error(), "stdout detail")

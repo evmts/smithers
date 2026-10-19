@@ -84,14 +84,11 @@ const (
 	perRunAPITokenTTL = 24 * time.Hour
 )
 
-// issueTemporaryRepoCloneToken mints a short-lived read-only token used to CLONE
-// a user's jjhub repo into a sandbox/workspace.
-func issueTemporaryRepoCloneToken(ctx context.Context, store accessTokenStore, userID int64, name string) (temporaryRepoCloneToken, error) {
-	return issueTemporaryRepoToken(ctx, store, userID, name, string(middleware.ScopeReadRepository))
-}
-
-// CI clone credentials are limited to one repository, including when an org
-// owner lends their identity to an org-owned repository's guest.
+// issueTemporaryBoundRepoCloneToken mints a short-lived read-only token used to
+// CLONE one repository into a sandbox, workspace or CI guest. The token reads
+// only that repository, including when an org owner lends their identity to an
+// org-owned repository's guest. A box gets one such token per repository it
+// clones; there is deliberately no unbound variant.
 func issueTemporaryBoundRepoCloneToken(ctx context.Context, store accessTokenStore, userID, repositoryID int64, name string) (temporaryRepoCloneToken, error) {
 	if repositoryID <= 0 {
 		return temporaryRepoCloneToken{}, fmt.Errorf("bound clone token requires a repository binding")
