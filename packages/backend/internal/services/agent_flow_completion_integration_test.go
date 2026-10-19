@@ -236,7 +236,7 @@ func TestCodingCompletionNotificationsAndLargeReply(t *testing.T) {
 			if large {
 				// PostgreSQL's notification limit must not prevent a valid reply from
 				// committing. Such messages use the existing transcript/SSE replay read.
-				output := `{"messages":[{"role":"assistant","content":"` + strings.Repeat("a", codingTriggerTextLimit) + `"}]}`
+				output := fmt.Sprintf(`{"turnId":"run-%d","messages":[{"role":"assistant","content":"%s"}]}`, projection.WorkflowRunID, strings.Repeat("a", codingTriggerTextLimit))
 				update.Checkpoint.Run.FinalOutput = &output
 			}
 			require.NoError(t, service.ProjectFlowRuntime(t.Context(), update))

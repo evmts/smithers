@@ -341,6 +341,10 @@ func (dispatch *agentDispatch) cancelCodingTurn(ctx context.Context) {
 // ProjectFlowRuntime keeps legacy workflow/session rows as idempotent product
 // projections. Completed coding replies commit to the existing transcript
 // atomically with terminal status; model/tool frames remain in the turn journal.
+// errAgentFlowNotOwner refuses a runtime update whose scope or binding is not
+// the projected session's, whatever turn its reply names.
+var errAgentFlowNotOwner = errors.New("agent Flow projection does not own the session")
+
 func (service *AgentService) ProjectFlowRuntime(ctx context.Context, update flowdispatch.ProjectionUpdate) error {
 	if service == nil || service.dispatchQ == nil {
 		return errors.New("agent Flow projection store unavailable")
@@ -368,7 +372,7 @@ func (service *AgentService) ProjectFlowRuntime(ctx context.Context, update flow
 	}
 	if update.Scope != agentFlowScope(owner.RepositoryID, owner.UserID) ||
 		update.Checkpoint.Target.BindingKind != "agent-session" || update.Checkpoint.Target.BindingID != projection.SessionID {
-		return errors.New("agent Flow projection does not own the session")
+		return errAgentFlowNotOwner
 	}
 	if update.Checkpoint.RunID != "" {
 		workspaceID := ""
