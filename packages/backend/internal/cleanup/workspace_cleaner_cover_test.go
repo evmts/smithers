@@ -33,6 +33,7 @@ func (m *workspaceCoverStore) CleanupStalePendingWorkspaces(ctx context.Context)
 func (m *workspaceCoverStore) CleanupIdleWorkspaces(ctx context.Context) error         { return nil }
 func (m *workspaceCoverStore) CleanupOverQuotaWorkspaces(context.Context) error        { return nil }
 func (m *workspaceCoverStore) CleanupStoppedAgentWorkspaceDisks(context.Context) error { return nil }
+func (m *workspaceCoverStore) RetireIdleAgentBoxes(context.Context) error              { return nil }
 func (m *workspaceCoverStore) CleanupAbandonedWorkspaces(context.Context) error        { return nil }
 func (m *workspaceCoverStore) ReapWorkspaceChildren(context.Context) error             { return nil }
 func (m *workspaceCoverStore) CleanupOrphanFlowJournals(context.Context) error         { return nil }

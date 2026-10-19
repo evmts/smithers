@@ -12,9 +12,8 @@ import (
 )
 
 type agentWorkspaceBackendStub struct {
-	createFn  func(ctx context.Context, input CreateAgentWorkspaceInput) (AgentWorkspaceResult, error)
-	suspended []string
-	failed    []string
+	createFn func(ctx context.Context, input CreateAgentWorkspaceInput) (AgentWorkspaceResult, error)
+	released []string
 }
 
 func (s *agentWorkspaceBackendStub) CheckAgentWorkspaceQuota(context.Context, int64) error {
@@ -27,13 +26,9 @@ func (s *agentWorkspaceBackendStub) CreateAgentWorkspace(ctx context.Context, in
 	}
 	return AgentWorkspaceResult{WorkspaceID: "ws-1", VMID: "vm-1"}, nil
 }
-func (s *agentWorkspaceBackendStub) SuspendAgentWorkspace(_ context.Context, id string) error {
-	s.suspended = append(s.suspended, id)
-	return nil
-}
-func (s *agentWorkspaceBackendStub) FailAgentWorkspace(_ context.Context, id string) error {
-	s.failed = append(s.failed, id)
-	return nil
+func (s *agentWorkspaceBackendStub) ReleaseAgentWorkspace(_ context.Context, id, sessionID string, _ int64) (AgentWorkspaceRelease, error) {
+	s.released = append(s.released, id+"/"+sessionID)
+	return AgentWorkspaceRelease{Outcome: agentWorkspaceQuiesced, HeadTokenRevoked: true}, nil
 }
 func (s *agentWorkspaceBackendStub) SnapshotAgentWorkspace(context.Context, string, string) (string, error) {
 	return "snap-1", nil
@@ -123,27 +118,15 @@ func TestAgentDispatch_WorkspaceMode_CreateFailureMarksInfraFailed(t *testing.T)
 	assert.Empty(t, d.workspaceID)
 }
 
-func TestAgentDispatch_WorkspaceMode_CleanupFailsUnstartedAndSuspendsStarted(t *testing.T) {
+// A dispatch that fails after its box joined releases that box, whether or
+// not its agent started: the run is over either way.
+func TestAgentDispatch_WorkspaceMode_CleanupReleasesTheBox(t *testing.T) {
 	t.Parallel()
-	t.Run("agent never started: workspace failed, quota released", func(t *testing.T) {
-		backend := &agentWorkspaceBackendStub{}
-		d := newWorkspaceModeDispatch(t, backend)
-		d.workspaceID = "ws-1"
-		d.vmCreated = true
-		d.vm = sandbox.CreateResult{ID: "vm-1"}
-		d.cleanup()
-		assert.Equal(t, []string{"ws-1"}, backend.failed)
-		assert.Empty(t, backend.suspended)
-	})
-	t.Run("agent started: workspace suspended and kept", func(t *testing.T) {
-		backend := &agentWorkspaceBackendStub{}
-		d := newWorkspaceModeDispatch(t, backend)
-		d.workspaceID = "ws-1"
-		d.vmCreated = true
-		d.serviceStarted = true
-		d.vm = sandbox.CreateResult{ID: "vm-1"}
-		d.cleanup()
-		assert.Equal(t, []string{"ws-1"}, backend.suspended)
-		assert.Empty(t, backend.failed)
-	})
+	backend := &agentWorkspaceBackendStub{}
+	d := newWorkspaceModeDispatch(t, backend)
+	d.workspaceID = "ws-1"
+	d.vmCreated = true
+	d.vm = sandbox.CreateResult{ID: "vm-1"}
+	d.cleanup()
+	assert.Equal(t, []string{"ws-1/" + d.input.SessionID}, backend.released)
 }

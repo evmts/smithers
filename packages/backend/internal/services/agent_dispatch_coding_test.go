@@ -354,8 +354,9 @@ func (stubAgentWorkspaceBackend) CheckAgentWorkspaceQuota(context.Context, int64
 func (stubAgentWorkspaceBackend) CreateAgentWorkspace(context.Context, CreateAgentWorkspaceInput) (AgentWorkspaceResult, error) {
 	return AgentWorkspaceResult{}, nil
 }
-func (stubAgentWorkspaceBackend) SuspendAgentWorkspace(context.Context, string) error { return nil }
-func (stubAgentWorkspaceBackend) FailAgentWorkspace(context.Context, string) error    { return nil }
+func (stubAgentWorkspaceBackend) ReleaseAgentWorkspace(context.Context, string, string, int64) (AgentWorkspaceRelease, error) {
+	return AgentWorkspaceRelease{Outcome: agentWorkspaceKeptInUse}, nil
+}
 func (stubAgentWorkspaceBackend) SnapshotAgentWorkspace(context.Context, string, string) (string, error) {
 	return "", nil
 }

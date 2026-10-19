@@ -66,6 +66,7 @@ var allEnvKeys = []string{
 	"SMITHERS_SANDBOX_AGENT_ROOTFS_SIZE_MB",
 	"SMITHERS_SANDBOX_AGENT_MAX_RUNTIME_SECONDS",
 	"SMITHERS_SANDBOX_AGENT_IDLE_TIMEOUT_SECONDS",
+	"SMITHERS_SANDBOX_AGENT_BOX_IDLE_CAP_SECONDS",
 	"SMITHERS_SANDBOX_AGENT_MAX_CONCURRENT",
 	"SMITHERS_SANDBOX_WORKSPACE_IDLE_TIMEOUT",
 	"SMITHERS_SANDBOX_WORKSPACE_LEASE_DELETE_AFTER",
@@ -761,6 +762,7 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			AgentRootfsSizeMB:         2048,
 			AgentMaxRuntimeSecs:       1800,
 			AgentIdleTimeoutSecs:      300,
+			AgentBoxIdleCapSecs:       900,
 			WorkspaceIdleTimeout:      1800,
 			WorkspaceLeaseDeleteAfter: 86400,
 			WorkspacePersistence:      "persistent",
@@ -1222,6 +1224,12 @@ func TestLoad_EveryEnvVarOverrides_TableDriven(t *testing.T) {
 			envKey: "SMITHERS_SANDBOX_AGENT_IDLE_TIMEOUT_SECONDS", envValue: "900",
 			check: func(t *testing.T, cfg *Config) {
 				assert.Equal(t, int64(900), cfg.Sandbox.AgentIdleTimeoutSecs)
+			},
+		},
+		{
+			envKey: "SMITHERS_SANDBOX_AGENT_BOX_IDLE_CAP_SECONDS", envValue: "0",
+			check: func(t *testing.T, cfg *Config) {
+				assert.Equal(t, int64(0), cfg.Sandbox.AgentBoxIdleCapSecs, "0 disables the idle cap")
 			},
 		},
 		// SSH
@@ -1951,4 +1959,13 @@ func TestLoadFlowLoadDefaultAndExplicitDisable(t *testing.T) {
 	cfg, err = Load("")
 	require.NoError(t, err)
 	require.False(t, cfg.FeatureFlags.FlowLoad)
+}
+
+// TestLoad_AgentBoxIdleCapDefaultsToFifteenMinutes: a quiesced agent box is
+// retired after 15 minutes with no turn unless the deployment sets otherwise.
+func TestLoad_AgentBoxIdleCapDefaultsToFifteenMinutes(t *testing.T) {
+	clearConfigEnv(t)
+	cfg, err := Load("")
+	require.NoError(t, err)
+	assert.Equal(t, int64(900), cfg.Sandbox.AgentBoxIdleCapSecs)
 }

@@ -362,7 +362,7 @@ type agentRevisionSnapshotStamper interface {
 
 // finishAgentWorkspace closes a run's computer (RFD-004): a completed run's
 // workspace is snapshotted and the snapshot stamped on the run's revisions;
-// every terminal status then suspends the workspace and keeps the row.
+// every terminal status then releases the box and keeps the row.
 func (s *AgentService) finishAgentWorkspace(ctx context.Context, session db.AgentSession, workspaceID string, workflowRunID int64, finalStatus string) {
 	logger := middleware.LoggerWithAgentSessionAndWorkflowRun(ctx, session.ID, workflowRunID)
 	if finalStatus == "completed" {
@@ -380,11 +380,36 @@ func (s *AgentService) finishAgentWorkspace(ctx context.Context, session db.Agen
 			}
 		}
 	}
-	if err := s.workspaces.SuspendAgentWorkspace(ctx, workspaceID); err != nil {
-		logger.Error("failed to suspend agent workspace", "workspace_id", workspaceID, "error", err)
+	release, err := s.workspaces.ReleaseAgentWorkspace(ctx, workspaceID, session.ID, workflowRunID)
+	logAgentWorkspaceRelease(logger, workspaceID, finalStatus, release, err)
+}
+
+// logAgentWorkspaceRelease states what ending a run did to its box: the
+// outcome, whether its head token is dead, and what keeps it running.
+func logAgentWorkspaceRelease(logger *slog.Logger, workspaceID, finalStatus string, release AgentWorkspaceRelease, err error) {
+	attrs := []any{"workspace_id", workspaceID, "final_status", finalStatus,
+		"outcome", release.Outcome, "head_token_revoked", release.HeadTokenRevoked}
+	if release.Detail != "" {
+		attrs = append(attrs, "kept_for", release.Detail)
+	}
+	if err != nil {
+		logger.Error("agent workspace release failed", append(attrs, "error", err)...)
 		return
 	}
-	logger.Info("agent workspace suspended", "workspace_id", workspaceID, "final_status", finalStatus)
+	message := map[string]string{
+		agentWorkspaceQuiesced:                "agent workspace quiesced",
+		agentWorkspaceRetired:                 "agent workspace retired",
+		agentWorkspaceUnreaped:                "agent workspace kept unreaped",
+		agentWorkspaceAlreadyReleased:         "agent workspace was already released",
+		agentWorkspaceKeptInUse:               "agent workspace kept running",
+		agentWorkspaceKeptForMachineLifecycle: "agent workspace kept running",
+		agentWorkspaceKeptWithoutRuntime:      "agent workspace kept running",
+		agentWorkspaceAbsent:                  "agent workspace absent",
+	}[release.Outcome]
+	if message == "" {
+		message = "agent workspace release unknown"
+	}
+	logger.Info(message, attrs...)
 }
 
 func (s *AgentService) deleteAgentSandboxVM(ctx context.Context, sessionID string, workflowRunID int64, sandboxVMID pgtype.Text, counted bool) {
