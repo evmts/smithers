@@ -353,8 +353,9 @@ async function shot(page: Page, state: string, width: number, scheme: string) {
   const dir = process.env.REPOSITORY_SHOTS
   if (dir) {
     await mkdir(dir, { recursive: true })
+    const still = state === "commands" ? "code-home-ask-commands" : ["code-home-ask-change", state].join("-")
     await page.screenshot({
-      path: `${dir}/${state === "commands" ? "code-home-ask-commands" : `code-home-ask-change-${state}`}-${width}-${scheme}.png`,
+      path: `${dir}/${still}-${width}-${scheme}.png`,
       fullPage: true
     })
   }

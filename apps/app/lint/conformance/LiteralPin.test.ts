@@ -742,10 +742,6 @@ const KNOWN_ORPHANS: ReadonlyArray<Excuse> = [
     reason: "e2e/real/auth-permissions.spec.ts: account.show now opens Settings; the former account-login projection is absent, so changing the kind alone would leave the scenario dead."
   },
   {
-    literal: "change.land", file: "e2e/real/coverage/deferrals.ts",
-    reason: "e2e/real/coverage/deferrals.ts: the old change landing affordance is absent; TODO merging uses prs.land and different IDs/arguments, so this scenario needs a full rewrite."
-  },
-  {
     literal: "repo-import", file: "e2e/real/issues/cloud.ts",
     reason: "e2e/real/issues/cloud.ts: RepoImportSeam retains import records but no live wire repo-import card/renderer exists; the job scenario needs an owner decision."
   }
