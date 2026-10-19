@@ -1,8 +1,20 @@
+/**
+ * Publishes `smthrs serve`'s session operator token to a file the local
+ * gateway relay reads, instead of printing it.
+ *
+ * @since 1.0.0
+ */
+
 import { randomBytes } from "node:crypto"
 import { open, rename, rm } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 
-/** Publish a session credential without exposing a partial or world-readable file. */
+/**
+ * Publish a session credential without exposing a partial or world-readable file.
+ *
+ * @category output
+ * @since 1.0.0
+ */
 export const writeOperatorTokenFile = async (path: string, token: string): Promise<void> => {
   const destination = resolve(path)
   const temporary = join(dirname(destination), `.operator-token-${randomBytes(16).toString("hex")}`)
