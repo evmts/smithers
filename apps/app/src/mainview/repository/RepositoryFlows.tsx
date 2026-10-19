@@ -8,7 +8,7 @@ import { hrefFor } from "../RepositoryRouter"
 import { flowCommand, type FlowDefinition, type ReadState } from "./FlowContents"
 import "./repository-automation.css"
 
-export const FLOW_HELD = "Hosted runs that change code are held. Run smthrs locally: npm i -g smthrs@next"
+export const FLOW_HELD = "Hosted runs of this flow are held; run it locally instead."
 /** A router link, or none when the name cannot round-trip through the URL grammar (never a dead link). */
 const link = (repo: string, subject: RepositorySubject): string | undefined => {
   try { return hrefFor({ repo, subject }) } catch { return undefined }

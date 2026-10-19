@@ -6,7 +6,7 @@ import type { GitHubSyncChip } from "./githubSync"
 import { RepositoryLoading } from "./RepositoryFlows"
 import "./repository-automation.css"
 
-export const MODELS_HELD = "Model connections arrive with hosted runs. Locally, smthrs uses your Claude Code or Codex login."
+export const MODELS_HELD = "Hosted coding runs on Cerebras Qwen; locally, smthrs uses your login."
 
 /**
  * Monday's Settings sections, in the mock's order (views/settings/shared.tsx):

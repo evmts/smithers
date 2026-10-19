@@ -25,7 +25,7 @@ export function frontmatterDescription(source: string): string | undefined {
   return line
 }
 export const validFlowName = (name: string) => !!name && !name.includes("/") && !name.includes("\\") && !unsafePath(name) && !/[\s\x00-\x1f\x7f]/.test(name)
-export const flowCommand = (name: string) => `smthrs flow start ${/^[a-zA-Z0-9][\w.-]*$/.test(name) ? name : `'${name.replaceAll("'", "'\\''")}'`}`
+export const flowCommand = (name: string) => `npx smthrs@next flow start ${/^[a-zA-Z0-9][\w.-]*$/.test(name) ? name : `'${name.replaceAll("'", "'\\''")}'`}`
 
 /** Static literal metadata only. Never evaluate repository code. */
 export function flowDescription(source: string): string | undefined {
