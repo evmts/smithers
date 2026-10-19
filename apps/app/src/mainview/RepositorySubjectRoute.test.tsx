@@ -917,3 +917,30 @@ test("issue detail keeps the loaded list count from persisted card history", asy
   const nav = host.querySelector('nav[aria-label="Repository"]')
   expect([...nav!.querySelectorAll("a")].find(a => a.getAttribute("href")?.endsWith("/issues"))?.textContent).toBe("Issues1")
 })
+
+test("Code home reload re-reads the branch count for a restored repository selection", async () => {
+  const storage = memoryStorage()
+  const backend = recordingBackend({
+    "/api/user": json(401, {}),
+    "/api/public/repos": json(200, { repos: [{ name: REPO }] }),
+    [ROOT]: json(200, { is_public: true, default_bookmark: "main" }),
+    [`${ROOT}/contents`]: json(200, [{ name: "src", type: "dir" }]),
+    [`${ROOT}/bookmarks`]: json(200, { items: [
+      { name: "main", target_change_id: "main-change", target_commit_id: "a".repeat(40) },
+      { name: "docs", target_change_id: "docs-change", target_commit_id: "b".repeat(40) }
+    ], next_cursor: "" })
+  })
+  window.history.replaceState(null, "", `/${REPO}`)
+  for (const visit of ["first", "repeat"]) {
+    const store = await createAppStore({ kind: "localStorage", storage })
+    const controller = createAppController(store, silentAgent, { bootstrap: WEB, repositoryApp: REPO, ...backend.services })
+    await controller.loadSession()
+    const requestId = beginRepositoryEntry(store, REPO)
+    await openRequestedRepo(controller, backend.fetchImpl, REPO, requestId)
+    await settled()
+    const { host } = mount(controller)
+    expect(host.querySelector(".repo-code-home-toolbar .repo-ui-muted")?.textContent, visit).toBe("2 branches")
+    while (mounted.length > 0) mounted.pop()?.()
+    await controller.dispose()
+  }
+})

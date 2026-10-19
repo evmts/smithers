@@ -2048,7 +2048,11 @@ export const createAppController = (
     const before = activeRepositoryId(store)
     const result = await selectRepoOnly(key)
     if (result === undefined && store.session().surface === "world") void readWikiForPane()
-    if (result === undefined && !installHost && !design.enabled && activeRepositoryId(store) !== before) repositoryBranches.repositoryChanged()
+    // Reload restores the selection, but branch rows belong to this controller.
+    // Refill that view even when selecting the already active repository.
+    const selected = activeRepositoryId(store)
+    if (result === undefined && !installHost && !design.enabled && selected !== null &&
+      (selected !== before || repositoryBranches.rows.get(selected)?.state !== "ready")) repositoryBranches.repositoryChanged()
     return result
   }
   const {
