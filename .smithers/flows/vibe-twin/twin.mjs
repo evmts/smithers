@@ -15,6 +15,7 @@
  * and the twin run has no failure the TypeScript run lacks.
  */
 import { spawnSync } from "node:child_process"
+import typescript from "typescript"
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -29,25 +30,51 @@ const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)))
  */
 export const dropDefaultNever = (text) => {
   const head = "Effect.Effect<"
+  // Copies a string literal or comment starting at i verbatim, returning its end: their text is
+  // never a type, so normalization must not touch it (guardian-review b-4zmezg).
+  const skip = (i) => {
+    const c = text[i]
+    if (c === '"' || c === "'" || c === "`") {
+      let j = i + 1
+      for (; j < text.length && text[j] !== c; j++) if (text[j] === "\\") j++
+      return j + 1
+    }
+    if (text.startsWith("/*", i)) {
+      const j = text.indexOf("*/", i + 2)
+      return j < 0 ? text.length : j + 2
+    }
+    if (text.startsWith("//", i)) {
+      const j = text.indexOf("\n", i)
+      return j < 0 ? text.length : j
+    }
+    return i
+  }
   let out = ""
   let i = 0
   while (i < text.length) {
-    const at = text.indexOf(head, i)
-    if (at < 0 || (at > 0 && /[\w$.]/.test(text[at - 1]))) {
-      if (at < 0) return out + text.slice(i)
-      out += text.slice(i, at + 1)
-      i = at + 1
+    const skipped = skip(i)
+    if (skipped > i) {
+      out += text.slice(i, skipped)
+      i = skipped
+      continue
+    }
+    if (!text.startsWith(head, i) || (i > 0 && /[\w$.]/.test(text[i - 1]))) {
+      out += text[i]
+      i++
       continue
     }
     const args = []
     let depth = 0
-    let start = at + head.length
+    let start = i + head.length
     let j = start
     for (; j < text.length; j++) {
       const c = text[j]
-      if (c === '"' || c === "'" || c === "`") {
-        for (j++; j < text.length && text[j] !== c; j++) if (text[j] === "\\") j++
-      } else if ("<([{".includes(c)) depth++
+      const after = skip(j)
+      if (after > j) {
+        j = after - 1
+        continue
+      }
+      if ("<([{".includes(c)) depth++
       else if (c === ">" && text[j - 1] === "=") continue
       else if (">)]}".includes(c)) {
         if (depth === 0) break
@@ -61,7 +88,7 @@ export const dropDefaultNever = (text) => {
     args.push(text.slice(start, j))
     const inner = args.map(dropDefaultNever)
     while (inner.length > 1 && inner[inner.length - 1].trim() === "never") inner.pop()
-    out += text.slice(i, at) + head + inner.join(",") + ">"
+    out += head + inner.join(",") + ">"
     i = j + 1
   }
   return out
@@ -198,7 +225,7 @@ export const parseDts = (text) => {
         if (!m) continue
         const name = m[3] ?? m[2]
         const kind = named[1] || m[1] ? "type" : "value"
-        byName.set(name, { name, kind, generic: false, text: `export { ${part} } from <re-export>` })
+        byName.set(name, { name, kind, generic: false, semantic: true, text: `export { ${part} } from <re-export>` })
       }
       continue
     }
@@ -210,7 +237,13 @@ export const parseDts = (text) => {
       : { name: m[2], kind: m[1] === "class" ? "class" : ["interface", "type", "enum", "namespace"].includes(m[1]) ? "type" : "value" }
     const generic = entry.kind === "type" && new RegExp(`^export (?:declare )?(?:interface|type) ${entry.name}<`).test(body)
     const previous = byName.get(entry.name)
-    byName.set(entry.name, previous ? { ...previous, text: `${previous.text}\n${statement}` } : { ...entry, generic, text: statement })
+    byName.set(entry.name, {
+      ...(previous ?? entry),
+      generic: Boolean(previous?.generic || generic),
+      hasType: Boolean(previous?.hasType || entry.kind === "type"),
+      hasValue: Boolean(previous?.hasValue || entry.kind === "value"),
+      text: previous ? `${previous.text}\n${statement}` : statement
+    })
   }
   return [...byName.values()]
 }
@@ -554,6 +587,8 @@ const sameNamedPair = (pkg, work, text) => {
     if (a === undefined || b === undefined || normalizeDts(a.text) !== normalizeDts(b.text)) return false
     const tsLocals = localNames(tsText)
     const vbLocals = localNames(vbText)
+    // A nominal brand does not waive changed public fields behind private aliases.
+    if (!sameReferencedLocals(a.text, tsLocals, vbLocals)) return false
     return brandKeys.every((key) => !tsLocals.has(key) && !vbLocals.has(key) ? true : tsLocals.get(key) === vbLocals.get(key) && tsLocals.has(key))
   })
 }
@@ -566,12 +601,20 @@ const sameNamedPair = (pkg, work, text) => {
  */
 /**
  * The exports a source file declares, for a module TypeScript can't emit a .d.ts for (E-6):
- * values, classes and types, with generic types marked. Re-exports from other modules are
- * listed separately; they are checked where they are declared.
+ * values, classes and types, with generic types marked. Named re-exports are checked through the source module namespace too. Star exports
+ * need a complete type export inventory before this fallback can verify them.
  */
 export const sourceExports = (text) => {
   const out = new Map()
-  const add = (name, kind, generic = false) => out.set(name, { name, kind, generic })
+  const add = (name, kind, generic = false) => {
+    const previous = out.get(name)
+    out.set(name, {
+      ...(previous ?? { name, kind }),
+      generic: Boolean(previous?.generic || generic),
+      hasType: Boolean(previous?.hasType || kind === "type"),
+      hasValue: Boolean(previous?.hasValue || kind === "value")
+    })
+  }
   const body = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")
   for (const m of body.matchAll(/^export\s+(?:declare\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/gm)) add(m[1], "class")
   for (const m of body.matchAll(/^export\s+(?:declare\s+)?(?:async\s+)?function\*?\s+([A-Za-z_$][\w$]*)/gm)) add(m[1], "value")
@@ -579,7 +622,7 @@ export const sourceExports = (text) => {
   for (const m of body.matchAll(/^export\s+(?:declare\s+)?(?:const\s+)?enum\s+([A-Za-z_$][\w$]*)/gm)) add(m[1], "value")
   for (const m of body.matchAll(/^export\s+(?:declare\s+)?(?:interface|type)\s+([A-Za-z_$][\w$]*)(\s*<)?/gm)) add(m[1], "type", Boolean(m[2]))
   if (/^export\s+default\b/m.test(body)) add("default", "value")
-  for (const m of body.matchAll(/^export\s+(type\s+)?\{([^}]*)\}(?!\s*from)/gm)) {
+  for (const m of body.matchAll(/^export\s+(type\s+)?\{([^}]*)\}/gm)) {
     for (const part of m[2].split(",").map((p) => p.trim()).filter(Boolean)) {
       const t = part.match(/^(type\s+)?([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$/)
       if (t) add(t[3] ?? t[2], m[1] || t[1] ? "type" : "value")
@@ -647,18 +690,18 @@ const apiCheck = (pkg, work, twinned = [], privates = { ts: new Map(), twin: new
       // Equal export text may refer to different private aliases or imports (guardian-review):
       // it is proof only when the module's private context matches too.
       const sameLocals = sameReferencedLocals(e.text, tsLocals, vbLocals)
-      if (normalizeDts(e.text) === normalizeDts(v.text) && sameLocals) continue
+      if (!e.semantic && !v.semantic && normalizeDts(e.text) === normalizeDts(v.text) && sameLocals) continue
       if (e.kind === "reexport") {
         api.errors.push(`${file}: ${name} (changed export context requires semantic verification)`)
         continue
       }
-      if (e.kind === "type") {
+      if (e.kind === "type" || e.hasType) {
         if (e.generic) api.typeDiffers.push(`${file}: ${name} (generic: keep its text${sameLocals ? "" : " and its module's private declarations"})`)
         else {
           need()
           check(`${file}: type ${name}`, `T${i}.${name}`, `V${i}.${name}`)
         }
-        continue
+        if (!e.hasValue) continue
       }
       need()
       check(`${file}: ${name}`, `typeof T${i}.${name}`, `typeof V${i}.${name}`)
@@ -672,7 +715,15 @@ const apiCheck = (pkg, work, twinned = [], privates = { ts: new Map(), twin: new
     const srcFile = ["ts", "tsx", "mts"].map((x) => `${rel}.${x}`).find((f) => existsSync(join(pkg, sourceRoot(pkg), f)))
     const vbFile = ["vibe", "ts", "tsx"].map((x) => `${rel}.${x}`).find((f) => existsSync(join(pkg, "src-vibe", f)))
     if (srcFile === undefined || vbFile === undefined) return
-    const ts = sourceExports(readFileSync(join(pkg, sourceRoot(pkg), srcFile), "utf8"))
+    const tsSource = readFileSync(join(pkg, sourceRoot(pkg), srcFile), "utf8")
+    const vbSource = readFileSync(join(pkg, "src-vibe", vbFile), "utf8")
+    // A value namespace cannot prove type-only star exports. Keep this module
+    // unverified until its complete export set is available, never count zero checks.
+    if (/\bexport\s+(?:type\s+)?\*/.test(tsSource) || /\bexport\s+(?:type\s+)?\*/.test(vbSource)) {
+      api.errors.push(`${rel} (source): star re-export requires a complete declaration inventory`)
+      return
+    }
+    const ts = sourceExports(tsSource)
     const vbDts = join(twinOut, `${rel}.d.ts`)
     const vb = existsSync(vbDts)
       ? new Map(parseDts(readFileSync(vbDts, "utf8")).filter((e) => e.kind !== "reexport").map((e) => [e.name, e]))
@@ -686,10 +737,10 @@ const apiCheck = (pkg, work, twinned = [], privates = { ts: new Map(), twin: new
         api.missingExports.push(`${rel} (source): ${name}`)
         continue
       }
-      if (e.kind === "type") {
+      if (e.kind === "type" || e.hasType) {
         if (e.generic) api.typeDiffers.push(`${rel} (source): ${name} (generic, and TypeScript emits no declaration: review)`)
         else check(`${rel} (source): type ${name}`, `T${i}.${name}`, `V${i}.${name}`)
-        continue
+        if (!e.hasValue) continue
       }
       if (privates.ts.get(rel)?.exports.includes(name)) {
         // TypeScript can't declare this export (TS4094). The twin must report the same private
@@ -1276,7 +1327,13 @@ registerHooks({
   const twinnedSet = new Set(twinned)
   // A React component stays .tsx: VibeLang has no JSX, and components call their .vibe logic
   // through its TypeScript API (D63; effectscript-4a d-q7gqcv, finding F-5).
-  const isComponent = (file) => file.endsWith(".tsx") && /<[A-Za-z][\w.]*[\s/>]|<\/|<>/.test(readFileSync(file, "utf8"))
+  const isComponent = (file) => {
+    if (!file.endsWith(".tsx")) return false
+    const source = typescript.createSourceFile(file, readFileSync(file, "utf8"), typescript.ScriptTarget.Latest, true, typescript.ScriptKind.TSX)
+    if (source.parseDiagnostics.length > 0) return false
+    const hasJsx = (node) => typescript.isJsxElement(node) || typescript.isJsxSelfClosingElement(node) || typescript.isJsxFragment(node) || Boolean(typescript.forEachChild(node, hasJsx))
+    return hasJsx(source)
+  }
   receipt.api.missingEffectModules = srcModules(pkg)
     .filter(({ rel, file }) => !twinnedSet.has(rel) && !isComponent(file) && /from\s+["'](?:effect|@effect\/)/.test(readFileSync(file, "utf8")))
     .map(({ rel }) => `${rel}.d.ts`)

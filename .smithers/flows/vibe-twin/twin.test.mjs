@@ -280,3 +280,11 @@ test("an import type's resolution-mode import attribute is not a difference (S10
     "require mode is a different resolution"
   )
 })
+
+test("default-never normalization leaves string literals and comments alone (guardian b-4zmezg)", () => {
+  assert.notEqual(normalizeDts(`export type Shape = "Effect.Effect<number, never>";`), normalizeDts(`export type Shape = "Effect.Effect<number>";`))
+  assert.notEqual(normalizeDts("export type T = `Effect.Effect<number, never>`;"), normalizeDts("export type T = `Effect.Effect<number>`;"))
+  assert.equal(dropDefaultNever("/** Effect.Effect<A, never> */ x"), "/** Effect.Effect<A, never> */ x")
+  assert.equal(dropDefaultNever("// Effect.Effect<A, never>\nx"), "// Effect.Effect<A, never>\nx")
+  assert.equal(normalizeDts("export declare const r: Effect.Effect<R<H>, E, never>;"), normalizeDts("export declare const r: Effect.Effect<R<H>, E>;"))
+})
