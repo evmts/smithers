@@ -582,15 +582,23 @@ SELECT id, repository_id, workflow_definition_id, status, trigger_event, trigger
 FROM workflow_runs
 WHERE id = $1
   AND repository_id = $2
+  AND (NOT $3::boolean OR may_view_workflow_run(id, $4::bigint))
 `
 
 type GetWorkflowRunParams struct {
-	ID           int64 `json:"id"`
-	RepositoryID int64 `json:"repository_id"`
+	ID                 int64 `json:"id"`
+	RepositoryID       int64 `json:"repository_id"`
+	RestrictVisibility bool  `json:"restrict_visibility"`
+	ViewerID           int64 `json:"viewer_id"`
 }
 
 func (q *Queries) GetWorkflowRun(ctx context.Context, arg GetWorkflowRunParams) (WorkflowRun, error) {
-	row := q.db.QueryRow(ctx, getWorkflowRun, arg.ID, arg.RepositoryID)
+	row := q.db.QueryRow(ctx, getWorkflowRun,
+		arg.ID,
+		arg.RepositoryID,
+		arg.RestrictVisibility,
+		arg.ViewerID,
+	)
 	var i WorkflowRun
 	err := row.Scan(
 		&i.ID,
@@ -1074,14 +1082,17 @@ SELECT id, repository_id, workflow_definition_id, status, trigger_event, trigger
 FROM workflow_runs
 WHERE workflow_definition_id = $1
   AND repository_id = $2
+  AND (NOT $3::boolean OR may_view_workflow_run(id, $4::bigint))
 ORDER BY id DESC
-LIMIT $4
-OFFSET $3
+LIMIT $6
+OFFSET $5
 `
 
 type ListWorkflowRunsByDefinitionParams struct {
 	WorkflowDefinitionID int64 `json:"workflow_definition_id"`
 	RepositoryID         int64 `json:"repository_id"`
+	RestrictVisibility   bool  `json:"restrict_visibility"`
+	ViewerID             int64 `json:"viewer_id"`
 	PageOffset           int32 `json:"page_offset"`
 	PageSize             int32 `json:"page_size"`
 }
@@ -1090,6 +1101,8 @@ func (q *Queries) ListWorkflowRunsByDefinition(ctx context.Context, arg ListWork
 	rows, err := q.db.Query(ctx, listWorkflowRunsByDefinition,
 		arg.WorkflowDefinitionID,
 		arg.RepositoryID,
+		arg.RestrictVisibility,
+		arg.ViewerID,
 		arg.PageOffset,
 		arg.PageSize,
 	)
@@ -1139,19 +1152,28 @@ const listWorkflowRunsByRepo = `-- name: ListWorkflowRunsByRepo :many
 SELECT id, repository_id, workflow_definition_id, status, trigger_event, trigger_ref, trigger_commit_sha, dispatch_inputs, agent_token_hash, agent_token_expires_at, jjhub_token_id, check_run_id, check_run_url, started_at, completed_at, created_at, updated_at, execution_plane, log_bytes, log_entry_count, cancel_reason, dismissed_by, dismissed_at
 FROM workflow_runs
 WHERE repository_id = $1
+  AND (NOT $2::boolean OR may_view_workflow_run(id, $3::bigint))
 ORDER BY id DESC
-LIMIT $3
-OFFSET $2
+LIMIT $5
+OFFSET $4
 `
 
 type ListWorkflowRunsByRepoParams struct {
-	RepositoryID int64 `json:"repository_id"`
-	PageOffset   int32 `json:"page_offset"`
-	PageSize     int32 `json:"page_size"`
+	RepositoryID       int64 `json:"repository_id"`
+	RestrictVisibility bool  `json:"restrict_visibility"`
+	ViewerID           int64 `json:"viewer_id"`
+	PageOffset         int32 `json:"page_offset"`
+	PageSize           int32 `json:"page_size"`
 }
 
 func (q *Queries) ListWorkflowRunsByRepo(ctx context.Context, arg ListWorkflowRunsByRepoParams) ([]WorkflowRun, error) {
-	rows, err := q.db.Query(ctx, listWorkflowRunsByRepo, arg.RepositoryID, arg.PageOffset, arg.PageSize)
+	rows, err := q.db.Query(ctx, listWorkflowRunsByRepo,
+		arg.RepositoryID,
+		arg.RestrictVisibility,
+		arg.ViewerID,
+		arg.PageOffset,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}

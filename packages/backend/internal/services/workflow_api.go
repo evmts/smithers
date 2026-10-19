@@ -6,6 +6,7 @@ import (
 	stdErrors "errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -148,6 +149,7 @@ func (s *workflowAPIService) ListWorkflowRunsByRepo(ctx context.Context, reposit
 		offset = 0
 	}
 	return s.queries.ListWorkflowRunsByRepo(ctx, db.ListWorkflowRunsByRepoParams{
+		RestrictVisibility: true, ViewerID: runViewerID(ctx),
 		RepositoryID: repositoryID,
 		PageOffset:   ClampInt32(offset),
 		PageSize:     int32(perPage),
@@ -166,6 +168,7 @@ func (s *workflowAPIService) ListWorkflowRunsByDefinition(ctx context.Context, r
 		offset = 0
 	}
 	return s.queries.ListWorkflowRunsByDefinition(ctx, db.ListWorkflowRunsByDefinitionParams{
+		RestrictVisibility: true, ViewerID: runViewerID(ctx),
 		WorkflowDefinitionID: definitionID,
 		RepositoryID:         repositoryID,
 		PageOffset:           ClampInt32(offset),
@@ -177,10 +180,7 @@ func (s *workflowAPIService) GetWorkflowRun(ctx context.Context, repositoryID, r
 	if s.queries == nil {
 		return db.WorkflowRun{}, pkgerrors.Internal("workflow store unavailable")
 	}
-	run, err := s.queries.GetWorkflowRun(ctx, db.GetWorkflowRunParams{
-		ID:           runID,
-		RepositoryID: repositoryID,
-	})
+	run, err := s.queries.GetWorkflowRun(ctx, workflowRunReadParams(ctx, repositoryID, runID))
 	if err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.WorkflowRun{}, pkgerrors.NotFound("workflow run not found")
@@ -318,4 +318,19 @@ func ValidateDispatchInputs(configJSON json.RawMessage, userInputs map[string]in
 	}
 
 	return result, nil
+}
+
+// runViewerID returns zero for visitors; zero never owns an agent session.
+func runViewerID(ctx context.Context) int64 {
+	return middleware.RunRecordViewerID(ctx)
+}
+
+// An internal credential authorizes exactly its verified run. It never lends
+// the owning person's identity to a public run read or a repository list.
+func workflowRunReadParams(ctx context.Context, repositoryID, runID int64) db.GetWorkflowRunParams {
+	params := db.GetWorkflowRunParams{ID: runID, RepositoryID: repositoryID, RestrictVisibility: true, ViewerID: runViewerID(ctx)}
+	if bound := middleware.WorkflowRunFromContext(ctx); bound != nil && bound.ID == runID && bound.RepositoryID == repositoryID {
+		params.RestrictVisibility = false
+	}
+	return params
 }

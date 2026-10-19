@@ -430,6 +430,7 @@ func (d *agentDispatch) createWorkflowRun() error {
 			WorkflowDefinitionID: d.wfDef.ID,
 			Status:               "queued",
 			TriggerEvent:         "agent_message",
+			DispatchInputs:       []byte(fmt.Sprintf(`{"agent_session_id":%q}`, d.input.SessionID)),
 			TriggerRef:           "",
 			TriggerCommitSha:     "",
 			// Agent runs are driven end-to-end by this dispatch: the agent plane

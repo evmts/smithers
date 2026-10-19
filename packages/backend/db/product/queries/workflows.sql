@@ -90,7 +90,8 @@ WHERE repository_id = $1
 SELECT *
 FROM workflow_runs
 WHERE id = $1
-  AND repository_id = $2;
+  AND repository_id = $2
+  AND (NOT sqlc.arg(restrict_visibility)::boolean OR may_view_workflow_run(id, sqlc.arg(viewer_id)::bigint));
 
 
 -- name: GetWorkflowRunByRunID :one
@@ -113,6 +114,7 @@ SELECT *
 FROM workflow_runs
 WHERE workflow_definition_id = $1
   AND repository_id = $2
+  AND (NOT sqlc.arg(restrict_visibility)::boolean OR may_view_workflow_run(id, sqlc.arg(viewer_id)::bigint))
 ORDER BY id DESC
 LIMIT sqlc.arg(page_size)
 OFFSET sqlc.arg(page_offset);
@@ -155,6 +157,7 @@ RETURNING *;
 SELECT *
 FROM workflow_runs
 WHERE repository_id = $1
+  AND (NOT sqlc.arg(restrict_visibility)::boolean OR may_view_workflow_run(id, sqlc.arg(viewer_id)::bigint))
 ORDER BY id DESC
 LIMIT sqlc.arg(page_size)
 OFFSET sqlc.arg(page_offset);

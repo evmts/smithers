@@ -12,18 +12,19 @@ import (
 )
 
 type workflowRunCountStub struct {
-	countFn func(context.Context, int64) (int, error)
+	countFn func(context.Context, int64, int64) (int, error)
 }
 
-func (s workflowRunCountStub) CountActiveWorkflowRunsForUser(ctx context.Context, userID int64) (int, error) {
-	return s.countFn(ctx, userID)
+func (s workflowRunCountStub) CountVisibleActiveWorkflowRunsForUser(ctx context.Context, userID, viewerID int64) (int, error) {
+	return s.countFn(ctx, userID, viewerID)
 }
 
 func TestWorkflowRunCountHandler(t *testing.T) {
 	t.Run("returns the authenticated user's authoritative active count", func(t *testing.T) {
 		handler := &WorkflowRunCountHandler{Counter: workflowRunCountStub{
-			countFn: func(_ context.Context, userID int64) (int, error) {
+			countFn: func(_ context.Context, userID, viewerID int64) (int, error) {
 				require.Equal(t, int64(7), userID)
+				require.Equal(t, int64(7), viewerID)
 				return 4, nil
 			},
 		}}
@@ -39,7 +40,7 @@ func TestWorkflowRunCountHandler(t *testing.T) {
 
 	t.Run("requires authentication", func(t *testing.T) {
 		handler := &WorkflowRunCountHandler{Counter: workflowRunCountStub{
-			countFn: func(context.Context, int64) (int, error) {
+			countFn: func(context.Context, int64, int64) (int, error) {
 				t.Fatal("counter must not run without an authenticated user")
 				return 0, nil
 			},
@@ -67,7 +68,7 @@ func TestWorkflowRunCountHandler(t *testing.T) {
 
 	t.Run("does not turn a database error into a zero count", func(t *testing.T) {
 		handler := &WorkflowRunCountHandler{Counter: workflowRunCountStub{
-			countFn: func(context.Context, int64) (int, error) {
+			countFn: func(context.Context, int64, int64) (int, error) {
 				return 0, errors.New("database unavailable")
 			},
 		}}
