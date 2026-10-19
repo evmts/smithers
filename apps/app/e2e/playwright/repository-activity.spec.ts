@@ -1,4 +1,5 @@
 import { expect, test } from "./browserTest"
+import { fillComposer } from "./composer"
 import { identityRoute, signedOutVisitor } from "./identity"
 
 test("an incomplete empty activity read never claims nothing new and can be refreshed", async ({ page }) => {
@@ -12,15 +13,16 @@ test("an incomplete empty activity read never claims nothing new and can be refr
     `/api/user/github-repos/${repo}/issues`, `/api/repos/${repo}/landings`, "/api/notifications/list"
   ].includes(url.pathname), route => route.fulfill(available ? { json: [] } : { status: 401, json: { message: "Sign in" } }))
   await page.goto(`/${repo}?design=off`)
-  await page.getByRole("button", { name: "Chat", exact: true }).click()
-  const input = page.getByTestId("composer-input")
-  await input.fill(`/repo.overview ${repo}`)
-  await input.press("Enter")
+  // The admitted repository renders in its frame: the chat is the Ask aside.
+  await fillComposer(page, `/repo.overview ${repo}`)
+  await page.getByTestId("composer-input").press("Enter")
   const activity = page.locator(".repo-update")
   await expect(activity).toBeVisible()
   await expect(activity.getByRole("status")).toContainText("Partial update:")
   await expect(activity.getByText("Nothing new since the last check.", { exact: true })).toHaveCount(0)
   await page.goto(`/${repo}?design=off`)
+  // A reload collapses the Ask; the card and its status are still there once it opens.
+  await page.getByRole("button", { name: "Ask", exact: true }).click()
   await expect(activity.getByRole("status")).toBeVisible()
   await expect(activity.getByText("Nothing new since the last check.", { exact: true })).toHaveCount(0)
   available = true

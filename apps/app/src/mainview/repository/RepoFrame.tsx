@@ -9,6 +9,16 @@ import "./repository.css"
 
 export const RepositoryAskContext = createContext<((runCommand?: RunDynamicCommand) => void) | null>(null)
 
+/**
+ * The frame's notice region (the mock's `.repo-ui-toasts`), set while the Ask is
+ * collapsed: ShellRail portals its already filtered ToastStack there, so a live
+ * or failed notice (repository loading, a background branch request) stays
+ * visible outside a hidden Ask, and `reveal` opens the Ask before a notice's
+ * action acts on a card inside it. Null while the Ask is open: the notices then
+ * render inside it, as before.
+ */
+export const RepositoryNoticesContext = createContext<{ readonly host: HTMLElement; readonly reveal: () => void } | null>(null)
+
 const tabs = [
   ["", "Code"], ["issues", "Issues"], ["pulls", "Pull requests"]
 ] as const
@@ -29,6 +39,8 @@ export function RepoFrame({ repo, login, publicRepo, ask, onRunCommand, children
   const docked = useSyncExternalStore(subscribeWidth, () => (frame.current?.clientWidth ?? 0) >= 1440, () => false)
   const [open, setOpen] = useState<boolean | undefined>(undefined)
   const expanded = Boolean(login) && (open ?? docked)
+  // Transient chrome: the mounted notice region's node, for the Ask's notices while it is collapsed.
+  const [notices, setNotices] = useState<HTMLDivElement | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const base = `/${repo}`
   const [owner, name] = repo.split("/")
@@ -63,10 +75,16 @@ export function RepoFrame({ repo, login, publicRepo, ask, onRunCommand, children
       </header>
       <main id="repo-content" tabIndex={-1} className="repo-frame-content" data-keyboard-pane="Repository"><RepositoryAskContext.Provider value={openAsk}>{children}</RepositoryAskContext.Provider></main>
     </div>
-    <aside id="repo-ask" className="repo-frame-ask" aria-label="Ask" data-keyboard-pane="Ask">
+    <aside id="repo-ask" className="repo-frame-ask" aria-label="Ask" data-keyboard-pane="Ask" onKeyDownCapture={event => {
+      // A collapsed Ask's only reachable controls are its notices in the frame's region: the chord opens the Ask
+      // from there, ahead of the hidden chat's own handler, which would only toggle an unseen composer.
+      if (expanded || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return
+      event.preventDefault(); event.stopPropagation(); openAsk()
+    }}>
       <div className="repo-frame-ask-heading"><h2>Ask</h2><button className="repo-ui-icon-btn" aria-label="Close Ask" {...flowProps("chat.close")} onClick={() => close(onRunCommand)}><X size={18}/></button></div>
-      <div className="repository-chat">{typeof ask === "function" ? ask(expanded) : ask}</div>
+      <div className="repository-chat"><RepositoryNoticesContext.Provider value={expanded || notices === null ? null : { host: notices, reveal: () => openAsk() }}>{typeof ask === "function" ? ask(expanded) : ask}</RepositoryNoticesContext.Provider></div>
     </aside></div>
     </div>
+    <div ref={setNotices} className="repo-ui-toasts" data-keyboard-pane="Notifications" />
   </div>
 }

@@ -65,5 +65,13 @@
 .repo-code-home-file-row:has(> span:only-child) { grid-template-columns:minmax(0,1fr); }
 .repo-ui-branch-menu code { overflow-wrap:anywhere; font-size:var(--fs-1); color:var(--text-muted); }
 
+/* The Ask's filtered notices while the Ask is collapsed (ShellRail portals its ToastStack into the mock's toast region). */
+.repo-ui-toasts:empty { display:none; }
+.repo-ui-toasts [data-tone="live"] { --tone:var(--brand); }
+.repo-ui-toasts [data-tone="attention"] { --tone:var(--attention); }
+.repo-ui-toasts [data-tone="failed"] { --tone:var(--danger); }
+.repo-ui-toasts [data-tone="done"],.repo-ui-toasts [data-tone="quiet"] { --tone:var(--text-muted); }
+:where(.repo-ui-toasts) button { font:inherit; color:inherit; border:0; background:transparent; }
+
 .repo-frame-scroll { height:100%; overflow-y:auto; overflow-x:hidden; }
 .repo-frame-global,.repo-frame-page { width:100cqw; }
