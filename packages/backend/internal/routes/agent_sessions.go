@@ -44,6 +44,7 @@ type AgentSessionRouteService interface {
 
 // AgentSessionHandler handles the public repository-scoped agent session API.
 type AgentSessionHandler struct {
+	Landing     AgentSessionLandingRouteService
 	Service     AgentSessionRouteService
 	EgressAudit SandboxEgressAuditRouteService
 }
@@ -141,9 +142,14 @@ func (h *AgentSessionHandler) ListSessions(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	_, err := requireRouteUser(r)
+	user, err := requireRouteUser(r)
 	if err != nil {
 		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
+		return
+	}
+
+	if user.UserType == "guest" {
+		pkgerrors.WriteError(w, pkgerrors.NotFound("agent session not found"))
 		return
 	}
 
@@ -177,7 +183,7 @@ func (h *AgentSessionHandler) GetSession(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_, err := requireRouteUser(r)
+	user, err := requireRouteUser(r)
 	if err != nil {
 		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
 		return
@@ -186,6 +192,11 @@ func (h *AgentSessionHandler) GetSession(w http.ResponseWriter, r *http.Request)
 	sessionID, err := routeParam(r, "id", "session id is required")
 	if err != nil {
 		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
+		return
+	}
+
+	if user.UserType == "guest" {
+		pkgerrors.WriteError(w, pkgerrors.NotFound("agent session not found"))
 		return
 	}
 
@@ -206,6 +217,10 @@ func (h *AgentSessionHandler) GetSession(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if session.UserID != user.ID {
+		pkgerrors.WriteError(w, pkgerrors.NotFound("agent session not found"))
+		return
+	}
 	pkgerrors.WriteJSON(w, http.StatusOK, session)
 }
 

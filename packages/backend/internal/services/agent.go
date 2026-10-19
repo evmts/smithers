@@ -29,15 +29,17 @@ import (
 
 // AgentSessionResponse is the API representation of an agent session.
 type AgentSessionResponse struct {
-	ID           string          `json:"id"`
-	RepositoryID int64           `json:"repository_id"`
-	UserID       int64           `json:"user_id"`
-	Title        string          `json:"title"`
-	Status       string          `json:"status"`
-	MessageCount int64           `json:"message_count"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
-	Metadata     json.RawMessage `json:"metadata"`
+	Workspace    *AgentSessionWorkspace `json:"workspace"`
+	Run          *AgentSessionRun       `json:"run"`
+	ID           string                 `json:"id"`
+	RepositoryID int64                  `json:"repository_id"`
+	UserID       int64                  `json:"user_id"`
+	Title        string                 `json:"title"`
+	Status       string                 `json:"status"`
+	MessageCount int64                  `json:"message_count"`
+	CreatedAt    time.Time              `json:"created_at"`
+	UpdatedAt    time.Time              `json:"updated_at"`
+	Metadata     json.RawMessage        `json:"metadata"`
 	// WorkspaceID is the kind=agent workspace this run executes in (RFD-004).
 	WorkspaceID string `json:"workspace_id,omitempty"`
 	// ReasonCode, Reason and Retryable state why the session failed: a code
@@ -382,7 +384,7 @@ func (t *pgxAgentAppendTx) CreateAgentMessageWithNextSequence(ctx context.Contex
 }
 
 func (t *pgxAgentAppendTx) CreateAgentPart(ctx context.Context, arg db.CreateAgentPartParams) (db.AgentPart, error) {
-	return t.q.CreateAgentPart(ctx, arg)
+	return createUntrustedAgentPart(ctx, t.q, arg)
 }
 
 func (t *pgxAgentAppendTx) Commit(ctx context.Context) error {
@@ -698,7 +700,11 @@ func (s *AgentService) GetSession(ctx context.Context, sessionID string) (AgentS
 		return AgentSessionResponse{}, pkgerrors.NotFound("agent session not found")
 	}
 
-	return toAgentSessionWithCountResponse(row), nil
+	result := toAgentSessionWithCountResponse(row)
+	if err := s.enrichSessionRead(ctx, row, &result); err != nil {
+		return AgentSessionResponse{}, pkgerrors.Internal("read agent session details").WithCause(err)
+	}
+	return result, nil
 }
 
 // GetSessionForRepo verifies that the given agent session exists and belongs to the
@@ -713,7 +719,8 @@ func (s *AgentService) GetSessionForRepo(ctx context.Context, sessionID string, 
 		return pkgerrors.NotFound("agent session not found")
 	}
 
-	if session.RepositoryID != repoID {
+	actor := middleware.UserFromContext(ctx)
+	if session.RepositoryID != repoID || actor != nil && (actor.UserType == "guest" || session.UserID != actor.ID) {
 		return pkgerrors.NotFound("agent session not found")
 	}
 
@@ -731,6 +738,32 @@ func (s *AgentService) ListSessions(ctx context.Context, repositoryID int64, pag
 	}
 	if perPage < 1 || perPage > 100 {
 		perPage = 30
+	}
+	// Public repository lists expose only the caller's sessions. Filter before
+	// pagination so neither page boundaries nor totals disclose other owners.
+	if actor := middleware.UserFromContext(ctx); actor != nil {
+		owned := make([]AgentSessionResponse, 0)
+		for offset := int32(0); ; offset += 100 {
+			rows, err := s.q.ListAgentSessionsByRepoWithMessageCount(ctx, db.ListAgentSessionsByRepoWithMessageCountParams{RepositoryID: repositoryID, PageOffset: offset, PageSize: 100})
+			if err != nil {
+				return nil, 0, pkgerrors.Internal("list agent sessions").WithCause(err)
+			}
+			for _, row := range rows {
+				if row.UserID == actor.ID {
+					owned = append(owned, toAgentSessionListResponse(row))
+				}
+			}
+			if len(rows) < 100 {
+				break
+			}
+		}
+		total := int64(len(owned))
+		start := (page - 1) * perPage
+		if start >= len(owned) {
+			return []AgentSessionResponse{}, total, nil
+		}
+		end := min(start+perPage, len(owned))
+		return owned[start:end], total, nil
 	}
 	offset := (page - 1) * perPage
 
@@ -864,7 +897,7 @@ func (s *AgentService) appendMessageWithTx(ctx context.Context, sessionID, role 
 		p.PartIndex = int64(i)
 		p.RepositoryID = locked.RepositoryID
 		p.SessionID = sessionID
-		created, err := tx.CreateAgentPart(ctx, p)
+		created, err := createUntrustedAgentPart(ctx, tx, p)
 		if err != nil {
 			_ = tx.Rollback(ctx)
 			return AgentMessageResponse{}, pkgerrors.Internal("create agent part: " + err.Error())
@@ -947,7 +980,7 @@ func (s *AgentService) appendMessageWithoutTx(ctx context.Context, sessionID, ro
 		p.PartIndex = int64(i)
 		p.RepositoryID = session.RepositoryID
 		p.SessionID = sessionID
-		created, err := s.q.CreateAgentPart(ctx, p)
+		created, err := createUntrustedAgentPart(ctx, s.q, p)
 		if err != nil {
 			return AgentMessageResponse{}, pkgerrors.Internal("create agent part: " + err.Error())
 		}
