@@ -37,6 +37,24 @@ func OperationFromContext(ctx context.Context) (Operation, bool) {
 	return operation, ok
 }
 
+type guestContextKey struct{}
+
+// WithGuest scopes a runtime side effect to the guest (the placement, such as
+// a vm or sandbox id) the product decided it for. A runtime that hosts
+// successive guests under one workspace id acts on that guest only and treats
+// a call naming a guest that is gone as done, so a late stop, reap or delete
+// never reaches a newer guest of the same workspace.
+func WithGuest(ctx context.Context, guestID string) context.Context {
+	return context.WithValue(ctx, guestContextKey{}, strings.TrimSpace(guestID))
+}
+
+// GuestFromContext returns the guest a call is scoped to, or "" when the call
+// names none.
+func GuestFromContext(ctx context.Context) string {
+	guest, _ := ctx.Value(guestContextKey{}).(string)
+	return guest
+}
+
 // IsolationGuarantees are machine-readable facts reported by an adapter.
 // They are runtime evidence rather than an edition or billing label.
 type IsolationGuarantees struct {
