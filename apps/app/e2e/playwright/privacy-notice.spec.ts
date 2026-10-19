@@ -1,5 +1,6 @@
 import { expect, test } from "./browserTest"
 import { SCOPED_TEST_USER, signedOutVisitor, skipSignup, identityRoute } from "./identity"
+import { APPLICATION_SIGN_IN_PATH } from "@smthrs/rpc/ApplicationAuth"
 
 for (const key of ["Enter", "Space"]) test(`a Chat refusal survives account cleanup and an explicit ${key} retry`, async ({ page }) => {
   await signedOutVisitor(page)
@@ -10,6 +11,11 @@ for (const key of ["Enter", "Space"]) test(`a Chat refusal survives account clea
   await page.route(url => url.pathname === "/api/user/repos", route => route.fulfill({ json: { repos: signedIn ? [{
     owner: "smithersai", name: "smithers", full_name: "smithersai/smithers", default_bookmark: "main", owner_type: "Organization"
   }] : [] } }))
+  // /owner/repo opens the repository frame (59f7a91e, bf0ae9f8). Signed out,
+  // its Ask door is sign-in. A 204 handoff keeps the page, so the retry is
+  // observable and the refusal must still be on screen after it.
+  const signIns: string[] = []
+  await page.route(url => url.pathname === APPLICATION_SIGN_IN_PATH, route => { signIns.push(route.request().url()); return route.fulfill({ status: 204 }) })
   // Hold the real SQLite commit while the account privacy barrier is active.
   // No application debug API or replacement persistence implementation.
   await page.addInitScript(() => {
@@ -30,30 +36,32 @@ for (const key of ["Enter", "Space"]) test(`a Chat refusal survives account clea
   signedIn = false
   await page.evaluate(() => window.dispatchEvent(new Event("focus")))
   const input = page.getByTestId("composer-input")
-  const chat = page.getByRole("button", { name: "Chat", exact: true })
+  const ask = page.getByRole("button", { name: "Ask", exact: true })
   const notice = page.getByRole("alert").filter({ hasText: "Account cleanup is running. Try again in a moment." })
   try {
     await expect.poll(() => page.evaluate(() => (window as any).privacyCommitProbe.commits)).toBeGreaterThan(0)
-    await expect(chat).toBeVisible()
-    await chat.focus()
-    await expect(chat).toBeFocused()
+    await expect(ask).toBeVisible()
+    await ask.focus()
+    await expect(ask).toBeFocused()
     await page.keyboard.press(key)
     await expect(input).toBeHidden()
     await expect(notice).toBeVisible()
+    expect(signIns).toEqual([])
     await page.evaluate(() => (window as any).privacyCommitProbe.release())
     await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("smithers-mvp.privacyRetirement") ?? "null")?.phase)).toBe("complete")
     // Cleanup cannot silently replay the refused gesture or erase its failure.
     await expect(input).toBeHidden()
     await expect(notice).toBeVisible()
-    await chat.focus()
+    expect(signIns).toEqual([])
+    // The explicit retry runs the signed-out Ask door once, keeping this route.
+    await ask.focus()
     await page.keyboard.press(key)
-    await expect(input).toBeVisible()
-    await input.fill("A new draft after account cleanup")
-    await expect(input).toHaveValue("A new draft after account cleanup")
+    await expect.poll(() => signIns.length).toBe(1)
+    expect(new URL(signIns[0]!).searchParams.get("return_to")).toBe("/smithersai/smithers/")
+    expect(new URL(page.url()).pathname).toBe("/smithersai/smithers/")
+    // A later act does not acknowledge the refusal; it stays until dismissed.
     await expect(notice).toBeVisible()
-    // The durable refusal has no invented dismissal control.
-    await expect(input).toHaveValue("A new draft after account cleanup")
-    await expect(notice).toBeVisible()
+    await expect(input).toBeHidden()
   } finally {
     await page.evaluate(() => (window as any).privacyCommitProbe.release()).catch(() => {})
   }
