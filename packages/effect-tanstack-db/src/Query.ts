@@ -1,0 +1,12 @@
+/**
+ * The expressions a live query is built from, re-exported from TanStack DB as
+ * they are: comparisons, logic, null checks and `caseWhen`.
+ *
+ * They are pure data. Each call returns a description of an expression for a
+ * live query to compile, and runs nothing, so they need no Effect wrapper.
+ * Nothing else from TanStack DB is re-exported.
+ *
+ * @since 0.1.0
+ */
+
+export { and, caseWhen, eq, gt, gte, isNull, isUndefined, lt, lte, not, or } from "@tanstack/db"
