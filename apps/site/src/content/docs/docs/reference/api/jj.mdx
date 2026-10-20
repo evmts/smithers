@@ -236,12 +236,15 @@ A restore therefore either sees an added workspace and refuses with `conflict`,
 or completes before the add runs.
 
 `withRepositoryMutation(method, from, effect)` exposes this coordination to
-host adoption. `RepositoryMutationTimeoutMs` is a Context reference with a
+host adoption, and `NodeJj.layerRepositoryMutation` provides it as the root's
+`RepositoryMutation` service, whose `run(method, from, effect)` platform-neutral
+code such as `@smthrs/sandbox`'s `SandboxMerge.apply` requires instead of
+importing the Node adapter. `RepositoryMutationTimeoutMs` is a Context reference with a
 default of `120000`, bounding acquisition only. The protected effect must not call another fenced
 operation on the same store; internal compound operations use their raw
 command runner while holding the outer permits.
 
-`retryGitIndexLock(effect)` retries confirmed shared Git `index.lock`
+`retryGitIndexLock(effect)`, exported from the root because it only inspects error messages, retries confirmed shared Git `index.lock`
 acquisition failures and ref-lock contention: at most 1,200 retries with 100 ms
 waits, independently for each execution. It preserves permanent errors, private-index errors and
 the final exhausted error, and never removes an active Git lock. Its retry

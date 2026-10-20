@@ -423,6 +423,8 @@ Every other export of `Smithers.ts`, in source order:
 | `Smithers.LlmReview`              | action             | The one sealed model action reviewing every batch of changed files.                                                                                                                  |
 | `Smithers.LlmReviewError`         | error              | A review round failed before producing findings.                                                                                                                                     |
 | `Smithers.LlmReviewLive`          | layer              | Implements `LlmReview` with `git diff` and a model CLI.                                                                                                                              |
+| `Smithers.JevLint`                | rule               | Judges files against declared rules with Jev, one yes-or-no question per rule, and fails on findings.                                                                                |
+| `Smithers.JevReview`              | action             | The one sealed action that asks Jev every rule covering each file.                                                                                                                   |
 | `Smithers.Clean`                  | rule               | Removes the declared targets' outputs and the named scratch paths, and nothing else.                                                                                                 |
 | `Smithers.Dev`                    | rule               | Plans a long-lived development or watch command.                                                                                                                                     |
 | `Smithers.ToolBuild`              | rule               | Runs one arbitrary command for Rust, Zig, native addons, or another toolchain through the shared action.                                                                             |
@@ -549,6 +551,7 @@ Run `smthrs test //packages/core:test` for the tests and
 - `packages/smithers/build/targets/src/GithubTarget.ts`
 - `packages/smithers/build/targets/src/GithubWorkflow.ts`
 - `packages/smithers/build/targets/src/Input.ts`
+- `packages/smithers/build/targets/src/JevLint.ts`
 - `packages/smithers/build/targets/src/LlmLint.ts`
 - `packages/smithers/build/targets/src/NodeArtifact.ts`
 - `packages/smithers/build/targets/src/NpmTarget.ts`

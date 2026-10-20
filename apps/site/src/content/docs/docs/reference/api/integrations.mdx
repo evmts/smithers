@@ -18,6 +18,12 @@ Conventions worth knowing before the signatures:
 
 - Clients are Effect services. Each has a tag (for example `GitHubClient`), a
   `make` constructor for direct use, and a `layer` for composition.
+- Everything that speaks HTTP (`GitHubClient`, `Proxy`, `OAuthToken`) takes
+  Effect's `HttpClient` from context. Provide `FetchHttpClient.layer` from
+  `effect/http`, or, in a test, a client of your own that injects a transport
+  fault. None of them follows a redirect: each sets the fetch transport's
+  `redirect` to `"manual"` and sends no `b3` or `traceparent` header. Do not
+  hand them a client wrapped in `HttpClient.followRedirects`.
 - Failing Effect values fail with `Core.IntegrationError`.
 - Plan-time helpers validate their arguments by throwing, the way an ordinary
   constructor does. Those throws are `SmithersError` values with codes such
@@ -31,12 +37,15 @@ Conventions worth knowing before the signatures:
 
 ```ts
 import { GitHub } from "@smthrs/integrations"
+import { Effect } from "effect"
+import { FetchHttpClient } from "effect/http"
 
-const client = GitHub.GitHubClient.make({})
+const comment = Effect.gen(function*() {
+  const client = yield* GitHub.GitHubClient.make({})
+  return yield* client.request("POST", "/repos/OWNER/REPO/issues/1/comments", { body: "Triaged." })
+})
 
-await Effect.runPromise(
-  client.request("POST", "/repos/OWNER/REPO/issues/1/comments", { body: "Triaged." })
-)
+await Effect.runPromise(comment.pipe(Effect.provide(FetchHttpClient.layer)))
 ```
 
 ## Core
@@ -46,13 +55,15 @@ The service-agnostic pieces every provider builds on, exported as `Core`.
 ### Core.Signature
 
 Constant-time HMAC-SHA256 verification, the check every webhook source uses.
+The HMAC is WebCrypto's, so computing and verifying are Effects. A host
+without WebCrypto, such as an insecure browser context, is a defect.
 
-| Export                    | Signature                                                   | Notes                                                                                                                                                                                       |
-| ------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `verifySignature`         | `(options: VerifyOptions) => boolean`                       | Accepts GitHub's `sha256=<hex>`, a bare hex digest, and a base64 digest. Returns `false`, never throws, for a missing signature, an empty secret, a wrong prefix, or an undecodable digest. |
-| `constantTimeEqual`       | `(left: Uint8Array, right: Uint8Array) => boolean`          | Always scans the longer input and folds the length difference into the result, so a mismatch leaks nothing through timing.                                                                  |
-| `computeHmacSha256Hex`    | `(payload: string \| Uint8Array, secret: string) => string` | The lowercase hex digest, for signing test deliveries.                                                                                                                                      |
-| `GITHUB_SIGNATURE_PREFIX` | `"sha256="`                                                 | The prefix GitHub puts in front of its hex digest.                                                                                                                                          |
+| Export                    | Signature                                                           | Notes                                                                                                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `verifySignature`         | `(options: VerifyOptions) => Effect<boolean>`                       | Accepts GitHub's `sha256=<hex>`, a bare hex digest, and a base64 digest. Succeeds with `false`, never fails, for a missing signature, an empty secret, a wrong prefix, or an undecodable digest. |
+| `constantTimeEqual`       | `(left: Uint8Array, right: Uint8Array) => boolean`                  | Always scans the longer input and folds the length difference into the result, so a mismatch leaks nothing through timing.                                                                       |
+| `computeHmacSha256Hex`    | `(payload: string \| Uint8Array, secret: string) => Effect<string>` | The lowercase hex digest, for signing test deliveries.                                                                                                                                           |
+| `GITHUB_SIGNATURE_PREFIX` | `"sha256="`                                                         | The prefix GitHub puts in front of its hex digest.                                                                                                                                               |
 
 `VerifyOptions` fields: `payload` (the exact bytes the provider signed, never
 a re-serialized copy), `secret`, `signature` (nullable), and an optional
@@ -78,7 +89,9 @@ address the channel by), `credential` (the journal-safe `CredentialRef`),
 `secret` (a `SecretResolver`), optional `fingerprintHeaders` (non-secret
 headers whose values affect the decoded event), `verify`, `decode`, `route`,
 and an optional `project` that defaults to a no-op projection posting
-nothing.
+nothing. `verify` is `(raw, secret) => boolean | Effect<boolean, unknown>`,
+so it can return `Core.Signature.verifySignature(...)` directly. Only `true`
+verifies; a throw, a failure or a defect refuses the delivery.
 
 `SecretResolver` is
 `(credential: Redacted<CredentialRef>) => Effect<Redacted<string>, Unauthorized>`.
@@ -151,17 +164,17 @@ webhook secret into `details`.
 `SmithersError` with code `INTEGRATION_ERROR` and carries the
 machine-readable `reason`.
 
-| Reason                | Raised when                                                                                                                                                      |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `invalid-config`      | A declaration, option, or stored cursor is unusable.                                                                                                             |
-| `invalid-signature`   | A webhook signature did not verify.                                                                                                                              |
-| `decode-failed`       | A payload or response could not be read as expected.                                                                                                             |
-| `poll-failed`         | A polling source's request failed.                                                                                                                               |
-| `delivery-failed`     | An API call failed. `details.retryable` says whether another attempt is worth making, and `details.outcomeUnknown` says the write may already have been applied. |
-| `credentials-missing` | A required credential was not configured.                                                                                                                        |
-| `permission-denied`   | The credential lacks the scope the operation needs.                                                                                                              |
-| `listener-conflict`   | An unowned hook holds a declared callback URL, or a reconcile apply lock is held.                                                                                |
-| `rate-limited`        | A rate limiter refused to wait for the budget. Nothing was sent; `details.retryAt` is the instant to retry.                                                      |
+| Reason                | Raised when                                                                                                                                                                                                                          |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `invalid-config`      | A declaration, option, or stored cursor is unusable.                                                                                                                                                                                 |
+| `invalid-signature`   | A webhook signature did not verify.                                                                                                                                                                                                  |
+| `decode-failed`       | A payload or response could not be read as expected.                                                                                                                                                                                 |
+| `poll-failed`         | A polling source's request failed.                                                                                                                                                                                                   |
+| `delivery-failed`     | An API call failed. `details.retryable` says whether another attempt is worth making, `details.retryAfterMillis` how long the server asked to wait first, and `details.outcomeUnknown` that the write may already have been applied. |
+| `credentials-missing` | A required credential was not configured.                                                                                                                                                                                            |
+| `permission-denied`   | The credential lacks the scope the operation needs.                                                                                                                                                                                  |
+| `listener-conflict`   | An unowned hook holds a declared callback URL, or a reconcile apply lock is held.                                                                                                                                                    |
+| `rate-limited`        | A rate limiter refused to wait for the budget. Nothing was sent; `details.retryAt` is the instant to retry.                                                                                                                          |
 
 | Export               | Signature                                       | Notes                                                                           |
 | -------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -176,28 +189,36 @@ machine-readable `reason`.
 
 The failure a durable action journals: the schema form of `IntegrationError`.
 [Durable actions](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/concepts/durable-actions.md) explains why a schema and
-not the class.
+not the class, and why it comes in two tags.
 
-| Export                 | Signature                                                    | Notes                                                                                                                                                                                                   |
-| ---------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `IntegrationFailure`   | `Schema.TaggedError`, tag `/integrations/IntegrationFailure` | Fields: `reason`, `message`, `retryable`, optional `outcomeUnknown`, optional `deliveredMessageIds`.                                                                                                    |
-| `fromIntegrationError` | `(error: unknown) => IntegrationFailure`                     | Total: anything that is not a well-formed `IntegrationError` converts to a non-retryable `delivery-failed` instead of throwing inside `Effect.mapError`. The message is capped at `MAX_MESSAGE_LENGTH`. |
-| `toIntegrationError`   | `(failure: IntegrationFailure) => IntegrationError`          | Converts back to the class, preserving `retryable`, `outcomeUnknown`, and `deliveredMessageIds` in `details`.                                                                                           |
-| `Reason`               | schema                                                       | The classification as a schema, built from `IntegrationError.reasons`.                                                                                                                                  |
-| `MessageId`            | schema                                                       | A provider message id: a positive integer within the safe range.                                                                                                                                        |
-| `isMessageId`          | `(value: unknown) => value is number`                        | The refinement `MessageId` applies.                                                                                                                                                                     |
-| `MAX_MESSAGE_LENGTH`   | `512`                                                        | The longest provider text a failure persists.                                                                                                                                                           |
+| Export                        | Signature                                                             | Notes                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Failure`                     | schema, `IntegrationFailure \| RetryableIntegrationFailure`           | What an integration action declares as its `error`.                                                                                                                                                                                                                                                                                                                                                       |
+| `IntegrationFailure`          | `Schema.TaggedError`, tag `/integrations/IntegrationFailure`          | A failure another attempt cannot clear. Fields: `reason`, `message`, `retryable`, optional `outcomeUnknown`, optional `deliveredMessageIds`, optional `retryAfterMillis`.                                                                                                                                                                                                                                 |
+| `RetryableIntegrationFailure` | `Schema.TaggedError`, tag `/integrations/RetryableIntegrationFailure` | A failure another attempt may clear, with the same fields. `retryAfterMillis` is the server's wait, which the engine's `RetryPolicy.decide` reads instead of the policy's backoff.                                                                                                                                                                                                                        |
+| `retryPolicy`                 | `RetryPolicy`                                                         | The retry for a step that calls this package's clients: at most three attempts, 0.5 s then 1 s apart or the server's `retryAfterMillis` up to a minute, never an `IntegrationFailure`. The clients never retry, so this is the only retry.                                                                                                                                                                |
+| `integrationFailureTag`       | `"/integrations/IntegrationFailure"`                                  | The tag `retryPolicy` lists as non-retryable.                                                                                                                                                                                                                                                                                                                                                             |
+| `fromIntegrationError`        | `(error: unknown, options?: ConversionOptions) => Failure`            | A retryable error becomes a `RetryableIntegrationFailure`; anything else an `IntegrationFailure`. With `reconciles: true`, for a step that reads before it writes, a lost write is retryable too. Total: anything that is not a well-formed `IntegrationError` converts to a non-retryable `delivery-failed` instead of throwing inside `Effect.mapError`. The message is capped at `MAX_MESSAGE_LENGTH`. |
+| `toIntegrationError`          | `(failure: Failure) => IntegrationError`                              | Converts back to the class, preserving `retryable`, `outcomeUnknown`, `deliveredMessageIds`, and `retryAfterMillis` in `details`.                                                                                                                                                                                                                                                                         |
+| `Reason`                      | schema                                                                | The classification as a schema, built from `IntegrationError.reasons`.                                                                                                                                                                                                                                                                                                                                    |
+| `MessageId`                   | schema                                                                | A provider message id: a positive integer within the safe range.                                                                                                                                                                                                                                                                                                                                          |
+| `isMessageId`                 | `(value: unknown) => value is number`                                 | The refinement `MessageId` applies.                                                                                                                                                                                                                                                                                                                                                                       |
+| `RetryAfterMillis`            | schema                                                                | A server-named wait: a non-negative safe integer of milliseconds.                                                                                                                                                                                                                                                                                                                                         |
+| `isRetryAfterMillis`          | `(value: unknown) => value is number`                                 | The refinement `RetryAfterMillis` applies.                                                                                                                                                                                                                                                                                                                                                                |
+| `MAX_MESSAGE_LENGTH`          | `512`                                                                 | The longest provider text a failure persists.                                                                                                                                                                                                                                                                                                                                                             |
 
 ### Core.Pkce
 
-RFC 7636 PKCE parameters for the GitHub OAuth apps. All three
-constructors throw `TypeError` or `RangeError` for invalid arguments.
+RFC 7636 PKCE parameters for the GitHub OAuth apps, drawn and hashed with
+WebCrypto. All three constructors throw `TypeError` or `RangeError` when
+called with invalid arguments. The SHA-256 is asynchronous, so the pair and
+the challenge are Effects.
 
-| Export                | Signature                           | Notes                                                                                          |
-| --------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `createPkcePair`      | `(byteLength?: number) => PkcePair` | A fresh verifier with its S256 challenge.                                                      |
-| `createCodeVerifier`  | `(byteLength?: number) => string`   | 32 to 96 bytes of entropy, producing the 43 to 128 characters RFC 7636 allows. Defaults to 32. |
-| `deriveCodeChallenge` | `(codeVerifier: string) => string`  | Base64url of the verifier's SHA-256, unpadded.                                                 |
+| Export                | Signature                                   | Notes                                                                                          |
+| --------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `createPkcePair`      | `(byteLength?: number) => Effect<PkcePair>` | A fresh verifier with its S256 challenge, drawn each time the Effect runs.                     |
+| `createCodeVerifier`  | `(byteLength?: number) => string`           | 32 to 96 bytes of entropy, producing the 43 to 128 characters RFC 7636 allows. Defaults to 32. |
+| `deriveCodeChallenge` | `(codeVerifier: string) => Effect<string>`  | Base64url of the verifier's SHA-256, unpadded.                                                 |
 
 `PkcePair` fields: `codeVerifier`, `codeChallenge`, and
 `codeChallengeMethod: "S256"`.
@@ -241,12 +262,30 @@ same token.
 ### Core.OAuthToken
 
 Short-lived OAuth access tokens minted from a stored refresh token, behind an
-`AccessTokenSource`. `make(options)` caches a token until `skew` before it
-expires and refreshes on demand; a rotated refresh token is written back
-through the `RefreshTokenStore` (`memoryStore`, or `credentialStore(credentials, reference)`
-over the control plane's credential boundary with a compare-and-set).
-`exchangeCode` completes an authorization-code grant. `reasonForOAuthError`
-maps an OAuth error code to an `IntegrationError` reason.
+`AccessTokenSource`. `make(options)` is an
+`Effect<AccessTokenSource, IntegrationError, HttpClient>` that fails
+`invalid-config` or `credentials-missing` for a bad endpoint or bound. The
+source caches a token until `skew` before it expires and refreshes on demand;
+a rotated refresh token is written back through the `RefreshTokenStore`
+(`memoryStore`, or `credentialStore(credentials, reference)` over the control
+plane's credential boundary with a compare-and-set). `exchangeCode` completes
+an authorization-code grant as an `Effect<Grant, IntegrationError, HttpClient>`.
+`exchangeRefreshToken` presents one refresh token once and returns the whole
+`Grant`, rotation included, for a host that stores refresh tokens itself, such
+as one per signed-in person; a lost answer reports `outcomeUnknown`, because
+GitHub's refresh tokens are single-use. No token request is ever repeated: a
+429, and a 5xx or lost connection on a refresh that may be presented again,
+fail `retryable` with the server's `Retry-After` as `retryAfterMillis`, for the
+retry policy of the step that asked. When another source sharing the stored
+refresh token rotated it first, the refused source fails `retryable`
+`permission-denied`, with `retryAfterMillis: 0` when the stored token has
+already changed and `ROTATION_SETTLE_MS` (500) when it may still be
+persisting; the next attempt presents the stored token. A redirect from the token endpoint fails with
+its status and the form never leaves for its `Location`. An OAuth error body is
+a refusal whatever the status, since GitHub answers one with `200 OK`.
+`reasonForOAuthError` maps an OAuth error code, GitHub's
+`bad_verification_code`, `bad_refresh_token`, `incorrect_client_credentials`
+and `redirect_uri_mismatch` included, to an `IntegrationError` reason.
 
 ### Core.Connection
 
@@ -286,9 +325,9 @@ driver that keeps them current.
 `@smthrs/integrations/Environment`: explicit access to the host's process
 environment, the one place the package spells that decision.
 
-| Export               | Signature                                             | Notes                                                                                                                        |
-| -------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `ambientEnvironment` | `() => Readonly<Record<string, string \| undefined>>` | Reads the ambient process environment. Callers that require account isolation pass an environment record explicitly instead. |
+| Export               | Signature                                             | Notes                                                                                                                                                                                                              |
+| -------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ambientEnvironment` | `() => Readonly<Record<string, string \| undefined>>` | Reads the ambient process environment, or `{}` on a host without one, such as a browser or a Worker without `nodejs_compat`. Callers that require account isolation pass an environment record explicitly instead. |
 
 ## GitHub
 
@@ -301,11 +340,12 @@ omits falls back to `env`, which defaults to the ambient environment.
 
 `GitHubConfig` fields: `token` (falls back to `SMITHERS_GITHUB_TOKEN`, then
 `GITHUB_TOKEN`), `apiBaseUrl` (falls back to `SMITHERS_GITHUB_API_BASE_URL`,
-default `https://api.github.com`), `maxRetries` (defaults to 3), and
-`requestTimeout` (defaults to 30 seconds).
+default `https://api.github.com`), and `requestTimeout` (defaults to 30
+seconds). There is no retry budget: the client never repeats a request, and the
+retry policy of the durable step that calls it is the only retry.
 
-`requestTimeout` is the deadline for one attempt, covering the response
-headers and the body read. The retry budget bounds only completed attempts, so
+`requestTimeout` is the deadline for one request, covering the response
+headers and the body read. A retry policy sees only attempts that end, so
 without it a peer that answers and then trickles the body forever holds the
 call open. It must be a finite, positive `Duration.Input`.
 
@@ -313,11 +353,11 @@ call open. It must be a finite, positive `Duration.Input`.
 | ------------------------- | ------------------------------------------------------- | ------------------------------------ |
 | `resolve`                 | `(config?: GitHubConfig, env?) => ResolvedGitHubConfig` | First non-empty value wins, trimmed. |
 | `DEFAULT_API_BASE_URL`    | `"https://api.github.com"`                              | The public REST endpoint.            |
-| `DEFAULT_REQUEST_TIMEOUT` | `Duration.seconds(30)`                                  | The default per-attempt deadline.    |
+| `DEFAULT_REQUEST_TIMEOUT` | `Duration.seconds(30)`                                  | The default per-request deadline.    |
 
 ### GitHub.GitHubClient
 
-The REST client. Rate-limit handling, bounded pagination, and token hygiene:
+The REST client. Retry classification, bounded pagination, and token hygiene:
 the token reaches the `Authorization` header and nothing else, and every
 request URL, including a `rel="next"` target, is pinned to the configured API
 origin. A 3xx is not followed: it fails `delivery-failed` with its status, so
@@ -327,25 +367,25 @@ construction. Raw upstream stacks and nested causes are discarded.
 
 Service interface:
 
-| Method     | Signature                                                                                                                                                                                                                                              | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `request`  | `(method: RequestMethod, path: string, body?: unknown, options?: RequestOptions) => Effect<unknown, IntegrationError>`, or `<A>(method: RequestMethod, path: string, body: unknown, options: DecodedRequestOptions<A>) => Effect<A, IntegrationError>` | One REST call. Without a schema the result is the parsed JSON as `unknown`; a `schema` decodes it, fixes the result type, and fails `decode-failed` when the body does not match. A rate limit (a 429, or the 403 forms GitHub uses for a secondary limit) is retried for every method, waiting the server's `Retry-After` or `x-ratelimit-reset` capped at one minute. A 5xx or transport failure is retried only for a read; on a write it reports `outcomeUnknown` unless `retryUnsafeWrites` is set. An unserializable body or an unparseable path fails `invalid-config` before any request. Interrupting the fiber aborts the request in flight. Each attempt also carries the configured `requestTimeout`; expiring aborts the exchange and fails `delivery-failed` with `timedOut: true`, and on a write with `outcomeUnknown: true`. |
-| `paginate` | `(path: string, options?: { perPage?: number; maxPages?: number }) => Effect<Page, IntegrationError>`                                                                                                                                                  | Follows `Link: rel="next"` within the page budget and concatenates the pages. `perPage` defaults to 100 and accepts 1 to 100; `maxPages` defaults to 10 and accepts 1 to 1000. A bound outside its range fails `invalid-config` before the first request. Running out of budget with a next link outstanding is reported as `truncated: true`, never as a short but complete answer.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Method     | Signature                                                                                                                                                                                                                                              | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `request`  | `(method: RequestMethod, path: string, body?: unknown, options?: RequestOptions) => Effect<unknown, IntegrationError>`, or `<A>(method: RequestMethod, path: string, body: unknown, options: DecodedRequestOptions<A>) => Effect<A, IntegrationError>` | One REST call. Without a schema the result is the parsed JSON as `unknown`; a `schema` decodes it, fixes the result type, and fails `decode-failed` when the body does not match. A rate limit (a 429, or the 403 forms GitHub uses for a secondary limit) is never repeated: it fails `retryable` for every method, with the server's `Retry-After` or `x-ratelimit-reset`, capped at one minute, as `details.retryAfterMillis`. A 5xx or transport failure is `retryable` only for a read, with a 5xx's `Retry-After`; on a write it reports `outcomeUnknown` unless `retryUnsafeWrites` is set. The retry policy of the step that made the call decides whether there is another attempt. An unserializable body or an unparseable path fails `invalid-config` before any request. Interrupting the fiber aborts the request in flight. Each request also carries the configured `requestTimeout`; expiring aborts the exchange and fails `delivery-failed` with `timedOut: true`, and on a write with `outcomeUnknown: true`. |
+| `paginate` | `(path: string, options?: { perPage?: number; maxPages?: number }) => Effect<Page, IntegrationError>`                                                                                                                                                  | Follows `Link: rel="next"` within the page budget and concatenates the pages. `perPage` defaults to 100 and accepts 1 to 100; `maxPages` defaults to 10 and accepts 1 to 1000. A bound outside its range fails `invalid-config` before the first request. Running out of budget with a next link outstanding is reported as `truncated: true`, never as a short but complete answer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
-| Export                | Signature                                                                | Notes                                                                                                                                                                                          |
-| --------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GitHubClient`        | service tag and interface                                                |                                                                                                                                                                                                |
-| `make`                | `(config?: GitHubConfig, env?) => GitHubClient`                          | Throws `IntegrationError` `invalid-config` for an `apiBaseUrl` that is not a valid HTTP(S) URL, a `maxRetries` outside 0 to 10, or a `requestTimeout` that is not a finite, positive duration. |
-| `layer`               | `(config?: GitHubConfig, env?) => Layer<GitHubClient, IntegrationError>` | The client as a layer. An invalid config fails the build with `invalid-config`.                                                                                                                |
-| `isRateLimitResponse` | `(status: number, headers: Headers, body: unknown) => boolean`           | Whether a response is GitHub telling the client to slow down.                                                                                                                                  |
-| `retryAfterMs`        | `(headers: Headers, nowMs?: number) => number \| null`                   | The wait the server asked for, capped at one minute.                                                                                                                                           |
-| `nextPageUrl`         | `(linkHeader: string \| null) => string \| null`                         | The `rel="next"` URL in an RFC 5988 `Link` header.                                                                                                                                             |
-| `UNSAFE_METHODS`      | `readonly RequestMethod[]`                                               | `POST`, `PATCH`, `PUT`, `DELETE`: the verbs whose effect the server may already have applied when the answer is lost.                                                                          |
-| `MAX_PER_PAGE`        | `100`                                                                    | The largest `per_page` GitHub accepts.                                                                                                                                                         |
-| `DEFAULT_MAX_PAGES`   | `10`                                                                     | The default page budget.                                                                                                                                                                       |
-| `MAX_PAGES_LIMIT`     | `1000`                                                                   | The largest accepted page budget.                                                                                                                                                              |
-| `PROXY_RETRY_AT`      | `"x-smithers-retry-at"`                                                  | The header in which the GitHub proxy names when a refused request may be retried.                                                                                                              |
-| `PROXY_REASON`        | `"x-smithers-rate-limit-reason"`                                         | The header in which the GitHub proxy names why it refused.                                                                                                                                     |
+| Export                | Signature                                                                             | Notes                                                                                                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GitHubClient`        | service tag and interface                                                             |                                                                                                                                                                                               |
+| `make`                | `(config?: GitHubConfig, env?) => Effect<GitHubClient, IntegrationError, HttpClient>` | Builds the client over the `HttpClient` in context. Fails `invalid-config` for an `apiBaseUrl` that is not a valid HTTP(S) URL or a `requestTimeout` that is not a finite, positive duration. |
+| `layer`               | `(config?: GitHubConfig, env?) => Layer<GitHubClient, IntegrationError, HttpClient>`  | The client as a layer. An invalid config fails the build with `invalid-config`.                                                                                                               |
+| `isRateLimitResponse` | `(status: number, headers: Headers, body: unknown) => boolean`                        | Whether a response is GitHub telling the client to slow down.                                                                                                                                 |
+| `retryAfterMs`        | `(headers: Headers, nowMs?: number) => number \| null`                                | The wait a rate limit asked for, from `Retry-After` or `x-ratelimit-reset`, capped at one minute.                                                                                             |
+| `nextPageUrl`         | `(linkHeader: string \| null) => string \| null`                                      | The `rel="next"` URL in an RFC 5988 `Link` header.                                                                                                                                            |
+| `UNSAFE_METHODS`      | `readonly RequestMethod[]`                                                            | `POST`, `PATCH`, `PUT`, `DELETE`: the verbs whose effect the server may already have applied when the answer is lost.                                                                         |
+| `MAX_PER_PAGE`        | `100`                                                                                 | The largest `per_page` GitHub accepts.                                                                                                                                                        |
+| `DEFAULT_MAX_PAGES`   | `10`                                                                                  | The default page budget.                                                                                                                                                                      |
+| `MAX_PAGES_LIMIT`     | `1000`                                                                                | The largest accepted page budget.                                                                                                                                                             |
+| `PROXY_RETRY_AT`      | `"x-smithers-retry-at"`                                                               | The header in which the GitHub proxy names when a refused request may be retried.                                                                                                             |
+| `PROXY_REASON`        | `"x-smithers-rate-limit-reason"`                                                      | The header in which the GitHub proxy names why it refused.                                                                                                                                    |
 
 A `429` that carries `PROXY_RETRY_AT` comes from the [GitHub proxy](#githubproxy),
 which never sent the request to GitHub. The client fails `rate-limited` at once
@@ -390,18 +430,19 @@ client on the machine calls instead of `api.github.com`. It owns one
 the limiter will not wait for is answered `429` with `retry-after`,
 `PROXY_RETRY_AT`, and `PROXY_REASON`. Everything else is forwarded once with
 GitHub's status, headers, and body; a `rel="next"` link is rewritten to the
-proxy. A transport failure is `502` and a deadline `504`; the proxy never
-repeats a request. The [GitHub guide](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/guides/github.md#stay-inside-githubs-rate-limits)
+proxy. A redirect from GitHub is answered to the caller, never followed with
+the injected token. A transport failure is `502` and a deadline `504`; the
+proxy never repeats a request. The [GitHub guide](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/guides/github.md#stay-inside-githubs-rate-limits)
 shows how to run it.
 
-| Export           | Signature                                                                                 | Notes                                                                                                                                                                                                   |
-| ---------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `make`           | `(options: ProxyOptions) => Effect<Effect<HttpServerResponse, never, HttpServerRequest>>` | The proxy as an HTTP application.                                                                                                                                                                       |
-| `layer`          | `(options: ProxyOptions) => Layer<never, never, HttpServer>`                              | Serves it on the `HttpServer` in context, such as `NodeHttpServer.layer`.                                                                                                                               |
-| `ProxyOptions`   | `{ credential, upstream?, capability?, limits?, maxWait?, requestTimeout? }`              | `credential(repository)` answers `{ token, principal }` for a request on `owner/name` or on no repository. `capability`, when set, is required from every caller as `Authorization: Bearer` or `token`. |
-| `Credential`     | `{ token: string; principal: string }`                                                    | Credentials with one `principal` share one budget.                                                                                                                                                      |
-| `repositoryOf`   | `(path: string) => string \| undefined`                                                   | The `owner/name` a REST path addresses.                                                                                                                                                                 |
-| `CONTROL_PREFIX` | `"/_smithers/"`                                                                           | `GET /_smithers/health` answers `{ ok: true }`. `GET /_smithers/admission?repo=owner/name&writes=n` answers `{ principal, startsAt, deferred }` without booking anything.                               |
+| Export           | Signature                                                                                                    | Notes                                                                                                                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `make`           | `(options: ProxyOptions) => Effect<Effect<HttpServerResponse, never, HttpServerRequest>, never, HttpClient>` | The proxy as an HTTP application, calling GitHub through the `HttpClient` in context.                                                                                                                   |
+| `layer`          | `(options: ProxyOptions) => Layer<never, never, HttpServer \| HttpClient>`                                   | Serves it on the `HttpServer` in context, such as `NodeHttpServer.layer`, and calls GitHub through the `HttpClient` in context, such as `FetchHttpClient.layer`.                                        |
+| `ProxyOptions`   | `{ credential, upstream?, capability?, limits?, maxWait?, requestTimeout? }`                                 | `credential(repository)` answers `{ token, principal }` for a request on `owner/name` or on no repository. `capability`, when set, is required from every caller as `Authorization: Bearer` or `token`. |
+| `Credential`     | `{ token: string; principal: string }`                                                                       | Credentials with one `principal` share one budget.                                                                                                                                                      |
+| `repositoryOf`   | `(path: string) => string \| undefined`                                                                      | The `owner/name` a REST path addresses.                                                                                                                                                                 |
+| `CONTROL_PREFIX` | `"/_smithers/"`                                                                                              | `GET /_smithers/health` answers `{ ok: true }`. `GET /_smithers/admission?repo=owner/name&writes=n` answers `{ principal, startsAt, deferred }` without booking anything.                               |
 
 ### GitHub.Repository
 
@@ -438,11 +479,11 @@ explains the pattern.
 
 | Export                                                                          | Signature                                                     | Notes                                                                                                                                                                                                                                                                                                                       |
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CommentOnIssue`                                                                | `Action`, tag `integrations/github/comment-on-issue`          | Posts a comment on an issue or pull request. Tier `irreversible`. Error schema `IntegrationFailure`.                                                                                                                                                                                                                        |
+| `CommentOnIssue`                                                                | `Action`, tag `integrations/github/comment-on-issue`          | Posts a comment on an issue or pull request. Tier `irreversible`, never retried. Error schema `Failure`; a rate limit fails `RetryableIntegrationFailure` with `retryAfterMillis`, and nothing was posted.                                                                                                                  |
 | `CommentOnIssuePayload`                                                         | schema                                                        | `owner`, `repo`, `issueNumber`, `body`. The coordinates demand the `Owner` and `Repo` shapes, so a payload built from a webhook body or a model's output fails to decode rather than reaching the API.                                                                                                                      |
 | `Comment`                                                                       | schema                                                        | The comment GitHub created: `id` and `url`.                                                                                                                                                                                                                                                                                 |
 | `layerCommentOnIssue`                                                           | `Layer<Requirement<...>, never, GitHubClient \| FlowRuntime>` | Implements the action over the client in context.                                                                                                                                                                                                                                                                           |
-| `retryPolicy`                                                                   | `RetryPolicy`                                                 | Three attempts, 0.5 s then 1 s apart, for the keyed write-back actions below.                                                                                                                                                                                                                                               |
+| `retryPolicy`                                                                   | `RetryPolicy`                                                 | `Core.ActionFailure.retryPolicy`, for the keyed write-back actions below: at most three attempts, waiting the server's `retryAfterMillis` when it named one, and never an `IntegrationFailure`. A lost write is retryable here, because each attempt reads before it writes. Error schema `Failure`.                        |
 | `AddLabels`                                                                     | `Action`, tag `integrations/github/add-labels`                | Adds the labels in `labels` the issue lacks, compared without case. Keyed; reads the labels first. Success: `added`, `labels`.                                                                                                                                                                                              |
 | `UpsertComment`                                                                 | `Action`, tag `integrations/github/upsert-comment`            | Requires `author: { login }` for user tokens or `author: { appId }` for installation tokens. Adopts only that author’s comment whose first line is `stickyMarker(key)` (Apps also require `user.type: Bot`). Keyed. Fails without writing on a thread longer than `RECONCILE_PAGES` pages. Success: `id`, `url`, `outcome`. |
 | `stickyMarker`                                                                  | `(key: string) => string`                                     | `<!-- smithers:key=KEY -->`.                                                                                                                                                                                                                                                                                                |
@@ -461,4 +502,6 @@ walk is met again. External ids use the numeric repository id
 `commentId` build them. Public repositories give `public` records, private
 ones `container`-scoped records. Deletions are not listed by GitHub; run a
 `fullListing` adapter periodically or map the deletion webhooks to
-tombstones.
+tombstones. A rate limit or a transient read failure fails the run once,
+`retryable`; run the sync as a durable step whose retry policy repeats it, and
+the repeat resumes from the committed cursor.

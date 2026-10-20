@@ -55,7 +55,8 @@ that broke the bundle would fail the build before it shipped.
 The durable stores accept an injected SQL client and `DurableWriter`. Native
 Node.js and Bun compositions use SQLite or the shipped PostgreSQL adapter;
 `NodeDatabase.layer` selects PostgreSQL for a PostgreSQL URL, and
-`@smthrs/database/postgres/PostgresDatabase` supports direct injection. Browser
+`PostgresDatabase` from the `@smthrs/database` root supports direct injection
+with the `@effect/sql-pg` driver passed in. Browser
 bundling does not supply a durable browser driver or qualify browser execution.
 PostgreSQL storage alone does not qualify a canonical backend deployment:
 artifacts, workspaces, and native process state still need durable host storage.
@@ -80,7 +81,8 @@ Observe progress with `poll(id)`, or await the result with
 `execute(payload, { executionId: id })`. Callers that need a durable waiting
 row or attempt receipt must await that evidence explicitly. Closing the engine
 scope releases ownership and retains durable admission and progress for
-recovery by a replacement host. The heartbeat sweep recovers pending admissions
+recovery by a replacement host. Under the default `"process"` sweep, the
+heartbeat sweep recovers pending admissions
 through the same coordinator and fenced claim/activate path;
 unregistered flows wait for a host that registers them. Pending recovery scans
 at most 64 rows per sweep and rotates registered flows. Each scan cycle has a
@@ -103,12 +105,17 @@ polls. Completed predecessor history remains unchanged. On normal parent exit,
 `onParentExit` belongs to the child's creating round and is retained through its
 handoffs; explicit cancellation still cascades to linked children.
 
-| Export                  | Signature                                                                                                           | Meaning                                                                                                |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `Options`               | interface                                                                                                           | Construction options. See below.                                                                       |
-| `make`                  | `(options: Options) => Effect<FlowRuntime["Service"], never, Requirements>`                                         | Builds the `FlowRuntime` service the port in [`@smthrs/flow`](/docs/reference/api/flow/) declares.                     |
-| `layer`                 | `(options: Options) => Layer<SnapshotBoundary \| FlowRuntime, never, Requirements>`                                 | Provides both, using the ambient `Jj` for action bodies and engine bookkeeping.                        |
-| `layerWithPrivilegedJj` | `(options: Options, privilegedJj: Layer<Jj, E, R>) => Layer<SnapshotBoundary \| FlowRuntime, E, Requirements \| R>` | The same, with a private repository for engine bookkeeping while ambient `Jj` stays for action bodies. |
+| Export                  | Signature                                                                                                                           | Meaning                                                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `Options`               | interface                                                                                                                           | Construction options. See below.                                                                               |
+| `make`                  | `(options: Options) => Effect<FlowRuntime["Service"], never, Requirements>`                                                         | Builds the `FlowRuntime` service the port in [`@smthrs/flow`](/docs/reference/api/flow/) declares.                             |
+| `layer`                 | `(options: Options) => Layer<SnapshotBoundary \| FlowRuntime, never, Requirements>`                                                 | Provides both, using the ambient `Jj` for action bodies and engine bookkeeping.                                |
+| `layerWithPrivilegedJj` | `(options: Options, privilegedJj: Layer<Jj, E, R>) => Layer<SnapshotBoundary \| FlowRuntime, E, Requirements \| R>`                 | The same, with a private repository for engine bookkeeping while ambient `Jj` stays for action bodies.         |
+| `Sweep`                 | `"process" \| { readonly host: string }`                                                                                            | Who wakes the store's runs. See `Options.sweep`.                                                               |
+| `nextWake`              | `(executionId: string) => Effect<Option<number>, RunStoreError, RunStore \| DurableEngineState>`                                    | When a host must next drive the execution, in epoch milliseconds. See [Hosted executions](#hosted-executions). |
+| `Driven`                | `{ _tag: "Settled"; status } \| { _tag: "Parked"; wakeAtMs: number \| undefined } \| { _tag: "Unfinished" }`                        | What one `drive` left an execution as.                                                                         |
+| `Driver`                | `Context.Service<{ drive }>`                                                                                                        | Provided by `layer` and `layerWithPrivilegedJj` beside `FlowRuntime`.                                          |
+| `drive`                 | `(flow: Flow.Any, options: { executionId: string; payload: object }) => Effect<Driven, FlowCycleDetected \| RunStoreError, Driver>` | Drives one execution once, for its host. See [Hosted executions](#hosted-executions).                          |
 
 ### EngineStore.Options
 
@@ -121,6 +128,7 @@ handoffs; explicit cancellation still cascades to linked children.
 | `canActivate`          | `(row: RunStore.RunRow) => Effect<boolean>` (optional) | Read-only admission fence rechecked inside the native activation transaction. Use the same consent and ownership policy as preflight; keep module loading and external I/O in `canExecute`. A refusal abandons the claim without dispatching the body.                                                                                                                                  |
 | `clockFireRetryPolicy` | `Schedule<unknown, unknown>` (optional)                | Redispatch policy for a durable clock whose fire failed. Defaults to exponential from 100ms capped at 30s, forever, the same option shape as the engine's `suspendedRetryPolicy`.                                                                                                                                                                                                       |
 | `requestResume`        | `(executionId, reason) => Effect<void>` (optional)     | Called for every wake this engine initiates against a PARKED execution: `"deferred"` (a durable deferred completed), `"clock"` (a durable clock fired), `"parent"` (a child settled under a parent parked on it). An operator's own resume is not reported. A host that refuses to re-enter a parked run nobody asked for reads it to tell an engine wake from its own heartbeat sweep. |
+| `sweep`                | `Sweep` (optional)                                     | Who wakes this store's runs. `"process"`, the default, sweeps the store every heartbeat interval and renews each owned run's lease. `{ host: executionId }` runs no sweep and renews no lease, and registration re-arms only that execution's clocks and completions. See [Hosted executions](#hosted-executions).                                                                      |
 
 ### Required services
 
@@ -162,8 +170,8 @@ run when another process has called `RunStore.requestCancel`. Terminal
 transitions are additionally guarded with `{ cancelRequested: "absent" }` inside
 the ownership compare-and-swap.
 
-The driver's periodic sweep re-drives durable shapes on the heartbeat
-cadence: pending admissions, parked runs whose cancellation was durably requested,
+Under the default `"process"` sweep, the driver's periodic sweep re-drives
+durable shapes on the heartbeat cadence: pending admissions, parked runs whose cancellation was durably requested,
 runs parked with reason `released`, and stale `running` rows left by a hard-killed
 owner. Each
 re-enters the ordinary claim, steal, and activate path. A wake for a flow the
@@ -177,6 +185,60 @@ takes the journal's durable channel (`emitDurable`), so a saturated lossy queue
 can never drop one. Attempt lifecycle writes additionally pass the owner: a
 reclaimed owner fails with `fence_lost` and self-interrupts instead of
 appending.
+
+Every action body runs under its attempt's ownership fence,
+`@smthrs/flow`'s `Action.CurrentFence`: the run, the step key digest, the
+attempt number, and this engine's owner. A body that writes its own tables adds
+`@smthrs/run-store`'s `RunStore.owned` for that fence to its statement, so the
+write changes nothing once another incarnation has taken the run or the
+attempt has settled.
+
+### Hosted executions
+
+`sweep: { host: executionId }` is for a host that drives one execution per
+invocation and wakes it from outside, such as a Cloudflare Durable Object
+alarm. The engine then starts no sweep fiber and renews no lease, so every
+fiber it starts belongs to a drive or to a clock timer in the runtime's scope,
+and closing that scope ends them. Registering a flow re-arms only the hosted
+execution's pending clocks and re-schedules only its unconsumed completions.
+
+The host owns three things the sweep and the lease did:
+
+1. **Liveness.** Supply an `isAlive` that answers `false` for an earlier
+   incarnation of the same host, and draw each incarnation's number with
+   `OwnerIdentity.layerWithoutPid`. A new incarnation then takes a crashed
+   one's run at once, adopts its running attempt, and the old incarnation's
+   fenced writes change nothing.
+2. **Routing.** Every other engine over the same store routes the hosted
+   execution away with `canExecute`. Its lease is not renewed, so a process
+   engine would reclaim it once `Ownership.heartbeatStaleAfter` passes.
+3. **The next invocation.** Drive the execution with `drive(flow, { executionId,
+   payload })`. It admits an execution the store does not hold, drives one it
+   holds only when work is due, and returns without waiting for the run to
+   settle: `Settled`, `Parked` with `wakeAtMs`, or `Unfinished` when work is
+   due that the drive did not do. Arm the next invocation at `wakeAtMs`, or
+   after a backoff for `Unfinished`. A drive that finds the last round of a
+   lineage `Settled` records the wake of each parent still waiting on it
+   again, without scheduling a wake already recorded, so an invocation that
+   died between a child's settlement and its parent's wake record loses no
+   wake. `nextWake(executionId)` answers the same question without driving:
+
+| Answer                                   | Meaning                                                                                                                                                                                                                                 |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Option.none()`                          | Nothing wakes the execution by itself: it settled, does not exist, is quarantined until an operator resumes it, or is parked on an event whose completion has not arrived. That completion's writer reports it through `requestResume`. |
+| `Option.some(at)`, `at` at or before now | There is work now: an unconsumed completion or a due clock, a cancellation request, a run released by an interrupted drive, or an admission nobody drove.                                                                               |
+| `Option.some(at)`, later                 | The earliest pending `DurableClock` of a parked run, or when another owner's claim or lease lapses.                                                                                                                                     |
+
+`nextWake` fails with the `RunStoreError` the run store raises for a read it
+cannot make; an unknown id is `Option.none()`.
+
+A store that becomes unavailable while an attempt is admitted, run or recorded
+(a lost connection, an I/O failure, a database restart) does not decide the
+attempt's outcome. The dispatch interrupts itself, as it does on a lost fence,
+so the attempt row stays `running` and the run is released. The next drive
+adopts the attempt and records its result. Each one counts on
+`EngineStoreMetrics.storageUnavailable` and logs a warning naming the store's
+error code.
 
 Full model: [Ownership and fencing](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/concepts/ownership-and-fencing.md) and
 [Attempts and replay](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/concepts/attempts-and-replay.md).
@@ -376,16 +438,17 @@ interface Service {
 }
 ```
 
-| Export              | Signature                                                                                                | Meaning                                                                                                                                     |
-| ------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `StepBoundary`      | `Context.Service<Service>`                                                                               | Service tag.                                                                                                                                |
-| `make`              | `(service: Service) => Service`                                                                          | Brands an implementation, so a wrong shape is reported where it is written.                                                                 |
-| `makeFileSystem`    | `(fs: FileSystem, path: Path, artifacts: ArtifactStore.Service, options?: FileSystemOptions) => Service` | The production boundary.                                                                                                                    |
-| `layer`             | `Layer<Service, never, FileSystem \| Path \| ArtifactStore>`                                             | Provides it, rooting measurement and replay at the kernel `Workspace` root when one is in context. Resolves that root with the host `Path`. |
-| `layerTest`         | `(options?: TestOptions) => Layer<Service>`                                                              | Deterministic in-memory boundary.                                                                                                           |
-| `exactReads`        | `(descriptor: FileBoundary) => ReadonlyArray<FileInput>`                                                 | Exact read inputs, ignoring declarations that still need expansion.                                                                         |
-| `readSetMatches`    | `(prepared: PreparedBoundary) => boolean`                                                                | Whether the measured snapshot still matches the declaration.                                                                                |
-| `referencedDigests` | `(evidence: BoundaryEvidence) => ReadonlyArray<ArtifactStore.Digest>`                                    | The digests the evidence references rather than inlines. Evidence from a foreign implementation yields the empty list.                      |
+| Export              | Signature                                                                                                | Meaning                                                                                                                                                                                                          |
+| ------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `StepBoundary`      | `Context.Service<Service>`                                                                               | Service tag.                                                                                                                                                                                                     |
+| `make`              | `(service: Service) => Service`                                                                          | Brands an implementation, so a wrong shape is reported where it is written.                                                                                                                                      |
+| `makeFileSystem`    | `(fs: FileSystem, path: Path, artifacts: ArtifactStore.Service, options?: FileSystemOptions) => Service` | The production boundary.                                                                                                                                                                                         |
+| `layer`             | `Layer<Service, never, FileSystem \| Path \| ArtifactStore>`                                             | Provides it, rooting measurement and replay at the kernel `Workspace` root when one is in context. Resolves that root with the host `Path`.                                                                      |
+| `layerTest`         | `(options?: TestOptions) => Layer<Service>`                                                              | Deterministic in-memory boundary.                                                                                                                                                                                |
+| `layerUnsupported`  | `Layer<Service>`                                                                                         | The boundary of a host with no filesystem. Every call fails with `UnsupportedBoundary`, so a sealed step that declares a file boundary fails its attempt before its body runs; a step without one runs normally. |
+| `exactReads`        | `(descriptor: FileBoundary) => ReadonlyArray<FileInput>`                                                 | Exact read inputs, ignoring declarations that still need expansion.                                                                                                                                              |
+| `readSetMatches`    | `(prepared: PreparedBoundary) => boolean`                                                                | Whether the measured snapshot still matches the declaration.                                                                                                                                                     |
+| `referencedDigests` | `(evidence: BoundaryEvidence) => ReadonlyArray<ArtifactStore.Digest>`                                    | The digests the evidence references rather than inlines. Evidence from a foreign implementation yields the empty list.                                                                                           |
 
 ### Schemas
 
@@ -514,6 +577,7 @@ commit that cannot take the lock within 2 minutes fails with
 | `makeMemory`                | `(initialFiles?: InitialFiles) => Effect<MemorySandbox, WorkspaceError, Crypto>`                                                   | Deterministic, browser-safe, and the conformance implementation. Seeds the whole tree, so an undeclared read is observable.                           |
 | `makeFileSystem`            | `(fs: FileSystem, path: Path, artifacts: ArtifactStore.Service, workspaceRoot: string, options?: FileSystemOptions) => Service`    | The production host.                                                                                                                                  |
 | `layerFileSystem`           | `(options?: FileSystemOptions) => Layer<Service, WorkspaceError, FileSystem \| Path \| ArtifactStore \| Workspace>`                | Provides it, taking the root from the kernel `Workspace` and resolving it with the host `Path`. Fails with `host_unavailable` over a path-based host. |
+| `layerUnsupported`          | `Layer<Service>`                                                                                                                   | The sandbox of a host with no filesystem: `execute` and `materialize` fail with `host_unavailable` and never run the body.                            |
 | `Workspace`                 | `Context.Service<Workspace>`                                                                                                       | The in-transaction filesystem and effect outbox, available only inside `execute`.                                                                     |
 | `EffectDispatcher`          | `Context.Service<Dispatcher>`                                                                                                      | The post-copy-back dispatch stage. Optional.                                                                                                          |
 | `layerDispatcher`           | `(dispatcher: Dispatcher) => Layer<Dispatcher>`                                                                                    | Provides one.                                                                                                                                         |
@@ -1115,17 +1179,17 @@ The engine-owned read port, exported from the root and
 `@smthrs/engine-store/ExecutionSnapshot`. Its `make()` and `layer` require
 `SqlClient` with the engine migrations applied.
 
-| Export                                   | Contract                                                                                                                                                                              |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ExecutionSnapshot`, `Service`           | Service tag and its `read` and `related` operations.                                                                                                                                  |
-| `Service.read(runIds)`                   | Coherent `Batch` for up to `maximumBatchSize` (200) IDs, preserving request order and duplicates.                                                                                     |
-| `withReadTransaction(sql, effect)`       | Reserves a read transaction without writer admission: deferred on SQLite and repeatable-read, read-only on PostgreSQL. An existing transaction retains its caller-selected isolation. |
-| `Service.related(options)`               | Bounded `RelatedPage` of direct durable children or lineage rounds, with the requested anchor.                                                                                        |
-| `Position`                               | Durable database `source` and monotonic `revision`.                                                                                                                                   |
-| `Snapshot`, `Observed`, `Missing`        | Explicit observed execution or absence, including deletion evidence.                                                                                                                  |
-| `Waiting`                                | Timer, signal, approval, quota, human, or other reason, with wake time and SHA-256 `tokenDigest`.                                                                                     |
-| `Batch`, `RelatedOptions`, `RelatedPage` | Source watermark, scoped results, relation selector, and optional continuation.                                                                                                       |
-| `isNewer(incoming, stored)`              | True only for the same source with a greater revision.                                                                                                                                |
+| Export                                   | Contract                                                                                                                                                                                                                        |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ExecutionSnapshot`, `Service`           | Service tag and its `read` and `related` operations.                                                                                                                                                                            |
+| `Service.read(runIds)`                   | Coherent `Batch` for up to `maximumBatchSize` (200) IDs, preserving request order and duplicates.                                                                                                                               |
+| `withReadTransaction(sql, effect)`       | `@smthrs/database`'s `Dialect.readTransaction`: one read transaction without writer admission, deferred on SQLite and `REPEATABLE READ READ ONLY` on PostgreSQL. An existing transaction retains its caller-selected isolation. |
+| `Service.related(options)`               | Bounded `RelatedPage` of direct durable children or lineage rounds, with the requested anchor.                                                                                                                                  |
+| `Position`                               | Durable database `source` and monotonic `revision`.                                                                                                                                                                             |
+| `Snapshot`, `Observed`, `Missing`        | Explicit observed execution or absence, including deletion evidence.                                                                                                                                                            |
+| `Waiting`                                | Timer, signal, approval, quota, human, or other reason, with wake time and SHA-256 `tokenDigest`.                                                                                                                               |
+| `Batch`, `RelatedOptions`, `RelatedPage` | Source watermark, scoped results, relation selector, and optional continuation.                                                                                                                                                 |
+| `isNewer(incoming, stored)`              | True only for the same source with a greater revision.                                                                                                                                                                          |
 
 The requested run's lifecycle remains round scoped. Intent and the first owner's
 cancellation acknowledgement are separate fields. Observation failures use
@@ -1299,14 +1363,15 @@ the store, never the original.
 
 Mints the `OwnerId` an incarnation fences its writes with.
 
-| Export            | Signature                                               | Meaning                                                             |
-| ----------------- | ------------------------------------------------------- | ------------------------------------------------------------------- |
-| `OwnerIdentity`   | `Context.Service<Service>`                              | Service tag.                                                        |
-| `Service`         | `{ ownerId: (hostId: string) => Effect<OwnerId> }`      | The host supplies the incarnation; the caller supplies the host id. |
-| `make`            | `(service: Service) => Service`                         | Brands an implementation.                                           |
-| `makeIncarnation` | `(pid: number \| undefined, crypto: Crypto) => Service` | The standard source over an explicitly supplied process id.         |
-| `layer`           | `Layer<OwnerIdentity, never, Crypto>`                   | The platform default.                                               |
-| `layerConstant`   | `(owner: OwnerId) => Layer<OwnerIdentity>`              | Pins the whole token.                                               |
+| Export            | Signature                                               | Meaning                                                                                                                                                               |
+| ----------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OwnerIdentity`   | `Context.Service<Service>`                              | Service tag.                                                                                                                                                          |
+| `Service`         | `{ ownerId: (hostId: string) => Effect<OwnerId> }`      | The host supplies the incarnation; the caller supplies the host id.                                                                                                   |
+| `make`            | `(service: Service) => Service`                         | Brands an implementation.                                                                                                                                             |
+| `makeIncarnation` | `(pid: number \| undefined, crypto: Crypto) => Service` | The standard source over an explicitly supplied process id.                                                                                                           |
+| `layer`           | `Layer<OwnerIdentity, never, Crypto>`                   | The platform default.                                                                                                                                                 |
+| `layerWithoutPid` | `Layer<OwnerIdentity, never, Crypto>`                   | Draws the incarnation number from `Random` and never reads a process id. For a Worker or Durable Object, whose isolate may report one fixed pid to every incarnation. |
+| `layerConstant`   | `(owner: OwnerId) => Layer<OwnerIdentity>`              | Pins the whole token.                                                                                                                                                 |
 
 The process id is read off `globalThis` rather than through a bare `process`
 reference, so the module carries no Node binding: a browser bundle sees
@@ -1360,6 +1425,7 @@ remain host-owned.
 | `sandboxExecutions`, `sandboxExecutionDuration`, `sandboxExecution`     | counter, timer, and views keyed by `ExitTag`                                                                                  |
 | `sandboxMaterializations`, `materializationDuration`, `materialization` | counter, timer, and views keyed by `ExitTag`                                                                                  |
 | `materializationConflicts`                                              | counter                                                                                                                       |
+| `storageUnavailable`                                                    | counter                                                                                                                       |
 | `boundarySettlements`, `boundarySettlement`                             | counter and views keyed by `Clean`, `Deviation`, `Violation`, `Refused`                                                       |
 | `stepCacheDecisions`, `stepCacheDecision`                               | counter and views keyed by `VerifiedHit`, `Miss`, `UnverifiableEvidence`, `Unmeasurable`, `StaleReadSet`, `ReplayFailed`      |
 | `claims`, `claim`                                                       | counter and views keyed by `Activated`, `Terminal`, `HeartbeatFresh`, `StealRefusedOwnerAlive`, `ClaimLost`, `ActivationLost` |

@@ -298,6 +298,51 @@ activates. The write refuses any row whose `heartbeat_at_ms` is within
 staleness check: the probe proved the owner's process gone, so the row is
 taken at once. `claimAndOwn` applies the same rule.
 
+### owned
+
+```ts
+interface Fence {
+  readonly runId: string
+  readonly stepKeyDigest: string
+  readonly attempt: number
+  readonly owner: OwnerId
+}
+interface OwnedOptions {
+  readonly schema?: string | undefined
+}
+const owned: (sql: SqlClient.SqlClient, fence: Fence, options?: OwnedOptions) => Fragment
+```
+
+A boolean SQL condition that holds only while the fence is current: the run is
+`running` under exactly the fenced owner, and the fenced attempt row in
+`flows_attempts` is still `running`. An action adds it to its own `UPDATE` or
+`DELETE`, so a write from an owner that lost the run to a takeover, or from an
+attempt that has since settled, changes no row. Read the affected row count to
+tell a refused write from a successful one.
+
+`@smthrs/flow`'s `Action.CurrentFence` has the `Fence` shape; a durable engine
+supplies it to every action body it runs.
+
+```ts
+const fence = yield * Action.CurrentFence
+if (fence === undefined) return yield * Effect.die("this step needs a durable engine")
+const rows = yield * sql`
+  UPDATE messages SET text = ${text}
+  WHERE id = ${id} AND ${RunStore.owned(sql, fence, { schema: "smithers_flows" })}
+  RETURNING id
+`
+```
+
+`schema` qualifies `flows_runs` and `flows_attempts` when the statement runs on
+a client whose search path is not the engine's, such as an application client
+over the same PostgreSQL database. Without it the names are unqualified.
+
+On PostgreSQL the condition reads both rows `FOR SHARE`. A takeover or an
+attempt settlement that updates either row waits for the fenced statement's
+transaction, and the statement waits for theirs and then sees their result, so
+a fenced write lands before the takeover or not at all. SQLite serializes
+write transactions, which gives the same order without a row lock.
+
 ### RunStore models
 
 #### RunStatus
@@ -760,8 +805,7 @@ const leaseLiveness: (staleAfter?: Duration.Input) => LivenessCheck
 
 The default check and the honest floor: an owner is alive while its persisted
 heartbeat is younger than `staleAfter`, which defaults to `heartbeatStaleAfter`.
-An owner with no recorded heartbeat is reported gone. Browser compositions keep
-it, because a tab has no process table to ask.
+An owner with no recorded heartbeat is reported gone.
 
 ### sameHostPidProbe
 
@@ -774,6 +818,19 @@ signal. Only `ESRCH` is read as death; `EPERM`, any other error, and a pid that
 is not a positive safe integer are read as life. A recorded owner on another host
 is never probed and answers `false`, so the expired lease decides instead of
 stranding that host's runs forever. Node hosts only.
+
+### singleIncarnationLiveness
+
+```ts
+const singleIncarnationLiveness: LivenessCheck
+```
+
+For a host that runs one incarnation per host id: a Cloudflare Durable Object,
+or a browser engine in the worker that holds its origin's Web Lock. An owner
+with the claimant's host id and another `pid` or `nonce` is an earlier
+incarnation, and answers `false` however fresh its lease. Every other owner,
+the claimant included, is judged by `leaseLiveness()`. Two Node engines over
+one database can share a host id, so Node hosts use `sameHostPidProbe`.
 
 ### heartbeatLoop
 

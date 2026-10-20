@@ -879,6 +879,19 @@ An unavailable spawner. Every derived helper reports the missing host as a
 `NotFound` `PlatformError` naming the command line, so an unconfigured
 capability answers rather than vanishing.
 
+### ChildProcessSpawner.ambientEnvironment
+
+```ts
+const ambientEnvironment: () => Readonly<Record<string, string | undefined>>
+```
+
+The environment this process holds, which a child built with
+`ChildProcessEnvironment.make` inherits its bootstrap names from. It is `{}` on
+a host with no process environment, such as a browser or a Cloudflare Worker.
+Library code that builds a child's environment, or names a host directory a
+child uses, reads it here rather than from the `process` global, so it still
+imports and runs on every host.
+
 ### ChildProcessSpawner.layer
 
 ```ts
@@ -1527,6 +1540,23 @@ contract before marking the client. Replacing the client does not inherit the as
 the kernel guard preserves it when wrapping a supported client. The standard Node and Bun host
 bundles implement it. `HttpClient.supportsDestinationPinning(client)` reports
 whether that exact client is marked. Model requests leave `Destination` unset.
+
+`HttpClient.ResolveHost` is the reference a web tool reads to turn a request's
+hostname into the addresses it checks and then pins. The resolver and the
+pinning client must come from the same host, so `@smthrs/platform-node`'s
+`EgressHttpClient.layer` provides both, on Node and on Bun. The default
+resolves nothing and fails with `HttpClient.ResolveHostUnavailable({ hostname,
+reason })`. That is the answer in a browser tab or a Cloudflare Worker, where
+the platform mediates the network: such a host can neither look a name up nor
+hold a connection to the addresses a lookup returned, so a web request that
+needs a name is refused, never sent unchecked. A test provides its own:
+
+```ts
+import { HttpClient } from "@smthrs/kernel"
+import { Effect } from "effect"
+
+const pinned = Effect.provideService(HttpClient.ResolveHost, () => Effect.succeed(["192.0.2.10"]))
+```
 
 ## Unreachable
 

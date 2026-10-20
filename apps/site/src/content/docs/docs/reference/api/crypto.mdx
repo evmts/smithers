@@ -9,12 +9,22 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/crypto/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/crypto/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/crypto/docs)
 
 Every hashing, schema, error, and service name below is exported from the root
-entry point and from `@smthrs/crypto/Sha256`. Function identity is the one
-other public module: it is exported as the `Identity` namespace from the root
-and from `@smthrs/crypto/Identity`.
+entry point and from `@smthrs/crypto/Sha256`. Two other public modules are
+namespaces of the root: `WebCrypto`, Effect's `Crypto` over the global
+WebCrypto, and `Identity`, function identity.
 
 ```ts
-import { Digest, digest, digestSync, Identity, Sha256, Sha256Error, Sha256ErrorCode, syncCrypto } from "@smthrs/crypto"
+import {
+  Digest,
+  digest,
+  digestSync,
+  Identity,
+  Sha256,
+  Sha256Error,
+  Sha256ErrorCode,
+  syncCrypto,
+  WebCrypto
+} from "@smthrs/crypto"
 ```
 
 ## Example
@@ -213,7 +223,48 @@ with no platform layer.
   Because `Crypto.make` derives random numbers, UUIDs, and shuffling from
   `randomBytes`, every random operation fails the same way.
 
-Normal application code should provide its platform `Crypto` layer instead.
+Normal application code should provide its platform `Crypto` layer, or
+[`WebCrypto.layer`](#webcryptolayer), instead.
+
+### WebCrypto.make
+
+```ts
+const make: () => Crypto.Crypto
+```
+
+Effect's `Crypto` over the global WebCrypto object, `globalThis.crypto`, which
+Node, Bun, browsers, and Cloudflare Workers all provide. It is the one
+WebCrypto-backed `Crypto` in Smithers: `@smthrs/platform-cloudflare`'s host
+bundle and `@smthrs/platform-node`'s sandboxed-flow guest both provide it.
+
+- `randomBytes(size)` fills any size, at most 65,536 bytes per
+  `crypto.getRandomValues` call. That is the Web Crypto limit; one larger call
+  throws `QuotaExceededError`. Effect derives random numbers, UUIDs, ULIDs, and
+  shuffling from it.
+- `digest(algorithm, data)` copies `data` and calls `crypto.subtle.digest`. A
+  rejection fails with a `PlatformError` whose reason is `Unknown`, with
+  `module: "Crypto"`, `method: "digest"`, the description
+  `WebCrypto could not compute <algorithm>`, and WebCrypto's own error as
+  `cause`.
+- Randomness is read only when a caller asks for it, never while the module
+  evaluates or while `make` builds the service. Cloudflare refuses to deploy a
+  script that calls `crypto.getRandomValues` at module scope (upload error
+  10021).
+
+### WebCrypto.layer
+
+```ts
+const layer: Layer.Layer<Crypto.Crypto>
+```
+
+[`WebCrypto.make()`](#webcryptomake) as a layer.
+
+```ts
+import { digest, WebCrypto } from "@smthrs/crypto"
+import { Effect } from "effect"
+
+const address = await Effect.runPromise(digest("hello").pipe(Effect.provide(WebCrypto.layer)))
+```
 
 ## Input and memory policy
 
@@ -349,7 +400,8 @@ derived from one rather than colliding with it.
   `digestSync` and `syncCrypto`.
 - `Identity.capture` uses `structuredClone`, a global on Node.js 26, Bun, and
   modern browsers, and `Identity.processNonce` uses `crypto.getRandomValues`.
-  Neither is read while the module evaluates.
+  `WebCrypto` uses the global `crypto` object. None of them is read while the
+  module evaluates.
 
 ## Neighbouring packages
 

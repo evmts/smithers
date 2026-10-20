@@ -39,7 +39,7 @@ The `exports` map declares these subpaths:
 
 ## Namespaces
 
-The package index re-exports seventeen namespaces:
+The package index re-exports eighteen namespaces:
 
 | Namespace         | Summary                                                              |
 | ----------------- | -------------------------------------------------------------------- |
@@ -57,6 +57,7 @@ The package index re-exports seventeen namespaces:
 | `Poll`            | The durable poller: attempts as rounds, waits as durable timers.     |
 | `RetryPolicy`     | Retry policy models and constructors.                                |
 | `Sleep`           | The system timer action and its implementation layer.                |
+| `SpanFailure`     | Spans whose failures export only a tag and a code.                   |
 | `Stall`           | The stall breaker round loops share.                                 |
 | `StepIdentity`    | Stable step identity construction.                                   |
 | `WaitFor`         | The system wait-point action and its implementation layer.           |
@@ -151,6 +152,29 @@ The current durable retry attempt, counted from one.
 - **Since:** `0.1.0`
 
 The persisted key of the dispatch an implementation is running under, when the runtime supplies one.
+
+### `Action.Fence`
+
+- **Type:** `interface { runId: string; stepKeyDigest: string; attempt: number; owner: { hostId: string; pid: number; nonce: string } }`
+- **Since:** `1.0.0`
+
+The ownership fence of one running attempt: the attempt row and the engine incarnation that holds its run. The owner changes when another incarnation adopts a crashed attempt, and the attempt changes when a failed attempt is retried.
+
+### `Action.CurrentFence`
+
+- **Type:** `Context.Reference<Fence | undefined>`
+- **Default:** `undefined`
+- **Since:** `1.0.0`
+
+The fence of the attempt an implementation is running under, when the runtime supplies one. A durable engine supplies it; `@smthrs/run-store`'s `RunStore.owned` turns it into a condition for the implementation's own SQL write.
+
+### `Action.CurrentRedispatch`
+
+- **Type:** `Context.Reference<boolean>`
+- **Default:** `false`
+- **Since:** `1.0.0`
+
+`true` while an implementation runs an attempt an earlier execution started and never settled: its process died or was cut off mid-body, or the body parked on a durable wait and the run resumed. A durable engine re-runs such an attempt under its original number. An implementation that cannot repeat its effect silently, such as a paid provider call, reads it to count or reconcile the repeat.
 
 ### `Action.DuplicateImplementation`
 
@@ -1617,7 +1641,7 @@ Whether an error is classified non-retryable, by `defaultNonRetryable` or by the
 - **Signature:** `decide(policy: RetryPolicy, options: { readonly attempt: number; readonly error: unknown; readonly random?: number | undefined; readonly elapsedMs?: number | undefined }): RetryDecision`
 - **Since:** `0.1.0`
 
-The pure core of the engine's single retry decision point. Non-retryable errors are classified here and nowhere else.
+The pure core of the engine's single retry decision point. Non-retryable errors are classified here and nowhere else. A failure with its own `retryAfterMillis`, a finite non-negative number of milliseconds such as a provider's `Retry-After` on a `ModelError`, retries after that delay instead of the policy's backoff, capped by `maxMs` and by what remains of `expirationMs`.
 
 ### `RetryPolicy.decideEffect`
 
@@ -1655,6 +1679,39 @@ The declared `system/sleep` step: a relative `millis` from now, or an absolute `
 - **Since:** `0.1.0`
 
 The sleep implementation: arm the durable clock, park under `timer`, wake. Provide it beside the other action implementation layers, over `Action.layerImplementations`.
+
+## SpanFailure
+
+An OTLP exporter writes a failed span's error message and stack into its status and `exception` event, and a failure's message is often someone else's text: a model provider's error can quote a prompt. A span that ends through this module records a stand-in for each failure instead: its tag, or else its class name, and a tagged failure's `code` when the code is a lowercase token, such as `Refused: rate_limited`; anything else reads `redacted`. Only the span's copy changes: the caller still receives the original failure.
+
+`Action.execute`, each flow's `<tag>.execute` span, and `@smthrs/engine-store`'s `ActionPersistence.execute` end this way, so an action's failure text never reaches them.
+
+### `SpanFailure.exit`
+
+- **Signature:** `exit<A, E>(result: Exit.Exit<A, E>): Exit.Exit<A, unknown>`
+- **Since:** `1.0.0`
+
+An exit as a span records it: every failure and defect replaced by its stand-in, keeping its annotations. A success and an interruption pass unchanged.
+
+### `SpanFailure.tracer`
+
+- **Signature:** `tracer(inner: Tracer.Tracer): Tracer.Tracer`
+- **Since:** `1.0.0`
+
+The tracer with every span it opens ending on `exit`. Wrapping it again returns it unchanged.
+
+### `SpanFailure.effect`, `SpanFailure.stream`, `SpanFailure.fn`
+
+- **Since:** `1.0.0`
+
+Run an effect, a stream, or every call of a traced function on `tracer`, so every span they open withholds its failure text. Wrap a traced function itself, `fn(Effect.fn("name")(body))`, so its own span opens on the wrapped tracer.
+
+### `SpanFailure.withSpan`
+
+- **Signature:** `withSpan(name: string, options?: Tracer.SpanOptions): <A, E, R>(self: Effect<A, E, R>) => Effect<A, E, R>`
+- **Since:** `1.0.0`
+
+`Effect.withSpan` with only that one span withholding its failure text; the spans the effect opens are traced as before.
 
 ## Stall
 

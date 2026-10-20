@@ -44,7 +44,7 @@ test("the support reference states every released Node engine range and current 
   for (
     const term of [
       "unsupported_runtime",
-      "bundle only",
+      "No other SQL client is a supported durable store",
       "advisory, not release-gating",
       "TLS termination",
       "ControlClient.credential",
@@ -59,7 +59,9 @@ test("the support reference states every released Node engine range and current 
 
 test("the release smoke row names the exact runtimes that certify the candidate tarballs", () => {
   const workflow = parseWorkflow(read(".github/workflows/release.yml"))
-  const smokeSteps = workflow.jobs.publish.steps.filter((step) => step.run?.includes("node .smithers/flows/release/smoke-release.mjs "))
+  const smokeSteps = workflow.jobs.publish.steps.filter((step) =>
+    step.run?.includes("node .smithers/flows/release/smoke-release.mjs ")
+  )
   assert.equal(smokeSteps.length, 1, "the release requires one smoke receipt on the supported Node floor")
   const pins = smokeSteps.map((step) => {
     const assertion = step.run.match(/test "\$\(node --version\)" = 'v([\d.]+)'/)
@@ -72,7 +74,6 @@ test("the release smoke row names the exact runtimes that certify the candidate 
   const documentedPins = [...row[1].matchAll(/`(\d+\.\d+\.\d+)`/g)].map(([, pin]) => pin)
   assert.deepEqual(documentedPins, pins, "release smoke versions must match the actual workflow checks")
 })
-
 
 test("Bun installation claims match its declared engine floor", () => {
   const directory = "packages/smithers/flows/platform-bun"

@@ -1,7 +1,7 @@
 ---
 import Base from "../layouts/Base.astro"
 import { DEFAULT_APP_DOCUMENT_PATH } from "../../../server/src/appDocument"
-import { WORDMARK } from "../../../app/src/mainview/Wordmark"
+import { WORDMARK } from "@smthrs/ui"
 import { ROOT_APP_PATH } from "../../../app/src/mainview/runtime/FrameHistory"
 import { RepositoryOpenForm } from "../../../app/src/mainview/cards/RepositoryOpenForm"
 import { landingCopy } from "../data/landingCopy"
@@ -41,7 +41,8 @@ const firstCommand = landingCopy.commands.npx
 </Base>
 <script>
   import { sameOriginUrl } from "../lib/sameOriginUrl"
-  import { shouldResumeApp } from "../lib/appHistory"
+  // The module, not the @smthrs/rpc root, keeps the root's schemas out of the landing page's first script.
+  import { shouldResumeApp } from "@smthrs/rpc/AppEntry"
   const copy = document.getElementById("copy-install")
   const command = document.getElementById("run-command")
   const runner = document.querySelector<HTMLElement>(".landing-runner")

@@ -45,6 +45,7 @@
     "@smthrs/sync": "workspace:*",
     "@smthrs/testing": "workspace:*",
     "@smthrs/time-travel": "workspace:*",
+    "@smthrs/ui": "workspace:*",
     "@types/react": "^19.2.18",
     "effect": "4.0.5",
     "typescript": "~5.9.3"

@@ -45,7 +45,7 @@
 - [@smthrs/engine-store](https://smithers.sh/docs/reference/api/engine-store/): Effect services for durable engine action persistence and replay boundaries
 - [@smthrs/errors](https://smithers.sh/docs/reference/api/errors/): SmithersError and the error codes the integration adapters raise
 - [@smthrs/evals](https://smithers.sh/docs/reference/api/evals/): Fixed-suite evaluation, baselines, regression reports, and score gates for flows
-- [@smthrs/flows](https://smithers.sh/docs/reference/api/flows/): Barrel package re-exporting the whole @smthrs durable flow engine
+- [@smthrs/flows](https://smithers.sh/docs/reference/api/flows/): Barrel package re-exporting the whole @smthrs durable flow engine and its platform-neutral Runtime
 - [@smthrs/fs](https://smithers.sh/docs/reference/api/fs/): Private metadata routing and schema-checked command projections for Smithers flows
 - [@smthrs/gateway](https://smithers.sh/docs/reference/api/gateway/): Effect workspace gateway contracts, projections, and supervision ports for flows
 - [@smthrs/harness](https://smithers.sh/docs/reference/api/harness/): The Smithers built-in agent loop: a cell-first controller whose model turns produce JavaScript cells that run in a persistent realm and reach the world only through durable flow calls
@@ -65,7 +65,8 @@
 - [@smthrs/plan-store](https://smithers.sh/docs/reference/api/plan-store/): The persisted plan's append-only SQLite store and the migrations that own its tables
 - [@smthrs/platform-browser](https://smithers.sh/docs/reference/api/platform-browser/): Browser implementations of Effect platform services backed by ZenFS and just-bash
 - [@smthrs/platform-bun](https://smithers.sh/docs/reference/api/platform-bun/): Bun Host bundle for flows: Effect's Bun platform services composed into the closed Host surface
-- [@smthrs/platform-node](https://smithers.sh/docs/reference/api/platform-node/): Node.js Host bundle for flows: Effect's Node platform services composed into the closed Host surface
+- [@smthrs/platform-cloudflare](https://smithers.sh/docs/reference/api/platform-cloudflare/): Cloudflare host for durable flows: the closed Host surface for Workers, the engine over an injected Postgres, and a per-execution Durable Object driven by alarms
+- [@smthrs/platform-node](https://smithers.sh/docs/reference/api/platform-node/): Node.js Host bundle for flows: Effect's Node platform services composed into the closed Host surface, and the durable flow runtime on Node
 - [@smthrs/plugin](https://smithers.sh/docs/reference/api/plugin/): Vite-style typed plugin kernel for flows: hooks, resolution, and config execution
 - [@smthrs/registry](https://smithers.sh/docs/reference/api/registry/): Portable flow descriptor discovery and progressive-disclosure registry services
 - [@smthrs/run-store](https://smithers.sh/docs/reference/api/run-store/): Effect services for flows run state, attempts, and ownership arbitration
@@ -99,7 +100,7 @@
 - [@smthrs/build-cli](https://github.com/smithersai/smithers/tree/main/packages/smithers/build/build-cli/docs): Executes PACKAGE.ts target graphs with content-addressed caching
 - [@smthrs/targets](https://github.com/smithersai/smithers/tree/main/packages/smithers/build/targets/docs): Typed legacy declaration rules and macros for smithers build
 - [@smthrs/control](https://github.com/smithersai/smithers/tree/main/packages/smithers/control/docs): Control services and RPC projections for flows
-- [@smthrs/flows](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs): Barrel package re-exporting the whole @smthrs durable flow engine
+- [@smthrs/flows](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs): Barrel package re-exporting the whole @smthrs durable flow engine and its platform-neutral Runtime
 - [@smthrs/artifacts](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/artifacts/docs): Effect service for the Smithers content-addressed artifact store, local and remote
 - [@smthrs/canonical](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs): RFC 8785 canonical JSON as an Effect Schema
 - [@smthrs/capability](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/capability/docs): Capability values and permission failures: the leaf vocabulary of the Smithers permission kernel
@@ -119,7 +120,8 @@
 - [@smthrs/plan-store](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/docs): The persisted plan's append-only SQLite store and the migrations that own its tables
 - [@smthrs/platform-browser](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-browser/docs): Browser implementations of Effect platform services backed by ZenFS and just-bash
 - [@smthrs/platform-bun](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-bun/docs): Bun Host bundle for flows: Effect's Bun platform services composed into the closed Host surface
-- [@smthrs/platform-node](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-node/docs): Node.js Host bundle for flows: Effect's Node platform services composed into the closed Host surface
+- [@smthrs/platform-cloudflare](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-cloudflare/docs): Cloudflare host for durable flows: the closed Host surface for Workers, the engine over an injected Postgres, and a per-execution Durable Object driven by alarms
+- [@smthrs/platform-node](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-node/docs): Node.js Host bundle for flows: Effect's Node platform services composed into the closed Host surface, and the durable flow runtime on Node
 - [@smthrs/run-store](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/run-store/docs): Effect services for flows run state, attempts, and ownership arbitration
 - [@smthrs/sandbox](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/docs): Provisioned machines, provider-neutral remote process execution, conformance, and sandbox liveness for flows
 - [@smthrs/step-cache](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/step-cache/docs): Effect service for the flows content-addressed step result cache

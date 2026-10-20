@@ -1,6 +1,6 @@
 # 0001: Postgres, Electric and TanStack DB replace LiveStore
 
-Status: accepted (Will, 2026-10-19)
+Status: accepted (Will, 2026-10-19). Superseded by [0002](0002-local-first.md) for writes and the device store: "Writes need the network" no longer holds; every read comes from the device and every write goes through a durable outbox. The rest stands.
 
 ## Decision
 
