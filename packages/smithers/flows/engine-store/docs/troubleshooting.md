@@ -308,6 +308,35 @@ stored before results kept the code still reads `plan_changed`. To keep work
 in flight across a deploy that really changes a flow, let those runs settle
 before the deploy.
 
+## A run resumed after a deploy fails with `payload_changed`
+
+**What happened.** A run parked under one build resumed under another whose
+flow no longer decodes the payload the run recorded. The engine records a run's
+payload once, encoded with the codec of the build that admitted it, and decodes
+it with the resuming build's codec on every resume. A new required field or a
+changed type makes that decode fail, and no later wake can succeed. The run
+settles `failed` before any step dispatches, with
+`Interpreter.InterpreterError` code `payload_changed` as its defect. The engine
+logs a warning naming the run and the flow, and journals a `payload-changed`
+run decision. Neither quotes the payload. `poll`, a browser engine's `result`,
+and a Cloudflare execution object's next alarm read the same settled run.
+
+**The schema-evolution rule.** A flow's payload schema is part of its plan, so
+any change to it refuses that flow's parked runs:
+
+| Change to the payload schema         | Recorded payload | A parked run settles |
+| ------------------------------------ | ---------------- | -------------------- |
+| A new required field, a changed type | does not decode  | `payload_changed`    |
+| A new optional field, a widened type | decodes          | `plan_changed`       |
+| None                                 | decodes          | resumes              |
+
+**What to change.** To change a payload schema while runs are in flight, let
+them settle before the deploy, or declare the new shape as a flow with a new tag
+and keep the old flow registered until its runs settle. Read the code with
+`Interpreter.refusalCode(exit.cause)` wherever the application waits on a run;
+on `payload_changed`, as on `plan_changed`, close what the run was feeding and
+start the changed flow under a new execution id.
+
 ## RetentionError
 
 **What happened.** A retention pass could not complete.

@@ -1366,7 +1366,7 @@ Gives an answer the caller's own type. The schema here and the question's own sc
 - **Type:** `Schema.TaggedError` with fields `code`, `flow: string`, `node: string`, and `message: string`
 - **Since:** `0.1.0`
 
-A graph the interpreter refuses to drive. The `code` is one of `incomplete_graph`, `duplicate_node_id`, `unresolved_action`, `implementation_version_mismatch`, `missing_implementation_version`, `unresolved_reference`, `unsupported_call`, `missing_operation`, `node_record_too_large`, `plan_changed` (a durable resume rebuilt a different plan than the run recorded), or `join_mismatch` (a race, any, or quorum journaled members, or a losing child boundary, its plan can no longer reproduce).
+A graph the interpreter refuses to drive. The `code` is one of `incomplete_graph`, `duplicate_node_id`, `unresolved_action`, `implementation_version_mismatch`, `missing_implementation_version`, `unresolved_reference`, `unsupported_call`, `missing_operation`, `node_record_too_large`, `plan_changed` (a durable resume rebuilt a different plan than the run recorded), `payload_changed` (a durable resume's build no longer decodes the payload the run recorded), or `join_mismatch` (a race, any, or quorum journaled members, or a losing child boundary, its plan can no longer reproduce).
 
 A refused run settles failed with the error as its defect. `Flow.Result` stores the error's fields and decodes them back into this class, so `poll`, a browser engine's `result`, and every other reader of the stored run see the same `code`.
 
@@ -1380,7 +1380,8 @@ The code of the interpreter refusal a run ended with, if it ended with one. It r
 ```ts
 const settle = Effect.gen(function*() {
   const exit = yield* engine.result(Answer, answerId)
-  if (Exit.isFailure(exit) && Option.contains(Interpreter.refusalCode(exit.cause), "plan_changed")) {
+  const code = Exit.isFailure(exit) ? Interpreter.refusalCode(exit.cause) : Option.none()
+  if (Option.contains(code, "plan_changed") || Option.contains(code, "payload_changed")) {
     // Parked under one build and refused under the next: close what the run was feeding.
   }
 })

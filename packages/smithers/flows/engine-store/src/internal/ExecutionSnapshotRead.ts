@@ -149,7 +149,14 @@ export interface Waiting {
   readonly request?: typeof Schema.Json.Type | undefined
 }
 
-const waitingKind = (reason: string): Waiting["kind"] => {
+/**
+ * The structured kind of a durable waiting reason: `event` reads as `signal`,
+ * and an unknown plugin reason is `other`, never approval.
+ *
+ * @private
+ * @since 1.0.0
+ */
+export const waitingKind = (reason: string): Waiting["kind"] => {
   switch (reason) {
     case "timer":
     case "approval":

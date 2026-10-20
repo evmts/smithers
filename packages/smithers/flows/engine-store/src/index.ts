@@ -63,6 +63,15 @@ export * as ExecutionSnapshot from "./ExecutionSnapshot.ts"
 export * as RunChangeFeed from "./RunChangeFeed.ts"
 
 /**
+ * One run as a person debugging it reads it: redacted, bounded values, steps,
+ * children and a journal page.
+ *
+ * @since 1.0.0
+ * @category services
+ */
+export * as RunInspection from "./RunInspection.ts"
+
+/**
  * @since 0.1.0
  * @category services
  */

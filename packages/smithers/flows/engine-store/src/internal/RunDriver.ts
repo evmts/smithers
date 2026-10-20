@@ -7,7 +7,7 @@
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
 import { FlowEngine } from "@smthrs/engine"
-import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import { Ownership, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
@@ -2056,34 +2056,78 @@ export const make = (
         }
       })
 
+    /**
+     * Settles an owned run `failed` with `defect`, a refusal no later round of
+     * it can get past, recording `decision` with the transition. A
+     * cancellation requested meanwhile cancels the run instead.
+     */
+    const failRefused = (
+      executionId: string,
+      flow: Flow.Any,
+      state: RunState,
+      defect: unknown,
+      decision: Readonly<Record<string, unknown>>
+    ): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const stateJson = yield* encodeState({
+          ...state,
+          result: (yield* encodeResult(flow, new Flow.Complete({ exit: Exit.die(defect) }))).encoded
+        })
+        const transitioned = yield* transitionAndRecord(
+          executionId,
+          "failed",
+          stateJson,
+          { ...decision, status: "failed", owner: dependencies.owner },
+          { cancelRequested: "absent" },
+          applyChildExitPolicy(executionId)
+        )
+        if (transitioned._tag === "GuardFailed") {
+          yield* cancelOwned(executionId, state)
+        } else if (transitioned._tag === "Transitioned") {
+          yield* announceSettled(executionId, state)
+        }
+      })
+
     /** Fails a run whose persisted round identity or budget is malformed. */
     const endInvalidRound = (
       seam: HandoffSeam,
       error: FlowEngine.Round.InvalidRound
     ): Effect.Effect<void> =>
+      failRefused(seam.executionId, seam.flow, seam.state, error, {
+        decision: "round-invalid",
+        message: error.message
+      })
+
+    /**
+     * Fails a run whose recorded payload the resuming build's payload schema
+     * no longer decodes, as a deploy that added a required field leaves it.
+     *
+     * No build of this flow can resume it, so it settles `failed` with the
+     * interpreter's `payload_changed` refusal as its defect, the way a changed
+     * plan settles `plan_changed`, instead of dying in the decoder on every
+     * wake. The refusal and its log line name the run and the flow, never the
+     * payload or the decoder's message, which can quote it.
+     */
+    const refuseChangedPayload = (
+      executionId: string,
+      flow: Flow.Any,
+      state: RunState
+    ): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const stateJson = yield* encodeState({
-          ...seam.state,
-          result: (yield* encodeResult(seam.flow, new Flow.Complete({ exit: Exit.die(error) }))).encoded
+        // A round of this run that parked in this process retained its scope;
+        // no round replaces it now. `Exit.void`, as a supersede releases it.
+        yield* releaseRetainedScope(executionId, Exit.void)
+        const refusal = new Interpreter.InterpreterError({
+          code: "payload_changed",
+          flow: flow._tag,
+          node: "root",
+          message: "The recorded payload does not decode with this build's payload schema; start a new execution"
         })
-        const transitioned = yield* transitionAndRecord(
-          seam.executionId,
-          "failed",
-          stateJson,
-          {
-            decision: "round-invalid",
-            status: "failed",
-            message: error.message,
-            owner: dependencies.owner
-          },
-          { cancelRequested: "absent" },
-          applyChildExitPolicy(seam.executionId)
+        yield* Effect.logWarning(
+          `engine-store: refusing run ${executionId} of flow ${flow._tag}: its recorded payload does not decode with this build's payload schema`,
+          { runId: executionId, flowName: flow._tag, code: refusal.code }
         )
-        if (transitioned._tag === "GuardFailed") {
-          yield* cancelOwned(seam.executionId, seam.state)
-        } else if (transitioned._tag === "Transitioned") {
-          yield* announceSettled(seam.executionId, seam.state)
-        }
+        yield* failRefused(executionId, flow, state, refusal, { decision: "payload-changed", code: refusal.code })
       })
 
     /**
@@ -2211,9 +2255,14 @@ export const make = (
           }
           if (cleared._tag !== "Transitioned") return
 
+          // The payload was recorded with the codec of the build that admitted
+          // the run. One this build's codec refuses can never resume here.
           const payload = yield* (Schema.decodeUnknownEffect(
             Schema.toCodecJson(registration.flow.payloadSchema)
-          )(activeState.payload).pipe(Effect.orDie) as Effect.Effect<unknown>)
+          )(activeState.payload).pipe(Effect.option) as Effect.Effect<Option.Option<unknown>>)
+          if (Option.isNone(payload)) {
+            return yield* refuseChangedPayload(executionId, registration.flow, activeState)
+          }
           // A previous round of this run may have parked and retained its flow
           // scope. That instance is now superseded — this round runs under the
           // fresh instance below, with a scope of its own — so release the old
@@ -2263,7 +2312,7 @@ export const make = (
                   Effect.suspend(() =>
                     activeState.capabilityCeilings === undefined
                       ? Effect.die(new Error("Missing persisted capabilityCeilings; execution cannot safely resume"))
-                      : registration.execute(payload as object, executionId)
+                      : registration.execute(payload.value as object, executionId)
                   ).pipe(
                     CapabilitySet.attenuateGroups(activeState.capabilityCeilings ?? [[]]),
                     Flow.intoResult,

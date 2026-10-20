@@ -2214,17 +2214,20 @@ const makeRuntime = (
       }),
       codeDrift: Effect.fn("SqlControlRuntime.codeDrift")(function*(runId: RunId) {
         const summary = yield* recordedCode(yield* requireRow(runId))
-        const current = (yield* readCurrentFlows).get(summary.flowId)
         const pinned = summary.executionDigest === undefined || options.pinnedFlow === undefined
           ? undefined :
           yield* options.pinnedFlow(summary.flowId, summary.executionDigest)
+        // A pin answers alone, so the flows on disk are read only without one.
+        // `currentFlows` rescans and measures every flow; every health beat
+        // lists every open run, so reading it eagerly spent a waiting CLI's
+        // CPU on rescans until its run lease lapsed (docs-sync, 2026-10-20).
         return codeDriftOf(
           summary,
           pinned === true ?
             { executionDigest: summary.executionDigest }
             : pinned === false
             ? undefined
-            : current,
+            : (yield* readCurrentFlows).get(summary.flowId),
           options.engineVersion
         )
       }),

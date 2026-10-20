@@ -35,16 +35,25 @@ describe("Interpreter.refusalCode", () => {
     expect(Interpreter.refusalCode(Cause.fail(refused))).toEqual(Option.some("plan_changed"))
   })
 
-  it("reads the code of a refusal written and read back, twice", () => {
-    const once = stored(new Flow.Complete({ exit: Exit.die(refused) }))
-    const twice = stored(once)
-    for (const result of [once, twice]) {
-      const defect = Cause.squash(causeOf(result))
-      expect(defect).toBeInstanceOf(Interpreter.InterpreterError)
-      expect(defect).toMatchObject({ code: "plan_changed", flow: "refusal-code/answer", node: "root" })
-      expect(Interpreter.refusalCode(causeOf(result))).toEqual(Option.some("plan_changed"))
+  it.each(["plan_changed", "payload_changed"] as const)(
+    "reads %s from a refusal written and read back, twice",
+    (code) => {
+      const once = stored(
+        new Flow.Complete({
+          exit: Exit.die(
+            new Interpreter.InterpreterError({ code, flow: refused.flow, node: refused.node, message: refused.message })
+          )
+        })
+      )
+      const twice = stored(once)
+      for (const result of [once, twice]) {
+        const defect = Cause.squash(causeOf(result))
+        expect(defect).toBeInstanceOf(Interpreter.InterpreterError)
+        expect(defect).toMatchObject({ code, flow: "refusal-code/answer", node: "root" })
+        expect(Interpreter.refusalCode(causeOf(result))).toEqual(Option.some(code))
+      }
     }
-  })
+  )
 
   it("reads plan_changed from a result stored before the code was kept", () => {
     // What a store held: the defect codec kept only the error's name and message.

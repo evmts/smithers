@@ -35,6 +35,12 @@ its reads, so declare every value a callback depends on with `Node.capture`.
 A bound or native function has no shape and fails every resume. Runs recorded
 before graph digests were introduced, and runs with callbacks recorded before
 callback shapes, require a new execution.
+The flow's payload schema is part of the digest too, and a run's payload is
+recorded once, with the codec of the build that admitted it. A resume whose
+build no longer decodes that payload, after a new required field or a changed
+type, fails with `payload_changed`; one that still decodes it, after a new
+optional field, fails with `plan_changed`. Let runs settle before changing a
+flow's payload schema, or give the new shape a new flow tag.
 Action implementation changes must advance their declared implementation
 version; a digest cannot inspect imported code behind an unchanged version.
 `Flow.execute` does not approve a plan or accept an approved digest. Approval

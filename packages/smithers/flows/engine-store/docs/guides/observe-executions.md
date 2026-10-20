@@ -1,10 +1,10 @@
 ---
 title: "Observe executions and page runs"
-description: "Coherent engine snapshots, bounded filtered pages, revisioned catch-up, cancellation acknowledgement and durable child catalogs."
+description: "Coherent engine snapshots, bounded filtered pages, one run inspected for a person, revisioned catch-up, cancellation acknowledgement and durable child catalogs."
 ---
 
-`ExecutionSnapshot`, `RunChangeFeed`, and `RunCatalogRead` read the engine's
-database. Each has a `layer` requiring `SqlClient`; apply `Migrations.layer`
+`ExecutionSnapshot`, `RunChangeFeed`, `RunCatalogRead` and `RunInspection` read
+the engine's database. Each has a `layer` requiring `SqlClient`; apply `Migrations.layer`
 before constructing it. They start no polling fibers and read no control tables.
 
 ## Observe one execution or a batch
@@ -137,6 +137,74 @@ anchor ID and relation kind. Missing child rows remain explicit observations.
 
 This catalog includes children with no control admission row. It reads direct
 children, not a recursive descendant tree, and does not treat a fork as a spawn.
+
+## Inspect one run for a person
+
+`RunInspection` is the display read: what a run page shows a person debugging
+one run. It reads the engine's own tables and copies nothing.
+
+```ts
+import { RunInspection } from "@smthrs/engine-store"
+import * as Effect from "effect/Effect"
+
+const page = Effect.gen(function*() {
+  const reads = yield* RunInspection.RunInspection
+  const first = yield* reads.inspect("build-42")
+  // The next page of the journal, once more events exist.
+  return yield* reads.inspect("build-42", { afterSeq: first.journal.nextSeq })
+})
+```
+
+`inspect` returns:
+
+- `run`: the lifecycle (`status`, times, effective parent, cancellation intent,
+  structured wait), `lastSeq`, the run's latest journal sequence (`-1` with
+  none), and the run's `input` and `result`.
+- `steps`: one entry per plan node, folded from `flows.engine.node-scheduled`
+  and `flows.engine.node-settled`. A node's `attempts` are the `flows_attempts`
+  rows whose step key digest its settlement names, so a node still running
+  lists none yet. Its `output` is the last attempt's outcome, else the result
+  preview the settlement recorded.
+- `children`: up to 200 runs this run started (`parent_run_id` or a spawn
+  edge), oldest first, each with its own `input` and `result`. An agent's cell
+  call is one, so a child's input and result are that call's.
+- `journal`: the events after `afterSeq`, ascending, at most `limit` (500 at
+  most). `nextSeq` is the last one returned, or `afterSeq` when none were, and
+  `hasMore` says more exist now. Paging by `nextSeq` while the run appends
+  never skips or repeats an event.
+
+What a value releases:
+
+- Every value passes through `@smthrs/journal`'s `Redaction.redact` and is cut
+  to 16 KiB of UTF-8 at a character boundary. `bytes` is the whole size, and
+  `clipped` says the cut happened, so the text is then a prefix that no longer
+  parses.
+- A failure becomes its closed code: the failure's tag, `defect` or
+  `interrupted`. A typed failure's message, a defect's text and a failed node's
+  result preview never leave the read, so neither does a provider's error text.
+- Built with `layerWith({ flows })`, the reads know each flow's payload and
+  success schemas and, read off each flow's plan, each action's success
+  schema; a child boundary's flow is walked too. Every value with a known
+  schema, the run's input and result, each attempt's outcome, each step's
+  output and each journal preview, is decoded with that schema and encoded
+  again for display, so a `Schema.Redacted` value reads as `<redacted>` at any
+  depth. The engine's JSON codec stores such a value as its text, so this is
+  the only thing that keeps it out of the read.
+- A value whose schema is known but no longer decodes it reads as
+  `<withheld>`, never as the stored text. So does a cut preview of a schema
+  that holds a `Redacted` value, and the output of a node with no action (a
+  map or a sequence), which only passes on a value one of its steps made.
+- The limit: a value whose flow or action is not reachable from the given
+  flows has the redaction rules alone between it and the reader. That covers
+  a run of a flow the reads were not given, and an action a body reaches only
+  with its real input, since the plan is walked against a placeholder. Return
+  a secret from such a step only inside a field the rules name, such as
+  `apiKey`.
+
+`list({ limit, cursor, roots })` pages runs newest first. `payload(runId)` is
+the one read that is not for display: the encoded, unredacted payload, so a
+host can run the same flow again. A run the engine never held is `RunNotFound`;
+a stored row the read cannot decode is `RunStoreError` with `decode_failed`.
 
 ## Catch up without losing deletions
 

@@ -2,7 +2,7 @@ import * as Audience from "@smthrs/build-cli/Audience"
 import { ApprovalAuthority, Control } from "@smthrs/control"
 import { Unavailable } from "@smthrs/control/ControlError"
 import * as TestControl from "@smthrs/control/test/TestControl"
-import { Console, Effect, Layer, Logger, References, Stream } from "effect"
+import { Cause, Console, Effect, Layer, Logger, References, Stream } from "effect"
 import { getEventListeners } from "node:events"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -970,5 +970,29 @@ describe("control bridge transport scope", () => {
     expect(ports.scheduler).not.toHaveBeenCalled()
     expect(ports.serve).not.toHaveBeenCalled()
     expect(lifecycle).toEqual([])
+  })
+})
+
+describe("failureOf", () => {
+  it("names the signal that interrupted a command instead of Effect's bare interruption", () => {
+    const controller = new AbortController()
+    controller.abort(new Error("smthrs interrupted by SIGINT"))
+    expect(Bridge.failureOf(Cause.interrupt(), controller.signal)).toMatchObject({
+      _tag: "/cli/Refused",
+      fault: "user",
+      code: "interrupted",
+      message: "smthrs interrupted by SIGINT before the command finished."
+    })
+  })
+
+  it("names an interruption from inside the host as one, not a crash", () => {
+    const failure = Bridge.failureOf(Cause.interrupt(), new AbortController().signal)
+    expect(failure).toMatchObject({ _tag: "/cli/Refused", fault: "bug", code: "interrupted" })
+    expect(String((failure as Error).message)).not.toContain("All fibers interrupted")
+  })
+
+  it("keeps a failure's own error", () => {
+    const error = new Error("down")
+    expect(Bridge.failureOf(Cause.fail(error), undefined)).toBe(error)
   })
 })

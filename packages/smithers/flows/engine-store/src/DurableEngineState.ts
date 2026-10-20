@@ -25,6 +25,7 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
 import * as SqlClient from "effect/sql/SqlClient"
+import * as SqlError from "effect/sql/SqlError"
 import * as EngineStateSchema from "./internal/EngineStateSchema.ts"
 import { compareText } from "./internal/Ordering.ts"
 import type { OnParentExit } from "./RunState.ts"
@@ -730,6 +731,20 @@ export interface Service {
       readonly onCommit: (commit: Effect.Effect<void>) => void
     }
   ) => Effect.Effect<A, E, R>
+  /**
+   * Runs `effect` as one read snapshot: every read in it agrees with the
+   * others, and it takes neither the writer permit nor the store's write lock.
+   * Keep writes out of it.
+   *
+   * A read that needs one snapshot used `transaction`, a write transaction.
+   * On SQLite that is `BEGIN IMMEDIATE` behind the process's one write permit,
+   * so every health beat of every open run took the engine's write lock, and a
+   * run's lease heartbeat queued behind those reads until its lease lapsed
+   * (docs-sync, 2026-10-20).
+   *
+   * @since 1.0.0
+   */
+  readonly readTransaction: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
 }
 
 /**
@@ -1950,6 +1965,12 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       )
     })
 
+  const readTransaction: Service["readTransaction"] = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    Dialect.readTransaction(sql, effect).pipe(
+      // BEGIN or COMMIT failing is the store's failure, never the body's.
+      Effect.catchIf((error): error is SqlError.SqlError => SqlError.isSqlError(error), (error) => Effect.die(error))
+    ) as Effect.Effect<A, E, R>
+
   const runParents: Service["runParents"] = Effect.fn("DurableEngineState.runParents")((childId) =>
     sql<RunParentDatabaseRow>`
       SELECT
@@ -2012,7 +2033,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     removeRunParentsForRun,
     runParents,
     runChildren,
-    transaction
+    transaction,
+    readTransaction
   })
 })
 
@@ -2223,7 +2245,7 @@ export const makeMemory = (options: MemoryOptions = {}): Service => {
       )
       .map(([runId, view]) => ({ runId, createdAtMs: view.createdAtMs ?? 0 }))
 
-  const unguarded: Omit<Service, "transaction"> = {
+  const unguarded: Omit<Service, "transaction" | "readTransaction"> = {
     deferred: Effect.fn("DurableEngineState.deferred")((address) =>
       Effect.gen(function*() {
         const row = deferreds.get(deferredKey(address))
@@ -2665,7 +2687,9 @@ export const makeMemory = (options: MemoryOptions = {}): Service => {
     removeRunParentsForRun: (runId) => guard(unguarded.removeRunParentsForRun(runId)),
     runParents: (childId) => guard(unguarded.runParents(childId)),
     runChildren: (parentId) => guard(unguarded.runChildren(parentId)),
-    transaction
+    transaction,
+    // Memory has no lock to contend for; its permit is what keeps reads agreeing.
+    readTransaction: (effect) => transaction(effect)
   })
 }
 

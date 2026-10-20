@@ -192,9 +192,29 @@ const provideServices = <A, E, R>(
   )
 }
 
+/**
+ * The error a failed exit throws. An interruption names what interrupted the
+ * command: squashed, it read only "All fibers interrupted without error",
+ * which an operator cannot tell from a crash.
+ * @category conversions
+ * @since 1.0.0
+ */
+export const failureOf = (cause: Cause.Cause<unknown>, signal: AbortSignal | undefined): unknown => {
+  if (!Cause.hasInterruptsOnly(cause)) return Cause.squash(cause)
+  const reason = signal?.aborted === true && signal.reason instanceof Error ? signal.reason.message : undefined
+  return new CliError.Refused({
+    fault: reason === undefined ? "bug" : "user",
+    code: "interrupted",
+    message: reason === undefined
+      ? "The command was interrupted from inside before it finished. Run it again; " +
+        "`smthrs runs list` shows any run it left."
+      : `${reason} before the command finished.`
+  })
+}
+
 const settle = async <A, E>(operation: Effect.Effect<A, E>, runtime: Runtime): Promise<A> => {
   const result = await Effect.runPromiseExit(operation, { signal: runtime.signal })
-  if (Exit.isFailure(result)) throw Cause.squash(result.cause)
+  if (Exit.isFailure(result)) throw failureOf(result.cause, runtime.signal)
   return result.value
 }
 
@@ -262,7 +282,7 @@ export const invoke = async (
     Effect.provideService(CommandStatus.CommandStatus, (code) => runtime.exit?.(code))
   )
   const result = await Effect.runPromiseExit(provideServices(run, options, runtime), { signal: runtime.signal })
-  if (Exit.isFailure(result)) throw Cause.squash(result.cause)
+  if (Exit.isFailure(result)) throw failureOf(result.cause, runtime.signal)
   return values.length === 1 ? values[0] : values
 }
 
@@ -499,5 +519,5 @@ export const host = async (bind: Serve.Bind, options: ConnectionOptions, runtime
     ),
     { signal: runtime.signal }
   )
-  if (Exit.isFailure(result)) throw Cause.squash(result.cause)
+  if (Exit.isFailure(result)) throw failureOf(result.cause, runtime.signal)
 }

@@ -23,6 +23,9 @@ import * as Schema from "effect/Schema"
  * plan's members can no longer reproduce. `plan_changed` refuses a durable
  * resume whose rebuilt graph differs from its first recorded plan. Moved
  * declaration sites are not a difference: only the plan's digest is compared.
+ * `payload_changed` refuses a durable resume whose recorded payload no longer
+ * decodes with the resuming build's payload schema, such as one a deploy
+ * added a required field to.
  *
  * A run refused this way settles failed with the error as its defect, and
  * keeps it: `Flow.Result` stores the error's fields and decodes them back
@@ -46,6 +49,7 @@ export class InterpreterError extends Schema.TaggedError<InterpreterError>()(
       "missing_operation",
       "node_record_too_large",
       "plan_changed",
+      "payload_changed",
       "join_mismatch"
     ]),
     flow: Schema.String,

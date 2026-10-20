@@ -11,8 +11,9 @@
 import { type Control as ControlService, ControlError, type ControlSchema } from "@smthrs/control"
 import * as HostLiveness from "@smthrs/platform-node/HostLiveness"
 import { Ownership } from "@smthrs/run-store"
-import { Clock, Duration, Effect, Option, Schema, Stream } from "effect"
+import { Cause, Clock, Duration, Effect, Option, Schema, Stream } from "effect"
 import { hostname } from "node:os"
+import * as RunActivity from "../cli/RunActivity.ts"
 import * as RunProgress from "../cli/RunProgress.ts"
 import * as CliError from "../CliError.ts"
 import * as ExecutorOwnership from "../ExecutorOwnership.ts"
@@ -60,8 +61,122 @@ export const watchFailure = (
   })
 
 /**
- * Waits for the run to settle and reports the event kind that settled it, or
- * `undefined` when nothing was waited for. `quiet` suppresses progress.
+ * How long an attached wait keeps watching a run parked on `released` before
+ * it reports the park.
+ *
+ * The engine releases an execution it interrupted mid-step: its host's lease
+ * lapsed, or the host stopped. A keyed step is re-driven on the owner's next
+ * sweep and the run leaves the park on its own. Anything else waits for
+ * `smthrs runs resume`, so a wait that kept following it never returned: an
+ * overloaded host's `pnpm docs:check` printed its package checks, then hung
+ * for 40 minutes on a park nothing would end (2026-10-20). The bound is the
+ * steal cutoff, after which any host may adopt the run.
+ * @category constants
+ * @since 1.0.0
+ */
+export const releasedParkGrace: Duration.Duration = Ownership.heartbeatStaleAfter
+
+const settlementOf = (event: ControlSchema.ControlEvent): Settlement => {
+  const payload = event.payload
+  const cause = typeof payload === "object" && payload !== null && "cause" in payload ? payload.cause : undefined
+  return { kind: event.kind, ...(typeof cause === "string" ? { cause } : {}) }
+}
+
+const runDecision = (event: ControlSchema.ControlEvent): boolean =>
+  event.kind === "control.engine.event" && typeof event.payload === "object" && event.payload !== null &&
+  "eventType" in event.payload && event.payload.eventType === "flows.engine.run-decision"
+
+/**
+ * What a run parked on `released` waits for, in one line: which executions
+ * the engine interrupted, why, and the command that restarts them.
+ * @category getters
+ * @since 1.0.0
+ */
+export const releasedCause = (
+  runId: string,
+  flowId: string,
+  decisions: ReadonlyArray<ControlSchema.ControlEvent>
+): string => {
+  const releases = RunActivity.released(decisions, flowId)
+  const why = releases.map((release) =>
+    release.cause === "lease-lapsed" && release.unconfirmedMs !== undefined
+      ? `${release.flowName} was interrupted when its host's run lease went unconfirmed for ` +
+        `${(release.unconfirmedMs / 1000).toFixed(1)} s`
+      : release.cause === "interrupted"
+      ? `${release.flowName} was interrupted when its host stopped`
+      : `${release.flowName} was interrupted mid-step`
+  )
+  return `Run ${runId} parked: ${why.length === 0 ? "a step was interrupted mid-step" : why.join("; ")}. ` +
+    `Nothing restarts it; \`smthrs runs resume ${runId}\` re-runs the interrupted step.`
+}
+
+/**
+ * Whether a run that parked is still parked on `released` once the owner had
+ * {@link releasedParkGrace} to re-drive it. Answers the park's settlement, or
+ * none when the run moved on and the watch should keep following it.
+ */
+const releasedPark = (
+  control: ControlService.Service,
+  runId: string,
+  decisions: () => ReadonlyArray<ControlSchema.ControlEvent>
+) =>
+  Effect.gen(function*() {
+    const deadline = (yield* Clock.currentTimeMillis) + Duration.toMillis(releasedParkGrace)
+    for (;;) {
+      const listed = yield* control.list({ _tag: "runs", filters: { runId } })
+      const run = listed._tag === "runs" ? listed.items.find((item) => item.runId === runId) : undefined
+      if (run === undefined || run.status !== "parked" || run.waitingReason !== "released") {
+        return Option.none<Settlement>()
+      }
+      if ((yield* Clock.currentTimeMillis) >= deadline) {
+        return Option.some<Settlement>({
+          kind: "control.run.parked",
+          cause: releasedCause(runId, run.flowId, decisions())
+        })
+      }
+      yield* Effect.sleep(Duration.seconds(1))
+    }
+  })
+
+/**
+ * The settlement a wait reports when its follow ended without one: the run's
+ * own terminal status, its released park, or a retryable refusal that names
+ * what the run is doing. Reporting nothing here printed the admission receipt
+ * and exited 0 for a run that had not finished.
+ */
+const unsettled = (
+  control: ControlService.Service,
+  runId: string,
+  decisions: () => ReadonlyArray<ControlSchema.ControlEvent>
+) =>
+  Effect.gen(function*() {
+    const listed = yield* control.list({ _tag: "runs", filters: { runId } }).pipe(
+      Effect.mapError((error) => watchFailure(error, runId, "settlement"))
+    )
+    const run = listed._tag === "runs" ? listed.items.find((item) => item.runId === runId) : undefined
+    if (run !== undefined && (run.status === "completed" || run.status === "failed" || run.status === "cancelled")) {
+      return { kind: `control.run.${run.status}` }
+    }
+    if (run?.status === "parked" && run.waitingReason === "released") {
+      return { kind: "control.run.parked", cause: releasedCause(runId, run.flowId, decisions()) }
+    }
+    return yield* Effect.fail(
+      new ControlError.TransportError({
+        message: `The event stream for run ${JSON.stringify(runId)} ended before the run settled; it is ` +
+          `${run?.status ?? "not found"}. Read it with \`smthrs runs show ${runId}\`.`,
+        retryable: true
+      })
+    )
+  })
+
+/**
+ * Waits for the run to settle and reports the event kind that settled it.
+ * `quiet` suppresses progress.
+ *
+ * A park on `released` settles the wait once {@link releasedParkGrace} passes
+ * without a host re-driving it, and a follow that ends early or is interrupted
+ * from inside the host reads the run's status, so the wait always ends with
+ * what the run did.
  * @category constructors
  * @since 1.0.0
  */
@@ -70,24 +185,36 @@ export const awaitRun = (
   runId: string,
   afterSequence: number | undefined,
   quiet: boolean
-): Effect.Effect<Settlement | undefined, ControlError.TransportError> =>
-  RunProgress.observe(
-    control.watch(afterSequence === undefined ? { runId } : { runId, afterSequence }),
-    runId,
-    quiet
-  ).pipe(
-    Stream.filter((event) => settled(event.kind)),
-    Stream.take(1),
-    Stream.runCollect,
-    Effect.map((events): Settlement | undefined => {
-      const event = globalThis.Array.from(events)[0]
-      if (event === undefined) return undefined
-      const payload = event.payload
-      const cause = typeof payload === "object" && payload !== null && "cause" in payload ? payload.cause : undefined
-      return { kind: event.kind, ...(typeof cause === "string" ? { cause } : {}) }
-    }),
-    Effect.mapError((error) => watchFailure(error, runId, "settlement"))
-  )
+): Effect.Effect<Settlement, ControlError.TransportError> =>
+  Effect.gen(function*() {
+    // Only run decisions are kept: they name what a release interrupted.
+    const decisions: Array<ControlSchema.ControlEvent> = []
+    const seen = () => decisions
+    const found = yield* RunProgress.observe(
+      control.watch(afterSequence === undefined ? { runId } : { runId, afterSequence }),
+      runId,
+      quiet
+    ).pipe(
+      Stream.tap((event) => runDecision(event) ? Effect.sync(() => decisions.push(event)) : Effect.void),
+      Stream.filter((event) => settled(event.kind) || event.kind === "control.run.parked"),
+      Stream.mapEffect((event) =>
+        event.kind === "control.run.parked"
+          ? releasedPark(control, runId, seen)
+          : Effect.succeed(Option.some(settlementOf(event)))
+      ),
+      Stream.filter(Option.isSome),
+      Stream.take(1),
+      Stream.runCollect,
+      Effect.map((settlements) => globalThis.Array.from(settlements)[0]?.value),
+      Effect.mapError((error) => watchFailure(error, runId, "settlement")),
+      // An interruption from inside the host, such as a lapsed run lease,
+      // reached this wait as a bare cause and the command printed only "All
+      // fibers interrupted without error". Read what the run did instead. An
+      // interruption of this command itself (a signal) never reaches here.
+      Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.succeed(undefined) : Effect.failCause(cause))
+    )
+    return found ?? (yield* unsettled(control, runId, seen))
+  })
 
 /**
  * Finds the greatest sequence in a stream without retaining its history.
@@ -334,6 +461,7 @@ export const status = (settlement: Settlement | undefined): number | undefined =
     case "control.run.cancelled":
       return 130
     case "control.run.waiting-approval":
+    case "control.run.parked":
       return 3
     default:
       return undefined
@@ -359,15 +487,26 @@ export const report = (settlement: Settlement | undefined) =>
 
 /**
  * The receipt document to render. Admission stays identifiable while an
- * attached failure states its verdict.
+ * attached run states its outcome: `status`, and the `cause` of a failure or
+ * a park.
  * @category getters
  * @since 1.0.0
  */
-export const receiptDocument = (receipt: ControlSchema.Receipt, settlement: Settlement | undefined): unknown =>
-  settlement?.kind === "control.run.failed"
-    ? {
+export const receiptDocument = (receipt: ControlSchema.Receipt, settlement: Settlement | undefined): unknown => {
+  if (settlement === undefined || !settlement.kind.startsWith("control.run.")) return receipt
+  const outcome = settlement.kind.slice("control.run.".length)
+  if (outcome === "failed") {
+    return {
       ...receipt,
       status: "failed",
       cause: settlement.cause === undefined ? "no cause recorded in the journal" : causeLine(settlement.cause)
     }
-    : receipt
+  }
+  // A receipt alone read `Accepted` whether the run passed or was never
+  // waited for, so a passing `pnpm docs:check` looked like an unanswered one.
+  return {
+    ...receipt,
+    status: outcome,
+    ...(settlement.cause === undefined ? {} : { cause: settlement.cause })
+  }
+}

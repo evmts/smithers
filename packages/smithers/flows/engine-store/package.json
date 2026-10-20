@@ -48,6 +48,7 @@
     "./Errors": "./src/Errors.ts",
     "./ExecutionSnapshot": "./src/ExecutionSnapshot.ts",
     "./RunChangeFeed": "./src/RunChangeFeed.ts",
+    "./RunInspection": "./src/RunInspection.ts",
     "./Inconsistency": "./src/Inconsistency.ts",
     "./Migrations": "./src/Migrations.ts",
     "./OwnerIdentity": "./src/OwnerIdentity.ts",
@@ -200,6 +201,16 @@
         "require": {
           "types": "./dist/cjs/RunChangeFeed.d.ts",
           "default": "./dist/cjs/RunChangeFeed.js"
+        }
+      },
+      "./RunInspection": {
+        "import": {
+          "types": "./dist/esm/RunInspection.d.ts",
+          "default": "./dist/esm/RunInspection.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunInspection.d.ts",
+          "default": "./dist/cjs/RunInspection.js"
         }
       },
       "./Inconsistency": {

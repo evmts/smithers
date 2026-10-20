@@ -603,3 +603,29 @@ it.each([true, false, undefined])("uses pinned-flow availability %s when checkin
     )
   }
 })
+
+it.each([true, false, undefined])(
+  "reads the flows on disk only when pinned-flow availability is %s",
+  async (pinned) => {
+    // `currentFlows` rescans and measures every flow on disk. A pin answers the
+    // drift alone, so the scan runs only when there is no pin to consult; health
+    // beats list every open run, and an eager scan per run starved the host's
+    // lease heartbeat (docs-sync, 2026-10-20).
+    let scans = 0
+    const observed = await scenario({
+      next: "digest-v2",
+      stack: (catalog) => ({
+        pinnedFlow: () => Effect.succeed(pinned),
+        currentFlows: () =>
+          Effect.sync(() => {
+            scans++
+            return catalog()
+          })
+      }),
+      before: () => Effect.sync(() => (scans = 0)),
+      act: (runId) => Effect.flatMap(ControlRuntime, (runtime) => runtime.codeDrift(runId))
+    })
+    expect(Exit.isSuccess(observed.acted)).toBe(true)
+    expect(scans).toBe(pinned === undefined ? 1 : 0)
+  }
+)

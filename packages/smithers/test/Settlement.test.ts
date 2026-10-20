@@ -4,7 +4,8 @@
  */
 import { Control, ControlError } from "@smthrs/control"
 import type { ControlSchema } from "@smthrs/control"
-import { Effect, Stream } from "effect"
+import { Duration, Effect, Fiber, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { spawnSync } from "node:child_process"
 import { hostname } from "node:os"
 import { describe, expect, it } from "vitest"
@@ -37,6 +38,7 @@ describe("Settlement", () => {
     expect(Settlement.status({ kind: "control.run.failed" })).toBe(1)
     expect(Settlement.status({ kind: "control.run.cancelled" })).toBe(130)
     expect(Settlement.status({ kind: "control.run.waiting-approval" })).toBe(3)
+    expect(Settlement.status({ kind: "control.run.parked" })).toBe(3)
     expect(Settlement.status({ kind: "control.run.pending" })).toBeUndefined()
     expect(Settlement.status(undefined)).toBeUndefined()
   })
@@ -47,15 +49,26 @@ describe("Settlement", () => {
     expect(Settlement.wasDeclined(undefined)).toBe(false)
   })
 
-  it("keeps the receipt and adds the failure verdict", () => {
+  it("keeps the receipt and adds the run's outcome", () => {
     const receipt = { _tag: "Accepted", runId: "run-1" } as unknown as ControlSchema.Receipt
 
-    expect(Settlement.receiptDocument(receipt, { kind: "control.run.completed" })).toBe(receipt)
+    // A bare receipt read `Accepted` for a run that passed and for one nobody
+    // waited for, so a passing docs check looked unanswered (2026-10-20).
+    expect(Settlement.receiptDocument(receipt, { kind: "control.run.completed" })).toEqual({
+      ...receipt,
+      status: "completed"
+    })
     expect(Settlement.receiptDocument(receipt, { kind: "control.run.failed" })).toEqual({
       ...receipt,
       status: "failed",
       cause: "no cause recorded in the journal"
     })
+    expect(Settlement.receiptDocument(receipt, { kind: "control.run.parked", cause: "Run run-1 parked" })).toEqual({
+      ...receipt,
+      status: "parked",
+      cause: "Run run-1 parked"
+    })
+    expect(Settlement.receiptDocument(receipt, undefined)).toBe(receipt)
   })
 
   it("keeps a transport failure's own retryability when it wraps one", () => {
@@ -171,5 +184,163 @@ describe("settlement ownership", () => {
       )
     )
     expect(observed).toBe(failure)
+  })
+})
+
+describe("awaitRun", () => {
+  const service = async (overrides: Partial<Control.Service>) =>
+    Control.make({
+      ...await Effect.runPromise(Control.Control.pipe(Effect.provide(Control.layerNoop))),
+      ...overrides
+    })
+  const event = (
+    sequence: number,
+    kind: string,
+    payload: ControlSchema.ControlEvent["payload"] = {}
+  ): ControlSchema.ControlEvent => ({
+    runId: "run-1",
+    sequence,
+    occurredAt: sequence,
+    kind,
+    payload
+  })
+  // The engine's record of a lease lapse that interrupted the docs-sync step.
+  const lapse = event(4, "control.engine.event", {
+    executionId: "child-1",
+    eventType: "flows.engine.run-decision",
+    payload: {
+      decision: "interrupt-released",
+      cause: { kind: "lease-lapsed", unconfirmedMs: 19_001 },
+      executionFact: { observation: { flowName: "registry/entry/abc/docs-sync" } }
+    }
+  })
+  const summary = (status: string, waitingReason?: string) => ({
+    _tag: "runs" as const,
+    items: [{
+      runId: "run-1",
+      flowId: "docs-sync",
+      status,
+      createdAt: 0,
+      updatedAt: 0,
+      ...(waitingReason === undefined ? {} : { waitingReason })
+    }]
+  })
+  /** Runs `awaitRun` under a test clock, advancing it by `advance` once it is waiting. */
+  const settle = (control: Control.Service, advance: Duration.Input) =>
+    Effect.runPromise(
+      Effect.gen(function*() {
+        const fiber = yield* Effect.forkChild(Effect.result(Settlement.awaitRun(control, "run-1", undefined, true)))
+        yield* TestClock.adjust(advance)
+        return yield* Fiber.join(fiber)
+      }).pipe(Effect.provide(TestClock.layer()))
+    )
+
+  it("reports a park on released once no host re-drives it, naming the lapse and the resume", async () => {
+    let reads = 0
+    const control = await service({
+      list: () => Effect.sync(() => (reads++, summary("parked", "released")) as never),
+      // A park leaves the run with no further event: the follow never ends.
+      watch: () => Stream.concat(Stream.make(lapse, event(5, "control.run.parked")), Stream.never)
+    })
+    const result = await settle(control, Duration.sum(Settlement.releasedParkGrace, Duration.seconds(1)))
+    expect(result._tag).toBe("Success")
+    if (result._tag !== "Success") return
+    expect(result.success.kind).toBe("control.run.parked")
+    expect(result.success.cause).toBe(
+      "Run run-1 parked: docs-sync was interrupted when its host's run lease went unconfirmed for 19.0 s. " +
+        "Nothing restarts it; `smthrs runs resume run-1` re-runs the interrupted step."
+    )
+    expect(Settlement.status(result.success)).toBe(3)
+    expect(reads).toBeGreaterThan(1)
+  })
+
+  it("keeps waiting while a released park is re-driven, then reports the run's settlement", async () => {
+    // A keyed step is retried on the owner's next sweep: the run leaves the
+    // park, and the wait must report how it then ended, not the park.
+    let reads = 0
+    const control = await service({
+      list: () => Effect.sync(() => (reads++ === 0 ? summary("parked", "released") : summary("running")) as never),
+      watch: () =>
+        Stream.concat(
+          Stream.make(lapse, event(5, "control.run.parked"), event(9, "control.run.completed")),
+          Stream.never
+        )
+    })
+    const result = await settle(control, Duration.seconds(2))
+    expect(result).toMatchObject({ _tag: "Success", success: { kind: "control.run.completed" } })
+  })
+
+  it("keeps following a park on anything but released", async () => {
+    // A durable timer or an event wait is this host's to wake.
+    const control = await service({
+      list: () => Effect.succeed(summary("parked", "timer") as never),
+      watch: () =>
+        Stream.concat(
+          Stream.make(event(5, "control.run.parked"), event(9, "control.run.failed", { cause: "red" })),
+          Stream.never
+        )
+    })
+    const result = await settle(control, Duration.seconds(1))
+    expect(result).toMatchObject({ _tag: "Success", success: { kind: "control.run.failed", cause: "red" } })
+  })
+
+  it.each([
+    { status: "completed", kind: "control.run.completed" },
+    { status: "failed", kind: "control.run.failed" },
+    { status: "cancelled", kind: "control.run.cancelled" }
+  ])("reads a $status run's status when the follow ends without its settlement", async ({ status, kind }) => {
+    const control = await service({
+      list: () => Effect.succeed(summary(status) as never),
+      watch: () => Stream.make(event(1, "control.run.running"))
+    })
+    expect(await settle(control, Duration.zero)).toMatchObject({ _tag: "Success", success: { kind } })
+  })
+
+  it("refuses to report a run whose follow ended while it still runs", async () => {
+    // Reporting nothing printed the bare admission receipt and exited 0.
+    const control = await service({
+      list: () => Effect.succeed(summary("running") as never),
+      watch: () => Stream.make(event(1, "control.run.running"))
+    })
+    const result = await settle(control, Duration.zero)
+    expect(result._tag).toBe("Failure")
+    if (result._tag !== "Failure") return
+    expect(result.failure).toBeInstanceOf(ControlError.TransportError)
+    expect(result.failure.message).toBe(
+      "The event stream for run \"run-1\" ended before the run settled; it is running. " +
+        "Read it with `smthrs runs show run-1`."
+    )
+  })
+
+  it.each([
+    {
+      status: "parked",
+      waitingReason: "released",
+      outcome: { _tag: "Success", success: { kind: "control.run.parked" } }
+    },
+    { status: "completed", outcome: { _tag: "Success", success: { kind: "control.run.completed" } } },
+    { status: "running", outcome: { _tag: "Failure" } }
+  ])(
+    "reads a $status run when the host interrupts the wait from inside",
+    async ({ status, waitingReason, outcome }) => {
+      // A lapsed lease interrupted the host's fibers; the command printed only
+      // "All fibers interrupted without error" and exited 1 (2026-10-20).
+      const control = await service({
+        list: () => Effect.succeed(summary(status, waitingReason) as never),
+        watch: () => Stream.concat(Stream.make(lapse), Stream.fromEffect(Effect.interrupt))
+      })
+      const result = await settle(control, Duration.zero)
+      expect(result).toMatchObject(outcome)
+      if (result._tag === "Failure") expect(result.failure.message).toContain("it is running")
+    }
+  )
+
+  it("reports a released park the follow ended on", async () => {
+    const control = await service({
+      list: () => Effect.succeed(summary("parked", "released") as never),
+      watch: () => Stream.make(lapse)
+    })
+    const result = await settle(control, Duration.zero)
+    expect(result).toMatchObject({ _tag: "Success", success: { kind: "control.run.parked" } })
   })
 })

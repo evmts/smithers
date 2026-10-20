@@ -99,9 +99,10 @@ const legacyPlanChanged = "The rebuilt plan differs from the recorded plan; star
  * A refused run settles failed with its `InterpreterError` as a defect. In
  * the process that drove it the defect is the error itself, and from `poll`,
  * from `result` or from another process it is the same error decoded from
- * the stored result. So `plan_changed` here means the run was parked under
- * one build and refused under the next, and an application closes what the
- * run was feeding, such as an answer still streaming.
+ * the stored result. So `plan_changed` or `payload_changed` here means the
+ * run was parked under one build and refused under the next, and an
+ * application closes what the run was feeding, such as an answer still
+ * streaming.
  *
  * A failure stored before results kept the code carries only the error's
  * name and message. It answers `plan_changed` when its message is the one
