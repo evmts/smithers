@@ -49,7 +49,7 @@ import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { transform } from "sucrase"
-import * as Interactions from "./Interactions.ts"
+import { Interactions } from "@smthrs/view-frame"
 import { utf8Length } from "./internal/bytes.ts"
 import {
   attributeRefusal,

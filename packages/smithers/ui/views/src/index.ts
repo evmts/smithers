@@ -15,13 +15,13 @@
  * @category messaging
  * @since 0.1.0
  */
-export * as Bridge from "./Bridge.ts"
+export { Bridge } from "@smthrs/view-frame"
 
 /**
  * @category messaging
  * @since 0.1.0
  */
-export * as Interactions from "./Interactions.ts"
+export { Interactions } from "@smthrs/view-frame"
 
 /**
  * @category rendering
@@ -45,4 +45,4 @@ export * as ViewCode from "./ViewCode.ts"
  * @category framing
  * @since 0.1.0
  */
-export * as ViewCsp from "./ViewCsp.ts"
+export { ViewCsp } from "@smthrs/view-frame"
