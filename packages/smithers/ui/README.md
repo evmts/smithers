@@ -50,6 +50,9 @@ import { Button, SmithersUiStyles, StatusPill } from "@smthrs/ui";
   `EnvironmentVariables`, `SecretField`.
 - Sandbox previews: `Sandbox`/`SandboxHeader`/`SandboxStatus`/`SandboxActions`/`SandboxContent`,
   `WebPreview`, `JSXPreview`.
+- Web pages: `WebPageView` (an outside page in a sandboxed frame),
+  `WebLinkCard` (a card that opens it in a new tab), and their URL guards
+  `framedPageTarget` and `webPageTarget`.
 - Workflow canvas: `WorkflowCanvas` node/edge/controls/panel/toolbar/minimap
   anatomy.
 - Vault: `BacklinksPanel`, `OutlineView`, the `wikilinks` and `graphModel`

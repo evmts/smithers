@@ -113,6 +113,20 @@ export { ChatMessage, type ChatMessageProps, type ChatMessageRole } from "./chat
 export { ChatTranscript, type ChatTranscriptProps } from "./chat/ChatTranscript";
 export { ChatComposer, type ChatComposerError, type ChatComposerProps, type ChatComposerStatus } from "./chat/ChatComposer";
 export {
+  type ChatComposerCompletions,
+  CompletionList,
+  type CompletionListProps,
+  type ComposerCompletion,
+} from "./chat/CompletionList";
+export {
+  type SlashCommand,
+  type SlashCompletion,
+  type SlashMenu,
+  slashMenu,
+  type SlashSubmit,
+  slashSubmit,
+} from "./slash-commands";
+export {
   MessageScrollerProvider,
   MessageScrollerViewport,
   MessageScrollerContent,
@@ -724,6 +738,18 @@ export { frameRuntime } from "./generated-view/runtime.generated";
 export { loadPresentationBundle, presentationComponentNames, presentationComponents } from "./presentation";
 export { FlowFormView, flowFormViewCss, type FlowFormSubmission, type FlowFormViewProps } from "./flow-form-view";
 export { IssuesView, issuesViewCss, type IssuesViewIssue, type IssuesViewProps } from "./issues-view";
+// An outside web page: in a sandboxed frame, or as a card that opens a tab.
+export {
+  framedPageTarget,
+  WEB_PAGE_SANDBOX,
+  WebLinkCard,
+  WebPageView,
+  webPageCss,
+  webPageTarget,
+  type WebLinkCardProps,
+  type WebPageTarget,
+  type WebPageViewProps,
+} from "./web-page";
 export {
   declaredInput,
   formFieldsFor,

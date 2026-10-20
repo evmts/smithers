@@ -47,6 +47,7 @@ import { breadcrumbsCss, directoryListingCss, repoViewCss } from "./repositoryCs
 import { flowFormViewCss } from "./flow-form-view/flowFormViewCss";
 import { generatedViewCss } from "./generated-view/generatedViewCss";
 import { issuesViewCss } from "./issues-view/issuesViewCss";
+import { webPageCss } from "./web-page/webPageCss";
 
 const shadowCard = t.shadow2;
 const shadowOverlay = t.shadow3;
@@ -202,6 +203,11 @@ export const chatCss = `
 .sui-chat-composer-send { width:34px; height:34px; min-height:34px; border-radius:${t.radius}; font-size:18px; }
 .sui-chat-composer-stop { width:34px; height:34px; min-height:34px; border-radius:${t.radius}; color:${t.destructive}; font-size:12px; }
 .sui-chat-composer-stop:hover { background:${t.destructiveSoft}; color:${t.destructive}; }
+.sui-completion-list { position:absolute; right:0; bottom:calc(100% + 8px); left:0; z-index:1; display:grid; gap:2px; max-height:240px; overflow-y:auto; padding:4px; border:1px solid ${t.border}; border-radius:${t.radius}; background:${t.popover}; color:${t.popoverForeground}; box-shadow:${shadowOverlay}; }
+.sui-completion-option { min-width:0; display:flex; align-items:baseline; gap:12px; padding:6px 8px; border-radius:${t.radiusControl}; font-size:13px; cursor:pointer; user-select:none; ${interaction} }
+.sui-completion-option[data-highlighted='true'] { background:${t.secondary}; }
+.sui-completion-label { flex:none; color:${t.foreground}; font-family:${t.fontMono}; }
+.sui-completion-detail { min-width:0; color:${t.mutedForeground}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 @keyframes sui-chat-message-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
 @keyframes sui-chat-typing { 0%, 60%, 100% { opacity:.3; } 30% { opacity:1; } }
 @media (max-width: 620px) { .sui-chat-messages { padding:24px 14px 146px; } .sui-chat-bubble { max-width:90%; } .sui-chat-composer[data-docked='true'] { right:12px; left:12px; bottom:max(10px, env(safe-area-inset-bottom)); } }
@@ -747,6 +753,7 @@ export const smithersUiCss = [
   generatedViewCss,
   flowFormViewCss,
   issuesViewCss,
+  webPageCss,
   reducedMotionCss,
 ]
   .map((block) => block.trim())

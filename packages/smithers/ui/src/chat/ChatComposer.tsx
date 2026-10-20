@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import {
   useEffect,
+  useId,
   useRef,
   type ComponentProps,
   type FormEvent,
@@ -12,6 +13,7 @@ import { Button } from "../button";
 import { cn } from "../cn";
 import type { DataAttributes } from "../data-attributes";
 import { useInjectUiCss } from "../styles";
+import { type ChatComposerCompletions, clampHighlight, CompletionList, completionOptionId } from "./CompletionList";
 
 /** Mirrors the PromptInput lifecycle (minus "error"): busy is submitted|streaming. */
 export type ChatComposerStatus = "ready" | "streaming" | "submitted";
@@ -63,6 +65,13 @@ export type ChatComposerProps = Omit<ComponentProps<"form">, "onSubmit" | "onErr
   /** Extra attributes for the Stop button. */
   stopProps?: ComponentProps<"button"> & DataAttributes;
   textareaProps?: Omit<ComponentProps<"textarea">, "value" | "onChange" | "disabled" | "placeholder"> & DataAttributes;
+  /**
+   * What to list above the input while typing, such as slash commands. Controlled: the host keeps the rows and the
+   * highlight. While it has rows, the input points at the list (`aria-controls`, `aria-activedescendant`),
+   * ArrowDown and ArrowUp move the highlight, Enter accepts, Tab completes and Escape dismisses, all before the
+   * composer's own Enter and Escape.
+   */
+  completions?: ChatComposerCompletions;
 };
 
 /** Controlled glass chat composer. Enter submits and Shift+Enter inserts a line. */
@@ -86,10 +95,14 @@ export function ChatComposer({
   submitProps,
   stopProps,
   textareaProps,
+  completions,
   className,
   ...props
 }: ChatComposerProps) {
   useInjectUiCss();
+  const listId = `${useId()}-completions`;
+  const listed = completions !== undefined && completions.items.length > 0 ? completions : undefined;
+  const highlighted = listed === undefined ? 0 : clampHighlight(listed.highlighted, listed.items.length);
   const busy = lifecycleStatus === "submitted" || lifecycleStatus === "streaming";
   const canSubmit = !disabled && (!busy || submitWhileBusy) && value.trim().length > 0;
   const stopAccessibleLabel = typeof stopLabel === "string" && stopLabel !== "■" ? stopLabel : "Stop generating";
@@ -131,6 +144,10 @@ export function ChatComposer({
   const onKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     textareaProps?.onKeyDown?.(event);
     if (event.defaultPrevented || event.nativeEvent.isComposing) return;
+    if (listed !== undefined && completionKey(event, listed, highlighted)) {
+      event.preventDefault();
+      return;
+    }
     if (event.key === "Escape" && busy && onStop) {
       onStop();
       return;
@@ -150,7 +167,12 @@ export function ChatComposer({
       onSubmit={submit}
       {...props}
     >
+      {listed === undefined ? null : <CompletionList id={listId} completions={listed} />}
       <textarea
+        aria-autocomplete={completions === undefined ? undefined : "list"}
+        aria-haspopup={completions === undefined ? undefined : "listbox"}
+        aria-controls={listed === undefined ? undefined : listId}
+        aria-activedescendant={listed === undefined ? undefined : completionOptionId(listId, highlighted)}
         {...textareaProps}
         ref={setTextareaRef}
         className={cn("sui-chat-composer-input", textareaProps?.className)}
@@ -202,3 +224,38 @@ export function ChatComposer({
     </form>
   );
 }
+
+/**
+ * The keys the listed completions own: ArrowDown and ArrowUp move the highlight (wrapping), Enter accepts the
+ * highlighted row, Tab completes it, Escape dismisses the list. Answers whether the key was theirs. Shift+Enter keeps
+ * inserting a line, Shift+Tab keeps moving focus back, and a key held with a modifier stays the host's.
+ */
+const completionKey = (
+  event: ReactKeyboardEvent<HTMLTextAreaElement>,
+  completions: ChatComposerCompletions,
+  highlighted: number,
+): boolean => {
+  if (event.altKey || event.ctrlKey || event.metaKey) return false;
+  const count = completions.items.length;
+  switch (event.key) {
+    case "ArrowDown":
+      completions.onHighlight((highlighted + 1) % count);
+      return true;
+    case "ArrowUp":
+      completions.onHighlight((highlighted - 1 + count) % count);
+      return true;
+    case "Enter":
+      if (event.shiftKey) return false;
+      completions.onChoose(highlighted, "accept");
+      return true;
+    case "Tab":
+      if (event.shiftKey) return false;
+      completions.onChoose(highlighted, "complete");
+      return true;
+    case "Escape":
+      completions.onDismiss();
+      return true;
+    default:
+      return false;
+  }
+};

@@ -225,7 +225,8 @@ and `title` rather than throwing.
 | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------- |
 | `ChatMessage`                                                                                                                                            | `ChatMessageProps`, `ChatMessageRole`                                                       | One message with an optional label, meta, and pending state. |
 | `ChatTranscript`                                                                                                                                         | `ChatTranscriptProps`                                                                       | The drop-in transcript surface.                    |
-| `ChatComposer`                                                                                                                                           | `ChatComposerProps`, `ChatComposerStatus`, `ChatComposerError`                              | Controlled glass composer. `submitProps` and `stopProps` stamp host attributes on the two buttons. `onError` receives a failed `onSubmit` as `submit-failed`. |
+| `ChatComposer`                                                                                                                                           | `ChatComposerProps`, `ChatComposerStatus`, `ChatComposerError`, `ChatComposerCompletions`   | Controlled glass composer. `submitProps` and `stopProps` stamp host attributes on the two buttons. `onError` receives a failed `onSubmit` as `submit-failed`. `completions` lists rows above the input, such as slash commands: arrows move, Enter accepts, Tab completes, Escape dismisses ([complete slash commands](./guides/complete-slash-commands.md)). |
+| `CompletionList`                                                                                                                                         | `CompletionListProps`, `ComposerCompletion`                                                 | The listbox `completions` renders, for a host composing its own input. |
 | `Message`, `MessageAvatar`, `MessageHeader`, `MessageContent`, `MessageFooter`, `MessageActions`, `MessageGroup`                                          | `MessageProps`, `MessageRole`, `MessageAvatarProps`, `MessageActionsProps`                  | The compound message anatomy.                      |
 | `MessageBranch`, `MessageBranchContent`, `MessageBranchSelector`, `MessageBranchPrevious`, `MessageBranchNext`, `MessageBranchPage`                       | `MessageBranchProps`                                                                        | Alternate responses with a pager.                  |
 | `MessageScrollerProvider`, `MessageScrollerViewport`, `MessageScrollerContent`, `MessageScrollerItem`, `MessageScrollerButton`                            | `MessageScrollerProviderProps`, `MessageScrollerViewportProps`, `MessageScrollerContentProps`, `MessageScrollerItemProps`, `MessageScrollerButtonProps` | Stick-to-bottom scrolling anatomy. |
@@ -832,6 +833,60 @@ empty list shows `EmptyState`. `inline` scrolls inside 320 pixels.
 `declaredInput(document)` and `formFieldsFor(input, hints?, payload?)`, with
 their `FieldKind`, `FieldValue`, `FormDraft`, `FormField` and `FormHints`
 types, are on the root as well as `@smthrs/ui/flow-form`.
+
+`slashMenu(draft, commands)` and `slashSubmit(text, commands)`, with their
+`SlashCommand`, `SlashCompletion`, `SlashMenu` and `SlashSubmit` types, list
+what a composer's draft completes to and read a submitted line as a command
+run, a refusal or a prompt
+([complete slash commands](./guides/complete-slash-commands.md)).
+
+## Web pages
+
+An outside web page, framed or as a card that opens a new tab. See
+[show a web page](./guides/show-a-web-page.md).
+
+```ts
+function WebPageView(props: WebPageViewProps): JSX.Element
+function WebLinkCard(props: WebLinkCardProps): JSX.Element
+function webPageTarget(url: string, hostOrigin?: string): WebPageTarget | null
+function framedPageTarget(url: string, hostOrigin?: string): WebPageTarget | null
+
+const WEB_PAGE_SANDBOX: "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+const webPageCss: string
+
+type WebPageViewProps = Omit<ComponentProps<"figure">, "children" | "title" | "ref" | "dangerouslySetInnerHTML"> & {
+  url: string
+  size?: "inline" | "full"     // default "inline"
+  title?: string               // the frame's title; default `Web page from ${host}`
+  actions?: ReactNode          // in the bar, before Open in new tab
+}
+
+type WebLinkCardProps = Omit<ComponentProps<"section">, "children" | "ref" | "dangerouslySetInnerHTML"> & {
+  url: string
+  openLabel?: string           // default "Open"
+  onOpen?: () => void          // on click; never prevents it
+}
+
+type WebPageTarget = { readonly href: string; readonly origin: string; readonly host: string }
+```
+
+`WebPageView` renders a `figure` (`data-slot="web-page-view"`, `data-size`):
+a `figcaption` with the origin (`web-page-origin`), `actions` and an
+`Open in new tab` link (`web-page-open`), then an `iframe` (`web-page-frame`)
+with `sandbox` set to `WEB_PAGE_SANDBOX`, `referrerPolicy="no-referrer"`,
+`loading="lazy"` and no `allow` attribute. `inline` is 28rem high; `full` fills
+its container. `WebLinkCard` renders a `Card` (`web-link-card`) with the origin
+(`web-link-origin`) and an anchor styled as a `Button` (`web-link-open`). Both
+links have `target="_blank"` and `rel="noopener noreferrer"`.
+
+`webPageTarget`, `WebLinkCard`'s guard, accepts only an absolute `https:` or
+`http:` URL with no credentials, and refuses one on `hostOrigin`.
+`framedPageTarget`, `WebPageView`'s guard, also refuses `http:` and every page
+on the site of `hostOrigin` (its last two labels, or the hostname for an IP
+address or a single label); under a public suffix such as `pages.dev` that
+over-refuses. Both components pass `window.location.origin` and, on `null`,
+render `EmptyState` titled `Can't show this page` with `data-refused="true"`
+and no frame or link. `webPageCss` is part of `smithersUiCss`.
 
 ## Related
 
