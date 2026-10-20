@@ -363,12 +363,13 @@ const bookmarks = (...names: ReadonlyArray<string>) =>
 
 const fileContents = (content: string) => json(200, { path: "x", content, size: new TextEncoder().encode(content).length, commit_sha: "b".repeat(40), raw_url: ROOT + "/contents/x?raw=1", type: "file", encoding: "utf-8" })
 
-const filePageOf = (store: Awaited<ReturnType<typeof createAppStore>>) => {
+const fileReadOf = (store: Awaited<ReturnType<typeof createAppStore>>) => {
   const entry = store.session().repositoryEntry!
   const subject = requestedTarget(window.location)!.subject
   if (subject?.kind !== "blob") return undefined
-  return repositoryCodeReads.get(codeReadKey(REPO, "blob", subject.location, entry.requestId))?.page
+  return repositoryCodeReads.get(codeReadKey(REPO, "blob", subject.location, entry.requestId))
 }
+const filePageOf = (store: Awaited<ReturnType<typeof createAppStore>>) => fileReadOf(store)?.page
 
 const fileListCardOf = (store: Awaited<ReturnType<typeof createAppStore>>) =>
   [...store.collections.cards.values()].find(card => card.kind === "file-list")
@@ -516,6 +517,31 @@ test("a file read the platform refuses is reported as that read's own refusal", 
   const { store, refusal } = await enter(`/${REPO}/blob/main/apps/missing.ts`, backend)
   expect(refusal).toBe("Could not read file.")
   expect(fileCardOf(store)).toBeUndefined()
+  // The 404 is the platform saying main has no apps/missing.ts: the view's missing state, not a failed read.
+  expect(fileReadOf(store)).toMatchObject({ state: "missing" })
+  expect(fileReadOf(store)?.error).toBeUndefined()
+})
+
+// A 404 that names a missing branch, commit or storage is not a missing path (#4354): the read failed.
+test("a file read whose 404 names missing branch storage is a failed read, not a missing file", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/bookmarks`]: bookmarks("main"),
+    [`${ROOT}/contents/apps/edge.ts`]: json(404, { message: "repository storage not found" })
+  })
+  const { store, refusal } = await enter(`/${REPO}/blob/main/apps/edge.ts`, backend)
+  expect(refusal).toBe("Could not read file.")
+  expect(fileReadOf(store)).toMatchObject({ state: "failed", error: "File read failed (404)" })
+})
+
+// Only the contents read's own status decides "missing": a 500 whose words say "not found" is still a failed read.
+test("a file read that fails for another reason stays a failed read with its status as the detail", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/bookmarks`]: bookmarks("main"),
+    [`${ROOT}/contents/apps/broken.ts`]: json(500, { status: "error", code: "not_found", message: "Path not found" })
+  })
+  const { store, refusal } = await enter(`/${REPO}/blob/main/apps/broken.ts`, backend)
+  expect(refusal).toBe("Could not read file.")
+  expect(fileReadOf(store)).toMatchObject({ state: "failed", error: "File read failed (500)" })
 })
 
 /*

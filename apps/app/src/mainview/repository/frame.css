@@ -43,6 +43,11 @@
 .repo-frame-state { padding: 64px 24px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; border: 1px solid var(--border); border-radius: var(--r-3); background: var(--surface); }
 .repo-frame-state h2 { font-size: var(--fs-4); font-weight: 500; }
 .repo-frame-state p { font-size: var(--fs-2); color: var(--text-muted); }
+/* A failure's Details (FailureNotice) is a disclosure, not a bare line: `.repo-frame summary` drops the native marker, so it draws a chevron. */
+.repo-frame [data-fault] > details > summary { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 13px; }
+.repo-frame [data-fault] > details > summary::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform var(--dur) var(--ease-current); }
+.repo-frame [data-fault] > details[open] > summary::before { transform: rotate(45deg); }
+.repo-frame [data-fault] .failure-detail { margin: 8px 0 0; color: var(--text-muted); font-size: 13px; text-align: left; }
 .repo-frame-loading { border: 1px solid var(--border); border-radius: var(--r-3); background: var(--surface); overflow: hidden; }
 .repo-frame-skeleton-row { display: flex; justify-content: space-between; gap: 24px; padding: 18px 16px; border-bottom: 1px solid var(--border); }
 .repo-frame-skeleton-row:last-child { border-bottom: 0; }

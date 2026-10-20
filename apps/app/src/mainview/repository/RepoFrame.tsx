@@ -68,6 +68,15 @@ export const guestAdmission = (conversation: string | undefined, repo: string): 
   conversation !== undefined && conversation.toLowerCase().startsWith(`guest:${repo.toLowerCase()}:`)
 
 /**
+ * The frame Ask composer's placeholder (PM d-szeq1q): a person with write access
+ * (signed in and the entry's can_write, App.tsx `member`) can ask or describe a
+ * change; a signed-in reader can ask. Signed out it is not the frame's to say
+ * (undefined): the chat keeps its own words behind the sign-in door.
+ */
+export const frameAskPlaceholder = (signedIn: boolean, canWrite: boolean): string | undefined =>
+  !signedIn ? undefined : canWrite ? "Ask a question or describe a change…" : "Ask a question…"
+
+/**
  * Repository route shell. `children` is the plain content slot shared by repo views.
  * `guest` is this repository's guest-conversation admission (`guestAdmission`):
  * an admitted guest opens Ask like a member; signed out without it, Ask leads

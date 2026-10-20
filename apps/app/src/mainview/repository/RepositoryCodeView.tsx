@@ -6,7 +6,7 @@ import { RepositoryAskContext } from "./RepoFrame"
 import { useLiveQuery } from "@tanstack/react-db"
 import { codeReadKey, repositoryCodeReads } from "./RepositoryCodeRead"
 import { useContext, useRef, useSyncExternalStore, type CSSProperties } from "react"
-import { File, Folder } from "lucide-react"
+import { File, Folder, Link as LinkIcon } from "lucide-react"
 import type { Card } from "../state/AppState"
 import type { RepositoryBranches } from "../state/seams/RepositoryBranchesSeam"
 import type { LatestCommit } from "../state/seams/LatestCommitSeam"
@@ -69,6 +69,8 @@ export function RepositoryCodeView({ repo, cards, refs, commits, branches, onBra
   }
   const commit = permalinkCommit(revision, page?.commitSha, commits)
   const failure = error ?? (read?.state === "failed" ? read.error : undefined)
+  // The contents read answered 404: no file at this path and ref (mock CodeNotFound), never a failed read.
+  const missing = !failure && admitted && read?.state === "missing" && located !== undefined
   const permalink = () => {
     if (!commit) return
     const url = new URL(route(subject.kind, path, commit), window.location.origin)
@@ -81,9 +83,12 @@ export function RepositoryCodeView({ repo, cards, refs, commits, branches, onBra
       <nav className="repo-code-breadcrumbs" aria-label="File path">{located ? <a href={route("tree", "")}>{repo.split("/").at(-1)}</a> : <span>{repo.split("/").at(-1)}</span>}
         {path.split("/").filter(Boolean).map((part, index, parts) => <span key={index}><span className="repo-code-separator">/</span>{index === parts.length - 1 ? <strong>{part}</strong> : <a href={route("tree", parts.slice(0, index + 1).join("/"))}>{part}</a>}</span>)}
       </nav>
-      {located && commit && <button className="repo-ui-btn repo-ui-btn-primary repo-code-permalink" {...flowAction(onRunCommand, "chat.copy-message", flowArgs("chat.copy-message", { text: permalink() ?? "" }))}>Copy permalink</button>}
+      {located && commit && !failure && !missing && <button className="repo-ui-btn repo-ui-btn-primary repo-code-permalink" {...flowAction(onRunCommand, "chat.copy-message", flowArgs("chat.copy-message", { text: permalink() ?? "" }))}><LinkIcon size={14} aria-hidden="true" /><span>Copy permalink</span></button>}
     </div>
-    {failure ? <FailureNotice failure={unavailableFailure("repository.file", "Couldn’t load this file.", failure)} /> : !card && !page ? <p role="status">Loading…</p> : card?.kind === "file-list" ? <div className="repository-code-box">
+    {failure ? <FailureNotice className="repo-frame-state" failure={unavailableFailure("repository.file", "Couldn’t load this file.", failure)} /> : missing ? <section className="repo-frame-state">
+      <h2>No {path} at {revision}</h2>
+      <a className="repo-ui-btn" href={route("tree", path.split("/").slice(0, -1).join("/"))}><Folder size={15} aria-hidden="true" />Go up a directory</a>
+    </section> : !card && !page ? <p role="status">Loading…</p> : card?.kind === "file-list" ? <div className="repository-code-box">
       {latestCommit && <LatestCommitRow commit={latestCommit} />}
       {card.payload.entries.length === 0 ? <p>This folder is empty.</p> : <div role="table" aria-label={path ? `Files in ${path}` : "Repository files"}>
         {path && <div role="row" className="repo-code-file-row"><span role="cell"><a href={route("tree", path.split("/").slice(0, -1).join("/"))} aria-label="Parent directory">..</a></span></div>}

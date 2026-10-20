@@ -14,6 +14,7 @@ for (const width of [1440, 1280, 390]) for (const theme of ["light", "dark"] as 
     await page.route(/\/api\/repos\/alpha\/one\/contents(?:\/[^?]*)?(?:\?.*)?$/, route => {
       const path = new URL(route.request().url()).pathname
       if (path.endsWith("/missing.ts")) return route.fulfill({ status: 404, json: { message: "Path not found" } })
+      if (path.endsWith("/broken.ts")) return route.fulfill({ status: 500, json: { message: "mirror read timed out" } })
       if (path.endsWith("/sized.ts")) return route.fulfill({ json: { type: "file", content: "x".repeat(20000), size: 20000, encoding: "utf-8", commit_sha: "b".repeat(40), raw_url: "/api/repos/alpha/one/contents/src/sized.ts?raw=1" } })
       if (path.endsWith("/large.ts")) return route.fulfill({ json: { type: "file", content: "// long file\n".repeat(9000) + "// FINAL LINE", size: 108013, encoding: "utf-8", commit_sha: "b".repeat(40), raw_url: "/api/repos/alpha/one/contents/src/large.ts?raw=1" } })
       if (path.endsWith("/huge.ts")) return route.fulfill({ json: { type: "file", content: "", size: 524289, too_large: true, commit_sha: "b".repeat(40), raw_url: "/api/repos/alpha/one/contents/src/huge.ts?raw=1&ref=" + "b".repeat(40) } })
@@ -47,6 +48,12 @@ for (const width of [1440, 1280, 390]) for (const theme of ["light", "dark"] as 
     await page.screenshot({ path: testInfo.outputPath(`sp1b-blob-${width}-${theme}.png`) })
     await expect(view.getByText("Truncated", { exact: true })).toHaveCount(0)
     await expect(page.locator(".repo-ui-btn-primary:visible")).toHaveCount(1)
+    // Design live review .17/.18/.20 item 3 (mock views/code/File.tsx): Copy permalink is a repo button, 14px at 500 with a link icon, as tall as the branch button.
+    const branchHeight = (await view.locator(".repo-ui-dropdown > summary.repo-ui-btn").boundingBox())!.height
+    expect(await view.getByRole("button", { name: "Copy permalink", exact: true }).evaluate(node => {
+      const style = getComputedStyle(node)
+      return { size: style.fontSize, weight: style.fontWeight, height: node.getBoundingClientRect().height, icon: node.querySelector("svg")?.getAttribute("aria-hidden") }
+    })).toEqual({ size: "14px", weight: "500", height: branchHeight, icon: "true" })
     await expect(view.getByRole("button", { name: "Blame", exact: true })).toHaveCount(0)
     for (const name of ["Copy permalink", "Raw", "Copy file contents"]) {
       const control = view.getByRole("button", { name, exact: true }); await control.focus(); await expect(control).toBeFocused()
@@ -76,9 +83,29 @@ for (const width of [1440, 1280, 390]) for (const theme of ["light", "dark"] as 
     await view.getByRole("button", { name: "Raw", exact: true }).click()
     await expect(view.getByLabel("Raw src/index.ts", { exact: true })).toHaveText("export const answer = 42\n// final line\n")
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    // A 404 from the contents read is a missing file (mock CodeNotFound), never "Couldn't load this file.": no permalink, and the way up at the same ref.
     await page.goto("/alpha/one/blob/main/src/missing.ts")
-    await expect(page.getByRole("region", { name: "File view" }).getByRole("alert")).toContainText("Could not read file.")
+    await expect(view.getByRole("heading", { name: "No src/missing.ts at main", exact: true })).toBeVisible()
+    const up = view.getByRole("link", { name: "Go up a directory", exact: true })
+    await expect(up).toHaveAttribute("href", "/alpha/one/tree/main/src")
+    await up.focus(); await expect(up).toBeFocused()
+    await expect(view.getByRole("alert")).toHaveCount(0)
+    await expect(view.getByRole("button", { name: "Copy permalink", exact: true })).toHaveCount(0)
     await expect(page.getByText("This file is empty.", { exact: true })).toHaveCount(0)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`sp1j-blob-missing-${width}-${theme}.png`) })
+    // A real read failure keeps the error, its status behind a styled, keyboard-operable Details.
+    await page.goto("/alpha/one/blob/main/src/broken.ts")
+    const failed = view.getByRole("alert")
+    await expect(failed).toContainText("Couldn’t load this file.")
+    await expect(view.getByRole("heading", { name: "No src/broken.ts at main" })).toHaveCount(0)
+    await expect(view.getByRole("button", { name: "Copy permalink", exact: true })).toHaveCount(0)
+    const details = failed.locator("summary")
+    await expect(details).toHaveText("Details")
+    expect(await details.evaluate(node => getComputedStyle(node).fontSize)).toBe("13px")
+    await details.focus(); await expect(details).toBeFocused(); await page.keyboard.press("Enter")
+    await expect(failed.getByRole("region", { name: "Failure details", exact: true })).toHaveText("File read failed (500)")
+    await page.screenshot({ path: testInfo.outputPath(`sp1j-blob-failed-${width}-${theme}.png`) })
     await page.goto("/alpha/one/blob/main/src/large.ts")
     await expect(view.getByRole("link", { name: "Select line 9001", exact: true })).toBeVisible()
     await expect(view.locator('[data-line="9001"] code')).toHaveText("// FINAL LINE")
@@ -110,6 +137,8 @@ for (const width of [1440, 1280, 390]) for (const theme of ["light", "dark"] as 
     await page.keyboard.press("Control+k")
     await expect(page.getByRole("complementary", { name: "Ask", exact: true })).toBeVisible()
     await expect(page.getByTestId("composer-input")).toBeVisible()
+    // Design f-8wfsm7 (b): the open Ask's composer clears the viewport's foot by 16px (the mock's composer margin), here at a height of 844.
+    expect(await page.getByTestId("composer-input").evaluate(node => innerHeight - node.closest(".smithers-composer")!.getBoundingClientRect().bottom)).toBeGreaterThanOrEqual(16)
     await page.getByRole("button", { name: "Close Ask", exact: true }).click()
     await expect(page.getByRole("complementary", { name: "Ask", exact: true })).toBeHidden()
     await page.getByRole("button", { name: "Ask about lines", exact: true }).click()

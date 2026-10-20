@@ -1,7 +1,7 @@
 import { createRoot } from "../cards/views/testDom"
 import { act } from "react"
 import { expect, test } from "bun:test"
-import { guestAdmission, RepoFrame } from "./RepoFrame"
+import { frameAskPlaceholder, guestAdmission, RepoFrame } from "./RepoFrame"
 
 /*
  * Who opens Ask on a repository route (PM gap list row 15): a signed-in
@@ -70,4 +70,14 @@ test("guestAdmission reads only this repository's receipt", () => {
   expect(guestAdmission("guest:sponsor/public:opaque-session", "sponsor/other")).toBe(false)
   expect(guestAdmission("guest:sponsor/publication:opaque-session", "sponsor/public")).toBe(false)
   expect(guestAdmission(undefined, "sponsor/public")).toBe(false)
+})
+
+// PM d-szeq1q: the frame Ask's placeholder says what this viewer can do there; signed out the frame says nothing of its own.
+test("the frame Ask invites a change only from a viewer with write access", () => {
+  expect(frameAskPlaceholder(true, true)).toBe("Ask a question or describe a change…")
+  expect(frameAskPlaceholder(true, false)).toBe("Ask a question…")
+  expect(frameAskPlaceholder(false, true)).toBeUndefined()
+  expect(frameAskPlaceholder(false, false)).toBeUndefined()
+  // One ellipsis character, never three dots.
+  for (const text of [frameAskPlaceholder(true, true)!, frameAskPlaceholder(true, false)!]) expect(text.endsWith("…") && !text.includes("...")).toBe(true)
 })

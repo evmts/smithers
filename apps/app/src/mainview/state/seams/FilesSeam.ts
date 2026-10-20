@@ -75,6 +75,16 @@ const anchored = (anchor: FileAnchor | undefined): { readonly line?: number; rea
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
 
+/** The contents route's 404 answers that name a missing branch, commit, storage or route rather than a missing path (#4354). */
+const NOT_A_PATH_404: ReadonlySet<string> = new Set(["repository storage not found", "default bookmark not found", "branch not found", "commit not found", "404 page not found"])
+
+/** A 404's own answer: its JSON body and message, or the plain text a missing route returns. */
+const notFoundAnswer = (text: string): { readonly body: unknown; readonly message: string } => {
+  let body: unknown = null
+  try { body = JSON.parse(text) } catch { /* Missing routes return plain text. */ }
+  return { body, message: isRecord(body) && typeof body.message === "string" ? body.message : text.trim() }
+}
+
 /** "" and "/" (and any slash dressing) normalize to the root: the empty path. */
 const normalizePath = (path: string): string => path.trim().replace(/^\/+/, "").replace(/\/+$/, "")
 
@@ -208,11 +218,8 @@ export const createFilesSeam = (ctx: SeamContext, branchOptions?: BranchFileOpti
 
   // Only explicit branch, commit, storage, or route misses hide the requested path.
   const explain404 = async (response: Response, fallback: string): Promise<string> => {
-    const text = await response.text().catch(() => "")
-    let body: unknown = null
-    try { body = JSON.parse(text) } catch { /* Missing routes return plain text. */ }
-    const message = isRecord(body) && typeof body.message === "string" ? body.message : text.trim()
-    if (["repository storage not found", "default bookmark not found", "branch not found", "commit not found", "404 page not found"].includes(message)) {
+    const { body, message } = notFoundAnswer(await response.text().catch(() => ""))
+    if (NOT_A_PATH_404.has(message)) {
       return "Couldn't read this branch's files."
     }
     const refusal = refusalOf({ body, status: response.status, message: refusalWords(body, fallback, response.status) })
@@ -722,7 +729,8 @@ const branchFileOperations = (ctx: SeamContext, options?: BranchFileOptions): Br
 }
 
 /** A rejected repository read retains its diagnostic and HTTP status. */
-export class RepositoryFileReadFailed extends Data.TaggedError("RepositoryFileReadFailed")<{ readonly message: string; readonly status?: number }> {}
+/** `pathMissing`: the read answered 404 for this path at this ref, not for a missing branch, commit, storage or route. */
+export class RepositoryFileReadFailed extends Data.TaggedError("RepositoryFileReadFailed")<{ readonly message: string; readonly status?: number; readonly pathMissing?: boolean }> {}
 
 /** Read complete hosted file bytes for a repository page, without creating a chat card. */
 export const readFilePage = async (
@@ -733,6 +741,10 @@ export const readFilePage = async (
 ): Promise<FilePage> => {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || unsafePath(path) || !path) throw new RepositoryFileReadFailed({ message: "Invalid repository file path" })
   const response = await ctx.http(`${ctx.baseUrl}/api/repos/${repo.split("/").map(encodeURIComponent).join("/")}/contents/${encodeRepoPath(path)}${ref === undefined ? "" : `?ref=${encodeURIComponent(ref)}`}`)
+  if (response.status === 404) {
+    const { message } = notFoundAnswer(await response.text().catch(() => ""))
+    throw new RepositoryFileReadFailed({ message: "File read failed (404)", status: 404, pathMissing: !NOT_A_PATH_404.has(message) })
+  }
   if (!response.ok) throw new RepositoryFileReadFailed({ message: `File read failed (${response.status})`, status: response.status })
   return decodeFilePage(await response.json())
 }

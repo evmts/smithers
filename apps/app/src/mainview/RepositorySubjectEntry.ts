@@ -5,6 +5,7 @@ import type { RefLocation, RepositorySubject } from "@smthrs/rpc/RepositorySubje
 import { isCommitRevision, resolveRefLocation } from "@smthrs/rpc/RepositorySubjectPath"
 import type { RepositoryHome } from "@smthrs/rpc/RepositoryHome"
 import { failureDetail } from "@smthrs/rpc/UserFailure"
+import { RepositoryFileReadFailed } from "./state/seams/FilesSeam"
 import { flowArgs } from "./flows/FlowArgs"
 import { treeCopyOf } from "./RepoLink"
 import type { AppController } from "./state/AppController"
@@ -277,9 +278,12 @@ const openRequestedFile = async (
     try {
       const page = await controller.readRepositoryFilePage(target, located.path, located.ref)
       if (!options.signal?.aborted && admitted(controller.store, repo, options.requestId, owner)) setCodeRead(readKey, "ready", undefined, page)
-    } catch {
+    } catch (cause: unknown) {
       if (!options.signal?.aborted && admitted(controller.store, repo, options.requestId, owner)) {
-        setCodeRead(readKey, "failed", "Could not read file.")
+        // The contents read's 404 for this path at this ref is the view's missing state; a 404 for a missing
+        // branch, commit or storage (#4354), and any other refusal, is a failed read with its status behind Details.
+        if (cause instanceof RepositoryFileReadFailed && cause.pathMissing === true) setCodeRead(readKey, "missing")
+        else setCodeRead(readKey, "failed", cause instanceof RepositoryFileReadFailed && cause.status !== undefined ? `File read failed (${cause.status})` : "Could not read file.")
         return "Could not read file."
       }
     }
