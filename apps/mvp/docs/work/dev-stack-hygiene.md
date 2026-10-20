@@ -1,17 +1,18 @@
 ---
 title: Dev stack hygiene for the agent fleet
-status: done
+status: in-progress
 area: infra
-owner: lead (smithers-b3); written into the wiring checklist (scratchpad `final/WIRING.md`, "Dev stack hygiene") at 02:15 on 2026-10-20; compose Postgres recreated with `max_connections` 300 about 02:27; the `$TMPDIR` cleanup stays a step of each tracker tick
+owner: lead (smithers-b3); from 13:13 on 2026-10-20 it also owns the shared dev server's model budget (raised to 10,000,000 tokens a day in `apps/mvp/.env`) and restarts the server only under the shared test lock (scratchpad `restart-dev.sh`). Until 13:13: lead (smithers-b3); from 11:42:48 on 2026-10-20 it resumes the agents each usage limit stops, and it offered Will a cap of about 8 agents at a time (no answer by 11:46); reopened from done at 11:46. Until 11:42: lead (smithers-b3); from 07:30:21 on 2026-10-20 full test suites wait for one shared lock (scratchpad `heavy.lock`). Until 07:30: lead (smithers-b3); written into the wiring checklist (scratchpad `final/WIRING.md`, "Dev stack hygiene") at 02:15 on 2026-10-20; compose Postgres recreated with `max_connections` 300 about 02:27; the `$TMPDIR` cleanup stays a step of each tracker tick
 updated: 2026-10-20
-links: [disk-space.md, app-wiring.md, model-endpoint.md, sign-in.md, repo-clone-and-view.md, code-reviews.md, e2e-suite-and-gifs.md]
+links: [cerebras-rate-limits.md, flow-authoring.md, chat-message-controls.md, review-round-4.md, decisions-for-will.md, navigate-flow.md, site-deployment-test.md, docs-check-flow-outcome.md, land-to-main.md, disk-space.md, app-wiring.md, model-endpoint.md, sign-in.md, repo-clone-and-view.md, code-reviews.md, e2e-suite-and-gifs.md, second-build-machine.md]
 ---
 
 ## What
 
 Keep the shared local dev stack on Will's MacBook healthy while 10 or more agents run test suites at once:
 - **Postgres connections:** raise the compose Postgres `max_connections` from 100 to 300 (`-c max_connections=300` in `apps/mvp/docker-compose.yml`'s `command`).
-- **Disk:** at each tracker tick, delete top-level `$TMPDIR` items untouched for 60 minutes.
+- **Disk:** at each tracker tick, delete top-level `$TMPDIR` items untouched for 60 minutes (20 minutes from 07:16 on 2026-10-20).
+- **Load (from 07:30 on 2026-10-20):** full test suites run one at a time behind a shared lock, scratchpad `heavy.lock`.
 
 ## Why
 
@@ -37,10 +38,63 @@ Keep the shared local dev stack on Will's MacBook healthy while 10 or more agent
 - 02:54 to 02:55: full `apps/mvp` runs show no SQLSTATE 53300 (`c1/full.log`, `c1/full2.log`, `wiring/unit.log`). `df -h /` at 02:55: 12 GiB available.
 - **About 02:58 on 2026-10-20: "Outdated Optimize Dep" errors in the app at `:1337`** (lead's note). This is Vite's dependency pre-bundle going stale while agents change packages under a running dev server; the browser then fails module requests with 504 "Outdated Optimize Dep". The fix is a dev restart with a clean `.vite` cache. Scratchpad `wiring/dev.sh` (02:53:01) already runs `rm -rf node_modules/.vite` before `pnpm dev`. The dev server started at 02:53 logged "optimized dependencies changed. reloading" once at start, and none since by 03:05. The earlier server's log shows the same message at 23:59, 01:50, 02:20, 02:35, 02:36 and 02:44, each while agents edited packages.
 - 02:56:40: a full `apps/mvp` run, scratchpad `wiring/unit2.log`: 472 passed, 0 failed, no SQLSTATE 53300. `df -h /` at 03:05: 14 GiB available.
+- **07:16:03 on 2026-10-20, the lead to Will:** "The disk had dropped to 8.6 GiB. Test runs are writing about 7 GB of temp files an hour now, so I'll clear temp files untouched for 20 minutes instead of an hour. It's back to 14 GiB."
+- 07:24:01, the lead: "The disk has 12 GiB free after cleanup."
+- **07:30:21 on 2026-10-20, the lead to Will:** "The machine's load average hit 170 from agents running test suites at once, which made tests flaky. Full test suites now wait for a shared lock, so they run one at a time." The lock is the directory scratchpad `heavy.lock` (created 07:30, present at 07:37).
+- 07:30:37, the lander: round 1's checks "ran before the machine got busy", so they need no recheck ([land to main](land-to-main.md)).
+- 07:34:02, the lead: "The machine's load average is down from 170 to 32, and the disk has 14 GiB free."
+- **07:44:39 on 2026-10-20, the [navigate](navigate-flow.md) agent:** ChatApi answered 503 to every question because the dev database lacked other agents' migrations, so every agent-run unit test failed. It ran `pnpm db:migrate`, which applied 0010 to 0012. The lead to Will at 07:44:43: "Without them, questions were briefly answered with errors. That's applied now." A migration an agent adds doesn't reach the shared dev database until someone runs `pnpm db:migrate`.
+- 07:51:49, the lead: it removed `~/smithers/review-evidence`, an untracked symlink to a folder deleted since Sep 12, which failed `support-matrix.test.mjs` on this Mac ([site deployment test](site-deployment-test.md)).
+- **About 08:15 to 10:40 on 2026-10-20: the Claude usage limit stopped the lead and every Claude agent** (the lander and seven builders) for about two and a half hours. The lead resumed all eight at 10:42 from where they stopped ([land to main](land-to-main.md)). The dev server's flow databases (`apps/mvp/.alchemy/local/…FlowExecution/*.sqlite`) kept changing until 08:36:51.
+- 10:42:03, the lead: "The machine's load is low (about 5) and the disk has 14 GiB free." 10:43: `uptime` shows load averages of 32, 14 and 8 as the eight agents restart; `df -h` shows 14 GiB free (99% used). 10:43:40: the shared `heavy.lock` is held again (the client Fable fix agent's full unit run).
+- 10:53:49, the lead: a tracker refresh was skipped because "20 subagents, the session's limit, are running": review round 4 and the build agents, plus their sub-agents. "The disk has 12 GiB free."
+- **11:14:36, the lead:** "The disk is down to 10 GiB, mostly from the lander's temporary 4.1 GB workspace, which goes away when the landing finishes." 11:24:01: 10 GiB free ([land to main](land-to-main.md)).
+- **11:19:46, the lead:** it "stopped three docs checks that had been stuck for 3 to 4 hours, each burning about 70% CPU." The cause was every Smithers CLI process taking the database's write lock every 5 seconds; the fix reads without it, and "a waiting CLI dropped from about 100% CPU to about 5%" ([docs check](docs-check-flow-outcome.md)).
+- **About 11:30 on 2026-10-20: the account's weekly limit stopped the lead and every Claude agent** ("You've hit your weekly limit · resets Oct 26 at 12pm", 11:30:17), about 50 minutes after the session limit's 10:40 reset. The 11:39:52 tick hit the same limit.
+- **11:41:39: Will logged in to another account** ("keep going", 11:41:41). **11:42:18, the lead:** "The weekly limit stopped every agent on the old account at about 11:30. On your new login I've resumed all nine, each from where it stopped with its work intact": landing round 2, the server, browser and two SDK sets of review fixes, and the issues, flows, branch and agent-status slices. "Each agent restarts its own stopped sub-agents."
+- **About 11:35 (the lead's time; the session showed it at 11:42:19, "resets Oct 23 at 8pm"): the second account's weekly limit stopped the agents again.** Will, 11:42:36: "keep goign i used usage reset." **11:42:48, the lead:** "I resumed the five agents the second account's limit stopped: the server fixes, both SDK fix sets, the branch workspace and the tracker refresh." The lander, the chat fixes, issues, flows and agent status weren't reported stopped.
+  - "We're using limits fast: about 15 agents run at once, plus their sub-agents. If you'd rather stretch this account, I can cap it at about 8 at a time and finish the review fixes and landing first." No answer by 11:46.
+- The day's capacity record:
+
+  ```
+  08:15 ──── session limit ──── 10:40   every agent stopped (~2 h 25 m); 8 resumed 10:42
+  11:30 ── weekly limit, account 1      every agent stopped; Will logs in to account 2 at 11:41
+  ~11:35 ─ weekly limit, account 2      5 agents stopped; Will applies a usage reset; resumed 11:42:48
+  ```
+
+- 11:43: `df -h` shows 8.2 GiB free (100% used); 11:44:22, the lead: 11 GiB free; 11:46: 10 GiB free, load averages 36, 20 and 20.
+- **Status moved from done to in-progress** at 11:46: the fleet hit three usage limits in three and a half hours, and the lead's cap offer waits on Will.
+- 12:14 on 2026-10-20 (the lead): the shared lock (scratchpad `heavy.lock`) was taken at 12:13 and a full suite runs. If an agent dies holding it, the lead clears it so it can't block everyone. 10 GiB free at 12:03 and 12:14. No answer from Will on the agent cap by 12:14.
+- 12:23:45 on 2026-10-20 (the lead): the shared lock is free again; 10 GiB free. The [agent status](agent-status.md) browser test ran from 12:16; [issues](issues.md) waits for the lock from 12:18.
+- **About 12:52 on 2026-10-20:** stopping its own duplicate suite, the issues builder ran `pkill -f 'vitest run --coverage.enabled=false'`, a pattern that matches every agent's vitest run, so other agents' tests may have died around 12:52 ([issues](issues.md)). 12:54:04, the lead: "I told those agents to rerun anything that died."
+- 12:54:43 (the lead): 8.5 GiB free.
+- 12:53 to 12:58, `apps/mvp/test-results/`: the message controls e2e ran four times (a first try and three retries), each failing ([message controls](chat-message-controls.md)).
+
+- 13:04:08 on 2026-10-20 (the lead): 8.0 GiB free.
+- **13:06 on 2026-10-20: the lander removed its 4.1 GB `~/smithers-lander` workspace** after round 2 ([land to main](land-to-main.md)). It reported the 12:52 `pkill` killed none of its runs.
+- **13:08 to 13:09:31 on 2026-10-20: the shared dev server had spent its daily model budget.** Every model call answered 429 "Today's model budget is spent": `model_budget_days` held 1,022,891 committed tokens against the 1,000,000 cap, of which 496,311 were spent. The rest were reservations of calls whose tests were killed; by design an unsettled reservation stays charged at its worst case and is final once it expires (`worker/ModelUsage.ts`: "nothing sweeps it"), so only the next UTC day starts fresh ([model endpoint](model-endpoint.md)). It blocked the [flows](flow-authoring.md) e2e and very likely caused the [message controls](chat-message-controls.md) "Couldn't answer" failures, first read as [Cerebras rate limits](cerebras-rate-limits.md).
+- **13:11:42 to 13:13:19: the restart.** The lead set `MODEL_DAILY_TOKEN_BUDGET` to 10,000,000 in `apps/mvp/.env` (not committed). The first restart (13:11:42 to 13:11:48) never stopped the old server, so two dev servers ran. 13:12:01, the lead: "My script never stopped the old server, so two dev servers are now running." The fixed `restart-dev.sh` waits for `heavy.lock`, kills both process trees (13 pids at 13:13:03), checks that port 1337 is free, starts one server and waits for `/app` to answer 200; up at 13:13:19 with one listener on 1337 (scratchpad `restart-dev.log`). The repository home builder's flows e2e ran in the two-server window (13:12:05 to 13:12:56) and failed ([flow authoring](flow-authoring.md)).
+- 13:13:57, the lead: "The dev server is back on its own, with a daily model budget of 10 million tokens. I've told the message-controls and branch agents to rerun their live-model tests." It saved the cause and fix as a memory. 13:15:50: the message controls e2e passed on the new server.
+- 13:14:32 (the lead): 9.0 GiB free; 8.4 GiB at 13:17.
+- **13:20:43 on 2026-10-20: Will offered Latitude servers.** "If you need more computing resources we have latitude servers". The lead, 13:21:12: "CPU isn't the bottleneck": the one shared test lock and the one shared checkout are. A Latitude box helps only as a second build machine with its own clone, Postgres, Electric and dev server, pushing to `main` itself, and never the two hosts running production sandbox workers or nyc-01. Waiting on Will to name one ([second build machine](second-build-machine.md)).
+- 13:22:27: the lead rewrote the builder rules (scratchpad `final/BUILD-COMMON.md`): the heavy lock before any full suite, e2e or `docs:check`; never `pkill` or `killall` by pattern; the shared dev server restarts only through the lead; no git; no clones or large toolchains; about 9 GiB free.
+- 13:22:43 to 13:23:25: six more agents started (evals, secrets, spend alerts, notifications, Panel T with a Codex Sol member, the 0012 docs agent), on top of the triage, branch workspace, home view and SDK builders. 13:23:36: the lead checked the lock's age and cleaned stale temp items. **13:23:56: 8.6 GiB free.**
 
 ## Next
 
-Restart the dev server with a clean `.vite` cache (scratchpad `wiring/dev.sh`) before Will tests, and after any agent changes a package the app pre-bundles. Reopen if "Outdated Optimize Dep" shows after such a restart. Keep the 60-minute `$TMPDIR` cleanup at each tracker tick, and check `df -h /` before fanning out more than 5 agents.
+From 13:13 on 2026-10-20: as below, plus: restart the dev server only through `restart-dev.sh` (under `heavy.lock`, both trees killed, port checked); when a live-model e2e fails, read the 429's body first, since our own budget and a provider limit both answer 429; and check `model_budget_days` before a fan-out of live-model tests, because killed runs keep their reservations until midnight UTC.
+
+Until 13:13 on 2026-10-20 the next step was, from 12:54 on 2026-10-20: as below, and every brief says to stop a test run by its own pid, never with `pkill -f` on a shared pattern (the 12:52 kill).
+
+Until 12:54 on 2026-10-20 the next step was, from 11:42 on 2026-10-20: Will answers the cap offer. Until then the lead resumes every agent a usage limit stops, from where it stopped, and each parent restarts its own sub-agents. With a cap, the review fixes and landing round 2 go first. The rest stands: run `pnpm db:migrate` when an agent adds a migration; every full suite takes `heavy.lock`; clear `$TMPDIR` files untouched for 20 minutes at each tracker tick; check `df -h /` and the load before fanning out more than 5 agents; restart the dev server with a clean `.vite` cache before Will tests. The lander's 4.1 GB workspace returns once round 2 lands.
+
+Until 11:42 on 2026-10-20 the next step was, from 07:44 on 2026-10-20: run `pnpm db:migrate` on the dev database whenever an agent adds a migration, before e2e runs or Will tests. Every full test suite takes the shared lock (scratchpad `heavy.lock`) first; clear `$TMPDIR` files untouched for 20 minutes at each tracker tick; check `df -h /` and the load average before fanning out more than 5 agents; restart the dev server with a clean `.vite` cache (scratchpad `wiring/dev.sh`) before Will tests.
+
+Until 07:44 on 2026-10-20 the next step was, from 07:30 on 2026-10-20: every full test suite takes the shared lock (scratchpad `heavy.lock`) first; clear `$TMPDIR` files untouched for 20 minutes at each tracker tick; check `df -h /` and the load average before fanning out more than 5 agents; restart the dev server with a clean `.vite` cache (scratchpad `wiring/dev.sh`) before Will tests.
+
+Until 07:30 on 2026-10-20 the next step was, from 07:16 on 2026-10-20: clear `$TMPDIR` files untouched for 20 minutes, not 60, at each tracker tick; check `df -h /` before fanning out more than 5 agents; restart the dev server with a clean `.vite` cache (scratchpad `wiring/dev.sh`) before Will tests and after any agent changes a package the app pre-bundles.
+
+Until 07:16 on 2026-10-20 the next step was: Restart the dev server with a clean `.vite` cache (scratchpad `wiring/dev.sh`) before Will tests, and after any agent changes a package the app pre-bundles. Reopen if "Outdated Optimize Dep" shows after such a restart. Keep the 60-minute `$TMPDIR` cleanup at each tracker tick, and check `df -h /` before fanning out more than 5 agents.
 
 Until about 02:58 on 2026-10-20 the next step was: none open. Keep the 60-minute `$TMPDIR` cleanup at each tracker tick, and check `df -h /` before fanning out more than 5 agents. Reopen if a full run fails with SQLSTATE 53300 again or the disk drops below 5 GiB.
 
@@ -48,4 +102,6 @@ Until about 02:27 on 2026-10-20 the next step was: raise `max_connections` to 30
 
 ## Questions for Will
 
-None. Open for the lead: should `max_connections=300` land in `docker-compose.yml` for everyone, or stay a local setting? Best guess: land it, since any contributor who runs the suites in parallel hits the same limit. (Answered about 02:27 on 2026-10-20: it is in `docker-compose.yml`, so it reaches everyone when committed.)
+- **Cap the fleet at about 8 agents at a time** to stretch the second account, finishing the review fixes and landing first? The lead offered it at 11:42:48 on 2026-10-20; about 15 agents run now, plus their sub-agents. No recommendation is on record. ([Decisions for Will](decisions-for-will.md), row 8.)
+
+Until 11:42 on 2026-10-20 this section read: None. Open for the lead: should `max_connections=300` land in `docker-compose.yml` for everyone, or stay a local setting? Best guess: land it, since any contributor who runs the suites in parallel hits the same limit. (Answered about 02:27 on 2026-10-20: it is in `docker-compose.yml`, so it reaches everyone when committed.)

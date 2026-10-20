@@ -3,8 +3,8 @@ title: Infrastructure as code (Neon and Electric through Alchemy)
 status: done
 area: infra
 owner: IaC agent (finished); Will (go-ahead for the first deploy)
-updated: 2026-10-19
-links: [../infrastructure.md, ../decisions/0001-electric-postgres-tanstack-db.md, durable-answering.md, land-and-deploy-mvp.md, decisions-for-will.md, host-agnostic-flows.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, cloudflare-flow-host.md]
+updated: 2026-10-20
+links: [review-round-4.md, ../infrastructure.md, ../decisions/0001-electric-postgres-tanstack-db.md, durable-answering.md, land-and-deploy-mvp.md, decisions-for-will.md, host-agnostic-flows.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, cloudflare-flow-host.md]
 ---
 
 ## What
@@ -73,7 +73,12 @@ Will: "Do we have infra as code for everything including postgres? ... Since we 
 
 - 23:25 to 23:39: W5 declared the `FlowExecution` Durable Object in `alchemy.run.ts`, one per remote flow execution, over Postgres schema `smithers_flows` through the same Hyperdrive config. 23:39: W5 reported that the production plan passes ([Cloudflare flow host](cloudflare-flow-host.md)). Open: `db:migrate` doesn't apply the engine's own migrations; they run on the first alarm.
 
+- **11:01 on 2026-10-20: [review round 4](review-round-4.md)'s R4-13 (P2, Claude Fable P2-2, source-verified against Cloudflare's Workers Logs docs): the Electric secret lands in Workers Logs.** `infra/ElectricGateway.ts:83` reads `?secret=` from the gateway's inbound URL and compares it with `!==`; `:59-72` declares the gateway with `observability.logs.invocationLogs: true, persist: true`, and a fetch invocation log records the request URL with its query string. So every shape request from ChatApi writes `…&secret=<ELECTRIC_SECRET>` into the gateway's persisted logs, and anyone with Workers Logs read access holds a secret that bypasses ChatApi's throttle, actor checks and column lists against everything Electric replicates. Rotation happens only when Alchemy's `Random` is replaced. ChatApi's logs also hold `GET /api/auth/callback?code=…&state=…`; that code is single-use and PKCE-bound, so low. Fix: between ChatApi and the gateway carry the secret in an `authorization` header, compare it with `Core.Signature.constantTimeEqual` as `worker/SignIn.ts:169-170` does, and add `secret=` only on the hop to the container; or turn invocation logs off for the gateway. Unrouted by 11:07.
+- Status stays done: a source-verified P2 waits for the lead's ruling (round 4 tracker rule). The production deploy still waits on Will's yes ([land and deploy](land-and-deploy-mvp.md)).
+
 ## Next
+
+From 11:07 on 2026-10-20, first: the lead's ruling on round 4's R4-13, the Electric secret in the gateway's persisted logs, before the first production deploy ([review round 4](review-round-4.md)). Then:
 
 - Deploying: `pnpm deploy` (stage `prod`) only on Will's explicit yes, after [land and deploy](land-and-deploy-mvp.md)'s code review and [sign-in](sign-in.md).
 - Add `CODE_STORAGE_KEY` to deploy secrets once R3 of [repo clone and view](repo-clone-and-view.md) binds it. (Saving `CLOUDFLARE_ACCOUNT_ID` and `NEON_ORG_ID` is done: `apps/mvp/.env`, about 22:18.)

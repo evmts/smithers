@@ -10,6 +10,8 @@ Only items 1, 2 and 3 are proposed for the MVP, each trimmed to that loop. Every
 
 **Will, 2026-10-19:** "it's more or less right". He also said: "Don't worry about the mvp I gave you a list of things we are building that's what we are building now ... once we finish everything we got so far I need to test the app review the code". Work follows his feature list (features 1 to 8). This file is reference only.
 
+**Superseded for checks at 13:21:27 on 2026-10-20** ([no GitHub Actions](../work/no-github-actions.md)): Smithers has no GitHub Actions, check-run or commit-status support. "Checks" below means the Smithers flow runs on a PR's head SHA ([0012](../decisions/0012-git-end-to-end.md) decision 12).
+
 ## Proposed MVP (trimmed)
 - [ ] **1. TODOs, minimum:** create a TODO from chat, the agent works it on its own branch, see its status, drop it. *Cut:* insert, amend and move on a stack; TODOs from issues.
 - [ ] **2. Review and merge, minimum:** see the PR's diff and checks, and a person merges. Agents never approve or merge. *Cut:* evidence views, revocable pre-approval, stack-order enforcement.

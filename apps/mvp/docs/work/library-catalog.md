@@ -4,7 +4,7 @@ status: done
 area: process
 owner: library catalog agent
 updated: 2026-10-20
-links: [agent-root-browser-safe.md, declared-import-exceptions.md, ../../../../docs/libraries.md, ../../../../AGENTS.md, web-standard-globals-rule.md, model-endpoint.md, integrations-browser-safe-root.md, durable-browser-engine.md, agent-ui-rendering.md, flows-root-platform-neutral.md, b1-follow-ups.md, platform-cloudflare-edge-cache.md, agent-root-browser-safe.md, known-host-access-burn-down.md, observability.md]
+links: [agent-root-browser-safe.md, declared-import-exceptions.md, ../../../../docs/libraries.md, ../../../../AGENTS.md, web-standard-globals-rule.md, model-endpoint.md, integrations-browser-safe-root.md, durable-browser-engine.md, agent-ui-rendering.md, flows-root-platform-neutral.md, b1-follow-ups.md, platform-cloudflare-edge-cache.md, agent-root-browser-safe.md, known-host-access-burn-down.md, observability.md, land-to-main.md]
 ---
 
 ## What
@@ -60,6 +60,7 @@ Will, after the lead called a model over raw HTTP: "We are the maintainers of sm
 - About 02:06 on 2026-10-20: the [repo checks](repo-checks-green.md) declared two deep-import exceptions, `model-host` → `@smthrs/cli/Catalog` and `rpc` → `@smthrs/canonical` subpaths ([declared import exceptions](declared-import-exceptions.md)).
 - About 02:26 on 2026-10-20, the sandbox host-boundary agent: `docs/libraries.md` gained "Known violations: a library module reaches the host at run time", the 10 modules on the gate's `KNOWN_HOST_ACCESS` list, and its gate paragraph now describes the stricter `HiddenHostAccess` rules ([known host access](known-host-access-burn-down.md), [flows root](flows-root-platform-neutral.md)). A2b fixed a catalog row for the Electric subset removal (02:18, [observability](observability.md)).
 - 02:35: the `@smthrs/std` row still says Node and lists `src/NodeLanguageServer.ts` and `src/internal/HttpNetwork.ts` under "Known violations", and the `@smthrs/agent` row still says "All". Both change with the [agent root](agent-root-browser-safe.md) agent's report: `NodeLanguageServer` has moved to `platform-node`, and `HttpNetwork` no longer imports `node:dns` or `node:net`.
+- 13:04:55 on 2026-10-20: the `docs/libraries.md` rows for web pages and `ModelStep.model` landed on `main` in `c9d1e0c5ed` ([land to main](land-to-main.md)).
 
 ## Next
 

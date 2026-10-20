@@ -2,9 +2,9 @@
 title: Land and deploy the new app
 status: blocked
 area: process
-owner: Will (code review)
+owner: Will (yes to deploy). Landing on `main`: the lander agent from 06:42:50 on 2026-10-20 ([land to main](land-to-main.md)). Until 06:39 on 2026-10-20: Will (code review)
 updated: 2026-10-20
-links: [app-wiring.md, ../infrastructure.md, ../../../../AGENTS.md, infrastructure-as-code.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, durable-browser-engine.md, sign-in.md, integrations-browser-safe-root.md, gitremote-unicode-branches.md, integrations-effect-httpclient.md, flows-root-platform-neutral.md, flows-and-agent.md, cloudflare-flow-host.md, repo-checks-green.md, local-first.md, pwa.md, agent-ui-rendering.md, repo-clone-and-view.md, code-reviews.md]
+links: [site-deployment-test.md, land-to-main.md, app-wiring.md, ../infrastructure.md, ../../../../AGENTS.md, infrastructure-as-code.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, durable-browser-engine.md, sign-in.md, integrations-browser-safe-root.md, gitremote-unicode-branches.md, integrations-effect-httpclient.md, flows-root-platform-neutral.md, flows-and-agent.md, cloudflare-flow-host.md, repo-checks-green.md, local-first.md, pwa.md, agent-ui-rendering.md, repo-clone-and-view.md, code-reviews.md]
 ---
 
 ## What
@@ -14,6 +14,8 @@ Push the new app's commits to `main` and deploy it with Alchemy, so Will can tes
 ## Why
 
 Root `AGENTS.md`: development work lands on `main` and deploys through the existing workflow. Will reviews this app's code before it moves: "I will review the code before moving on."
+
+06:39:37 on 2026-10-20, Will reversed the review gate for landing: "let's get all thee done. also before I mentioned don't merge it into main right away I changed mind everything should be merged into main even before I review exiting code". Landing is now [land to main](land-to-main.md). Deploying still waits on his explicit yes.
 
 ## State
 
@@ -48,12 +50,17 @@ Root `AGENTS.md`: development work lands on `main` and deploys through the exist
 
 - 03:07 on 2026-10-20, scratchpad `wiring/plan.log`: **a read-only production `alchemy plan` by the wiring agent**, with the deploy's credential mapping (the GitHub App's client ID and secret from `GH_CLIENT_ID` and `GH_CLIENT_SECRET`; Code Storage org `smithers` and its key). 8 to create, 7 binding changes, 1 task (`ChatMigrations`). `ChatApi/Cron` is gone from the list, as the [app wiring](app-wiring.md) step planned; `ChatApi/FlowExecution`, `SessionSecret`, Electric and `ElectricGateway` are in it. Nothing deployed.
 - 03:12 to 03:16 on 2026-10-20: the first full real-browser e2e run of the wired app: 24 of 36 passed; the wiring agent is fixing the 12 reds. The agent-root SDK agent reported done at 03:15:18. Nothing is committed ([app wiring](app-wiring.md), [agent root in the browser](agent-root-browser-safe.md)).
+- **05:54 on 2026-10-20: the app is ready for Will to test.** The wiring agent reported done (final fresh-state run 36 passed, 1 skipped; 496 unit tests at 100%; typecheck clean; `docs:check` green; the prod plan shows no cron), and the lead opened http://localhost:1337/app for Will ([app wiring](app-wiring.md)). The Fable review started about 05:54 ([code reviews](code-reviews.md)). Still open before landing: the [plan identity](plan-identity-across-deploys.md) fix, the Fable findings, Will's review and his callback URL ([sign-in](sign-in.md)). Nothing is committed. Status stays blocked on Will's review.
+- **06:39:37 on 2026-10-20: landing no longer waits on Will's review** (Why, above). 06:42:50: the lead started a lander that commits finished work by area and pushes `main`, with no deploy ([land to main](land-to-main.md)). By 06:55, `main@origin` is still `fe9800eec5` (06:13) and the 19 local commits sit directly on it; nothing is pushed. Status stays `blocked`: what remains in this note is the deploy, which waits on Will's yes.
+- **07:30:21 on 2026-10-20: round 1 landed** on `main` (`bba8df6fab`, 28 commits, the 05:58 snapshot) with no deploy; the push triggers only the mirror to Smithers Cloud ([land to main](land-to-main.md)). One site test is red ([site deployment test](site-deployment-test.md)). Status stays `blocked` on Will's yes to deploy.
 
 ## Next
 
-After Will's review: commit the agents' work atomically, push to `main`, `alchemy deploy`, then run the e2e suite and `pnpm bench` against the live URL.
+From 06:42 on 2026-10-20: the lander pushes finished work to `main` in rounds ([land to main](land-to-main.md)). On Will's yes: `alchemy deploy`, then the e2e suite and `pnpm bench` against the live URL.
+
+Until 06:39 on 2026-10-20 the next step was: After Will's review: commit the agents' work atomically, push to `main`, `alchemy deploy`, then run the e2e suite and `pnpm bench` against the live URL.
 
 ## Questions for Will
 
-- Your review of the app's code. (Will, 23:00: after the current feature list is finished.)
+- Your review of the app's code. (Will, 23:00: after the current feature list is finished. 06:39:37 on 2026-10-20: it no longer gates landing on `main`.)
 - Deploy the production stack now, or after the review and sign-in? Recommended: after. Deploying waits on your explicit yes.

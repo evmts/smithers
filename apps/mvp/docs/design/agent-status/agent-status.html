@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent status</title>
+<style>
+/* The Paper palette, copied from @smthrs/ui-styleguide's standaloneThemeCss (light, then dark). */
+:root { color-scheme:light; --font-sans:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; --font-mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  --bg:#f7f4ee; --text:#211d18; --text-muted:#665f54; --text-faint:#6c655a; --surface:#fffefa; --surface-2:#efeae0; --border:rgba(33,29,24,.08); --border-strong:rgba(33,29,24,.14); --border-solid:#e4ddcf; --inverse-bg:#211d18; --inverse-text:#f7f4ee;
+  --brand:#0f766e; --success:#0b5b57; --danger:#a4442a; --warning:#8c5a08; --shadow-rgb:33 29 24; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme:dark; --bg:#0d1514; --text:#ece7db; --text-muted:#a8a193; --text-faint:#969083; --surface:#131b1a; --surface-2:#1a2422; --border:rgba(236,231,219,.1); --border-strong:rgba(236,231,219,.18); --border-solid:#293532; --inverse-bg:#ece7db; --inverse-text:#211d18; --brand:#45c4b2; --success:#7fbfb3; --danger:#d97757; --warning:#f0c169; --shadow-rgb:0 0 0; } }
+:root[data-theme="dark"] { color-scheme:dark; --bg:#0d1514; --text:#ece7db; --text-muted:#a8a193; --text-faint:#969083; --surface:#131b1a; --surface-2:#1a2422; --border:rgba(236,231,219,.1); --border-strong:rgba(236,231,219,.18); --border-solid:#293532; --inverse-bg:#ece7db; --inverse-text:#211d18; --brand:#45c4b2; --success:#7fbfb3; --danger:#d97757; --warning:#f0c169; --shadow-rgb:0 0 0; }
+:root { --brand-soft:color-mix(in srgb, var(--brand) 10%, var(--surface)); --warning-soft:color-mix(in srgb, var(--warning) 12%, var(--surface)); --warning-border:color-mix(in srgb, var(--warning) 45%, transparent); --danger-soft:color-mix(in srgb, var(--danger) 10%, var(--surface)); --ring:color-mix(in srgb, var(--brand) 22%, transparent); }
+* { box-sizing:border-box; }
+body { margin:0; font:13px/1.5 var(--font-sans); background:var(--bg); color:var(--text); }
+
+/* The page around the mock: controls and the frame. */
+.page { max-width:1240px; margin:0 auto; padding:16px; }
+.controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+.controls fieldset { border:0; margin:0; padding:0; display:flex; gap:4px; flex-wrap:wrap; }
+.controls button { font:inherit; font-size:12px; height:28px; padding:0 10px; border-radius:999px; border:1px solid var(--border-strong); background:var(--surface); color:var(--text); cursor:pointer; }
+.controls button[aria-pressed="true"] { background:var(--inverse-bg); color:var(--inverse-text); border-color:transparent; }
+.chrome { position:relative; border:1px solid var(--border-strong); border-radius:12px; overflow:hidden; background:var(--bg); box-shadow:0 12px 32px rgb(var(--shadow-rgb) / .1); margin:0 auto; }
+.chrome[data-width="desktop"] { width:min(1200px, 100%); }
+.chrome[data-width="phone"] { width:390px; max-width:100%; }
+.tab { display:flex; align-items:center; gap:8px; height:34px; padding:0 12px; background:var(--surface-2); border-bottom:1px solid var(--border); font-size:12px; color:var(--text-muted); }
+.tab b { font-weight:500; color:var(--text); background:var(--surface); padding:4px 10px; border-radius:8px 8px 0 0; }
+
+/* The app, as apps/mvp lays it out: header, conversation, composer. */
+.app { position:relative; height:720px; display:flex; flex-direction:column; gap:16px; padding:16px; max-width:48rem; margin:0 auto; }
+.chrome[data-width="phone"] .app { height:760px; gap:12px; }
+header { display:flex; align-items:center; gap:8px; justify-content:flex-end; min-height:32px; }
+header .grow { flex:1; }
+header .who { color:var(--text); }
+header .quiet { color:var(--text-muted); font-size:12px; }
+.conversation { flex:1; min-height:0; overflow:auto; display:flex; flex-direction:column; gap:12px; }
+.msg { max-width:80%; padding:9px 14px; border-radius:18px; font-size:15px; line-height:1.45; }
+.msg.user { align-self:flex-end; background:var(--inverse-bg); color:var(--inverse-text); }
+.msg.assistant { align-self:flex-start; background:var(--surface-2); color:var(--text); }
+.answer { align-self:flex-start; display:flex; flex-direction:column; gap:6px; max-width:88%; }
+.meta { display:flex; gap:6px; align-items:center; }
+.dots { display:inline-flex; gap:4px; padding:4px 0; }
+.dots i { width:6px; height:6px; border-radius:50%; background:var(--text-muted); animation:dot 1.2s infinite; }
+.dots i:nth-child(2) { animation-delay:.2s } .dots i:nth-child(3) { animation-delay:.4s }
+@keyframes dot { 0%,100% { opacity:.25 } 50% { opacity:1 } }
+.composer { display:flex; justify-content:center; }
+.composer button { font:inherit; height:32px; padding:0 12px; border-radius:6px; border:1px solid var(--border-strong); background:var(--surface); color:var(--text); }
+.composer kbd { font:11px var(--font-sans); color:var(--text-muted); margin-left:6px; }
+
+/* AgentStatusPill: glyph, tone and one word. */
+.pill { display:inline-flex; align-items:center; gap:6px; height:24px; padding:0 10px 0 8px; border-radius:999px; font-size:12px; font-weight:650; border:1px solid transparent; white-space:nowrap; }
+button.pill { font-family:inherit; cursor:pointer; }
+.pill .g { font-size:11px; line-height:1; }
+.pill[data-state="working"] { background:var(--brand-soft); color:var(--brand); }
+.pill[data-state="working"] .g { animation:pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:.35 } }
+.pill[data-state="waiting"] { background:transparent; border-color:var(--border-strong); color:var(--text-muted); }
+.pill[data-state="needs_you"] { background:var(--warning-soft); border-color:var(--warning-border); color:var(--warning); }
+.pill[data-state="failed"] { background:var(--danger-soft); color:var(--danger); }
+.pill[data-state="answered"] { background:transparent; color:var(--text-muted); padding-left:0; }
+.pill .n { font-variant-numeric:tabular-nums; background:var(--warning); color:var(--surface); border-radius:999px; padding:0 6px; font-size:11px; }
+
+/* NeedsYouCard. */
+.card { border:1px solid var(--warning-border); background:var(--warning-soft); border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+.card p { margin:0; font-size:14px; }
+.card .row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.card input { flex:1 1 180px; min-width:0; height:32px; padding:0 10px; border-radius:6px; border:1px solid var(--border-solid); background:var(--surface); color:var(--text); font:14px var(--font-sans); }
+.card input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--ring); }
+.btn { font:inherit; font-size:13px; height:32px; padding:0 12px; border-radius:6px; border:1px solid var(--border-strong); background:var(--surface); color:var(--text); cursor:pointer; }
+.btn.primary { background:var(--brand-soft); color:var(--brand); border-color:color-mix(in srgb, var(--brand) 40%, transparent); font-weight:650; }
+.btn.ghost { border-color:transparent; background:transparent; color:var(--text-muted); }
+.answered { display:flex; flex-direction:column; gap:2px; font-size:13px; color:var(--text-muted); padding-left:2px; }
+.answered q { color:var(--text); quotes:none; }
+
+/* ToastStack: bottom-left on desktop, full width above the composer on a phone. */
+.stack { display:flex; flex-direction:column; gap:6px; width:100%; }
+.toast { display:flex; align-items:center; gap:8px; padding:8px 8px 8px 12px; border-radius:10px; background:var(--surface); border:1px solid var(--border-strong); border-left:3px solid var(--warning); box-shadow:0 4px 12px rgb(var(--shadow-rgb) / .1), 0 16px 48px rgb(var(--shadow-rgb) / .14); font-size:13px; }
+.toast .g { color:var(--warning); }
+.toast .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.toast .x { width:28px; height:28px; border:0; background:transparent; color:var(--text-muted); border-radius:6px; cursor:pointer; font-size:14px; }
+
+/* Annotations under each frame. */
+.notes { max-width:1200px; margin:12px auto 0; display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:8px; }
+.notes div { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:12px; color:var(--text-muted); }
+.notes b { color:var(--text); display:block; font-size:12px; margin-bottom:2px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="controls" role="toolbar" aria-label="Mock controls">
+    <fieldset aria-label="State" id="states"></fieldset>
+    <fieldset aria-label="Theme" id="themes"></fieldset>
+    <fieldset aria-label="Width" id="widths"></fieldset>
+  </div>
+  <div class="chrome" id="chrome">
+    <div class="tab"><b id="title">Smithers</b><span>localhost:1337/app</span></div>
+    <div class="app" id="app"></div>
+  </div>
+  <div class="notes" id="notes"></div>
+</div>
+<script>
+const STATES = {
+  working: { label: "Working", note: "The answer streams. Header: Working, pulsing brand. No pill on the answer itself: the streaming answer is enough." },
+  waiting: { label: "Waiting", note: "A second question waits its turn behind the first, which needs you. The header shows the most urgent state: Needs you. The waiting answer carries a quiet Waiting pill." },
+  needs_you: { label: "Needs you", note: "The agent asked (agent/ask, kind question). The card holds the question in the agent's words, its options and a field. Header pill and toast are gold; the title counts open questions." },
+  approval: { label: "Approval", note: "kind approval: Approve or Deny. The toast's one action is still Answer, which scrolls to and focuses the card." },
+  answered: { label: "Answered", note: "The card collapses to the answer. The run reports working again, so the header shows Working and the toast is gone on every device." },
+  failed: { label: "Failed", note: "Settled failed. The answer keeps 0002's Couldn't answer and Retry; the header shows Failed until a newer question." },
+  done: { label: "Done", note: "Settled done. Nothing extra: the answer is the result." },
+}
+const params = new URLSearchParams(location.search)
+let state = params.get("state") ?? "needs_you"
+let theme = params.get("theme") ?? "light"
+let width = params.get("w") ?? "desktop"
+
+const pill = (s, word, extra = "") => `<span class="pill" data-state="${s}"><span class="g" aria-hidden="true">${{ working: "◌", waiting: "○", needs_you: "◆", failed: "✕", answered: "✓" }[s]}</span>${word}${extra}</span>`
+const headerPill = (s, word, count) => s === null ? "" :
+  `<button class="pill" data-state="${s}" aria-label="Smithers: ${word}"><span class="g" aria-hidden="true">${{ working: "◌", waiting: "○", needs_you: "◆", failed: "✕" }[s]}</span>${word}${count > 1 ? ` <span class="n">${count}</span>` : ""}</button>`
+const question = `<div class="msg user">Deploy the docs preview, please.</div>`
+const card = `<div class="card" role="group" aria-label="Needs you">
+  <div>${pill("needs_you", "Needs you")}</div>
+  <p>Which branch should I deploy?</p>
+  <div class="row"><button class="btn">main</button><button class="btn">docs-v2</button></div>
+  <div class="row"><input id="field" placeholder="Your answer" aria-label="Your answer"><button class="btn primary" onclick="go('answered')">Answer</button></div>
+</div>`
+const approval = `<div class="card" role="group" aria-label="Needs you">
+  <div>${pill("needs_you", "Needs you")}</div>
+  <p>Delete the stale preview <code>docs-v1</code>?</p>
+  <div class="row"><button class="btn primary" onclick="go('answered')">Approve</button><button class="btn">Deny</button></div>
+</div>`
+const toast = (text) => `<div class="stack" role="region" aria-label="Notifications">
+  <div class="toast"><span class="g" aria-hidden="true">◆</span><span class="t"><b>Needs you</b> · ${text}</span><button class="btn primary" onclick="document.getElementById('field')?.focus()">Answer</button><button class="x" aria-label="Hide">×</button></div>
+</div>`
+
+function view() {
+  const header = (p) => `<header>${p}<span class="grow"></span><span aria-hidden="true">◐</span><span class="who">ben</span><span class="quiet">Sign out</span></header>`
+  let body = "", hp = "", title = "Smithers", stack = ""
+  switch (state) {
+    case "working":
+      hp = headerPill("working", "Working")
+      body = `${question}<div class="answer"><div class="msg assistant"><span class="dots" aria-label="Smithers is answering"><i></i><i></i><i></i></span></div></div>`
+      break
+    case "waiting":
+      hp = headerPill("needs_you", "Needs you", 1); title = "(1) Smithers"
+      body = `${question}<div class="answer">${card}</div>
+        <div class="msg user">Also bump the docs version.</div>
+        <div class="answer"><div class="msg assistant"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></div><div class="meta">${pill("waiting", "Waiting")}</div></div>`
+      stack = toast("Which branch should I deploy?")
+      break
+    case "needs_you":
+      hp = headerPill("needs_you", "Needs you", 1); title = "(1) Smithers"
+      body = `${question}<div class="answer">${card}</div>`
+      stack = toast("Which branch should I deploy?")
+      break
+    case "approval":
+      hp = headerPill("needs_you", "Needs you", 1); title = "(1) Smithers"
+      body = `<div class="msg user">Clean up old previews.</div><div class="answer">${approval}</div>`
+      stack = toast("Delete the stale preview docs-v1?")
+      break
+    case "answered":
+      hp = headerPill("working", "Working")
+      body = `${question}<div class="answer"><div class="msg assistant"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></div>
+        <div class="answered">${pill("answered", "Answered")}<q>docs-v2</q></div></div>`
+      break
+    case "failed":
+      hp = headerPill("failed", "Failed")
+      body = `${question}<div class="answer"><div class="msg assistant" style="color:var(--text-muted)">Couldn't answer</div><div class="meta"><button class="btn ghost">Retry</button></div></div>`
+      break
+    case "done":
+      hp = ""
+      body = `${question}<div class="answer"><div class="msg assistant">Deployed docs-v2 to the preview.</div><div class="answered">${pill("answered", "Answered")}<q>docs-v2</q></div></div>`
+      break
+  }
+  document.getElementById("app").innerHTML = `${header(hp)}${stack}<section class="conversation" aria-label="Conversation">${body}</section><div class="composer"><button>Chat<kbd>⌘K</kbd></button></div>`
+  document.getElementById("title").textContent = title
+  document.getElementById("notes").innerHTML = `<div><b>${STATES[state].label}</b>${STATES[state].note}</div>
+    <div><b>Header</b>Most urgent first: Needs you (count above 1), else the latest answer's Working, Waiting or Failed, else nothing.</div>
+    <div><b>Tab title</b>(N) Smithers while N of your runs need you.</div>
+    <div><b>Other devices</b>Every view reads the synced runs row; an answer from any device resumes the run.</div>`
+  document.documentElement.dataset.theme = theme
+  document.getElementById("chrome").dataset.width = width
+  for (const [id, values, current, set] of [["states", Object.keys(STATES), state, (v) => state = v], ["themes", ["light", "dark"], theme, (v) => theme = v], ["widths", ["desktop", "phone"], width, (v) => width = v]]) {
+    const host = document.getElementById(id)
+    host.innerHTML = values.map((v) => `<button aria-pressed="${v === current}" data-v="${v}">${STATES[v]?.label ?? v}</button>`).join("")
+    host.querySelectorAll("button").forEach((b) => b.onclick = () => { set(b.dataset.v); view() })
+  }
+}
+function go(next) { state = next; view() }
+view()
+</script>
+</body>
+</html>

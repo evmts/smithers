@@ -180,8 +180,9 @@ remain enforced for customer repositories.
   bootstrap/repair.
 - Once stage 1 passes J1 and J2, run the coding factory and change automation
   on that install, and `issue-sweep` stops pushing straight to `main` (M-31).
-  GitHub keeps `main`, issues, pull requests, reviews and checks (M-22). Do not
-  build a parallel GitHub Actions factory.
+  GitHub keeps `main`, issues, pull requests and reviews (M-22). Smithers has
+  no GitHub Actions support; a pull request's checks are Smithers flow runs
+  (M-52). Do not build a parallel GitHub Actions factory.
 - Commit and push repository maintenance directly to `main` with `jj`; do not
   open PRs for maintenance (Will, 2026-10-13). This overrides PR-only landing
   and agent `main` movement restrictions for source maintenance; the product's

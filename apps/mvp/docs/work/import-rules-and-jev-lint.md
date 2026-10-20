@@ -4,7 +4,7 @@ status: in-progress
 area: process
 owner: rules agent; the lead refreshes at session end
 updated: 2026-10-20
-links: [repo-view-package-split.md, repo-checks-green.md, ../rules.md, ../../AGENTS.md, ../../../../docs/libraries.md, model-host-effect-boundary.md, sync-service-di-test-seam.md, route-ban-any-receiver.md, code-storage-spend-caps.md, host-agnostic-flows.md, ../decisions/0011-the-agent-runs-in-the-browser.md]
+links: [review-round-4.md, repo-view-package-split.md, repo-checks-green.md, ../rules.md, ../../AGENTS.md, ../../../../docs/libraries.md, model-host-effect-boundary.md, sync-service-di-test-seam.md, route-ban-any-receiver.md, code-storage-spend-caps.md, host-agnostic-flows.md, ../decisions/0011-the-agent-runs-in-the-browser.md]
 ---
 
 ## What
@@ -36,7 +36,15 @@ Will: "For rules like don't use effect in tsx it would be great if we did a PACK
 
 - 02:32 to 02:43 on 2026-10-20: `//apps/mvp:importRules` has one violation in 218 files, `src/features/repo/components/RepoPage.tsx:4` importing `@smthrs/ui/adapters/repo-view` (`rootImportsOnly`). It stays red until Will answers A (one exception) or B (its own package, recommended) ([repo-view package split](repo-view-package-split.md)). From 02:24 to 02:40 no `smithers-build` target evaluated, because `std/PACKAGE.ts` named a moved file; fixed on disk 02:40:41 ([repo checks](repo-checks-green.md)).
 
+- **11:04:02 on 2026-10-20: [review round 4](review-round-4.md)'s R4-20 (P2, Claude Opus P2-9; the glob checked by a fork with `matchesGlob`): the app's import rules never read `worker/` subdirectories.** `apps/mvp/PACKAGE.ts:27-34` (`appSources`) and `:324` (`workerSources`) use `worker/!(*.test).ts`, which matches top-level files only. So the durability and boundary rules (`Effect.run*`, `setTimeout`, `Effect.retry`, `Schedule.*`, `*.waitUntil`, every `workerSources` rule) skip `worker/github/**`, `worker/branch/**` and `worker/flows/**`: the GitHub write path, the terminals and every server flow. "A gate that can't fail there." Fix: `worker/**/!(*.test).ts`, excluding `worker/test/**`. Unrouted by 11:07.
+- Round 4's P3s on the gates: Opus P3-9: the gate is red on `state.waitUntil` in `worker/BranchSandboxes.ts:128` (a fork ran `packages/repo-targets/scripts/import-rules.mjs`); Opus P3-11: `SdkRules`' platform-neutral globs miss `node:fs/promises` and bare built-ins (`packages/repo-targets/src/SdkRules.ts:93`); Fable S-P2-2: the same line forbids `crypto` only as a module import, so no gate sees ambient `crypto.subtle`; Opus P3-13: `RunInspection.ts:25-29` deep-imports three packages, and `@smthrs/jj`'s `retryGitIndexLock` is a hand-rolled recursive sleep loop of up to 1,200 tries in library code. Fable verified the SDK import rules pass on `effect-tanstack-db`, `effect-electric` and `effect-code-storage`.
+- Opus's assessment: platform code stays in host packages and the app imports from roots, "so the rule holds by habit rather than by gate."
+
 ## Next
+
+From 11:07 on 2026-10-20: the lead routes round 4's R4-20: widen the worker globs, then fix what the gate finds in `worker/github`, `worker/branch` and `worker/flows`; and the gate P3s above ([review round 4](review-round-4.md)).
+
+Until 11:07 on 2026-10-20 the next steps were:
 
 - The [model-host Effect boundary](model-host-effect-boundary.md) report (started about 21:45; the agent stopped by accident at 22:08 and restarted about 22:20).
 - The rules agent's follow-ups: per-package `ImportRules` for the SDK, the target index, `docs:sync`, and a script that keeps `AGENTS.md` and `rules.md` in step.

@@ -7,7 +7,7 @@ Status: accepted (Will, 2026-10-19; design panel: Opus as lead, and Sol). This r
 1. **Every read comes from the device.** `messages` is an Electric collection wrapped in TanStack DB's SQLite persistence: OPFS, through `@tanstack/browser-db-sqlite-persistence`. It syncs eagerly, one shape per conversation, and a reload resumes the shape from its stored offset and handle.
 2. **Every write goes through one durable outbox, `@tanstack/offline-transactions`.** An ask is an offline transaction, stored in IndexedDB before it is sent, retried by the library's own backoff, and restored after a reload or restart.
 3. **A queued question never overlays a synced row.** It lives in an in-memory `asking` collection, and views read `messages ∪ (unsent − messages) ∪ (asking − messages − unsent)` (the `unsent − messages` part since 2026-10-20: a delete the device store lost in a leader handover must not show a question twice). Only the server's routes write answer rows; since decision 0011, the asking browser's agent writes through them.
-4. **The focused tab leads the outbox, and an ask is accepted only into durable storage.** A custom `LeaderElection`, an option the library documents, takes the Web Lock with `steal` on focus; other tabs queue. An ask never takes the library's online-only path.
+4. **The focused tab leads the outbox, and an ask is accepted only into durable storage.** A custom `LeaderElection`, an option the library documents, takes the Web Lock with `steal` on focus; other tabs queue. An ask never takes the library's online-only path. As built (2026-10-20): `Outbox.lockLeader` over `@smthrs/platform-browser`'s `WebLock`, whose `take` steals the lock when the window gets focus, when anything in it gets focus (the composer), or when a person asks in a tab that doesn't lead; the tab that led stops sending and waits in line again.
 5. **A question the server refuses stays on the device** in a persisted `unsent` collection until the person edits or discards it.
 6. **Answers stream as Postgres row updates through Electric.** Durable Streams waits for a measured need.
 7. **The server answers a conversation's questions one at a time, in `position` order.** The composer never blocks.
@@ -68,7 +68,7 @@ The connection pill sits in the header, in an `aria-live="polite"` region, and a
 | Online, up to date | conversation only; the one animation is the dots on a streaming answer | none |
 | Asking online | the question shows in the same frame and the draft clears; the answer row shows once Postgres has it | none |
 | Offline | pill | `Offline` |
-| Asking offline | the question shows at the end, marked; the count rises; no answer placeholder, since nothing is answering | pill `Offline · 2`, badge `Queued` |
+| Asking offline | the question shows at the end, marked; the count rises; no answer placeholder, since nothing is answering; Edit (added 2026-10-20) takes it out of the outbox under the outbox's lock and moves its text to the composer ([chat](../features/chat.md#message-controls)) | pill `Offline · 2`, badge `Queued` + `Edit` |
 | Reading offline | the whole conversation from the device; Load earlier is instant | `Offline` |
 | Reload or restart offline | the shell from the service worker, rows from OPFS, queued questions restored | `Offline · 2` |
 | Reconnecting | no state of its own. `Queued` badges clear as each question reaches Postgres, then its answer streams; the pill hides once the shape is up to date and the outbox is empty | none |
@@ -95,20 +95,21 @@ The connection pill sits in the header, in an `aria-live="polite"` region, and a
 
 **The `ask` mutation** is an Effect, and the wrapper maps its errors onto the executor:
 1. POST, with one 15 s deadline over the whole request.
-2. On 202, `messages.awaitTxId(txid, 15 s)`. On 200, return if `messages.get(questionId)` is present, else `awaitMatch` on the id, so a row that synced long ago is never awaited as a new insert.
-3. **Refused (400, 409, 413):** upsert an `unsent` row keyed by `questionId` (a crash replay is harmless), then fail with `Refused`, which becomes `NonRetriableError` and rolls back `asking`.
-4. **Retry (network, 5xx, 408, 429, delivery timeout):** fail with `Retry`. The library retries 1 s doubling to 60 s, with jitter, FIFO and one at a time; delays reset on `online` or on Retry.
+2. On 202 or 200, start this device's agent, `chat/Answer` under the answer id (decision [0011](0011-the-agent-runs-in-the-browser.md)), and wait until its engine has recorded the run; the run goes on in the background. So the outbox entry outlives every moment the server holds a question no run will answer: a tab closed between the POST and the engine's record leaves the entry, and the next page sends it again (200) and starts the run. The engine starts an execution once. A start that fails (no engine in this tab, refused, the tab closing) is **Retry** (added 2026-10-20, review P1-1).
+3. On 202, `messages.awaitTxId(txid, 15 s)`. On 200, return if `messages.get(questionId)` is present, else `awaitMatch` on the id, so a row that synced long ago is never awaited as a new insert.
+4. **Refused (400, 409, 413):** upsert an `unsent` row keyed by `questionId` (a crash replay is harmless), then fail with `Refused`, which becomes `NonRetriableError` and rolls back `asking`.
+5. **Retry (network, 5xx, 408, 429, delivery timeout, a run not recorded):** fail with `Retry`. The library retries 1 s doubling to 60 s, with jitter, FIFO and one at a time; delays reset on `online` or on Retry.
 
 **Library rules the wrapper defuses.** In `retry/RetryPolicy.ts` (1.1.3), an `AbortError` is never retried, and our deadline aborts `fetch`. An error whose message contains "400", "401", "403" or "422" is never retried either. The wrapper throws only its own error names, with fixed messages, and has a regression test for each rule.
 
 **Admission.**
-- `transact` succeeds only when this tab leads and the outbox storage is durable. Steal-on-focus makes the composer's tab the leader before anyone can type.
+- `transact` succeeds only when this tab leads and the outbox storage is durable. Steal-on-focus makes the composer's tab the leader before anyone can type. An ask that still finds another tab leading is kept `unsent` (`not_admitted`) for the moment the steal takes, then sent from this tab.
 - In 1.1.3, a follower falls back to an online-only transaction, with no outbox and no retry. The wrapper never takes that path.
 - If the IndexedDB write fails, the commit rejects, `asking` rolls back, and the wrapper writes an `unsent` row with reason `not_admitted`.
 
 **Reconciliation.**
 - **Queued:** an `asking` row plus an IndexedDB entry.
-- **Stored:** Electric delivers the row, the anti-join hides `asking` in the same frame, and the mutation returns, so the transaction settles.
+- **Stored:** this device's engine has recorded the answer's run, Electric delivers the row, the anti-join hides `asking` in the same frame, and the mutation returns, so the transaction settles.
 - **Confirmed:** the library deletes the entry.
 - **Why `asking` is separate:** TanStack layers optimistic rows as whole-row snapshots ([3]), so an overlay on `messages` would mask the streamed answer and the server's `position`.
 - **A tab that loses leadership mid-send** leaves its own transaction unsettled. The new leader restores the entry and resends it, and the server dedupes. The stale `asking` row stays hidden by the anti-join until reload.
@@ -142,7 +143,7 @@ The connection pill sits in the header, in an `aria-live="polite"` region, and a
 **Prompting together** (later; no change to this design):
 - A `conversations` table and `messages.conversation_id`, with one shape per conversation (`where conversation_id = $1`). Electric's optimized clauses hold about 5,000 changes/s at any shape count ([5]).
 - `author_id`, null while signed out.
-- **Steer and cancel** become outbox mutations (`steer`, `cancel`), idempotent by client id. The running `chat/Answer` reads them between model turns as flow signals targeting its run id. Until `cancel` exists, a queued question can't be removed.
+- **Steer and cancel** become outbox mutations (`steer`, `cancel`), idempotent by client id. The running `chat/Answer` reads them between model turns as flow signals targeting its run id. Until `cancel` exists, a queued question can't be removed while it is being sent; one not being sent can be taken back with Edit (`Outbox.withdraw`, 2026-10-20).
 - The turn wait is already the queue several people need.
 - Presence and typing are ephemeral TTL rows, never outbox entries.
 
@@ -167,8 +168,7 @@ Collection.persisted(schema, { id, getKey, schemaVersion })                  // 
 Collection.make(schema, options, { persist?: { schemaVersion } })            // wraps persistedCollectionOptions
 Outbox.layer({ start: typeof startOfflineExecutor, collections, leader: Outbox.Leader, storage?: Outbox.Storage,
                mutations: Record<string, (p: { rows, idempotencyKey }) => Effect<void, Outbox.Refused | Outbox.Retry, R>> })
-Outbox.Leader.focusedTab(window)   // Web Locks: queued request; steal on focus; re-queue when stolen
-Outbox.Leader.single               // Node and one-tab tests
+Outbox.lockLeader({ lock, name })  // over a lock service (WebLock): queued request; `take` steals; re-queue when stolen
 interface Outbox {
   transact(name, ids: { id, idempotencyKey }, mutate: () => void): Effect<Transaction, NotAdmitted>  // sync
   admitted(tx): Effect<void, NotAdmitted>   // the IndexedDB write; distinct from settlement
@@ -203,6 +203,8 @@ interface Outbox {
 - **E7:** with Electric stopped at boot, the conversation renders from OPFS and the pill shows.
 - **E8:** Retry sends within 1 s.
 - **E9:** kill the page after admission, before the POST: the ask is restored and sent once.
+- **E9b (added 2026-10-20):** kill the page after ChatApi took the question, before the engine recorded its run: the page opened again sends it again and the agent answers (`e2e/local-first.spec.ts` "closed before its run started").
+- **E3b (added 2026-10-20):** two tabs online: a question asked in the tab that didn't lead is answered with the other tab still open, and asking back in the first works too (`e2e/local-first.spec.ts` "two tabs").
 - **E10:** a back/forward-cache restore reloads and shows the same state.
 
 **No-spinner proof:**
@@ -215,7 +217,7 @@ interface Outbox {
 1. **Dependency change** (see Consequences), alone at the bottom of the stack; it lands 2026-10-25.
 2. **Wrappers (§6) with tests** in `@smthrs/effect-tanstack-db` and `@smthrs/effect-electric`. Done 2026-10-19; `src/lib/collections.ts` is deleted.
 3. **Server, with HOST-PLAN W5:** the turn wait and the history bound. The POST contract is unchanged.
-4. **App:** `messages` becomes read-only, eager and persisted. Add `asking` with the outbox, `unsent`, the pill and the service worker. The composer stays enabled while an answer streams. Done 2026-10-20, with two changes the lead made on 2026-10-20: the outbox's leader is `Outbox.lockLeader` over `@smthrs/platform-browser`'s `WebLock` (no steal on focus; a tab that doesn't lead keeps its question `unsent` and sends it once it leads), and the device store stays on `@journeyapps/wa-sqlite`, the build the browser engine uses too.
+4. **App:** `messages` becomes read-only, eager and persisted. Add `asking` with the outbox, `unsent`, the pill and the service worker. The composer stays enabled while an answer streams. Done 2026-10-20, with two changes the lead made on 2026-10-20: the outbox's leader is `Outbox.lockLeader` over `@smthrs/platform-browser`'s `WebLock`, and the device store stays on `@journeyapps/wa-sqlite`, the build the browser engine uses too. The lead first built the leader without steal, so a tab that didn't lead kept its question `Not sent` until the leading tab closed, against Will's answer 1; review P2-3 restored steal the same day (`lockLeader`'s `take`, §1 item 4).
 5. **Docs and tests:** update [state.md](../state.md) and [chat.md](../features/chat.md), and add a status line in 0001 pointing here. In `e2e/local-first.spec.ts`, rewrite "offline ask", "flapping network" and "sync down while asking", which expect offline asks to fail. Done 2026-10-20.
 
 **Deleted:**
@@ -230,7 +232,7 @@ interface Outbox {
 | Risk | Recommended answer |
 |---|---|
 | Persisted collections are 0.x: a 7,000-line core with weekly releases | E3, E7, E10 and a 10-tab soak in CI. Without OPFS, reads fall back to memory; the IndexedDB outbox still keeps asks |
-| offline-transactions 1.1.3: followers are online-only; `WebLocksLeader` never queues, so no tab takes over when the leader leaves; the `AbortError` and substring retry rules | `Leader.focusedTab`, no online-only path, error mapping and regression tests; file both issues with TanStack |
+| offline-transactions 1.1.3: followers are online-only; `WebLocksLeader` never queues, so no tab takes over when the leader leaves; the `AbortError` and substring retry rules | `Outbox.lockLeader` with `take`, no online-only path, error mapping and regression tests; file both issues with TanStack |
 | Eager first open of a long conversation | Accept it at chat sizes; switch to `progressive` if first open takes over 1 s at 10k messages |
 | Storage eviction (Safari clears script storage after 7 days without use) | Call `navigator.storage.persist()` at boot and record the grant as a metric |
 | An app update while asks are queued | Stable mutation names, collection ids and row `v`; a test queues on build N and sends from build N+1 |

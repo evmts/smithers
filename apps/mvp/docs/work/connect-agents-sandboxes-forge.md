@@ -2,9 +2,9 @@
 title: Connect the agent, sandboxes and the forge (feature 7)
 status: todo
 area: infra
-owner: Panel S (Opus lead, Sol)
-updated: 2026-10-19
-links: [../decisions/0005-sandboxes-secrets-and-the-forge.md, ../decisions/0006-repo-clone-and-view.md, ../decisions/0008-auth.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, sandboxes.md, flows-and-agent.md, durable-browser-engine.md, model-endpoint.md]
+owner: unassigned; from 13:21:12 on 2026-10-20 it waits for the [branch terminal](branch-terminal.md) slice. Until 13:21: Panel S (Opus lead, Sol)
+updated: 2026-10-20
+links: [../decisions/0005-sandboxes-secrets-and-the-forge.md, ../decisions/0006-repo-clone-and-view.md, ../decisions/0008-auth.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, sandboxes.md, flows-and-agent.md, durable-browser-engine.md, model-endpoint.md, branch-terminal.md, secrets-proxy.md, todos-and-stack.md]
 ---
 
 ## What
@@ -30,10 +30,14 @@ Will, 22:42: "This is a great question! So we want the sandbox to only expose th
 - 22:42: **answered yes** (quote under Why). Recorded in 0005 under Q2. 0005 stays proposed until its budget question (Q3, asked 22:43) is answered ([sandboxes](sandboxes.md)). Nothing is built.
 - 22:45: 0005 Q3 deferred until we ship ([sandbox budgets](sandbox-budgets.md)). **All three of 0005's questions are settled**, so this item moves from designing to todo. 0005's status line in the file still reads "proposed". Nothing is built.
 - 23:02 on 2026-10-19: the lead's board: features 5 to 7 (sandboxes, secrets, and Qwen in sandboxes) are not started; they "wait for disk space and the agent". The Mac had about 10 GB free at 23:01, and the agent's first slice depends on B1 and the [model endpoint](model-endpoint.md).
+- 13:19:52 on 2026-10-20: the lead's list: "Branch sandboxes, secrets via an egress proxy, agent connected to sandboxes and the forge: not started".
+- 13:21:12: the lead: "Branch sharing, branch sandboxes, and connecting the agent to sandboxes: these build on the branch and terminal slice that's still running." So they wait for the [branch terminal](branch-terminal.md) builder. Of the group, only [secrets through an egress proxy](secrets-proxy.md) started (13:22:52), at a seam outside the container and terminal code.
 
 ## Next
 
-After the sandbox spike and the agent's first slice: the agent edits a file on a branch sandbox, runs the tests, and pushes to Code Storage.
+From 13:21 on 2026-10-20: after the [branch terminal](branch-terminal.md) slice and [sandboxes](sandboxes.md): the agent edits a file on a branch sandbox, runs the tests, and pushes to Code Storage. [TODOs and the stack](todos-and-stack.md) (Panel T, designing since 13:23) names this as what its later slices wait on.
+
+Until 13:21 on 2026-10-20 the next step was: after the sandbox spike and the agent's first slice: the agent edits a file on a branch sandbox, runs the tests, and pushes to Code Storage.
 
 ## Questions for Will
 

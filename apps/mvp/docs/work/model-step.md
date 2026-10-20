@@ -2,9 +2,9 @@
 title: ModelStep, the durable model call
 status: done
 area: sdk
-owner: W3 agent-package agent (finished); its leftovers closed by the SDK defects agent at 22:47
-updated: 2026-10-19
-links: [../features/chat.md, ../rules.md, ../../../../docs/libraries.md, durable-answering.md, model-host-effect-boundary.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, durable-browser-engine.md]
+owner: none; review round 4's R4-28 and R4-29 fixed by the SDK batch 2 agent, reported 12:52:09 on 2026-10-20. Until 12:52: W3 agent-package agent (finished); its leftovers closed by the SDK defects agent at 22:47
+updated: 2026-10-20
+links: [agent-jev.md, land-to-main.md, ../features/chat.md, ../rules.md, ../../../../docs/libraries.md, durable-answering.md, model-host-effect-boundary.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, durable-browser-engine.md, review-round-4.md, api-baseline-rerecord.md, agent-status.md, code-reviews.md]
 ---
 
 ## What
@@ -41,8 +41,21 @@ Will: "whatever abstraction we have that is doing the model call should be durab
 - 22:47: **both leftovers closed** by the SDK defects agent ([model-host Effect boundary](model-host-effect-boundary.md)). The dead `HarnessError` branch is gone, with a type test in its place. The `CellFlows` snapshot change was intended, from upstream commit `56a3eedc9b48` (#4284), and the snapshot was updated. All touched packages are at 100% coverage.
 - 22:58: W1 added a Retry-After test: a real 429 `ModelError` through `ModelStep` on compose Postgres, so the step waits as long as the provider asked. `@smthrs/agent` passes 2,066 tests at 100% coverage, `ModelStep` 23 of 23. `ModelStep`'s own workarounds were already gone ([durable answering](durable-answering.md)).
 - 23:01: [Codex checkpoint review 2](code-reviews.md) found no defect in `ModelStep`.
+- **07:49:53 on 2026-10-20: `ModelStep.model` added** by the [Jev](agent-jev.md) agent. It turns a model and its route into a `Model` whose every call is one sealed `ModelStep.run` of the running flow, so code that takes a `Model` and calls it itself, such as `Evaluator.layerFromSeat`, judges with sealed, replayable calls instead of streaming the seat directly. Tests, docs, a row in `docs/libraries.md` and the changeset `.changeset/model-step-as-model.md` (minor). Its first consumer is `app/jev/classify` and `app/jev/evaluate`. Uncommitted; it lands in round 2 of [land to main](land-to-main.md). Status stays done.
+- **12:52:09 on 2026-10-20: [review round 4](review-round-4.md)'s R4-28 and R4-29 fixed** by the SDK batch 2 agent, each with a test that failed on the old code; uncommitted (changeset `model-step-engine-retries-reasoning-bounds`, major).
+  - **Retries (R4-28):** `retryPolicy` is the only retry and waits the provider's `Retry-After`. A new `RequestExecutor.Retries`, set to 0 by `ModelStep`, stops the route's HTTP layer retrying within an attempt. A failing call now sends 3 requests where it sent 18 (scripted provider), and 2 where it sent 6 (real HTTP 503). `defaultRetryPolicy` is at most 6 attempts with no 2-minute window, because that window, counted from the first attempt, blocked any retry of a long call.
+  - **Liveness (R4-29):** every chunk, keep-alives included, is a heartbeat (`Model.Liveness`). `run` takes `callTimeoutMs`, and `heartbeatTimeoutMsFor` and `callTimeoutMsFor` set both bounds by effort: `none`, `minimal` and `low` allow 60 s of silence and a 300 s call; unset and `medium` 300 s and 300 s; `high` 300 s and 900 s; `xhigh` and `max` no silence bound and 1,800 s. A call past its timeout is sealed `call_timeout` and not retried. `defaultHeartbeatTimeoutMs` is removed.
+  - The agent suite passes 2,084 tests at 100% coverage. Keep-alives don't reach the browser through `ModelProxy` yet ([model endpoint](model-endpoint.md)). Status stays done.
+- **12:57:25 on 2026-10-20, a replay gap found by [agent status](agent-status.md):** reopening a tab while the agent waits on a question makes one extra model call. The lead: "A saved model step should replay without calling the model again, so it goes into the next review round" ([code reviews](code-reviews.md)). No test reproduces it yet. Status stays done until the review rates it.
+- **13:04:55: landed on `main`** in round 2 as `1000ecda62` "✨ feat(agent): ModelStep.model makes a model call one sealed step; ModelProxy admits a call before it runs", with the changesets `model-step-as-model` and `model-proxy-prepare-admission` ([land to main](land-to-main.md)). The 12:52 R4 fixes (changeset `model-step-engine-retries-reasoning-bounds`) aren't in it.
 
 ## Next
+
+From 13:04 on 2026-10-20: the R4 fixes land in the lander's next round; the next review round takes the extra model call on a reopened tab ([agent status](agent-status.md)). Keep-alive forwarding stays the [model endpoint](model-endpoint.md)'s; the major changeset joins the [API baseline](api-baseline-rerecord.md) re-record.
+
+Until 13:04 on 2026-10-20 the next step was, from 12:52 on 2026-10-20: nothing here. The major changeset joins the [API baseline](api-baseline-rerecord.md) re-record; keep-alive forwarding is the [model endpoint](model-endpoint.md)'s; the fixes land in round 3 of [land to main](land-to-main.md).
+
+Until 12:52 on 2026-10-20 this section read:
 
 Done. Follow-ups that belong to other items:
 - The coverage gap and snapshot: [model-host Effect boundary](model-host-effect-boundary.md). (Closed 22:47.)

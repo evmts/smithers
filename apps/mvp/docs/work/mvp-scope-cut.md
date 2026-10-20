@@ -30,6 +30,8 @@ ask in chat ──▶ TODO ──▶ agent works it on its own branch (sandbox)
 | 3 | [GitHub as truth](github-source-of-truth.md) | open the PR on GitHub; show merged or closed | conflict screens, steering from review comments, full issue sync |
 | 4+6 | [Live work and notifications](notifications-and-live-work.md) | toasts for your runs, "Needs you", failures that stay (decision 0009) | the `Earlier` list, repository notification rules |
 
+Superseded for checks at 13:21:27 on 2026-10-20 ([no GitHub Actions](no-github-actions.md)): item 2's checks are the Smithers flow runs on the PR's head SHA, never GitHub's check runs or statuses.
+
 Covered elsewhere, outside the four: sign-in, roles, opening a repository, the agent asking you questions mid-task, and pause, resume and retry.
 
 ## Why

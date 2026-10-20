@@ -2,9 +2,9 @@
 title: PR review and merge (MVP 2, early feature 8a)
 status: todo
 area: app
-owner: unassigned
-updated: 2026-10-19
-links: [../proposals/early-features.md, ../proposals/mvp-gaps.md, ../decisions/0007-roles-and-tags.md, roles-and-labels.md, design-questions.md]
+owner: unassigned; from 13:21:12 on 2026-10-20 it waits for the [triage](issue-triage.md) builder (same GitHub write path and list view). Until 13:21: unassigned; not in 0012's slice G0 (started 07:40:55 on 2026-10-20). Until 07:40: Panel G designed the PR pages, opening a PR and the merge flow in decision 0012 (written 06:58:11 on 2026-10-20, status: proposed; panel started 06:41:56). The `/review` findings flow has no owner. Until 06:41 on 2026-10-20: unassigned
+updated: 2026-10-20
+links: [issues.md, ../decisions/0012-git-end-to-end.md, pull-request-list-and-tabs.md, github-source-of-truth.md, review-requests-and-revisions.md, issue-triage.md, ../proposals/early-features.md, ../proposals/mvp-gaps.md, ../decisions/0007-roles-and-tags.md, roles-and-labels.md, design-questions.md, docs-check-flow-outcome.md, no-github-actions.md, second-build-machine.md]
 ---
 
 ## What
@@ -25,10 +25,21 @@ Reviewing agent output is the user's bottleneck (mvp.md §1.2), and Will's MVP c
 - 22:56: the lead's MVP list keeps item 2 as: see the PR's diff and checks; a Maintainer merges through the merge flow. Cut until later: evidence views, pre-approval, stack-order rules. Will hasn't approved it ([MVP scope cut](mvp-scope-cut.md)).
 - 23:00: Will: "Don't worry about the mvp ... But yes it's more or less right". The MVP list is reference only; work follows his feature list ([MVP scope cut](mvp-scope-cut.md)). Nobody builds this now.
 - About 23:06: 0007 is accepted. Its catalog: `repo:approve` needs a Maintainer; `repo:merge` needs the merge flow's minimum, Maintainer by default and never below Member. An agent asked to merge opens its person's own Review & merge confirmation ([roles and labels](roles-and-labels.md)).
+- **06:39:05 on 2026-10-20: in Will's priorities** ("finishing the entire git e2e flow"). Panel G designs the pull request pages, review and the merge flow; status moved from `todo` to `designing`. The agent's `/review` findings pinned to diff lines aren't in the panel's brief.
+- Panel G's drafts (Sol 06:46, Opus 06:53): `pr/Merge { pr, headSha, method }` runs the repository's merge flow (Maintainer by default, always a person, never an agent or a Guest); it calls GitHub's `merge-async` fenced to the head the person saw, with squash by default. `pr/Review` with approve needs a Maintainer and is never an agent act. Details: [pull requests](pull-request-list-and-tabs.md).
+- 06:58:11: decision 0012 written (status: proposed). Approve, Request changes and Merge are a person's acts only; the agent may request a merge and leave review comments as findings.
+- 07:08:32 on 2026-10-20: Panel G is waiting on its last `pnpm docs:check`; no report ([docs check outcome](docs-check-flow-outcome.md)). Decision 0012 is unchanged since 06:58:11.
+- **07:40:55 on 2026-10-20, Panel G done; the lead to Will:** "The git design is done (decision 0012), and building its first slice has started." Its first slice is issues: "list, view, create and comment on issues, across two devices" ([issues](issues.md)). Opening, reviewing and merging pull requests are 0012 §4 and workstreams W3 to W6, built after G0.
+- **Status moved from designing to todo:** designed in 0012, not in the first slice.
+- 13:19:52 on 2026-10-20: the lead's list: "Pull request list, review and merge; branch update and resync: not started (rest of 0012)".
+- 13:21:12: the lead: start these when triage finishes, since they share its GitHub write path and list view. Not in the 13:22 batch.
+- **13:21:27: no GitHub Actions** ([no GitHub Actions](no-github-actions.md)). "See the PR's diff and checks" now means its Smithers workflow runs on the head SHA. A merge GitHub refuses for its own required checks shows GitHub's refusal as it comes.
 
 ## Next
 
-First slice: open a public PR, press Review, see findings; reload or a second device shows the same run. Posting and Merge wait for [auth](auth.md). Merge runs the repository's merge flow, with the default allowing Maintainers and Admins (since 22:49).
+From 13:21 on 2026-10-20: after the [triage](issue-triage.md) builder finishes, 0012's W3 to W6 build opening, reviewing and merging PRs; the merge runs the repository's merge flow (Maintainers and Admins by default, always a person). The `/review` findings flow still has no owner.
+
+Until 13:21 on 2026-10-20 the next step was: first slice: open a public PR, press Review, see findings; reload or a second device shows the same run. Posting and Merge wait for [auth](auth.md). Merge runs the repository's merge flow, with the default allowing Maintainers and Admins (since 22:49).
 
 ## Questions for Will
 

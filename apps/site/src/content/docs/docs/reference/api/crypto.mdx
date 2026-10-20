@@ -266,6 +266,30 @@ import { Effect } from "effect"
 const address = await Effect.runPromise(digest("hello").pipe(Effect.provide(WebCrypto.layer)))
 ```
 
+## Name-based UUIDs
+
+### Uuid.v5
+
+```ts
+const v5: (namespace: string, name: string) => Effect.Effect<string, PlatformError, Crypto.Crypto>
+```
+
+The RFC 9562 version 5 UUID of `name` in `namespace`, in lowercase: SHA-1 of
+the namespace's 16 bytes and the name's UTF-8 bytes, cut to 16 bytes, with the
+version and variant bits set. The same namespace and name give the same UUID on
+every host, so a device offline and a server agree on an id with no round trip.
+It digests through the injected `Crypto` (provide `WebCrypto.layer`). A
+namespace that isn't a UUID is a defect. A name-based UUID identifies; it is
+never a secret.
+
+### Uuid.isUuid
+
+```ts
+const isUuid: (value: string) => boolean
+```
+
+Whether `value` is a UUID in canonical hyphenated form, in either case.
+
 ## Input and memory policy
 
 Text must be well-formed UTF-16. Unpaired surrogates are rejected before the
@@ -313,13 +337,22 @@ Digests a function's exact source as UTF-8 with SHA-256. Exact source matters:
 whitespace inside a string literal is behavior, so normalizing before hashing
 could make two different functions share an identity.
 
-- Returns `{ _tag: "FunctionIdentity", algorithm, digest }`, where `digest` is
-  64 lowercase hexadecimal characters.
+- Returns `{ _tag: "FunctionIdentity", algorithm, digest, resumeDigest }`,
+  where both digests are 64 lowercase hexadecimal characters.
 - `algorithm` is `sha256-source-captures/v5` when the operation was declared
   with [`Identity.capture`](#identitycapture), and `sha256-source-ephemeral/v4`
   otherwise. An undeclared closure folds in process-local, per-function
   entropy, because JavaScript cannot inspect what a closure captured and
   source-only identity would permit an incorrect cache hit.
+- `resumeDigest` is what a durable resume compares, never a cache identity.
+  It digests the source with every binding renamed by the order it is
+  declared in, then the declared captures, with no entropy. A minifier renames
+  a callback's bindings whenever unrelated code in its bundle changes, and
+  `resumeDigest` stays the same; any other edit, a swap of two parameters' or
+  two locals' uses included, changes it. It cannot tell which outer binding a
+  name reads beyond the pattern of its reads: `() => f(a, b)` and
+  `() => f(b, a)` share it when `a` and `b` are declared outside the function.
+  A native or bound function has none.
 - **Throws** `TypeError("function identity requires a function")` for anything
   that is not a function.
 
@@ -382,6 +415,7 @@ interface FunctionIdentity {
   readonly _tag: "FunctionIdentity"
   readonly algorithm: Identity.Algorithm
   readonly digest: string
+  readonly resumeDigest?: string | undefined
 }
 type Algorithm = "sha256-source-ephemeral/v4" | "sha256-source-captures/v5"
 ```

@@ -1,10 +1,10 @@
 ---
 title: Notifications and live work (MVP 4 and 6, early feature 8b)
-status: todo
+status: in-progress
 area: design
-owner: Panel N (Opus lead, Sol); the 0011 docs agent wrote the browser-run path into 0009 (22:49)
-updated: 2026-10-19
-links: [../decisions/0009-notifications-and-live-work.md, mvp-scope-cut.md, ../proposals/early-features.md, ../proposals/mvp-gaps.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, durable-browser-engine.md, ../decisions/0002-local-first.md, local-first.md, durable-answering.md]
+owner: notifications builder (Claude Opus), started by the lead at 13:23:06 on 2026-10-20 on slice 1; unreported by 13:24. Until 13:23: Panel N (Opus lead, Sol); the 0011 docs agent wrote the browser-run path into 0009 (22:49)
+updated: 2026-10-20
+links: [agent-status.md, flow-debugging.md, ../decisions/0009-notifications-and-live-work.md, mvp-scope-cut.md, ../proposals/early-features.md, ../proposals/mvp-gaps.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, durable-browser-engine.md, ../decisions/0002-local-first.md, local-first.md, durable-answering.md, ../decisions/0015-agent-status.md, token-spend-alerts.md, branch-terminal.md, issue-triage.md]
 ---
 
 ## What
@@ -45,10 +45,26 @@ Will: "Notifications are on the menu but it seems like a feature an agent on the
 
   A conversation's runs show in that conversation. Choices 1 (a finished run disappears after `Done`) and 3 (built-in routing only) stand.
 - 23:00: Will: "Don't worry about the mvp". The MVP item numbers above are reference only ([MVP scope cut](mvp-scope-cut.md)); this work stays on the feature list as early feature 8b. Not started; the lead's 23:02 board doesn't list it as building.
+- **06:42 to 06:43 on 2026-10-20: two designs build on 0009.** [Agent status](agent-status.md) (decision 0015, a designer since 06:43:04) maps working, needs you, waiting, failed and done onto 0009's toasts, Needs you and run rows. [Flow debugging](flow-debugging.md) (Panel F, decision 0014) reuses 0009's `runs`, `run_commands` and shapes for its run list and adds a run page that reads each engine's journal.
+
+- 13:19:52 on 2026-10-20: the lead's list puts "TODOs and the stack; notifications" under "Your feature list, not started yet".
+- 13:21:12: the lead: the designs for TODOs and for notifications can start now, "documents only". 13:21:41: Will: "start the ones that can start now we are trying to ship faster".
+- **13:23:06: the lead started a builder, not a designer, on slice 1** (Claude Opus, scratchpad `final/BUILD-COMMON.md`), since 0009 is designed and its questions are settled. It builds on what finished today and adds no second run index or toast system: [agent status](agent-status.md) (0015: the `runs` table from migration `0013_runs`, `worker/Runs.ts`, the header pill, the card, the needs-you toast, the tab-title count and their `@smthrs/ui` components), the runs page (`src/features/runs/`, `docs/features/runs.md`) and the shared toast stack. Slice 1:
+  - 0009's one run index as the source;
+  - a personal feed (needs me, finished, failed) with read state synced across devices;
+  - live-work toasts for runs on my branch, including other people's;
+  - the repository events `main` changed and new release, as feed entries;
+  - an e2e with two people on two devices.
+- The [branch terminal](branch-terminal.md) builder still edits branch and conversation files and the [triage](issue-triage.md) builder edits issues files, so `AppShell` and the router take only small, additive edits.
+- 13:23:33, the lead to Will: "your feed (needs you, finished, failed), toasts for runs on your branch including other people's, and `main` changed or new release".
+- **Status moved from todo to in-progress.**
+- Open against 0009 §8: choice 1 says a finished run disappears after `Done`, while slice 1's feed lists what finished. Best guess: the feed entry is the person's record, and the run row still leaves the live list; the builder's report should say which.
 
 ## Next
 
-First slice: each answer's run chip opens a live Run card, and its toast settles from the run's outcome. Since 22:58 the toast stack reads the person, branch and repository watches, not only your own runs.
+From 13:23 on 2026-10-20: the builder's report: the feed and its synced read state, the branch-scoped toasts, the repository events, and the two-person e2e with its GIF.
+
+Until 13:23 on 2026-10-20 the next step was: first slice: each answer's run chip opens a live Run card, and its toast settles from the run's outcome. Since 22:58 the toast stack reads the person, branch and repository watches, not only your own runs.
 
 ## Questions for Will
 

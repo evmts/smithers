@@ -2086,7 +2086,7 @@ Gives an answer the caller's own type. The schema here and the question's own sc
 - **Type:** `Schema.TaggedError` with fields `code`, `flow: string`, `node: string`, and `message: string`
 - **Since:** `0.1.0`
 
-A graph the interpreter refuses to drive. The `code` is one of `incomplete_graph`, `duplicate_node_id`, `unresolved_action`, `implementation_version_mismatch`, `missing_implementation_version`, `unresolved_reference`, `unsupported_call`, `missing_operation`, `node_record_too_large`, `plan_changed` (a durable resume rebuilt a different plan than the run recorded), or `join_mismatch` (a race, any, or quorum journaled members, or a losing child boundary, its plan can no longer reproduce).
+A graph the interpreter refuses to drive. The `code` is one of `incomplete_graph`, `duplicate_node_id`, `unresolved_action`, `implementation_version_mismatch`, `missing_implementation_version`, `unresolved_reference`, `unsupported_call`, `missing_operation`, `node_record_too_large`, `plan_changed` (a durable resume rebuilt a different plan than the run recorded), `payload_changed` (a durable resume's build no longer decodes the payload the run recorded), or `join_mismatch` (a race, any, or quorum journaled members, or a losing child boundary, its plan can no longer reproduce).
 
 A refused run settles failed with the error as its defect. `Flow.Result` stores the error's fields and decodes them back into this class, so `poll`, a browser engine's `result`, and every other reader of the stored run see the same `code`.
 
@@ -2100,7 +2100,8 @@ The code of the interpreter refusal a run ended with, if it ended with one. It r
 ```ts
 const settle = Effect.gen(function*() {
   const exit = yield* engine.result(Answer, answerId)
-  if (Exit.isFailure(exit) && Option.contains(Interpreter.refusalCode(exit.cause), "plan_changed")) {
+  const code = Exit.isFailure(exit) ? Interpreter.refusalCode(exit.cause) : Option.none()
+  if (Option.contains(code, "plan_changed") || Option.contains(code, "payload_changed")) {
     // Parked under one build and refused under the next: close what the run was feeding.
   }
 })
@@ -7599,14 +7600,21 @@ Calls the model once, as one step of the running flow.
   is part of it; the credential is not. Without a declared cache environment
   the engine scopes it to the execution, so another execution with an
   identical request calls the provider itself.
-- **Retries.** Transport faults are retried inside the step with
-  byte-identical bodies. A capacity refusal (`rate_limited`, `quota_exceeded`,
-  `provider_internal`, or HTTP 429, 503, 504 or 529) fails the step without
-  sealing it, and `retryPolicy` decides whether the engine tries again. Every
-  other provider error is sealed as `Result.error`.
-- **Liveness.** Each attempt and each streamed event is a heartbeat. An attempt
-  silent for `heartbeatTimeoutMs` fails with `Action.AttemptTimedOut`, which
-  `retryPolicy` retries.
+- **Retries.** `retryPolicy` is the only thing that retries: each attempt
+  makes one provider call, with a byte-identical body, and the route's
+  `RequestExecutor` repeats nothing inside it (`RequestExecutor.Retries` is 0). A failure another
+  attempt may clear fails the attempt without sealing it: a dropped connection,
+  a body that ends without a settlement, `transport`, `provider_internal`,
+  `rate_limited`, `quota_exceeded`, or HTTP 429, 503, 504 or 529. The policy
+  waits the provider's `Retry-After` (`retryAfterMillis`) when it named one.
+  Every other provider error is sealed as `Result.error`.
+- **Liveness.** Each attempt, each streamed event and each chunk of bytes the
+  provider sends, a keep-alive comment or ping included (`Model.Liveness`), is
+  a heartbeat. An attempt silent for `heartbeatTimeoutMs` fails with
+  `Action.AttemptTimedOut`, which `retryPolicy` retries.
+- **Call timeout.** An attempt that runs past `callTimeoutMs` is cut off and
+  sealed as a `call_timeout` error. Waiting doesn't shorten an answer, so it
+  isn't retried.
 - **At least once.** A call cut off mid-flight, by a dying process or an
   interrupted fiber, is made again when the execution resumes. The
   `agent_model_step_redispatches` counter counts each repeat.
@@ -7641,7 +7649,8 @@ code is `unknown`. See [Judge with sealed calls](https://github.com/smithersai/s
 | `model`              | `Model.Model`                                           | The model that streams the call, with its credential applied. Required.                                                                                                          |
 | `route`              | `FlowEngineLike.RouteResolver`                          | The same route's credential-free preparation, which the key digests. `FlowEngineLike.routeResolver` builds one. Required.                                                        |
 | `retryPolicy`        | `RetryPolicy.RetryPolicy`                               | Retries every failure the step does not seal. Defaults to `defaultRetryPolicy`.                                                                                                  |
-| `heartbeatTimeoutMs` | `number`                                                | Milliseconds an attempt may stream nothing. Defaults to `defaultHeartbeatTimeoutMs`.                                                                                             |
+| `heartbeatTimeoutMs` | `number`                                                | Milliseconds an attempt may go without an event or a byte. Zero disarms it. Defaults to `heartbeatTimeoutMsFor(request.params.reasoningEffort)`.                                 |
+| `callTimeoutMs`      | `number`                                                | Milliseconds one provider call may take before it is sealed as `call_timeout`. Zero disarms it. Defaults to `callTimeoutMsFor(request.params.reasoningEffort)`.                  |
 | `onEvent`            | `(event: ModelEvent.ModelEvent) => Effect.Effect<void>` | Receives each event while the call runs, and the recorded events on a replay. An attempt that follows a failed or cut-off one starts with a `retry` event. Runs inside the step. |
 
 `model` and `route` must describe one configured route: a `route` that
@@ -7675,12 +7684,36 @@ const Failure: Schema.Union<[
 Everything `run` fails with, as one encodable schema. A flow whose body calls
 `run` can declare it as its error schema.
 
-### ModelStep.defaultRetryPolicy, ModelStep.defaultHeartbeatTimeoutMs
+### ModelStep.defaultRetryPolicy
 
-| Constant                    | Value                                                                                                                             |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `defaultRetryPolicy`        | 1 s doubling to 30 s, up to a fifth of each delay shaved off at random, for at most 2 min. Permission failures are never retried. |
-| `defaultHeartbeatTimeoutMs` | 60,000                                                                                                                            |
+At most six attempts. The first retry waits 1 s and each next one twice the
+last, with up to a fifth of each delay shaved off at random. A provider's
+`Retry-After` replaces the delay, up to 30 s. Permission failures are never
+retried. The bound counts attempts rather than wall-clock time, because a model
+call's attempts run from milliseconds to its call timeout.
+
+### ModelStep.heartbeatTimeoutMsFor, ModelStep.callTimeoutMsFor
+
+```ts
+const heartbeatTimeoutMsFor: (effort: ModelRequest.ReasoningEffort | undefined) => number
+const callTimeoutMsFor: (effort: ModelRequest.ReasoningEffort | undefined) => number
+```
+
+The defaults for `heartbeatTimeoutMs` and `callTimeoutMs` at a reasoning
+effort. A host that calls models in several roles passes its own values per
+call, starting from these.
+
+| Effort                   | `heartbeatTimeoutMsFor` | `callTimeoutMsFor` |
+| ------------------------ | ----------------------- | ------------------ |
+| `none`, `minimal`, `low` | 60 s                    | 300 s              |
+| unset, `medium`          | 300 s                   | 300 s              |
+| `high`                   | 300 s                   | 900 s              |
+| `xhigh`, `max`           | 0 (no bound)            | 1,800 s            |
+
+A model that reasons can stream nothing while it thinks. An unset effort takes
+the provider's default, which reasons. At `xhigh` and `max` silence isn't
+evidence of a stall, so the call timeout is the only bound. The call timeouts
+are the agent loop's own (`CellTurn.modelCallMsFor`).
 
 ## Checkpointed
 
@@ -14068,6 +14101,30 @@ import { Effect } from "effect"
 const address = await Effect.runPromise(digest("hello").pipe(Effect.provide(WebCrypto.layer)))
 ```
 
+## Name-based UUIDs
+
+### Uuid.v5
+
+```ts
+const v5: (namespace: string, name: string) => Effect.Effect<string, PlatformError, Crypto.Crypto>
+```
+
+The RFC 9562 version 5 UUID of `name` in `namespace`, in lowercase: SHA-1 of
+the namespace's 16 bytes and the name's UTF-8 bytes, cut to 16 bytes, with the
+version and variant bits set. The same namespace and name give the same UUID on
+every host, so a device offline and a server agree on an id with no round trip.
+It digests through the injected `Crypto` (provide `WebCrypto.layer`). A
+namespace that isn't a UUID is a defect. A name-based UUID identifies; it is
+never a secret.
+
+### Uuid.isUuid
+
+```ts
+const isUuid: (value: string) => boolean
+```
+
+Whether `value` is a UUID in canonical hyphenated form, in either case.
+
 ## Input and memory policy
 
 Text must be well-formed UTF-16. Unpaired surrogates are rejected before the
@@ -14115,13 +14172,22 @@ Digests a function's exact source as UTF-8 with SHA-256. Exact source matters:
 whitespace inside a string literal is behavior, so normalizing before hashing
 could make two different functions share an identity.
 
-- Returns `{ _tag: "FunctionIdentity", algorithm, digest }`, where `digest` is
-  64 lowercase hexadecimal characters.
+- Returns `{ _tag: "FunctionIdentity", algorithm, digest, resumeDigest }`,
+  where both digests are 64 lowercase hexadecimal characters.
 - `algorithm` is `sha256-source-captures/v5` when the operation was declared
   with [`Identity.capture`](#identitycapture), and `sha256-source-ephemeral/v4`
   otherwise. An undeclared closure folds in process-local, per-function
   entropy, because JavaScript cannot inspect what a closure captured and
   source-only identity would permit an incorrect cache hit.
+- `resumeDigest` is what a durable resume compares, never a cache identity.
+  It digests the source with every binding renamed by the order it is
+  declared in, then the declared captures, with no entropy. A minifier renames
+  a callback's bindings whenever unrelated code in its bundle changes, and
+  `resumeDigest` stays the same; any other edit, a swap of two parameters' or
+  two locals' uses included, changes it. It cannot tell which outer binding a
+  name reads beyond the pattern of its reads: `() => f(a, b)` and
+  `() => f(b, a)` share it when `a` and `b` are declared outside the function.
+  A native or bound function has none.
 - **Throws** `TypeError("function identity requires a function")` for anything
   that is not a function.
 
@@ -14184,6 +14250,7 @@ interface FunctionIdentity {
   readonly _tag: "FunctionIdentity"
   readonly algorithm: Identity.Algorithm
   readonly digest: string
+  readonly resumeDigest?: string | undefined
 }
 type Algorithm = "sha256-source-ephemeral/v4" | "sha256-source-captures/v5"
 ```
@@ -16134,6 +16201,31 @@ The allowed limit is 1 through `maximumPageSize` (1,000). Changes are coalesced
 per run ID and ordered by revision. Tombstones persist indefinitely, including
 after ordinary run retention, so an offline consumer can resume its checkpoint.
 Source replacement or an ahead-of-source checkpoint fails with `invalid_run`.
+
+## RunInspection
+
+[src/RunInspection.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/RunInspection.ts)
+
+One run as a person debugging it reads it, from the engine's own tables
+(`flows_runs`, `flows_attempts`, `flows_run_parents`, `flows_journal_events`).
+Exported from the root and `@smthrs/engine-store/RunInspection`. Every read runs
+in one `Dialect.readTransaction`, on SQLite and PostgreSQL alike.
+
+| Export                                                | Signature                                                                                                               | Meaning                                                                                                                                                                     |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RunInspection`, `Service`                            | `Context.Service<Service>`                                                                                              | Service tag and its `inspect`, `list` and `payload` operations.                                                                                                             |
+| `Service.inspect(runId, { afterSeq?, limit? })`       | `Effect<Inspection, RunNotFound \| RunStoreError>`                                                                      | The run with its `input` and `result`, its `steps`, its `children`, and the journal page after `afterSeq` (default `-1`), at most `limit` events (default and most 500).    |
+| `Service.list({ limit?, cursor?, roots? })`           | `Effect<RunList, RunStoreError>`                                                                                        | Runs newest first, 50 at a time by default and 200 at most; `roots`, the default, keeps the runs with no parent. A malformed cursor is `invalid_run`.                        |
+| `Service.payload(runId)`                              | `Effect<{ flowName, payload }, RunNotFound \| RunStoreError>`                                                           | The run's payload as the engine stored it: encoded and unredacted, to run the flow again inside the engine. Never put it on a wire or in front of a reader.                 |
+| `make(options?)`, `layer`, `layerWith(options)`       | `Effect<Service, never, SqlClient>`, `Layer<RunInspection, never, SqlClient>`                                            | Build it over a migrated `SqlClient`. `layerWith({ flows })` shows every value whose flow or action is reachable from `flows` through its schema.                            |
+| `Options`                                             | `{ flows? }`                                                                                                            | The flows whose schemas, and whose plans' action schemas, values show through: a `Schema.Redacted` value reads as `redactedMarker` at any depth, an undecodable one as `withheldMarker`. |
+| `redactedMarker`, `withheldMarker`                    | `"<redacted>"`, `"<withheld>"`                                                                                          | What a `Redacted` value reads as, and what a value the reads cannot show safely reads as.                                                                                   |
+| `holdsRedacted(schema)`                               | `boolean`                                                                                                               | Whether a schema holds a `Schema.Redacted` value anywhere, recursive references included.                                                                                   |
+| `Inspection`, `RunSummary`, `Step`, `Attempt`, `Child`, `Event`, `JournalPage`, `RunList`, `Waiting` | models                                                                      | See [Inspect one run](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/guides/observe-executions.md#inspect-one-run-for-a-person).                                                                                         |
+| `Value`                                               | `{ text, bytes, clipped }`                                                                                              | Redacted JSON text, cut to `valueLimitBytes` at a character boundary; `bytes` is the whole size.                                                                            |
+| `valueLimitBytes`, `maximumJournalPage`, `maximumListPage`, `maximumChildren` | `16384`, `500`, `200`, `200`                                                                    | Bounds.                                                                                                                                                                     |
+| `valueOf(value)`, `clip(text)`, `codeOf(failure)`     | pure                                                                                                                    | How a value is released: failures reduced to codes, `Redaction.redact`, JSON, cut. `codeOf` reads only a failure's tag.                                                     |
+| `RunNotFound`                                         | `{ runId }`, tag `@smthrs/engine-store/RunNotFound`                                                                      | The engine holds no run with this id.                                                                                                                                       |
 
 ## RunCatalogRead
 
@@ -21348,6 +21440,25 @@ request's result type: a caller cannot name a response type the client never
 decoded. `Page` fields: `items` and `truncated`. `RequestMethod` is
 `"GET" | "POST" | "PATCH" | "PUT" | "DELETE"`.
 
+### GitHub.AppAuth
+
+A GitHub App's own authentication: the RS256 JWT and installation tokens,
+through WebCrypto. The private key may be PKCS#1 PEM, as GitHub downloads it,
+or PKCS#8 PEM, with newlines optionally escaped as `\n`. Every call goes
+through a `GitHubClient` built with the JWT and an empty environment. Neither
+the key, the JWT, nor a minted token appears in an error or a span attribute.
+
+| Export                      | Signature                                                                        | Notes                                                                                                                                                                                                              |
+| --------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `make`                      | `(credentials: AppCredentials) => Effect<AppAuth, IntegrationError, HttpClient>` | `AppCredentials`: `appId`, `privateKey: Redacted<string>`, `apiBaseUrl?`, `requestTimeout?`. A key that does not parse or import, or a bad `appId`, fails `invalid-config`.                                        |
+| `layer`                     | `(credentials: AppCredentials) => Layer<AppAuth, IntegrationError, HttpClient>`  | Service tag `AppAuth` (`@smthrs/integrations/AppAuth`).                                                                                                                                                            |
+| `AppAuth.jwt`               | `Effect<Redacted<string>, IntegrationError>`                                     | RS256; `iat` 60 s back, `exp` 9 minutes ahead, `iss` the app ID; time from the `Clock` service.                                                                                                                    |
+| `AppAuth.installation`      | `(owner, repo) => Effect<{ id: number }, IntegrationError>`                      | `GET /repos/{owner}/{repo}/installation`. Not installed fails `delivery-failed`, `details.status` 404, not retryable.                                                                                              |
+| `AppAuth.installationToken` | `(options) => Effect<InstallationToken, IntegrationError>`                       | `POST /app/installations/{id}/access_tokens`, narrowed by `repositories`, `repositoryIds` and `permissions`. `InstallationToken`: `token: Redacted<string>`, `expiresAt` (epoch ms). A lost answer is `retryable`. |
+| `importPrivateKey`          | `(pem: Redacted<string>) => Effect<CryptoKey, IntegrationError>`                 | PKCS#1 or PKCS#8 PEM to a non-extractable RS256 signing key.                                                                                                                                                       |
+| `JWT_BACKDATE_SECONDS`      | `60`                                                                             | How far back `iat` is set.                                                                                                                                                                                         |
+| `JWT_LIFETIME_SECONDS`      | `540`                                                                            | How far ahead `exp` is set.                                                                                                                                                                                        |
+
 ### GitHub.RateLimit
 
 The limiter the [GitHub proxy](#githubproxy) runs for each principal, so a
@@ -21442,6 +21553,29 @@ explains the pattern.
 | `closesIssue`                                                                   | `(body, issue, sameRepository) => boolean`                    | Whether a description closes the issue with any GitHub closing keyword.                                                                                                                                                                                                                                                     |
 | `layerAddLabels`, `layerUpsertComment`, `layerCheckRun`, `layerLinkPullRequest` | same as `layerCommentOnIssue`                                 | Implement each action over the client in context.                                                                                                                                                                                                                                                                           |
 | `layer`                                                                         | same                                                          | Every GitHub action's implementation in one layer.                                                                                                                                                                                                                                                                          |
+
+### GitHub.Issues
+
+Issue and issue-comment operations over the `GitHubClient` in context, plus
+the hidden write marker a step adopts its own earlier write by. A step POSTs
+once; on a retry after `outcomeUnknown` it calls the finder first, adopts what
+it finds, and writes only when nothing carries its marker. Coordinates are
+validated as `Repository.repositoryPath` does.
+
+| Export                               | Signature                                                                                                   | Notes                                                                                                                                                |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getIssue`                           | `(owner, repo, number) => Effect<Issue, IntegrationError, GitHubClient>`                                    | `GET /repos/{owner}/{repo}/issues/{number}`.                                                                                                         |
+| `listComments`                       | `(owner, repo, number, options?) => Effect<{ items, truncated }, IntegrationError, GitHubClient>`           | Oldest first; `options.since` (ISO 8601) and `options.maxPages` (default 10).                                                                        |
+| `createIssue`                        | `(owner, repo, { title, body }) => Effect<Issue, IntegrationError, GitHubClient>`                           | `POST /repos/{owner}/{repo}/issues`. A lost answer fails `outcomeUnknown`.                                                                           |
+| `createComment`                      | `(owner, repo, number, body) => Effect<IssueComment, IntegrationError, GitHubClient>`                       | `POST /repos/{owner}/{repo}/issues/{number}/comments`. A lost answer fails `outcomeUnknown`.                                                         |
+| `findIssueByWrite`                   | `(owner, repo, { writeId, since }) => Effect<Option<Issue>, IntegrationError, GitHubClient>`                | Issues updated since `since`, newest created first, at most `Actions.RECONCILE_PAGES` pages; pull requests skipped. The earliest-created match wins. |
+| `findCommentByWrite`                 | `(owner, repo, number, { writeId, since }) => Effect<Option<IssueComment>, IntegrationError, GitHubClient>` | The same for one issue's comments.                                                                                                                   |
+| `writeMarker`                        | `(writeId: string) => string`                                                                               | `<!-- smithers:write=ID -->`; `ID` is 1 to 100 letters, digits and hyphens, else throws `invalid-config`.                                            |
+| `withWriteMarker`                    | `(body: string, writeId: string) => string`                                                                 | `body`, a blank line, then the marker.                                                                                                               |
+| `writeIdOf`                          | `(body: string \| null \| undefined) => string \| undefined`                                                | The last marker's write id; whitespace tolerated.                                                                                                    |
+| `withoutWriteMarker`                 | `(body: string) => string`                                                                                  | The body with every marker, and the blank line before it, removed.                                                                                   |
+| `Issue`, `IssueComment`, `IssueUser` | schemas                                                                                                     | GitHub's JSON narrowed to the fields Smithers reads; a missing `state_reason` decodes as `null`, and `pull_request` is present on a pull request.    |
+| `WRITE_ID_PATTERN`                   | regex                                                                                                       | The write id rule.                                                                                                                                   |
 
 ### GitHub.Sync
 
@@ -27101,15 +27235,16 @@ The one provider seam: a request in, a stream of events out. A flow, a
 harness, or a test swaps the implementation without knowing which protocol,
 endpoint, or credential answers the call.
 
-| Export                                  | Kind                      | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| --------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Model`                                 | service interface and tag | `stream: (request: ModelRequest) => Stream<ModelEvent, ModelFailure>`. Cancellation is fiber interruption, so there is no abort parameter. Tag id `/model/Model`.                                                                                                                                                                                                                                                                                                                                  |
-| `ModelFailure`                          | type                      | `ModelError \| PermissionRequired \| PermissionDenied \| GrantStoreError`. The permission classes come from `@smthrs/capability`; see the [capability API](/docs/reference/api/capability/).                                                                                                                                                                                                                                                                                                                       |
-| `make(implementation)`                  | constructor               | Builds a `Model` from an implementation of `stream`.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `layer(implementation)`                 | layer                     | Provides `Model` from an implementation of `stream`.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `makeNoop(overrides?)`                  | constructor               | A `Model` that fails every stream with `ModelError` code `no_route` and message `no model route in this environment`, so an environment with no provider configured reports that rather than hanging. `overrides` replaces individual methods.                                                                                                                                                                                                                                                     |
-| `layerNoop(overrides?)`                 | layer                     | Provides `makeNoop`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `withGenAiSpan(request, providerName?)` | tracing                   | Wraps a model stream in an OpenTelemetry GenAI client span named `chat <modelId>`, with `gen_ai.operation.name`, `gen_ai.request.model`, `gen_ai.provider.name` when given, the usage tokens and `gen_ai.usage.cost` as they stream in, and `gen_ai.response.finish_reasons`, `gen_ai.response.id` and the [wire timing](#wire-timing) from the settle event. Prompt and response content never reach it, and a failure reaches it as its tag and code alone; see [Span failures](#span-failures). |
+| Export                                  | Kind                      | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Model`                                 | service interface and tag | `stream: (request: ModelRequest) => Stream<ModelEvent, ModelFailure>`. Cancellation is fiber interruption, so there is no abort parameter. Tag id `/model/Model`.                                                                                                                                                                                                                                                                                                                                      |
+| `ModelFailure`                          | type                      | `ModelError \| PermissionRequired \| PermissionDenied \| GrantStoreError`. The permission classes come from `@smthrs/capability`; see the [capability API](/docs/reference/api/capability/).                                                                                                                                                                                                                                                                                                                           |
+| `make(implementation)`                  | constructor               | Builds a `Model` from an implementation of `stream`.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `layer(implementation)`                 | layer                     | Provides `Model` from an implementation of `stream`.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `makeNoop(overrides?)`                  | constructor               | A `Model` that fails every stream with `ModelError` code `no_route` and message `no model route in this environment`, so an environment with no provider configured reports that rather than hanging. `overrides` replaces individual methods.                                                                                                                                                                                                                                                         |
+| `layerNoop(overrides?)`                 | layer                     | Provides `makeNoop`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `Liveness`                              | reference                 | `Context.Reference<Effect<void>>`, a no-op by default. A route runs it for every chunk of response bytes, including a keep-alive comment or ping frame that decodes to no event. A caller that bounds silence provides its heartbeat here, as `ModelStep` in `@smthrs/agent` does, so a provider that thinks without streaming but keeps its connection alive is not cut off. `ModelProxy` carries it across HTTP: `serve` writes a blank line for it and the client runs it for every chunk it reads. |
+| `withGenAiSpan(request, providerName?)` | tracing                   | Wraps a model stream in an OpenTelemetry GenAI client span named `chat <modelId>`, with `gen_ai.operation.name`, `gen_ai.request.model`, `gen_ai.provider.name` when given, the usage tokens and `gen_ai.usage.cost` as they stream in, and `gen_ai.response.finish_reasons`, `gen_ai.response.id` and the [wire timing](#wire-timing) from the settle event. Prompt and response content never reach it, and a failure reaches it as its tag and code alone; see [Span failures](#span-failures).     |
 
 ## `ModelRequest`
 
@@ -27313,29 +27448,29 @@ the model receives and which `Model` answers; a browser, Worker or CLI
 provides `layerClient` and calls `model.stream(request)` as it would locally.
 See [Proxy a model](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/docs/guides/proxy-a-model.md).
 
-| Export                 | Kind        | Behavior                                                                                                                                                                                                                                                                                                                                                                                          |
-| ---------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `serve(options)`       | server      | `Effect<HttpServerResponse, never, HttpServerRequest \| R>`. Reads a `POST` JSON `ModelRequest` body, runs `options.prepare`, calls the `Model` it chose inside `Model.withGenAiSpan`, and streams NDJSON. Answers `405` to another method, `413` past `maxBodyBytes` (counted while reading), `400` to a body that is not a `ModelRequest`, a `Refusal`'s status, and `500` when `prepare` dies. |
-| `ServeOptions<R>`      | interface   | `prepare: (request, admission) => Effect<Prepared, Refusal, R>`, required; `maxBodyBytes?`, default `defaultMaxBodyBytes`; `attributes?`, labels added to every server-side metric and the log line (the proxy's own names win); `onEnd?: (end: End) => Effect<void, never, R>`, run once after an admitted request's model stream ends; the terminal line waits for it.                          |
-| `Prepared`             | interface   | `{ request, model }`: the `ModelRequest` the model receives and the `Model` that answers it.                                                                                                                                                                                                                                                                                                      |
-| `Admission`            | interface   | `{ requestId, invocationId, requestBytes }`, `prepare`'s second argument: the caller's id, the server's id for this call (the one `End` carries, so a host reserves spend under it in `prepare` and settles it in `onEnd`), and the body's size in bytes, at most `maxBodyBytes`.                                                                                                                 |
-| `End`                  | interface   | `{ requestId, invocationId, outcome, modelId, usage }`; `invocationId` is the server's own id for the call, minted for every admitted request (key metering on it; the caller chooses `requestId` and may repeat it); `outcome` is `success`, `failed` or `interrupted`, and `usage` is the merged `usage` events (a `retry` starts it over). Never passed for a refused request.                 |
-| `Refusal`              | error class | Tag `flows/model/ModelProxyRefusal`. `status` (400 to 599) and `message` reach the client as written; `code?` is the client's `ModelError` code, chosen by the status when omitted. `modelErrorCode` is the code the client gets; its `ModelError.faults` class is the refusal's fault, so a `429` waits and a `401` asks the person.                                                             |
-| `makeClient(options)`  | client      | `Effect<Model, never, HttpClient>`. `stream` posts the encoded request with a fresh request id and trace context and decodes the lines. Interrupting it aborts the request.                                                                                                                                                                                                                       |
-| `layerClient(options)` | client      | `Layer<Model, never, HttpClient>` from `makeClient`.                                                                                                                                                                                                                                                                                                                                              |
-| `prepare(options)`     | client      | `(request) => Effect<Route.PreparedRequest, ModelError>`: the credential-free request `makeClient` sends, the URL and exact body bytes, for a durable step's `route`. `headers` and the request id stay out; a request that does not encode fails `invalid_request`.                                                                                                                              |
-| `ClientOptions`        | interface   | `url` (relative URLs resolve against the page), `headers?`.                                                                                                                                                                                                                                                                                                                                       |
-| `Line`                 | schema      | One NDJSON line: a `ModelEvent`, `EndLine` or `ErrorLine`.                                                                                                                                                                                                                                                                                                                                        |
-| `EndLine`              | schema      | `{"type":"end"}`, the terminal line of a clean stream.                                                                                                                                                                                                                                                                                                                                            |
-| `ErrorLine`            | schema      | `{"type":"error",code,message,retryAfterMillis?}`, the terminal line of a stream whose model failed after the headers. `message` is the code's fixed `FailureCopy` headline, never provider text.                                                                                                                                                                                                 |
-| `ErrorBody`            | schema      | `{code,message,requestId}`, the body of every non-`200` answer.                                                                                                                                                                                                                                                                                                                                   |
-| `requestIdHeader`      | constant    | `x-smithers-request-id`.                                                                                                                                                                                                                                                                                                                                                                          |
-| `contentType`          | constant    | `application/x-ndjson`.                                                                                                                                                                                                                                                                                                                                                                           |
-| `defaultMaxBodyBytes`  | constant    | 1 MiB.                                                                                                                                                                                                                                                                                                                                                                                            |
-| `requests`             | metric      | Counter `smithers_model_proxy_requests` by `side`, `outcome`, `status` (`0` with no response), and on the server the host's `attributes`.                                                                                                                                                                                                                                                         |
-| `duration`             | metric      | Histogram `smithers_model_proxy_duration_ms` by `side`, `outcome`, and on the server the host's `attributes`.                                                                                                                                                                                                                                                                                     |
-| `firstEvent`           | metric      | Histogram `smithers_model_proxy_first_event_ms` by `side`, and on the server the host's `attributes`.                                                                                                                                                                                                                                                                                             |
-| `tokens`               | metric      | Counter `smithers_model_tokens` by `type` (`input`, `output`), `model` and the host's `attributes`, from the final merged `usage` events; server only.                                                                                                                                                                                                                                            |
+| Export                 | Kind        | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ---------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `serve(options)`       | server      | `Effect<HttpServerResponse, never, HttpServerRequest \| R>`. Reads a `POST` JSON `ModelRequest` body, runs `options.prepare`, calls the `Model` it chose inside `Model.withGenAiSpan`, and streams NDJSON. Answers `405` to another method, `413` past `maxBodyBytes` (counted while reading), `400` to a body that is not a `ModelRequest`, a `Refusal`'s status, and `500` when `prepare` dies. Writes a blank keep-alive line each time the model runs `Model.Liveness`, at most one a second and none within a second of an event. |
+| `ServeOptions<R>`      | interface   | `prepare: (request, admission) => Effect<Prepared, Refusal, R>`, required; `maxBodyBytes?`, default `defaultMaxBodyBytes`; `attributes?`, labels added to every server-side metric and the log line (the proxy's own names win); `onEnd?: (end: End) => Effect<void, never, R>`, run once, uninterrupted, after an admitted request's model stream ends; the terminal line waits for it.                                                                                                                                               |
+| `Prepared`             | interface   | `{ request, model }`: the `ModelRequest` the model receives and the `Model` that answers it.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `Admission`            | interface   | `{ requestId, invocationId, requestBytes }`, `prepare`'s second argument: the caller's id, the server's id for this call (the one `End` carries, so a host reserves spend under it in `prepare` and settles it in `onEnd`), and the body's size in bytes, at most `maxBodyBytes`.                                                                                                                                                                                                                                                      |
+| `End`                  | interface   | `{ requestId, invocationId, outcome, modelId, usage }`; `invocationId` is the server's own id for the call, minted for every admitted request (key metering on it; the caller chooses `requestId` and may repeat it); `outcome` is `success`, `failed` or `interrupted`, and `usage` is the merged `usage` events (a `retry` starts it over). Never passed for a refused request.                                                                                                                                                      |
+| `Refusal`              | error class | Tag `flows/model/ModelProxyRefusal`. `status` (400 to 599) and `message` reach the client as written; `code?` is the client's `ModelError` code, chosen by the status when omitted. `modelErrorCode` is the code the client gets; its `ModelError.faults` class is the refusal's fault, so a `429` waits and a `401` asks the person.                                                                                                                                                                                                  |
+| `makeClient(options)`  | client      | `Effect<Model, never, HttpClient>`. `stream` posts the encoded request with a fresh request id and trace context and decodes the lines. Runs `Model.Liveness` for every chunk of the body, a blank keep-alive line included, and decodes no event from a blank line. Interrupting it aborts the request.                                                                                                                                                                                                                               |
+| `layerClient(options)` | client      | `Layer<Model, never, HttpClient>` from `makeClient`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `prepare(options)`     | client      | `(request) => Effect<Route.PreparedRequest, ModelError>`: the credential-free request `makeClient` sends, the URL and exact body bytes, for a durable step's `route`. `headers` and the request id stay out; a request that does not encode fails `invalid_request`.                                                                                                                                                                                                                                                                   |
+| `ClientOptions`        | interface   | `url` (relative URLs resolve against the page), `headers?`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `Line`                 | schema      | One NDJSON line: a `ModelEvent`, `EndLine` or `ErrorLine`. A blank line between them is a keep-alive, not a `Line`.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `EndLine`              | schema      | `{"type":"end"}`, the terminal line of a clean stream.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `ErrorLine`            | schema      | `{"type":"error",code,message,retryAfterMillis?}`, the terminal line of a stream whose model failed after the headers. `message` is the code's fixed `FailureCopy` headline, never provider text.                                                                                                                                                                                                                                                                                                                                      |
+| `ErrorBody`            | schema      | `{code,message,requestId}`, the body of every non-`200` answer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `requestIdHeader`      | constant    | `x-smithers-request-id`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `contentType`          | constant    | `application/x-ndjson`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `defaultMaxBodyBytes`  | constant    | 1 MiB.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `requests`             | metric      | Counter `smithers_model_proxy_requests` by `side`, `outcome`, `status` (`0` with no response), and on the server the host's `attributes`.                                                                                                                                                                                                                                                                                                                                                                                              |
+| `duration`             | metric      | Histogram `smithers_model_proxy_duration_ms` by `side`, `outcome`, and on the server the host's `attributes`.                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `firstEvent`           | metric      | Histogram `smithers_model_proxy_first_event_ms` by `side`, and on the server the host's `attributes`.                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `tokens`               | metric      | Counter `smithers_model_tokens` by `type` (`input`, `output`), `model` and the host's `attributes`, from the final merged `usage` events; server only.                                                                                                                                                                                                                                                                                                                                                                                 |
 
 The client fails every stream with a `ModelError` carrying the request id as
 `requestId`: an `ErrorLine` as its code, `retryAfterMillis` and message; an
@@ -27485,20 +27620,21 @@ the frames.
 Executes provider requests with bounded retries, quota classification, and
 credential-safe diagnostics.
 
-| Export                          | Kind                      | Behavior                                                                                                                                                                                                                                                                              |
-| ------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RequestExecutor`               | service interface and tag | `execute(request, options)` answers the response, failing with `RequestError`. It requires a `Scope`: the caller's scope owns the successful response body. Tag id `/model/RequestExecutor`.                                                                                          |
-| `ExecuteOptions`                | interface                 | `{ modelId, classifyError?, onTry? }`: the per-request policy the composed route supplies. Every request is wrapped in the kernel's `model:call` capability check for this `modelId`. `onTry` observes each HTTP try and cannot change what is sent or retried.                       |
-| `TryEvent`                      | type                      | What `onTry` is told, in epoch milliseconds on the executor's `Clock`: `{ type: "sent", at }` when a try's request is handed to the HTTP client, after any retry wait, and `{ type: "failed", sentAt, at, code, httpStatus? }` when one fails. The answered try reports `sent` alone. |
-| `ErrorClassifier`               | type                      | `(status, body) => ModelError`: protocol-specific classification for a failed HTTP response.                                                                                                                                                                                          |
-| `RequestError`                  | type                      | `ModelError \| PermissionRequired \| PermissionDenied \| GrantStoreError`. Kernel permission failures keep their original classes across the model boundary.                                                                                                                          |
-| `Transport`                     | interface                 | `{ client, rebuild }`: the kernel HTTP client every request goes through, and the host's way of replacing it.                                                                                                                                                                         |
-| `fixed(client)`                 | constructor               | A transport whose rebuild answers the same client.                                                                                                                                                                                                                                    |
-| `rebuildAfter`                  | constant                  | `3`: how many consecutive transport failures replace the client. A destroyed connection pool is the failure waiting does not repair. Any success, and any non-transport failure, resets the counter, which is shared by every request on the executor.                                |
-| `MakeOptions`                   | interface                 | `{ maxRetries? }`: retries after the first attempt. Defaults to `2`; `0` makes `execute` a single attempt. A negative count is `0`.                                                                                                                                                   |
-| `makeWith(transport, options?)` | constructor               | `Effect<RequestExecutor>` over a transport it may replace, bounded by `MakeOptions`.                                                                                                                                                                                                  |
-| `make`                          | constructor               | `Effect<RequestExecutor, never, HttpClient>` around the kernel HTTP client in context.                                                                                                                                                                                                |
-| `layer`                         | layer                     | `Layer<RequestExecutor, never, HttpClient>`: provides the executor, requiring the kernel HTTP client.                                                                                                                                                                                 |
+| Export                          | Kind                      | Behavior                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `RequestExecutor`               | service interface and tag | `execute(request, options)` answers the response, failing with `RequestError`. It requires a `Scope`: the caller's scope owns the successful response body. Tag id `/model/RequestExecutor`.                                                                                                                                               |
+| `ExecuteOptions`                | interface                 | `{ modelId, classifyError?, onTry? }`: the per-request policy the composed route supplies. Every request is wrapped in the kernel's `model:call` capability check for this `modelId`. `onTry` observes each HTTP try and cannot change what is sent or retried.                                                                            |
+| `TryEvent`                      | type                      | What `onTry` is told, in epoch milliseconds on the executor's `Clock`: `{ type: "sent", at }` when a try's request is handed to the HTTP client, after any retry wait, and `{ type: "failed", sentAt, at, code, httpStatus? }` when one fails. The answered try reports `sent` alone.                                                      |
+| `ErrorClassifier`               | type                      | `(status, body) => ModelError`: protocol-specific classification for a failed HTTP response.                                                                                                                                                                                                                                               |
+| `RequestError`                  | type                      | `ModelError \| PermissionRequired \| PermissionDenied \| GrantStoreError`. Kernel permission failures keep their original classes across the model boundary.                                                                                                                                                                               |
+| `Transport`                     | interface                 | `{ client, rebuild }`: the kernel HTTP client every request goes through, and the host's way of replacing it.                                                                                                                                                                                                                              |
+| `fixed(client)`                 | constructor               | A transport whose rebuild answers the same client.                                                                                                                                                                                                                                                                                         |
+| `rebuildAfter`                  | constant                  | `3`: how many consecutive transport failures replace the client. A destroyed connection pool is the failure waiting does not repair. Any success, and any non-transport failure, resets the counter, which is shared by every request on the executor.                                                                                     |
+| `MakeOptions`                   | interface                 | `{ maxRetries? }`: retries after the first attempt. Defaults to `2`; `0` makes `execute` a single attempt. A negative count is `0`.                                                                                                                                                                                                        |
+| `Retries`                       | reference                 | `Context.Reference<number \| undefined>`: the retries a caller allows each request, overriding the executor's `maxRetries`. `undefined`, the default, keeps the executor's; a negative count is `0`. A caller that decides retries itself provides `0`, as `ModelStep.run` in `@smthrs/agent` does, so one of its attempts is one request. |
+| `makeWith(transport, options?)` | constructor               | `Effect<RequestExecutor>` over a transport it may replace, bounded by `MakeOptions`.                                                                                                                                                                                                                                                       |
+| `make`                          | constructor               | `Effect<RequestExecutor, never, HttpClient>` around the kernel HTTP client in context.                                                                                                                                                                                                                                                     |
+| `layer`                         | layer                     | `Layer<RequestExecutor, never, HttpClient>`: provides the executor, requiring the kernel HTTP client.                                                                                                                                                                                                                                      |
 
 The kernel HTTP boundary returns structural permission data. The executor uses
 `@smthrs/capability`’s `decodePermissionError` to reconstruct the yieldable error
@@ -31670,7 +31806,7 @@ https://smithers.sh/docs/reference/api/platform-browser/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-browser/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-browser/docs)
 
-> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/run-store`](/docs/reference/api/run-store/)
+> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/)
 
 ```ts
 import { BrowserServices } from "@smthrs/platform-browser"
@@ -31865,32 +32001,32 @@ through them, and [The durable browser engine](https://github.com/smithersai/smi
 explains the design. The three platform services are injected, so a test
 provides faulty ones and an app can share one instance.
 
-| Export                                                                                    | Side   | What it is                                                                                                                                                                                                                         |
-| ----------------------------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BrowserEngine.layer({ name, worker })`                                                   | tab    | Starts the tab's engine worker, asks for persistent storage, and provides `BrowserEngine` over the browser's own channel and storage.                                                                                              |
-| `BrowserEngine.make(options)`                                                             | tab    | The same service, requiring `TabChannel` and `StoragePersistence` and a `Scope`.                                                                                                                                                   |
-| `BrowserEngine.BrowserEngine`                                                             | tab    | The service: `start`, `result`, `cancel`, `signal`, `events`, and `unavailable`, which completes with an `EngineUnavailable` once the tab's worker failed.                                                                         |
-| `BrowserEngine.RequestRefused`                                                            | tab    | The leader refused a request; `request` names it and `error` is the failure's tag.                                                                                                                                                 |
-| `BrowserEngine.EngineUnavailable`                                                         | tab    | The tab's own worker failed: `reason` is `worker-failed` (it threw, as at load) or `engine-failed` (no engine could be built); `error` is a tag. Pending requests fail; later requests recover when a new leader announces itself. |
-| `BrowserEngine.RunEvent`, `WorkerLike`, `Options`                                         | tab    | An engine event's execution id and type; the slice of `Worker` the tab uses; the layer's options.                                                                                                                                  |
-| `BrowserEngine.FlowReference`                                                             | tab    | What the service's calls take of a flow: its `_tag` and its payload, success and error schemas. A whole flow is one.                                                                                                               |
-| `BrowserEngine.requests`, `persistence`, `unavailable`                                    | tab    | Counters: requests by `request` and `outcome`; storage answers by `outcome`; failed workers by `reason`.                                                                                                                           |
-| `BrowserRuntime.run(options)`                                                             | worker | The worker entry: `serve` over `layerHost` with the browser's own lock and channel, and `options.telemetry`, if given, as where its records go. Returns the fiber.                                                                 |
-| `BrowserRuntime.serve(options, engine)`                                                   | worker | Waits for the lock, builds `engine`, wakes unfinished runs, announces itself, answers requests and runs tabs' statements. Stops leading if its lock is stolen.                                                                     |
-| `BrowserRuntime.layerHost({ name, sqlite }, registerFlows)`                               | worker | `layer` over `BrowserSqlite.layer`: `engine.db` on a pool in the OPFS directory `smithers/<name>`, and the shared `app.db` beside it on a connection of its own.                                                                   |
-| `BrowserRuntime.layer(options, registerFlows)`                                            | worker | `@smthrs/flows`' `Runtime.layer` over an injected `SqlClient`, with the run catalog and the engine host: WebCrypto, the owner identity, `Path`, fetch, a refusing `Jj`.                                                            |
-| `BrowserRuntime.Services`, `Host`, `Options`, `HostOptions`, `ServeOptions`, `RunOptions` | worker | The types the functions above take and provide.                                                                                                                                                                                    |
-| `BrowserRuntime.leaderships`, `wakes`, `requests`, `statements`                           | worker | Counters: leaders; unfinished runs by `outcome`; requests by `request` and `outcome`; shared-database statements by `outcome`.                                                                                                     |
-| `BrowserSqlite.layerSqlite({ build, directory })`                                         | worker | The `Sqlite` service: the wa-sqlite `build`, loaded lazily, with the OPFS pool `directory` registered as its VFS, held until the scope closes.                                                                                     |
-| `BrowserSqlite.Build`, `Factory`                                                          | worker | The build as lazy imports: `module` imports `wa-sqlite.mjs`, `wasm` loads `wa-sqlite.wasm`. The package itself never imports the build.                                                                                            |
-| `BrowserSqlite.layer({ filename })`                                                       | worker | A `SqlClient` over `filename`, opened on the `Sqlite` service's VFS until the scope closes.                                                                                                                                        |
-| `BrowserSqlite.Sqlite`, `open(filename)`, `make(database)`                                | worker | The build-and-VFS service an app can provide itself; open a database on it; build a `SqlClient` over any open wa-sqlite database.                                                                                                  |
-| `SharedSqlite.layer({ name })`, `make(options)`, `SharedSqlite`                           | tab    | `execute(sql, params)`: run statements on the app's shared database, on the leader's connection, one at a time per tab.                                                                                                            |
-| `SharedSqlite.open({ name, within? })`, `Database`, `filename`                            | tab    | The database as `{ execute, close }` Promises, for TanStack DB's browser persistence; resolves once a leader answers, rejects after `within` (30 s) otherwise.                                                                     |
-| `SharedSqlite.SqliteError`                                                                | tab    | What `Database.execute` rejects with: SQLite's own `message` and `code`, as wa-sqlite's `SQLiteError`, which TanStack DB reads; the `SqlError` is its `cause`.                                                                     |
-| `WebLock.WebLock`, `make(locks)`, `layer`                                                 | both   | `hold(name, { steal? })`: wait for the exclusive lock, or take it at once with `steal`; hold it until the scope closes. `lost` completes if another context steals it.                                                             |
-| `TabChannel.TabChannel`, `make(construct)`, `layer`                                       | both   | `open(name)`: a port that posts to every other port of the channel and subscribes to what they post.                                                                                                                               |
-| `StoragePersistence.StoragePersistence`, `make(storage)`, `layer`                         | tab    | `persist`: ask for persistent storage and answer whether the origin has it.                                                                                                                                                        |
+| Export                                                                                    | Side   | What it is                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `BrowserEngine.layer({ name, worker })`                                                   | tab    | Starts the tab's engine worker, asks for persistent storage, and provides `BrowserEngine` over the browser's own channel and storage.                                                                                                                                                                                                                        |
+| `BrowserEngine.make(options)`                                                             | tab    | The same service, requiring `TabChannel` and `StoragePersistence` and a `Scope`.                                                                                                                                                                                                                                                                             |
+| `BrowserEngine.BrowserEngine`                                                             | tab    | The service: `start`, `result`, `cancel`, `signal`, `events`, and `unavailable`, which completes with an `EngineUnavailable` once the tab's worker failed; and the run reads `inspect(runId, { afterSeq?, limit? })` and `list({ limit?, cursor?, roots? })`, answered by the leader's `RunInspection` (`@smthrs/engine-store`), redacted and cut to 16 KiB. |
+| `BrowserEngine.RequestRefused`                                                            | tab    | The leader refused a request; `request` names it and `error` is the failure's tag.                                                                                                                                                                                                                                                                           |
+| `BrowserEngine.EngineUnavailable`                                                         | tab    | The tab's own worker failed: `reason` is `worker-failed` (it threw, as at load) or `engine-failed` (no engine could be built); `error` is a tag. Pending requests fail; later requests recover when a new leader announces itself.                                                                                                                           |
+| `BrowserEngine.RunEvent`, `WorkerLike`, `Options`                                         | tab    | An engine event's execution id and type; the slice of `Worker` the tab uses; the layer's options.                                                                                                                                                                                                                                                            |
+| `BrowserEngine.FlowReference`                                                             | tab    | What the service's calls take of a flow: its `_tag` and its payload, success and error schemas. A whole flow is one.                                                                                                                                                                                                                                         |
+| `BrowserEngine.requests`, `persistence`, `unavailable`                                    | tab    | Counters: requests by `request` and `outcome`; storage answers by `outcome`; failed workers by `reason`.                                                                                                                                                                                                                                                     |
+| `BrowserRuntime.run(options)`                                                             | worker | The worker entry: `serve` over `layerHost` with the browser's own lock and channel, and `options.telemetry`, if given, as where its records go. Returns the fiber.                                                                                                                                                                                           |
+| `BrowserRuntime.serve(options, engine)`                                                   | worker | Waits for the lock, builds `engine`, wakes unfinished runs, announces itself, answers requests and runs tabs' statements. Stops leading if its lock is stolen.                                                                                                                                                                                               |
+| `BrowserRuntime.layerHost({ name, sqlite }, registerFlows)`                               | worker | `layer` over `BrowserSqlite.layer`: `engine.db` on a pool in the OPFS directory `smithers/<name>`, and the shared `app.db` beside it on a connection of its own.                                                                                                                                                                                             |
+| `BrowserRuntime.layer(options, registerFlows)`                                            | worker | `@smthrs/flows`' `Runtime.layer` over an injected `SqlClient`, with the run catalog, the run reads (`RunInspection`, rendering through `options.flows` when given) and the engine host: WebCrypto, the owner identity, `Path`, fetch, a refusing `Jj`, and `RunInspection` for registered flows.                                                             |
+| `BrowserRuntime.Services`, `Host`, `Options`, `HostOptions`, `ServeOptions`, `RunOptions` | worker | The types the functions above take and provide.                                                                                                                                                                                                                                                                                                              |
+| `BrowserRuntime.leaderships`, `wakes`, `requests`, `statements`                           | worker | Counters: leaders; unfinished runs by `outcome`; requests by `request` and `outcome`; shared-database statements by `outcome`.                                                                                                                                                                                                                               |
+| `BrowserSqlite.layerSqlite({ build, directory })`                                         | worker | The `Sqlite` service: the wa-sqlite `build`, loaded lazily, with the OPFS pool `directory` registered as its VFS, held until the scope closes.                                                                                                                                                                                                               |
+| `BrowserSqlite.Build`, `Factory`                                                          | worker | The build as lazy imports: `module` imports `wa-sqlite.mjs`, `wasm` loads `wa-sqlite.wasm`. The package itself never imports the build.                                                                                                                                                                                                                      |
+| `BrowserSqlite.layer({ filename })`                                                       | worker | A `SqlClient` over `filename`, opened on the `Sqlite` service's VFS until the scope closes.                                                                                                                                                                                                                                                                  |
+| `BrowserSqlite.Sqlite`, `open(filename)`, `make(database)`                                | worker | The build-and-VFS service an app can provide itself; open a database on it; build a `SqlClient` over any open wa-sqlite database.                                                                                                                                                                                                                            |
+| `SharedSqlite.layer({ name })`, `make(options)`, `SharedSqlite`                           | tab    | `execute(sql, params)`: run statements on the app's shared database, on the leader's connection, one at a time per tab.                                                                                                                                                                                                                                      |
+| `SharedSqlite.open({ name, within? })`, `Database`, `filename`                            | tab    | The database as `{ execute, close }` Promises, for TanStack DB's browser persistence; resolves once a leader answers, rejects after `within` (30 s) otherwise.                                                                                                                                                                                               |
+| `SharedSqlite.SqliteError`                                                                | tab    | What `Database.execute` rejects with: SQLite's own `message` and `code`, as wa-sqlite's `SQLiteError`, which TanStack DB reads; the `SqlError` is its `cause`.                                                                                                                                                                                               |
+| `WebLock.WebLock`, `make(locks)`, `layer`                                                 | both   | `hold(name, { steal? })`: wait for the exclusive lock, or take it at once with `steal`; hold it until the scope closes. `lost` completes if another context steals it.                                                                                                                                                                                       |
+| `TabChannel.TabChannel`, `make(construct)`, `layer`                                       | both   | `open(name)`: a port that posts to every other port of the channel and subscribes to what they post.                                                                                                                                                                                                                                                         |
+| `StoragePersistence.StoragePersistence`, `make(storage)`, `layer`                         | tab    | `persist`: ask for persistent storage and answer whether the origin has it.                                                                                                                                                                                                                                                                                  |
 
 `BrowserSqlite` uses `@journeyapps/wa-sqlite`, the build TanStack DB's browser
 persistence uses, so an app ships one SQLite. The leader's `layerHost` opens
@@ -31953,6 +32089,61 @@ const tree = ImmutableCache.readThrough(
   ImmutableCache.key("repo.tree", repo, sha),
   fetchTree(repo, sha)
 ).pipe(Effect.provide(BrowserCache.layer()))
+```
+
+## The terminal socket
+
+`TerminalSocket.connect` is the socket a page holds to a terminal on a host
+that speaks `TerminalProtocol` from `@smthrs/sandbox`. It returns at once and
+dials in a fiber the scope owns; closing the scope closes the socket and stops
+redialing.
+
+```ts
+const connect: (
+  url: string,
+  options: { readonly onOutput: (bytes: Uint8Array) => void }
+) => Effect.Effect<Connection, never, Scope.Scope | Socket.WebSocketConstructor>
+
+interface Connection {
+  readonly send: (data: string | Uint8Array) => Effect.Effect<void>
+  readonly resize: (cols: number, rows: number) => Effect.Effect<void>
+  readonly status: Stream.Stream<Status>
+}
+
+type Status =
+  | { readonly _tag: "Connecting" }
+  | { readonly _tag: "Open"; readonly access: "write" | "read" }
+  | { readonly _tag: "Offline"; readonly attempt: number; readonly code: number }
+  | { readonly _tag: "Ended"; readonly reason: "closed" | "slept" | "lost" | "revoked" }
+  | { readonly _tag: "Closed"; readonly code: number }
+
+const layerWebSocket: Layer.Layer<Socket.WebSocketConstructor>
+```
+
+| Behaviour     | What the socket does                                                                                                                                                       |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Output        | Each binary frame reaches `onOutput` in order, as a fresh `Uint8Array` that spans its own buffer, whether it arrived as an `ArrayBuffer`, a `Blob` or a Node `Buffer`.     |
+| Input         | `send` writes UTF-8 bytes, in frames of at most 64 KiB, only while `Open` with `write`. Anything sent before then, while offline, with `read` or after the end is dropped. |
+| Size          | `resize` keeps only the latest size, clamped to whole numbers from 1 to 1000 columns and 500 rows, and writes it on `ready` with `write` and again when it changes.        |
+| `ready`       | Opens the terminal with the host's access, and resets the reconnect count.                                                                                                 |
+| `ended`       | Ends the terminal with the host's reason and closes the socket with 1000. It never redials.                                                                                |
+| Final close   | 1000, 1003, 1008 and 1009 close it for good as `Closed`.                                                                                                                   |
+| Other close   | 1006, 1011 and any other code go `Offline` and redial after 1 s, doubling to 30 s, at most 10 times in a row; then `Closed` with the last code.                            |
+| Status stream | Starts with the current status and ends when the scope closes.                                                                                                             |
+
+The socket comes from Effect's `Socket.WebSocketConstructor`, and
+`TerminalSocket.layerWebSocket` provides the browser's own `WebSocket`. Delays
+run on Effect's `Clock`, so a test drives them with `TestClock`. A constructor
+that throws counts as a dropped connection.
+
+```ts
+import { TerminalSocket } from "@smthrs/platform-browser"
+
+const terminal = Effect.gen(function*() {
+  const connection = yield* TerminalSocket.connect(url, { onOutput: (bytes) => write.output(bytes) })
+  yield* connection.resize(cols, rows)
+  yield* connection.send("ls\r")
+}).pipe(Effect.scoped, Effect.provide(TerminalSocket.layerWebSocket))
 ```
 
 ## Browser support
@@ -32311,10 +32502,17 @@ https://smithers.sh/docs/reference/api/platform-cloudflare/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-cloudflare/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-cloudflare/docs)
 
-> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/run-store`](/docs/reference/api/run-store/)
+> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/)
 
 ```ts
-import { CloudflareHost, CloudflareRuntime, EdgeCache, ExecutionObject } from "@smthrs/platform-cloudflare"
+import {
+  CloudflareHost,
+  CloudflareRuntime,
+  ContainerTerminal,
+  EdgeCache,
+  ExecutionObject,
+  SandboxObject
+} from "@smthrs/platform-cloudflare"
 ```
 
 The package has one entry point, its root. It imports no `node:` built-in and
@@ -32637,6 +32835,222 @@ What the Workers Cache API means for it:
   max-age=31536000, immutable`; without it the Workers cache stores nothing.
 - **Previews.** The dashboard editor and Playground previews ignore every Cache
   API call, so there every `get` misses.
+
+## SandboxObject
+
+What a container Durable Object runs before it uses its container. See
+[attach a terminal to a container](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/guides/attach-a-terminal-to-a-container.md).
+
+### `SandboxObject.wake`
+
+```ts
+const wake: <F, E, R>(
+  machine: SandboxObject.Machine<F, E, R>,
+  options: SandboxObject.WakeOptions<F>
+) => Effect.Effect<SandboxObject.WakeOutcome, E, R>
+
+interface WakeOptions<F> {
+  readonly intercepts: ReadonlyArray<{ readonly host: string; readonly fetcher: F }>
+  readonly inactivityTimeoutMs?: number | undefined
+}
+
+type WakeOutcome = "started" | "running"
+```
+
+1. Starts the container with `{ enableInternet: false }` when `running` is
+   false.
+2. Arms the inactivity timeout: `inactivityTimeoutMs`, default
+   `SandboxObject.defaultInactivityTimeoutMs` (30 minutes).
+3. Registers each intercept with `interceptOutboundHttp(host, fetcher)`, in
+   order.
+
+It runs all three on every call, so a restarted object, or one that died
+between its start and its registration, gets its timeout and intercepts back.
+It keeps no state and runs no timer or retry. A failure is the container
+client's own error, unchanged; the `sandbox.wake` span and the
+`cloudflare.sandbox.wake` log line carry only its tag.
+
+### `SandboxObject.Machine`
+
+```ts
+interface Machine<F, E = never, R = never> {
+  readonly running: Effect.Effect<boolean, E, R>
+  start(options: { readonly enableInternet: false }): Effect.Effect<void, E, R>
+  setInactivityTimeout(durationMs: number): Effect.Effect<void, E, R>
+  interceptOutboundHttp(addr: string, binding: F): Effect.Effect<void, E, R>
+}
+```
+
+The slice of an Effect container client `wake` uses. An Alchemy Durable
+Object's container handle satisfies it, with `F` Alchemy's `Fetcher`, `E` its
+start and container errors and `R = RuntimeContext`.
+
+### Metrics
+
+| Export                | Name                                | Attributes                                  |
+| --------------------- | ----------------------------------- | ------------------------------------------- |
+| `SandboxObject.wakes` | `smithers_cloudflare_sandbox_wakes` | `outcome`: `started`, `running` or `failed` |
+
+## ContainerTerminal
+
+A browser terminal on a tmux session in a Durable Object's container, over
+`@smthrs/sandbox`'s `TerminalProtocol`. See
+[attach a terminal to a container](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/guides/attach-a-terminal-to-a-container.md).
+
+### `ContainerTerminal.ensureSession`
+
+```ts
+const ensureSession: <E, R>(
+  container: ContainerTerminal.Container<E, R>,
+  options: { readonly name: string; readonly user: string; readonly cwd: string }
+) => Effect.Effect<"created" | "existing", E | ContainerTerminal.InvalidSession | ContainerTerminal.SessionFailed, R>
+```
+
+As `user`, runs `tmux has-session -t =<name>`, and when it fails, `tmux
+new-session -d -s <name> -c <cwd>`, each as an argument vector with no shell.
+A session another caller created meanwhile counts as `existing`. It fails
+with `InvalidSession` before running anything when `name` is not a lowercase
+UUID, `user` is `root` or not a plain user name, or `cwd` is not an absolute
+path of letters, digits, `.`, `_`, `-` and `/`; with `SessionFailed` when no
+session runs after `new-session`; and with the container's error when `exec`
+fails. Its span is `terminal.session`.
+
+### `ContainerTerminal.attach`
+
+```ts
+const attach: <E, R>(
+  container: ContainerTerminal.Container<E, R>,
+  socket: ContainerTerminal.Socket,
+  options: {
+    readonly name: string
+    readonly user: string
+    readonly access: "write" | "read"
+    readonly cols: number
+    readonly rows: number
+  }
+) => Effect.Effect<ContainerTerminal.Report, never, R>
+```
+
+Bridges an accepted server WebSocket to a new tmux client on a
+pseudo-terminal of `cols` by `rows`, until one side ends. It never fails.
+
+- **The client.** A writer's is `tmux attach-session -t =<name>` with piped
+  stdin; a reader's adds `-f read-only,ignore-size` and has no stdin, so it
+  neither types nor sizes the window. Both run as `user` under `TERM`
+  `ContainerTerminal.clientTerm` (`xterm-256color`).
+- **Output.** `ready {access}` first, then the shell's output as binary
+  frames of at most `TerminalProtocol.maxFrameBytes` (64 KiB), in order.
+- **Input.** A writer's binary frames (an `ArrayBuffer`, a typed array or a
+  `Blob`) go to stdin, and its `resize` resizes the pseudo-terminal. A
+  reader's binary frames and resizes are dropped.
+- **Refusals.** A frame over the cap closes with `CloseCode.tooBig` (1009); a
+  malformed control frame, or a frame that is neither text nor binary, with
+  `CloseCode.unsupported` (1003). Invalid options close with 1003 before
+  anything runs.
+- **The end.** When the tmux client exits, the viewer gets `ended {reason:
+  "closed"}` and `CloseCode.ended` (1000). When the viewer leaves, or a
+  refusal or failure closes the socket, `attach` SIGKILLs only its own tmux
+  client and waits for its exit; the session keeps running. A failed `exec`,
+  stdin, resize, `Blob` read or output stream closes with `CloseCode.failed`
+  (1011), after which the viewer reconnects.
+
+Start it right after `accept()`, never `acceptWebSocket()`, and run it in the
+background for the socket's lifetime.
+
+### `ContainerTerminal.Report`
+
+```ts
+interface Report {
+  readonly outcome: "ended" | "closed" | "unsupported" | "too_big" | "failed"
+  readonly closeCode: number | null
+  readonly bytes: { readonly in: number; readonly out: number; readonly dropped: number }
+}
+```
+
+`closeCode` is `null` when the viewer closed the socket first. `bytes` counts
+what went to the shell, to the viewer, and was dropped from a reader.
+
+### `ContainerTerminal.Container` and `ContainerTerminal.Process`
+
+```ts
+interface Container<E = never, R = never> {
+  exec(cmd: Array<string>, options?: ExecOptions): Effect.Effect<Process<E, R>, E, R | Scope.Scope>
+}
+
+interface Process<E = never, R = never> {
+  readonly stdin: Sink.Sink<unknown, Uint8Array, unknown, E, R> | undefined
+  readonly stdout: Stream.Stream<Uint8Array, E, R> | undefined
+  readonly exitCode: Effect.Effect<number, E, R>
+  kill(signal?: number): Effect.Effect<void, E, R>
+  resize(cols: number, rows: number): Effect.Effect<void, E, R>
+}
+
+interface ExecOptions {
+  readonly user?: string
+  readonly env?: Record<string, string>
+  readonly pty?: { readonly cols: number; readonly rows: number }
+  readonly stdin?: "pipe"
+  readonly stdout?: "pipe" | "ignore"
+  readonly stderr?: "pipe" | "ignore" | "combined"
+}
+```
+
+The slice of an Effect container client the functions use. An Alchemy Durable
+Object's container handle satisfies it with `E = ContainerError` and
+`R = RuntimeContext`.
+
+### `ContainerTerminal.Socket`
+
+```ts
+interface Socket {
+  send(message: string | ArrayBuffer | Uint8Array): void
+  close(code?: number, reason?: string): void
+  addEventListener(
+    type: "message" | "close" | "error",
+    listener: (event: { readonly type: string; readonly data?: unknown }) => void
+  ): void
+}
+```
+
+The slice of a server WebSocket `attach` uses: the server side of
+`new WebSocketPair()`, already accepted.
+
+### `ContainerTerminal.isSessionName`
+
+```ts
+const isSessionName: (value: string) => boolean
+```
+
+Whether `value` is a lowercase UUID, the only session name the functions
+accept. A Worker can check a terminal id from a URL before it upgrades.
+
+### Errors
+
+```ts
+class InvalidSession extends Schema.TaggedError<InvalidSession>()(
+  "@smthrs/platform-cloudflare/InvalidSession",
+  { field: Schema.Literals(["name", "user", "cwd", "size"]), message: Schema.String }
+)
+
+class SessionFailed extends Schema.TaggedError<SessionFailed>()(
+  "@smthrs/platform-cloudflare/SessionFailed",
+  { name: Schema.String, exitCode: Schema.Number, message: Schema.String }
+)
+```
+
+### Metrics
+
+| Export                           | Name                                         | Attributes                                                        |
+| -------------------------------- | -------------------------------------------- | ----------------------------------------------------------------- |
+| `ContainerTerminal.sessions`     | `smithers_cloudflare_terminal_sessions`      | `outcome`: `created`, `existing` or `failed`                      |
+| `ContainerTerminal.connects`     | `smithers_cloudflare_terminal_connects`      | `access`, and `outcome` as in `Report`                            |
+| `ContainerTerminal.sessionsOpen` | `smithers_cloudflare_terminal_sessions_open` | `access`; up at `ready`, down when the attach ends                |
+| `ContainerTerminal.bytes`        | `smithers_cloudflare_terminal_bytes`         | `direction`: `in`, `out` or `dropped`; a count, never the content |
+
+No metric attribute holds an id. Each `attach` runs in a `terminal.connect`
+span with `smithers.terminal.id`, `smithers.terminal.access`,
+`smithers.terminal.outcome`, `smithers.terminal.close_code` and the three byte
+counts, and logs one `cloudflare.terminal.connect` line inside it.
 
 ---
 
@@ -37189,6 +37603,7 @@ Every namespace is also its own subpath, and `./internal/*` is null mapped.
 | `@smthrs/sandbox/CloudflareSandbox`         | [src/CloudflareSandbox/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/CloudflareSandbox)                 |
 | `@smthrs/sandbox/SandboxHealth`             | [src/SandboxHealth/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/SandboxHealth)                         |
 | `@smthrs/sandbox/SandboxSupervision`        | [src/SandboxSupervision/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/SandboxSupervision)               |
+| `@smthrs/sandbox/TerminalProtocol`          | [src/TerminalProtocol/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/TerminalProtocol)                   |
 
 ## RemoteChildProcessSpawner
 
@@ -37381,6 +37796,30 @@ The base is resolved after the provider hands over the session, so a provider th
 | `capture_failed`      | `git` failed while diffing, or the patch is not UTF-8 even with every path diffed as binary |
 
 `hostContext(session, { health? })` builds the `Host` context `layerHost` provides from a session the caller already holds; it requires a `Scope`. `layerHost` and `run` both use it.
+
+## TerminalProtocol
+
+The wire protocol between a browser terminal and the host that attaches it to a shell in a sandbox, one WebSocket per
+viewer. It is pure, so the host (`@smthrs/platform-cloudflare`'s `ContainerTerminal`) and the client
+(`@smthrs/platform-browser`'s `TerminalSocket`) share one definition.
+
+```ts
+import { TerminalProtocol } from "@smthrs/sandbox"
+
+socket.send(TerminalProtocol.encodeResize(120, 40))
+const control = TerminalProtocol.decodeServerControl(text) // { type: "ready", access } | { type: "ended", reason }
+if (TerminalProtocol.isFinal(code)) stop()
+else wait(TerminalProtocol.reconnectDelay(attempt))
+```
+
+- **Frames:** binary frames carry bytes (the shell's output; a writer's keystrokes). Text frames carry JSON control: a
+  writer's `resize { cols, rows }` (1 to `maxCols` by 1 to `maxRows`), and the host's `ready { access }` and
+  `ended { reason }` (`closed`, `slept`, `lost`, `revoked`). Either side caps a frame at `maxFrameBytes` (64 KiB).
+- **Close codes (`CloseCode`):** `ended` 1000, `unsupported` 1003 (a malformed control frame), `noAccess` 1008 and
+  `tooBig` 1009 are final (`isFinal`); `failed` 1011 and a dropped connection (1006) reconnect.
+- **Reconnects:** `reconnectDelay(attempt)` is 1 s doubling to 30 s for `reconnect.maxAttempts` (10) attempts, and
+  `undefined` after; a connection that reaches `ready` starts the count again. Keystrokes are never queued while
+  disconnected: input whose delivery is unknown is not safe to repeat.
 
 ## SandboxMerge
 

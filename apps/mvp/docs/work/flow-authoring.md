@@ -1,0 +1,116 @@
+---
+title: Creating flows (a form card, the agent builds, a PR activates)
+status: in-progress
+area: app
+owner: repository home builder (started about 13:09 on 2026-10-20), which runs `e2e/flows.spec.ts` before building the home view; its first run failed at 13:12:56 and it changed `src/features/flows-ui/` from 13:15. Until 13:09: 0014's builder, which reported the first slice built at 13:05 on 2026-10-20 (relayed by the lead at 13:09:31), less the home view and a passing e2e. Until 13:05: 0014's builder; `e2e/flows.spec.ts` on disk at 12:10:42 on 2026-10-20 and the flows and runs feature docs rewritten at 12:35 to 12:37; no recorded e2e run, GIF or report by 12:45. Until 12:10: 0014's builder, not stopped by either weekly limit (the lead, 11:42:48 on 2026-10-20); `src/features/flows-ui/` and `src/features/runs/` with tests on disk to 11:50; no e2e and unreported by 11:55. Until 11:42: 0014's builder, resumed by the lead at 10:42 on 2026-10-20 from where it stopped (the Claude usage limit stopped it from about 08:15 to 10:40); unreported by 10:44. Until 10:42: 0014's builder, the walking skeleton from 07:30:21 on 2026-10-20 (the lead to Will); nothing on disk by 07:37; unreported. Until 07:30: Panel F; decision 0014 written 07:02:13 on 2026-10-20 (status: proposed); no builder yet. Until 07:02: Panel F (Opus merges into decision 0014; started 06:42:06 on 2026-10-20). Sol's design done 06:43; Opus's independent design written 06:56:49
+updated: 2026-10-20
+links: [review-round-4.md, land-to-main.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, flow-debugging.md, repository-declared-home.md, flows-and-agent.md, slash-commands.md, scratch-branches.md, sandboxes.md, todos-and-stack.md, pull-request-list-and-tabs.md, agent-ui-rendering.md, roles-and-labels.md, old-app-feature-gaps.md, decisions-for-will.md, ../decisions/0003-flows-and-the-agent.md, ../decisions/0004-agent-ui-codemode-and-rendering.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../proposals/mvp-gaps.md, dev-stack-hygiene.md]
+---
+
+## What
+
+People and the agent author new flows: a repository's `.smithers/flows/<name>/flow.ts` (M-49), or a person's or the app's own flows.
+
+```
+/flow.new ─▶ form card: Name · Goal · Scope (Repository | Personal | App)
+               │ agent builds the draft as durable steps; optional grill-me questions inline
+               ▼
+           validate + test in a no-credential sandbox, on a scratch branch
+               ▼
+           propose: a TODO on a branch ─▶ PR ─▶ a person merges
+               ▼
+           refresh activates that exact revision ─▶ registry, slash menu, agent catalog
+```
+
+**Decided in 0014 (07:02, proposed):**
+- **Three kinds of flow, and the kind decides where it runs.** App flows (`src/features/<f>/flows.ts`, the team's) run as today. Prompt flows are a `SKILL.md` (frontmatter `name`, `description`, `flows`, optional `model`, plus instructions) that the trusted agent loop reads; they run on the person's own browser engine. Code flows are `.smithers/flows/<name>/flow.ts` and run only in a job sandbox.
+- **Your own flows ("Mine") are prompt flows** stored in Postgres and synced to your devices. There is no personal code flow. A repository's flows reach its default branch only through a PR a person merges.
+- **`flow/new` is one durable flow on the browser engine.** A form card (where, name, what it should do) starts it, with the current repository as default. Each round drafts, asks optional questions with the default it assumed, checks the draft and saves the draft row; only a blocking question parks it on `HumanTask`. **Try** runs the draft once, **Save** stores a personal flow, **Propose** opens a PR through 0012.
+- **Activation receipt:** when the mirror's head moves, `flow/refresh` finds `.smithers/flows/` without running it, checks each flow, and moves its active revision in `flow_bindings` by compare-and-set; a failure shows `Merged · not active`.
+- **One catalog:** the slash menu, the Flows pages and the agent read one join of the app registry, the person's flows and the repository's active bindings; every non-app flow runs through `flow/run { ref, input }`. Nothing shadows an app flow.
+- **People merge; agents propose.** The agent may author, try and save its person's flows and propose repository flows, never merge or activate.
+- **Walking skeleton (F1):** `/flow.new` → the draft → Save → run it (for example `/release-notes`) → the run card → Inspect → each step's input and output → Retry. It needs no sandbox, no PR and no 0009 table. Repository flows (L1) wait for 0012's branch and PR flow; code flows (L2) for 0005's job sandboxes, built with 0013.
+
+The best guess before 0014, from Sol's design (scratchpad `final/panel-f-sol.md`):
+- **A form card.** `/flow.new` opens Name, Goal and Scope; the repository defaults to the current one. The browser agent builds the draft through durable steps. Only missing authority, a required input or an unsafe ambiguity parks the build on `HumanTask`; optional questions let work continue.
+- **One shape.** `Flow.make("<name>", { … })` default-exported from `.smithers/flows/<name>/flow.ts`, tests beside it. No root `flows/`, no second graph model, no new runtime.
+- **Scope doesn't confer trust.** Repository, Personal and App code all run in a sandbox, never in the app, the browser engine or the trusted Worker. Pure presentation TSX runs only in 0004's generated-view realm.
+- **Validate, then test, an immutable revision.** Extract metadata in a sandbox with no credentials; check path, tag, schemas, imports, capabilities and protected tags; typecheck and run the flow's own tests. Test runs execute the real module on a scratch branch with explicit grants and no production writes.
+- **Activation is a receipt.** Draft → Tested → Proposed → Merged → Active. A source edit is a TODO on a branch and becomes a PR; people merge, agents never approve or activate. Refresh loads the merged commit in isolation and moves the active pointer; a failure keeps the previous version active. Each run pins its source revision.
+- **One catalog.** The existing registry gains references keyed by `(scope, owner, tag, revision)`. Buttons, slash completion, agent tools, CLI and API all derive from them. A repository can't shadow a system flow.
+- **Flows:** `flow/new`, `flow/answer`, `flow/validate`, `flow/test`, `flow/propose`, `flow/refresh`, `flow/activate`, `flow/run`.
+
+## Why
+
+Will, 06:39:05 on 2026-10-20: "Stuff related to flows debugging flows creting flows which wasn't listed is another one."
+
+His earlier ruling (2026-10-13, for the old app): a form card; the repository defaults to the current one; optional grill-me questions during the build; block only when truly blocked; global and per-repository flows.
+
+Planned before only as `mvp-gaps.md` item 8: "Let teams author and safely activate their own flows and views." The old app had a flow card, plan card, form cards and the repository's flow list (`apps/app/src/mainview/cards/FlowCard.tsx`, `cards/FlowPlanCard.tsx`, `cards/FlowFormCards.tsx`, `repository/RepositoryFlows.tsx`). The old-app audit counted it as covered, which is why Will said it "wasn't listed".
+
+## State
+
+- 06:39:05 on 2026-10-20: Will's priority. 06:40: Sol's run started. 06:42:06: the lead started Panel F's Opus member and merger.
+- 06:43: Sol's design finished (exit 0): decisions 1 to 6 cover authoring. It names no question for Will.
+- By 06:55: Opus's design (`panel-f-opus.md`) and `0014-flows-authoring-debugging-and-home-view.md` aren't written.
+- 06:56:49: Opus's design written. **07:02:13: decision 0014 written (status: proposed)**, with one question for Will (below). It differs from Sol on the main point: personal flows are prompt flows, so the first slice needs no sandbox.
+- **07:30:21 on 2026-10-20, Panel F done; the lead to Will:** "The flows design is done (decision 0014), and building its first slice has started." Its list: "**Runs:** a run list and a run page showing each step, waits and failures, with Stop, Retry, Resume and Answer buttons. **New flows:** you create a flow from a form, and the agent can ask a few optional questions while building it. **Running it:** save the flow, run it, and watch its run page. **Repository home:** a repository's own home page comes from a small data file in the repository, with the file tree one tab away."
+- 07:30:21, the lead relayed Q1 (below), "built with the recommended answer until you say otherwise". The slice builds personal flows as prompt flows.
+- By 07:37: no slice file on disk (no `RunInspection`, `src/features/flows/`, `src/features/runs/` or `flows` migration). Migration 0013 is taken by agent status's `runs` table ([agent status](agent-status.md)), so the `flows` tables take the next free number from the lead.
+- **Status moved from designing to in-progress** at the 07:30:21 start.
+- 07:42:44 on 2026-10-20: the branch workspace took migration 0014 ([conversations](conversations-and-history.md)), so the `flows` tables take 0015 or later.
+- 07:43:00 on 2026-10-20: migration `0015_flows.ts` (skeleton step 3): `flows`, one row per name a person owns; append-only `flow_revisions`, where a run pins a revision and `digest` is the SHA-256 of `source`; and `flow_drafts`. A person's flow "is a `SKILL.md` of instructions and the flows it may call; it never holds code (decision 0014 §2)".
+- 07:54:58 to 08:02:20, on disk: `src/features/flows-ui/` declares `flow/new`, `flow/answer`, `flow/save`, `flow/run`, `flow/run/prompt`, `flow/delete` and `flow/list` (steps 4 and 5). Steps 1 and 2 are in [flow debugging](flow-debugging.md).
+- No screen, e2e or report by 08:07. Kept out of landing round 2 at 07:53:57 as still in flight ([land to main](land-to-main.md)).
+- **About 08:15 on 2026-10-20: the Claude usage limit stopped the builder** ("Build 0014 first slice: runs page + flow/new", 15:14:01Z) with every other Claude agent, unreported. The limit reset at 10:40.
+- **10:42: the lead resumed it** from where it stopped ("flows and runs"). 10:42:02 to 10:43:48: `src/features/flows-ui/flows.test.ts` and `steps.ts` changed. No screen, e2e or report by 10:44.
+
+- **11:01 to 11:04 on 2026-10-20: [review round 4](review-round-4.md), Claude Fable P3-3 and Claude Opus P3-12 (source-verified): two saves of one draft commit two revisions.** `worker/PersonalFlows.ts:401-435`: `saveRefusal` checks `draft.status === "ready"` outside the transaction (`:198-209`), and `save` (`:216-246`) raises `flows.revision` and marks the draft `saved` with no `status = 'ready'` guard. Two `flow/save` runs for one draft (a double click, two tabs) both read `ready`: an existing flow's revision goes up twice with two identical `flow_revisions` rows; a new flow's second save hits `flows_owner_name`, answers `409 name_taken`, which `src/features/flows-ui/steps.ts:227-231` maps to the non-retryable `NameTaken`, so that run fails although the flow exists. Fix: open the transaction with `UPDATE flow_drafts SET status = 'saved' WHERE id = $1 AND status = 'ready' RETURNING id` and answer `existing` when it updates nothing; a concurrent-save test. Unrouted by 11:07.
+- Also round 4: Fable's R4-12 lists `PersonalFlows`' shapes (`worker/PersonalFlows.ts:513-517`) among those that swap to an empty definition when the session lookup fails ([local-first](local-first.md)). Opus: flows and drafts are scoped to their owner, and `owner_id` stays off the shapes.
+- 11:05 to 11:25 on 2026-10-20, on disk, unreported: `src/features/runs/` (`store.ts`, `actions.ts`, `runs.ts`, `components/RunListView.tsx`, `RunPageView.tsx` and `RunsContext.tsx`, 11:08 to 11:22) and `src/features/flows-ui/` (`store.ts`, `round.ts`, `steps.ts`, `actions.ts`, `flowsUi.ts`, `components/DraftCard.tsx`, `FlowsPage.tsx`, `NewFlowCard.tsx` and `FlowsUiContext.tsx`, 11:16 to 11:22); both `contract.ts` files 11:25:10.
+- 11:42:48, the lead: flows wasn't reported stopped by either weekly limit, so it kept running.
+- 11:44:47 to 11:50:25: tests `flows-ui/tab.test.ts` (new 11:44:47, changed 11:48:45), `flows-ui/api.test.ts` (new 11:49:40), `runs/page.test.ts` (new 11:50:18) and `flows-ui/flows.test.ts` (11:50:25).
+- Not yet by 11:55: a flows e2e (none in `e2e/`), a GIF or a report. R4-22's file `engine-store/src/RunInspection.ts` changed at 11:13:25; no fix on record.
+- 11:59 to 12:44 on 2026-10-20, on disk, unreported:
+  - **12:10:42: the new `e2e/flows.spec.ts`**, decision 0014's F1 and F7 in a real browser with its own durable engine and the real model, no mocks: draft a prompt flow from `/app/flows`, save it, run it, watch its run page to its answer, then stop a live run and retry it.
+  - `src/features/flows-ui/` `callable.ts` and `flows.test.ts` (12:18:58), `faults.test.ts` (12:22:08), `actions.ts` and `api.ts` (12:37:43), `tab.test.ts` (12:37:55).
+  - `src/features/runs/` `runs.test.ts` and `store.test.ts` (12:22:08), `actions.ts` (12:30:19), `contract.ts` (12:37:43), `steps.ts` (12:39:48).
+  - `docs/features/flows.md` (12:35:17) and `docs/features/runs.md` (12:37:43) rewritten; the shared `src/flows/registry.ts` changed at 12:42:44.
+  - `worker/PersonalFlows.ts` and its test changed at 12:18; `save` still marks the draft `saved` with no `status = 'ready'` guard, so round 4's double-save finding stays open. R4-22's `engine-store/src/RunInspection.ts` is unchanged since 11:13:25.
+- Not yet by 12:45: a recorded run of `flows.spec.ts` (no video under `test-results/`), a GIF or a report. Status stays `in-progress` until the e2e passes.
+- **13:05 on 2026-10-20: 0014's builder reported the first slice built** (notification 13:07:56; the lead to Will at 13:09:31: "You can now create, save, run and debug flows"):
+  - `/app/flows`: `flow/new` with its questions, Draft and Save; personal flows in migration `0015_flows`. The agent, `/flow.new` and `/flow.run` run the same flows. The slash menu now honors a command's `hints`, which other entries set but which had no effect until then.
+  - The run page is in [flow debugging](flow-debugging.md).
+  - **Differs from 0014:** a blocking question ends the round as `needs_you`, and the answer starts the next round; nothing parks on a `HumanTask`.
+  - Proof: 105 tests pass, 100% coverage on every new file; app, worker and both SDK packages typecheck; `pnpm docs:check` passes. Docs: `docs/features/flows.md` and the new `docs/features/runs.md`. One `importRules` violation, in `worker/ExecutionHost.test.ts`, isn't this slice's.
+  - **The e2e was written but couldn't finish:** the local dev server refused every model call with 429 "Today's model budget is spent": `model_budget_days` held 1,022,891 committed tokens against the 1,000,000 cap, of which 496,311 were spent and the rest were killed runs' reservations, held until midnight UTC ([dev stack hygiene](dev-stack-hygiene.md)). Before the budget ran out, the spec drafted a flow with the real model and saved it.
+  - Shared files touched: the registry, declarations, registrations, `catalog.ts` (now scoped per run), boot, main, router, `AppShell`, `worker/Chat.ts`, the vitest coverage list and three test harnesses.
+  - Will's try-it steps (the lead, 13:09:31): Flows → New flow; name `count`; What: "list the numbers from one to fifty in words"; Draft; Save; Run on the Flows page; watch the run page; start a second run, Stop, then Retry.
+- Round 4's double-save finding is still open: `worker/PersonalFlows.ts` (unchanged since 12:18:01) marks the draft `saved` with no `status = 'ready'` guard.
+- **13:13 on 2026-10-20: the lead raised the dev budget to 10,000,000 tokens** (`apps/mvp/.env`, not committed) and restarted the shared dev server; a first restart at 13:11 left two servers running until 13:13:19.
+- **13:12:05 to 13:12:56: the repository home builder's first run of `flows.spec.ts` failed** (scratchpad `home-view/flows1.log`), during the two-server window: after Save the page returned to `/app/flows`, but the new flow's `Run count-…` button didn't appear within 5 s; the table showed only an earlier run's flow. 13:15:34 to 13:16:44: `src/features/flows-ui/` `actions.ts`, `store.ts` and `faults.test.ts` changed. No passing run by 13:17. Status stays `in-progress` until the e2e passes.
+
+## Next
+
+From 13:09 on 2026-10-20: the repository home builder gets `e2e/flows.spec.ts` passing on the restarted dev server, with its GIF, then builds the [home view](repository-declared-home.md). The double-save fix goes with round 4's routing ([review round 4](review-round-4.md)). The slice lands in the lander's app round ([land to main](land-to-main.md)).
+
+Until 13:09 on 2026-10-20 the next step was, from 11:07 on 2026-10-20: the walking skeleton as before; the double-save fix goes with round 4's routing ([review round 4](review-round-4.md)).
+
+Until 11:07 on 2026-10-20 the next step was, from 07:30 on 2026-10-20: the walking skeleton in 0014 §9's order, until F1 passes on `alchemy dev`:
+1. `RunInspection` in `@smthrs/engine-store`, and `inspect` and `list` on `BrowserEngine`.
+2. `/app/runs` and the run page, with `run/cancel` and `run/retry` on local runs ([flow debugging](flow-debugging.md)).
+3. The `flows`, `flow_revisions` and `flow_drafts` migration and shapes.
+4. `flow/new`, `flow/answer`, `flow/try` and `flow/save` for personal flows.
+5. `flow/run` for prompt flows, in the slash menu and the agent's catalog.
+
+F1: `/flow.new` → the draft → Save → `/release-notes` → the run card → Inspect → each step's input and output → Retry. Repository flows (L1) wait for 0012's pull-request flow; code flows (L2) for 0013's sandboxes.
+
+Until 07:30 on 2026-10-20 the next step was, from 07:02 on 2026-10-20: Will answers 0014's question; then one owner builds the walking skeleton in order (`RunInspection`, the run page, the `flows` tables, `flow/new` and `flow/save`, `flow/run`) until F1 passes on `alchemy dev`.
+
+Until 07:02 the next step was: Opus merges both designs into 0014 (status: proposed). Sol's walking skeleton: a Member creates a harmless typed flow through the form, validates and tests it on a scratch branch in the sandbox host, inspects its journal and opens a PR; a person merges; refresh activates it; it shows in the slash menu and the agent catalog. It depends on Panel G's branch and PR slice ([pull requests](pull-request-list-and-tabs.md)) and a sandbox host ([sandboxes](sandboxes.md)).
+
+## Questions for Will
+
+- Q1 of 0014: your own flows, usable in any repository, are prompt flows (a `SKILL.md` of instructions plus the flows it may call, stored in Smithers and synced to your devices); code flows (`flow.ts`) live only in repositories and run only in a sandbox. Recommended: yes. It ships the first slice before sandboxes exist; Sol's alternative, every authored flow as sandboxed code, waits for sandboxes and pull requests. (Relayed by the lead at 07:30:21 on 2026-10-20; the first slice builds on yes until Will changes it.)
+
+Until 07:02: None yet. Panel F sends at most 3 with 0014. Sol's recommended defaults: repository scope first; Personal flows are owner-only; App flows are published by a human Admin.

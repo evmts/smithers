@@ -2,9 +2,9 @@
 title: Codex and Fable reviews
 status: in-progress
 area: process
-owner: lead (smithers-b3); Codex Astra review 3 written 01:18 on 2026-10-20 (five findings, two reproduced), all five accepted and assigned by 01:19: findings 1 and 4 to one fix agent, 2 to a views fix agent, 3 to the wiring agent, 5 to a sandbox host-boundary agent; Fable reviews the fixed code after; finding 2 fully done (reported about 02:08 on 2026-10-20, `ViewCodeError` included); findings 1 and 4 fixed (reported about 02:16); finding 5 fixed (reported 02:26:57); finding 3 on disk with the wiring agent, unreported; Codex checkpoint review 2 written 23:01; finding 3 fixed 23:27; finding 1 fixed 00:21 on 2026-10-20
+owner: lead (smithers-b3); review round 4 (Codex Astra, Codex Sol, Claude Opus and Claude Fable at once) running since 10:47 on 2026-10-20, tracked in `review-round-4`: Sol and Astra written 10:50 and 10:52, Opus 11:04, Fable still writing at 11:07; the Codex findings are with a worker fix agent and the branch workspace builder. Until 10:47: lead (smithers-b3); a review round is planned for after landing round 2 (Codex Astra, then fixes, then Fable) over slash commands, `navigate`, the web page flow and Jev; the client Fable fixes remain. Until 07:59: lead (smithers-b3); Fable review 2's worker and engine and hosts fixes reported done at 07:01:52 and 07:07:38 on 2026-10-20; the client fixes remain. Until 07:01: lead (smithers-b3); Fable review 2 written 06:08:31 on 2026-10-20: all five Astra fixes verified, 12 new findings (0 P0, 1 P1, 3 P2, 8 P3); from 06:09 three Fable fix agents (client, worker, engine and hosts), tracked in `fable-review-2-fixes`. Until 06:09: lead (smithers-b3); Fable review 2 running since about 05:54 on 2026-10-20 over the whole uncommitted diff (1,412 files), told what became of each Astra finding, to write scratchpad `final/fable-review-2.md`; all five Astra findings fixed (finding 3 reported 05:54:14 with the wiring agent's report). Until 05:54: lead (smithers-b3); Codex Astra review 3 written 01:18 on 2026-10-20 (five findings, two reproduced), all five accepted and assigned by 01:19: findings 1 and 4 to one fix agent, 2 to a views fix agent, 3 to the wiring agent, 5 to a sandbox host-boundary agent; Fable reviews the fixed code after; finding 2 fully done (reported about 02:08 on 2026-10-20, `ViewCodeError` included); findings 1 and 4 fixed (reported about 02:16); finding 5 fixed (reported 02:26:57); finding 3 on disk with the wiring agent, unreported; Codex checkpoint review 2 written 23:01; finding 3 fixed 23:27; finding 1 fixed 00:21 on 2026-10-20
 updated: 2026-10-20
-links: [known-host-access-burn-down.md, dev-stack-hygiene.md, ../rules.md, integrations-durable-retries.md, sign-in.md, local-first.md, flows-and-agent.md, one-sqlite-one-leader.md, repo-checks-green.md, agent-ui-rendering.md, model-endpoint.md, platform-cloudflare-edge-cache.md, sdk-test-reds.md, effect-tanstack-db-and-effect-electric.md, decisions-for-will.md, cloudflare-flow-host.md, durable-answering.md, repo-clone-and-view.md, integrations-browser-safe-root.md, land-and-deploy-mvp.md, gitremote-unicode-branches.md, web-standard-globals-rule.md, flows-root-platform-neutral.md, observability.md, app-wiring.md, auth.md, host-agnostic-flows.md]
+links: [review-round-4.md, agent-jev.md, site-deployment-test.md, land-to-main.md, known-host-access-burn-down.md, dev-stack-hygiene.md, ../rules.md, integrations-durable-retries.md, sign-in.md, local-first.md, flows-and-agent.md, one-sqlite-one-leader.md, repo-checks-green.md, agent-ui-rendering.md, model-endpoint.md, platform-cloudflare-edge-cache.md, sdk-test-reds.md, effect-tanstack-db-and-effect-electric.md, decisions-for-will.md, cloudflare-flow-host.md, durable-answering.md, repo-clone-and-view.md, integrations-browser-safe-root.md, land-and-deploy-mvp.md, gitremote-unicode-branches.md, web-standard-globals-rule.md, flows-root-platform-neutral.md, observability.md, app-wiring.md, auth.md, host-agnostic-flows.md, plan-identity-minified-builds.md, navigate-flow.md, web-page-flow.md, fable-review-2-fixes.md, agent-status.md, model-step.md]
 ---
 
 ## What
@@ -178,10 +178,89 @@ Will, 01:12 on 2026-10-20: "remember to have /codex astra review code and then o
   | 3 | delete server answering | on disk, with the wiring agent's report |
   | 4 | one role check per session | **done**, Codex's pause-and-release test |
   | 5 | sandbox host code behind a service | **done**, probe fails the old code with 4 findings |
+- **05:54:14 on 2026-10-20: finding 3 is fixed, reported.** The wiring agent: "ChatApi no longer answers on the server: `Answer.ts`, `waitUntil` and the cron are gone, and migration `0008` dropped `attempts`." The prod plan shows no cron. No regression test that fails on the old code is named for it ([app wiring](app-wiring.md), [durable answering](durable-answering.md)).
+- The board as of 05:54:
+
+  | # | Fix | State |
+  |---|---|---|
+  | 1 | server-minted accounting id | **done**, 200, 200, 429 |
+  | 2 | views spans and `ViewCodeError` content-free | **done**, 116 tests at 100% |
+  | 3 | delete server answering | **done**, reported 05:54:14 |
+  | 4 | one role check per session | **done**, Codex's pause-and-release test |
+  | 5 | sandbox host code behind a service | **done**, probe fails the old code with 4 findings |
+
+- **About 05:54 on 2026-10-20: the Fable review started**, Will's order (Astra, fixes, then Fable). Brief: the whole uncommitted diff, read with `jj`; verify each of the five Astra fixes without re-reporting them; findings P0 to P3, real defects only, with file, line, a failure scenario and the fix; focus on the seams where separately built parts meet (browser engine, `SharedSqlite`, TanStack persistence and the outbox; `ModelStep`, `ModelProxy` and the endpoint's budget; sign-in, the role gate and the sign-out wipe; repo clone, the Cloudflare flow host and `ImmutableCache`). The [plan identity](plan-identity-across-deploys.md) fix and [slash commands](slash-commands.md) get a light pass, since they may land during the review. Output: scratchpad `final/fable-review-2.md`. At 05:55 it was reading the design records and `worker/`.
+- 05:54 on 2026-10-20, the lead to Will: "The Fable review of everything is now running, after the Astra fixes."
+- 06:03 to 06:04 on 2026-10-20, unreported: the Fable reviewer wrote a throwaway reproduction, `apps/mvp/worker/zz_fable_repro.test.ts`, ran it (scratchpad `repro-run.txt`, 06:04:13, 2 of 2 passed) and removed it. Two likely findings, not yet in `final/fable-review-2.md`:
+  - **Repro B:** "another Member settles A's streaming answer with forged text; A's own settle is then refused". The forged write returns 200, the row becomes `done` with "forged by B", and A's own settle gets 409 `settled`.
+  - **Repro C:** "concurrent model calls all pass the budget check and overspend it". With a budget of 46, 8 concurrent calls all return 200, spending 368; the next sequential call gets 429. Astra finding 1 (server-minted accounting ids) is fixed; this race is a separate check-then-spend gap.
+- Not in this review's scope unless they land first: [plan identity in minified builds](plan-identity-minified-builds.md), [navigate](navigate-flow.md) and the [web page flow](web-page-flow.md), all started 05:58 to 05:59 on 2026-10-20. The web page flow's frame allows `allow-same-origin` for the outside site, unlike decision 0004's generated views; it needs a security look when it lands.
+- **06:08:31 on 2026-10-20: Fable review 2 written** (scratchpad `final/fable-review-2.md`). All five Astra fixes are verified fixed, each with file and line evidence. 12 new findings: 0 P0, 1 P1, 3 P2 and 8 P3. Repros B and C above became P2-1 (cross-member forgery) and P2-2 (the budget race). Fable: "The two hand-offs that were wired last are where the holes are", the outbox's hand-off to the engine (P1-1) and the answer routes' check of a role instead of the asker (P2-1); "The budget is the third seam and the only one with a reproduced money consequence (P2-2)."
+- **The review order is complete through Fable:**
+
+  | Step | State |
+  |---|---|
+  | Codex Astra review 3 | **done**, 01:18 on 2026-10-20 |
+  | Fixes to its 5 findings | **done**, last one reported 05:54:14 |
+  | Fable review 2 | **done**, 06:08:31 |
+  | Fixes to Fable's 12 findings | **in progress** since 06:09 ([Fable review 2 fixes](fable-review-2-fixes.md)) |
+
+- **06:09:02 to 06:09:22 on 2026-10-20: three Fable fix agents started,** split by area, each writing a failing test first: client (P1-1, P2-3, P3-2, P3-5, P3-6), worker (P2-1, P2-2, P3-3, P3-4, P3-8), and engine and hosts (P3-1, P3-7). The lead accepted all 12; none is rejected on record ([Fable review 2 fixes](fable-review-2-fixes.md)).
+- **06:09:26 on 2026-10-20, the lead to Will:** "The Fable review confirmed that all five Astra fixes are correct and complete. It found 12 new issues, with no P0s, and reproduced two of them against the real database." And: "Three agents are fixing them, split by area (browser, server, flow hosts), each writing a failing test first."
+- Fable review 2 doesn't mention the [web page flow](web-page-flow.md)'s frame, which allows `allow-same-origin` for the outside site (`@smthrs/ui` `WEB_PAGE_SANDBOX`, on disk 06:10:31). Its security look is still owed.
+- **06:21:32 on 2026-10-20: the web page frame's security look is closed by the lead's ruling.** The lead told the web page agent that a page same-origin with the app, framed with `allow-scripts allow-same-origin`, "can remove its own sandbox and reach the app: its storage, its session, and the parent page". So `embed` refuses the app's own origin and any origin sharing its cookies or storage, validates only the requested URL, and keeps to `https` outside origins. A test is required. At 06:24:07 the refusal is on disk (`src/features/web/url.ts`, reasons `same_origin` and `same_site`); its test isn't yet. The test is the [web page flow](web-page-flow.md)'s to finish, not a review item.
+- **06:39:37 on 2026-10-20: Will's review no longer gates landing.** Will: "everything should be merged into main even before I review exiting code". From 06:42:50 a lander pushes finished work to `main` ([land to main](land-to-main.md)). Reviews continue on what has landed; the deploy still waits on Will's yes ([land and deploy](land-and-deploy-mvp.md)).
+- **07:01:52 and 07:07:38 on 2026-10-20:** the worker and the engine and hosts Fable fix agents reported done: P2-1, P2-2, P3-1, P3-3, P3-4, P3-7 and P3-8 fixed, each with a failing test first ([Fable review 2 fixes](fable-review-2-fixes.md)). The client agent's P1-1, P2-3, P3-2, P3-5 and P3-6 remain. [Model endpoint](model-endpoint.md) is done again.
+- **07:06 to 07:51 on 2026-10-20: work finished after Fable review 2, so no review has covered it:** [slash commands](slash-commands.md) (07:06), the [web page flow](web-page-flow.md) and [`navigate`](navigate-flow.md) (07:44), [Jev](agent-jev.md) with `ModelStep.model` in `@smthrs/agent` (07:49), the `@smthrs/effect-electric` sync replay fix (07:44) and the [site deployment test](site-deployment-test.md) (07:51). Will's standing rule is Fable and Codex review at done.
+- **07:59:01 on 2026-10-20, the lead to Will: a review round is planned after landing round 2.** "Slash commands, `navigate`, the web-page flow and Jev haven't been reviewed yet. After landing round 2 finishes, they go through Codex Astra review, then fixes, then a Fable review, as with the earlier work."
+
+  | Step | State |
+  |---|---|
+  | Landing round 2 | **in progress** since 07:53:57 ([land to main](land-to-main.md)) |
+  | Codex Astra review 4 | **planned** |
+  | Fixes to its findings | **planned** |
+  | Fable review 3 | **planned** |
+
+- By 08:07: no new review file in scratchpad `final/`; the newest is `fable-review-2.md` (06:08).
+- About 08:15 to 10:40 on 2026-10-20: the Claude usage limit stopped the lead, the lander and the client Fable fix agent; the lead resumed them at 10:42. The review round still waits on landing round 2's push ([land to main](land-to-main.md)). By 10:44 no new review file in `final/`.
+
+- **10:47:02 on 2026-10-20, Will:** "good time to do another round of /codex astra /codex sol and claude opus subagent and claude fable subagent all reviewing the code so far 4 reviews this time". This replaces the planned Astra-then-Fable round: four independent reviewers, one brief (scratchpad `final/REVIEW4-BRIEF.md`), over `main` since `115ec18f30` plus the working copy, light on the five slices still being written. Tracked in [review round 4](review-round-4.md).
+- 10:47:43, the lead to Will: "All four reviews are running at once and independently." When all four report, the lead merges them into one deduplicated list ranked by severity and sends the fixes out.
+- 10:50:21 and 10:52:19: Codex Sol and Codex Astra written. They agree on the P1 (unknown model usage refunds the reservation, reproduced) and two P2s (a `RecheckRole` retry revokes the session; branch web views go to the home conversation). Astra adds two P2s (a failed expiry admission still answers 202; sign-out can lose token revocation), Sol one (the full-screen view resolves home rows only). 10:53:16: the four server fixes went to a new worker fix agent and the two view fixes to the branch workspace builder ([review round 4](review-round-4.md)).
+- 11:04:02: Claude Opus written: 3 P1, 11 P2, 31 P3. 11:05:23: Claude Fable partly written (app findings and part of the SDK section); still running at 11:07.
+- The board as of 11:07:
+
+  | Step | State |
+  |---|---|
+  | Codex Astra review 4 | **done**, 10:52 |
+  | Codex Sol review 4 | **done**, 10:50 |
+  | Claude Opus review 4 | **done**, 11:04 |
+  | Claude Fable review 4 | **running** |
+  | Fixes to the Codex findings | **in progress** since about 10:53 |
+  | The lead's merged list and routing of Opus's and Fable's findings | **waiting** on Fable |
+- 12:57:25 on 2026-10-20, the lead: the next review round takes an [agent status](agent-status.md) bug. Reopening a tab while the agent waits on a question makes one extra model call, where a saved model step should replay ([model step](model-step.md)).
 
 ## Next
 
-From 02:27 on 2026-10-20: the wiring agent's report, which deletes server answering (finding 3), with a regression test that fails on the old code. Findings 1, 2, 4 and 5 are done. Then a Fable review of the fixed code over review 3's scope, told what became of each Astra finding.
+From 12:57 on 2026-10-20: [review round 4](review-round-4.md)'s open P1 and P2 fixes report. The next review round takes the replay bug above and the [web page flow](web-page-flow.md), which neither Fable review covered.
+
+Until 12:57 on 2026-10-20 the next step was, from 10:47 on 2026-10-20: [review round 4](review-round-4.md). Fable finishes; the lead merges the four reports into one ranked list, rules on each finding and routes the fixes, each with a test that fails on the old code. Separately: the client Fable fix agent's report ([Fable review 2 fixes](fable-review-2-fixes.md)).
+
+Until 10:47 on 2026-10-20 the next step was, from 07:59 on 2026-10-20: once landing round 2 pushes ([land to main](land-to-main.md)), Codex Astra reviews slash commands, `navigate`, the web page flow (its frame, URL checks and `frame-ancestors`) and Jev with `ModelStep.model`; best guess also the `effect-electric` replay. The lead fixes or rejects each finding, with a test that fails on the old code for each fix. Then Fable reviews the fixed code. Separately: the client Fable fix agent's report ([Fable review 2 fixes](fable-review-2-fixes.md)).
+
+Until 07:59 on 2026-10-20 the next step was, from 07:51 on 2026-10-20: the client Fable fix agent's report, with a regression test that fails on the old code for each finding ([Fable review 2 fixes](fable-review-2-fixes.md)). Then a Fable and Codex review of what finished after Fable review 2: slash commands, `navigate`, the web page flow (its frame, URL checks and `frame-ancestors`), Jev and `ModelStep.model`, and the `effect-electric` replay. Will's own review ([decisions for Will](decisions-for-will.md), row 7) follows landing rather than gating it ([land to main](land-to-main.md)).
+
+Until 07:51 on 2026-10-20 the next step was, from 07:07 on 2026-10-20: the client Fable fix agent's report, with a regression test that fails on the old code for each finding ([Fable review 2 fixes](fable-review-2-fixes.md)). Will's own review ([decisions for Will](decisions-for-will.md), row 7) follows landing rather than gating it ([land to main](land-to-main.md)).
+
+Until 07:07 on 2026-10-20 the next step was, from 06:55 on 2026-10-20: the three Fable fix agents' reports, each with a regression test that fails on the old code ([Fable review 2 fixes](fable-review-2-fixes.md)). Will's own review ([decisions for Will](decisions-for-will.md), row 7) now follows landing rather than gating it ([land to main](land-to-main.md)).
+
+Until 06:55 on 2026-10-20 the next step was, from 06:21 on 2026-10-20: the three Fable fix agents' reports, each with a regression test that fails on the old code ([Fable review 2 fixes](fable-review-2-fixes.md)). Then Will's own review ([decisions for Will](decisions-for-will.md), row 6) and the landing ([land and deploy](land-and-deploy-mvp.md)). The web page frame's security look closed at 06:21:32 on the lead's ruling; its refusal test belongs to the [web page flow](web-page-flow.md).
+
+Until 06:21 on 2026-10-20 the next step was, from 06:09 on 2026-10-20: the three Fable fix agents' reports, each with a regression test that fails on the old code ([Fable review 2 fixes](fable-review-2-fixes.md)). Then Will's own review ([decisions for Will](decisions-for-will.md), row 5) and the landing ([land and deploy](land-and-deploy-mvp.md)). Still owed: a security look at the [web page flow](web-page-flow.md)'s frame when it lands.
+
+Until 06:09 on 2026-10-20 the next step was, from about 05:54 on 2026-10-20: Fable review 2 (scratchpad `final/fable-review-2.md`) with findings by severity. The lead accepts or rejects each and assigns fixes, each with a regression test that fails on the old code. Then Will's own review ([decisions for Will](decisions-for-will.md), row 5) and the landing ([land and deploy](land-and-deploy-mvp.md)).
+
+Until about 05:54 on 2026-10-20 the next step was, from 02:27 on 2026-10-20: the wiring agent's report, which deletes server answering (finding 3), with a regression test that fails on the old code. Findings 1, 2, 4 and 5 are done. Then a Fable review of the fixed code over review 3's scope, told what became of each Astra finding.
 
 Until 02:27 on 2026-10-20 the next step was, from about 02:24: two reports, each with a regression test that fails on the old code: the sandbox agent's for finding 5, and the wiring agent's, which deletes server answering (finding 3). Findings 1, 2 and 4 are done. Then a Fable review of the fixed code over review 3's scope, told what became of each Astra finding.
 
@@ -207,3 +286,4 @@ Until 23:12 the next step was: assign review 2's fixes 1, 3 and 4 (fix 2 is W5 (
 
 - Open for the lead, not Will: F4+F5, R3 to R5 and the `platform-browser` follow-ups get only a light pass in review 3. Do they get their own Astra pass when they report, before the Fable review?
 - Does the lead's rejection of finding 4 stand? Recommended: yes. Building proceeds on it ([web-standard globals](web-standard-globals-rule.md)).
+- Open for the lead, not Will: does any review follow the Fable fixes before Will's own review? Will's order (01:12 on 2026-10-20) ends at Fable.

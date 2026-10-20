@@ -4,7 +4,7 @@ status: done
 area: sdk
 owner: B1 agent (started 22:31 on 2026-10-19; since 23:28 its store moves to `@journeyapps/wa-sqlite`, and its leader becomes the only one; reported done about 23:41); follow-ups in [B1 follow-ups](b1-follow-ups.md)
 updated: 2026-10-20
-links: [agent-root-browser-safe.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../decisions/0003-flows-and-the-agent.md, ../decisions/0002-local-first.md, ../rules.md, flows-and-agent.md, durable-answering.md, model-endpoint.md, pwa.md, local-first.md, host-agnostic-flows.md, everything-is-a-durable-flow.md, notifications-and-live-work.md, one-sqlite-one-leader.md, b1-follow-ups.md, flows-root-platform-neutral.md, plan-identity-across-deploys.md]
+links: [agent-root-browser-safe.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../decisions/0003-flows-and-the-agent.md, ../decisions/0002-local-first.md, ../rules.md, flows-and-agent.md, durable-answering.md, model-endpoint.md, pwa.md, local-first.md, host-agnostic-flows.md, everything-is-a-durable-flow.md, notifications-and-live-work.md, one-sqlite-one-leader.md, b1-follow-ups.md, flows-root-platform-neutral.md, plan-identity-across-deploys.md, plan-identity-minified-builds.md]
 ---
 
 ## What
@@ -97,6 +97,7 @@ The service worker only serves the app offline ([PWA](pwa.md)).
 
 - About 02:05 on 2026-10-20: **every B1 follow-up is done** ([B1 follow-ups](b1-follow-ups.md)), and the `platform-browser` agent added `SharedSqlite` and `WebLock.hold` with `steal` on this host; the engine and its wasm load only in the worker ([one SQLite, one leader](one-sqlite-one-leader.md)). 02:14, on disk, unreported: `BrowserEngine`'s `start`, `result`, `cancel` and `signal` take a `BrowserEngine.FlowReference`, so a tab can run a flow it doesn't import, such as the agent ([agent root in the browser](agent-root-browser-safe.md)).
 - **About 05:25 on 2026-10-20: a parked run doesn't survive an app update.** The engine's plan record includes each node's `declaredAt` (bundle path and line), and the journal compares records by content. A tab that resumes `chat/Answer` from OPFS under a new build whose lines moved fails `plan_changed`, and the answer stays "Smithers is answering". Found on the server through `chat/Expire`; the defect is in the shared engine store, not this host, and an SDK agent is fixing it ([plan identity across deploys](plan-identity-across-deploys.md)). Status stays done for this host; the resume after an update is proven only once that fix lands.
+- **05:57:59 on 2026-10-20: the shared engine-store fix is done** for rebuilds that move declarations; `platform-browser` passes in Node and Chromium, including resume after a kill ([plan identity across deploys](plan-identity-across-deploys.md)). A minified app update can still rename locals inside an unchanged callback and fail a tab's resumed `chat/Answer` with `plan_changed`; a follow-up agent closes that from about 05:58 ([plan identity in minified builds](plan-identity-minified-builds.md)). Status stays done for this host.
 
 ## Next
 

@@ -2,9 +2,9 @@
 title: Branch sandboxes (feature 5)
 status: todo
 area: infra
-owner: Panel S (Opus lead, Sol)
-updated: 2026-10-19
-links: [../decisions/0005-sandboxes-secrets-and-the-forge.md, ../todo.md, sandbox-budgets.md, ../decisions/0007-roles-and-tags.md, ../decisions/0002-local-first.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, connect-agents-sandboxes-forge.md, model-endpoint.md, token-spend-alerts.md]
+owner: unassigned; from 13:21:12 on 2026-10-20 it waits for the [branch terminal](branch-terminal.md) slice. Until 13:21: Panel S (Opus lead, Sol)
+updated: 2026-10-20
+links: [branch-terminal.md, branch-sharing.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../todo.md, sandbox-budgets.md, ../decisions/0007-roles-and-tags.md, ../decisions/0002-local-first.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, connect-agents-sandboxes-forge.md, model-endpoint.md, token-spend-alerts.md, secrets-proxy.md]
 ---
 
 ## What
@@ -44,10 +44,15 @@ Will: "We need to be able to run most git repos in most sandboxes. I think frees
 - 22:45: **Q3 deferred until we ship.** Will: "Add this as a TODO but we won't worry about this until we ship." Recorded in 0005 under Q3; `todo.md` has a new section, "Sandbox budgets, before we ship", tracked in [sandbox budgets](sandbox-budgets.md).
 - **All three of 0005's questions are settled** (Q1 Cloudflare, Q2 the sandbox as a tool provider, Q3 deferred), so this item moves from designing to todo. 0005's status line in the file still reads "proposed". Nothing is built.
 - 23:02 on 2026-10-19: the lead's board: features 5 to 7 (sandboxes, secrets, and Qwen in sandboxes) are not started; they "wait for disk space and the agent". The Mac had about 10 GB free at 23:01, and the agent's first slice depends on B1 and the [model endpoint](model-endpoint.md).
+- **06:39 to 06:42 on 2026-10-20: the first sandbox has a driver.** Will put "ability to open terminal in an iframe" in his priorities and asked for branch sharing. Panel B's walking skeleton must reach a real shell in a real Cloudflare sandbox: a branch `SandboxObject`, a digest-pinned image, a PTY seam in `@smthrs/sandbox` and a terminal gateway Worker ([branch terminal](branch-terminal.md)). Sol estimates `standard-1` at about $0.047 to $0.074 an awake hour. Status stays `todo` until 0013 merges.
+- 13:19:52 on 2026-10-20: the lead's list: "Branch sandboxes, secrets via an egress proxy, agent connected to sandboxes and the forge: not started".
+- 13:21:12: the lead: "Branch sharing, branch sandboxes, and connecting the agent to sandboxes: these build on the branch and terminal slice that's still running." So they wait for the [branch terminal](branch-terminal.md) builder. Of the group, only [secrets through an egress proxy](secrets-proxy.md) started (13:22:52), at a seam outside the container and terminal code.
 
 ## Next
 
-A one-day spike after features 1 to 3. Switch to Freestyle if restoring a 2 GB workspace takes over 30 s, more than 10% of a 20-repo set fails, or the shutdown checkpoint can't finish in time.
+From 13:21 on 2026-10-20: after the [branch terminal](branch-terminal.md) builder finishes its first slice (a real Cloudflare container per branch), extend that container into the branch sandbox of 0005, with secrets only through the [egress proxy](secrets-proxy.md).
+
+Until 13:21 on 2026-10-20 the next step was: a one-day spike after features 1 to 3. Switch to Freestyle if restoring a 2 GB workspace takes over 30 s, more than 10% of a 20-repo set fails, or the shutdown checkpoint can't finish in time.
 
 ## Questions for Will
 

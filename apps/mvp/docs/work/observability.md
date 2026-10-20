@@ -4,7 +4,7 @@ status: in-progress
 area: app
 owner: lead (smithers-b3); each feature adds its records; the wiring agent (the allowlist contract and the engine worker's exporter, since about 01:17 on 2026-10-20; its sub-agent A2b reported both done at 02:18); the views fix agent (review 3's finding 2, since about 01:19; reported fixed about 01:58, then sent back for `ViewCodeError.message`; fully done about 02:08 on 2026-10-20)
 updated: 2026-10-20
-links: [app-wiring.md, ../observability.md, ../rules.md, code-reviews.md, agent-ui-rendering.md, local-first.md, flows-and-agent.md, browser-engine-worker-load-hang.md]
+links: [review-round-4.md, app-wiring.md, ../observability.md, ../rules.md, code-reviews.md, agent-ui-rendering.md, local-first.md, flows-and-agent.md, browser-engine-worker-load-hang.md, fable-review-2-fixes.md, docs-check-flow-outcome.md]
 ---
 
 ## What
@@ -55,10 +55,26 @@ Will: "We have 0 observability. 0 logging. This is a production system. We need 
 - 04:00 to 04:03 on 2026-10-20, on disk, unreported: the app's `docs/observability.md` documents `chat.answer.expire`, `smithers_answer_expiries` and `persisted write failed`. The drift test is red at 04:02 (scratchpad `d2-test.log`): the contract (`src/flows/contract.ts`) lists `browser.engine.worker`, and no source emits it ([app wiring](app-wiring.md)).
 - 04:07:48 on 2026-10-20, on disk, unreported: the contract drops `browser.engine.worker`, which no source emitted; the drift test is green in the 04:12 unit run (scratchpad `wiring/unit3.log`). Sign-out's extra `persisted write failed` line was still red there; a fix in `src/features/auth/actions.ts` is on disk at 04:13, and the 04:14 unit run is green: 491 passed, 4 skipped, coverage 100% (scratchpad `wiring/unit4.log`) ([app wiring](app-wiring.md)).
 - 04:23 on 2026-10-20 (scratchpad `wiring/e2e-3.log`): both observability e2e cases (correlation, redaction) pass in the full serial run ([app wiring](app-wiring.md)).
+- 05:53:06 on 2026-10-20 (scratchpad `wiring/e2e-fresh.log`): both observability e2e cases pass in the final fresh-state run, correlation ("the browser's ask, its agent's dispatch and ChatApi's chat.question and chat.answer.write records share the answer id") and redaction; the wiring agent reported at 05:54:14 ([app wiring](app-wiring.md)).
+- **06:08 on 2026-10-20: Fable review 2's P3-4:** `/api/telemetry` accepts 128 KiB OTLP exports from anyone, as often as they like, and the shape relay is open too (`worker/Chat.ts:104-109,179-180`). The worker fix agent adds rate and size limits, or the minimum safe version if decision 0008 phases them, since 06:09:12 ([Fable review 2 fixes](fable-review-2-fixes.md)).
+- **07:01:52 on 2026-10-20: P3-4 fixed as the minimum safe version** ([Fable review 2 fixes](fable-review-2-fixes.md)): `/api/telemetry` and every shape are limited per network at 3,000 requests a minute, `429` with a 60-second retry, metric `smithers_throttle_decisions`; telemetry keeps its 128 KiB size cap. The limits are not from a load test.
+- 07:07:38 on 2026-10-20: with the remote door removed, the constant `placement` telemetry field is gone ([flows and the agent](flows-and-agent.md)).
+- From 06:45 on 2026-10-20: agents can't read whether `pnpm docs:check` passed, a records gap in the Smithers CLI ([docs check outcome](docs-check-flow-outcome.md)).
+
+- **11:01 to 11:04 on 2026-10-20: [review round 4](review-round-4.md)'s telemetry findings, unrouted by 11:07.**
+  - R4-13 (P2, Claude Fable): the Electric secret travels in the gateway's URL, which persisted Workers Logs record ([IaC](infrastructure-as-code.md)). The root rule keeps secrets out of telemetry.
+  - Claude Opus P3-5: `src/telemetry.ts:56-58` keeps `url.full`, `url.path` and `url.query` for every client span, so each `GET /api/repos/<owner>/<name>/blob/<sha>/<path>` (`features/repo/api.ts:110`) exports the repository's file paths, while `features/navigation/contract.ts:32-34` says a path "can carry content" and records none. Fix: relay the route template only (`/api/repos/:owner/:name/blob/:sha/*`) and drop `url.full` and `url.query`.
+  - Claude Fable S-P3-1: `GitProxy` counts a 2xx as `ok` before the body streams, so a pack that breaks off is recorded `ok`; `ShapeProxy` records on `Stream.onExit` (`packages/effect-code-storage/src/GitProxy.ts:147-148`).
 
 ## Next
 
-First, from 02:35 on 2026-10-20: the wiring agent's report, with the two observability e2e tests green in a real browser. They wait for the engine worker to load in the app ([app wiring](app-wiring.md)). The allowlist contract, its drift test and the engine worker's exporter are done (A2b, 02:18).
+From 11:07 on 2026-10-20: as before, plus the lead's routing of round 4's telemetry findings: R4-13 and Opus P3-5 ([review round 4](review-round-4.md)).
+
+Until 11:07 on 2026-10-20 the next step was, from 07:01 on 2026-10-20: the relay limits are done. Next: usage metrics for "how users use the app", then dashboards and [token-spend alerts](token-spend-alerts.md).
+
+Until 07:01 on 2026-10-20 the next step was, from 06:09 on 2026-10-20: the worker fix agent's relay limits for `/api/telemetry` (P3-4, [Fable review 2 fixes](fable-review-2-fixes.md)). The two observability e2e cases are green in the final fresh-state run (05:53).
+
+Until 06:09 on 2026-10-20 the first step was, from 02:35 on 2026-10-20: the wiring agent's report, with the two observability e2e tests green in a real browser. They wait for the engine worker to load in the app ([app wiring](app-wiring.md)). The allowlist contract, its drift test and the engine worker's exporter are done (A2b, 02:18).
 
 Until 02:35 on 2026-10-20 the first step was, from about 02:08: the wiring agent's report: the two observability e2e tests and the chat telemetry test green, the shared contract's drift test passing, and the engine worker's records at the server ([app wiring](app-wiring.md)). The views fix is done.
 

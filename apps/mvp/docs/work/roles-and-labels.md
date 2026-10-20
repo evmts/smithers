@@ -4,7 +4,7 @@ status: todo
 area: design
 owner: unassigned (build of `@smthrs/access`); the wiring agent adds the model endpoint's Member gate (since about 01:17 on 2026-10-20); design done: the 0007 rewrite agent finished about 23:06 on 2026-10-19; lead records Will's answers
 updated: 2026-10-20
-links: [../decisions/0007-roles-and-tags.md, ../decisions/0008-auth.md, design-questions.md, pr-review-and-merge.md, auth.md, decisions-for-will.md, sign-in.md, model-endpoint.md, app-wiring.md]
+links: [../decisions/0007-roles-and-tags.md, ../decisions/0008-auth.md, design-questions.md, pr-review-and-merge.md, auth.md, decisions-for-will.md, sign-in.md, model-endpoint.md, app-wiring.md, fable-review-2-fixes.md, slash-commands.md, agent-status.md, token-spend-alerts.md]
 ---
 
 ## What
@@ -71,6 +71,10 @@ Will, 22:49: "Merging into main is actually triggering a workflow and that workf
 
 - About 01:17 on 2026-10-20: the wiring agent adds the Member gate to the [model endpoint](model-endpoint.md): only a Member or above may spend model tokens, per 0007 ([app wiring](app-wiring.md)).
 - 01:27, on disk: `worker/Actor.ts` defines `ASKERS` as Admin, Maintainer and Member, "the roles that may ask Smithers (`repo:ask`, decision 0007 §2)", with `Actor.test.ts`. The check lives in the app's worker, not in `@smthrs/access`, which is still unassigned.
+- **06:41:17 on 2026-10-20: 0007 Q3 is back in scope for triage.** Will: "we need the ability to customize issue triage so issues should have accepted or not accepted and workflow can accept them or reject via an agent". He had deferred Q3 (event-started flows applying labels with no person) at 22:56 on 2026-10-19. Panel G designs triage labels in 0012: a Maintainer enables the flow, a system step applies one triage label attributed to the flow and its enabler, and Members override ([issue triage](issue-triage.md)). Opus proposes new actions `repo:triage` (Member) and `repo:triage-flow` (Maintainer).
+- 06:40:35 on 2026-10-20: Will asked for branch sharing with read and write grants. Panel B's Sol design makes a grant narrow, never widen, a person's repository role and GitHub permission ([branch sharing](branch-sharing.md)).
+- By 07:20 on 2026-10-20, role checks other items shipped, uncommitted: cloning needs Member or above (`canClone`, Fable review 2's P3-3); only the asker writes an answer, so another Member or an Admin who didn't ask gets 403 (P2-1) ([Fable review 2 fixes](fable-review-2-fixes.md)); each slash command has a `minimum`: `/theme` and `/navigate` for anyone, `/web` and `/clone` for Members and up ([slash commands](slash-commands.md)); only a run's launcher writes or answers its `runs` row ([agent status](agent-status.md)).
+- 13:19:52 on 2026-10-20: the lead's list: "Roles and labels; token-spend alerts: not started". At 13:22 the lead started [token-spend alerts](token-spend-alerts.md) but not this; its 13:21:12 answer named neither a reason to wait nor this item. Best guess: 0007 §11 phase 1 (`@smthrs/capability` actions, the `@smthrs/access` package) needs no app files and could start next.
 
 ## Next
 

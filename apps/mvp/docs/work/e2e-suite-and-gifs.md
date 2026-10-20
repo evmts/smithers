@@ -4,7 +4,7 @@ status: done
 area: app
 owner: e2e fault-rewrite agent (finished); lead
 updated: 2026-10-20
-links: [../features/chat.md, ../rules.md, ../observability.md, sync-service-di-test-seam.md, route-ban-any-receiver.md, land-and-deploy-mvp.md, app-wiring.md, local-first.md]
+links: [../features/chat.md, ../rules.md, ../observability.md, sync-service-di-test-seam.md, route-ban-any-receiver.md, land-and-deploy-mvp.md, app-wiring.md, local-first.md, slash-commands.md, navigate-flow.md, web-page-flow.md, agent-jev.md]
 ---
 
 ## What
@@ -48,6 +48,10 @@ Will: "If something is broken by definition it being broken is having an e2e tes
 - Correction at 05:15 on 2026-10-20: the gallery was regenerated at 04:55:49 to 04:56:11, right after `wiring/e2e-5`: 36 GIFs in `~/Desktop/smithers-mvp/gifs`, `repo-clone`, `repo-browse` and `repo-refusals` included. A run ending 05:10:52 failed one new case, `chat.spec.ts` "steady: a question and its answer keep their elements as the question syncs and the answer settles"; at 05:11:09 the spec no longer has it ([app wiring](app-wiring.md)). Status stays done.
 - About 05:16 on 2026-10-20: the lead told the wiring agent to restore "steady" and fix the product, or restore it corrected with a one-line reason; the final full run must include it. At 05:24 the spec still lacks it; `Conversation.tsx` changed 05:18 ([app wiring](app-wiring.md)). Status stays done.
 - 05:26 to 05:38 on 2026-10-20: "steady" is back in `e2e/chat.spec.ts` (05:26:22), so the suite has 37 cases. The final full run (scratchpad `wiring/e2e-final.log`, from 05:29:08) passes "steady" (5.3 s); at 05:38 it stands at 21 passed and 5 local-first reds after 26 cases ([local-first](local-first.md), [app wiring](app-wiring.md)). The gallery still holds the 04:56 GIFs. Status stays done.
+- **05:53:06 on 2026-10-20, `wiring/e2e-fresh.log` finished green:** 36 passed, 1 skipped ("late joiner"), 0 failed in 12.4 minutes, one worker, on a fresh database and fresh Durable Object state with no hand fixes and no cleanup step ([app wiring](app-wiring.md)). 05:53:20: `pnpm e2e:gifs` regenerated the gallery, 37 GIFs in `~/Desktop/smithers-mvp/gifs`, `chat-steady` included. The wiring agent reported at 05:54:14. Status stays done.
+- 05:53 on 2026-10-20: a new spec is coming, `e2e/slash-commands.spec.ts` with its GIF ([slash commands](slash-commands.md)).
+- By 07:20 on 2026-10-20, 11 new GIFs in `~/Desktop/smithers-mvp/gifs` since the 05:53 run: [navigate](navigate-flow.md) 2 (06:37), [slash commands](slash-commands.md) 3 (07:05), [web page](web-page-flow.md) 5 (07:11 to 07:12) and [Jev](agent-jev.md) 1 (07:11).
+- 07:22 on 2026-10-20: a 12th, `navigate-navigate-by-a-person.gif`. From 07:44 to 07:49 three features reported done with their specs green: [navigate](navigate-flow.md) 3 of 3, the [web page flow](web-page-flow.md) 5 of 5 (its embed case failed once while other agents' edits reloaded the dev server, then passed) and [Jev](agent-jev.md) 1 of 1, with one judge call. No full-suite run since the 05:53 one is on record. Status stays done.
 
 ## Next
 
@@ -55,6 +59,7 @@ Done. Follow-ups that belong to other items:
 - Run `pnpm e2e:gifs` after the lead commits, so the gallery shows the rewritten tests.
 - Each new feature brings its own e2e test, such as [repo clone and view](repo-clone-and-view.md)'s R5.
 - A production run once [deployed](land-and-deploy-mvp.md).
+- From 05:53 on 2026-10-20: `e2e/slash-commands.spec.ts` and its GIF ([slash commands](slash-commands.md), done 07:05: 3 of 3, three GIFs); the late joiner's Load earlier half, which skips below 50 messages ([local-first](local-first.md)).
 
 ## Questions for Will
 

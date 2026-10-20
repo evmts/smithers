@@ -3,8 +3,8 @@ title: Web-standard globals aren't platform code (review 2, finding 4)
 status: done
 area: sdk
 owner: lead (smithers-b3), ruled by 23:12 on 2026-10-19; Will may overrule
-updated: 2026-10-19
-links: [../../../../docs/libraries.md, ../../../../AGENTS.md, code-reviews.md, integrations-browser-safe-root.md, repo-clone-and-view.md, library-catalog.md, decisions-for-will.md, integrations-effect-httpclient.md]
+updated: 2026-10-20
+links: [review-round-4.md, ../../../../docs/libraries.md, ../../../../AGENTS.md, code-reviews.md, integrations-browser-safe-root.md, repo-clone-and-view.md, library-catalog.md, decisions-for-will.md, integrations-effect-httpclient.md]
 ---
 
 ## What
@@ -29,9 +29,13 @@ The lead rejected the finding, interpreting Will's rule: `crypto.subtle` and `fe
 - 23:27: the integrations root shipped on WebCrypto under this ruling ([integrations root](integrations-browser-safe-root.md)). 23:28: it moves next to Effect's `HttpClient`, the ruling's preferred service for HTTP ([Effect HttpClient](integrations-effect-httpclient.md)).
 - 23:37: no answer from Will.
 
+- **11:05 on 2026-10-20: [review round 4](review-round-4.md), Claude Fable S-P2-2:** "The claimed fix for ambient `crypto.subtle` in Code Storage signing is not present." `packages/effect-code-storage/src/internal/token.ts:65, 94` still call `globalThis.crypto.subtle`, the same on `main@origin`, and `SdkRules.ts:93` forbids `crypto` only as a module import. Fable grants that "a web-standard global is allowed by the rule's letter", but argues for injection: `@smthrs/crypto`'s `Uuid.v5` already runs over injected `effect/Crypto` (`.changeset/crypto-uuid-v5.md`), and a signing fault can't be injected in tests. "Either inject it or withdraw the 'fixed' claim in `fable-review-2.md`'s table." This note records the finding as rejected, not fixed; the ruling stands unless the lead or Will reverses it. Status stays done.
+
 ## Next
 
-Nothing, unless Will overrules. If he does: an injected signing service with implementations in the host packages, and `@smthrs/effect-code-storage` and `@smthrs/integrations` move onto it.
+From 11:07 on 2026-10-20: the lead answers Fable's round 4 point: keep the rejection, or inject a signing service so its faults are testable ([review round 4](review-round-4.md)). Will may still overrule.
+
+Until 11:07 on 2026-10-20 the next step was: Nothing, unless Will overrules. If he does: an injected signing service with implementations in the host packages, and `@smthrs/effect-code-storage` and `@smthrs/integrations` move onto it.
 
 ## Questions for Will
 

@@ -56,6 +56,7 @@ Every namespace is also its own subpath, and `./internal/*` is null mapped.
 | `@smthrs/sandbox/CloudflareSandbox`         | [src/CloudflareSandbox/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/CloudflareSandbox)                 |
 | `@smthrs/sandbox/SandboxHealth`             | [src/SandboxHealth/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/SandboxHealth)                         |
 | `@smthrs/sandbox/SandboxSupervision`        | [src/SandboxSupervision/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/SandboxSupervision)               |
+| `@smthrs/sandbox/TerminalProtocol`          | [src/TerminalProtocol/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/TerminalProtocol)                   |
 
 ## RemoteChildProcessSpawner
 
@@ -248,6 +249,30 @@ The base is resolved after the provider hands over the session, so a provider th
 | `capture_failed`      | `git` failed while diffing, or the patch is not UTF-8 even with every path diffed as binary |
 
 `hostContext(session, { health? })` builds the `Host` context `layerHost` provides from a session the caller already holds; it requires a `Scope`. `layerHost` and `run` both use it.
+
+## TerminalProtocol
+
+The wire protocol between a browser terminal and the host that attaches it to a shell in a sandbox, one WebSocket per
+viewer. It is pure, so the host (`@smthrs/platform-cloudflare`'s `ContainerTerminal`) and the client
+(`@smthrs/platform-browser`'s `TerminalSocket`) share one definition.
+
+```ts
+import { TerminalProtocol } from "@smthrs/sandbox"
+
+socket.send(TerminalProtocol.encodeResize(120, 40))
+const control = TerminalProtocol.decodeServerControl(text) // { type: "ready", access } | { type: "ended", reason }
+if (TerminalProtocol.isFinal(code)) stop()
+else wait(TerminalProtocol.reconnectDelay(attempt))
+```
+
+- **Frames:** binary frames carry bytes (the shell's output; a writer's keystrokes). Text frames carry JSON control: a
+  writer's `resize { cols, rows }` (1 to `maxCols` by 1 to `maxRows`), and the host's `ready { access }` and
+  `ended { reason }` (`closed`, `slept`, `lost`, `revoked`). Either side caps a frame at `maxFrameBytes` (64 KiB).
+- **Close codes (`CloseCode`):** `ended` 1000, `unsupported` 1003 (a malformed control frame), `noAccess` 1008 and
+  `tooBig` 1009 are final (`isFinal`); `failed` 1011 and a dropped connection (1006) reconnect.
+- **Reconnects:** `reconnectDelay(attempt)` is 1 s doubling to 30 s for `reconnect.maxAttempts` (10) attempts, and
+  `undefined` after; a connection that reaches `ready` starts the count again. Keystrokes are never queued while
+  disconnected: input whose delivery is unknown is not safe to repeat.
 
 ## SandboxMerge
 

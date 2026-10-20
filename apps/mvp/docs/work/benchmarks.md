@@ -2,7 +2,7 @@
 title: Benchmarks, local and live
 status: in-progress
 area: app
-owner: benchmark agent (built it); the wiring agent's sub-agent B1 reworks it for browser answering (since 02:23 on 2026-10-20); the lead runs it against the server
+owner: from 05:54 on 2026-10-20 no builder is named for the new baseline: the wiring agent reported the bench repo suite passing 21 of 21 and the baseline needing a re-record. Until 05:54: benchmark agent (built it); the wiring agent's sub-agent B1 reworks it for browser answering (since 02:23 on 2026-10-20); the lead runs it against the server
 updated: 2026-10-20
 links: [repo-follow-ups.md, ../benchmarks.md, app-wiring.md, durable-answering.md, dev-stack-hygiene.md]
 ---
@@ -26,10 +26,13 @@ Will: "We should also have performance benchmarks that can be run locally and al
 
 - By 02:35 on 2026-10-20: the R3 to R5 agent added a `repo` suite (`bench/repo.ts`, in `SUITES` beside `load`, `cmdk`, `shape`, `answer`, `sync` and `concurrent`). It reads `octocat/Spoon-Knife`'s tree and README and asks no model. Large-fixture cases aren't built ([repo follow-ups](repo-follow-ups.md)). `bench/suites.ts` and `probe.ts` changed again after 02:35, unreported.
 - 04:57 to 05:00 on 2026-10-20, unreported: the wiring agent ran `pnpm bench --only repo` against the dev server on `:1337` (scratchpad `wiring/bench.sh`). At 04:57 the seed timed out after 90 s, so 0 of 1 checks passed (`bench/results/2026-10-20T11-56-20Z.json`). At 05:00 it passed 21 checks with no regressions against the 00:25 baseline (`bench/results/2026-10-20T12-00-25Z.json`): `repo.shape.initial_sync` p50 14.2 ms, first tree 5 ms, first blob 4.7 ms, cached tree p50 4.1 ms, cached blob p50 3.6 ms. `bench/probe.ts` and `stats.ts` changed at 05:00. No full bench run under browser answering is on record.
+- **05:54:14 on 2026-10-20, the wiring agent's report:** "the bench repo suite passes 21/21", and under "Not done": "The bench baseline needs re-recording." `bench/baseline.json` still predates browser answering. No full bench run under browser answering is reported ([app wiring](app-wiring.md)).
 
 ## Next
 
-From 02:23 on 2026-10-20: B1's report, with every remaining metric honest under browser answering and the bench's unit tests and type check green. Then the lead runs `pnpm bench` against the dev server once the app answers in a real browser, and records a new baseline.
+From 05:54 on 2026-10-20: a full `pnpm bench` against the dev server on `:1337`, now that the app answers in a real browser, then a re-recorded `bench/baseline.json`. No owner is named. The live run waits on the first deploy ([land and deploy](land-and-deploy-mvp.md)).
+
+Until about 05:54 on 2026-10-20 the next step was, from 02:23 on 2026-10-20: B1's report, with every remaining metric honest under browser answering and the bench's unit tests and type check green. Then the lead runs `pnpm bench` against the dev server once the app answers in a real browser, and records a new baseline.
 
 Until 02:23 on 2026-10-20 the next step was: rebaseline after [durable answering](durable-answering.md) lands, add the engine writer-lock benchmark, then a live run after the first deploy.
 
