@@ -148,9 +148,6 @@
   padding: 0;
 }
 
-.hosted-change-failure {
-  color: var(--danger);
-}
 .hosted-change-stage-row [data-stage-chevron] {
   flex: none;
   color: var(--text-muted);

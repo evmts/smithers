@@ -105,8 +105,12 @@ test("runner names, unknown test counts and drift preserve exact copy", () => {
   expect(
     testingCopy({ ...result(), test_receipt: { ...result().test_receipt!, command: "make test", tests_run: null } })
   ).toMatchObject({ text: "make test exited 0 in the agent's sandbox at abc", passed: true, tested: true })
+  // A failing test is a result Smithers reports, not a product error (PM d-wjx0ua).
   expect(testingCopy(result(1)).note).toBe(
-    "Tests failed (exit 1). You can still open a pull request; the failure goes in its description."
+    "Smithers ran your tests: bun test exited 1 (33 tests). Review the diff before you open a pull request. The failure goes in its description."
+  )
+  expect(testingCopy(result(2, null)).note).toBe(
+    "Smithers ran your tests: bun test exited 2. Review the diff before you open a pull request. The failure goes in its description."
   )
 })
 test("stage clocks survive later observations without inventing a missing cloning clock", () => {
