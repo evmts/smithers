@@ -212,6 +212,9 @@ var allEnvKeys = []string{
 	"SMITHERS_CHAT_CONCURRENCY",
 	"SMITHERS_CHAT_QUEUE_SIZE",
 	"SMITHERS_CHAT_LEASE_SECONDS",
+	"SMITHERS_CHAT_GUESTS_PER_OWNER",
+	"SMITHERS_CHAT_GUESTS_FLEET",
+	"SMITHERS_CHAT_PENDING_PER_OWNER",
 	"SMITHERS_GUEST_REPOSITORIES",
 	"SMITHERS_GUEST_PROVIDER",
 	"SMITHERS_GUEST_MODEL",
@@ -889,6 +892,7 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			RequestsPerIP: 10,
 			OutputTokens:  1024,
 		},
+		Chat: ChatConfig{GuestsPerOwner: 2, GuestsFleet: 4, PendingPerOwner: 5},
 	}
 	assert.Equal(t, expected, cfg)
 }
@@ -1969,4 +1973,25 @@ func TestLoad_AgentBoxIdleCapDefaultsToFifteenMinutes(t *testing.T) {
 	cfg, err := Load("")
 	require.NoError(t, err)
 	assert.Equal(t, int64(900), cfg.Sandbox.AgentBoxIdleCapSecs)
+}
+
+// The G3i model host caps: two live model hosts per owner, four in the fleet
+// and five unanswered chat turns per owner, unless the deployment says
+// otherwise.
+func TestLoad_ChatModelHostCapsDefaultsAndEnvironment(t *testing.T) {
+	clearConfigEnv(t)
+	cfg, err := Load("")
+	require.NoError(t, err)
+	assert.Equal(t, 2, cfg.Chat.GuestsPerOwner)
+	assert.Equal(t, 4, cfg.Chat.GuestsFleet)
+	assert.Equal(t, 5, cfg.Chat.PendingPerOwner)
+
+	t.Setenv("SMITHERS_CHAT_GUESTS_PER_OWNER", "3")
+	t.Setenv("SMITHERS_CHAT_GUESTS_FLEET", "12")
+	t.Setenv("SMITHERS_CHAT_PENDING_PER_OWNER", "7")
+	cfg, err = Load("")
+	require.NoError(t, err)
+	assert.Equal(t, 3, cfg.Chat.GuestsPerOwner)
+	assert.Equal(t, 12, cfg.Chat.GuestsFleet)
+	assert.Equal(t, 7, cfg.Chat.PendingPerOwner)
 }

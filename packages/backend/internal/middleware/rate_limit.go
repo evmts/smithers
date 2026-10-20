@@ -568,7 +568,24 @@ const (
 
 	// ApprovalDecideRateLimitScope gates approval decide POSTs per user.
 	ApprovalDecideRateLimitScope = "approval_decide"
+
+	// ModelHostMinuteRateLimitScope and ModelHostHourRateLimitScope gate the
+	// POSTs that start a model host on the caller's behalf.
+	ModelHostMinuteRateLimitScope = "model_host_minute"
+	ModelHostHourRateLimitScope   = "model_host_hour"
 )
+
+// ModelHostRateLimit bounds how often one user starts a model host through a
+// route such as POST /api/model/stream: 10 a minute and a sustained 300 an
+// hour (Security d-kmefmv). Each start is a sandbox on the shared fleet and
+// model spend, so the bucket is per user, after RequireAuth, and both windows
+// must allow it. Both are token buckets: the hour's 300 burst plus its refill
+// let a user who starts 10 every minute reach about 600 in the first hour.
+func ModelHostRateLimit(store SearchRateLimitStore) func(http.Handler) http.Handler {
+	minute := newRateLimit(store, ModelHostMinuteRateLimitScope, 10, time.Minute, 10, time.Minute)
+	hour := newRateLimit(store, ModelHostHourRateLimitScope, 300, time.Hour, 300, time.Hour)
+	return func(next http.Handler) http.Handler { return minute(hour(next)) }
+}
 
 // WorkspaceTerminalOpenRateLimit enforces the per-user terminal WebSocket open
 // rate. Default 20/min; tune via SMITHERS_RATE_LIMIT_TERMINAL_OPEN_PER_MIN.

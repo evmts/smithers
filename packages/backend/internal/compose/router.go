@@ -1286,7 +1286,13 @@ func buildRouter(
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/commands/select", extras.Recommender.Select)
 		}
 		if extras.ModelStream != nil {
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/model/stream", extras.ModelStream.ServeHTTP)
+			stream := []func(http.Handler) http.Handler{middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)}
+			// Each hosted stream starts a sandbox on the shared fleet (G3i);
+			// a self-hosted install's streams run on its own machine.
+			if config.IsMultitenant(cfg.Auth) {
+				stream = append(stream, middleware.ModelHostRateLimit(queries))
+			}
+			r.With(stream...).Post("/model/stream", extras.ModelStream.ServeHTTP)
 		}
 
 		if strings.EqualFold(os.Getenv("SMITHERS_ENABLE_E2E_TEST_ROUTES"), "true") {

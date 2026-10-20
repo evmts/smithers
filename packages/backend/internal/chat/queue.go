@@ -160,7 +160,12 @@ func queueProblem(w http.ResponseWriter, status int, code string) {
 }
 
 func queueError(w http.ResponseWriter, err error) {
+	var pending *PendingFull
 	switch {
+	case errors.As(err, &pending):
+		// A typed retryable refusal: a turn frees within seconds.
+		w.Header().Set("Retry-After", "5")
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"class": "capacity", "code": "chat_turns_pending", "message": pending.Error()})
 	case errors.Is(err, ErrForbidden):
 		pkgerrors.WriteError(w, pkgerrors.New(pkgerrors.CodePermission, "Only the author can change this prompt"))
 	case errors.Is(err, ErrNotFound):

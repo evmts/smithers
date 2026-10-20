@@ -123,6 +123,37 @@ func TestOwnerModelTestMissingCredentialIsTyped(t *testing.T) {
 	require.JSONEq(t, `{"ok":false,"latencyMs":0,"failure":{"code":"credential_missing","credential":"MISSING_KEY"},"fault":"user"}`, response.Body.String())
 }
 
+// ownerCapModelTestResult is what a model test answers when the owner's
+// model host cap refused before any host existed (G3i): the key was not
+// tested, so the answer says why and is retryable, never "unreachable".
+const ownerCapModelTestResult = `{"ok":false,"latencyMs":0,"failure":{"code":"chat_guests_busy","message":"You have 2 chats answering right now. Wait for one to finish, then try again."},"fault":"capacity"}`
+
+func TestOwnerModelTestAnswersTheOwnerCapAsRetryableCapacity(t *testing.T) {
+	models := OwnerModels{Tester: fixtureTester(func(context.Context, int64, json.RawMessage) (json.RawMessage, error) {
+		return nil, &ports.ModelHostsBusy{Limit: 2}
+	})}
+	request := httptest.NewRequest(http.MethodPost, "/api/model/test", strings.NewReader(`{"model":{"id":"writer","protocol":"openai-chat","modelId":"fixture","credential":"TEST_KEY"}}`))
+	request = request.WithContext(middleware.ContextWithAuthInfo(request.Context(), &middleware.AuthInfo{User: &db.User{ID: 42}}))
+	response := httptest.NewRecorder()
+	models.Test(response, request)
+	require.Equal(t, http.StatusTooManyRequests, response.Code)
+	require.JSONEq(t, ownerCapModelTestResult, response.Body.String())
+}
+
+// A full fleet answers the ruling's retryable 503 no_capacity, not a 200
+// 'unreachable' that reads as the key's fault (8e review FIX 1).
+func TestOwnerModelTestAnswersAFullFleetAsNoCapacity(t *testing.T) {
+	models := OwnerModels{Tester: fixtureTester(func(context.Context, int64, json.RawMessage) (json.RawMessage, error) {
+		return nil, modelHostsBusy(false, 2)
+	})}
+	request := httptest.NewRequest(http.MethodPost, "/api/model/test", strings.NewReader(`{"model":{"id":"writer","protocol":"openai-chat","modelId":"fixture","credential":"TEST_KEY"}}`))
+	request = request.WithContext(middleware.ContextWithAuthInfo(request.Context(), &middleware.AuthInfo{User: &db.User{ID: 42}}))
+	response := httptest.NewRecorder()
+	models.Test(response, request)
+	require.Equal(t, http.StatusServiceUnavailable, response.Code)
+	require.JSONEq(t, `{"ok":false,"latencyMs":0,"failure":{"code":"no_capacity"},"fault":"capacity"}`, response.Body.String())
+}
+
 func TestPrivateModelProbeForwardsOnlyAuthenticatedOwnerRequest(t *testing.T) {
 	const body = `{"model":{"id":"writer","protocol":"openai-chat","modelId":"fixture","credential":"TEST_KEY"}}`
 	private := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

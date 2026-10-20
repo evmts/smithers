@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -41,6 +42,27 @@ type InstallMaintenanceSummary interface {
 }
 
 var ErrModelCredentialMissing = errors.New("model credential is missing")
+
+// ErrModelHostsBusy refuses a model host launch because its owner already runs
+// as many as one owner may (G3i, CEO a-94ge9y). It is retryable: a host frees
+// within seconds. ModelHostsBusy carries it with the sentence the person reads.
+var ErrModelHostsBusy = errors.New("model hosts busy for this owner")
+
+// ModelHostsBusy is the per-owner refusal, code chat_guests_busy. Its Error is
+// the sentence the person reads (PM d-ic6hp3); it names no plan.
+type ModelHostsBusy struct{ Limit int }
+
+func (busy *ModelHostsBusy) Error() string {
+	return fmt.Sprintf("You have %d chats answering right now. Wait for one to finish, then try again.", busy.Limit)
+}
+
+func (busy *ModelHostsBusy) Unwrap() error { return ErrModelHostsBusy }
+
+// ErrModelHostsFull refuses a model host launch because every model host the
+// fleet allows is running (G3i fleet ceiling, PM d-ic6hp3). It is retryable,
+// and it is also a sandbox no-capacity error, so a chat turn defers as it
+// does for a full sandbox fleet.
+var ErrModelHostsFull = errors.New("model host fleet full")
 
 // ErrModelRequestInvalid identifies a model stream request rejected before provider execution.
 var ErrModelRequestInvalid = errors.New("model stream request is invalid")

@@ -93,6 +93,9 @@ func (s OwnerModels) HandleModelTest(ctx context.Context, lease *jobs.Lease) err
 	result, status := s.runModelTest(ctx, owner, claim.Payload)
 	settle, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
+	if status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable {
+		return lease.Fail(settle, result)
+	}
 	if status != http.StatusOK {
 		return lease.Fail(settle, json.RawMessage(`{"ok":false,"latencyMs":0,"failure":{"code":"invalid"},"fault":"user"}`))
 	}

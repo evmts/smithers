@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/modelhost"
 	"github.com/smithersai/smithers/packages/backend/ports"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 type responseModelLease struct {
@@ -219,4 +221,46 @@ func TestModelStreamReportsAnUnnamedRefusalAsUnclassified(t *testing.T) {
 	require.Empty(t, string(stage))
 	require.Equal(t, ports.ReasonUnclassified, reason)
 	require.Empty(t, correlation)
+}
+
+// refusingGuestSlots is a model host cap that refuses every launch the way
+// the durable one does when it is full.
+type refusingGuestSlots struct{ refusal error }
+
+func (s refusingGuestSlots) Acquire(context.Context, int64) (func(context.Context), error) {
+	return nil, s.refusal
+}
+
+// A model host cap refuses before any host exists (G3i). The person's own cap
+// answers 429 with the sentence they read; the fleet ceiling answers 503
+// no_capacity. Both say when to try again, and neither reaches the launcher
+// or falls through to model_unavailable.
+func TestModelStreamAnswersModelHostCapRefusalsRetryably(t *testing.T) {
+	// The fleet refusal is also a sandbox no-capacity error, as the durable
+	// cap builds it, so a sandbox mapping can never shadow it.
+	fleetFull := fmt.Errorf("%w: %w", ports.ErrModelHostsFull, &sandbox.StatusError{StatusCode: http.StatusServiceUnavailable, Code: sandbox.NoCapacityCode, Message: "every model host the fleet allows is running"})
+	for _, tc := range []struct {
+		name    string
+		refusal error
+		status  int
+		body    string
+	}{
+		{"owner cap", &ports.ModelHostsBusy{Limit: 2}, http.StatusTooManyRequests,
+			`{"status":"error","code":"chat_guests_busy","message":"You have 2 chats answering right now. Wait for one to finish, then try again."}`},
+		{"fleet ceiling", fleetFull, http.StatusServiceUnavailable, `{"status":"error","code":"no_capacity"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			host, err := modelhost.New(modelhost.ResolverFunc(func(context.Context, int64, int64, json.RawMessage) (modelhost.Binding, error) {
+				return modelhost.Binding{}, nil
+			}), unexpectedModelLauncher{t})
+			require.NoError(t, err)
+			host.SetGuestSlots(refusingGuestSlots{refusal: tc.refusal})
+			w := httptest.NewRecorder()
+			NewModelStreamHandler(host).ServeHTTP(w, signedIn(httptest.NewRequest(http.MethodPost, "/api/model/stream", strings.NewReader(`{}`))))
+			require.Equal(t, tc.status, w.Code)
+			require.Equal(t, "5", w.Header().Get("Retry-After"))
+			require.Equal(t, "application/json", w.Header().Get("Content-Type"))
+			require.JSONEq(t, tc.body, w.Body.String())
+		})
+	}
 }

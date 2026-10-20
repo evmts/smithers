@@ -17,7 +17,7 @@ import (
 // admit is the common journal admission boundary for renderer transports.
 func (h *Handler) admit(r *http.Request, scope Scope, runID string, journal JournalRequest, request json.RawMessage) (AdmitResult, error) {
 	release := h.credentials.admit(turnKey{userID: scope.UserID, runID: runID, legID: journal.LegID}, middleware.CredentialOf(middleware.AuthInfoFromContext(r.Context())))
-	accepted, err := h.Store.Admit(r.Context(), AdmitInput{Scope: scope, RunID: runID, Journal: journal, Request: request})
+	accepted, err := h.Store.Admit(r.Context(), AdmitInput{Scope: scope, RunID: runID, Journal: journal, Request: request, PendingLimit: h.PendingPerOwner})
 	if err != nil || accepted.Status != "accepted" {
 		release()
 	}

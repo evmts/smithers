@@ -160,3 +160,12 @@ func TestAppBootstrapDebugAPIRequiresInstallAuthorizer(t *testing.T) {
 		}
 	}
 }
+
+// Hosted offers no model.turn, so the app keeps its fallback timeline titles
+// instead of starting a chat guest per line; an install keeps it.
+func TestModelTurnIsAdvertisedOnlyOffHosted(t *testing.T) {
+	require.False(t, modelTurnAdvertised(true, hostedAPITopology))
+	require.True(t, modelTurnAdvertised(true, topology{}))
+	require.False(t, modelTurnAdvertised(false, topology{}))
+	require.False(t, modelTurnAdvertised(true, topology{duties: DutiesWorkers}))
+}

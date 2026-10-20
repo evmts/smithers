@@ -182,11 +182,26 @@ func TestChatSizingDefaultsByRoleAndHonorsConfiguration(t *testing.T) {
 	require.Error(t, err)
 }
 
+// The pending-turn cap bounds hosted owners (G3i); a single owner's own
+// install keeps the runtime's unbounded default whatever the configuration.
+func TestChatPendingLimitAppliesOnlyWhenHosted(t *testing.T) {
+	hosted, err := chatRuntimeOptions(config.ChatConfig{PendingPerOwner: 5}, true, nil)
+	require.NoError(t, err)
+	require.Equal(t, 5, hosted.PendingPerOwner)
+	local, err := chatRuntimeOptions(config.ChatConfig{PendingPerOwner: 5}, false, nil)
+	require.NoError(t, err)
+	require.Zero(t, local.PendingPerOwner)
+	for _, isHosted := range []bool{true, false} {
+		_, err = chatRuntimeOptions(config.ChatConfig{PendingPerOwner: -1}, isHosted, nil)
+		require.Error(t, err, "hosted=%v", isHosted)
+	}
+}
+
 func TestChatSizingLoadsFromEnvironment(t *testing.T) {
 	t.Setenv("SMITHERS_CHAT_CONCURRENCY", "48")
 	t.Setenv("SMITHERS_CHAT_QUEUE_SIZE", "512")
 	t.Setenv("SMITHERS_CHAT_LEASE_SECONDS", "60")
 	cfg, err := config.Load("")
 	require.NoError(t, err)
-	require.Equal(t, config.ChatConfig{Concurrency: 48, QueueSize: 512, LeaseSeconds: 60}, cfg.Chat)
+	require.Equal(t, config.ChatConfig{Concurrency: 48, QueueSize: 512, LeaseSeconds: 60, GuestsPerOwner: 2, GuestsFleet: 4, PendingPerOwner: 5}, cfg.Chat)
 }

@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"regexp"
 	"time"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/buildcache"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/ports"
 )
 
 const (
@@ -457,6 +459,11 @@ func (s *Store) Admit(ctx context.Context, input AdmitInput) (AdmitResult, error
 	}
 	if erased {
 		return AdmitResult{}, ErrRetired
+	}
+	if input.PendingLimit > 0 {
+		if err = admitWithinPending(ctx, tx, input); err != nil {
+			return AdmitResult{}, err
+		}
 	}
 	turnID := uuid.NewString()
 	result, err := tx.Exec(ctx, `INSERT INTO chat_turns(
@@ -1202,7 +1209,7 @@ func cancelledFrame(runID string) json.RawMessage {
 // hostNoCapacityMessage is read by the person whose turn ran out of attempts
 // while every sandbox host was busy. Their conversation and its history are
 // untouched: the launch was refused before anything ran.
-const hostNoCapacityMessage = "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
+const hostNoCapacityMessage = "Chat is busy right now. Nothing here was lost; try again in a moment."
 
 func errorFrame(runID, message string) json.RawMessage {
 	value, _ := json.Marshal(map[string]any{"runId": runID, "type": "done", "error": message})
@@ -1389,6 +1396,41 @@ func (s *Store) RefuseProducer(ctx context.Context, grant ProducerGrant, refusal
 		return ErrInvalidRequest
 	}
 	_, err := s.stopProducerWith(ctx, grant, refusal.Code, -1, refusal.Text())
+	return err
+}
+
+// admitWithinPending refuses a new turn while its owner already has
+// PendingLimit turns not yet answered (G3i, Security d-kmefmv), so a deferred
+// or queued backlog per owner stays bounded. A replay of a turn that exists is
+// never refused. The owner's lock makes the count and the insert one decision
+// across replicas.
+func admitWithinPending(ctx context.Context, tx pgx.Tx, input AdmitInput) error {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('chat-pending:' || $1::bigint::text, 0))`, input.Scope.UserID); err != nil {
+		return err
+	}
+	var exists bool
+	var pending int
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM chat_turns WHERE user_id=$1 AND run_id=$2 AND leg_id=$3),
+		(SELECT count(*) FROM chat_turns WHERE user_id=$1 AND NOT terminal)`, input.Scope.UserID, input.RunID, input.Journal.LegID).Scan(&exists, &pending); err != nil {
+		return err
+	}
+	if !exists && pending >= input.PendingLimit {
+		slog.WarnContext(ctx, "chat turn refused: pending turns full", "owner_id", input.Scope.UserID, "pending", pending, "pending_limit", input.PendingLimit)
+		return &PendingFull{Limit: input.PendingLimit}
+	}
+	return nil
+}
+
+// RefuseHostsBusy ends a turn the owner's model host cap refused before any
+// host existed, with the cap's sentence. The receipt names no code yet: the
+// app decodes done codes from a closed list (@smthrs/rpc NativeAgent), and a
+// code it does not know fails the whole conversation, so chat_guests_busy
+// joins the receipt only after every client accepts it.
+func (s *Store) RefuseHostsBusy(ctx context.Context, grant ProducerGrant, busy *ports.ModelHostsBusy) error {
+	if busy == nil {
+		return ErrInvalidRequest
+	}
+	_, err := s.stopProducerWith(ctx, grant, codeChatGuestsBusy, -1, busy.Error())
 	return err
 }
 
