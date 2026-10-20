@@ -132,9 +132,17 @@ Three options record usage where the host knows what it means:
   calls, and each call still runs the model, so spend keyed on it counts only
   the first.
 
+This sample caps output at 1,000 tokens: unset or nonfinite values use 1,000;
+finite values are rounded down and clamped to [0, 1,000]. It reserves and
+forwards the same cap. The in-memory map illustrates accounting only; enforce
+a real budget with an atomic database reservation before admitting the call.
+
 ```ts
-import { ModelProxy } from "@smthrs/model"
+import { ModelProxy, ModelRequest } from "@smthrs/model"
 import { Effect } from "effect"
+
+const outputCap = (value: number | undefined): number =>
+  value === undefined || !Number.isFinite(value) ? 1_000 : Math.max(0, Math.min(1_000, Math.floor(value)))
 
 // Tokens reserved for calls in flight, by invocation id. A real host keeps them in its database.
 const reserved = new Map<string, number>()
@@ -142,9 +150,16 @@ const reserved = new Map<string, number>()
 const served = ModelProxy.serve({
   prepare: (request, { invocationId, requestBytes }) =>
     Effect.sync(() => {
-      // The worst case: every byte a prompt token, plus the most output the call may ask for.
-      reserved.set(invocationId, requestBytes + (request.params.maxTokens ?? 1_000))
-      return { model, request }
+      const maxTokens = outputCap(request.params.maxTokens)
+      // The worst case: every byte a prompt token, plus the enforced output cap.
+      reserved.set(invocationId, requestBytes + maxTokens)
+      return {
+        model,
+        request: ModelRequest.ModelRequest.make({
+          ...request,
+          params: ModelRequest.GenerationParams.make({ ...request.params, maxTokens })
+        })
+      }
     }),
   maxBodyBytes: 64 * 1024,
   attributes: { role: "agent" },

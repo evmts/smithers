@@ -112,6 +112,60 @@ describe("Proxy a model guide", () => {
     expect(serve?.annotations).toMatchObject({ role: "agent" })
   })
 
+  it.each([
+    [undefined, 1_000],
+    [Number.NaN, 1_000],
+    [Number.POSITIVE_INFINITY, 1_000],
+    [Number.NEGATIVE_INFINITY, 1_000],
+    [-100, 0],
+    [-0.5, 0],
+    [0, 0],
+    [0.5, 0],
+    [1.9, 1],
+    [999.9, 999],
+    [1_000, 1_000],
+    [1_001, 1_000],
+    [Number.MAX_VALUE, 1_000]
+  ])("reserves and forwards the same bounded output cap for %s", async (maxTokens, expected) => {
+    const received: Array<ModelPackage.ModelRequest.ModelRequest> = []
+    const model = ModelPackage.Model.make({
+      stream: (body) => {
+        received.push(body)
+        return echo.stream(body)
+      }
+    })
+    const { served, reserved } = example<{
+      served: ReturnType<typeof ModelPackage.ModelProxy.serve<never>>
+      reserved: Map<string, number>
+    }>("Meter what each request spends", ["served", "reserved"], { model })
+    const { outputCap } = example<{ outputCap: (value: number | undefined) => number }>(
+      "Meter what each request spends",
+      ["outputCap"],
+      { model }
+    )
+    expect(outputCap(maxTokens)).toBe(expected)
+    if (maxTokens !== undefined && !Number.isFinite(maxTokens)) return
+    const lines: Array<Record<string, unknown>> = []
+    const logger = Logger.make((options) => {
+      const line = Logger.formatStructured.log(options)
+      if (line.message === "usage") lines.push(line.annotations)
+    })
+    const handler = EffectHttp.HttpEffect.toWebHandler(
+      served.pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger])))
+    )
+    const body = ModelPackage.ModelRequest.ModelRequest.make({
+      ...request,
+      params: ModelPackage.ModelRequest.GenerationParams.make({ maxTokens })
+    })
+    const posted = post(body)
+    const requestBytes = new TextEncoder().encode(await posted.clone().text()).length
+    await (await handler(posted)).text()
+    expect(received).toHaveLength(1)
+    expect(received[0]?.params.maxTokens).toBe(expected)
+    expect(lines[0]?.reserved).toBe(requestBytes + expected)
+    expect(reserved.size).toBe(0)
+  })
+
   it("serves the Node handler that the browser example then reads as a Model", async () => {
     const { handler } = example<{ handler: (request: Request) => Promise<Response> }>(
       "Run it on Node or Bun",
