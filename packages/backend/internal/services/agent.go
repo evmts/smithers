@@ -417,6 +417,8 @@ type AgentService struct {
 	// the same change that gives buildServiceSpec a real Exec.
 	guestEntrypointAssumed bool
 
+	sandboxEgressAllowlist SandboxEgressAllowlist
+
 	neverStartedTimeout   time.Duration
 	queueTimeout          time.Duration
 	revocations           revocation.Publisher
@@ -588,6 +590,11 @@ func WithAgentEnvironmentBoundSecrets(loader AgentEnvironmentBoundSecretsLoader)
 	return func(s *AgentService) {
 		s.boundSecrets = loader
 	}
+}
+
+// WithAgentSandboxEgressAllowlist configures deployment egress for every box.
+func WithAgentSandboxEgressAllowlist(allowlist SandboxEgressAllowlist) AgentServiceOption {
+	return func(s *AgentService) { s.sandboxEgressAllowlist = allowlist }
 }
 
 // WithAgentEgressAllowDomains sends the repository's egress allowlist with

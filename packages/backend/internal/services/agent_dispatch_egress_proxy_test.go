@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -237,24 +238,42 @@ func TestProviderCredentialEgressSecretBindsKnownProvidersOnly(t *testing.T) {
 // even when there is nothing to substitute yet.
 func TestAgentDispatch_EgressProxyIsRequestedForEverySession(t *testing.T) {
 	t.Parallel()
-	var created sandbox.CreateRequest
-	client := &mockSandboxVMClient{createVMFn: func(_ context.Context, req sandbox.CreateRequest) (sandbox.CreateResult, error) {
-		created = req
-		return sandbox.CreateResult{ID: "vm-unbound"}, nil
-	}}
-	dispatch := newEgressDispatch(t, client)
-	dispatch.svc.sandboxConfig.ModelSeats = nil
-	metrics := &egressMetricsStub{}
-	dispatch.svc.sandboxMetrics = metrics
+	for _, configured := range []bool{false, true} {
+		t.Run(fmt.Sprint(configured), func(t *testing.T) {
+			var created sandbox.CreateRequest
+			client := &mockSandboxVMClient{createVMFn: func(_ context.Context, req sandbox.CreateRequest) (sandbox.CreateResult, error) {
+				created = req
+				return sandbox.CreateResult{ID: "vm-unbound"}, nil
+			}}
+			dispatch := newEgressDispatch(t, client)
+			dispatch.svc.sandboxConfig.ModelSeats = nil
+			dispatch.input.UserID = 71
+			dispatch.svc.billing = sandboxPolicyStub{entitlement: SandboxEntitlement{EgressBytesPerDay: 5 << 30}}
+			allowlist, domains, rules := sandboxEgressFixture(t)
+			if configured {
+				WithAgentSandboxEgressAllowlist(allowlist)(dispatch.svc)
+			}
+			metrics := &egressMetricsStub{}
+			dispatch.svc.sandboxMetrics = metrics
 
-	require.NoError(t, dispatch.buildServiceSpec())
-	require.NoError(t, dispatch.injectSecrets())
-	require.NoError(t, dispatch.createVM())
+			require.NoError(t, dispatch.buildServiceSpec())
+			require.NoError(t, dispatch.injectSecrets())
+			require.NoError(t, dispatch.createVM())
 
-	require.NotNil(t, created.EgressProxy)
-	assert.True(t, created.EgressProxy.Enabled)
-	assert.Equal(t, []string{"SMITHERS_AGENT_TOKEN"}, created.EgressProxy.SecretNames(), "only the callback token rides the proxy")
-	assert.Equal(t, 1, metrics.deliveries[secretDeliveryPathEgressProxy], "the callback token")
+			require.NotNil(t, created.EgressProxy)
+			assert.True(t, created.EgressProxy.Enabled)
+			assert.Equal(t, []string{"SMITHERS_AGENT_TOKEN"}, created.EgressProxy.SecretNames(), "only the callback token rides the proxy")
+			assert.Equal(t, 1, metrics.deliveries[secretDeliveryPathEgressProxy], "the callback token")
+
+			assert.Equal(t, &sandbox.EgressQuota{BillingUserID: 71, DailyBytes: 5 << 30}, created.EgressProxy.Quota)
+			if configured {
+				assert.Equal(t, domains, created.EgressProxy.AllowDomains)
+				assert.Equal(t, rules, created.EgressProxy.HostRules)
+			} else {
+				assert.Nil(t, created.EgressProxy.AllowDomains)
+			}
+		})
+	}
 }
 
 // The per-run repository token doubles as the build cache write credential:

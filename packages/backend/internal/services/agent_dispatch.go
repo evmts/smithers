@@ -1286,6 +1286,7 @@ func (d *agentDispatch) createVM() error {
 		return quotaErr
 	}
 	d.vmReq.EgressProxy = &sandbox.EgressProxyPolicy{Enabled: true, Quota: quota, Secrets: append([]sandbox.EgressProxySecret(nil), d.egressSecrets...)}
+	d.svc.sandboxEgressAllowlist.Apply(d.vmReq.EgressProxy)
 	if d.svc.egressAllowDomains != nil && d.input.RepositoryID > 0 {
 		domains, err := d.svc.egressAllowDomains.AllowDomains(d.ctx, d.input.RepositoryID)
 		if err != nil {

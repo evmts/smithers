@@ -447,6 +447,7 @@ func (s *WorkspaceService) inheritOutsiderMark(ctx context.Context, child, sourc
 // bake) binds nothing so the baked disk never carries a repository's secrets.
 func (s *WorkspaceService) workspaceEgressProxy(ctx context.Context, repositoryID int64, workspaceID string) (*sandbox.EgressProxyPolicy, error) {
 	policy := &sandbox.EgressProxyPolicy{Enabled: true}
+	s.sandboxEgressAllowlist.Apply(policy)
 	// A CI task guest has no workspace; its repository's payer is billed all
 	// the same. The controller refuses every grant to a guest without a quota
 	// but the golden bake, which binds no repository (plue#839).
@@ -474,7 +475,7 @@ func (s *WorkspaceService) workspaceEgressProxy(ctx context.Context, repositoryI
 	if outsider, err := s.outsiderWorkspace(ctx, workspaceID); err != nil {
 		return nil, pkgerrors.Internal("read the workspace's outsider mark").WithCause(err)
 	} else if outsider {
-		policy.HostRules = sandbox.ConversationWithheldHostRules()
+		policy.HostRules = append(policy.HostRules, sandbox.ConversationWithheldHostRules()...)
 	}
 	// The repository's durable allowlist is what a created or resumed proxy
 	// adds to the deployment list; a read that fails refuses the VM rather

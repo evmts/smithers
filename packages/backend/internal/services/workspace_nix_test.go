@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -394,18 +395,39 @@ func TestDevelopmentWorkspaceHasDependencyAndCheckDiskSpace(t *testing.T) {
 // A repository without its own registered closure still gets CI: its job
 // guests boot the platform base closure through the same workspace request.
 func TestCIGuestVMRequestBootsBaseClosureForRepositoryWithoutImage(t *testing.T) {
-	images := NewSandboxEnvironmentImageService(&fakeEnvironmentImageQuerier{rows: []runtimeports.SandboxEnvironmentImage{
-		{ID: "base-vm", Kind: "vm", ClosureHash: "b", Image: "reg/nixos-guest:base-b", Status: "ready"},
-	}})
-	svc := NewWorkspaceService(&mockWorkspaceQuerier{}, WithWorkspaceEnvironmentImages(images))
-	checkout := []sandbox.GitRepositorySpec{{Repo: "https://git.example.test/acme/app.git", Path: nixCITaskWorkdir, Rev: "cafebabe"}}
+	for _, configured := range []bool{false, true} {
+		t.Run(fmt.Sprint(configured), func(t *testing.T) {
+			images := NewSandboxEnvironmentImageService(&fakeEnvironmentImageQuerier{rows: []runtimeports.SandboxEnvironmentImage{
+				{ID: "base-vm", Kind: "vm", ClosureHash: "b", Image: "reg/nixos-guest:base-b", Status: "ready"},
+			}})
+			svc := NewWorkspaceService(&mockWorkspaceQuerier{}, WithWorkspaceEnvironmentImages(images), WithWorkspaceBillingPolicy(NewUnlimitedBillingPolicy()))
+			allowlist, domains, rules := sandboxEgressFixture(t)
+			if configured {
+				WithWorkspaceSandboxEgressAllowlist(allowlist)(svc)
+			}
+			secret := sandbox.EgressProxySecret{Name: "API_KEY", Value: "bound", Hosts: []string{"api.example.test"}, MatchHeaders: []string{"authorization"}}
+			svc.agentEnvironment = &boundSecretsAgentEnvironmentProvider{bound: []sandbox.EgressProxySecret{secret}}
+			checkout := []sandbox.GitRepositorySpec{{Repo: "https://git.example.test/acme/app.git", Path: nixCITaskWorkdir, Rev: "cafebabe"}}
 
-	req, err := svc.CIGuestVMRequest(context.Background(), 8, checkout)
-	require.NoError(t, err)
-	assert.Equal(t, "vm", req.Kind)
-	assert.Equal(t, "reg/nixos-guest:base-b", req.Image)
-	assert.Nil(t, req.Packages, "the toolchain comes from the closure, never apt")
-	assert.Equal(t, checkout, req.GitRepos)
+			req, err := svc.CIGuestVMRequest(context.Background(), 8, checkout)
+			require.NoError(t, err)
+			assert.Equal(t, "vm", req.Kind)
+			assert.Equal(t, "reg/nixos-guest:base-b", req.Image)
+			assert.Nil(t, req.Packages, "the toolchain comes from the closure, never apt")
+			assert.Equal(t, checkout, req.GitRepos)
+
+			require.NotNil(t, req.EgressProxy)
+			require.NotNil(t, req.EgressProxy.Quota)
+			assert.Equal(t, int64(-1), req.EgressProxy.Quota.DailyBytes)
+			assert.Contains(t, req.EgressProxy.Secrets, secret)
+			if configured {
+				assert.Equal(t, domains, req.EgressProxy.AllowDomains)
+				assert.Equal(t, rules, req.EgressProxy.HostRules)
+			} else {
+				assert.Nil(t, req.EgressProxy.AllowDomains)
+			}
+		})
+	}
 }
 
 // With no image registered at all the guest cannot boot; provisioning fails

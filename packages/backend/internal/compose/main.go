@@ -250,7 +250,11 @@ type Options struct {
 	// EnvGitHubAppCredentials is an explicit Plue adapter; self-hosting leaves it false.
 	EnvGitHubAppCredentials bool
 	// PublicMirrors are the composer's public mirrors (app.Config.PublicMirrors).
-	PublicMirrors   []string
+	PublicMirrors []string
+
+	SandboxEgressAllowDomains []string
+	SandboxEgressHostRules    []sandbox.EgressHostRule
+
 	CanaryRuns      ports.CanaryRunSource
 	RuntimeStores   ports.RuntimeStores
 	ReadyBindings   func(operations.Bindings)
@@ -1195,6 +1199,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	neverStartedTimeout, _ := time.ParseDuration(cfg.Agents.NeverStartedTimeout)
 	hostedCoding := hostedCodingUsers(cfg)
 	slog.Info("hosted coding admits", "everyone", hostedCoding.Everyone, "user_ids", hostedCoding.UserIDs)
+	sandboxEgressAllowlist, err := services.NewSandboxEgressAllowlist(options.SandboxEgressAllowDomains, options.SandboxEgressHostRules)
+	if err != nil {
+		return fmt.Errorf("sandbox egress allowlist: %w", err)
+	}
 	agentService := services.NewAgentServiceWithPool(queries, pool,
 		services.WithAgentDispatchQuerier(runtimeStores.AgentDispatch),
 		services.WithAgentNeverStartedTimeout(neverStartedTimeout),
@@ -1217,6 +1225,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithAgentEnvironmentVariables(agentEnvironmentService),
 		services.WithAgentEnvironmentBoundSecrets(agentEnvironmentService),
 		services.WithAgentEgressAllowDomains(egressPolicyService),
+		services.WithAgentSandboxEgressAllowlist(sandboxEgressAllowlist),
 		services.WithAgentSandboxMetrics(smithersMetrics),
 		services.WithAgentWorkflowMetrics(smithersMetrics),
 		services.WithAgentSessionMetrics(smithersMetrics),
@@ -1257,6 +1266,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithWorkspaceAuditService(auditService),
 		services.WithWorkspaceSandboxClient(sandboxClient),
 		services.WithWorkspaceEgressAllowDomains(egressPolicyService),
+		services.WithWorkspaceSandboxEgressAllowlist(sandboxEgressAllowlist),
 		services.WithWorkspaceSourceReader(repoHostClient),
 		services.WithWorkspaceBurstVersions(pool, repoHostClient),
 		services.WithWorkspaceRefDeleter(repoHostClient),

@@ -34,19 +34,21 @@ func (q *outsiderMarkedWorkspaceQuerier) IsOutsiderWorkspace(_ context.Context, 
 func TestWorkspaceEgressWithholdsGitHubConversationFromOutsiderWorkspaces(t *testing.T) {
 	t.Parallel()
 	service := newWorkspaceServiceForTests(&outsiderMarkedWorkspaceQuerier{marked: map[string]bool{"ws-outsider": true}})
+	allowlist, _, rules := sandboxEgressFixture(t)
+	WithWorkspaceSandboxEgressAllowlist(allowlist)(service)
 	ctx := context.Background()
 	outsider, err := service.workspaceEgressProxy(ctx, 123, "ws-outsider")
 	require.NoError(t, err)
-	assert.Equal(t, sandbox.ConversationWithheldHostRules(), outsider.HostRules)
+	assert.Equal(t, append(rules, sandbox.ConversationWithheldHostRules()...), outsider.HostRules)
 	require.NoError(t, outsider.Validate())
 	maintainer, err := service.workspaceEgressProxy(ctx, 123, "ws-maintainer")
 	require.NoError(t, err)
-	assert.Empty(t, maintainer.HostRules)
+	assert.Equal(t, rules, maintainer.HostRules)
 
 	req, err := service.buildWorkspaceVMRequest(ctx, "", nil, 123, "ws-outsider", "container")
 	require.NoError(t, err)
 	require.NotNil(t, req.EgressProxy)
-	assert.Equal(t, sandbox.ConversationWithheldHostRules(), req.EgressProxy.HostRules, "a fresh VM boots narrowed")
+	assert.Equal(t, append(rules, sandbox.ConversationWithheldHostRules()...), req.EgressProxy.HostRules, "a fresh VM boots narrowed")
 }
 
 // An outsider's lane workspace is marked before it is provisioned, so the

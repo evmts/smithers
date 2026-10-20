@@ -46,6 +46,10 @@ type Config struct {
 	// any SMITHERS_PUBLIC_MIRRORS names (docs/public-mirrors.md). An install
 	// refuses to start with it.
 	PublicMirrors []string
+	// SandboxEgressAllowDomains replaces the provider list when non-empty.
+	// SandboxEgressHostRules adds restrictions to every new box.
+	SandboxEgressAllowDomains []string
+	SandboxEgressHostRules    []sandbox.EgressHostRule
 	// CanaryRuns supplies deployment run evidence for the public status page.
 	// Nil reports unknown; self-hosting does not require a canary service.
 	CanaryRuns    ports.CanaryRunSource
@@ -253,6 +257,8 @@ func (cfg Config) options() compose.Options {
 		HostProfile:                cfg.HostProfile,
 		EnvGitHubAppCredentials:    cfg.EnvGitHubAppCredentials,
 		PublicMirrors:              cfg.PublicMirrors,
+		SandboxEgressAllowDomains:  cfg.SandboxEgressAllowDomains,
+		SandboxEgressHostRules:     cfg.SandboxEgressHostRules,
 		CanaryRuns:                 cfg.CanaryRuns,
 		RuntimeStores:              cfg.RuntimeStores,
 		BeforeShutdown:             cfg.BeforeShutdown,

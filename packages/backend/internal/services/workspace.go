@@ -626,6 +626,9 @@ type WorkspaceService struct {
 	// egressAllowDomains is the repository allowlist every workspace VM's
 	// egress proxy is created and resumed with (#2653).
 	egressAllowDomains EgressAllowDomainsSource
+
+	sandboxEgressAllowlist SandboxEgressAllowlist
+
 	// flowJournals drops a deleted workspace's flow journal (#3172).
 	flowJournals           FlowJournals
 	prepareFlowHostCapture func(context.Context, string) error
@@ -721,6 +724,11 @@ func WithWorkspaceRepositorySecrets(injector *SecretInjector) WorkspaceServiceOp
 // the VM provisioning lifecycle.
 func WithWorkspaceAgentEnvironment(provider AgentEnvironmentProvisioningProvider) WorkspaceServiceOption {
 	return func(s *WorkspaceService) { s.agentEnvironment = provider }
+}
+
+// WithWorkspaceSandboxEgressAllowlist configures deployment egress for every box.
+func WithWorkspaceSandboxEgressAllowlist(allowlist SandboxEgressAllowlist) WorkspaceServiceOption {
+	return func(s *WorkspaceService) { s.sandboxEgressAllowlist = allowlist }
 }
 
 // WithWorkspaceEgressAllowDomains sends each repository's egress allowlist
