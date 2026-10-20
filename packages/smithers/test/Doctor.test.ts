@@ -81,16 +81,16 @@ const setBackend = (value: string | undefined): void => {
 
 describe("the Node floor", () => {
   it("accepts the supported versions and refuses the ones below the floor", () => {
-    expect(Doctor.minimumNode).toBe("22.19.0")
-    for (const version of ["22.19.0", "v22.19.1", "24.19.0", "26.4.0", "27.0.0"]) {
+    expect(Doctor.minimumNode).toBe("26.4.0")
+    for (const version of ["26.4.0", "v26.4.1", "26.10.0", "27.0.0"]) {
       expect(Doctor.satisfiesNode(version)).toBe(true)
     }
-    for (const version of ["22.18.9", "22.15.0", "22.4.1", "20.11.0", "v18.0.0"]) {
+    for (const version of ["26.3.9", "22.19.0", "24.11.0", "24.18.0", "25.9.0", "20.11.0", "v18.0.0"]) {
       expect(Doctor.satisfiesNode(version)).toBe(false)
     }
     expect(Doctor.satisfiesNode("26", "26.0.1")).toBe(false)
     expect(Doctor.satisfiesNode("26.4.0", "26.5.0")).toBe(false)
-    expect(Doctor.satisfiesNode("22.18.0", "20.0.0")).toBe(false)
+    expect(Doctor.satisfiesNode("26.3.0", "20.0.0")).toBe(false)
     expect(Doctor.satisfiesNode("26.4.0", "invalid")).toBe(false)
     for (const version of ["26.4", "26.4.0-rc.1", "26.4.0garbage", "", "9007199254740992.0.0"]) {
       expect(Doctor.satisfiesNode(version)).toBe(false)
@@ -101,11 +101,11 @@ describe("the Node floor", () => {
 })
 
 describe("the report", () => {
-  it.each(["22.4.1", "22.18.9"])("explains why Node %s is unsupported", (nodeVersion) => {
+  it.each(["24.18.0", "26.3.9"])("explains why Node %s is unsupported", (nodeVersion) => {
     const report = Doctor.inspect({ root: project(), environment: {}, nodeVersion })
     expect(check(report, "node")).toMatchObject({
       level: "fail",
-      detail: `v${nodeVersion} is unsupported; use Node 22.19+`
+      detail: `v${nodeVersion} is unsupported; use Node 26.4+`
     })
     expect(Doctor.failed(report)).toBe(true)
   })

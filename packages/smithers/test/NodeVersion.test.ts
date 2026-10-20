@@ -4,20 +4,20 @@ import * as NodeVersion from "../src/internal/NodeVersion.ts"
 
 describe("NodeVersion", () => {
   it("accepts the engines floor and anything newer", () => {
-    for (const version of ["22.19.0", "22.19.1", "22.20.0", "24.19.0", "26.4.0", "v27.0.0", "30.1.2"]) {
+    for (const version of ["26.4.0", "26.4.1", "26.5.0", "v27.0.0", "30.1.2"]) {
       expect(NodeVersion.satisfies(version)).toBe(true)
     }
   })
 
   it("refuses anything older, by minor and by major", () => {
-    for (const version of ["22.18.9", "22.15.0", "22.4.1", "v20.19.0"]) {
+    for (const version of ["26.3.9", "26.0.0", "24.4.1", "v22.12.0"]) {
       expect(NodeVersion.satisfies(version)).toBe(false)
     }
   })
 
   it("names both versions and the node binary when it refuses", () => {
-    expect(NodeVersion.refusal("22.4.1", "/opt/homebrew/bin/node")).toBe(
-      "smthrs needs Node 22.19.0 or later; /opt/homebrew/bin/node is Node 22.4.1. Put a newer node first on PATH."
+    expect(NodeVersion.refusal("24.4.1", "/opt/homebrew/bin/node")).toBe(
+      "smthrs needs Node 26.4.0 or later; /opt/homebrew/bin/node is Node 24.4.1. Put a newer node first on PATH."
     )
     expect(NodeVersion.refusal("26.5.0", "/usr/bin/node")).toBeUndefined()
   })
