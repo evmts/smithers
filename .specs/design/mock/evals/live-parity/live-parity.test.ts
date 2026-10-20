@@ -68,6 +68,9 @@ test("request firewall refuses writes, socket schemes, dangerous GET paths and a
   for (const path of ["/logout", "/auth/callback", "/api/pull/1/merge", "/api/approve", "/issues?action=delete"]) assert.equal(readOnlyRequest("GET", `https://example.test${path}`), false)
   assert.equal(readOnlyRequest("GET", "wss://example.test/stream"), false)
   assert.equal(readOnlyRequest("GET", "https://example.test/team/repo/issues?q=is%3Aopen"), true)
+  // A contents read names a file: a flow called "land" is a path, not a land action (port-p0, 2026-10-19).
+  assert.equal(readOnlyRequest("GET", "https://example.test/api/repos/team/repo/contents/.smithers/flows/land?ref=main"), true)
+  assert.equal(readOnlyRequest("GET", "https://example.test/api/repos/team/repo/land"), false)
 })
 test("fake collector pairs light desktop/phone and uses auth only for member live pages", async () => {
   const calls: Parameters<CapturePage>[0][] = []
