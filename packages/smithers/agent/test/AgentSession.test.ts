@@ -1178,25 +1178,6 @@ describe("AgentSession", () => {
     expect(resumed).toEqual([outcome.runId])
   })
 
-  it("waits through an accepted control row before driving the engine", async () => {
-    let reads = 0
-    await expect(Effect.runPromise(
-      AgentSession.waitForRunning(
-        () => Effect.sync(() => (reads++ === 0 ? "accepted" : "running")),
-        "run-wait",
-        1,
-        Effect.yieldNow
-      )
-    )).resolves.toBe(true)
-    expect(reads).toBe(2)
-    await expect(
-      Effect.runPromise(AgentSession.waitForRunning(() => Effect.succeed("cancelled"), "run-cancelled", 1))
-    ).resolves.toBe(false)
-    await expect(
-      Effect.runPromise(AgentSession.waitForRunning(() => Effect.succeed("accepted"), "run-stuck", 0))
-    ).rejects.toMatchObject({ code: "launch_failed", runId: "run-stuck" })
-  })
-
   it("waits for a parked execution publication before resuming it", async () => {
     let polls = 0
     const parked = await Effect.runPromise(

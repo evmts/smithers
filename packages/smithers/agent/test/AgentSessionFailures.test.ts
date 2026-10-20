@@ -1263,6 +1263,47 @@ describe("the executor's registry seam", () => {
 })
 
 describe("the executor's driver admission fence", () => {
+  it("waits for committed admission without polling the contended control store", async () => {
+    const record = recorder()
+    const checked = Deferred.makeUnsafe<void>()
+    const registered = Deferred.makeUnsafe<Fiber.Fiber<unknown, unknown>>()
+    let reads = 0
+    let executions = 0
+    await withExecutor(record, {
+      runtime: {
+        getRun: () =>
+          Effect.sync(() => {
+            reads++
+            Deferred.doneUnsafe(checked, Effect.void)
+            return { ...launchInput.run, status: "accepted" as const }
+          }),
+        registerFiber: (_runId, fiber) => Deferred.succeed(registered, fiber).pipe(Effect.asVoid)
+      },
+      engine: (engine) =>
+        ({
+          ...engine,
+          execute: () =>
+            Effect.sync(() => {
+              executions++
+            })
+        }) as unknown as EngineService
+    }, (executor) =>
+      Effect.gen(function*() {
+        expect(yield* executor.launch(launchInput)).toBe("accepted")
+        yield* Deferred.await(checked)
+        yield* Effect.sleep("150 millis")
+        // Startup observers can read once too; no reads may recur while
+        // admission stays accepted and the journal has no transition.
+        expect(reads).toBeLessThanOrEqual(3)
+        const waitingReads = reads
+        yield* Effect.sleep("150 millis")
+        expect(reads).toBe(waitingReads)
+        expect(executions).toBe(0)
+        yield* Fiber.interrupt(yield* Deferred.await(registered))
+        expect(record.statuses).toEqual([])
+      }))
+  })
+
   for (const status of ["waiting-approval", "parked"] as const) {
     it(`parks a background round held by another host (${status})`, async () => {
       const record = recorder()

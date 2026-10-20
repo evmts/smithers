@@ -2319,9 +2319,10 @@ export const agentFlow = Flow.make("agent/run", {
 })
 
 /**
- * Waits for ControlLive to publish its running transition before a driver
- * starts the engine. Keeping the bounded retry here makes the publication race
- * deterministic to exercise without coupling it to a particular scheduler.
+ * Waits for committed control admission before starting the engine. Subscribe
+ * before rechecking so a concurrent running transition cannot be missed. The
+ * journal publishes only after commit; no store retry or scheduling delay is
+ * needed to cross the admission transaction.
  *
  * @category helpers
  * @since 0.1.0
@@ -2329,33 +2330,39 @@ export const agentFlow = Flow.make("agent/run", {
 export const waitForRunning = (
   status: (runId: string) => Effect.Effect<RunStatus, unknown>,
   runId: string,
-  attempts: number,
-  retryDelay: Effect.Effect<void> = Effect.sleep(Duration.millis(10))
+  journal: Pick<Journal.Service, "changes">
 ): Effect.Effect<boolean, unknown> =>
-  Effect.gen(function*() {
+  Effect.scoped(Effect.gen(function*() {
     const current = yield* status(runId)
-    if (current === "running") {
-      // The running row is written inside ControlLive's admission transaction.
-      // Cross the same asynchronous retry boundary once more so that
-      // transaction can commit before the engine opens its own durable
-      // transaction.
-      yield* retryDelay
-      return true
-    }
-    if (current === "accepted" && attempts > 0) {
-      yield* retryDelay
-      return yield* waitForRunning(status, runId, attempts - 1, retryDelay)
-    }
-    if (current === "accepted") {
-      return yield* Effect.fail(
-        new LaunchFailed({
-          runId,
-          message: "The accepted run was not published as running before its driver admission budget expired"
-        })
-      )
-    }
-    return false
-  })
+    if (current !== "accepted") return current === "running"
+    const subscription = yield* journal.changes
+    const subscribed = yield* status(runId)
+    if (subscribed !== "accepted") return subscribed === "running"
+    yield* Stream.fromSubscription(subscription).pipe(
+      Stream.filter((entry) =>
+        entry.runId === runId && [
+          "control.run.running",
+          "control.run.pending",
+          "control.run.cancelled",
+          "control.run.failed",
+          "control.run.completed"
+        ].includes(entry.eventType)
+      ),
+      Stream.take(1),
+      Stream.runDrain,
+      Effect.timeoutOrElse({
+        duration: Duration.seconds(60),
+        orElse: () =>
+          Effect.fail(
+            new LaunchFailed({
+              runId,
+              message: "The accepted run was not published as running before its driver admission deadline"
+            })
+          )
+      })
+    )
+    return (yield* status(runId)) === "running"
+  }))
 
 /**
  * Polls a durable execution until it is published as parked. A missing poll is
@@ -4190,7 +4197,7 @@ export const make = (
         const admitted = yield* waitForRunning(
           (id) => runtime.getRun(id).pipe(Effect.orDie, Effect.map((run) => run.status)),
           runId,
-          400
+          journal
         )
         if (!admitted) return
         // Awaited, not discarded: `discard: true` admits the run and returns
