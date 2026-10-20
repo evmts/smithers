@@ -264,3 +264,19 @@ test("the repository tabs draw a partial list's count as a floor and a complete 
     expect(tab("Pull requests")).toBe("3")
   } finally { act(() => root.unmount()); host.remove() }
 })
+
+test("an Ask request that reaches a frame already on the page opens Ask, over an earlier close", () => {
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  const render = (askRequested: boolean) => act(() => root.render(<RepoFrame repo="ada/widgets" login="ben" askRequested={askRequested} onRunCommand={() => {}} ask={visible => <div data-ask-visible={String(visible)} />}>content</RepoFrame>))
+  try {
+    render(false)
+    act(() => (host.querySelector(".repo-frame-ask-button") as HTMLButtonElement).click())
+    act(() => (host.querySelector('[aria-label="Close Ask"]') as HTMLButtonElement).click())
+    expect(host.querySelector(".repo-frame")?.getAttribute("data-ask-open")).toBe("false")
+    render(true)
+    expect(host.querySelector(".repo-frame")?.getAttribute("data-ask-open")).toBe("true")
+    expect(host.querySelector("[data-ask-visible]")?.getAttribute("data-ask-visible")).toBe("true")
+  } finally { act(() => root.unmount()); host.remove() }
+})
