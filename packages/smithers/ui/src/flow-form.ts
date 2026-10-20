@@ -11,8 +11,7 @@
  * (state/controller/forms.ts) resolves option providers against the seams
  * and holds the draft in the card's payload.
  */
-import { REPO_TOKEN } from "./command-line"
-import { splitRunSource } from "./run-command"
+import { REPO_TOKEN, splitRunSource } from "./form-input"
 import { SchemaRepresentation } from "effect"
 import type { JsonSchema, Schema, SchemaAST } from "effect"
 
