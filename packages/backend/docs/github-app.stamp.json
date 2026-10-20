@@ -5,7 +5,7 @@
     "path": "packages/backend/docs/github-app.md",
     "digest": "e1653460858649eb05839d84ea85cd8ed27a89ae5ae461526df4f450e520a518"
   },
-  "closure": "2ec9166dece58d67d39c05e4c4d24998e67a15c19211af876365ea9bb8aabfdd",
+  "closure": "812f914d326bfada8962a9f08cc66f416d847458867882e612f7fc6e55d460bf",
   "inputs": [
     {
       "path": "docs/api/openapi/install.yaml",
@@ -49,7 +49,7 @@
     },
     {
       "path": "packages/backend/internal/compose/main.go",
-      "digest": "2bfa28171843b8e75b21d5371016ae938b1a0b353a79eba23235b96e12084da1"
+      "digest": "8870d74bb2ffdca42638a95e88044d36f2d6b41ddd6ee42585abcdab335fedda"
     },
     {
       "path": "packages/backend/internal/compose/runtime_helpers.go",
@@ -69,7 +69,7 @@
     },
     {
       "path": "packages/backend/internal/pkg/errors/registry.go",
-      "digest": "27337a76ea819fafbe2c3d74032e6baf873ec2d5897f2139dc268f66ee8d867f"
+      "digest": "f3004fce2dbf78e06112e604013f63aacc3d1a7e3587558ea3441339eb23cfe5"
     },
     {
       "path": "packages/backend/internal/repohost/refs.go",
@@ -117,7 +117,7 @@
     },
     {
       "path": "packages/backend/internal/services/github_import.go",
-      "digest": "bb591114c28325fd2644d274934c4b66d1c15ff9f684fa3ec523491a0eab58e8"
+      "digest": "ff44bd23a797d69567cd59ea2f110a273a5a5bc754e90660b361d20ecc35aa3b"
     },
     {
       "path": "packages/backend/internal/services/github_issue_comments.go",
@@ -217,7 +217,7 @@
     },
     {
       "path": "packages/backend/internal/services/landing_github_pull.go",
-      "digest": "6bfb78f4f2af0123aea2f00c08dfac2c63a111fd5a2ddf14815a4e4db90523ea"
+      "digest": "b2d19c0d98557b29384a2b7f1efa217c5757627bf09469ed4c3993635b8afc7e"
     },
     {
       "path": "packages/backend/internal/services/member_poll.go",
@@ -241,7 +241,7 @@
     },
     {
       "path": "packages/backend/internal/services/mythical_github.go",
-      "digest": "37d5f8329ac63ba7d891af7ad35952e6abfb690493c9ff2621060081a67290b2"
+      "digest": "adae24245b9676cbf9f46579008fb182322970784b9bc96bfb60e8cfc2e6ba71"
     },
     {
       "path": "packages/backend/internal/services/mythical_github_poll.go",
