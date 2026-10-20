@@ -653,7 +653,11 @@ func buildRouter(
 			}
 			vmProvision = append(vmProvision, repoAPIQuota)
 			vmProvision = append(vmProvision, gateWorkspaces)
-			vmProvisionSandbox := append([]func(http.Handler) http.Handler{}, vmProvision...)
+			// Routes that create or wake a box outside an agent turn. On a
+			// multitenant deployment only the staff list passes; everyone
+			// else gets workspaces_unavailable (hosted_workspace.go).
+			vmProvisionStaff := append(append([]func(http.Handler) http.Handler{}, vmProvision...), hostedWorkspaceStaffGate(cfg)...)
+			vmProvisionSandbox := append([]func(http.Handler) http.Handler{}, vmProvisionStaff...)
 			vmProvisionSandbox = append(vmProvisionSandbox, gateSandboxes, userSandboxesQuota)
 			// Session create deliberately does NOT take userSandboxesQuota on the
 			// no-workspace_id path: the service REUSES the repo's existing primary
@@ -670,7 +674,7 @@ func buildRouter(
 			if queries != nil {
 				workspaceSessionStore = queries
 			}
-			workspaceSessionProvision := append([]func(http.Handler) http.Handler{}, vmProvision...)
+			workspaceSessionProvision := append([]func(http.Handler) http.Handler{}, vmProvisionStaff...)
 			workspaceSessionProvision = append(
 				workspaceSessionProvision,
 				gateSandboxes,
@@ -714,13 +718,13 @@ func buildRouter(
 			if config.IsSingleOwner(cfg.Auth) && extras.Mythical != nil {
 				r.With(headReport...).Post("/api/repos/{owner}/{repo}/workspaces/{id}/stack/{operation}", extras.Mythical.ReservedStackOperation)
 			}
-			r.With(vmProvision...).Post("/api/repos/{owner}/{repo}/workspaces/{id}/snapshot", workspaceHandler.CreateWorkspaceSnapshot)
+			r.With(vmProvisionStaff...).Post("/api/repos/{owner}/{repo}/workspaces/{id}/snapshot", workspaceHandler.CreateWorkspaceSnapshot)
 			r.With(vmProvision...).Post("/api/repos/{owner}/{repo}/workspaces/{id}/coding/operations", workspaceHandler.ApplyCodingOperation)
 			if jjVCSHandler != nil {
 				r.With(vmProvision...).Get("/api/repos/{owner}/{repo}/workspaces/{id}/operations/{op_id}/undo/preview", jjVCSHandler.PreviewOperationUndo)
 				r.With(vmProvision...).Post("/api/repos/{owner}/{repo}/workspaces/{id}/operations/{op_id}/undo", jjVCSHandler.UndoOperation)
 			}
-			r.With(vmProvision...).Post("/api/repos/{owner}/{repo}/workspace-snapshots", workspaceHandler.CreateWorkspaceSnapshotTemplate)
+			r.With(vmProvisionStaff...).Post("/api/repos/{owner}/{repo}/workspace-snapshots", workspaceHandler.CreateWorkspaceSnapshotTemplate)
 			r.With(workspaceSessionProvision...).Post("/api/repos/{owner}/{repo}/workspace/sessions", workspaceHandler.CreateSession)
 			// Destroying the last session suspends and checkpoints a persistent
 			// Microsandbox VM. Disk snapshot export can legitimately exceed the

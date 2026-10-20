@@ -1371,7 +1371,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	gitHubSyncedRepoService.SetMirrorer(gitHubImportService)
 	if options.topology.hosted() {
-		services.WithGitHubImportWorkspaceProvisioner(workspaceService)(gitHubImportService)
+		services.WithGitHubImportWorkspaceProvisioner(hostedImportWorkspaces(cfg, workspaceService))(gitHubImportService)
 	} else {
 		// The install's import ends when the mirror holds the branch: machines
 		// start per branch, and Machine ready is setup step 6 (spec §8.6.3).
