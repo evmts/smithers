@@ -68,9 +68,20 @@ const setup = (
   return { schema, steps, objects, cleanup, runs: runsIn(schema) }
 }
 
-/** Every object's alarm, by execution id: all `null` once the objects are quiet. */
+/**
+ * Every object's alarm, by execution id: `"forget"` when it is a settled
+ * object's final alarm, at the end of its retention window, so every alarm is
+ * `null` or `"forget"` once the objects are quiet.
+ */
 const alarms = (objects: Objects.Objects) =>
-  Object.fromEntries([...objects.objects].map(([id, storage]) => [id, storage.alarm()]))
+  Object.fromEntries([...objects.objects].map(([id, storage]) => {
+    const at = storage.alarm()
+    const settledAt = storage.values.get(ExecutionObject.settledKey) as number | undefined
+    return [id, settledAt !== undefined && at === settledAt + ExecutionObject.settledRetentionMs ? "forget" : at]
+  }))
+
+/** A `Settled` outcome, whatever window it was armed to forget at. */
+const settled = { _tag: "Settled", forgetAtMs: expect.any(Number) }
 
 for (const target of Postgres.targets) {
   describe.skipIf(!target.available)(`executions across objects over ${target.label}`, () => {
@@ -144,7 +155,7 @@ for (const target of Postgres.targets) {
           { flow: Relay._tag, status: "completed" },
           { flow: Patient._tag, status: "suspended" }
         ])
-        expect(Object.values(alarms(c.objects))).toEqual([null, null, null])
+        expect(Object.values(alarms(c.objects))).toEqual([null, "forget", null])
 
         // The app cancels the parent, then wakes its object.
         yield* Supervisor.interrupt(parentId).pipe(
@@ -155,8 +166,8 @@ for (const target of Postgres.targets) {
 
         const runs = yield* c.runs
         expect(runs.map((run) => run.status)).toEqual(["cancelled", "completed", "cancelled"])
-        expect(c.objects.outcomes.get(runs[2]!.id)).toEqual([{ _tag: "Parked", wakeAtMs: null }, { _tag: "Settled" }])
-        expect(Object.values(alarms(c.objects))).toEqual([null, null, null])
+        expect(c.objects.outcomes.get(runs[2]!.id)).toEqual([{ _tag: "Parked", wakeAtMs: null }, settled])
+        expect(Object.values(alarms(c.objects))).toEqual(["forget", "forget", "forget"])
       }).pipe(Effect.ensuring(c.cleanup))
     })
 
@@ -176,18 +187,15 @@ for (const target of Postgres.targets) {
         const childId = runs[1]!.id
         expect(c.steps).toEqual(["child:hi", "parent:child:hi"])
         expect([...c.objects.objects.keys()]).toEqual([parentId, childId])
-        expect(c.objects.outcomes.get(parentId)).toEqual([
-          { _tag: "Parked", wakeAtMs: null },
-          { _tag: "Settled" }
-        ])
-        expect(c.objects.outcomes.get(childId)).toEqual([{ _tag: "Settled" }])
-        expect(alarms(c.objects)).toEqual({ [parentId]: null, [childId]: null })
+        expect(c.objects.outcomes.get(parentId)).toEqual([{ _tag: "Parked", wakeAtMs: null }, settled])
+        expect(c.objects.outcomes.get(childId)).toEqual([settled])
+        expect(alarms(c.objects)).toEqual({ [parentId]: "forget", [childId]: "forget" })
 
         // A duplicate alarm on either object runs no step again and routes nothing.
-        expect(yield* c.objects.alarm(childId)).toEqual({ _tag: "Settled" })
-        expect(yield* c.objects.alarm(parentId)).toEqual({ _tag: "Settled" })
+        expect(yield* c.objects.alarm(childId)).toEqual(c.objects.outcomes.get(childId)![0])
+        expect(yield* c.objects.alarm(parentId)).toEqual(c.objects.outcomes.get(parentId)![1])
         expect(c.steps).toEqual(["child:hi", "parent:child:hi"])
-        expect(alarms(c.objects)).toEqual({ [parentId]: null, [childId]: null })
+        expect(alarms(c.objects)).toEqual({ [parentId]: "forget", [childId]: "forget" })
       }).pipe(Effect.ensuring(c.cleanup))
     })
 
@@ -206,8 +214,8 @@ for (const target of Postgres.targets) {
         ])
         // The parent failed with the child's own declared error, not a defect.
         expect(JSON.stringify(runs[0]!.result)).toContain("SleepRequestInvalid")
-        expect(c.objects.outcomes.get(parentId)).toEqual([{ _tag: "Parked", wakeAtMs: null }, { _tag: "Settled" }])
-        expect(alarms(c.objects)).toEqual({ [parentId]: null, [runs[1]!.id]: null })
+        expect(c.objects.outcomes.get(parentId)).toEqual([{ _tag: "Parked", wakeAtMs: null }, settled])
+        expect(alarms(c.objects)).toEqual({ [parentId]: "forget", [runs[1]!.id]: "forget" })
       }).pipe(Effect.ensuring(c.cleanup))
     })
 
@@ -246,7 +254,15 @@ for (const target of Postgres.targets) {
         expect(runs.map((run) => run.id)).toEqual([...c.objects.objects.keys()])
         expect(JSON.stringify(runs[2]!.result)).toContain("3")
         expect(c.steps).toEqual(["bump:0", "bump:1", "bump:1", "bump:2"])
+        // Advancing the clock fired each settled round's final alarm too: every
+        // object has forgotten its round and holds nothing.
         expect(Object.values(alarms(c.objects))).toEqual([null, null, null])
+        expect([...c.objects.objects.values()].map((object) => object.values.size)).toEqual([0, 0, 0])
+        expect([...c.objects.outcomes.values()].map((outcomes) => outcomes.at(-1))).toEqual([
+          { _tag: "Forgotten" },
+          { _tag: "Forgotten" },
+          { _tag: "Forgotten" }
+        ])
       }).pipe(Effect.ensuring(c.cleanup))
     })
   })

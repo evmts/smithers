@@ -37,6 +37,9 @@ const awaitingRegistration = Layer.effectDiscard(Effect.gen(function*() {
   )
 }))
 
+/** A `Settled` outcome, whatever window it was armed to forget at. */
+const settled = { _tag: "Settled", forgetAtMs: expect.any(Number) }
+
 /** One Durable Object's worth of state: its storage, its schema and the steps its flow ran. */
 const object = (target: Postgres.Target = Postgres.direct) => {
   const schema = Postgres.freshSchema()
@@ -69,7 +72,7 @@ const object = (target: Postgres.Target = Postgres.direct) => {
 
 for (const target of Postgres.targets) {
   describe.skipIf(!target.available)(`ExecutionObject over ${target.label}`, () => {
-    it.live("start stores the intent and moves the alarm to now; the alarm runs the flow and deletes the alarm", () => {
+    it.live("start stores the intent and moves the alarm to now; the alarm runs the flow and arms the forget alarm", () => {
       const o = object(target)
       return Effect.gen(function*() {
         const value = yield* o.intent({ question: "hi", pauseMs: 0 })
@@ -79,21 +82,28 @@ for (const target of Postgres.targets) {
         expect(o.memory.alarm()).toBeGreaterThanOrEqual(before)
         expect(o.memory.alarm()).toBeLessThan(before + ExecutionObject.startGraceMs)
 
-        expect(yield* o.alarm()).toEqual({ _tag: "Settled" })
+        const outcome = yield* o.alarm()
+        expect(outcome).toEqual(settled)
         expect(o.steps).toEqual(["ask:hi", "answer"])
-        expect(o.memory.alarm()).toBeNull()
+        // The object keeps the intent for the retention window, then forgets it.
+        const settledAt = o.memory.values.get(ExecutionObject.settledKey) as number
+        expect(settledAt).toBeGreaterThanOrEqual(before)
+        expect(outcome).toEqual({ _tag: "Settled", forgetAtMs: settledAt + ExecutionObject.settledRetentionMs })
+        expect(o.memory.alarm()).toBe(settledAt + ExecutionObject.settledRetentionMs)
+        expect(o.memory.values.has(ExecutionObject.failuresKey)).toBe(false)
         expect(yield* o.status).toBe("completed")
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(o.schema))))
     })
 
-    it.live("a flow that fails has settled: the alarm is deleted, not retried", () => {
+    it.live("a flow that fails has settled: the alarm waits to forget it, not to retry", () => {
       const o = object(target)
       return Effect.gen(function*() {
         // A negative pause is the flow's own declared failure, SleepRequestInvalid.
         const value = yield* o.intent({ question: "hi", pauseMs: -1 })
         yield* ExecutionObject.start(o.memory.storage, value, Effect.void)
-        expect(yield* o.alarm()).toEqual({ _tag: "Settled" })
-        expect(o.memory.alarm()).toBeNull()
+        const outcome = yield* o.alarm()
+        expect(outcome).toEqual(settled)
+        expect(o.memory.alarm()).toBe((outcome as { readonly forgetAtMs: number }).forgetAtMs)
         expect(o.steps).toEqual(["ask:hi"])
         expect(yield* o.status).toBe("failed")
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(o.schema))))
@@ -117,7 +127,7 @@ for (const target of Postgres.targets) {
         expect(asked).toBe(2)
         expect(o.memory.values.get(ExecutionObject.intentKey)).toBe(stored)
 
-        expect(yield* o.alarm()).toEqual({ _tag: "Settled" })
+        expect(yield* o.alarm()).toEqual(settled)
         expect(o.steps).toEqual(["ask:hi", "answer"])
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(o.schema))))
     })
@@ -127,13 +137,66 @@ for (const target of Postgres.targets) {
       return Effect.gen(function*() {
         const value = yield* o.intent({ question: "hi", pauseMs: 0 })
         yield* ExecutionObject.start(o.memory.storage, value, Effect.void)
-        expect(yield* o.alarm()).toEqual({ _tag: "Settled" })
-        expect(yield* o.alarm()).toEqual({ _tag: "Settled" })
+        const outcome = yield* o.alarm()
+        expect(outcome).toEqual(settled)
+        expect(yield* o.alarm()).toEqual(outcome)
         yield* ExecutionObject.start(o.memory.storage, value, Effect.void)
-        expect(o.memory.alarm()).not.toBeNull()
-        expect(yield* o.alarm()).toEqual({ _tag: "Settled" })
+        expect(o.memory.alarm()).not.toBe((outcome as { readonly forgetAtMs: number }).forgetAtMs)
+        expect(yield* o.alarm()).toEqual(outcome)
         expect(o.steps).toEqual(["ask:hi", "answer"])
+        expect(o.memory.alarm()).toBe((outcome as { readonly forgetAtMs: number }).forgetAtMs)
+      }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(o.schema))))
+    })
+
+    it.effect("a settled object forgets its intent after the window; a late start runs no step and forgets again", () => {
+      const o = object(target)
+      return Effect.gen(function*() {
+        yield* TestClock.setTime(Date.now())
+        const value = yield* o.intent({ question: "hi", pauseMs: 0 })
+        yield* ExecutionObject.start(o.memory.storage, value, Effect.void)
+        const settledAt = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
+        const forgetAtMs = settledAt + ExecutionObject.settledRetentionMs
+        expect(yield* o.alarm()).toEqual({ _tag: "Settled", forgetAtMs })
+        expect([...o.memory.values.keys()].sort()).toEqual([ExecutionObject.intentKey, ExecutionObject.settledKey])
+
+        // Inside the window a duplicate start or a wake costs no drive: a
+        // runtime that cannot even be built still answers the settlement.
+        const settledOnly = { flows: [Answer], runtime: unbuildable, router: Objects.unrouted }
+        yield* ExecutionObject.start(o.memory.storage, value, Effect.void)
+        expect(yield* ExecutionObject.alarm(o.memory.storage, settledOnly)).toEqual({ _tag: "Settled", forgetAtMs })
+        expect(yield* ExecutionObject.wake(o.memory.storage)).toBe(true)
+        expect(yield* ExecutionObject.alarm(o.memory.storage, settledOnly)).toEqual({ _tag: "Settled", forgetAtMs })
+        expect(o.memory.alarm()).toBe(forgetAtMs)
+        // The intent still guards its id inside the window.
+        const other = yield* o.intent({ question: "something else", pauseMs: 0 })
+        expect(yield* Effect.flip(ExecutionObject.start(o.memory.storage, other, Effect.void))).toBeInstanceOf(
+          ExecutionObject.IntentConflict
+        )
+
+        // The window passes: the final alarm empties the object and arms nothing.
+        yield* TestClock.setTime(forgetAtMs)
+        expect(yield* ExecutionObject.alarm(o.memory.storage, settledOnly)).toEqual({ _tag: "Forgotten" })
+        expect(o.memory.values.size).toBe(0)
         expect(o.memory.alarm()).toBeNull()
+        expect(yield* ExecutionObject.wake(o.memory.storage)).toBe(false)
+        expect(o.memory.alarm()).toBeNull()
+
+        // A late start of the same intent settles from the run the engine
+        // stored, without running a step, and the object forgets it again.
+        yield* ExecutionObject.start(o.memory.storage, value, Effect.void)
+        const later = forgetAtMs + ExecutionObject.settledRetentionMs
+        expect(yield* o.alarm()).toEqual({ _tag: "Settled", forgetAtMs: later })
+        expect(o.steps).toEqual(["ask:hi", "answer"])
+        expect(yield* o.status).toBe("completed")
+        yield* TestClock.setTime(later)
+        expect(yield* o.alarm()).toEqual({ _tag: "Forgotten" })
+        expect(o.memory.values.size).toBe(0)
+
+        // Past the window the id no longer guards its payload: another one is
+        // stored, and the engine answers it with the run it already holds.
+        yield* ExecutionObject.start(o.memory.storage, other, Effect.void)
+        expect(yield* o.alarm()).toEqual(settled)
+        expect(o.steps).toEqual(["ask:hi", "answer"])
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(o.schema))))
     })
 
@@ -147,7 +210,7 @@ for (const target of Postgres.targets) {
         // The alarm stayed at the grace deadline: nothing moved it to now.
         expect(o.memory.alarm()).toBeGreaterThanOrEqual(before + ExecutionObject.startGraceMs)
 
-        expect(yield* o.alarm()).toEqual({ _tag: "Settled" })
+        expect(yield* o.alarm()).toEqual(settled)
         expect(o.steps).toEqual(["ask:hi", "answer"])
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(o.schema))))
     })
@@ -245,9 +308,9 @@ for (const target of Postgres.targets) {
         expect(o.steps).toEqual(["ask:hi"])
 
         yield* TestClock.setTime(wakeAtMs)
-        expect(yield* o.alarm()).toEqual({ _tag: "Settled" })
+        expect(yield* o.alarm()).toEqual({ _tag: "Settled", forgetAtMs: wakeAtMs + ExecutionObject.settledRetentionMs })
         expect(o.steps).toEqual(["ask:hi", "answer"])
-        expect(o.memory.alarm()).toBeNull()
+        expect(o.memory.alarm()).toBe(wakeAtMs + ExecutionObject.settledRetentionMs)
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(o.schema))))
     })
   })
@@ -263,6 +326,34 @@ describe("ExecutionObject without a database", () => {
         router: Objects.unrouted
       })
       expect(outcome).toEqual({ _tag: "Idle" })
+      expect(memory.alarm()).toBeNull()
+    }))
+
+  it.effect("a settled object re-arms its forget alarm without a runtime, and empties itself once the window passes", () =>
+    Effect.gen(function*() {
+      const memory = MemoryStorage.make()
+      const value = yield* ExecutionObject.intent(Answer, {
+        executionId: "settled",
+        payload: { question: "hi", pauseMs: 0 }
+      })
+      yield* ExecutionObject.start(memory.storage, value, Effect.void)
+      // What an earlier alarm left: a settlement at 1 s, and an attempt it counted.
+      yield* memory.storage.put(ExecutionObject.settledKey, 1_000)
+      yield* memory.storage.put(ExecutionObject.failuresKey, 1)
+      const options = { flows: [Answer], runtime: unbuildable, router: Objects.unrouted, settledRetentionMs: 60_000 }
+
+      yield* TestClock.setTime(60_999)
+      expect(yield* ExecutionObject.alarm(memory.storage, options)).toEqual({ _tag: "Settled", forgetAtMs: 61_000 })
+      expect(memory.alarm()).toBe(61_000)
+      expect(memory.values.get(ExecutionObject.failuresKey)).toBe(1)
+
+      yield* TestClock.setTime(61_000)
+      expect(yield* ExecutionObject.alarm(memory.storage, options)).toEqual({ _tag: "Forgotten" })
+      expect(memory.values.size).toBe(0)
+      expect(memory.alarm()).toBeNull()
+      // Forgotten for good: a late alarm is idle, and a late wake arms nothing.
+      expect(yield* ExecutionObject.alarm(memory.storage, options)).toEqual({ _tag: "Idle" })
+      expect(yield* ExecutionObject.wake(memory.storage)).toBe(false)
       expect(memory.alarm()).toBeNull()
     }))
 

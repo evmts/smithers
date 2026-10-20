@@ -1,14 +1,16 @@
 ---
 title: "The execution lifecycle"
-description: "What start, wake and alarm do, how a child or the next round reaches its own object, how an object's next incarnation replaces a dead one, and which test proves each guarantee."
+description: "What start, wake and alarm do, how a child or the next round reaches its own object, how an object's next incarnation replaces a dead one, how a settled object forgets its execution, and which test proves each guarantee."
 ---
 
 One Durable Object drives one flow execution, and it is named by that
 execution's id, so every request about the execution reaches the same object.
-The object keeps two things in its own storage: the intent (which flow, which
-execution, which payload) and a count of alarms that made no progress.
-Everything else about the run (its journal, owner, lease, attempts, timers and
-result) lives in the engine's Postgres store.
+The object keeps three things in its own storage: the intent (which flow, which
+execution, which payload), a count of alarms that made no progress and, once
+the execution settles, when it did. Everything else about the run (its journal,
+owner, lease, attempts, timers and result) lives in the engine's Postgres
+store. A settled object forgets all three after a retention window; see
+[Retention](#retention).
 
 ## start
 
@@ -28,7 +30,8 @@ unchanged and leaves the alarm armed.
 
 The same intent again stores nothing, runs `effect` again and moves the alarm to
 now, so a retried request is safe. Another payload for the same execution fails
-with `IntentConflict` before anything is stored or run.
+with `IntentConflict` before anything is stored or run. Both hold while the
+object holds the intent, which a settled object does for its retention window.
 
 ## wake
 
@@ -59,12 +62,13 @@ that parks it again.
    other objects and hands each to `router`. See [Routing](#routing).
 5. **Arms the next wake.** The outcome decides it:
 
-| Outcome    | When                                                                                                          | Count   | Alarm                                       |
-| ---------- | ------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------------------- |
-| `Idle`     | No intent is stored.                                                                                          | kept    | deleted                                     |
-| `Settled`  | The run completed, failed or was cancelled. A flow's own failure is a settlement, not a retry.                | cleared | deleted                                     |
-| `Parked`   | The run waits. `wakeAtMs` is `EngineStore.nextWake`: its earliest pending timer, or `null` for an event wait. | cleared | armed at `wakeAtMs`, or deleted when `null` |
-| `Retrying` | Building the runtime, driving the run or routing failed.                                                      | kept    | armed one backoff away                      |
+| Outcome     | When                                                                                                                                        | Count   | Alarm                                       |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------------------- |
+| `Idle`      | No intent is stored.                                                                                                                        | kept    | deleted                                     |
+| `Settled`   | The run completed, failed or was cancelled. A flow's own failure is a settlement, not a retry. The object records when.                     | cleared | armed at `forgetAtMs`                       |
+| `Parked`    | The run waits. `wakeAtMs` is `EngineStore.nextWake`: its earliest pending timer, or `null` for an event wait.                               | cleared | armed at `wakeAtMs`, or deleted when `null` |
+| `Retrying`  | Building the runtime, driving the run or routing failed.                                                                                    | kept    | armed one backoff away                      |
+| `Forgotten` | The run settled and its retention window has passed. The object deleted its intent, its count and its settlement, and its storage is empty. | deleted | deleted                                     |
 
 `alarm` never fails. A failure becomes `Retrying` with the failure's tag, so
 Cloudflare's own alarm retries, which stop after six, never decide whether an
@@ -82,6 +86,38 @@ A drive that leaves work due now (`EngineStore.drive` reports `Unfinished`:
 the runtime refused the execution, or the store became unavailable during the
 drive) is `Retrying` with `Undriven` rather than `Parked`, so an object that
 cannot make progress backs off instead of waking itself in a loop.
+
+## Retention
+
+A settled object holds its intent for a retention window, then forgets it.
+`settledRetentionMs` is the window: one day unless `alarm` is given
+`settledRetentionMs`.
+
+```
+alarm: drive ─ settles ─► store when (smithers/settled), alarm at settled + window
+alarm before the window ends (a duplicate start, a wake) ─► no runtime, alarm at settled + window
+alarm at the window's end ─► delete intent, count and settlement; delete the alarm (Forgotten)
+```
+
+- **No drive after settlement.** An object that recorded its settlement never
+  builds a runtime again. A duplicate `start` or a `wake` inside the window
+  costs one alarm and no database connection, and answers `Settled`.
+- **One final alarm, no sweep.** Each settled object arms one alarm for the end
+  of its own window. Nothing scans for old objects.
+- **A late read is still answered.** After the window `wake` answers `false`,
+  and an alarm is `Idle`. A late `start` of the same intent stores it again;
+  its alarm finds the run settled in the engine's store, runs no step, records
+  the settlement again and forgets it a window later.
+- **The id guards its payload only within the window.** Inside it, another
+  payload under the same execution id fails with `IntentConflict`. After it,
+  `start` stores the other payload, and the engine answers it with the run it
+  already holds: an admitted run is never driven with a new payload. Execution
+  ids that name one attempt, as a clone's or an answer's does, never meet this.
+- **The run's history stays in the engine.** The object deletes only its own
+  storage. The run, its journal and its result stay in the engine's Postgres
+  store until the operator's own retention pass (`@smthrs/engine-store`'s
+  `Retention`, run by `smithers gc`) deletes them. Deleting them from the object
+  would let a late `start` of the same intent run the flow again.
 
 ## Routing
 
@@ -173,6 +209,8 @@ lease alone.
 | A real object finishes a run after `ctx.abort()` inside a step, one backoff later.        | `test/WorkerdSmoke.test.ts` (`FLOWS_WORKERD_SMOKE=1`)       |
 | workerd starts no alarm handler beside a running one.                                     | `test/WorkerdSmoke.test.ts`, the `Probe` object             |
 | No payload or failure text reaches a log line, span attribute, failed span or metric.     | `test/Observability.test.ts`                                |
+| A settled object answers duplicates without a drive and empties itself after its window.  | `test/ExecutionObject.test.ts`; `test/WorkerdSmoke.test.ts` |
+| A late `start` after the window runs no step again and the object forgets it again.       | `test/ExecutionObject.test.ts`; `test/WorkerdSmoke.test.ts` |
 | A parent's child runs on its own object, and its settlement wakes the parent.             | `test/Routing.test.ts`; `test/WorkerdSmoke.test.ts`         |
 | A child's failure fails its parent.                                                       | `test/Routing.test.ts`; `test/WorkerdSmoke.test.ts`         |
 | Each round of a handoff lineage runs on its own object, a reset round included.           | `test/Routing.test.ts`; `test/WorkerdSmoke.test.ts`         |

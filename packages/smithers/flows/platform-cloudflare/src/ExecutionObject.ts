@@ -8,8 +8,10 @@
  * execution until it settles or parks, hands every execution the drive left
  * for another object to that object through the caller's {@link Router}, and
  * arms the next wake; {@link wake} moves the alarm to now. Leases, attempts,
- * timers and retries stay in the engine's Postgres store; the object's
- * storage holds the intent and a failure count, nothing else.
+ * timers, retries and results stay in the engine's Postgres store; the
+ * object's storage holds the intent, a failure count and, once the execution
+ * settles, when it did. A settled object keeps its intent for
+ * {@link settledRetentionMs}, then forgets it and empties its storage.
  *
  * The functions take the object's storage as a structural slice, so the
  * same code runs under any Effect-native Durable Object (an Alchemy
@@ -96,8 +98,9 @@ export class IntentConflict extends Schema.TaggedError<IntentConflict>()(
  *
  * - `Idle`: no intent is stored, so there was nothing to run; the alarm is
  *   deleted.
- * - `Settled`: the execution completed, failed or was cancelled; the alarm
- *   is deleted.
+ * - `Settled`: the execution completed, failed or was cancelled. The object
+ *   keeps the intent until `forgetAtMs`, the settlement plus the retention
+ *   window, and the alarm is armed for it.
  * - `Parked`: the execution waits. `wakeAtMs` is when the engine must next
  *   drive it (`EngineStore.nextWake`), usually its earliest pending
  *   `DurableClock`, and the alarm is armed for it; `null` means it waits on
@@ -107,13 +110,17 @@ export class IntentConflict extends Schema.TaggedError<IntentConflict>()(
  *   alarm is armed at `retryAtMs`. `attempt` counts consecutive alarms that
  *   made no progress, those that died included, and `failure` is the tag of
  *   what failed, never its message.
+ * - `Forgotten`: the execution settled and its retention window has passed;
+ *   the object deleted its intent, its count and its settlement, and the
+ *   alarm is deleted. The object is empty, as one that never held an
+ *   execution.
  *
  * @category models
  * @since 1.0.0
  */
 export type Outcome =
   | { readonly _tag: "Idle" }
-  | { readonly _tag: "Settled" }
+  | { readonly _tag: "Settled"; readonly forgetAtMs: number }
   | { readonly _tag: "Parked"; readonly wakeAtMs: number | null }
   | {
     readonly _tag: "Retrying"
@@ -121,6 +128,7 @@ export type Outcome =
     readonly retryAtMs: number
     readonly failure: string
   }
+  | { readonly _tag: "Forgotten" }
 
 /**
  * The services {@link alarm} reads from the runtime it builds:
@@ -173,6 +181,33 @@ export const intentKey = "smithers/intent"
 export const failuresKey = "smithers/failures"
 
 /**
+ * The storage key the time the execution settled, in epoch milliseconds,
+ * lives under. An object that holds it never drives its execution again.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const settledKey = "smithers/settled"
+
+/**
+ * How long a settled object keeps its intent, in milliseconds, unless
+ * {@link alarm} is given another window: one day.
+ *
+ * Within the window a duplicate {@link start} or a {@link wake} is answered
+ * from the object alone, with no drive, and another payload under the same
+ * execution id fails with {@link IntentConflict}. After it the object forgets
+ * the execution: a late {@link wake} answers `false`, and a late `start`
+ * stores the intent again, whose next alarm finds the run settled in the
+ * engine's store, runs no step and forgets it again a window later. The run's
+ * history and result stay in the engine's store under the engine's own
+ * retention.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const settledRetentionMs = 86_400_000
+
+/**
  * How long after {@link start} records an intent the alarm fires on its own,
  * in milliseconds, if `start` never reaches the line that moves it to now.
  *
@@ -204,8 +239,8 @@ export const starts = Metric.counter("smithers_cloudflare_execution_starts", {
 })
 
 /**
- * {@link alarm} invocations, by `outcome`: `idle`, `settled`, `parked` or
- * `retrying`.
+ * {@link alarm} invocations, by `outcome`: `idle`, `settled`, `parked`,
+ * `retrying` or `forgotten`.
  *
  * @category metrics
  * @since 1.0.0
@@ -244,6 +279,10 @@ const decodeIntent = Schema.decodeUnknownEffect(Schema.fromJsonString(Intent))
 
 /** The stored form of an intent: its canonical JSON, so equal intents are equal strings. */
 const stored = (value: Intent): string => canonicalize(encodeIntent(value))
+
+/** The ids an alarm's span carries: the execution and its flow, never the payload. */
+const annotateIntent = (value: Intent) =>
+  Effect.annotateCurrentSpan({ "smithers.execution.id": value.executionId, "smithers.flow": value.flow })
 
 /**
  * The stable name of what a cause failed with, for a log line or a span
@@ -286,7 +325,9 @@ export const intent = <F extends Flow.Any>(
  * Starting the same intent again is safe: nothing new is stored, `effect`
  * runs again, and the alarm is moved to now, so a settled execution answers
  * with its settlement once more. A different intent fails with
- * {@link IntentConflict} before anything is stored or run.
+ * {@link IntentConflict} before anything is stored or run. Both hold while
+ * the object holds the intent: until a settled execution's retention window
+ * passes ({@link settledRetentionMs}).
  *
  * @category operations
  * @since 1.0.0
@@ -460,10 +501,17 @@ const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextD
  *    drive's report is what makes this durable: an alarm that died after the
  *    drive and before routing routes the same executions on its next attempt,
  *    and starting or waking an object twice changes nothing.
- * 5. On progress, deletes the alarm if the execution settled, or arms it for
- *    when the engine must next drive it if it parked, reading the store again
- *    after arming so a wake that landed meanwhile is kept; then clears the
- *    count.
+ * 5. On progress, records when the execution settled and arms the alarm for
+ *    the end of its retention window if it settled, or arms it for when the
+ *    engine must next drive it if it parked, reading the store again after
+ *    arming so a wake that landed meanwhile is kept; then clears the count.
+ *
+ * An object that recorded its execution's settlement never drives it again.
+ * Its alarm, whether the final one or one a duplicate `start` or a `wake`
+ * moved up, builds no runtime: before `retain` has passed since the
+ * settlement it arms the alarm for that moment and answers `Settled`; after,
+ * it deletes the intent, the count and the settlement, deletes the alarm and
+ * answers `Forgotten`. One final alarm per object, and no sweep.
  *
  * Any failure, a router call's included, re-arms the alarm with the backoff
  * and returns `Retrying`, so the alarm never fails and Cloudflare's own retry
@@ -474,6 +522,9 @@ const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextD
  * to objects of the same class, so `flows` lists every flow an execution may
  * start as a child or hand off to.
  *
+ * `settledRetentionMs` is how long a settled object keeps its intent; it
+ * defaults to {@link settledRetentionMs}.
+ *
  * @category operations
  * @since 1.0.0
  */
@@ -483,6 +534,7 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
     readonly flows: ReadonlyArray<Flow.Any>
     readonly runtime: (intent: Intent) => Layer.Layer<Services, E, R>
     readonly router: Router<RE, RR>
+    readonly settledRetentionMs?: number | undefined
   }
 ): Effect.Effect<Outcome, never, R | RS | RR> =>
   Effect.gen(function*() {
@@ -491,20 +543,37 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
       yield* storage.deleteAlarm()
       return { _tag: "Idle" } as const
     }
+    const retain = options.settledRetentionMs ?? settledRetentionMs
+    const settledAt = yield* storage.get<number>(settledKey)
+    if (settledAt !== undefined) {
+      yield* decodeIntent(raw).pipe(Effect.flatMap(annotateIntent), Effect.ignore)
+      const forgetAtMs = settledAt + retain
+      if ((yield* Clock.currentTimeMillis) < forgetAtMs) {
+        yield* storage.setAlarm(forgetAtMs)
+        return { _tag: "Settled", forgetAtMs } as const
+      }
+      yield* storage.delete(intentKey)
+      yield* storage.delete(failuresKey)
+      yield* storage.delete(settledKey)
+      yield* storage.deleteAlarm()
+      return { _tag: "Forgotten" } as const
+    }
     const attempt = ((yield* storage.get<number>(failuresKey)) ?? 0) + 1
     yield* storage.put(failuresKey, attempt)
     yield* storage.setAlarm((yield* Clock.currentTimeMillis) + backoff(attempt))
     const outcome = yield* Effect.exit(Effect.gen(function*() {
       const value = yield* decodeIntent(raw)
-      yield* Effect.annotateCurrentSpan({ "smithers.execution.id": value.executionId, "smithers.flow": value.flow })
+      yield* annotateIntent(value)
       const flow = options.flows.find((candidate) => candidate._tag === value.flow)
       if (flow === undefined) return yield* new UnknownFlow({ flow: value.flow })
       return yield* Effect.gen(function*() {
         const driven = yield* drive(flow, value)
         yield* route(value.executionId, options.router)
         if (driven._tag === "Settled") {
-          yield* storage.deleteAlarm()
-          return driven
+          const now = yield* Clock.currentTimeMillis
+          yield* storage.put(settledKey, now)
+          yield* storage.setAlarm(now + retain)
+          return { _tag: "Settled", forgetAtMs: now + retain } as const
         }
         return { _tag: "Parked", wakeAtMs: yield* arm(storage, value.executionId, driven.wakeAtMs) } as const
       }).pipe(Effect.provide(options.runtime(value)))

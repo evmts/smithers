@@ -104,6 +104,7 @@ const securityReview = Smithers.SecurityReview({
         "An execution stops being driven for good: an alarm that returns or dies without an armed successor leaves a run nothing will ever wake, and a user's answer never settles.",
       lookFor: [
         "A path in ExecutionObject.alarm that deletes the alarm while the run is neither terminal nor parked on an event.",
+        "The settled key written, or the intent deleted, before the drive settled and its routing succeeded, so an unsettled or unrouted execution is forgotten.",
         "Driving before the attempt is counted and the backoff alarm is armed, so a death mid-drive leaves nothing armed.",
         "An outcome whose wake time is now or earlier armed without counting an attempt, which loops alarms without backoff.",
         "ExecutionObject.alarm failing instead of returning Retrying, which hands retries to Cloudflare's capped retry.",

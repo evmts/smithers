@@ -74,7 +74,7 @@ for (const target of Postgres.targets) {
         // lapsed (`Parked` at A's heartbeat plus the stale window, no step run);
         // judging A an earlier incarnation of the same object, B takes the run
         // in this very alarm.
-        expect(b.outcome).toEqual({ _tag: "Settled" })
+        expect(b.outcome).toEqual({ _tag: "Settled", forgetAtMs: expect.any(Number) })
         // The question step settled under A and replays; the interrupted step runs again.
         expect(b.steps).toEqual(["answer"])
         expect(yield* run(schema, executionId)).toEqual({ status: "completed", owner_host_id: null })

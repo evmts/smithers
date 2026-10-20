@@ -39,7 +39,7 @@ interface Mark {
 
 interface Report {
   readonly marks: ReadonlyArray<Mark>
-  readonly outcomes: ReadonlyArray<{ readonly _tag: string }>
+  readonly outcomes: ReadonlyArray<{ readonly _tag: string; readonly forgetAtMs?: number }>
   readonly alarm: number | null
 }
 
@@ -95,7 +95,8 @@ describe("a remote execution in local workerd", () => {
   test("runs probe/Pause from real alarms, and a new incarnation finishes it after ctx.abort() mid-step", async () => {
     const executionId = crypto.randomUUID()
     const intent = await Effect.runPromise(
-      ExecutionHost.intent(Pause.Pause, { executionId, payload: { label: "w", pauseMs: 300 } }),
+      // Longer than any first drive, migrations included, takes under load, so the first alarm parks on the timer.
+      ExecutionHost.intent(Pause.Pause, { executionId, payload: { label: "w", pauseMs: 3_000 } }),
     )
     const started = await worker.dispatchFetch(`http://executions/${executionId}/start`, {
       method: "POST",
@@ -112,15 +113,15 @@ describe("a remote execution in local workerd", () => {
     }, { timeout: 60_000, interval: 100 })
 
     // The first alarm parked on the durable timer; the alarm that ran `:after` died with the object, so it reported
-    // nothing; the retried alarm settled the run and deleted the alarm.
+    // nothing; the retried alarm settled the run and armed the alarm that forgets it after the retention window.
     expect(report.outcomes.map((outcome) => outcome._tag)).toEqual(["Parked", "Settled"])
-    expect(report.alarm).toBeNull()
+    expect(report.alarm).toBe(report.outcomes[1]!.forgetAtMs)
     expect(report.marks.map((mark) => mark.label)).toEqual(["w:before", "w:after", "w:after"])
     const [before, aborted, after] = report.marks
     expect(aborted!.incarnation).toBe(before!.incarnation)
     expect(after!.incarnation).not.toBe(aborted!.incarnation)
     // The second step waited for the timer, and the new incarnation took over one alarm backoff later, not a lease.
-    expect(aborted!.at - before!.at).toBeGreaterThanOrEqual(300)
+    expect(aborted!.at - before!.at).toBeGreaterThanOrEqual(3_000)
     expect(after!.at - aborted!.at).toBeLessThan(20_000)
 
     const [run] = await admin(

@@ -118,9 +118,12 @@ alarm ◄───────────────────────�
   │ build the runtime in this alarm, drive the flow once (EngineStore.drive)
   │ route: start each new child or next round on its own object,
   │        wake each parent or child the drive made due (router)
-  ├─ settled ──► delete the alarm, clear the count
+  ├─ settled ──► record when, alarm at the end of the retention window, clear the count
   ├─ parked  ──► alarm at the engine's next wake, read it again, clear the count
   └─ failed  ──► keep the count, alarm one backoff away
+
+final alarm, one day after the settlement (settledRetentionMs)
+  └─ forgotten ─► delete the intent, the count and the settlement; arm nothing
 ```
 
 ```

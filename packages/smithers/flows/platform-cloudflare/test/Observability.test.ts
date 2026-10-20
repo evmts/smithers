@@ -97,7 +97,9 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
         runtime: () => unbuildable,
         router: Objects.unrouted
       })
-      expect(yield* ExecutionObject.alarm(memory.storage, healthy)).toEqual({ _tag: "Settled" })
+      expect(yield* ExecutionObject.alarm(memory.storage, healthy)).toMatchObject({ _tag: "Settled" })
+      // The window passes: the final alarm forgets the execution, and says which.
+      yield* ExecutionObject.alarm(memory.storage, { ...healthy, settledRetentionMs: 0 })
     })).pipe(
       Effect.ensuring(Effect.promise(() => Postgres.dropSchema(schema))),
       Effect.andThen(Effect.sync(() => {
@@ -108,6 +110,7 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
         expect(t.count(ExecutionObject.starts, { outcome: "conflict" })).toBe(1)
         expect(t.count(ExecutionObject.alarms, { outcome: "retrying" })).toBe(1)
         expect(t.count(ExecutionObject.alarms, { outcome: "settled" })).toBe(1)
+        expect(t.count(ExecutionObject.alarms, { outcome: "forgotten" })).toBe(1)
 
         // Each line is logged inside the span of the same name, which ends with
         // the outcome even when the caller's effect failed.
@@ -140,7 +143,12 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
           )
         )
         const alarms = t.named("cloudflare.execution.alarm")
-        expect(alarms.map((span) => span.attributes.get("smithers.execution.alarm"))).toEqual(["retrying", "settled"])
+        expect(alarms.map((span) => span.attributes.get("smithers.execution.alarm"))).toEqual([
+          "retrying",
+          "settled",
+          "forgotten"
+        ])
+        expect(alarms[2]!.attributes.get("smithers.execution.id")).toBe(executionId)
         expect(t.lines("cloudflare.execution.alarm").map((line) => line.annotations)).toEqual([
           expect.objectContaining({
             trace_id: alarms[0]!.traceId,
@@ -149,7 +157,8 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
             "error.type": "Leaky",
             "smithers.execution.attempt": 1
           }),
-          expect.objectContaining({ trace_id: alarms[1]!.traceId, span_id: alarms[1]!.spanId, outcome: "settled" })
+          expect.objectContaining({ trace_id: alarms[1]!.traceId, span_id: alarms[1]!.spanId, outcome: "settled" }),
+          expect.objectContaining({ trace_id: alarms[2]!.traceId, span_id: alarms[2]!.spanId, outcome: "forgotten" })
         ])
 
         // No content anywhere: not in a line, an attribute, an event, a failed

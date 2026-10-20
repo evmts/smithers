@@ -13,6 +13,11 @@
  * binding, as an app's object class does. A `bump:1` step calls
  * `ctx.abort()` the first time it runs, so one round is reset inside its step.
  *
+ * `Retained` runs `AnswerFlow` with a retention window of `RETAIN_MS`, and
+ * keeps its steps and outcomes in instance memory rather than in its
+ * storage, so its report shows the storage `ExecutionObject` leaves behind:
+ * nothing, once a settled execution's window has passed.
+ *
  * `Probe` answers one question about the platform the design rests on: an
  * alarm set while an alarm handler runs does not start a second handler
  * beside it.
@@ -32,6 +37,7 @@ interface RawStorage {
   get(key: string): Promise<unknown>
   put(key: string, value: unknown): Promise<void>
   delete(key: string): Promise<boolean>
+  list(): Promise<Map<string, unknown>>
   getAlarm(): Promise<number | null>
   setAlarm(scheduledTime: number): Promise<void>
   deleteAlarm(): Promise<void>
@@ -48,8 +54,10 @@ interface State {
 interface Env {
   readonly HYPERDRIVE: { readonly connectionString: string }
   readonly SCHEMA: string
+  readonly RETAIN_MS: string
   readonly EXECUTION: Namespace
   readonly NESTED: Namespace
+  readonly RETAINED: Namespace
   readonly PROBE: Namespace
 }
 
@@ -207,6 +215,55 @@ export class Nested {
   }
 }
 
+export class Retained {
+  readonly state: State
+  readonly env: Env
+  readonly steps: Array<string> = []
+  readonly outcomes: Array<ExecutionObject.Outcome> = []
+
+  constructor(state: State, env: Env) {
+    this.state = state
+    this.env = env
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const storage = this.state.storage
+    const path = new URL(request.url).pathname
+    if (path === "/start") {
+      const intent = (await request.json()) as ExecutionObject.Intent
+      await Effect.runPromise(ExecutionObject.start(storageOf(storage), intent, Effect.void))
+      return new Response("accepted")
+    }
+    if (path === "/wake") {
+      return new Response((await Effect.runPromise(ExecutionObject.wake(storageOf(storage)))) ? "armed" : "idle")
+    }
+    return Response.json({
+      steps: this.steps,
+      outcomes: this.outcomes,
+      storage: Object.fromEntries(await storage.list()),
+      alarm: await storage.getAlarm()
+    })
+  }
+
+  async alarm(): Promise<void> {
+    const outcome = await Effect.runPromise(ExecutionObject.alarm(storageOf(this.state.storage), {
+      flows: [Answer],
+      runtime: runtime({
+        hostId: this.state.id.toString(),
+        record: (label) => Effect.sync(() => this.steps.push(label)).pipe(Effect.as(label)),
+        database: PostgresDatabase.layer({
+          url: this.env.HYPERDRIVE.connectionString,
+          driver: Pg,
+          schema: this.env.SCHEMA
+        })
+      }),
+      router: unrouted,
+      settledRetentionMs: Number(this.env.RETAIN_MS)
+    }))
+    this.outcomes.push(outcome)
+  }
+}
+
 export class Probe {
   readonly state: State
   running = 0
@@ -240,7 +297,13 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
     const [, kind, name, ...rest] = url.pathname.split("/")
-    const namespace = kind === "probe" ? env.PROBE : kind === "nested" ? env.NESTED : env.EXECUTION
+    const namespace = kind === "probe"
+      ? env.PROBE
+      : kind === "nested"
+      ? env.NESTED
+      : kind === "retained"
+      ? env.RETAINED
+      : env.EXECUTION
     const stub = namespace.get(namespace.idFromName(name ?? ""))
     return stub.fetch(`https://object/${rest.join("/")}`, {
       method: request.method,

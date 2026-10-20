@@ -3,8 +3,10 @@
 // object runs them in local workerd in worker/ExecutionHost.workerd.test.ts.
 import * as Pg from "@effect/sql-pg"
 import { Logger as StructuredLogger } from "@smthrs/observability"
+import { ExecutionObject } from "@smthrs/platform-cloudflare"
 import { Context, Duration, Effect, Layer, Logger, Metric, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
+import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
@@ -99,7 +101,9 @@ describe("ExecutionHost over the compose Postgres", () => {
           router: routes.router,
         })
         const before = Date.now()
-        const payload = { label: "x", pauseMs: 200 }
+        // Longer than any first drive, migrations included, takes under a loaded suite: a timer that comes due during
+        // the drive leaves work due now, and the alarm answers Retrying instead of Parked.
+        const payload = { label: "x", pauseMs: 5_000 }
         yield* host.start(yield* ExecutionHost.intent(Pause.Pause, { executionId, payload }))
         expect(object.alarm()).toBeGreaterThanOrEqual(before)
         expect(object.alarm()).toBeLessThanOrEqual(Date.now())
@@ -109,18 +113,33 @@ describe("ExecutionHost over the compose Postgres", () => {
         expect(parked._tag).toBe("Parked")
         expect(marks).toEqual(["x:before"])
         const wakeAt = parked._tag === "Parked" ? parked.wakeAtMs : null
-        expect(wakeAt).toBeGreaterThanOrEqual(before + 200)
+        expect(wakeAt).toBeGreaterThanOrEqual(before + 5_000)
         expect(object.alarm()).toBe(wakeAt)
         expect(yield* status(sql, name, executionId)).toBe("suspended")
 
         // The wake-up at the armed time, as Cloudflare fires it: the second step, then the run settles and the alarm
-        // goes.
+        // waits out the object's retention window.
         yield* Effect.sleep(Math.max(0, wakeAt! - Date.now()))
-        expect(yield* host.alarm()).toEqual({ _tag: "Settled" })
+        const settled = yield* host.alarm()
+        expect(settled).toEqual({ _tag: "Settled", forgetAtMs: expect.any(Number) })
+        const forgetAtMs = settled._tag === "Settled" ? settled.forgetAtMs : null
+        expect(forgetAtMs! - Date.now()).toBeGreaterThan(ExecutionObject.settledRetentionMs - 60_000)
+        expect(object.alarm()).toBe(forgetAtMs)
         expect(marks).toEqual(["x:before", "x:after"])
-        expect(object.alarm()).toBeNull()
         expect(yield* status(sql, name, executionId)).toBe("completed")
         expect(routes.routed).toEqual([])
+
+        // The final alarm, a day later, forgets the execution: the object's storage is empty and no alarm is armed.
+        // The run and its result stay in the engine's schema.
+        const forgotten = yield* Effect.gen(function* () {
+          yield* TestClock.setTime(forgetAtMs!)
+          return yield* host.alarm()
+        }).pipe(Effect.provide(TestClock.layer()))
+        expect(forgotten).toEqual({ _tag: "Forgotten" })
+        expect(object.values.size).toBe(0)
+        expect(object.alarm()).toBeNull()
+        expect(yield* host.wake()).toBe(false)
+        expect(yield* status(sql, name, executionId)).toBe("completed")
       })
     ))
 
@@ -210,7 +229,7 @@ describe("ExecutionHost over the compose Postgres", () => {
         })
         const payload = { label: "y", pauseMs: 0 }
         yield* host.start(yield* ExecutionHost.intent(Pause.Pause, { executionId, payload }))
-        expect(yield* host.alarm()).toEqual({ _tag: "Settled" })
+        expect(yield* host.alarm()).toMatchObject({ _tag: "Settled" })
         expect(yield* status(sql, name, executionId)).toBe("completed")
       })
     )
@@ -226,8 +245,9 @@ describe("ExecutionHost over the compose Postgres", () => {
     // ChatApi started the expiry, as it asks the Durable Object to: one execution per answer.
     const executionId = Expire.executionId(answerId)
     expect(h.starts).toEqual([{ flow: "chat/Expire", executionId, payload: { answerId } }])
-    // Long enough that the first alarm, which migrates the engine's schema, still finds the answer young.
-    const services = await appServices("5 seconds")
+    // Long enough that the first alarm, which migrates the engine's schema, still finds the answer young under a loaded
+    // suite (5 seconds was not, once).
+    const services = await appServices("10 seconds")
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
         const object = memory()
@@ -248,8 +268,9 @@ describe("ExecutionHost over the compose Postgres", () => {
 
         // Cloudflare's wake-up at the armed time settles the answer and the run.
         yield* Effect.sleep(Math.max(0, wakeAt! - Date.now()))
-        expect(yield* host.alarm()).toEqual({ _tag: "Settled" })
-        expect(object.alarm()).toBeNull()
+        const settled = yield* host.alarm()
+        expect(settled).toMatchObject({ _tag: "Settled" })
+        expect(object.alarm()).toBe(settled._tag === "Settled" ? settled.forgetAtMs : null)
         expect(yield* status(sql, name, executionId)).toBe("completed")
       })
     )
@@ -289,7 +310,7 @@ describe("ExecutionHost over the compose Postgres", () => {
           router: recording().router,
         })
         yield* host.start(yield* ExecutionHost.intent(RecheckRole.RecheckRole, { executionId, payload: { sessionId } }))
-        expect(yield* host.alarm()).toEqual({ _tag: "Settled" })
+        expect(yield* host.alarm()).toMatchObject({ _tag: "Settled" })
         expect(yield* status(sql, name, executionId)).toBe("completed")
       })
     )
@@ -314,7 +335,7 @@ describe("ExecutionHost over the compose Postgres", () => {
         yield* host.start(
           yield* ExecutionHost.intent(RevokeGitHubToken.RevokeGitHubToken, { executionId, payload: { sessionId } }),
         )
-        expect(yield* host.alarm()).toEqual({ _tag: "Settled" })
+        expect(yield* host.alarm()).toMatchObject({ _tag: "Settled" })
         expect(yield* status(sql, name, executionId)).toBe("completed")
       })
     )
@@ -362,7 +383,7 @@ describe("ExecutionHost over the compose Postgres", () => {
         // The sync answers sync_in_progress once, so the first drive may park on the retry; drive until it settles.
         let driven = yield* host.alarm()
         for (let drives = 1; driven._tag !== "Settled" && drives < 20; drives++) driven = yield* host.alarm()
-        expect(driven).toEqual({ _tag: "Settled" })
+        expect(driven).toMatchObject({ _tag: "Settled" })
         expect(yield* status(sql, name, executionId)).toBe("completed")
       })
     )

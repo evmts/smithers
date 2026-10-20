@@ -127,6 +127,7 @@ const alarm: <E, R, RS, RE = never, RR = never>(
     readonly flows: ReadonlyArray<Flow.Any>
     readonly runtime: (intent: ExecutionObject.Intent) => Layer.Layer<ExecutionObject.Services, E, R>
     readonly router: ExecutionObject.Router<RE, RR>
+    readonly settledRetentionMs?: number | undefined
   }
 ) => Effect.Effect<ExecutionObject.Outcome, never, R | RS | RR>
 ```
@@ -143,11 +144,18 @@ once with `EngineStore.drive`, then routes:
 - when the execution settled and is the last round of its lineage, each parent
   due now: `router.wake`.
 
-Then it clears the count and deletes the alarm (settled) or arms it for the
+Then it clears the count and records when the execution settled, arming the
+alarm for the end of its retention window (settled), or arms it for the
 engine's next wake (parked), reading `EngineStore.nextWake` once more after
 arming so a wake that landed during the alarm is kept. Never fails: a failure,
 a router call's included, is `Retrying`. `flows` must list every flow an
 execution may start as a child or hand off to.
+
+An object that recorded its settlement builds no runtime again. Before
+`settledRetentionMs` (default `ExecutionObject.settledRetentionMs`, one day)
+has passed since the settlement, its alarm arms itself for that moment and
+answers `Settled`. After, it deletes the intent, the count and the settlement,
+deletes the alarm and answers `Forgotten`: the object's storage is empty.
 
 ### `ExecutionObject.Router`
 
@@ -212,12 +220,14 @@ object wraps its Promise methods in `Effect.promise`.
 ```ts
 type Outcome =
   | { readonly _tag: "Idle" }
-  | { readonly _tag: "Settled" }
+  | { readonly _tag: "Settled"; readonly forgetAtMs: number }
   | { readonly _tag: "Parked"; readonly wakeAtMs: number | null }
   | { readonly _tag: "Retrying"; readonly attempt: number; readonly retryAtMs: number; readonly failure: string }
+  | { readonly _tag: "Forgotten" }
 ```
 
-What one alarm did. `failure` is the tag of what failed, never its message.
+What one alarm did. `forgetAtMs` is when the settled object forgets its
+intent. `failure` is the tag of what failed, never its message.
 
 ### `ExecutionObject.Services`
 
@@ -240,21 +250,23 @@ class IntentConflict extends Schema.TaggedError<IntentConflict>()(
 
 ### Constants
 
-| Export                         | Value                                                               | Meaning                                                                  |
-| ------------------------------ | ------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `ExecutionObject.intentKey`    | `"smithers/intent"`                                                 | The storage key the intent lives under.                                  |
-| `ExecutionObject.failuresKey`  | `"smithers/failures"`                                               | The storage key the count of alarms without progress lives under.        |
-| `ExecutionObject.startGraceMs` | `5_000`                                                             | How long after `start` stores an intent its alarm fires if `start` dies. |
-| `ExecutionObject.retryPolicy`  | `RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 300_000 })` | The backoff between alarms without progress. Never gives up.             |
+| Export                               | Value                                                               | Meaning                                                                  |
+| ------------------------------------ | ------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `ExecutionObject.intentKey`          | `"smithers/intent"`                                                 | The storage key the intent lives under.                                  |
+| `ExecutionObject.failuresKey`        | `"smithers/failures"`                                               | The storage key the count of alarms without progress lives under.        |
+| `ExecutionObject.settledKey`         | `"smithers/settled"`                                                | The storage key when the execution settled, in epoch ms, lives under.    |
+| `ExecutionObject.settledRetentionMs` | `86_400_000`                                                        | How long a settled object keeps its intent before it forgets it.         |
+| `ExecutionObject.startGraceMs`       | `5_000`                                                             | How long after `start` stores an intent its alarm fires if `start` dies. |
+| `ExecutionObject.retryPolicy`        | `RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 300_000 })` | The backoff between alarms without progress. Never gives up.             |
 
 ### Metrics
 
-| Export                   | Name                                   | Attributes                                                 |
-| ------------------------ | -------------------------------------- | ---------------------------------------------------------- |
-| `ExecutionObject.starts` | `smithers_cloudflare_execution_starts` | `outcome`: `accepted`, `duplicate`, `conflict` or `failed` |
-| `ExecutionObject.alarms` | `smithers_cloudflare_execution_alarms` | `outcome`: `idle`, `settled`, `parked` or `retrying`       |
-| `ExecutionObject.routed` | `smithers_cloudflare_execution_routed` | `route`: `start` or `wake`, counted per successful call    |
-| `ExecutionObject.wakes`  | `smithers_cloudflare_execution_wakes`  | `outcome`: `armed` or `idle`                               |
+| Export                   | Name                                   | Attributes                                                        |
+| ------------------------ | -------------------------------------- | ----------------------------------------------------------------- |
+| `ExecutionObject.starts` | `smithers_cloudflare_execution_starts` | `outcome`: `accepted`, `duplicate`, `conflict` or `failed`        |
+| `ExecutionObject.alarms` | `smithers_cloudflare_execution_alarms` | `outcome`: `idle`, `settled`, `parked`, `retrying` or `forgotten` |
+| `ExecutionObject.routed` | `smithers_cloudflare_execution_routed` | `route`: `start` or `wake`, counted per successful call           |
+| `ExecutionObject.wakes`  | `smithers_cloudflare_execution_wakes`  | `outcome`: `armed` or `idle`                                      |
 
 Each `alarm` span carries `smithers.execution.started` and
 `smithers.execution.woken`, the counts it routed; each `wake` runs in a
