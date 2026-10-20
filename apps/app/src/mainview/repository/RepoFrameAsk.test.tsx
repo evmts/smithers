@@ -72,12 +72,11 @@ test("guestAdmission reads only this repository's receipt", () => {
   expect(guestAdmission(undefined, "sponsor/public")).toBe(false)
 })
 
-// PM d-szeq1q: the frame Ask's placeholder says what this viewer can do there; signed out the frame says nothing of its own.
-test("the frame Ask invites a change only from a viewer with write access", () => {
-  expect(frameAskPlaceholder(true, true)).toBe("Ask a question or describe a change…")
-  expect(frameAskPlaceholder(true, false)).toBe("Ask a question…")
-  expect(frameAskPlaceholder(false, true)).toBeUndefined()
-  expect(frameAskPlaceholder(false, false)).toBeUndefined()
+// PM d-8bjzg6: while hosted coding is closed the frame Ask invites a question, never a change; signed out the frame says nothing of its own.
+test("the frame Ask invites every signed-in viewer to ask, and none to describe a change", () => {
+  expect(frameAskPlaceholder(true)).toBe("Ask a question…")
+  expect(frameAskPlaceholder(false)).toBeUndefined()
+  expect(frameAskPlaceholder(true)).not.toMatch(/change/i)
   // One ellipsis character, never three dots.
-  for (const text of [frameAskPlaceholder(true, true)!, frameAskPlaceholder(true, false)!]) expect(text.endsWith("…") && !text.includes("...")).toBe(true)
+  expect(frameAskPlaceholder(true)!.endsWith("…") && !frameAskPlaceholder(true)!.includes("...")).toBe(true)
 })
