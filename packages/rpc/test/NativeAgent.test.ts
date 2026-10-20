@@ -139,7 +139,15 @@ describe("AgentTurnFrame — proxy family", () => {
    */
   test("every done code the chat producer seals a turn with decodes", () => {
     const sealed = (code: string) => ({ runId: "r1", type: "done", code, error: "the receipt's own sentence" })
-    for (const code of ["credential_missing", "credential_issuer_unavailable", "author_revoked", "host_no_capacity", "chat_guests_busy"]) {
+    for (
+      const code of [
+        "credential_missing",
+        "credential_issuer_unavailable",
+        "author_revoked",
+        "host_no_capacity",
+        "chat_guests_busy"
+      ]
+    ) {
       expect([code, decodeAgentTurnFrame(sealed(code))]).toEqual([code, sealed(code)])
     }
   })

@@ -4281,9 +4281,16 @@ export const legacyCards = [
   },
   {
     row: {
-      id: "hosted-change-session", kind: "hosted-change", title: "add slugify", status: "active", createdAt: 0, ordinal: 0,
+      id: "hosted-change-session",
+      kind: "hosted-change",
+      title: "add slugify",
+      status: "active",
+      createdAt: 0,
+      ordinal: 0,
       payload: { repo: "maya/tinyhttp", sessionId: "session", request: "add slugify" }
     },
-    expectedKind: "hosted-change", expectedTitle: "add slugify", expectedWas: null
+    expectedKind: "hosted-change",
+    expectedTitle: "add slugify",
+    expectedWas: null
   }
 ] as const

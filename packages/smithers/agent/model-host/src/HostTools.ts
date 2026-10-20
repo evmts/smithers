@@ -882,7 +882,11 @@ const hostInstructions = (offered: ReadonlyArray<Offered>, docs: ReadonlyArray<D
     "Call commands with action list to inspect payload schemas. HTTP commands accept a JSON object; TODO references also accept Tn.",
     ...(reads.includes(FILES_LIST_COMMAND.name) ? [LIST_BEFORE_READ_LINE] : []),
     ...(offered.some(({ command, asked }) => asked === true && command.name === "flow.new") ? [FLOW_NEW_LINE] : []),
-    ...(offered.some(({ command, asked }) => asked === true && command.name === "change.ask") ? ['Asked to add, fix, implement, change, remove, refactor or test repository code, run change.ask with the person’s request in that turn. It only shows the confirmation form; the person presses Start agent before any coding run starts. Never start a coding session yourself or claim the change has started before the person confirms.'] : []),
+    ...(offered.some(({ command, asked }) => asked === true && command.name === "change.ask")
+      ? [
+        "Asked to add, fix, implement, change, remove, refactor or test repository code, run change.ask with the person’s request in that turn. It only shows the confirmation form; the person presses Start agent before any coding run starts. Never start a coding session yourself or claim the change has started before the person confirms."
+      ]
+      : []),
     ...(documentation ? [docsReadLine(docs)] : []),
     "",
     `Everything this list lacks is an ACT you cannot take yet; it is never a subject you cannot discuss. ${

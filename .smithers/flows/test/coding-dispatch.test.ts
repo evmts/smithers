@@ -441,7 +441,12 @@ for (const hosted of [false, true]) {
             })
           ).pipe(
             Layer.provide(
-              HostRegistry.layer(root, state, services, repositoryFlowsServed({ repositoryPath: root, ...start.adapters }))
+              HostRegistry.layer(
+                root,
+                state,
+                services,
+                repositoryFlowsServed({ repositoryPath: root, ...start.adapters })
+              )
             ),
             Layer.provide(services),
             Layer.orDie
@@ -466,7 +471,9 @@ for (const hosted of [false, true]) {
         assert.equal(prompts.some((prompt) => prompt.includes(name)), !hosted, `${name} in the model's prompt`)
       }
       // The turn completes on a hosted host that serves no repository job (gate item 2b).
-      for (const name of ["repository/setup", "repository/trigger", "repository-jobs/issues", "repository-jobs/review"]) {
+      for (
+        const name of ["repository/setup", "repository/trigger", "repository-jobs/issues", "repository-jobs/review"]
+      ) {
         assert.equal(shown.includes(name), !hosted, `${name} shown: ${shown.join(",")}`)
         if (hosted) assert.ok(!prompts.some((prompt) => prompt.includes(name)), `${name} in the model's prompt`)
       }

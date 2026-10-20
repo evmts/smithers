@@ -7,9 +7,9 @@ import * as fs from "node:fs"
 import * as fsPromises from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Log from "../src/log.ts"
 import * as Failures from "../src/failures.ts"
 import { FlowDiscoveryFailed } from "../src/flows.ts"
+import * as Log from "../src/log.ts"
 import * as Watch from "../src/watch.ts"
 
 const { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } = fs

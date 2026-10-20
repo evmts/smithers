@@ -91,7 +91,10 @@ test("component suites that pass with their kill hooks succeed and record compon
     const parent = join(root, ".artifacts/checks/C-DUR-04")
     const [directory] = readdirSync(parent)
     const summary = JSON.parse(readFileSync(join(parent, directory!, "summary.json"), "utf8"))
-    assert.equal(summary.commit, execFileSync("jj", ["log", "--no-graph", "-r", "@-", "-T", "commit_id"], { cwd: root, encoding: "utf8" }).trim())
+    assert.equal(
+      summary.commit,
+      execFileSync("jj", ["log", "--no-graph", "-r", "@-", "-T", "commit_id"], { cwd: root, encoding: "utf8" }).trim()
+    )
     assert.equal(summary.componentStatus, "component-passed")
     assert.equal(summary.status, "incomplete")
     assert.ok(summary.points.every((point: { status: string }) => point.status === "blocked"))

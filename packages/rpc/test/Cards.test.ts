@@ -884,7 +884,10 @@ const FIXTURES: Record<
   settings: { minimal: {}, full: {} },
   members: { minimal: {}, full: {} },
   commands: { minimal: {}, full: {} },
-  "hosted-change": { minimal: { repo: "maya/tinyhttp", sessionId: "session", request: "add slugify" }, full: { repo: "maya/tinyhttp", sessionId: "session", request: "add slugify" } },
+  "hosted-change": {
+    minimal: { repo: "maya/tinyhttp", sessionId: "session", request: "add slugify" },
+    full: { repo: "maya/tinyhttp", sessionId: "session", request: "add slugify" }
+  },
   "archives": { minimal: {}, full: { selected: "0b1c2d3e" } },
   draft: {
     minimal: { ...draftFixtures.append.model, idempotencyKey: "commit-1" },
@@ -3028,7 +3031,11 @@ describe("every persisted card kind", () => {
     // A list that is one page of more says so with one boolean, never a count of its own.
     for (const kind of ["issue-list", "pr-list"] as const) {
       const partial = CardSchema.safeParse(card(kind, FIXTURES[kind].full))
-      expect(partial.success && (partial.data.kind === "issue-list" || partial.data.kind === "pr-list") ? partial.data.payload.partial : undefined).toBe(true)
+      expect(
+        partial.success && (partial.data.kind === "issue-list" || partial.data.kind === "pr-list")
+          ? partial.data.payload.partial
+          : undefined
+      ).toBe(true)
       expect(CardSchema.safeParse(card(kind, { ...FIXTURES[kind].full, partial: "30+" })).success).toBe(false)
       expect(CardSchema.safeParse(card(kind, { ...FIXTURES[kind].full, partial: 30 })).success).toBe(false)
     }
@@ -3399,13 +3406,21 @@ test.each(["agent.edit", "flows"])("preserves the active /%s form", (flow) => {
   expect(CardSchema.parse(form)).toEqual(form)
 })
 
-
 test("hosted-change persists only its subject reference", () => {
-  const card = { id: "hosted-change-session", kind: "hosted-change", title: "add slugify", status: "active", createdAt: 0, ordinal: 0,
-    payload: { repo: "maya/tinyhttp", sessionId: "session", request: "add slugify" } }
+  const card = {
+    id: "hosted-change-session",
+    kind: "hosted-change",
+    title: "add slugify",
+    status: "active",
+    createdAt: 0,
+    ordinal: 0,
+    payload: { repo: "maya/tinyhttp", sessionId: "session", request: "add slugify" }
+  }
   expect(CardSchema.parse(card)).toEqual(card)
   expect(CardSchema.safeParse({ ...card, payload: { repo: card.payload.repo } }).success).toBe(false)
-  expect(CardSchema.parse({ ...card, payload: { ...card.payload, model: "invented", stages: [] } }).payload).toEqual(card.payload)
+  expect(CardSchema.parse({ ...card, payload: { ...card.payload, model: "invented", stages: [] } }).payload).toEqual(
+    card.payload
+  )
 })
 
 describe("local gateway card identity", () => {
