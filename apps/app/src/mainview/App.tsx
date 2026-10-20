@@ -545,7 +545,7 @@ function AppContent() {
       <Composer
         typing={typing}
         autoFocus={!inAsk && authMessage === undefined}
-        placeholder={(inAsk ? frameAskPlaceholder(identity?.state === "signed-in", bootEntry?.canWrite === true) : undefined) ?? "Ask Smithers to work on something…"}
+        placeholder={(inAsk ? frameAskPlaceholder(identity?.state === "signed-in") : undefined) ?? "Ask Smithers to work on something…"}
       />
     </div>
   )

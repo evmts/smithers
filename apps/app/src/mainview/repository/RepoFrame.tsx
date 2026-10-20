@@ -68,13 +68,14 @@ export const guestAdmission = (conversation: string | undefined, repo: string): 
   conversation !== undefined && conversation.toLowerCase().startsWith(`guest:${repo.toLowerCase()}:`)
 
 /**
- * The frame Ask composer's placeholder (PM d-szeq1q): a person with write access
- * (signed in and the entry's can_write, App.tsx `member`) can ask or describe a
- * change; a signed-in reader can ask. Signed out it is not the frame's to say
- * (undefined): the chat keeps its own words behind the sign-in door.
+ * The frame Ask composer's placeholder: every signed-in viewer can ask. Hosted
+ * coding is not open, so no viewer, writer or reader, is invited to describe a
+ * change that would end at the refusal (PM d-8bjzg6; the writer invite of
+ * d-szeq1q returns when hosted coding opens). Signed out it is not the frame's
+ * to say (undefined): the chat keeps its own words behind the sign-in door.
  */
-export const frameAskPlaceholder = (signedIn: boolean, canWrite: boolean): string | undefined =>
-  !signedIn ? undefined : canWrite ? "Ask a question or describe a change…" : "Ask a question…"
+export const frameAskPlaceholder = (signedIn: boolean): string | undefined =>
+  signedIn ? "Ask a question…" : undefined
 
 /**
  * Repository route shell. `children` is the plain content slot shared by repo views.
