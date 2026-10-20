@@ -16,7 +16,7 @@ pnpm add @smthrs/gateway@next effect@4.0.5
 
 ## Requirements
 
-- Node.js 22.19.0 or later. The Node host uses `node:http` and
+- Node.js 26.4.0 or later. The Node host uses `node:http` and
   `@effect/platform-node`, so it does not run in a browser or in a Worker.
 - One copy of `effect` in the resolved tree. A second copy makes a `Layer`
   built against one fail to satisfy a requirement declared against the other.

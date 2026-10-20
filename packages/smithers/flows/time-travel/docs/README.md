@@ -32,7 +32,7 @@ npm install @smthrs/time-travel@1.0.0-rc.16 effect
 ```
 
 Beside [`@smthrs/flows`](/api/flows), install the same version as
-`@smthrs/flows`. The package needs Node.js 22.19.0 or later, ships ESM and
+`@smthrs/flows`. The package needs Node.js 26.4.0 or later, ships ESM and
 CommonJS with TypeScript declarations, and its root entry point bundles for the
 browser with no `node:` built-in.
 

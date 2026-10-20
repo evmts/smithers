@@ -15,7 +15,7 @@ The `next` tag carries the 1.0 release candidates.
 
 ## Requirements
 
-- Node.js 22.19.0 or later, from the package's `engines` field.
+- Node.js 26.4.0 or later, from the package's `engines` field.
 - `effect` `4.0.5`, declared as a peer dependency. Routes, streams, and
   layers are all `Effect` values, so your package installs `effect` itself.
 - `@smthrs/capability` and `@smthrs/kernel` come along as dependencies of this

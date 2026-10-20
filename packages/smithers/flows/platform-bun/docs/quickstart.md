@@ -12,7 +12,7 @@ appear in, and disappear from, the process ledger.
 
 ## Prerequisites
 
-- Bun 1.4.0 or later, or Node.js 22.19.0 or later.
+- Bun 1.4.0 or later, or Node.js 26.4.0 or later.
 - A project with the packages installed:
   `bun add @smthrs/platform-bun@1.0.0-rc.16 effect @smthrs/kernel@1.0.0-rc.16`.
   That also installs the required peer `@smthrs/platform-node`, which ships the

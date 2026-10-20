@@ -23,7 +23,7 @@ npm install -g smthrs@next
 
 Run `smithers config set api_origin https://your-api-host` and `smithers auth login` once for backend commands. Existing Smithers keyring and origin-bound auth-file logins are reused.
 
-Node 22.19.0 or later is required. The package installs one executable under two names, `smthrs` and its `smithers` alias.
+Node 26.4.0 or later is required. The package installs one executable under two names, `smthrs` and its `smithers` alias.
 
 ## The shortest real example
 

@@ -39,7 +39,7 @@ npm install @smthrs/patterns@next effect
 ```
 
 The package
-needs Node.js 22.19.0 or later. It shares its `effect` peer with the host,
+needs Node.js 26.4.0 or later. It shares its `effect` peer with the host,
 depends on [`@smthrs/flow`](/api/flow) and [`@smthrs/plan`](/api/plan), and
 imports no Node built-ins.
 

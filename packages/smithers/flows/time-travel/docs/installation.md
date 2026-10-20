@@ -15,7 +15,7 @@ In a project that already installs [`@smthrs/flows`](/api/flows), name the same
 version as `@smthrs/flows`, so both resolve to one copy of the package and of
 its `TimeTravel` service key.
 
-The package requires Node.js 22.19.0 or later and ships as both ESM and
+The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. Its runtime dependencies install with
 it: [`effect`](https://effect.website) and the `@smthrs/*` packages whose
 contracts it reads history through.

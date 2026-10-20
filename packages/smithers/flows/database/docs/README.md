@@ -52,7 +52,7 @@ and migration ladder. See [SQLite and PostgreSQL](./concepts/sqlite-only.md).
 npm install @smthrs/database@next @effect/sql-sqlite-node effect
 ```
 
-It needs Node.js 22.19.0 or later for the built-in `node:sqlite` module, and
+It needs Node.js 26.4.0 or later for the built-in `node:sqlite` module, and
 one `effect` at exactly `4.0.5` with `@effect/sql-sqlite-node` at the
 same version: two copies of `effect` in one tree split the `SqlClient` service
 identity, and a writer built against one cannot see a client provided from the

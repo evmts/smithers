@@ -22,7 +22,7 @@ Send an Effect program's logs, metrics, and traces to an OpenTelemetry collector
 npm install @smthrs/observability@next effect
 ```
 
-Node.js 22.19.0 or later. Effect services are identified by module identity, so install one `effect` release, at exactly `4.0.5`.
+Node.js 26.4.0 or later. Effect services are identified by module identity, so install one `effect` release, at exactly `4.0.5`.
 
 The default install supports the root, `Otlp`, `Otel`, and `Resource`. It
 installs `@effect/opentelemetry@4.0.5` and requires the

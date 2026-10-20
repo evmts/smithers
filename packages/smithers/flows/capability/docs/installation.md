@@ -15,7 +15,7 @@ npm install @smthrs/capability@next effect@4.0.5
 
 Name `@next` explicitly: `latest` still points at an older release candidate.
 
-The package requires Node.js 22.19.0 or later and ships as both ESM and
+The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. It has one runtime dependency,
 [`@smthrs/canonical`](/api/canonical), which supplies the record guard
 `Permission.isPermissionError` validates payloads with.

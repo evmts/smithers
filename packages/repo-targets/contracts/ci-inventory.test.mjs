@@ -301,7 +301,7 @@ test("public project copy keeps the support contract out of the short descriptio
     assert.doesNotMatch(text, /\breviewed\b|ready to merge/i, "the public description never says a change was reviewed or is ready to merge for the user")
   }
   assert.deepEqual(project.support, {
-    summary: "Smithers needs Node.js 22.19 or later. The release candidate is certified on Linux with Node 26.4.0."
+    summary: "The release candidate's required platform is Linux with Node 26.4.0."
   })
   const readme = readFileSync(join(root, "README.md"), "utf8")
   const docs = readFileSync(join(root, "apps/site/docs/installation.mdx"), "utf8")
@@ -310,7 +310,7 @@ test("public project copy keeps the support contract out of the short descriptio
   assert.equal(docs.match(/generated:project-description start[^\n]*\n\n([\s\S]*?)\n\n\{\/\* generated:project-description end/)?.[1], description)
   const readmeSupport = readme.match(/(?:^|\n)## Supported platforms\n\n([\s\S]*?)(?=\n## |$)/)?.[1]
   assert.equal(typeof readmeSupport, "string", "README must have a dedicated support section")
-  assert.match(readmeSupport, /needs Node\.js 22\.19 or later\. The release candidate is certified on Linux with Node 26\.4\.0\./)
+  assert.match(readmeSupport, /required platform is Linux with Node 26\.4\.0/)
   assert.match(readmeSupport, /\[support matrix\]\(https:\/\/smithers\.sh\/docs\/reference\/support-matrix\/\)/)
 })
 

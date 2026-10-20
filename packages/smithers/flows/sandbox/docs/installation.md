@@ -13,7 +13,7 @@ npm install @smthrs/sandbox@next effect
 
 The `next` tag carries the 1.0 release candidates.
 
-The package requires Node.js 22.19.0 or later and ships as ESM and CommonJS
+The package requires Node.js 26.4.0 or later and ships as ESM and CommonJS
 with TypeScript declarations. It has two runtime dependencies,
 [`effect`](https://effect.website) and
 [`@smthrs/kernel`](/api/kernel), and the second is used only for command line

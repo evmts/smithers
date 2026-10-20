@@ -57,7 +57,7 @@ person rather than to a log nobody sees.
 | `bin` is `smthrs` and `smithers`  | Both names run `@smthrs/cli`'s own executable, so `npx smthrs <verb>` works. A global install links both names onto `PATH`. If another package already owns a global `smithers`, npm refuses with `EEXIST`; `npm install -g --force` replaces it. |
 | One dependency, exact-pinned      | `@smthrs/cli` at this package's own version, never a range, so an install cannot pull a later or squatted CLI. Installing the notice installs the CLI and its dependencies.                                                                       |
 | Both entry points throw           | `dist/esm/index.js` throws on `import`, and `dist/cjs/index.js` throws on `require`.                                                                                                                                                              |
-| `engines.node` is `>=22.19.0`      | Matches the [Node version Smithers 1.0 requires](/migration/compatibility). Lowering it would let the notice install where the packages it names cannot run.                                                                                      |
+| `engines.node` is `>=26.4.0`      | Matches the [Node version Smithers 1.0 requires](/migration/compatibility). Lowering it would let the notice install where the packages it names cannot run.                                                                                      |
 
 A dynamic `import()` rejects with the error rather than throwing at the call
 site, because the throw happens while the module evaluates. A `require` of the

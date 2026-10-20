@@ -28,7 +28,7 @@ npm install @smthrs/sync@next effect
 in one program are two sets of service tags, so a client built against one copy
 cannot be provided to a program holding the other.
 
-Node.js 22.19.0 or later, or a browser with Web Crypto. The package ships as
+Node.js 26.4.0 or later, or a browser with Web Crypto. The package ships as
 both ESM and CommonJS with TypeScript declarations.
 
 ## Follow a run

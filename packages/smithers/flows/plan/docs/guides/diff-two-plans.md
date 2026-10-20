@@ -10,7 +10,7 @@ sidebar:
 
 ## Before you start
 
-The examples run with `node <file>.ts` on Node.js 22.19.0 or later and need no
+The examples run with `node <file>.ts` on Node.js 26.4.0 or later and need no
 engine, database, or jj. Compiling a plan needs Effect's `Crypto` service, which
 `@effect/platform-node` supplies. In a project that installed `@smthrs/flows`,
 add this package and `@smthrs/flow` at the version of `@smthrs/flows` you have,

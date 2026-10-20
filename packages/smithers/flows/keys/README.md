@@ -24,7 +24,7 @@ optional if you supply your own `Crypto` implementation.
 
 `effect` is a peer dependency at exactly `4.0.5`; [`@smthrs/canonical`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs) and
 [`@smthrs/crypto`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/crypto/docs) install with the package and are
-the only other runtime dependencies. Node.js 22.19.0 or later; the package
+the only other runtime dependencies. Node.js 26.4.0 or later; the package
 imports no `node:` built-in, so the same code runs under Bun and in a browser.
 
 ## Example

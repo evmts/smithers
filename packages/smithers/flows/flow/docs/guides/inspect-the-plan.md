@@ -13,7 +13,7 @@ to do.
 
 ## Before you start
 
-The examples run with `node <file>.ts` on Node.js 22.19.0 or later and need no
+The examples run with `node <file>.ts` on Node.js 26.4.0 or later and need no
 engine, database, or jj: planning reads declarations only. They import
 `@smthrs/flow` and `@smthrs/plan`. In a project that installed `@smthrs/flows`,
 add both at the version of `@smthrs/flows` you have:

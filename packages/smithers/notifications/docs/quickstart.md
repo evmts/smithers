@@ -13,7 +13,7 @@ back what each step decided.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - A project with the packages installed: `npm install @smthrs/notifications@next @smthrs/journal@next effect`.
 
 ## Write the notifications

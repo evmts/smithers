@@ -51,7 +51,7 @@ place code you do not trust.
 npm install @smthrs/sandbox@next effect
 ```
 
-Node.js 22.19.0 or later. `@smthrs/platform-node` supplies the contained host
+Node.js 26.4.0 or later. `@smthrs/platform-node` supplies the contained host
 services `DirectorySandbox` requires. A raw spawner or a wrapper with only a
 kill deadline is refused before a workspace is created.
 

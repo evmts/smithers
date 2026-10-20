@@ -15,7 +15,7 @@ node test/fixtures/verify-soak.ts /tmp/sync-soak/node26.json 60
 
 The focused timed tier does not replace the full package coverage gate. It
 spawns the same Node executable with `--expose-gc`. Supported pinned lane
-runtimes are Node 22.19.0 and 26.10.0. Minutes must be finite and within 1..720.
+runtimes are Node 26.4.0 and 26.10.0. Minutes must be finite and within 1..720.
 The artifact path is required. For a bounded local rehearsal use 3 minutes,
 and label the receipt as local bounded evidence.
 

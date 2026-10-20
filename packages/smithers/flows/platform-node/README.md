@@ -35,7 +35,7 @@ npm install @smthrs/platform-node@next effect
 The [installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/installation.md)
 covers the `effect` peer range and the host requirements.
 
-On POSIX, filesystem confinement requires Node.js 22.19.0 or later and the
+On POSIX, filesystem confinement requires Node.js 26.4.0 or later and the
 `smithers-jj-export` native helper. The package ships the helper prebuilt for
 macOS (arm64, x64), Linux (arm64, x64), and Windows (x64), so installing the
 package installs it. `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` only overrides the

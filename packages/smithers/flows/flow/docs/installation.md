@@ -18,7 +18,7 @@ The `next` tag carries the 1.0 release candidates.
 `effect/Schema` and your implementations import `effect/Effect` directly, and two
 copies of `effect` in one program are two sets of service tags.
 
-The package requires Node.js 22.19.0 or later. It ships as both ESM and
+The package requires Node.js 26.4.0 or later. It ships as both ESM and
 CommonJS with TypeScript declarations, and it pulls in
 [`@smthrs/plan`](/api/plan), [`@smthrs/crypto`](/api/crypto),
 [`@smthrs/keys`](/api/keys), and [`@smthrs/canonical`](/api/canonical), which

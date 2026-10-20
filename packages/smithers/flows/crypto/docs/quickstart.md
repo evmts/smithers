@@ -13,7 +13,7 @@ stored under.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - A project with the packages installed: `npm install @smthrs/crypto@next @effect/platform-node effect`.
 
 ## Hash bytes and store them under the digest

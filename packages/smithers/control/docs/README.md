@@ -63,7 +63,7 @@ npm install @smthrs/control@next effect
 ```
 
 The package needs
-Node.js 22.19.0 or later. For the collaborator packages a working composition
+Node.js 26.4.0 or later. For the collaborator packages a working composition
 adds, see [Installation](./installation.md).
 
 ## The smallest real program

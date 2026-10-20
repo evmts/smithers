@@ -32,7 +32,7 @@ npm install --save-dev @smthrs/migrate@next
 npx smithers-migrate
 ```
 
-The package requires Node.js 22.19.0 or later, and ships as both ESM and
+The package requires Node.js 26.4.0 or later, and ships as both ESM and
 CommonJS with TypeScript declarations.
 
 Syntax scanning uses TypeScript 7's version-pinned `unstable` API. It parses

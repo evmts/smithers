@@ -78,7 +78,7 @@ ask for, and the filesystem in it is the confined one described earlier. The
 [quickstart](./quickstart.md) runs a program that reads a file through it and
 watches a symlink escape get refused.
 
-Running this bundle needs Node.js 22.19.0 or later and the `smithers-jj-export`
+Running this bundle needs Node.js 26.4.0 or later and the `smithers-jj-export`
 helper, which `AtomicFileSystem` uses for the descriptor-relative syscalls Node
 does not expose. The package ships the helper, so installing it installs the
 helper. [Installation](./installation.md) covers the requirement,

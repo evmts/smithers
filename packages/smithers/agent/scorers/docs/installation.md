@@ -17,7 +17,7 @@ The `next` tag carries the 1.0 release candidates.
 
 ## Requirements
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - [`effect`](https://effect.website) `4.0.5`. The package is built and
   tested on 4.0.5. Execution, validation, and persistence use `Effect`; schemas
   use `effect/Schema`. Declaration and pure grading helpers are synchronous;

@@ -55,7 +55,7 @@ runner. Runtime evaluation code imports scorers directly.
 npm install @smthrs/scorers@next effect
 ```
 
-It needs Node.js 22.19.0 or later and [`effect`](https://effect.website), plus
+It needs Node.js 26.4.0 or later and [`effect`](https://effect.website), plus
 [`@smthrs/database`](/api/database) when you persist observations. For the
 runtime requirements and the import forms, see
 [Installation](./installation.md).

@@ -36,7 +36,7 @@ supplies:
 pnpm add @effect/platform-node @effect/platform-node-shared
 ```
 
-Node.js 22.19.0 or later, and `effect` `4.0.5` as a peer. Recording a plan
+Node.js 26.4.0 or later, and `effect` `4.0.5` as a peer. Recording a plan
 is [`@smthrs/plan-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/docs), which owns the SQL
 and brings [`@smthrs/database`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/database/docs) with it.
 

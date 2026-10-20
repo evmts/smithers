@@ -14,7 +14,7 @@ Nothing here executes a node. A plan is inert: driving one is
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - A project with the packages installed:
 
   ```bash

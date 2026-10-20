@@ -13,7 +13,7 @@ npm install @smthrs/notifications@next effect
 
 The `next` tag carries the 1.0 release candidates.
 
-The package requires Node.js 22.19.0 or later and ships as both ESM and
+The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. It is built on
 [`effect`](https://effect.website) and [`@smthrs/journal`](/api/journal). Declare
 `@smthrs/journal` in your own package as well: the compositions below import it

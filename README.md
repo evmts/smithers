@@ -24,7 +24,7 @@ For local execution and authoring, use the CLI and libraries described below.
 
 ## Supported platforms
 
-Smithers needs Node.js 22.19 or later. The release candidate is certified on Linux with Node 26.4.0. See the [support matrix](https://smithers.sh/docs/reference/support-matrix/).
+The release candidate's required platform is Linux with Node 26.4.0. See the [support matrix](https://smithers.sh/docs/reference/support-matrix/).
 
 ## Install
 

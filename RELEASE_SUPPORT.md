@@ -31,9 +31,7 @@ already makes this separation. See the [artifact host contract](packages/smither
 ## Runtime and dependency support
 
 The required release platform is Linux. The release workflow exercises Node
-26.4.0 with npm and pnpm consumers. The published CLI and its first-party
-dependency closure declare Node 22.19.0 or later; the packed CLI matrix covers
-22.19, 24.19 and 26.4. The TUI separately requires Node 26.4 for FFI, or Bun.
+26.4.0 as its certified floor with npm and pnpm consumers.
 The `engines` lower bound is not certification of every later Node release.
 macOS checks are advisory. Hardened native filesystem confinement requires a
 trusted Python interpreter and descriptor-relative POSIX operations; Windows

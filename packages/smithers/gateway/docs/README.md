@@ -60,7 +60,7 @@ embedding the surface in a process of your own.
 npm install @smthrs/gateway@next effect
 ```
 
-The package needs Node.js 22.19.0 or later. For the peers and the
+The package needs Node.js 26.4.0 or later. For the peers and the
 services a running composition supplies, see [Installation](./installation.md).
 
 ## The smallest real example

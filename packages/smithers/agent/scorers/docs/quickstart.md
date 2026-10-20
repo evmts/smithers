@@ -12,7 +12,7 @@ in-memory, so the whole thing runs from one file with no setup.
 
 ## Prerequisites
 
-Node.js 22.19.0 or later, and a project with the packages installed:
+Node.js 26.4.0 or later, and a project with the packages installed:
 
 ```bash
 npm install @smthrs/scorers@next @smthrs/database@next @effect/sql-sqlite-node effect

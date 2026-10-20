@@ -12,7 +12,7 @@ input, persisted the key, and validated it on the way back in.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - A project with the packages installed: `npm install @smthrs/keys@next @effect/platform-node effect`.
 
 ## Derive a key for one unit of work

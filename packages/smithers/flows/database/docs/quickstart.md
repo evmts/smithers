@@ -12,7 +12,7 @@ recording what was applied, and a program that is safe to run again.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - A project with the packages installed:
   `npm install @smthrs/database@next @effect/sql-sqlite-node effect`. See
   [Installation](./installation.md) for the peer ranges.
