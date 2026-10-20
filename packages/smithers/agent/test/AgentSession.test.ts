@@ -21,7 +21,7 @@ import { DurableEngineState, type Service as EngineStateService } from "@smthrs/
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
 import { Action, Flow, FlowRuntime, HumanTask, Interpreter, Sleep } from "@smthrs/flow"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Cell from "@smthrs/harness/Cell"
 import type * as CellCalls from "@smthrs/harness/CellCalls"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"

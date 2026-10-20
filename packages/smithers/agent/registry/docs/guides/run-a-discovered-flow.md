@@ -208,7 +208,7 @@ discovers a project in: `<root>/flows/**` first, then every installed pack,
 under one refreshable first-found registry.
 
 ```ts
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Registry from "@smthrs/registry/Registry"
 
 const host = NodeRuntime.layerHost(

@@ -12,7 +12,7 @@ without losing the anchor in between.
 ## Read a page
 
 ```ts
-import * as Read from "@smthrs/std/Read"
+import { Read } from "@smthrs/std"
 
 const page = Read.run({ path: "/workspace/src/widen.ts", offset: 40, limit: 20 })
 ```
@@ -54,7 +54,7 @@ or invalid UTF-8 is `binary_file`.
 The first anchor form is the file's own bytes:
 
 ```ts
-import * as Edit from "@smthrs/std/Edit"
+import { Edit } from "@smthrs/std"
 
 const applied = Edit.run({
   path: "/workspace/src/widen.ts",
@@ -185,7 +185,7 @@ currently refuses mutations until its guest provider qualifies.
 `write` replaces a file, creating parent directories:
 
 ```ts
-import * as Write from "@smthrs/std/Write"
+import { Write } from "@smthrs/std"
 
 const written = Write.run({ path: "/workspace/notes.md", content: "# Notes\n" })
 // written.bytesWritten, written.created
@@ -213,7 +213,7 @@ performed. Timestamps and extended metadata such as ACLs are not copied.
 that tool can use the shape it knows:
 
 ```ts
-import * as ApplyPatch from "@smthrs/std/ApplyPatch"
+import { ApplyPatch } from "@smthrs/std"
 
 const result = ApplyPatch.run({
   input: [

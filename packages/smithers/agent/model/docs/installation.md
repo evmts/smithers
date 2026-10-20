@@ -23,18 +23,15 @@ The `next` tag carries the 1.0 release candidates.
 
 ## Import forms
 
-The root entry point re-exports every module as a namespace:
+Import from the root entry point. It re-exports every module as a namespace:
 
 ```ts
 import { Model, ModelEvent, ModelRequest, Route } from "@smthrs/model"
 ```
 
-Every namespace is also importable on its own subpath, which keeps type
-resolution narrow in large projects:
-
-```ts
-import * as Route from "@smthrs/model/Route"
-```
+Each module is also exported on its own subpath, such as
+`@smthrs/model/Route`, for code that imported it that way before. New code
+imports the root.
 
 Two subpath forms are blocked on purpose: `@smthrs/model/internal/*` and any
 nested `*/index`. `@smthrs/model/package.json` is exported for tooling that

@@ -50,9 +50,15 @@ console.log(await Effect.runPromise(flows.pipe(Effect.provide(registry), Effect.
 
 ## Prompt
 
-`Prompt.compile(source)` compiles MDX into an ESM module whose default export
-renders Markdown text. Compilation parses code without evaluating expressions.
-The module is evaluated by the same verified loader as its importing flow.
+`Prompt.compile(source)` is an Effect that compiles MDX into an ESM module
+whose default export renders Markdown text, and fails on malformed MDX.
+Compilation parses code without evaluating expressions. The module is
+evaluated by the same verified loader as its importing flow.
+
+The MDX compiler loads the first time a prompt compiles, never when the
+registry loads. A host that only runs flows, such as an agent in a browser's
+dedicated worker, never loads it. Under the `browser` export condition its
+Markdown parser calls `document` while it loads, and a worker has none.
 
 `Prompt.Component<Props>` types the props of one concrete prompt import.
 Declare it in a sibling `prompt.d.mdx.ts`; there is no untyped wildcard import.

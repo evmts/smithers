@@ -12,8 +12,8 @@
  * @since 1.0.0-rc.0
  */
 
-import * as Fault from "@smthrs/flow/Fault"
-import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import { Fault, SpanFailure } from "@smthrs/flow"
+import { HttpClient as KernelHttpClient } from "@smthrs/kernel"
 import * as Clock from "effect/Clock"
 import type * as Config from "effect/Config"
 import * as Context from "effect/Context"
@@ -896,7 +896,7 @@ export function layerVercelGateway(
           })
         )
 
-      return Evaluator.of({ evaluate: Effect.fn("Evaluator.evaluate")(evaluate) })
+      return Evaluator.of({ evaluate: SpanFailure.fn(Effect.fn("Evaluator.evaluate")(evaluate)) })
     })
   )
 }
@@ -943,18 +943,20 @@ const typed = (question: Question | undefined, answer: ScriptedAnswer): unknown 
 export const layerScripted = (script: Script): Layer.Layer<Evaluator> =>
   Layer.succeed(Evaluator)(
     Evaluator.of({
-      evaluate: Effect.fn("Evaluator.evaluate")((request: Request) =>
-        Effect.gen(function*() {
-          const scripted = script(request)
-          const answers = Effect.isEffect(scripted) ? yield* scripted : scripted
-          const raw = Object.fromEntries(
-            Object.entries(answers).map(([id, answer]) => [id, typed(request.questions[id], answer)])
-          )
-          const decoded = yield* decodeRawAnswers(raw).pipe(
-            Effect.mapError((error) => new EvaluatorError({ code: "invalid_answer", message: error.message }))
-          )
-          return { answers: decoded, latencyMs: 0 }
-        })
+      evaluate: SpanFailure.fn(
+        Effect.fn("Evaluator.evaluate")((request: Request) =>
+          Effect.gen(function*() {
+            const scripted = script(request)
+            const answers = Effect.isEffect(scripted) ? yield* scripted : scripted
+            const raw = Object.fromEntries(
+              Object.entries(answers).map(([id, answer]) => [id, typed(request.questions[id], answer)])
+            )
+            const decoded = yield* decodeRawAnswers(raw).pipe(
+              Effect.mapError((error) => new EvaluatorError({ code: "invalid_answer", message: error.message }))
+            )
+            return { answers: decoded, latencyMs: 0 }
+          })
+        )
       )
     })
   )

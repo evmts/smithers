@@ -13,7 +13,7 @@ import * as Digest from "@smthrs/core/Digest"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
 import { Cause, Context, Effect, Exit, Option, Result, Schema } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
 import * as FlowBinding from "../src/FlowBinding.ts"
 import { HarnessError } from "../src/HarnessError.ts"
@@ -796,6 +796,39 @@ describe("FlowBinding.make", () => {
     })
     expect(Exit.isFailure(harnessExit) ? Cause.squash(harnessExit.cause) : undefined).toBe(harness)
     expect(rendered).toBe(false)
+  })
+
+  it("types the renderers without HarnessError, so a renderer needs no branch for one", async () => {
+    class Refused {
+      readonly _tag = "Refused"
+      readonly detail: string
+      constructor(detail: string) {
+        this.detail = detail
+      }
+    }
+    const harness = new HarnessError({ code: "engine_failed", message: "the realm could not open" })
+    const seen: Array<string> = []
+    const binding = FlowBinding.make({
+      flow: echo,
+      handler: (input): Effect.Effect<typeof Echoed.Type, Refused | HarnessError> =>
+        input.text === "realm" ? Effect.fail(harness) : Effect.fail(new Refused(`${input.text} refused`)),
+      publicError: (error) => {
+        expectTypeOf(error).toEqualTypeOf<Refused>()
+        seen.push(error.detail)
+        return error.detail
+      },
+      timedOut: (error) => {
+        expectTypeOf(error).toEqualTypeOf<Refused>()
+        return undefined
+      }
+    })
+
+    const refused = await Effect.runPromise(binding.run(call("echo", { text: "hi" })))
+    const realm = await run(binding.run(call("echo", { text: "realm" })))
+
+    expect(refused.message).toBe("Flow echo failed: hi refused")
+    expect(Exit.isFailure(realm) ? Cause.squash(realm.cause) : undefined).toBe(harness)
+    expect(seen).toEqual(["hi refused"])
   })
 
   it("never converts an interruption into a call result", async () => {

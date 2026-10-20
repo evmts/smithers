@@ -42,7 +42,7 @@ Because the declaration is data, a larger flow can name it and inherit both its
 capabilities and its effect envelope, without importing the handler at all:
 
 ```ts
-import * as Read from "@smthrs/std/Read"
+import { Read } from "@smthrs/std"
 import * as Schema from "effect/Schema"
 
 /** A step that reads a file. It declares what `read` declares. */
@@ -66,7 +66,7 @@ prompt needs.
 writing 17 imports:
 
 ```ts
-import * as Manifest from "@smthrs/std/Manifest"
+import { Manifest } from "@smthrs/std"
 
 Manifest.names // the 17 names, in registry order
 Manifest.flows // name -> declaration, all 17

@@ -29,21 +29,15 @@
  */
 
 import singlefile from "@jitl/quickjs-singlefile-browser-release-sync"
-import { Context, Duration, Effect, Layer, Option, Schema, type Scope } from "effect"
-import type {
-  QuickJSContext,
-  QuickJSHandle,
-  QuickJSRuntime,
-  QuickJSSyncVariant,
-  QuickJSWASMModule
-} from "quickjs-emscripten-core"
-import { newQuickJSWASMModuleFromVariant } from "quickjs-emscripten-core"
+import { Context, Duration, Effect, Exit, Layer, Option, Schema, Scope } from "effect"
+import type { QuickJSContext, QuickJSHandle, QuickJSRuntime, QuickJSWASMModule } from "quickjs-emscripten-core"
 import * as Cell from "./Cell.ts"
 import type { HarnessError } from "./HarnessError.ts"
 import * as bytes from "./internal/bytes.ts"
 import * as elide from "./internal/elide.ts"
 import * as printChannel from "./internal/printChannel.ts"
 import { refusal } from "./internal/refusal.ts"
+import * as QuickJSVariant from "./QuickJSVariant.ts"
 import * as Sandbox from "./Sandbox.ts"
 import * as VariablesPanel from "./VariablesPanel.ts"
 
@@ -415,45 +409,33 @@ const handleFromJson = (
   }
 }
 
-/**
- * Caches only a successful asynchronous load; a rejection may be retried.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const cacheSuccessful = <A>(load: () => Promise<A>): () => Promise<A> => {
-  let loaded: Promise<A> | undefined
-  return () => {
-    if (loaded === undefined) {
-      const pending = load()
-      loaded = pending
-      void pending.catch(() => {
-        loaded = undefined
-      })
-    }
-    return loaded
-  }
-}
-
-/**
- * The QuickJS build the sandbox compiles.
- *
- * @category models
- * @since 0.1.0
- */
-export interface VariantService {
-  readonly variant: QuickJSSyncVariant
-}
-
-/**
- * The QuickJS build the sandbox compiles.
- *
- * @category services
- * @since 0.1.0
- */
-export class Variant extends Context.Service<Variant, VariantService>()(
-  "@smthrs/harness/QuickJSSandbox/Variant"
-) {}
+export {
+  /**
+   * @category constructors
+   * @since 0.1.0
+   */
+  cacheSuccessful,
+  /**
+   * @category layers
+   * @since 0.1.0
+   */
+  layerVariant,
+  /**
+   * @category constructors
+   * @since 0.1.0
+   */
+  loadModule,
+  /**
+   * @category services
+   * @since 0.1.0
+   */
+  Variant,
+  /**
+   * @category models
+   * @since 0.1.0
+   */
+  type VariantService
+} from "./QuickJSVariant.ts"
 
 /**
  * Provides the single-file build, which Node and a browser both compile.
@@ -461,35 +443,9 @@ export class Variant extends Context.Service<Variant, VariantService>()(
  * @category layers
  * @since 0.1.0
  */
-export const layerVariantLive: Layer.Layer<Variant> = Layer.succeed(Variant)({ variant: singlefile })
-
-/**
- * Provides a build the host names.
- *
- * A workerd host builds one with `newVariant(baseVariant, { wasmModule })` from
- * a `.wasm` module import, because that runtime instantiates a module the
- * toolchain compiled and refuses to compile one from bytes.
- *
- * @category layers
- * @since 0.1.0
- */
-export const layerVariant = (variant: QuickJSSyncVariant): Layer.Layer<Variant> => Layer.succeed(Variant)({ variant })
-
-/**
- * One compiled module per build, so two sandboxes over one variant share it.
- *
- * Keyed weakly: a variant a host builds per request is collectable with the
- * module it produced.
- */
-const compiled = new WeakMap<QuickJSSyncVariant, () => Promise<QuickJSWASMModule>>()
-
-const loaderFor = (variant: QuickJSSyncVariant): () => Promise<QuickJSWASMModule> => {
-  const known = compiled.get(variant)
-  if (known !== undefined) return known
-  const loader = cacheSuccessful(() => newQuickJSWASMModuleFromVariant(variant))
-  compiled.set(variant, loader)
-  return loader
-}
+export const layerVariantLive: Layer.Layer<QuickJSVariant.Variant> = Layer.succeed(QuickJSVariant.Variant)({
+  variant: singlefile
+})
 
 /**
  * Synchronous monotonic-enough clock required by QuickJS's interrupt callback.
@@ -525,6 +481,27 @@ const capabilities: Sandbox.Capabilities = {
   steps: true,
   timeMs: true
 }
+
+/**
+ * The interpreter's stack, the same bound `@smthrs/views`' presentation realm
+ * sets. QuickJS must stop a deep recursion before the host's own stack does:
+ * each byte here costs about three bytes of host stack, and a host stack that
+ * overflows inside the interpreter leaves a runtime that aborts the process
+ * when it is disposed. Under this bound a runaway recursion is a catchable
+ * `InternalError` inside the cell instead.
+ */
+const stackBytes = 128 * 1024
+
+/** A realm whose runtime the host's own stack overflowed inside, and that the next cell replaces. */
+interface RealmRuntime extends Sandbox.Realm {
+  readonly broken: () => boolean
+}
+
+const hostStackOverflow = new Cell.Rejected({
+  code: "limit_exceeded",
+  reason: "stack",
+  message: "The cell overflowed the host's stack. Its realm was reset, so names from earlier cells are gone."
+})
 
 const timeLimitExceeded = (timeMs: number): Cell.Rejected =>
   new Cell.Rejected({
@@ -967,11 +944,11 @@ const tooLargeToWeigh = (held: number, ceiling: number, root: string, bytes: num
  * names a run accumulates" can honestly mean when the harness never drops a
  * value behind the model's back.
  */
-const openRealm = (
+const openRuntime = (
   module: QuickJSWASMModule,
   options: Sandbox.RealmOptions,
   clock: ComputeClockService
-): Effect.Effect<Sandbox.Realm, Sandbox.SandboxError, Scope.Scope> =>
+): Effect.Effect<RealmRuntime, Sandbox.SandboxError, Scope.Scope> =>
   Effect.gen(function*() {
     const realmLimits = Sandbox.withDefaults(capabilities, options.limits)
     /* v8 ignore next -- `withDefaults` fills `timeMs` from `defaultLimits` whenever the `timeMs` capability is declared, and this binding declares it, so the coalesce never reaches its fallback; it only discharges the optional type on `Sandbox.Limits` */
@@ -992,6 +969,24 @@ const openRealm = (
     let unread = 0
     let recorded: Recorded | undefined
     let justification: string | undefined
+    // Set when the host's own stack overflowed inside the interpreter. The
+    // runtime is then unusable and aborts the process when it is disposed, so
+    // nothing touches it again: every finalizer below skips it.
+    let broken = false
+
+    /**
+     * Calls into the interpreter. The interpreter reports its own failures as
+     * results, so anything thrown out of it is the host's stack overflowing
+     * inside it, and the realm is broken.
+     */
+    const enter = <A>(call: () => A): A => {
+      try {
+        return call()
+      } catch (error) {
+        broken = true
+        throw error
+      }
+    }
 
     const acquired = yield* Effect.acquireRelease(
       Effect.sync(() => {
@@ -1000,6 +995,7 @@ const openRealm = (
         if (realmLimits.memoryBytes !== undefined) {
           runtime.setMemoryLimit(realmLimits.memoryBytes)
         }
+        runtime.setMaxStackSize(stackBytes)
         runtime.setInterruptHandler(() => {
           if (clock.now() - clockBase >= timeMs) {
             exhausted = exhausted ?? timeLimitExceeded(timeMs)
@@ -1019,6 +1015,7 @@ const openRealm = (
       }),
       ({ context, runtime }) =>
         Effect.sync(() => {
+          if (broken) return
           context.dispose()
           runtime.dispose()
         })
@@ -1047,7 +1044,10 @@ const openRealm = (
 })(Object.defineProperty)`
         ))
       ),
-      (handle) => Effect.sync(() => handle.dispose())
+      (handle) =>
+        Effect.sync(() => {
+          if (!broken) handle.dispose()
+        })
     )
 
     const install = (name: string, implementation: Parameters<QuickJSContext["newFunction"]>[1]): void => {
@@ -1207,7 +1207,11 @@ const openRealm = (
     // seal. The host holds it as a handle rather than as a global, so no cell
     // can reach it and no cell can shadow it.
     const openFrame = installed.value
-    yield* Effect.addFinalizer(() => Effect.sync(() => openFrame.dispose()))
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        if (!broken) openFrame.dispose()
+      })
+    )
 
     // The names a fresh realm already holds, snapshotted after the prelude so
     // `ctx` and `console` are part of the baseline rather than part of the
@@ -1223,7 +1227,11 @@ const openRealm = (
     // context that made it, which is what keeps the probe's intrinsics the ones
     // a fresh realm had rather than the ones a cell left behind.
     const probe = context.unwrapResult(context.evalCode(panelProbe(JSON.stringify(baseline))))
-    yield* Effect.addFinalizer(() => Effect.sync(() => probe.dispose()))
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        if (!broken) probe.dispose()
+      })
+    )
 
     let bindings: ReadonlyArray<VariablesPanel.Binding> = []
     let weighed: ReadonlyArray<typeof Weighed.Type> = []
@@ -1264,14 +1272,12 @@ const openRealm = (
         // whose transition the harness refused is asked again inside the same
         // frame, so the retry has to open on an unsealed realm.
         if (evaluation.flows === undefined) {
-          context.unwrapResult(context.callFunction(openFrame, context.undefined)).dispose()
+          context.unwrapResult(enter(() => context.callFunction(openFrame, context.undefined))).dispose()
         } else {
           const catalog = context.newString(catalogOf(evaluation.flows))
-          try {
-            context.unwrapResult(context.callFunction(openFrame, context.undefined, catalog)).dispose()
-          } finally {
-            catalog.dispose()
-          }
+          const opened = enter(() => context.callFunction(openFrame, context.undefined, catalog))
+          catalog.dispose()
+          context.unwrapResult(opened).dispose()
         }
 
         // Whatever the frame produced, the prints are delivered with it and the
@@ -1314,7 +1320,7 @@ const openRealm = (
         const compiled = evaluation.program ?? Sandbox.compile(evaluation.cell)
         if (compiled instanceof Cell.Rejected) return frameOf(compiled)
 
-        const started = context.evalCode(compiled, `cell-${evaluation.frame}.js`, 128)
+        const started = enter(() => context.evalCode(compiled, `cell-${evaluation.frame}.js`, 128))
         if (started.error !== undefined) {
           const failure = context.dump(started.error)
           started.error.dispose()
@@ -1336,7 +1342,7 @@ const openRealm = (
         const poll = (): void => {
           // Teardown alone runs jobs once admission closes, under its own budget.
           if (closing) return
-          runtime.executePendingJobs()
+          enter(() => runtime.executePendingJobs())
           if (exhausted !== undefined) {
             settled = exhausted
             return
@@ -1421,6 +1427,7 @@ const openRealm = (
           Effect.ensuring(
             Effect.sync(() => {
               closing = true
+              if (broken) return
               try {
                 // A cleanup may keep scheduling promise jobs even without host
                 // calls. Bound that work independently of the compute clock.
@@ -1448,7 +1455,7 @@ const openRealm = (
         // cannot do is take the reading away: the probe holds its own
         // intrinsics from before any cell ran, so a realm whose `Object` a cell
         // has rebound is still weighed and still named.
-        const read = context.callFunction(probe, context.undefined)
+        const read = enter(() => context.callFunction(probe, context.undefined))
         if (read.error === undefined) {
           const measured = decodeProbe(JSON.parse(context.getString(read.value)))
           read.value.dispose()
@@ -1497,29 +1504,59 @@ const openRealm = (
 
     const evaluate = (evaluation: Sandbox.RealmEvaluation) =>
       Sandbox.evaluationLimits(realmLimits, evaluation.limits).pipe(
-        Effect.flatMap((limits) => evaluateFrame(evaluation, limits))
+        Effect.flatMap((limits) => evaluateFrame(evaluation, limits)),
+        // The overflow is the cell's to answer, as a typed rejection; any other
+        // defect is still a defect.
+        Effect.catchDefect((defect) =>
+          broken
+            ? Effect.succeed<Sandbox.RealmFrame>({
+              outcome: hostStackOverflow,
+              boundary: { ...boundary, terminal: "settled" },
+              prints: printChannel.buffer(lines, unread),
+              bindings: []
+            })
+            : Effect.die(defect)
+        )
       )
 
-    return { evaluate }
+    return { evaluate, broken: () => broken }
   })
 
 /**
- * Loads a QuickJS module through the sandbox's typed failure boundary.
+ * Opens one QuickJS realm that lives for a whole run, over a runtime it
+ * replaces when the host's own stack overflowed inside the interpreter.
  *
- * @category constructors
- * @since 0.1.0
+ * That runtime is unusable and aborts the process when it is disposed, so it
+ * is abandoned undisposed, its memory with it, and the next cell runs in a
+ * fresh one. The frame that overflowed says so, because the fresh realm holds
+ * none of the names earlier cells bound.
  */
-export const loadModule = (
-  loader: () => Promise<QuickJSWASMModule>
-): Effect.Effect<QuickJSWASMModule, Sandbox.SandboxError> =>
-  Effect.tryPromise({
-    try: loader,
-    catch: (cause) =>
-      new Sandbox.SandboxError({
-        code: "runtime_failed",
-        message: "QuickJS WebAssembly module could not be loaded",
-        cause
-      })
+const openRealm = (
+  module: QuickJSWASMModule,
+  options: Sandbox.RealmOptions,
+  clock: ComputeClockService
+): Effect.Effect<Sandbox.Realm, Sandbox.SandboxError, Scope.Scope> =>
+  Effect.gen(function*() {
+    const scope = yield* Effect.scope
+    const open = Effect.gen(function*() {
+      const owned = yield* Scope.fork(scope)
+      const runtime = yield* openRuntime(module, options, clock).pipe(Scope.provide(owned))
+      return { owned, runtime }
+    })
+    let current: Effect.Success<typeof open> | undefined = yield* open
+    return {
+      evaluate: (evaluation) =>
+        Effect.gen(function*() {
+          current ??= yield* open
+          const { owned, runtime } = current
+          const frame = yield* runtime.evaluate(evaluation)
+          if (runtime.broken()) {
+            current = undefined
+            yield* Scope.close(owned, Exit.void)
+          }
+          return frame
+        })
+    }
   })
 
 /**
@@ -1529,11 +1566,14 @@ export const loadModule = (
  * @category constructors
  * @since 0.1.0
  */
-export const makeWithVariant: Effect.Effect<Sandbox.Sandbox, Sandbox.SandboxError, ComputeClock | Variant> = Effect
+export const makeWithVariant: Effect.Effect<
+  Sandbox.Sandbox,
+  Sandbox.SandboxError,
+  ComputeClock | QuickJSVariant.Variant
+> = Effect
   .gen(function*() {
     const clock = yield* ComputeClock
-    const { variant } = yield* Variant
-    const module = yield* loadModule(loaderFor(variant))
+    const module = yield* QuickJSVariant.compiledModule
     return Sandbox.make({
       capabilities,
       openRealm: (options) => openRealm(module, options, clock)
@@ -1571,9 +1611,10 @@ export const make: Effect.Effect<Sandbox.Sandbox, Sandbox.SandboxError> = makeWi
  * @category layers
  * @since 0.1.0
  */
-export const layerWithVariant: Layer.Layer<Sandbox.Sandbox, Sandbox.SandboxError, Variant> = Layer.effect(
-  Sandbox.Sandbox
-)(makeWithVariant.pipe(Effect.provide(layerClockLive)))
+export const layerWithVariant: Layer.Layer<Sandbox.Sandbox, Sandbox.SandboxError, QuickJSVariant.Variant> = Layer
+  .effect(
+    Sandbox.Sandbox
+  )(makeWithVariant.pipe(Effect.provide(layerClockLive)))
 
 /**
  * Provides the QuickJS sandbox over the single-file build.

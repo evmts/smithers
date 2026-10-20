@@ -24,11 +24,12 @@ Every `POST` route requires `Authorization: Bearer <authorization>` and reads at
 ```ts
 import { createModelTurnHandler, environmentModelResolver } from "@smthrs/model-host"
 import { FetchTransport } from "@smthrs/platform-node"
+import { HttpEffect } from "effect/http"
 
 // The owner's configured model binding, as the backend stores it.
 declare const configuredBinding: unknown
 
-const handler = createModelTurnHandler({
+const app = createModelTurnHandler({
   authorization: process.env["MODEL_HOST_TOKEN"] ?? "",
   callbackBaseUrl: "http://127.0.0.1:4000",
   resolve: environmentModelResolver({ binding: configuredBinding, env: process.env }),
@@ -37,9 +38,14 @@ const handler = createModelTurnHandler({
   // A Node host writes each turn's diagnostic records to standard error.
   writeDiagnostic: (line) => process.stderr.write(line)
 })
+
+// The host program is the boundary that runs it.
+const handler = HttpEffect.toWebHandler(app)
 ```
 
-The handler is a `(request: Request) => Promise<Response>`, so any server that speaks Fetch serves it: `apps/model-host` adapts `node:http`, and a Worker or `Bun.serve` passes it as `fetch`.
+`createModelTurnHandler` returns an `effect/http` handler, `Effect<HttpServerResponse, never, HttpServerRequest>`: every refusal is a response, and the package runs no Effect itself. `HttpEffect.toWebHandler` turns it into a `(request: Request) => Promise<Response>` that any server speaking Fetch serves (`apps/model-host` adapts `node:http`; a Worker or `Bun.serve` passes it as `fetch`), or a host mounts it on an `HttpRouter`. It runs in the host's fiber, so the host's services, logger, tracer and metrics reach every turn.
+
+A caller who goes away interrupts the body read and the model call however the handler is mounted, and the turn's outcome is still logged and counted.
 
 - `createModelTurnHandler` throws when `authorization` is empty or whitespace, or when `callbackBaseUrl` is not an HTTP or HTTPS URL without user information, query or fragment.
 - A turn grant is refused with `400 request_invalid` when it is expired, malformed, names a different run or leg in its cursor, or names a producer origin other than `callbackBaseUrl`.
@@ -51,9 +57,9 @@ The handler is a `(request: Request) => Promise<Response>`, so any server that s
 
 - `runModelTurn` streams one model call into turn frames and cuts the credential out of text, reasoning and tool calls, including echoes split across chunks (`StreamingCredentialCutter`).
 - `DurableChatProducer` and `runDurableChatTurn` commit frames to the journal callback and verify each receipt against the expected cursor.
-- `fastModelFallback` tries the next source only when one fails as unavailable before it emitted any output.
 - `createHostDiagnostics` writes bounded, marker-tagged records to the `write` sink the host passes, and is inert without one; the package never writes to a console or stream itself. Fields that are not counts, flags or short tokens are dropped and counted.
-- `createModelProbe` tests a configured model and dials only its planned origin.
+- `toModel` builds the `Model` a configured-model plan names, over a transport that never follows a provider redirect (`onRedirect` is told the refused status), and the `route` it streams through. `route.prepare` gives a request's url, public headers and body exactly as the model sends them, before the key signs it. `HostModel.layer` and `HostModel.layerConfig` provide `{ modelId, model, route }` as the `HostModel` service. `HostModel.make(record)` builds the same service at run time from a configured-model record read elsewhere, such as a database row, reading its key through `Config`; a record the host cannot use, its key missing included, fails with `HostModelUnusable` and the planner's code.
+- `createModelProbe` tests a configured model and dials only its planned origin. Its `test` returns an Effect that never fails; the host runs it.
 
 ## Failures
 

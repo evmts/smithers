@@ -1,38 +1,32 @@
-import * as Evaluator from "@smthrs/model/Evaluator"
-import { ModelError } from "@smthrs/model/ModelError"
-import type { ModelCredentialListing } from "@smthrs/rpc/ConfiguredModel"
-import { Effect, Redacted } from "effect"
-import { HttpClient } from "effect/http/HttpClient"
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { Evaluator, ModelError } from "@smthrs/model"
+import type { ConfiguredModel } from "@smthrs/rpc"
+import { Redacted } from "effect"
+import { describe, expect, test } from "vitest"
 import {
   localModelCatalog,
   localModelCredential,
-  manualRedirects,
   type ModelCredentials,
   modelFailureOf,
   planOnLocal
 } from "../src/LocalModel.ts"
-
-type Fetch = typeof globalThis.fetch
-const fetchOf = (impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): Fetch =>
-  Object.assign(impl, { preconnect() {} })
 
 const ORIGIN = "http://127.0.0.1:9"
 const binding = { protocol: "openai-chat", baseUrl: ORIGIN, modelId: "lab", credential: "LAB" } as const
 const env = { SMITHERS_MODEL_KEY_LAB: " lab-key ", SMITHERS_MODEL_KEY_LAB_ORIGIN: ORIGIN }
 
 const stored = (value: string | undefined): ModelCredentials => {
-  const rows: ReadonlyArray<ModelCredentialListing> = [{ name: "LAB", origins: [ORIGIN], present: true, managed: true }]
+  const rows: ReadonlyArray<ConfiguredModel.ModelCredentialListing> = [{
+    name: "LAB",
+    origins: [ORIGIN],
+    present: true,
+    managed: true
+  }]
   return {
     refresh: async () => {},
     list: () => rows,
     read: (name) => name === "LAB" && value !== undefined ? Redacted.make(value) : undefined
   }
 }
-
-afterEach(() => {
-  vi.unstubAllGlobals()
-})
 
 describe("local credentials", () => {
   test("reads a named value, trimmed and redacted, and nothing when unset or blank", () => {
@@ -95,40 +89,9 @@ describe("localModelCatalog", () => {
   })
 })
 
-describe("manualRedirects", () => {
-  const get = (layer: ReturnType<typeof manualRedirects>["layer"]) =>
-    Effect.runPromise(
-      Effect.gen(function*() {
-        const client = yield* HttpClient
-        return (yield* client.get("https://fixture.test/")).status
-      }).pipe(Effect.provide(layer))
-    )
-
-  test("never follows a redirect and remembers the status", async () => {
-    const seen: Array<RequestRedirect | undefined> = []
-    const http = manualRedirects(fetchOf(async (_input, init) => {
-      seen.push(init?.redirect)
-      return new Response(null, { status: 302 })
-    }))
-    expect(http.redirected()).toBeUndefined()
-    expect(await get(http.layer)).toBe(302)
-    expect(seen).toEqual(["manual"])
-    expect(http.redirected()).toBe(302)
-  })
-
-  test("defaults to the global fetch and records no answer outside 3xx", async () => {
-    for (const status of [200, 404]) {
-      vi.stubGlobal("fetch", async () => new Response(null, { status }))
-      const http = manualRedirects()
-      expect(await get(http.layer)).toBe(status)
-      expect(http.redirected()).toBeUndefined()
-    }
-  })
-})
-
 describe("modelFailureOf", () => {
-  const model = (code: ModelError["code"], httpStatus?: number) =>
-    new ModelError({ code, message: "provider words", ...(httpStatus === undefined ? {} : { httpStatus }) })
+  const model = (code: ModelError.ModelError["code"], httpStatus?: number) =>
+    new ModelError.ModelError({ code, message: "provider words", ...(httpStatus === undefined ? {} : { httpStatus }) })
   const evaluator = (code: Evaluator.EvaluatorError["code"], status?: number) =>
     new Evaluator.EvaluatorError({ code, message: "provider words", ...(status === undefined ? {} : { status }) })
 

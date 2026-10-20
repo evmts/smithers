@@ -15,8 +15,8 @@
  * @since 1.0.0-rc.0
  */
 
-import * as Digest from "@smthrs/core/Digest"
-import * as Fault from "@smthrs/flow/Fault"
+import { Digest } from "@smthrs/core"
+import { Fault, SpanFailure } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
@@ -507,27 +507,29 @@ export const make = <const Id extends string, State extends Schema.Codec<any, an
   const digest = Digest.digest(CanonicalJson.stringify({ id, questions: Evaluator.encodeQuestions(questions) }))
   const encodeState = Schema.encodeEffect(state)
 
-  const read = Effect.fn(`Classifier.evaluate(${id})`)((value: State["Type"]) =>
-    Effect.gen(function*() {
-      const evaluator = yield* Evaluator.Evaluator
-      const encoded = yield* encodeState(value).pipe(
-        Effect.mapError((error) => new ClassifierError({ code: "invalid_question", message: error.message }))
-      )
-      const response = yield* evaluator.evaluate({
-        state: encoded,
-        questions,
-        ...(seatNote === undefined ? {} : { seatNote })
-      }).pipe(Effect.mapError(fromEvaluatorError))
-      // An answer this classifier cannot decode was still paid for.
-      const answers = yield* decodeAnswers(questions, response.answers).pipe(
-        Effect.mapError((error) =>
-          response.usage === undefined
-            ? error
-            : new ClassifierError({ code: error.code, message: error.message, usage: response.usage })
+  const read = SpanFailure.fn(
+    Effect.fn(`Classifier.evaluate(${id})`)((value: State["Type"]) =>
+      Effect.gen(function*() {
+        const evaluator = yield* Evaluator.Evaluator
+        const encoded = yield* encodeState(value).pipe(
+          Effect.mapError((error) => new ClassifierError({ code: "invalid_question", message: error.message }))
         )
-      )
-      return { ...response, answers }
-    })
+        const response = yield* evaluator.evaluate({
+          state: encoded,
+          questions,
+          ...(seatNote === undefined ? {} : { seatNote })
+        }).pipe(Effect.mapError(fromEvaluatorError))
+        // An answer this classifier cannot decode was still paid for.
+        const answers = yield* decodeAnswers(questions, response.answers).pipe(
+          Effect.mapError((error) =>
+            response.usage === undefined
+              ? error
+              : new ClassifierError({ code: error.code, message: error.message, usage: response.usage })
+          )
+        )
+        return { ...response, answers }
+      })
+    )
   )
 
   const evaluate = (value: State["Type"]) => Effect.map(read(value), (reading) => reading.answers)

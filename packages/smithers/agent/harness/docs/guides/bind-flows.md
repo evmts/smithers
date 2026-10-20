@@ -75,11 +75,12 @@ Inside `run`, every failure lands where the cell contract says it must:
   Interruptions are never caught.
 
 A binding can opt safe details into the public failure using
-`publicError: (error: E) => string | undefined`. Select only fields approved
-for cells and journals, for example a public status code. The returned text
-is bounded before it enters the call result. Returning `undefined`, throwing,
-or returning a non-string at runtime uses the opaque default. Harness and
-permission errors bypass this renderer.
+`publicError: (error: Exclude<E, HarnessError>) => string | undefined`. Select
+only fields approved for cells and journals, for example a public status code.
+The returned text is bounded before it enters the call result. Returning
+`undefined`, throwing, or returning a non-string at runtime uses the opaque
+default. Harness and permission errors bypass this renderer, so its parameter
+type leaves `HarnessError` out and a renderer needs no branch for one.
 
 Raw diagnostics remain in the host handler. Inspect them there, for example
 with `Effect.tapError`, and redact credentials before logging or persisting

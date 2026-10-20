@@ -5,6 +5,8 @@ import { defineConfig } from "vitest/config"
 export default defineConfig({
   test: {
     environment: "node",
+    // `scripts/provider-live.test.mjs` is a node:test suite with its own target.
+    include: ["test/**/*.test.ts"],
     // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s
     // wall-clock budget so correct suites survive coverage-instrumented load
     // while a genuine hang still fails the run.

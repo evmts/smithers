@@ -8,7 +8,7 @@
  * @since 0.1.0
  */
 
-import * as Fault from "@smthrs/flow/Fault"
+import { Fault } from "@smthrs/flow"
 import { Schema } from "effect"
 import type { Timing } from "./ModelEvent.ts"
 
@@ -200,23 +200,24 @@ export const isTerminalRefusal = (
  * construction, so a rejected or overflowing one is the factory's, never the
  * person's; a limit is a wait, and a call that ran past its own deadline is a
  * dependency another seat or a retry may answer.
+ *
+ * @category constants
+ * @since 1.0.0-rc.16
  */
-Fault.register(
-  "flows/model/ModelError",
-  {
-    invalid_request: "factory",
-    context_overflow: "factory",
-    no_route: "dependency",
-    authentication: "user",
-    rate_limited: "wait",
-    quota_exceeded: "wait",
-    // Hosted credit is spent: the person adds credit, then resumes.
-    out_of_credit: "user",
-    content_policy: "user",
-    provider_internal: "dependency",
-    transport: "dependency",
-    call_timeout: "dependency",
-    invalid_provider_output: "dependency",
-    unknown: "dependency"
-  } satisfies Fault.Rows<ModelErrorCode>
-)
+export const faults = {
+  invalid_request: "factory",
+  context_overflow: "factory",
+  no_route: "dependency",
+  authentication: "user",
+  rate_limited: "wait",
+  quota_exceeded: "wait",
+  // Hosted credit is spent: the person adds credit, then resumes.
+  out_of_credit: "user",
+  content_policy: "user",
+  provider_internal: "dependency",
+  transport: "dependency",
+  call_timeout: "dependency",
+  invalid_provider_output: "dependency",
+  unknown: "dependency"
+} as const satisfies Fault.Rows<ModelErrorCode>
+Fault.register("flows/model/ModelError", faults)

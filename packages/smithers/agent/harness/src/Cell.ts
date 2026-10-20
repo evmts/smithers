@@ -27,6 +27,7 @@ import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Cause, Context, Effect, Option, Result, Schema } from "effect"
 import { HarnessError } from "./HarnessError.ts"
+import { cellBlocks } from "./internal/fence.ts"
 import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
 
 /**
@@ -247,7 +248,7 @@ export class Rejected extends Schema.TaggedClass<Rejected>("flows/harness/Cell/R
   code: RejectionCode,
   message: Schema.String,
   /** The spent resource when `code` is `limit_exceeded`. */
-  reason: Schema.optional(Schema.Literals(["heap"]))
+  reason: Schema.optional(Schema.Literals(["heap", "stack"]))
 }) {}
 
 /**
@@ -877,15 +878,6 @@ export const callFailure = (result: CallResult): Schema.Json => {
   }
 }
 
-const fenced = /^```(?<info>[^\n`]*)\r?\n(?<body>[\s\S]*?)(?:\n?(?<close>^```[ \t]*(?=\r?$))|(?![\s\S]))/gm
-
-const languageOf = (info: string): Language | undefined => {
-  const tokens = new Set(info.trim().toLowerCase().split(/\s+/).filter((token) => token.length > 0))
-  if (tokens.has("ts") || tokens.has("typescript")) return "typescript"
-  if (tokens.has("cell") || tokens.has("js") || tokens.has("javascript")) return "javascript"
-  return undefined
-}
-
 /**
  * One reply's cell program, and how many fenced blocks it was written in.
  *
@@ -957,12 +949,8 @@ export const extract = (text: string): Result.Result<Extracted, Rejected> => {
   const bodies: Array<string> = []
   const distinct = new Set<string>()
   let typed = false
-  fenced.lastIndex = 0
-  for (const match of text.matchAll(fenced)) {
-    /* v8 ignore next -- `info` is a mandatory group of `fenced`, outside any alternation or quantifier, so it participates in every match; the default only discharges the optional type TypeScript gives `RegExpMatchArray.groups` */
-    const candidate = languageOf(match.groups?.info ?? "")
-    if (candidate === undefined) continue
-    if (match.groups?.close === undefined) {
+  for (const block of cellBlocks(text)) {
+    if (!block.closed) {
       return Result.fail(
         new Rejected({
           code: "output_truncated",
@@ -971,11 +959,9 @@ export const extract = (text: string): Result.Result<Extracted, Rejected> => {
         })
       )
     }
-    if (candidate === "typescript") typed = true
-    /* v8 ignore next -- `body` is likewise mandatory in `fenced`; a match that reached here already produced `info`, so `groups` is present and carries both */
-    const body = match.groups?.body ?? ""
-    bodies.push(body)
-    distinct.add(body)
+    if (block.language === "typescript") typed = true
+    bodies.push(block.body)
+    distinct.add(block.body)
   }
   if (bodies.length === 0) {
     return Result.fail(

@@ -1,10 +1,9 @@
-import { ModelError } from "@smthrs/model/ModelError"
-import { ModelRequest } from "@smthrs/model/ModelRequest"
+import { ModelError, ModelRequest } from "@smthrs/model"
 import { Effect, Stream } from "effect"
 import { expect, test } from "vitest"
 import { fastModelFallback } from "../src/FastModelFallback.ts"
 
-const request = new ModelRequest({ modelId: "gateway", system: [], messages: [], tools: [], params: {} })
+const request = new ModelRequest.ModelRequest({ modelId: "gateway", system: [], messages: [], tools: [], params: {} })
 const answer = { type: "text-delta", id: "text", text: "answer" } as const
 
 test.each(
@@ -14,9 +13,9 @@ test.each(
   const fail = (modelId: string) => ({
     modelId,
     model: {
-      stream: (input: ModelRequest) => {
+      stream: (input: ModelRequest.ModelRequest) => {
         seen.push(input.modelId)
-        return Stream.fail(new ModelError({ code, message: "fixture" }))
+        return Stream.fail(new ModelError.ModelError({ code, message: "fixture" }))
       }
     }
   })
@@ -36,7 +35,7 @@ test.each(["invalid_request", "context_overflow", "content_policy", "invalid_pro
   "%s keeps its own failure",
   async (code) => {
     let backup = false
-    const error = new ModelError({ code, message: "fixture" })
+    const error = new ModelError.ModelError({ code, message: "fixture" })
     const model = fastModelFallback([{ modelId: "gateway", model: { stream: () => Stream.fail(error) } }, {
       modelId: "team",
       model: {
@@ -58,7 +57,7 @@ test("partial output is never replayed on another source", async () => {
       stream: () =>
         Stream.concat(
           Stream.succeed(answer),
-          Stream.fail(new ModelError({ code: "transport", message: "disconnected" }))
+          Stream.fail(new ModelError.ModelError({ code: "transport", message: "disconnected" }))
         )
     }
   }, {
@@ -103,7 +102,7 @@ test("a ChatGPT fallback omits its unsupported output limit", async () => {
   let params: unknown
   const model = fastModelFallback([{
     modelId: "gateway",
-    model: { stream: () => Stream.fail(new ModelError({ code: "transport", message: "down" })) }
+    model: { stream: () => Stream.fail(new ModelError.ModelError({ code: "transport", message: "down" })) }
   }, {
     modelId: "chatgpt",
     outputTokenLimitSupported: false,
@@ -115,7 +114,9 @@ test("a ChatGPT fallback omits its unsupported output limit", async () => {
     }
   }])
   await Effect.runPromise(
-    Stream.runCollect(model.stream(new ModelRequest({ ...request, params: { maxTokens: 4096, temperature: 0.2 } })))
+    Stream.runCollect(
+      model.stream(new ModelRequest.ModelRequest({ ...request, params: { maxTokens: 4096, temperature: 0.2 } }))
+    )
   )
   expect(params).toEqual({ temperature: 0.2 })
 })

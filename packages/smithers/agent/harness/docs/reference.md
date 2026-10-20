@@ -26,7 +26,8 @@ importable as `@smthrs/harness/<Module>`.
 | `Notifications` | `Options`, `make`, `layer` | Adapter from the durable notification queue to harness turn boundaries. |
 | `Cell` | `Language`, `Source`, `digestOf`, `source`, `Continue`, `Complete`, `Park`, `Transition`, `renderText`, `RejectionCode`, `Settled`, `Raised`, `Rejected`, `Outcome`, `FlowProjection`, `project`, `CallFailureCode`, `defaultCallFailureCode`, `callFailureHint`, `TreeEpoch`, `LiveTree`, `CallIdentity`, `declarationDigest`, `Call`, `callOf`, `displayDescriptor`, `baseCheckpoint`, `checkpoint`, `checkpointOf`, `CallResult`, `CallSuccess`, `CallFailure`, `CallResultVariant`, `decodeCallResult`, `decodeOutcome`, `decodeTransition`, `callFailure`, `Extracted`, `extract` | The cell contract. |
 | `Sandbox` | `SandboxErrorCode`, `SandboxError`, `Invocation`, `Mint`, `Minter`, `mintUnavailable`, `Handler`, `Limits`, `EvaluationLimits`, `Capabilities`, `defaultLimits`, `minimumSteps`, `minimumTimeMs`, `minimumMemoryBytes`, `printFrameBytes`, `printStatementFloor`, `printRetainedBytes`, `withDefaults`, `evaluationLimits`, `Intent`, `replTransition`, `RealmEvaluation`, `FrameBoundary`, `RealmFrame`, `Realm`, `RealmOptions`, `Sandbox`, `make`, `layer`, `makeNoop`, `layerNoop`, `realmUnsupported`, `callTimedOut`, `compile`, `PendingCall`, `driveCell`, `raisedOutcome` | The deterministic script sandbox port. |
-| `CellTurn` | `defaultMaxFrames`, `defaultReadOnlyFrames`, `defaultModelCallMs`, `modelCallMsFor`, `defaultRepeatFrames`, `defaultNarrowingDemands`, `defaultUnmovedDemands`, `defaultUnresolvedDemands`, `defaultClaimDemands`, `defaultRevalidations`, `defaultMaxCheckpoints`, `State`, `Input`, `MemoryRow`, `Memory`, `make`, `Environment`, `teach`, `instructionsSegment`, `memorySegment`, `run` | The cell-first controller. |
+| `CellTurn` | `defaultMaxFrames`, `defaultReadOnlyFrames`, `defaultModelCallMs`, `modelCallMsFor`, `defaultRepeatFrames`, `defaultNarrowingDemands`, `defaultUnmovedDemands`, `defaultUnresolvedDemands`, `defaultClaimDemands`, `defaultRevalidations`, `defaultMaxCheckpoints`, `State`, `Input`, `MemoryRow`, `Memory`, `make`, `Environment`, `Profile`, `teach`, `instructionsSegment`, `memorySegment`, `run` | The cell-first controller. |
+| `DoneText` | `project` | The answer text of a reply that is still streaming. |
 | `CellHistory` | `ExecutedCell`, `Service`, `CellHistory`, `make`, `makeCells`, `makeNoop`, `layer`, `layerCells`, `layerNoop` | The source of every cell the current turn executed. |
 | `CellCalls` | `Implementation`, `Prompt`, `PromptRunner`, `Options`, `Resolver`, `make` | Registry-backed resolution for the flow calls a cell makes. |
 | `FlowBinding` | `Declared`, `DescriptorOptions`, `descriptorOf`, `Binding`, `Options`, `make`, `provide`, `Source`, `source`, `Catalog`, `empty`, `catalogResult`, `catalog`, `registry` | The executable-flow binding contract. |
@@ -446,10 +447,22 @@ Governing design: [durable cell loop](./concepts.md#durable-cell-loop).
 | `Memory` | interface | models | Opening memory as the host declared it: its rows, the digest the opening window declares, and how the host renders rows. |
 | `make` | const | constructors | Constructs an initial controller state. |
 | `Environment` | type | models | Host-measured container facts accepted by `teach`. |
+| `Profile` | type | models | The contract profile `teach` renders: `workspace`, the default, or `conversation`. |
 | `teach` | const | constructors | Prepends the cell contract and the callable-flow catalog to a context window. |
 | `instructionsSegment` | const | constructors | The prefix segment that carries human-provided instruction files, every chunk not withheld kept. |
 | `memorySegment` | const | constructors | The prefix segment that carries opening memory under its declared digest. |
 | `run` | const | streams | Runs the cell loop until it completes, parks, or exhausts its budget. |
+
+## DoneText
+
+`import { DoneText } from "@smthrs/harness"` (on the root only, with no subpath)
+
+The answer text of a reply that is still streaming: the decoded prefix of the
+literal a cell passes to `ctx.done`, for display before the run settles.
+
+| Export | Kind | Category | Summary |
+| --- | --- | --- | --- |
+| `project` | const | projections | The decoded prefix of the string or template literal passed to the last `ctx.done(` in a reply's cell blocks, or `Option.none()`. |
 
 ## CellHistory
 

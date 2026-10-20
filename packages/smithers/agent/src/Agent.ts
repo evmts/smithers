@@ -137,6 +137,21 @@ export interface Options {
   readonly prompt: string
   /** Stable system teaching placed ahead of the cell contract. */
   readonly system?: ReadonlyArray<string> | undefined
+  /**
+   * The cell contract the run is taught; see `CellTurn.Profile`. Omitted is
+   * `workspace`, the contract every run was taught before profiles existed.
+   *
+   * `conversation` is for a run that answers a person through its catalog's
+   * flows rather than changing a checkout. Beside the shorter contract, it
+   * leaves out the fact that this host pins no trees, which names
+   * `ctx.base` and `ctx.checkpoint()` that contract never teaches, and it
+   * defaults {@link repeatCap} and {@link narrowingCap} to zero, because
+   * their demands name a code task's evidence. {@link readOnlyCap} is
+   * already off unless set. A value set explicitly still wins.
+   *
+   * @since 1.0.0-rc.16
+   */
+  readonly profile?: CellTurn.Profile | undefined
   readonly registry: Registry.Registry
   /** Shared-kernel plugins resolved for the harness target. */
   readonly plugins?: PluginInput<FlowsHooks> | undefined
@@ -440,6 +455,12 @@ const stanceOf = (options: Options): "careful" | "paranoid" | undefined =>
   options.judged === true ? options.supervisor?.stance ?? "careful" : undefined
 
 /**
+ * Zero for a cap a `conversation` run leaves off unless it sets one, and
+ * `undefined`, the cell turn's own default, for every other run.
+ */
+const conversationOff = (options: Options): 0 | undefined => options.profile === "conversation" ? 0 : undefined
+
+/**
  * The opening memory the run-start relevance reading judges. The rows it is
  * handed back are rows of `declared`, so they render as the host's rows.
  */
@@ -465,7 +486,7 @@ const opening = (
   // shared by every host, while only a host with no store refuses `at`.
   const declared: Array<ContextWindow.SegmentInput> = [
     ...(options.system ?? []),
-    ...(pinned ? [] : [Checkpointed.unpinnedFact])
+    ...(pinned || options.profile === "conversation" ? [] : [Checkpointed.unpinnedFact])
   ].map((text) => ({
     kind: "system",
     zone: "prefix",
@@ -505,7 +526,8 @@ const opening = (
     }),
     flows,
     undefined,
-    stanceOf(options)
+    stanceOf(options),
+    options.profile
   )
 }
 
@@ -1036,8 +1058,8 @@ const runProductionUnmeasured: Service["run"] = (options) =>
             maxFrames: options.maxFrames,
             readOnlyCap: options.readOnlyCap,
             modelCallMs: options.modelCallMs,
-            repeatCap: options.repeatCap,
-            narrowingCap: options.narrowingCap,
+            repeatCap: options.repeatCap ?? conversationOff(options),
+            narrowingCap: options.narrowingCap ?? conversationOff(options),
             unmovedCap: options.unmovedCap,
             unresolvedCap: options.unresolvedCap,
             claimCap: options.claimCap,
@@ -1055,6 +1077,7 @@ const runProductionUnmeasured: Service["run"] = (options) =>
             contextWindowTokensFor: options.contextWindowTokensFor,
             judged: options.judged,
             stance: stanceOf(options),
+            profile: options.profile,
             instructions: options.instructions,
             pinned,
             monitors,

@@ -19,7 +19,7 @@ operations that need a real tree.
 ## Bind the git store
 
 ```ts
-import * as Checkpoints from "@smthrs/std/Checkpoints"
+import { Checkpoints } from "@smthrs/std"
 
 const store = Checkpoints.layerGit({
   root: "/workspace/repo", // the host path of the git repository

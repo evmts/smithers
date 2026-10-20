@@ -41,7 +41,7 @@
  * @since 1.0.0
  */
 
-import type { ChildProcessSpawner } from "@smthrs/kernel/ChildProcessSpawner"
+import { ambientEnvironment, type ChildProcessSpawner } from "@smthrs/kernel/ChildProcessSpawner"
 import { Effect } from "effect"
 import * as StdError from "../StdError.ts"
 import * as Exec from "./Exec.ts"
@@ -156,8 +156,8 @@ const open = (root: string): Effect.Effect<Repository, StdError.StdError, ChildP
   })
 
 const temporaryRoot = (): string => {
-  const env = globalThis.process?.env
-  const configured = [env?.TMPDIR, env?.TEMP, env?.TMP].find((value) => value !== undefined && value !== "")
+  const env = ambientEnvironment()
+  const configured = [env.TMPDIR, env.TEMP, env.TMP].find((value) => value !== undefined && value !== "")
   // Git for Windows and its shell have different /tmp roots. An absolute
   // drive path with forward slashes names the same directory to both.
   return configured === undefined ? "/tmp" : configured.replace(/\\/g, "/").replace(/\/+$/, "")
@@ -235,18 +235,17 @@ const shadowOf = (repository: Repository, path: string): Shadow => ({
 })
 
 /**
- * Runs `use` with a fresh {@link Shadow} over the repository at `root`, and
- * deletes the shadow however `use` ends.
+ * Runs `use` with a fresh {@link Shadow} over `repository`, and deletes the
+ * shadow however `use` ends.
  *
  * @category utilities
  * @since 1.0.0
  */
 const withShadow = <A, E, R>(
-  root: string | Repository,
+  repository: Repository,
   use: (shadow: Shadow) => Effect.Effect<A, E, R>
 ): Effect.Effect<A, E | StdError.StdError, R | ChildProcessSpawner> =>
   Effect.gen(function*() {
-    const repository = typeof root === "string" ? yield* open(root) : root
     const path = `${temporaryRoot()}/smithers-git-${globalThis.crypto.randomUUID()}`
     return yield* Effect.acquireUseRelease(
       Effect.succeed(path),
@@ -279,7 +278,7 @@ const relative = (from: string, to: string): string => {
   const target = to.split("/").filter((part) => part !== "")
   let shared = 0
   while (shared < source.length && shared < target.length && source[shared] === target[shared]) shared++
-  return [...source.slice(shared).map(() => ".."), ...target.slice(shared)].join("/") || "."
+  return [...source.slice(shared).map(() => ".."), ...target.slice(shared)].join("/")
 }
 
 /**
@@ -332,10 +331,10 @@ const measure = [
  * `~/.cache`, under `smithers`. Empty when neither is an absolute path.
  */
 const cacheRoot = (): string => {
-  const env = globalThis.process?.env
-  const xdg = env?.XDG_CACHE_HOME?.replace(/\/+$/, "")
+  const env = ambientEnvironment()
+  const xdg = env.XDG_CACHE_HOME?.replace(/\/+$/, "")
   if (xdg !== undefined && xdg.startsWith("/")) return `${xdg}/smithers`
-  const home = env?.HOME?.replace(/\/+$/, "")
+  const home = env.HOME?.replace(/\/+$/, "")
   return home !== undefined && home.startsWith("/") ? `${home}/.cache/smithers` : ""
 }
 

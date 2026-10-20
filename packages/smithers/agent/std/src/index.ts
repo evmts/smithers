@@ -139,8 +139,6 @@ export * as WebSearch from "./WebSearch.ts"
 export * as ExaWebSearch from "./ExaWebSearch.ts"
 /** @category services @since 1.0.0 */
 export * as LanguageServer from "./LanguageServer.ts"
-/** @category layers @since 1.0.0 */
-export * as NodeLanguageServer from "./NodeLanguageServer.ts"
 /** @category flows @since 1.0.0 */
 export * as Lsp from "./Lsp.ts"
 

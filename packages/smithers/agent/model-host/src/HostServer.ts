@@ -1,18 +1,14 @@
 /**
- * Authenticated Fetch binding for the shared model turn host.
+ * Authenticated `effect/http` handler for the shared model turn host.
  *
  * @since 1.0.0-rc.0
  */
 
 import { digestSync } from "@smthrs/crypto"
-import type * as Model from "@smthrs/model/Model"
-import { ModelError } from "@smthrs/model/ModelError"
-import { AgentTurnCursorSchema } from "@smthrs/rpc/AgentTurnJournal"
-import { ContextPreflightInputSchema } from "@smthrs/rpc/ContextPreflight"
-import type { ContextPreflightInput } from "@smthrs/rpc/ContextPreflight"
-import type { DocsPage } from "@smthrs/rpc/DocsPages"
-import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { type Model, ModelError } from "@smthrs/model"
+import { AgentTurnJournal, ContextPreflight, type DocsPages, type NativeAgent } from "@smthrs/rpc"
 import { Cause, Effect, Exit, Metric, Option } from "effect"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { z } from "zod"
 import type { CallbackTransportObserver } from "./CallbackTransport.ts"
 import { runContextPreflight } from "./ContextPreflight.ts"
@@ -67,7 +63,7 @@ const WireGrantSchema = z.object({
   legId: Identity,
   generation: z.number().int().positive(),
   token: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/),
-  cursor: AgentTurnCursorSchema,
+  cursor: AgentTurnJournal.AgentTurnCursorSchema,
   expiresAt: z.string().min(1).max(64),
   request: z.unknown(),
   producerBaseUrl: z.string().url(),
@@ -97,7 +93,7 @@ export interface ModelTurnResolution {
   readonly options: ModelTurnOptions
   /** Authorized SharedEntries and pinned repository data, resolved on the host. */
   readonly preflight?: {
-    readonly input: ContextPreflightInput
+    readonly input: ContextPreflight.ContextPreflightInput
     readonly model: Model.Model
     readonly options: ModelTurnOptions
   }
@@ -113,7 +109,7 @@ export interface ModelTurnResolution {
  */
 export type ModelTurnResolver = (
   grant: DurableChatGrant,
-  selection?: ContextPreflightInput
+  selection?: ContextPreflight.ContextPreflightInput
 ) => Effect.Effect<ModelTurnResolution, ResolveFailed>
 
 /**
@@ -128,9 +124,9 @@ export interface ModelTurnHandlerOptions {
   readonly installOrigin?: string
   readonly callbackBaseUrl: string
   readonly resolve: ModelTurnResolver
-  readonly fetchImpl?: FetchLike
+  readonly fetchImpl?: NativeAgent.FetchLike
   /** The in-app docs pages this host's build bundles; host-owned turns read them through `docs`. */
-  readonly docs?: ReadonlyArray<DocsPage>
+  readonly docs?: ReadonlyArray<DocsPages.DocsPage>
   /**
    * Observes each turn's journal callbacks, so a failed one answers with the
    * phase it reached. The Node host passes `FetchTransport.observe` from
@@ -157,14 +153,14 @@ const normalizedBaseUrl = (raw: string): string => {
   return value.toString()
 }
 
-const turnRequest = (value: unknown): StartAgentTurnRequest | undefined => {
+const turnRequest = (value: unknown): NativeAgent.StartAgentTurnRequest | undefined => {
   if (typeof value !== "object" || value === null) return undefined
   const body = value as Record<string, unknown>
   if (typeof body.runId !== "string" || typeof body.instructions !== "string" || !Array.isArray(body.messages)) {
     return undefined
   }
   if (body.tools !== undefined && !Array.isArray(body.tools)) return undefined
-  return value as StartAgentTurnRequest
+  return value as NativeAgent.StartAgentTurnRequest
 }
 
 const decodeGrant = (value: unknown, callbackBaseUrl: string): DurableChatGrant | undefined => {
@@ -208,10 +204,10 @@ const SelectionRequestSchema = z.object({
   ownerId: z.number().int().positive(),
   instructions: z.literal(""),
   messages: z.array(z.never()).max(0),
-  contextSelection: ContextPreflightInputSchema
+  contextSelection: ContextPreflight.ContextPreflightInputSchema
 }).strict()
 
-const streamRequest = (value: unknown): StartAgentTurnRequest | undefined => {
+const streamRequest = (value: unknown): NativeAgent.StartAgentTurnRequest | undefined => {
   if (typeof value !== "object" || value === null) return undefined
   const body = value as Record<string, unknown>
   if (typeof body.runId !== "string" || !Array.isArray(body.messages)) return undefined
@@ -219,7 +215,7 @@ const streamRequest = (value: unknown): StartAgentTurnRequest | undefined => {
   return {
     ...body,
     instructions: typeof body.instructions === "string" ? body.instructions : ""
-  } as StartAgentTurnRequest
+  } as NativeAgent.StartAgentTurnRequest
 }
 
 /** The most NDJSON bytes one sealed stream response holds; the Go reader caps at the same 16 MiB. */
@@ -282,7 +278,7 @@ const classify = (
       ? { failure: "Interrupted", response: "cancelled" }
       : { failure: "Defect", response: "turn_failed" }
   }
-  if (error instanceof ModelError) {
+  if (error instanceof ModelError.ModelError) {
     return {
       failure: "ModelFailure",
       code: error.code,
@@ -296,6 +292,12 @@ const classify = (
     response: "turn_failed"
   }
 }
+
+const json = (body: unknown, status = 200): HttpServerResponse.HttpServerResponse =>
+  HttpServerResponse.jsonUnsafe(body, { status })
+
+const refused = (code: string, status: number): HttpServerResponse.HttpServerResponse =>
+  json({ status: "error", code }, status)
 
 /**
  * The stage a sealed model stream stopped at, and what stopped it there:
@@ -314,7 +316,7 @@ const streamRefused = (
   diagnostics: HostDiagnostics,
   stage: "resolve" | "stream",
   cause: Cause.Cause<ResolveFailed | Model.ModelFailure | StreamTooLarge>
-): Response => {
+): HttpServerResponse.HttpServerResponse => {
   const classified = classify(cause)
   // `classify` also carries the status a journal refused a callback with, and
   // this route cannot produce one: a sealed model stream commits nothing, so
@@ -329,7 +331,7 @@ const streamRefused = (
     ...(classified.code === undefined ? {} : { providerCode: classified.code })
   }
   diagnostics.record("model_stream", "refused", refusal)
-  return Response.json({ status: "error", code: "stream_failed", ...refusal }, { status: 502 })
+  return json({ status: "error", code: "stream_failed", ...refusal }, 502)
 }
 
 const utf8 = new TextEncoder()
@@ -345,6 +347,16 @@ const sameDigest = (left: string, right: string): boolean => {
 }
 
 /**
+ * Whether a presented Authorization header value is `Bearer <authorization>`,
+ * compared in constant time: equal length SHA-256 digests keep the comparison
+ * from leaking a prefix match.
+ */
+const bearerCheck = (authorization: string): (presented: string | undefined) => boolean => {
+  const expected = digest(`Bearer ${authorization}`)
+  return (presented) => presented !== undefined && sameDigest(digest(presented), expected)
+}
+
+/**
  * The bearer check every model host route runs: compares the presented
  * Authorization header with `Bearer <authorization>` in constant time. Equal
  * length SHA-256 digests keep the comparison from leaking a prefix match.
@@ -353,64 +365,86 @@ const sameDigest = (left: string, right: string): boolean => {
  * @since 1.0.0-rc.0
  */
 export const bearerAuthorization = (authorization: string): (request: Request) => boolean => {
-  const expected = digest(`Bearer ${authorization}`)
-  return (request) => {
-    const presented = request.headers.get("authorization")
-    return presented !== null && sameDigest(digest(presented), expected)
+  const check = bearerCheck(authorization)
+  return (request) => check(request.headers.get("authorization") ?? undefined)
+}
+
+/** The request's path, read off its URL and never its Host header; an unparseable one routes nowhere. */
+const pathOf = (url: string): string => {
+  try {
+    return new URL(url, "http://model-host.invalid").pathname
+  } catch {
+    return ""
   }
 }
 
 /**
- * Creates the Fetch handler shared by the local executable and Plue service.
+ * Creates the `effect/http` handler shared by the local executable and Plue
+ * service. It reads the current `HttpServerRequest` and always answers with an
+ * `HttpServerResponse`: every refusal is a response, never a failure.
+ *
+ * Serve it with `HttpEffect.toWebHandler` from `effect/http`, which turns it
+ * into a Fetch handler and interrupts it when the caller goes away, or mount it
+ * on an `HttpRouter`. The handler runs in the caller's fiber, so the caller's
+ * services, tracer, logger and metric registry reach every turn. Interrupting
+ * a turn still records how it ended before the interruption completes.
  *
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const createModelTurnHandler = (options: ModelTurnHandlerOptions): (request: Request) => Promise<Response> => {
+export const createModelTurnHandler = (
+  options: ModelTurnHandlerOptions
+): Effect.Effect<HttpServerResponse.HttpServerResponse, never, HttpServerRequest.HttpServerRequest> => {
   if (options.authorization.trim() === "") throw new Error("model host authorization is required")
   const callbackBaseUrl = normalizedBaseUrl(options.callbackBaseUrl)
-  const authorized = bearerAuthorization(options.authorization)
-  return async (request) => {
-    const url = new URL(request.url)
-    if (url.pathname === MODEL_HOST_HEALTH_PATH && request.method === "GET") {
-      return Response.json({ protocol: MODEL_HOST_PROTOCOL })
-    }
-    if (url.pathname === MODEL_HOST_STREAM_PATH) {
-      if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })
-      if (!authorized(request)) {
-        return Response.json({ status: "error", code: "forbidden" }, { status: 401 })
+  const authorized = bearerCheck(options.authorization)
+  const methodNotAllowed = () => HttpServerResponse.text("Method not allowed", { status: 405 })
+  const forbidden = () => refused("forbidden", 401)
+  // Reading the body and running a model can be interrupted, however the
+  // handler is mounted: `HttpEffect.toWebHandler` alone would run them
+  // uninterruptibly, so a caller who left would hold a provider call open.
+  // Recording how a turn ended always runs to the end.
+  return Effect.uninterruptible(
+    Effect.gen(function*() {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const pathname = pathOf(request.url)
+      const presented = request.headers["authorization"]
+      if (pathname === MODEL_HOST_HEALTH_PATH && request.method === "GET") {
+        return json({ protocol: MODEL_HOST_PROTOCOL })
       }
-      const body = streamRequest(await boundedJson(request))
-      if (body === undefined) return Response.json({ status: "error", code: "request_invalid" }, { status: 400 })
-      const wireBody = body as unknown as Record<string, unknown>
-      const ownerId = typeof wireBody.ownerId === "number" && Number.isSafeInteger(wireBody.ownerId)
-        ? wireBody.ownerId :
-        0
-      const grant: DurableChatGrant = {
-        turnId: `model-stream-${body.runId}`,
-        ownerId,
-        runId: body.runId,
-        legId: body.runId,
-        generation: 1,
-        token: "model_stream_model_stream_model_stream_1234",
-        cursor: { version: 1, runId: body.runId, legId: body.runId, batch: 0, position: 0, hash: "0".repeat(64) },
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        request: body,
-        producerBaseUrl: callbackBaseUrl
-      }
-      const diagnostics = createHostDiagnostics({ turnId: grant.turnId, write: options.writeDiagnostic })
-      const resolveExit = await Effect.runPromiseExit(options.resolve(grant), { signal: request.signal })
-      if (Exit.isFailure(resolveExit)) return streamRefused(diagnostics, "resolve", resolveExit.cause)
-      const resolved = resolveExit.value
-      const encoder = new TextEncoder()
-      const lines: Array<string> = []
-      let size = 0
-      const streamExit = await Effect.runPromiseExit(
-        runModelTurn(
+      if (pathname === MODEL_HOST_STREAM_PATH) {
+        if (request.method !== "POST") return methodNotAllowed()
+        if (!authorized(presented)) return forbidden()
+        const body = streamRequest(yield* Effect.interruptible(boundedJson(request)))
+        if (body === undefined) return refused("request_invalid", 400)
+        const wireBody = body as unknown as Record<string, unknown>
+        const ownerId = typeof wireBody.ownerId === "number" && Number.isSafeInteger(wireBody.ownerId)
+          ? wireBody.ownerId :
+          0
+        const grant: DurableChatGrant = {
+          turnId: `model-stream-${body.runId}`,
+          ownerId,
+          runId: body.runId,
+          legId: body.runId,
+          generation: 1,
+          token: "model_stream_model_stream_model_stream_1234",
+          cursor: { version: 1, runId: body.runId, legId: body.runId, batch: 0, position: 0, hash: "0".repeat(64) },
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          request: body,
+          producerBaseUrl: callbackBaseUrl
+        }
+        const diagnostics = createHostDiagnostics({ turnId: grant.turnId, write: options.writeDiagnostic })
+        const resolveExit = yield* Effect.exit(Effect.interruptible(options.resolve(grant)))
+        if (Exit.isFailure(resolveExit)) return streamRefused(diagnostics, "resolve", resolveExit.cause)
+        const resolved = resolveExit.value
+        const encoder = new TextEncoder()
+        const lines: Array<string> = []
+        let size = 0
+        const streamExit = yield* Effect.exit(Effect.interruptible(runModelTurn(
           resolved.model,
           body,
           resolved.options,
-          (frame: AgentTurnFrame) => {
+          (frame: NativeAgent.AgentTurnFrame) => {
             const line = `${JSON.stringify(frame)}\n`
             size += encoder.encode(line).byteLength
             if (size > MAX_STREAM_BYTES) return Effect.fail(new StreamTooLarge({ limitBytes: MAX_STREAM_BYTES }))
@@ -419,88 +453,82 @@ export const createModelTurnHandler = (options: ModelTurnHandlerOptions): (reque
           },
           undefined,
           diagnostics
-        ),
-        { signal: request.signal }
-      )
-      if (Exit.isFailure(streamExit)) return streamRefused(diagnostics, "stream", streamExit.cause)
-      return new Response(lines.join(""), {
-        status: 200,
-        headers: { "content-type": "application/x-ndjson", "cache-control": "no-store" }
-      })
-    }
-    if (url.pathname === MODEL_HOST_CONTEXT_SELECT_PATH) {
-      if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })
-      if (!authorized(request)) {
-        return Response.json({ status: "error", code: "forbidden" }, { status: 401 })
+        )))
+        if (Exit.isFailure(streamExit)) return streamRefused(diagnostics, "stream", streamExit.cause)
+        return HttpServerResponse.text(lines.join(""), {
+          contentType: "application/x-ndjson",
+          headers: { "cache-control": "no-store" }
+        })
       }
-      const body = SelectionRequestSchema.safeParse(await boundedJson(request))
-      if (!body.success) return Response.json({ status: "error", code: "request_invalid" }, { status: 400 })
-      const { runId, ownerId, contextSelection } = body.data
-      const grant: DurableChatGrant = {
-        turnId: `context-selection-${runId}`,
-        ownerId,
-        runId,
-        legId: runId,
-        generation: 1,
-        token: "context_selection_context_selection_12",
-        cursor: { version: 1, runId, legId: runId, batch: 0, position: 0, hash: "0".repeat(64) },
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        request: { runId, instructions: "", messages: [] },
-        producerBaseUrl: callbackBaseUrl
-      }
-      const exit = await Effect.runPromiseExit(
-        options.resolve(grant, contextSelection).pipe(
-          Effect.flatMap(({ preflight }) =>
-            preflight === undefined
-              ? Effect.fail(
-                new ModelError({ code: "invalid_provider_output", message: "context selector is unavailable" })
-              )
-              : runContextPreflight(contextSelection, preflight.model, preflight.options)
+      if (pathname === MODEL_HOST_CONTEXT_SELECT_PATH) {
+        if (request.method !== "POST") return methodNotAllowed()
+        if (!authorized(presented)) return forbidden()
+        const body = SelectionRequestSchema.safeParse(yield* Effect.interruptible(boundedJson(request)))
+        if (!body.success) return refused("request_invalid", 400)
+        const { runId, ownerId, contextSelection } = body.data
+        const grant: DurableChatGrant = {
+          turnId: `context-selection-${runId}`,
+          ownerId,
+          runId,
+          legId: runId,
+          generation: 1,
+          token: "context_selection_context_selection_12",
+          cursor: { version: 1, runId, legId: runId, batch: 0, position: 0, hash: "0".repeat(64) },
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          request: { runId, instructions: "", messages: [] },
+          producerBaseUrl: callbackBaseUrl
+        }
+        const exit = yield* Effect.exit(Effect.interruptible(
+          options.resolve(grant, contextSelection).pipe(
+            Effect.flatMap(({ preflight }) =>
+              preflight === undefined
+                ? Effect.fail(
+                  new ModelError.ModelError({
+                    code: "invalid_provider_output",
+                    message: "context selector is unavailable"
+                  })
+                )
+                : runContextPreflight(contextSelection, preflight.model, preflight.options)
+            )
           )
-        ),
-        { signal: request.signal }
-      )
-      if (Exit.isSuccess(exit)) return Response.json(exit.value.result)
-      return Response.json({ status: "error", code: classify(exit.cause).response }, { status: 502 })
-    }
-    if (url.pathname !== MODEL_HOST_TURN_PATH) return new Response("Not found", { status: 404 })
-    if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })
-    if (!authorized(request)) {
-      return Response.json({ status: "error", code: "forbidden" }, { status: 401 })
-    }
-    const grant = decodeGrant(await boundedJson(request), callbackBaseUrl)
-    if (grant === undefined) return Response.json({ status: "error", code: "request_invalid" }, { status: 400 })
-    const started = performance.now()
-    const exit = await Effect.runPromiseExit(
-      options.resolve(grant).pipe(
-        Effect.flatMap(({ model, options: modelOptions, preflight }) =>
-          runDurableChatTurn(
-            model,
-            { ...grant, ...(options.installOrigin === undefined ? {} : { installOrigin: options.installOrigin }) },
-            modelOptions,
-            callbackBaseUrl,
-            options.fetchImpl,
-            preflight,
-            options.docs,
-            createHostDiagnostics({ turnId: grant.turnId, write: options.writeDiagnostic }),
-            options.observeTransport
+        ))
+        if (Exit.isSuccess(exit)) return json(exit.value.result)
+        return refused(classify(exit.cause).response, 502)
+      }
+      if (pathname !== MODEL_HOST_TURN_PATH) return HttpServerResponse.text("Not found", { status: 404 })
+      if (request.method !== "POST") return methodNotAllowed()
+      if (!authorized(presented)) return forbidden()
+      const grant = decodeGrant(yield* Effect.interruptible(boundedJson(request)), callbackBaseUrl)
+      if (grant === undefined) return refused("request_invalid", 400)
+      const started = performance.now()
+      const exit = yield* Effect.exit(Effect.interruptible(
+        options.resolve(grant).pipe(
+          Effect.flatMap(({ model, options: modelOptions, preflight }) =>
+            runDurableChatTurn(
+              model,
+              { ...grant, ...(options.installOrigin === undefined ? {} : { installOrigin: options.installOrigin }) },
+              modelOptions,
+              callbackBaseUrl,
+              options.fetchImpl,
+              preflight,
+              options.docs,
+              createHostDiagnostics({ turnId: grant.turnId, write: options.writeDiagnostic }),
+              options.observeTransport
+            )
           )
         )
-      ),
-      { signal: request.signal }
-    )
-    const elapsed = performance.now() - started
-    if (Exit.isSuccess(exit)) {
-      await Effect.runPromise(Metric.update(Metric.withAttributes(turnDuration, { outcome: "success" }), elapsed))
-      return new Response(null, { status: 204 })
-    }
-    // Provider and transport causes can hold signed requests, so the log line
-    // and the response carry the failure class and status codes only. The
-    // durable Go boundary records the generic terminal receipt after this
-    // refusal.
-    const failed = classify(exit.cause)
-    await Effect.runPromise(
-      Effect.logError("model host turn failed").pipe(
+      ))
+      const elapsed = performance.now() - started
+      if (Exit.isSuccess(exit)) {
+        yield* Metric.update(Metric.withAttributes(turnDuration, { outcome: "success" }), elapsed)
+        return HttpServerResponse.empty({ status: 204 })
+      }
+      // Provider and transport causes can hold signed requests, so the log line
+      // and the response carry the failure class and status codes only. The
+      // durable Go boundary records the generic terminal receipt after this
+      // refusal.
+      const failed = classify(exit.cause)
+      yield* Effect.logError("model host turn failed").pipe(
         Effect.annotateLogs({
           failure: failed.failure,
           ...(failed.status === undefined ? {} : { status: failed.status }),
@@ -510,15 +538,15 @@ export const createModelTurnHandler = (options: ModelTurnHandlerOptions): (reque
           runId: grant.runId,
           generation: grant.generation,
           elapsedMs: Math.round(elapsed)
-        }),
-        Effect.andThen(Metric.update(Metric.withAttributes(turnFailures, { failure: failed.failure }), 1)),
-        Effect.andThen(Metric.update(Metric.withAttributes(turnDuration, { outcome: "failure" }), elapsed))
+        })
       )
-    )
-    return Response.json({
-      status: "error",
-      code: failed.response,
-      ...(failed.transport === undefined ? {} : { transport: failed.transport })
-    }, { status: 502 })
-  }
+      yield* Metric.update(Metric.withAttributes(turnFailures, { failure: failed.failure }), 1)
+      yield* Metric.update(Metric.withAttributes(turnDuration, { outcome: "failure" }), elapsed)
+      return json({
+        status: "error",
+        code: failed.response,
+        ...(failed.transport === undefined ? {} : { transport: failed.transport })
+      }, 502)
+    })
+  )
 }

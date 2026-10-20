@@ -1,6 +1,6 @@
-import * as Model from "@smthrs/model/Model"
-import type * as ModelEvent from "@smthrs/model/ModelEvent"
+import { Model, type ModelEvent } from "@smthrs/model"
 import { Deferred, Effect, Stream } from "effect"
+import { HttpEffect } from "effect/http"
 import { environmentModelResolver } from "../../src/EnvironmentResolver.ts"
 import { createModelTurnHandler, MODEL_HOST_PROTOCOL } from "../../src/HostServer.ts"
 
@@ -15,7 +15,7 @@ const events: ReadonlyArray<ModelEvent.ModelEvent> = [
   { type: "settle", stopReason: "stop" }
 ]
 const modelOrigin = process.env.SMITHERS_FIXTURE_MODEL_ORIGIN
-const handler = createModelTurnHandler({
+const handler = HttpEffect.toWebHandler(createModelTurnHandler({
   authorization,
   callbackBaseUrl,
   resolve: modelOrigin === undefined ? (grant) => {
@@ -42,7 +42,7 @@ const handler = createModelTurnHandler({
     binding: { protocol: "openai-chat", baseUrl: modelOrigin, modelId: "recording-coding", credential: "FIXTURE" },
     env: { SMITHERS_MODEL_KEY_FIXTURE: credential, SMITHERS_MODEL_KEY_FIXTURE_ORIGIN: modelOrigin }
   })
-})
+}))
 
 const server = Bun.serve({
   hostname: "127.0.0.1",

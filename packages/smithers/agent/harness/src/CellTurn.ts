@@ -1001,6 +1001,12 @@ export interface Input {
    */
   readonly stance?: typeof AgentEvent.Stance.Type | undefined
   /**
+   * The contract profile the run is taught; omitted teaches `workspace`. See
+   * {@link Profile}. Like {@link stance}, the window must already have been
+   * taught with it, so the loop's re-teach replaces the same segments.
+   */
+  readonly profile?: Profile | undefined
+  /**
    * Human-provided instruction files, such as `AGENTS.md`, as the window's
    * {@link instructionsSegment} renders them. When {@link judged}, frame 0
    * asks Jev which of their chunks the task does not need and drops those it
@@ -1277,6 +1283,20 @@ export const make = (options: {
 export type Environment = cellPrompt.Environment
 
 /**
+ * The contract profile {@link teach} renders: `workspace`, the default, for a
+ * run that changes a checkout, or `conversation` for a run that answers a
+ * person through the flows its catalog lists.
+ *
+ * `conversation` keeps the REPL contract and rules 1 to 6 byte for byte and
+ * drops rules 7 to 9, the worked bug-fix example and the checkout's history
+ * fact. The `workspace` contract is unchanged.
+ *
+ * @category models
+ * @since 1.0.0-rc.16
+ */
+export type Profile = cellPrompt.Profile
+
+/**
  * Prepends the cell contract and the callable-flow catalog to a context window.
  *
  * The model is taught one thing — how to write a cell — and shown exactly the
@@ -1285,7 +1305,8 @@ export type Environment = cellPrompt.Environment
  * projected context never has to carry it.
  *
  * `stance`, when set, adds the run's one-line static stance after the
- * contract; see {@link Input.stance}.
+ * contract; see {@link Input.stance}. `profile` picks the contract; omitted
+ * teaches `workspace`. See {@link Profile}.
  *
  * @category constructors
  * @since 0.1.0
@@ -1295,7 +1316,8 @@ export const teach = (
   contextWindow: ContextWindow.ContextWindow,
   flows: ReadonlyArray<Descriptor.FlowDescriptor>,
   environment?: Environment,
-  stance?: typeof AgentEvent.Stance.Type
+  stance?: typeof AgentEvent.Stance.Type,
+  profile?: Profile
 ): ContextWindow.ContextWindow => {
   const projections: Record<string, Cell.FlowProjection & Pick<Descriptor.FlowDescriptor, "provenance" | "path">> = {}
   for (const descriptor of flows) {
@@ -1305,7 +1327,7 @@ export const teach = (
       path: descriptor.path
     }
   }
-  const taught = cellPrompt.make(projections, environment, stance).map((section) =>
+  const taught = cellPrompt.make(projections, environment, stance, profile).map((section) =>
     ContextWindow.makeSegment({
       kind: "system",
       zone: "prefix",
@@ -4692,7 +4714,13 @@ export const run = (
           // Replace only the teaching we supplied, preserving the host's
           // prefix and the accumulated transcript. Rebuild before compaction
           // so token accounting and the sealed request use this snapshot too.
-          const previous = teach(ContextWindow.empty(current.contextWindow.modelId), flows, undefined, input.stance)
+          const previous = teach(
+            ContextWindow.empty(current.contextWindow.modelId),
+            flows,
+            undefined,
+            input.stance,
+            input.profile
+          )
           const digests = new Set(previous.segments.map((segment) => segment.digest))
           current = advance(current, {
             contextWindow: teach(
@@ -4702,7 +4730,8 @@ export const run = (
               }),
               shown,
               undefined,
-              input.stance
+              input.stance,
+              input.profile
             )
           })
           flows = shown

@@ -1,19 +1,23 @@
-import * as Model from "@smthrs/model/Model"
-import type * as ModelEvent from "@smthrs/model/ModelEvent"
-import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
-import type { AgentTurnBatch, AgentTurnCursor } from "@smthrs/rpc/AgentTurnJournal"
-import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { Model, type ModelEvent } from "@smthrs/model"
+import { AgentTurnJournal, type NativeAgent } from "@smthrs/rpc"
 import { Effect, Stream } from "effect"
 import { createHash } from "node:crypto"
 import { describe, expect, test } from "vitest"
 import { DurableChatProducer, runDurableChatTurn } from "../src/DurableChatProducer.ts"
 
-const request: StartAgentTurnRequest = {
+const request: NativeAgent.StartAgentTurnRequest = {
   runId: "run",
   instructions: "answer",
   messages: [{ role: "user", content: "hi" }]
 }
-const cursor: AgentTurnCursor = { version: 1, runId: "run", legId: "leg", batch: 0, position: 0, hash: "a".repeat(64) }
+const cursor: AgentTurnJournal.AgentTurnCursor = {
+  version: 1,
+  runId: "run",
+  legId: "leg",
+  batch: 0,
+  position: 0,
+  hash: "a".repeat(64)
+}
 const grant = {
   turnId: "turn",
   ownerId: 1,
@@ -27,8 +31,8 @@ const grant = {
   producerBaseUrl: "http://host.test/"
 }
 const digest = (kind: "batch", value: unknown): string =>
-  createHash("sha256").update(agentTurnJournalDigestInput(kind, value)).digest("hex")
-const reply = (expected: AgentTurnCursor, frame: AgentTurnFrame) => {
+  createHash("sha256").update(AgentTurnJournal.agentTurnJournalDigestInput(kind, value)).digest("hex")
+const reply = (expected: AgentTurnJournal.AgentTurnCursor, frame: NativeAgent.AgentTurnFrame) => {
   const unsigned = {
     version: 1 as const,
     runId: "run",
@@ -38,7 +42,7 @@ const reply = (expected: AgentTurnCursor, frame: AgentTurnFrame) => {
     previousHash: expected.hash,
     frames: [frame]
   }
-  const batch: AgentTurnBatch = { ...unsigned, hash: digest("batch", unsigned) }
+  const batch: AgentTurnJournal.AgentTurnBatch = { ...unsigned, hash: digest("batch", unsigned) }
   return {
     status: "committed" as const,
     batch,
@@ -58,7 +62,7 @@ describe("DurableChatProducer", () => {
     const calls: Array<string> = []
     let attempt = 0
     const frame = { runId: "run", type: "delta" as const, kind: "text" as const, text: "a" }
-    const fetchImpl: FetchLike = async (_input, init) => {
+    const fetchImpl: NativeAgent.FetchLike = async (_input, init) => {
       calls.push(typeof init?.body === "string" ? init.body : "")
       if (++attempt === 1) throw new Error("response lost")
       return Response.json(reply(cursor, frame))
@@ -82,7 +86,7 @@ describe("DurableChatProducer", () => {
   test("ignores client tools and keeps tool execution on the host", async () => {
     const order: Array<string> = []
     let expected = cursor
-    const fetchImpl: FetchLike = async (input, init) => {
+    const fetchImpl: NativeAgent.FetchLike = async (input, init) => {
       const url = String(input)
       if (url.includes("provider-started")) {
         order.push("started")
@@ -127,7 +131,7 @@ describe("DurableChatProducer", () => {
   })
 })
 
-const frame: AgentTurnFrame = { runId: "run", type: "delta", kind: "text", text: "a" }
+const frame: NativeAgent.AgentTurnFrame = { runId: "run", type: "delta", kind: "text", text: "a" }
 
 test.each(
   [
@@ -212,7 +216,7 @@ test("does not call the model after a refused provider-start acknowledgment", as
 })
 
 test("wiki-only preflight journals and supplies only the chosen pinned page", async () => {
-  const frames: AgentTurnFrame[] = [], requests: unknown[] = []
+  const frames: NativeAgent.AgentTurnFrame[] = [], requests: unknown[] = []
   let expected = cursor
   const wiki = {
     item: { kind: "page" as const, label: "Retries", ref: "retries", revision: "4" },
@@ -234,7 +238,7 @@ test("wiki-only preflight journals and supplies only the chosen pinned page", as
       ])
     }
   })
-  const fetchImpl: FetchLike = async (url, init) => {
+  const fetchImpl: NativeAgent.FetchLike = async (url, init) => {
     if (String(url).includes("provider-started")) return new Response(null, { status: 204 })
     const body = JSON.parse(String(init?.body))
     frames.push(...body.frames)
@@ -297,11 +301,11 @@ test("pages large candidate and choice lists into bounded hash-checked journal w
     model: "fast",
     durationMs: 42
   }
-  const frames: AgentTurnFrame[] = []
-  const fetchImpl: FetchLike = async (_url, init) => {
+  const frames: NativeAgent.AgentTurnFrame[] = []
+  const fetchImpl: NativeAgent.FetchLike = async (_url, init) => {
     const body = JSON.parse(String(init?.body))
     const response = reply(body.expected, body.frames[0])
-    expect(new TextEncoder().encode(agentTurnJournalDigestInput("batch", response.batch)).byteLength)
+    expect(new TextEncoder().encode(AgentTurnJournal.agentTurnJournalDigestInput("batch", response.batch)).byteLength)
       .toBeLessThanOrEqual(96 * 1024)
     frames.push(body.frames[0])
     return Response.json(response)
@@ -359,8 +363,8 @@ test.each(["started", "completed"] as const)("refused later %s page stops subseq
     }
   })
   const refused: Array<string> = []
-  const accepted: Array<AgentTurnFrame> = []
-  const fetchImpl: FetchLike = async (url, init) => {
+  const accepted: Array<NativeAgent.AgentTurnFrame> = []
+  const fetchImpl: NativeAgent.FetchLike = async (url, init) => {
     if (String(url).includes("provider-started")) {
       starts++
       return new Response(null, { status: 204 })

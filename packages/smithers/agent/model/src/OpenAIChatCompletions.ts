@@ -11,6 +11,7 @@
  * @since 0.1.0
  */
 
+import { SpanFailure } from "@smthrs/flow"
 import { Effect, Option, Schema } from "effect"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
 import { ModelError } from "./ModelError.ts"
@@ -222,9 +223,11 @@ const buildBody = (
 })
 
 const fromRequest = (structuredOutput: StructuredOutput | undefined) =>
-  Effect.fn("OpenAIChatCompletions.fromRequest")((
-    request: ModelRequest
-  ): Effect.Effect<Body, ModelError> => Effect.succeed(buildBody(request, structuredOutput)))
+  SpanFailure.fn(
+    Effect.fn("OpenAIChatCompletions.fromRequest")((
+      request: ModelRequest
+    ): Effect.Effect<Body, ModelError> => Effect.succeed(buildBody(request, structuredOutput)))
+  )
 
 const ChunkToolCall = Schema.Struct({
   index: Schema.optional(Schema.Number),
@@ -473,14 +476,16 @@ const stepEvent = (
   return { state: current, events }
 }
 
-const step = Effect.fn("OpenAIChatCompletions.step")((
-  state: State,
-  event: ChatCompletionChunk
-): Effect.Effect<readonly [State, ReadonlyArray<ModelEvent.ModelEvent>], ModelError> =>
-  Effect.suspend(() => {
-    const result = stepEvent(state, event)
-    return result instanceof ModelError ? Effect.fail(result) : Effect.succeed([result.state, result.events] as const)
-  })
+const step = SpanFailure.fn(
+  Effect.fn("OpenAIChatCompletions.step")((
+    state: State,
+    event: ChatCompletionChunk
+  ): Effect.Effect<readonly [State, ReadonlyArray<ModelEvent.ModelEvent>], ModelError> =>
+    Effect.suspend(() => {
+      const result = stepEvent(state, event)
+      return result instanceof ModelError ? Effect.fail(result) : Effect.succeed([result.state, result.events] as const)
+    })
+  )
 )
 
 // `[DONE]` never reaches a protocol (SSE framing discards it). OpenAI and

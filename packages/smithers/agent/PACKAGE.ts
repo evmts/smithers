@@ -180,7 +180,7 @@ const securityReview = Smithers.SecurityReview({
         "A sealed key made cross-run reusable when Options.capabilities is undeclared.",
         "The wire-body marker splice producing the same key for two different request bodies."
       ],
-      paths: ["src/FlowEngineLike.ts", "src/internal/FlowEngineLike.ts", "src/internal/CallIdentity.ts"]
+      paths: ["src/FlowEngineLike.ts", "src/ModelStep.ts", "src/internal/ModelStep.ts", "src/internal/CallIdentity.ts"]
     },
     {
       id: "checkpoint-relocation",
@@ -217,7 +217,7 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A runaway or prompt-injected run spends provider credit past the approved token or latency ceiling, billing the account owner.",
       lookFor: [
-        "A model dispatch path in the package that bypasses budget.reserve.",
+        "A model dispatch path in the agent loop that bypasses budget.reserve. ModelStep.run is the single-call primitive a host bounds itself; FlowEngineLike reserves before every call it makes through it.",
         "Budget accumulator keyed so that a resumed or retried execution gets a fresh allowance.",
         "QuotaPolicy classifying a provider error so the call is retried unbounded or parked with spend uncounted."
       ],
@@ -226,6 +226,8 @@ const securityReview = Smithers.SecurityReview({
         "src/RunawayGuard.ts",
         "src/QuotaPolicy.ts",
         "src/FlowEngineLike.ts",
+        "src/ModelStep.ts",
+        "src/internal/ModelStep.ts",
         "src/AgentAction.ts"
       ]
     },

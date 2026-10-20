@@ -7,6 +7,7 @@
  * @since 0.1.0
  */
 
+import { SpanFailure } from "@smthrs/flow"
 import { Clock, Effect, Exit, Layer, Redacted, Result, Schema, Stream } from "effect"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type * as SchemaIssue from "effect/SchemaIssue"
@@ -178,43 +179,45 @@ const compile = <Body, Frame, Event, State>(
   route: Route<Body, Frame, Event, State>,
   request: ModelRequest
 ): Effect.Effect<Compiled, ModelError> =>
-  Effect.fn("flows/model/Route.prepare")(function*() {
-    const validatedRequest = yield* Schema.decodeUnknownEffect(ModelRequestSchema)(request).pipe(
-      Effect.mapError((error) =>
-        withPath("invalid_request", "Model request failed Schema validation", schemaPath(error))
-      )
-    )
-    const native = route.protocol.supportsDeferred(validatedRequest.modelId)
-    const candidate = yield* route.protocol.body.from(validatedRequest, { native })
-    const body = yield* Schema.encodeUnknownEffect(route.protocol.body.schema)(candidate).pipe(
-      Effect.mapError((error) =>
-        withPath(
-          "invalid_request",
-          `${route.protocol.id} produced an invalid provider request body`,
-          schemaPath(error)
+  SpanFailure.effect(
+    Effect.fn("flows/model/Route.prepare")(function*() {
+      const validatedRequest = yield* Schema.decodeUnknownEffect(ModelRequestSchema)(request).pipe(
+        Effect.mapError((error) =>
+          withPath("invalid_request", "Model request failed Schema validation", schemaPath(error))
         )
       )
-    )
-    const headers = yield* Effect.fromResult(
-      publicHeaders({ ...route.headers, ...route.protocol.headers?.(validatedRequest) })
-    )
-    const bytes = yield* Effect.try({
-      try: () => CanonicalJson.bytes(body),
-      catch: preparationError
-    })
-    return {
-      prepared: {
-        routeId: route.id,
-        protocolId: route.protocol.id,
-        method: "POST" as const,
-        url: Endpoint.render(route.endpoint),
-        publicHeaders: headers,
-        body: bytes,
-        bodyText: new TextDecoder().decode(bytes)
-      },
-      request: validatedRequest
-    }
-  })()
+      const native = route.protocol.supportsDeferred(validatedRequest.modelId)
+      const candidate = yield* route.protocol.body.from(validatedRequest, { native })
+      const body = yield* Schema.encodeUnknownEffect(route.protocol.body.schema)(candidate).pipe(
+        Effect.mapError((error) =>
+          withPath(
+            "invalid_request",
+            `${route.protocol.id} produced an invalid provider request body`,
+            schemaPath(error)
+          )
+        )
+      )
+      const headers = yield* Effect.fromResult(
+        publicHeaders({ ...route.headers, ...route.protocol.headers?.(validatedRequest) })
+      )
+      const bytes = yield* Effect.try({
+        try: () => CanonicalJson.bytes(body),
+        catch: preparationError
+      })
+      return {
+        prepared: {
+          routeId: route.id,
+          protocolId: route.protocol.id,
+          method: "POST" as const,
+          url: Endpoint.render(route.endpoint),
+          publicHeaders: headers,
+          body: bytes,
+          bodyText: new TextDecoder().decode(bytes)
+        },
+        request: validatedRequest
+      }
+    })()
+  )
 
 /**
  * The latest affinity token per conversation, process-wide so every model a
@@ -292,127 +295,129 @@ const stream = <Body, Frame, Event, State>(
 ): Stream.Stream<ModelEvent, Model.ModelFailure> =>
   Stream.scoped(
     Stream.unwrap(
-      Effect.fn("flows/model/Route.stream")(function*() {
-        const { timing } = call
-        const { prepared, request: snapshot } = yield* compile(route, request)
-        timing.prepared(prepared.body.byteLength)
-        const affinityHeader = route.protocol.affinityHeader
-        let traced = false
-        const attempt = Effect.gen(function*() {
-          const signed = yield* route.auth.sign({ ...prepared.publicHeaders })
-          timing.signed()
-          const slot = affinityHeader === undefined ? undefined : affinitySlot(prepared, snapshot, signed)
-          const token = slot === undefined ? undefined : affinity.get(slot)
-          if (!traced) {
-            traced = true
-            call.traced = WireTrace.record({ ...prepared, affinity: token !== undefined })
-          }
-          const signedHeaders = {
-            ...signed,
-            ...(token === undefined ? {} : { [affinityHeader!]: token })
-          }
-          const httpRequest = HttpClientRequest.post(prepared.url, { headers: signedHeaders }).pipe(
-            HttpClientRequest.bodyUint8Array(prepared.body, "application/json")
-          )
-          const sanitize = yield* RequestExecutor.errorSanitizer(httpRequest)
-          const response = yield* executor.execute(httpRequest, {
-            modelId: snapshot.modelId,
-            classifyError: route.protocol.classifyError,
-            onTry: timing.onTry
-          })
-          timing.headers()
-          call.status = response.status
-          call.headers = response.headers
-          const returned = slot === undefined ? undefined : response.headers[affinityHeader!.toLowerCase()]
-          if (returned !== undefined && returned !== "") rememberAffinity(slot!, returned)
-          return { response, sanitize }
-        }).pipe(Auth.withRedaction(route.auth))
-        // An `authentication` failure is terminal on both retry ladders — a bad
-        // key never repairs itself by waiting. A refresh-capable Auth is the
-        // one case where recovery is possible: run its refresh and re-sign
-        // exactly once, so an access token that expired mid-flight costs one
-        // recovery, while a credential the refresh cannot repair still fails
-        // typed on the second attempt.
-        const refresh = route.auth.refresh
-        const { response, sanitize } = yield* (refresh === undefined
-          ? attempt
-          : attempt.pipe(
-            Effect.catchIf(
-              (error): error is ModelError => error instanceof ModelError && error.code === "authentication",
-              () => Effect.andThen(refresh, attempt)
+      SpanFailure.effect(
+        Effect.fn("flows/model/Route.stream")(function*() {
+          const { timing } = call
+          const { prepared, request: snapshot } = yield* compile(route, request)
+          timing.prepared(prepared.body.byteLength)
+          const affinityHeader = route.protocol.affinityHeader
+          let traced = false
+          const attempt = Effect.gen(function*() {
+            const signed = yield* route.auth.sign({ ...prepared.publicHeaders })
+            timing.signed()
+            const slot = affinityHeader === undefined ? undefined : affinitySlot(prepared, snapshot, signed)
+            const token = slot === undefined ? undefined : affinity.get(slot)
+            if (!traced) {
+              traced = true
+              call.traced = WireTrace.record({ ...prepared, affinity: token !== undefined })
+            }
+            const signedHeaders = {
+              ...signed,
+              ...(token === undefined ? {} : { [affinityHeader!]: token })
+            }
+            const httpRequest = HttpClientRequest.post(prepared.url, { headers: signedHeaders }).pipe(
+              HttpClientRequest.bodyUint8Array(prepared.body, "application/json")
             )
-          )).pipe(
-            // This span ends when the response starts, so it carries the
-            // request's half of the reading, a refusal's or a stall's included.
-            Effect.ensuring(Effect.suspend(() => Effect.annotateCurrentSpan(CallTiming.attributes(timing.read()))))
-          )
-        const decodeEvent = Schema.decodeUnknownEffect(route.protocol.stream.event)
-        const terminal = route.protocol.stream.terminal
-        const events = route.framing.frame(
-          response.stream.pipe(
-            // The code is the contract and the transport's own text is not:
-            // `HttpClientError`'s message ends in the method and URL, which a
-            // provider authorizing by query parameter would make a credential.
-            // `transport` is what the retry ladder classifies on, and a body
-            // that dies after the headers is on that ladder from here.
-            Stream.mapError(() => new ModelError({ code: "transport", message: "Model response stream failed" }))
-          )
-        ).pipe(
-          // effect rc.108's SSE decoder adds `SseError` (oversized events) to
-          // the framing channel; a framing failure is a transport failure here.
-          Stream.mapError((error) =>
-            error._tag === "SseError"
-              ? new ModelError({ code: "transport", message: "Model response stream failed" })
-              : error
-          ),
-          Stream.mapEffect((frame) => {
-            timing.frame()
-            return decodeEvent(frame).pipe(
-              Effect.mapError((error) =>
-                withPath(
-                  "invalid_provider_output",
-                  `${route.protocol.id} emitted an invalid stream event`,
-                  schemaPath(error)
+            const sanitize = yield* RequestExecutor.errorSanitizer(httpRequest)
+            const response = yield* executor.execute(httpRequest, {
+              modelId: snapshot.modelId,
+              classifyError: route.protocol.classifyError,
+              onTry: timing.onTry
+            })
+            timing.headers()
+            call.status = response.status
+            call.headers = response.headers
+            const returned = slot === undefined ? undefined : response.headers[affinityHeader!.toLowerCase()]
+            if (returned !== undefined && returned !== "") rememberAffinity(slot!, returned)
+            return { response, sanitize }
+          }).pipe(Auth.withRedaction(route.auth))
+          // An `authentication` failure is terminal on both retry ladders — a bad
+          // key never repairs itself by waiting. A refresh-capable Auth is the
+          // one case where recovery is possible: run its refresh and re-sign
+          // exactly once, so an access token that expired mid-flight costs one
+          // recovery, while a credential the refresh cannot repair still fails
+          // typed on the second attempt.
+          const refresh = route.auth.refresh
+          const { response, sanitize } = yield* (refresh === undefined
+            ? attempt
+            : attempt.pipe(
+              Effect.catchIf(
+                (error): error is ModelError => error instanceof ModelError && error.code === "authentication",
+                () => Effect.andThen(refresh, attempt)
+              )
+            )).pipe(
+              // This span ends when the response starts, so it carries the
+              // request's half of the reading, a refusal's or a stall's included.
+              Effect.ensuring(Effect.suspend(() => Effect.annotateCurrentSpan(CallTiming.attributes(timing.read()))))
+            )
+          const decodeEvent = Schema.decodeUnknownEffect(route.protocol.stream.event)
+          const terminal = route.protocol.stream.terminal
+          const events = route.framing.frame(
+            response.stream.pipe(
+              // The code is the contract and the transport's own text is not:
+              // `HttpClientError`'s message ends in the method and URL, which a
+              // provider authorizing by query parameter would make a credential.
+              // `transport` is what the retry ladder classifies on, and a body
+              // that dies after the headers is on that ladder from here.
+              Stream.mapError(() => new ModelError({ code: "transport", message: "Model response stream failed" }))
+            )
+          ).pipe(
+            // effect rc.108's SSE decoder adds `SseError` (oversized events) to
+            // the framing channel; a framing failure is a transport failure here.
+            Stream.mapError((error) =>
+              error._tag === "SseError"
+                ? new ModelError({ code: "transport", message: "Model response stream failed" })
+                : error
+            ),
+            Stream.mapEffect((frame) => {
+              timing.frame()
+              return decodeEvent(frame).pipe(
+                Effect.mapError((error) =>
+                  withPath(
+                    "invalid_provider_output",
+                    `${route.protocol.id} emitted an invalid stream event`,
+                    schemaPath(error)
+                  )
                 )
               )
-            )
-          }),
-          terminal === undefined
-            ? (framed) => framed
-            // The route reads nothing after the terminal frame: the response
-            // stream closes with it, before the protocol steps it.
-            : Stream.takeUntil((event) => {
-              const last = terminal(event)
-              if (last) timing.closed()
-              return last
             }),
-          // A body that ends without one closes here, ahead of the halt hook.
-          Stream.onEnd(Effect.sync(timing.closed))
-        )
-        return events.pipe(
-          Stream.mapAccumEffect(
-            () => route.protocol.stream.initial(snapshot),
-            route.protocol.stream.step,
-            route.protocol.stream.onHalt === undefined
-              ? undefined
-              : { onHalt: route.protocol.stream.onHalt }
-          ),
-          // Keep the signed attempt's policy after the HTTP effect completes,
-          // including when refresh replaced the original credential.
-          Stream.mapError(sanitize),
-          // The settle event carries the reading as it stands when the
-          // protocol settles. Chat Completions settles on `finish_reason`,
-          // one chunk before the usage that ends the body, so that settle is
-          // read before the stream closes and has no `closedMs`.
-          Stream.map((event): ModelEvent => {
-            timing.event(event)
-            if (event.type === "usage") call.usage = settledMessage([{ type: "usage", ...call.usage }, event]).usage
-            if (event.type !== "settle") return event
-            call.settled = { ...event, timing: timing.read() }
-            return call.settled
-          })
-        )
-      })()
+            terminal === undefined
+              ? (framed) => framed
+              // The route reads nothing after the terminal frame: the response
+              // stream closes with it, before the protocol steps it.
+              : Stream.takeUntil((event) => {
+                const last = terminal(event)
+                if (last) timing.closed()
+                return last
+              }),
+            // A body that ends without one closes here, ahead of the halt hook.
+            Stream.onEnd(Effect.sync(timing.closed))
+          )
+          return events.pipe(
+            Stream.mapAccumEffect(
+              () => route.protocol.stream.initial(snapshot),
+              route.protocol.stream.step,
+              route.protocol.stream.onHalt === undefined
+                ? undefined
+                : { onHalt: route.protocol.stream.onHalt }
+            ),
+            // Keep the signed attempt's policy after the HTTP effect completes,
+            // including when refresh replaced the original credential.
+            Stream.mapError(sanitize),
+            // The settle event carries the reading as it stands when the
+            // protocol settles. Chat Completions settles on `finish_reason`,
+            // one chunk before the usage that ends the body, so that settle is
+            // read before the stream closes and has no `closedMs`.
+            Stream.map((event): ModelEvent => {
+              timing.event(event)
+              if (event.type === "usage") call.usage = settledMessage([{ type: "usage", ...call.usage }, event]).usage
+              if (event.type !== "settle") return event
+              call.settled = { ...event, timing: timing.read() }
+              return call.settled
+            })
+          )
+        })()
+      )
     )
   )
 

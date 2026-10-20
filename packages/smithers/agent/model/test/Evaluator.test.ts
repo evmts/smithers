@@ -1,4 +1,4 @@
-import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import { HttpClient as KernelHttpClient } from "@smthrs/kernel"
 import * as Config from "effect/Config"
 import * as ConfigProvider from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"

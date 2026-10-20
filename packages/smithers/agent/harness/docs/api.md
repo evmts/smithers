@@ -50,7 +50,7 @@ settled hi
 
 | Import                           | What it is                                                                                                           |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `@smthrs/harness`                | The root barrel: the 33 namespaces listed in the module index.                                                       |
+| `@smthrs/harness`                | The root barrel: the 35 namespaces listed in the module index.                                                       |
 | `@smthrs/harness/<Module>`       | Any top-level module directly, for example `@smthrs/harness/CellTurn`.                                               |
 | `@smthrs/harness/QuickJSSandbox` | The QuickJS-WASM `Sandbox` binding. Not re-exported from the root, because it carries an embedded WebAssembly build. |
 | `@smthrs/harness/package.json`   | The package manifest.                                                                                                |
@@ -59,7 +59,7 @@ The `./internal/*` and `./*/index` subpaths map to `null` and do not resolve.
 
 ## Module index
 
-34 public modules, 536 documented exports. Each module's full export table is
+36 public modules, 538 documented exports. Each module's full export table is
 in the [module and export inventory](./reference.md); the sections below state
 behavior and signatures.
 
@@ -78,7 +78,8 @@ behavior and signatures.
 | `Notifications`              | `Options`, `make`, `layer`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Adapter from the durable notification queue to harness turn boundaries.                                  |
 | `Cell`                       | `Language`, `Source`, `digestOf`, `source`, `Continue`, `Complete`, `Park`, `Transition`, `renderText`, `RejectionCode`, `Settled`, `Raised`, `Rejected`, `Outcome`, `FlowProjection`, `project`, `CallFailureCode`, `defaultCallFailureCode`, `callFailureHint`, `CallIdentity`, `declarationDigest`, `Call`, `baseCheckpoint`, `checkpoint`, `checkpointOf`, `CallResult`, `CallSuccess`, `CallFailure`, `CallResultVariant`, `decodeCallResult`, `decodeOutcome`, `decodeTransition`, `callFailure`, `Extracted`, `extract`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The cell contract.                                                                                       |
 | `Sandbox`                    | `SandboxErrorCode`, `SandboxError`, `Invocation`, `Mint`, `Minter`, `mintUnavailable`, `Handler`, `Limits`, `Capabilities`, `defaultLimits`, `minimumSteps`, `minimumTimeMs`, `minimumMemoryBytes`, `printFrameBytes`, `printStatementFloor`, `printRetainedBytes`, `withDefaults`, `Intent`, `replTransition`, `RealmEvaluation`, `RealmFrame`, `Realm`, `RealmOptions`, `Sandbox`, `make`, `layer`, `makeNoop`, `layerNoop`, `realmUnsupported`, `callTimedOut`, `compile`, `PendingCall`, `driveCell`, `raisedOutcome`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The deterministic script sandbox port.                                                                   |
-| `CellTurn`                   | `defaultMaxFrames`, `defaultReadOnlyFrames`, `defaultModelCallMs`, `defaultRepeatFrames`, `defaultNarrowingDemands`, `defaultUnmovedDemands`, `defaultUnresolvedDemands`, `defaultClaimDemands`, `defaultRevalidations`, `defaultMaxCheckpoints`, `State`, `Input`, `MemoryRow`, `Memory`, `make`, `teach`, `instructionsSegment`, `memorySegment`, `run`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The cell-first controller.                                                                               |
+| `CellTurn`                   | `defaultMaxFrames`, `defaultReadOnlyFrames`, `defaultModelCallMs`, `defaultRepeatFrames`, `defaultNarrowingDemands`, `defaultUnmovedDemands`, `defaultUnresolvedDemands`, `defaultClaimDemands`, `defaultRevalidations`, `defaultMaxCheckpoints`, `State`, `Input`, `MemoryRow`, `Memory`, `make`, `Profile`, `teach`, `instructionsSegment`, `memorySegment`, `run`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | The cell-first controller.                                                                               |
+| `DoneText`                   | `project`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The answer text of a reply that is still streaming.                                                      |
 | `CellHistory`                | `ExecutedCell`, `Service`, `CellHistory`, `make`, `makeCells`, `makeNoop`, `layer`, `layerCells`, `layerNoop`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The source of every cell the current turn executed.                                                      |
 | `CellCalls`                  | `Implementation`, `Prompt`, `PromptRunner`, `Options`, `Resolver`, `make`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Registry-backed resolution for the flow calls a cell makes.                                              |
 | `FlowBinding`                | `Declared`, `DescriptorOptions`, `descriptorOf`, `Binding`, `Options`, `make`, `provide`, `Source`, `source`, `Catalog`, `empty`, `catalogResult`, `catalog`, `registry`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | The executable-flow binding contract.                                                                    |
@@ -98,6 +99,7 @@ behavior and signatures.
 | `Sufficiency`                | `retained`, `Failure`, `Ledger`, `remember`, `Sufficient`, `find`, `observation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The evidence that is already complete.                                                                   |
 | `VacuousVerification`        | `retained`, `Pass`, `Ledger`, `remember`, `stored`, `find`, `observation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The proof that was already true before anything changed. Not wired into `CellTurn`.                      |
 | `VariablesPanel`             | `bound`, `Binding`, `Stamp`, `Ledger`, `stamp`, `render`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | The variables panel: what the realm holds, stated every frame.                                           |
+| `QuickJSVariant`             | `cacheSuccessful`, `VariantService`, `Variant`, `layerVariant`, `loadModule`, `compiledModule`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The QuickJS build a host names, shared by every QuickJS realm; carries no build itself.                  |
 | `QuickJSSandbox` _(subpath)_ | `cacheSuccessful`, `VariantService`, `Variant`, `layerVariantLive`, `layerVariant`, `ComputeClockService`, `ComputeClock`, `layerClockLive`, `loadModule`, `makeWithVariant`, `makeWithClock`, `make`, `layerWithVariant`, `layer`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | The QuickJS-WASM sandbox binding.                                                                        |
 
 ## Durability
@@ -238,7 +240,7 @@ export const run: (
 `run` executes the loop until it completes, parks, or exhausts its budget.
 Cancellation is fiber interruption: interrupting the stream tears down the
 sandbox through scope closure and reports one abort. `Input` is
-`{ state, flows, limits?, supervisor?, monitors?, judged?, stance?, instructions?, pinned?, memory? }`,
+`{ state, flows, limits?, supervisor?, monitors?, judged?, stance?, profile?, instructions?, pinned?, memory? }`,
 where `flows` is the frame's `FlowDescriptor` list, already narrowed by seat
 visibility, and `monitors` (default `Monitor.defaults()`) are what each
 supervisor reading scores. `judged` (default false) is true only when the
@@ -251,7 +253,10 @@ true, as `judged`, `relevance` (`{ withholdAt, pinned }`) and `monitors`
 (each id, kind and gate), so an unjudged journal is unchanged;
 `supervisorSteer` is read only from journals written before `judged`. `stance`
 (`careful` or `paranoid`) is the static stance the run is taught; pass the
-window taught with it. `DisciplineArmed.stance` records it when set.
+window taught with it. `DisciplineArmed.stance` records it when set. `profile`
+(`workspace`, the default, or `conversation`) is the contract the run is
+taught; pass the window taught with it, so the loop's re-teach at each catalog
+refresh replaces the same segments.
 
 **Run-start relevance.** At frame 0 of a judged run, once the frame's catalog
 is known, every model-invocable flow not in `pinned` (as `Relevance.flowItem`,
@@ -405,12 +410,22 @@ logical seats such as `reviewer`; direct harness callers without a callback use
 the model-id catalog. The callback lives outside serializable `State`; the
 resolved token count is carried in state across frames.
 
-`CellTurn.teach(contextWindow, flows, environment?, stance?)` prepends the cell contract and the
+`CellTurn.teach(contextWindow, flows, environment?, stance?, profile?)` prepends the cell contract and the
 callable-flow catalog to a context window as prefix segments. The optional
 `CellTurn.Environment` supplies the host's measured `locale` and `absentTools`.
 A `stance` adds a one-line `cell-stance` section after the contract,
 `Monitor.carefulText` or `Monitor.paranoidText` verbatim; it is constant for
 the run, so the cached prefix holds.
+
+`CellTurn.Profile` picks the contract:
+
+| Profile               | Taught                                                                                      | For                                                                           |
+| --------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `workspace` (default) | The REPL, rules 1 to 9, the worked bug-fix example, and the checkout's history fact         | A run that changes a checkout                                                 |
+| `conversation`        | The same REPL and rules 1 to 6, byte for byte; no example, no rules 7 to 9, no history fact | A run that answers a person through its catalog's flows, such as a chat agent |
+
+A `conversation` run renders the environment section only for facts the host
+measured. Both profiles render the same stance, `jev` and catalog sections.
 Catalog metadata is escaped inside an `untrusted-data` block with each
 source, root and repository path. Metadata and tool output cannot grant
 authority or change the task. Printed observations and controller-generated
@@ -496,6 +511,27 @@ the binding can refuse it. The print-channel constants are
 `Sandbox.printFrameBytes` (16 KiB), `Sandbox.printStatementFloor` (512 bytes),
 and `Sandbox.printRetainedBytes` (256 KiB).
 
+## QuickJSVariant
+
+`import { QuickJSVariant } from "@smthrs/harness"` (on the root only, with no subpath)
+
+The QuickJS build a host names, and its compiled WebAssembly module. Every
+QuickJS realm compiles through it: the cell sandbox here and the
+presentation realm in `@smthrs/views`. A host provides the build once and
+each realm compiles it at most once. The module carries no build itself, so
+it is on the root.
+
+| Export                       | Signature                                                                               | Behavior                                                                                                                                      |
+| ---------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Variant` / `VariantService` | service tag                                                                             | The QuickJS build a realm compiles. `QuickJSSandbox.Variant` is the same tag.                                                                 |
+| `layerVariant`               | `(variant: QuickJSSyncVariant) => Layer<Variant>`                                       | Provides a build the host names: the single-file build in Node and a browser, `newVariant(base, { wasmModule })` in a Worker.                 |
+| `compiledModule`             | `Effect<QuickJSWASMModule, SandboxError, Variant>`                                      | The named build's module, compiled on first use and shared by every realm over the same variant; a failed compile is retried on the next use. |
+| `loadModule`                 | `(loader: () => Promise<QuickJSWASMModule>) => Effect<QuickJSWASMModule, SandboxError>` | Loads a module through the typed failure boundary (`runtime_failed`).                                                                         |
+| `cacheSuccessful`            | `<A>(load: () => Promise<A>) => () => Promise<A>`                                       | Caches only a successful load; a rejection may be retried.                                                                                    |
+
+`QuickJSSandbox` re-exports all of these except `compiledModule`, and adds
+`layerVariantLive`, the single-file default.
+
 ## QuickJSSandbox
 
 `import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"` (not
@@ -563,6 +599,13 @@ ran, or produced no transition). `Cell.RejectionCode` is `no_cell`, `output_trun
 `unsupported_language`, `limit_exceeded`, or `stalled`. A result that cannot
 fit in the remaining QuickJS heap is rejected before materialization with
 `code: "limit_exceeded"` and `reason: "heap"`, so the frame remains recordable.
+
+The QuickJS realm bounds its interpreter stack at 128 KiB, so a runaway
+recursion raises a catchable `InternalError: stack overflow` inside the cell.
+If the host's own stack overflows inside the interpreter anyway, the frame is
+rejected with `code: "limit_exceeded"` and `reason: "stack"`, the broken
+runtime is abandoned without being disposed, and the next cell runs in a fresh
+realm that holds none of the earlier names.
 
 Flow-result heap checks conservatively include value and property storage plus
 bridge scratch space, not just serialized JSON bytes. A reply can be refused
@@ -882,7 +925,8 @@ results that resolve in the cell as `{ ok: false, error }`. Inspect
 `.ok === false` and `.error.code` to recover. Ordinary handler failures use the opaque message
 `Flow <name> failed.` Raw messages, objects, and causes are excluded from call
 results and their journal records. `Options.publicError`, typed as
-`(error: E) => string | undefined`, explicitly selects safe public text; the
+`(error: Exclude<E, HarnessError>) => string | undefined`, explicitly selects
+safe public text; the
 text is bounded before journaling. An absent renderer, `undefined`, a throw,
 or a non-string result uses the opaque default. The renderer is not a
 sanitizer: hosts must select safe fields and redact raw diagnostics before
@@ -893,7 +937,8 @@ transport, SDK, OS, or unknown errors, headers, URLs, or serialized causes.
 Existing `HarnessError` values pass through the error channel with their
 code and identity unchanged. Only `PermissionRequired` and `PermissionDenied`
 are converted to `HarnessError` with code `suspended`. These errors bypass
-`publicError`; interruptions are never caught.
+`publicError` and `timedOut`, whose parameter types exclude `HarnessError`;
+interruptions are never caught.
 
 `FlowBinding.provide(binding, context)` closes a binding's remaining
 requirements. `FlowBinding.Source` is a named, possibly effectful producer of
@@ -1282,6 +1327,37 @@ const piped = window.pipe(
 [`@smthrs/model`](/api/model) supplies the shared context-limit catalog used by
 seat resolution and seat steering (128,000 tokens for unknown models). A
 thinking-only steer preserves the current budget.
+
+## DoneText
+
+`import { DoneText } from "@smthrs/harness"` (on the root only, with no subpath)
+
+The answer text of a reply that is still streaming. A cell reply has no prose
+path, so the answer is the `output` a cell passes to `ctx.done`.
+
+```ts
+export const project: (reply: string) => Option.Option<string>
+```
+
+`project(reply)` returns the decoded prefix of the string or template literal
+passed to the last `ctx.done(` in the reply's cell blocks, or `Option.none()`.
+`reply` is the model's text so far; the last cell block may still be open.
+
+- It reads only blocks `Cell.extract` reads, joined the same way, and skips a
+  `ctx.done(` inside a string, a comment, a regular expression or template
+  text.
+- It answers `none` before the literal's opening quote arrives and for an
+  argument that is not a literal.
+- Escapes decode as a strict-mode string or untagged template decodes them;
+  a template's raw CR LF reads as LF.
+- Text stops at a template's `${`, at an escape strict code refuses, and at an
+  escape the input cut short. A cut-off prefix drops a high surrogate whose
+  pair has not arrived.
+
+So every result is a prefix of the literal's value, results grow as the reply
+grows, and a closed literal projects to its whole value. The projection is
+display: a host replaces it with the completed output when the run settles,
+and a replay folds the recorded `ModelDelta` text through the same function.
 
 ## Tokens
 

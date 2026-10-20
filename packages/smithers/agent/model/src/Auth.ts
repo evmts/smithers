@@ -6,7 +6,8 @@
  * @since 0.1.0
  */
 
-import * as ChildProcessEnvironment from "@smthrs/kernel/ChildProcessEnvironment"
+import { SpanFailure } from "@smthrs/flow"
+import { ChildProcessEnvironment } from "@smthrs/kernel"
 import { Effect, Redacted as EffectRedacted } from "effect"
 import * as Headers from "effect/http/Headers"
 import { ModelError } from "./ModelError.ts"
@@ -114,7 +115,11 @@ const secret = (key: Redacted<string>): Effect.Effect<string, ModelError> =>
  * @slop
  */
 export const apiKeyHeader = (name: string, key: Redacted<string>): Auth => ({
-  sign: Effect.fn("Auth.sign")((headers) => secret(key).pipe(Effect.map((value) => ({ ...headers, [name]: value })))),
+  sign: SpanFailure.fn(
+    Effect.fn("Auth.sign")((headers: Record<string, string>) =>
+      secret(key).pipe(Effect.map((value) => ({ ...headers, [name]: value })))
+    )
+  ),
   credentialHeaders: [name]
 })
 
@@ -126,8 +131,10 @@ export const apiKeyHeader = (name: string, key: Redacted<string>): Auth => ({
  * @slop
  */
 export const bearer = (key: Redacted<string>): Auth => ({
-  sign: Effect.fn("Auth.sign")((headers) =>
-    secret(key).pipe(Effect.map((value) => ({ ...headers, Authorization: `Bearer ${value}` })))
+  sign: SpanFailure.fn(
+    Effect.fn("Auth.sign")((headers: Record<string, string>) =>
+      secret(key).pipe(Effect.map((value) => ({ ...headers, Authorization: `Bearer ${value}` })))
+    )
   ),
   credentialHeaders: ["Authorization"]
 })

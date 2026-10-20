@@ -152,7 +152,6 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/internal/Exec.ts",
         "src/Container.ts",
-        "src/NodeLanguageServer.ts",
         "src/NativeSearch.ts",
         "src/TestRun.ts",
         "src/Bash.ts"
@@ -192,7 +191,6 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/internal/Exec.ts",
-        "src/NodeLanguageServer.ts",
         "src/internal/Html.ts",
         "src/internal/TestReport.ts",
         "src/internal/LinearRegex.ts",
@@ -211,7 +209,7 @@ const securityReview = Smithers.SecurityReview({
         "Lsp.run forwarding any absolute path to the language server with only an isAbsolutePath check, so documentSymbols, hover, or diagnostics reveal an out-of-workspace file.",
         "The host language server loading workspace-controlled code (tsconfig plugins, a workspace-local typescript or node_modules binary) outside any sandbox."
       ],
-      paths: ["src/NativeSearch.ts", "src/Grep.ts", "src/Glob.ts", "src/Lsp.ts", "src/NodeLanguageServer.ts"]
+      paths: ["src/NativeSearch.ts", "src/Grep.ts", "src/Glob.ts", "src/Lsp.ts"]
     },
     {
       id: "container-seal",

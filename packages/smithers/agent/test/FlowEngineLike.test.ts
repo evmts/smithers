@@ -53,7 +53,7 @@ import { describe, expect, it, vi } from "vitest"
 import * as AgentSession from "../src/AgentSession.ts"
 import * as Budget from "../src/Budget.ts"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import * as InternalFlowEngineLike from "../src/internal/FlowEngineLike.ts"
+import * as InternalModelStep from "../src/internal/ModelStep.ts"
 import * as QuotaPolicy from "../src/QuotaPolicy.ts"
 import * as WorkspaceObservation from "../src/WorkspaceObservation.ts"
 
@@ -309,10 +309,10 @@ describe("FlowEngineLike.make", () => {
 
     const decoded = Schema.decodeUnknownSync(FlowEngineLike.RecordedModelStep)(legacy)
     expect(decoded).toEqual(legacy)
-    expect(InternalFlowEngineLike.normalizeRecordedModelStep(decoded)).toEqual({ events: legacy, error: undefined })
+    expect(InternalModelStep.normalizeRecordedModelStep(decoded)).toEqual({ events: legacy, error: undefined })
 
     const current = { events: legacy }
-    expect(InternalFlowEngineLike.normalizeRecordedModelStep(current)).toBe(current)
+    expect(InternalModelStep.normalizeRecordedModelStep(current)).toBe(current)
   })
 
   it("streams the model events of a sealed step and records them for replay", async () => {
@@ -396,9 +396,9 @@ describe("FlowEngineLike.make", () => {
             )
         })
     })
-    const recording = InternalFlowEngineLike.recordModelStep(model, request("retry usage"), Schedule.recurs(1))
+    const recording = InternalModelStep.recordModelStep(model, request("retry usage"), Schedule.recurs(1))
     for (let i = 0; i < 2; i++) {
-      const recorded = InternalFlowEngineLike.normalizeRecordedModelStep(await Effect.runPromise(recording))
+      const recorded = InternalModelStep.normalizeRecordedModelStep(await Effect.runPromise(recording))
       expect(recorded.events.map((event) => event.type)).toEqual(["retry", "usage", "settle"])
       expect(ModelEvent.ModelEvent.settledMessage(recorded.events).usage).toEqual({
         inputTokens: 200,
@@ -427,9 +427,9 @@ describe("FlowEngineLike.make", () => {
             )
         })
     })
-    const recorded = InternalFlowEngineLike.normalizeRecordedModelStep(
+    const recorded = InternalModelStep.normalizeRecordedModelStep(
       await Effect.runPromise(
-        InternalFlowEngineLike.recordModelStep(model, request("malformed usage"), Schedule.recurs(1))
+        InternalModelStep.recordModelStep(model, request("malformed usage"), Schedule.recurs(1))
       )
     )
     const usage = ModelEvent.ModelEvent.settledMessage(recorded.events).usage
@@ -2074,7 +2074,7 @@ describe("FlowEngineLike.defaultModelRetryPolicy", () => {
    */
   const exhaust = (model: Model.Model): Promise<typeof FlowEngineLike.RecordedModelStep.Type> =>
     Effect.gen(function*() {
-      const fiber = yield* InternalFlowEngineLike.recordModelStep(
+      const fiber = yield* InternalModelStep.recordModelStep(
         model,
         request("hello"),
         FlowEngineLike.defaultModelRetryPolicy
@@ -2086,7 +2086,7 @@ describe("FlowEngineLike.defaultModelRetryPolicy", () => {
   const retriesOf = (
     recorded: typeof FlowEngineLike.RecordedModelStep.Type
   ): ReadonlyArray<ModelEvent.Retry> =>
-    InternalFlowEngineLike.normalizeRecordedModelStep(recorded).events.filter(
+    InternalModelStep.normalizeRecordedModelStep(recorded).events.filter(
       (event): event is ModelEvent.Retry => event.type === "retry"
     )
 
@@ -2134,7 +2134,7 @@ describe("FlowEngineLike.defaultModelRetryPolicy", () => {
     expect(observed.attempts).toBe(FlowEngineLike.defaultModelRetryTimes + 1)
     expect(retriesOf(recorded)).toHaveLength(FlowEngineLike.defaultModelRetryTimes)
     // Exhaustion returns the provider's own typed error, never a wrapper.
-    expect(InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error).toStrictEqual(error)
+    expect(InternalModelStep.normalizeRecordedModelStep(recorded).error).toStrictEqual(error)
   })
 
   it("puts a scripted stream abort on the same ladder, at the same delays", async () => {
@@ -2166,7 +2166,7 @@ describe("FlowEngineLike.defaultModelRetryPolicy", () => {
     expect(observed.attempts).toBe(FlowEngineLike.defaultModelRetryTimes + 1)
     expect(observed.gaps.map((gap) => Math.round(gap))).toEqual(retries.map((retry) => retry.delayMillis))
     expect(observed.gaps.reduce((total, gap) => total + gap, 0)).toBeGreaterThan(24_000)
-    expect(InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error).toMatchObject({
+    expect(InternalModelStep.normalizeRecordedModelStep(recorded).error).toMatchObject({
       code: "transport",
       message: "The model response stream ended without a settlement"
     })
@@ -2218,7 +2218,7 @@ describe("FlowEngineLike.defaultModelRetryPolicy", () => {
     // charge — that the count alone would have allowed.
     const unbounded = (FlowEngineLike.defaultModelRetryTimes + 1) * 10_000
     expect(observed.attempts * 10_000).toBeLessThan(unbounded)
-    expect(InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error).toMatchObject({ code: "transport" })
+    expect(InternalModelStep.normalizeRecordedModelStep(recorded).error).toMatchObject({ code: "transport" })
   })
 
   it("runs every declared rung when the attempts themselves are cheap", async () => {
@@ -2265,7 +2265,7 @@ describe("FlowEngineLike.defaultModelRetryPolicy", () => {
 
     await expect(
       Effect.runPromise(
-        InternalFlowEngineLike.recordModelStep(model, request("hello"), Schedule.recurs(0))
+        InternalModelStep.recordModelStep(model, request("hello"), Schedule.recurs(0))
       )
     ).rejects.toStrictEqual(error)
   })
@@ -2335,7 +2335,7 @@ describe("FlowEngineLike model-call budget", () => {
     budget: number | undefined = budgetMillis
   ): Promise<typeof FlowEngineLike.RecordedModelStep.Type> =>
     Effect.gen(function*() {
-      const fiber = yield* InternalFlowEngineLike.recordModelStep(
+      const fiber = yield* InternalModelStep.recordModelStep(
         model,
         request("hello"),
         FlowEngineLike.defaultModelRetryPolicy,
@@ -2348,7 +2348,7 @@ describe("FlowEngineLike model-call budget", () => {
   const retriesOf = (
     recorded: typeof FlowEngineLike.RecordedModelStep.Type
   ): ReadonlyArray<ModelEvent.Retry> =>
-    InternalFlowEngineLike.normalizeRecordedModelStep(recorded).events.filter(
+    InternalModelStep.normalizeRecordedModelStep(recorded).events.filter(
       (event): event is ModelEvent.Retry => event.type === "retry"
     )
 
@@ -2373,7 +2373,7 @@ describe("FlowEngineLike model-call budget", () => {
     // reached its end, and only the second one did.
     expect(seen.completed).toEqual([1])
     // The step still settles. An overrun costs one attempt, not the frame.
-    expect(InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error).toBeUndefined()
+    expect(InternalModelStep.normalizeRecordedModelStep(recorded).error).toBeUndefined()
 
     // The re-issue teaches. Waiting alone cannot fix an answer that is too
     // long, so the second request says what happened and what to do instead —
@@ -2397,7 +2397,7 @@ describe("FlowEngineLike model-call budget", () => {
     expect(seen.requests).toHaveLength(1)
     expect(seen.requests[0]!.system).toEqual([])
     expect(seen.completed).toEqual([0])
-    expect(InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error).toBeUndefined()
+    expect(InternalModelStep.normalizeRecordedModelStep(recorded).error).toBeUndefined()
   })
 
   it("runs unbounded when the controller disarms the budget", async () => {
@@ -2408,7 +2408,7 @@ describe("FlowEngineLike model-call budget", () => {
     // past the default ceiling settles untouched.
     expect(retriesOf(recorded)).toEqual([])
     expect(seen.completed).toEqual([0])
-    expect(InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error).toBeUndefined()
+    expect(InternalModelStep.normalizeRecordedModelStep(recorded).error).toBeUndefined()
   })
 
   it("surfaces the typed error once the re-issue has overrun too", async () => {
@@ -2422,7 +2422,7 @@ describe("FlowEngineLike model-call budget", () => {
     expect(retries).toHaveLength(FlowEngineLike.defaultModelOverruns)
     expect(new Set(retries.map((retry) => retry.code))).toEqual(new Set(["call_timeout"]))
     expect(seen.completed).toEqual([])
-    const error = InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error
+    const error = InternalModelStep.normalizeRecordedModelStep(recorded).error
     expect(error).toBeInstanceOf(ModelError)
     expect((error as ModelError).code).toBe("call_timeout")
     expect((error as ModelError).message).toContain("5-second budget")
@@ -2494,7 +2494,7 @@ describe("FlowEngineLike model-call budget", () => {
     minutes = 60
   ): Promise<typeof FlowEngineLike.RecordedModelStep.Type> =>
     Effect.gen(function*() {
-      const fiber = yield* InternalFlowEngineLike.recordModelStep(
+      const fiber = yield* InternalModelStep.recordModelStep(
         model,
         ModelRequest.ModelRequest.make({
           ...request("hello"),
@@ -2514,7 +2514,7 @@ describe("FlowEngineLike model-call budget", () => {
 
     expect(retriesOf(recorded)).toEqual([])
     expect(seen.completed).toEqual([0])
-    expect(InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error).toBeUndefined()
+    expect(InternalModelStep.normalizeRecordedModelStep(recorded).error).toBeUndefined()
   })
 
   it("cuts off a stream that goes silent and re-issues it without the overrun teaching", async () => {
@@ -2530,7 +2530,7 @@ describe("FlowEngineLike model-call budget", () => {
     const reopened = seen.startedAt[1]! - seen.startedAt[0]!
     expect(reopened).toBeGreaterThanOrEqual(FlowEngineLike.defaultModelIdleMs)
     expect(reopened).toBeLessThan(FlowEngineLike.defaultModelIdleMs + 5_000)
-    expect(InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error).toBeUndefined()
+    expect(InternalModelStep.normalizeRecordedModelStep(recorded).error).toBeUndefined()
   })
 
   it("names the silence when every attempt stalls", async () => {
@@ -2540,7 +2540,7 @@ describe("FlowEngineLike model-call budget", () => {
     // Like an overrun, a stall costs a whole window, so it is re-issued once
     // and not on the transport ladder's five rungs.
     expect(seen.requests).toHaveLength(FlowEngineLike.defaultModelOverruns + 1)
-    const error = InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error
+    const error = InternalModelStep.normalizeRecordedModelStep(recorded).error
     expect(error).toMatchObject({ code: "transport" })
     expect((error as ModelError).message).toContain("sent nothing for 300 seconds")
   })
@@ -2556,7 +2556,7 @@ describe("FlowEngineLike model-call budget", () => {
       expect(retriesOf(recorded)).toEqual([])
       expect(seen.requests).toHaveLength(1)
       expect(seen.completed).toEqual([0])
-      expect(InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error).toBeUndefined()
+      expect(InternalModelStep.normalizeRecordedModelStep(recorded).error).toBeUndefined()
     }
   )
 
@@ -2572,7 +2572,7 @@ describe("FlowEngineLike model-call budget", () => {
       expect(retriesOf(recorded).map((retry) => retry.code)).toEqual(["call_timeout"])
       expect(seen.requests).toHaveLength(FlowEngineLike.defaultModelOverruns + 1)
       expect(seen.startedAt[1]! - seen.startedAt[0]!).toBeGreaterThanOrEqual(ceiling)
-      expect(InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error).toMatchObject({
+      expect(InternalModelStep.normalizeRecordedModelStep(recorded).error).toMatchObject({
         code: "call_timeout"
       })
     }
@@ -2591,7 +2591,7 @@ describe("FlowEngineLike model-call budget", () => {
       const reopened = seen.startedAt[1]! - seen.startedAt[0]!
       expect(reopened).toBeGreaterThanOrEqual(FlowEngineLike.defaultModelIdleMs)
       expect(reopened).toBeLessThan(FlowEngineLike.defaultModelIdleMs + 5_000)
-      expect(InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error).toBeUndefined()
+      expect(InternalModelStep.normalizeRecordedModelStep(recorded).error).toBeUndefined()
     }
   )
 })

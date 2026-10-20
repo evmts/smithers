@@ -12,6 +12,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { describe, expect, it } from "@effect/vitest"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as CommandLine from "@smthrs/kernel/CommandLine"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
@@ -304,6 +305,20 @@ describe("Exec.exec spawn refusals", () => {
   it.effect("keeps every other refusal a host failure", () =>
     Effect.gen(function*() {
       expect(yield* refused("EAGAIN")).toMatchObject({ code: "spawn_error" })
+    }))
+
+  it.effect("leaves a spawner defect other than E2BIG a defect", () =>
+    Effect.gen(function*() {
+      const defect = new Error("spawner bug")
+      const exit = yield* Exec.exec("python3", { args: ["-"] }).pipe(
+        Effect.exit,
+        Effect.provideService(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.makeNoop({ spawn: () => Effect.die(defect) })
+        )
+      )
+      expect(exit._tag).toBe("Failure")
+      expect(exit._tag === "Failure" ? Cause.squash(exit.cause) : undefined).toBe(defect)
     }))
 })
 

@@ -112,11 +112,11 @@ and the field-by-field tables are in the
 
 A step answers with one decoded value, which it only knows at the end. Provide
 `EventSink` to receive the emitted agent events: token deltas, the produced
-cell, and its calls. With `FlowEngineLike`, model deltas arrive at the sealed
-model-call boundary, after the provider stream settles. The adapter records
-the complete provider stream before emitting those events; they do not report
-live provider progress. A replay emits the recorded events again without
-calling the provider:
+cell, and its calls. With `FlowEngineLike`, model events reach the sink live,
+from inside the sealed model-call boundary: each provider delta while the
+provider is still streaming, and a transport retry as a `model-retried` event
+before the next attempt's deltas. A replay emits the recorded events again
+without calling the provider:
 
 ```ts
 import { EventSink } from "@smthrs/agent"
@@ -134,6 +134,46 @@ One rule governs a sink: `emit` runs inside the frame that produced the event,
 and that frame holds the engine's write transaction. Push onto a queue, write
 to a socket, or resolve a deferred. A sink that waits on a durable write
 stalls the run.
+
+## Answer a person
+
+A step that answers a person through the host's flows, such as a chat reply,
+declares `profile: "conversation"`. The run is taught the REPL and rules 1 to 6
+without the coding contract's bug-fix example, evidence rules, and tree facts,
+and its repeat and narrowing demands default to off:
+
+```ts
+const Respond = AgentAction.make("chat/Respond", {
+  payload: { question: Schema.String },
+  output: Schema.String,
+  seat: "agent",
+  system: [instructions],
+  profile: "conversation",
+  maxFrames: 8,
+  prompt: ({ question }) => question
+})
+```
+
+To show the answer while the model writes it, fold the sink's text deltas
+through `DoneText.project` from `@smthrs/harness`. It returns the decoded
+prefix of the literal the cell passes to `ctx.done`, or `Option.none()`.
+Start the text over at each `model-requested` and `model-retried` event, and
+replace the live text with the step's answer when it resolves:
+
+```ts
+import { DoneText } from "@smthrs/harness"
+import * as Option from "effect/Option"
+
+let reply = ""
+const emit = (event: AgentEvent.AgentEvent) =>
+  Effect.sync(() => {
+    if (event._tag === "model-requested" || event._tag === "model-retried") reply = ""
+    if (event._tag === "model-delta" && event.delta.type === "text-delta") {
+      reply += event.delta.text
+      Option.map(DoneText.project(reply), render)
+    }
+  })
+```
 
 ## Handle the failures
 

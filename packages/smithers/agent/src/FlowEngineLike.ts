@@ -19,11 +19,12 @@
  * - `sealStep` resolves the route, runs `Route.prepare`, and digests the
  *   credential-free `PreparedRequest` — canonical body bytes included —
  *   together with the harness's declared key material into a `StepKey`
- *   (`docs/pages/concepts/step-keys.md`). That key is the *sealed* activity's
- *   idempotency key, so a provider wire change produces a new key and a
- *   replayed turn re-emits the recorded model events without calling the
- *   provider again. Credentials are signed on by the route after the digest
- *   and never enter it.
+ *   (`docs/pages/concepts/step-keys.md`). It then dispatches the call through
+ *   the same implementation `ModelStep.run` uses, under that key as the
+ *   *sealed* activity's idempotency key, so a provider wire change produces a
+ *   new key and a replayed turn re-emits the recorded model events without
+ *   calling the provider again. Credentials are signed on by the route after
+ *   the digest and never enter it.
  * - `splice` refuses every child in an elaborated batch with a typed engine
  *   failure. The elaborated-subgraph path was superseded by the cell loop, so
  *   the port remains available to the harness but does not run that old path.
@@ -51,25 +52,14 @@
  * @since 0.1.0
  */
 
-import * as Permission from "@smthrs/capability/Permission"
-import * as Digest from "@smthrs/core/Digest"
-import type * as KeyMaterial from "@smthrs/core/KeyMaterial"
+import { Permission } from "@smthrs/capability"
+import { Digest, type KeyMaterial } from "@smthrs/core"
 import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
-import type { FileBoundary } from "@smthrs/flow/FileBoundary"
-import * as Cell from "@smthrs/harness/Cell"
-import * as EngineLike from "@smthrs/harness/EngineLike"
-import * as HarnessError from "@smthrs/harness/HarnessError"
-import type * as Plan from "@smthrs/harness/Plan"
+import { Cell, EngineLike, HarnessError, type Plan } from "@smthrs/harness"
 import { CallFact } from "@smthrs/journal"
-import * as CanonicalJson from "@smthrs/model/CanonicalJson"
-import * as Evaluator from "@smthrs/model/Evaluator"
-import type * as Model from "@smthrs/model/Model"
-import * as ModelError from "@smthrs/model/ModelError"
-import * as ModelEvent from "@smthrs/model/ModelEvent"
-import * as ModelRequest from "@smthrs/model/ModelRequest"
-import * as Route from "@smthrs/model/Route"
-import * as StepKey from "@smthrs/plan/StepKey"
-import * as Checkpoints from "@smthrs/std/Checkpoints"
+import { CanonicalJson, Evaluator, type Model, ModelError, ModelEvent, type ModelRequest, Route } from "@smthrs/model"
+import { StepKey } from "@smthrs/plan"
+import { Checkpoints } from "@smthrs/std"
 import type * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
@@ -80,12 +70,12 @@ import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Queue from "effect/Queue"
-import * as Schedule from "effect/Schedule"
+import type * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import * as Budget from "./Budget.ts"
 import { callId } from "./internal/CallIdentity.ts"
-import { normalizeRecordedModelStep, recordModelStep } from "./internal/FlowEngineLike.ts"
+import * as ModelStep from "./internal/ModelStep.ts"
 import * as QuotaPolicy from "./QuotaPolicy.ts"
 import * as RunawayGuard from "./RunawayGuard.ts"
 import * as WorkspaceObservation from "./WorkspaceObservation.ts"
@@ -95,7 +85,16 @@ import type * as WorkspaceSandbox from "./WorkspaceSandbox.ts"
 // but their failures belong to the controller and the cell, which retry on their own terms.
 const singleAttempt = RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
 
-export { defaultModelIdleMs, defaultModelOverruns } from "./internal/FlowEngineLike.ts"
+export {
+  defaultModelIdleMs,
+  defaultModelOverruns,
+  defaultModelRetryBaseMillis,
+  defaultModelRetryFactor,
+  defaultModelRetryPolicy,
+  defaultModelRetryTimes,
+  defaultModelRetryWindowMillis,
+  RecordedModelStep
+} from "./internal/ModelStep.ts"
 
 /**
  * Route resolution for one sealed model request.
@@ -260,7 +259,7 @@ export const workspaceRelative = (path: string): string => path.startsWith("/") 
  * @category conversions
  * @since 0.1.0
  */
-export const callBoundary = (call: Cell.Call): FileBoundary => ({
+export const callBoundary = (call: Cell.Call): Action.FileBoundary => ({
   readSet: call.effects.reads.map((path) => ({ path: workspaceRelative(path), digest: call.identity.declaration })),
   writeSet: call.effects.writes.map(workspaceRelative),
   boundaryMode: call.effects.mode === "hermetic" ? "hard" : "expected"
@@ -442,44 +441,6 @@ export interface Options {
 }
 
 /**
- * The durable outcome of one sealed model step.
- *
- * The array branch is the format written before model-boundary retries were
- * introduced. Keeping it decodable matters because a parked run may resume
- * against a newer agent package and replay that already-settled activity.
- * New records always use the object branch so a terminal typed model failure
- * can be replayed after its retry events.
- *
- * @category schemas
- * @since 0.1.0
- */
-export const RecordedModelStep = Schema.Union([
-  Schema.Array(ModelEvent.ModelEvent),
-  Schema.Struct({
-    events: Schema.Array(ModelEvent.ModelEvent),
-    error: Schema.optional(ModelError.ModelError),
-    /**
-     * Which structured-output correction this call belonged to, when the
-     * caller was running a correction ladder.
-     *
-     * The ordinal is durable twice over, and only one of the two is readable.
-     * Each correction is its own session — `${executionId}/${tag}#${n}` — so
-     * the ladder's rungs already have distinct sealed step keys and a replay
-     * reproduces all of them; but a session is KEY MATERIAL, hashed into a
-     * digest, and nothing downstream can read an ordinal back out of it. An
-     * operator or a projection reading a run's steps could see three sealed
-     * model calls and not which was the ask and which were its corrections.
-     * The field is that answer, on the record itself.
-     *
-     * Optional because it is absent from two honest cases: a model call made
-     * outside a correction ladder, and a record written before this field
-     * existed, which a parked run may still resume onto.
-     */
-    correction: Schema.optional(Schema.Int)
-  })
-])
-
-/**
  * The correction ordinal the model calls made under it belong to.
  *
  * {@link module:AgentAction} sets it around each rung of its structured-output
@@ -501,98 +462,6 @@ export const Correction = Context.Reference<number | undefined>(
 )
 
 /**
- * The first delay the production transport policy waits, in milliseconds.
- *
- * @category policies
- * @since 0.1.0
- */
-export const defaultModelRetryBaseMillis = 1000
-
-/**
- * The factor each successive production transport delay multiplies by.
- *
- * @category policies
- * @since 0.1.0
- */
-export const defaultModelRetryFactor = 2
-
-/**
- * How many times the production transport policy retries one sealed step.
- *
- * @category policies
- * @since 0.1.0
- */
-export const defaultModelRetryTimes = 5
-
-/**
- * The wall clock the production transport ladder may span, in milliseconds.
- *
- * The count alone is not a bound. Five rungs of jittered doubling from one
- * second sum to at most 37.2 s of *sleeping*, but a ladder also spends whatever
- * each failing attempt spends, and a dying HTTP/2 session does not fail
- * quickly: r92 of the SWE-bench full benchmark burned ten `transport` retries
- * and $0.85 across two instances against a socket that stayed dead for about
- * half a minute, and each of those attempts re-sent a whole prompt and streamed
- * a partial body before dying. A ladder whose only bound is a count charges for
- * that as many times as the count allows.
- *
- * 45,000 ms is the declared ladder's own jittered ceiling plus one rung's worth
- * of headroom for the attempts between the sleeps, so a ladder that fails as
- * fast as this policy assumes still runs all five rungs and nothing here
- * changes for it. What changes is the ladder whose attempts are slow: it stops
- * when the wall clock says the incident has outlasted the window this policy
- * was written to cover, rather than when the fifth rung happens to arrive. Past
- * that point waiting is not what is wrong, which is exactly what
- * `@smthrs/model` `RequestExecutor` `makeWith` and its `Transport` are for: a
- * client the host can replace, rather than a longer wait on the one that died.
- *
- * The elapsed time is the schedule's own, taken on the injected clock, so a
- * test that supplies one sees the window it declared and never a wall-clock
- * wait.
- *
- * @category policies
- * @since 1.0.0-rc.0
- */
-export const defaultModelRetryWindowMillis = 45_000
-
-/**
- * The production transport retry budget: five retries over a jittered
- * exponential backoff spanning roughly thirty seconds, inside a 45-second
- * wall-clock window.
- *
- * The shape is load-bearing, not decorative. A transport-class failure is
- * almost never local: a destroyed HTTP/2 session, a 5xx, an overloaded
- * provider. All three persist for seconds to tens of seconds, so a retry that
- * fires inside that window is a wasted attempt, and a budget that empties
- * inside it turns one provider incident into a dead run. Wave 4 of the
- * SWE-bench harness lost `pytest-dev__pytest-6197` exactly that way: both of
- * its `transport` retries were spent, and the run ended `failed`, while the
- * provider was still refusing.
- *
- * Doubling from one second across five retries spans about 31 s, which is
- * long enough for a connection pool to re-establish and for a short rate-limit
- * window to pass. Jitter is what keeps a fleet of runs that all hit the same
- * incident from re-converging on the provider in lockstep; {@link
- * Schedule.jittered} scales each delay by a random factor in `[0.8, 1.2]`
- * drawn from the injected `Random` service, and the sleep itself is taken on
- * the injected clock, so a test that supplies both sees the schedule it
- * declared and never a wall-clock wait.
- *
- * {@link defaultModelRetryWindowMillis} bounds the same ladder by elapsed time,
- * because five rungs is a bound on how many attempts are made and not on what
- * they cost. Whichever limit arrives first ends the ladder.
- *
- * @category policies
- * @since 0.1.0
- */
-export const defaultModelRetryPolicy: Schedule.Schedule<unknown, Model.ModelFailure> = Schedule
-  .exponential(defaultModelRetryBaseMillis, defaultModelRetryFactor)
-  .pipe(
-    Schedule.jittered,
-    Schedule.upTo({ times: defaultModelRetryTimes, duration: Duration.millis(defaultModelRetryWindowMillis) })
-  )
-
-/**
  * Applies a composition's additional quota-parking policy.
  *
  * {@link recordModelStep} folds a `ModelError` into the step's recorded VALUE
@@ -610,9 +479,9 @@ export const defaultModelRetryPolicy: Schedule.Schedule<unknown, Model.ModelFail
  */
 const unlessParked = (quota: QuotaPolicy.Service) =>
 (
-  recorded: typeof RecordedModelStep.Type
-): Effect.Effect<typeof RecordedModelStep.Type, ModelError.ModelError> => {
-  const error = normalizeRecordedModelStep(recorded).error
+  recorded: ModelStep.Recorded
+): Effect.Effect<ModelStep.Recorded, ModelError.ModelError> => {
+  const error = recorded.error
   if (error === undefined) return Effect.succeed(recorded)
   return Effect.flatMap(
     Clock.currentTimeMillis,
@@ -627,24 +496,11 @@ const unlessParked = (quota: QuotaPolicy.Service) =>
  */
 const unlessGuarded = (guarded: boolean) =>
 (
-  recorded: typeof RecordedModelStep.Type
-): Effect.Effect<typeof RecordedModelStep.Type, ModelError.ModelError> => {
-  const error = normalizeRecordedModelStep(recorded).error
+  recorded: ModelStep.Recorded
+): Effect.Effect<ModelStep.Recorded, ModelError.ModelError> => {
+  const error = recorded.error
   return guarded && error?.code === "call_timeout" ? Effect.fail(error) : Effect.succeed(recorded)
 }
-
-/**
- * Model, permission, and usage-infrastructure failures as one encodable
- * boundary schema. The engine stores an activity's failure as well as its
- * success, so the port's error channel cannot be an opaque value.
- */
-const ModelFailure = Schema.Union([
-  ModelError.ModelError,
-  Permission.PermissionRequired,
-  Permission.PermissionDenied,
-  Permission.GrantStoreError,
-  HarnessError.HarnessError
-])
 
 const sealStepActivityName = "harness/sealStep"
 
@@ -652,8 +508,7 @@ const cellCallActivityName = (flowName: string): string => `harness/cell-call/${
 
 const boundaryActivityName = (name: string): string => `harness/boundary/${name}`
 
-const engineFailed = (message: string, cause: unknown): HarnessError.HarnessError =>
-  new HarnessError.HarnessError({ code: "engine_failed", message, cause })
+const engineFailed = ModelStep.engineFailed
 
 /** The ledger key prefix for the usage a recorded boundary paid for. */
 const boundaryUsagePrefix = "boundary-usage/"
@@ -685,99 +540,6 @@ const accountingFailed = (cause: Budget.AccountingUnavailable): HarnessError.Har
  * every stream and activity signature.
  */
 const keyed = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>): Effect.Effect<A, E> => Digest.provideSync(effect)
-
-/**
- * Drops `undefined`-valued properties from an already-encoded JSON value.
- *
- * Canonical serialization rejects `undefined` outright, and `Schema.encodeSync`
- * keeps optional fields as explicit `undefined`. Applied only to encoded
- * request JSON, never to arbitrary values, so Canonical still rejects class
- * instances and `Redacted` material on its own.
- */
-const stripUndefined = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(stripUndefined)
-  if (typeof value !== "object" || value === null) return value
-  const stripped: Record<string, unknown> = {}
-  for (const [key, item] of Object.entries(value)) {
-    if (item !== undefined) stripped[key] = stripUndefined(item)
-  }
-  return stripped
-}
-
-interface ModelCallDeclaration {
-  readonly _tag: "ModelCall"
-  readonly request: ModelRequest.ModelRequest
-}
-
-const isModelCall = (value: unknown): value is ModelCallDeclaration =>
-  typeof value === "object" && value !== null &&
-  (value as { readonly _tag?: unknown })._tag === "ModelCall" && "request" in value
-
-/**
- * Digests the harness key material together with the prepared wire request.
- *
- * The harness declaration embeds the live `ModelRequest` (class instances that
- * Canonical refuses), so it is re-encoded to plain JSON before hashing.
- */
-const seal = Effect.fn("FlowEngineLike.seal")(function*(
-  step: EngineLike.SealedModelStep,
-  route: RouteResolver
-) {
-  const prepared = yield* route.prepare(step.request)
-  const declaration = step.keyMaterial.body
-  const material = {
-    ...step.keyMaterial,
-    body: {
-      _tag: "PreparedModelCall",
-      declaration: isModelCall(declaration)
-        ? {
-          _tag: "ModelCall",
-          request: stripUndefined(Schema.encodeSync(ModelRequest.ModelRequest)(declaration.request))
-        }
-        : declaration,
-      request: {
-        routeId: prepared.routeId,
-        protocolId: prepared.protocolId,
-        method: prepared.method,
-        url: prepared.url,
-        publicHeaders: prepared.publicHeaders,
-        body: ""
-      }
-    }
-  } satisfies KeyMaterial.KeyMaterial
-  // Keep historical keys byte-for-byte: Uint8Array.join emits exactly the
-  // decimal JSON elements of Array.from(body), without allocating or walking
-  // a million generic canonical-JSON nodes. Let StepKey canonicalize all other
-  // material, then splice these known-canonical byte elements at its hash seam.
-  const wire = `[${prepared.body.join(",")}]`
-  const crypto = yield* keyed(Crypto.Crypto)
-  for (let ordinal = 0;; ordinal++) {
-    material.body.request.body = `flows/agent/wire-body/${ordinal}`
-    const marker = JSON.stringify(material.body.request.body)
-    let collision = false
-    const key = yield* StepKey.fromKeyMaterial(material, {}).pipe(
-      Effect.provideService(Crypto.Crypto, {
-        ...crypto,
-        digest: (algorithm, data) => {
-          const canonical = new TextDecoder().decode(data)
-          const offset = canonical.indexOf(marker)
-          // Caller material can contain the same literal. Retry with another
-          // marker rather than replacing any caller-owned value. No marker is
-          // ever part of the returned key's bytes.
-          collision = offset < 0 || canonical.indexOf(marker, offset + marker.length) !== -1
-          return crypto.digest(
-            algorithm,
-            collision ? data : new TextEncoder().encode(
-              canonical.slice(0, offset) + wire + canonical.slice(offset + marker.length)
-            )
-          )
-        }
-      }),
-      Effect.mapError((cause) => engineFailed("The prepared model request could not be sealed", cause))
-    )
-    if (!collision) return key
-  }
-})
 
 /**
  * The composition and run scope every durable key in this port folds in.
@@ -1009,7 +771,8 @@ export const make = (
       Stream.unwrap(
         Effect.gen(function*() {
           yield* accountedResume
-          const sealed = yield* seal(step, options.route)
+          const prepared = yield* options.route.prepare(step.request)
+          const sealed = yield* ModelStep.key(step.keyMaterial, prepared)
           // A guarded host parks an exhausted call timeout instead of failing
           // the run. The timed-out attempt's failure is durable under its key,
           // so each Continue the operator chose re-issues the call under a key
@@ -1021,13 +784,10 @@ export const make = (
             const admitted = yield* guard.admit(sealed)
             if (admitted._tag === "park") return yield* parkOn(admitted.parked)
             if (admitted.continued > 0) {
-              key = yield* seal({
-                ...step,
-                keyMaterial: {
-                  ...step.keyMaterial,
-                  layers: [...step.keyMaterial.layers, `timeout-continue:${admitted.continued}`]
-                }
-              }, options.route)
+              key = yield* ModelStep.key({
+                ...step.keyMaterial,
+                layers: [...step.keyMaterial.layers, `timeout-continue:${admitted.continued}`]
+              }, prepared)
             }
           }
           // The composition's spending ceiling, applied where every model call
@@ -1047,53 +807,35 @@ export const make = (
           // record the activity writes rather than discovered by whatever
           // re-executes it.
           const correction = yield* Correction
-          const recorded = yield* Action.make({
+          const { recorded: normalized } = yield* ModelStep.dispatch({
             name: sealStepActivityName,
-            // Provider retries belong to recordModelStep. A port failure must
-            // reach the controller rather than silently starting another call.
+            key,
+            request: step.request,
+            model: options.model,
+            // Provider retries belong to the step's transport ladder. A port
+            // failure must reach the controller rather than silently starting
+            // another call.
             retryPolicy: singleAttempt,
-            success: RecordedModelStep,
-            error: ModelFailure,
-            tier: "sealed",
-            idempotencyKey: key,
-            execute: Effect.suspend(() => {
-              let reported: ModelEvent.Usage | undefined
-              return Effect.gen(function*() {
-                // This names an actual, unsealed invocation, not the logical
-                // sealed key. A retry after capacity refusal is fresh provider
-                // work; charging it under `key` would mark every later retry
-                // paid and bypass admission. Allocate before dispatch, and keep
-                // the identity fixed through accounting's transaction retries.
-                const receipt = yield* crypto.randomUUIDv4().pipe(
-                  Effect.mapError((cause) => engineFailed("Could not allocate a model usage receipt", cause))
+            transport: options.modelRetryPolicy,
+            callTimeoutMs: step.modelCallMs,
+            correction,
+            onEvent: onLive,
+            // This names an actual, unsealed invocation, not the logical
+            // sealed key. A retry after capacity refusal is fresh provider
+            // work; charging it under `key` would mark every later retry paid
+            // and bypass admission. The receipt is allocated before dispatch,
+            // and stays fixed through accounting's transaction retries. The
+            // write runs uninterruptibly before releasing the reservation; a
+            // failed write remains pending and blocks fresh admission.
+            unsealedUsage: crypto.randomUUIDv4().pipe(
+              Effect.mapError((cause) => engineFailed("Could not allocate a model usage receipt", cause)),
+              Effect.map((receipt) => (usage: ModelEvent.Usage) =>
+                budget.record(`unsealed-model/${key}/${receipt}`, usage, step.request.modelId).pipe(
+                  Effect.mapError(accountingFailed)
                 )
-                return yield* recordModelStep(
-                  options.model,
-                  step.request,
-                  options.modelRetryPolicy ?? defaultModelRetryPolicy,
-                  step.modelCallMs,
-                  correction,
-                  (usage) => {
-                    reported = usage
-                  },
-                  onLive
-                ).pipe(
-                  Effect.flatMap(unlessParked(quota)),
-                  Effect.flatMap(unlessGuarded(guard !== undefined)),
-                  // The normal sealed result is accounted below, including on
-                  // replay. This finalizer covers only exits that cannot seal.
-                  // It runs uninterruptibly before releasing the reservation;
-                  // a failed write remains pending and blocks fresh admission.
-                  Effect.onExit((exit) =>
-                    Exit.isFailure(exit) && reported !== undefined
-                      ? budget.record(`unsealed-model/${key}/${receipt}`, reported, step.request.modelId).pipe(
-                        Effect.mapError(accountingFailed)
-                      )
-                      : Effect.void
-                  )
-                )
-              })
-            })
+              )
+            ),
+            settle: (recorded) => unlessParked(quota)(recorded).pipe(Effect.flatMap(unlessGuarded(guard !== undefined)))
           }).pipe(
             Effect.catchIf(
               (error): error is ModelError.ModelError =>
@@ -1109,7 +851,6 @@ export const make = (
                 ).pipe(Effect.flatMap(parkOn))
             )
           )
-          const normalized = normalizeRecordedModelStep(recorded)
           // Accounted after the step settles. The accumulator is keyed by the
           // step key, so a step whose body really did re-run counts once, and
           // a resumed run folds back what it recorded before the restart from

@@ -349,6 +349,15 @@ export interface Options<
   /** Stable system teaching for this step, after the host's and before the schema's. */
   readonly system?: ReadonlyArray<string> | undefined
   /**
+   * The cell contract every ask of this step is taught, its corrections and
+   * repair included. Forwarded to `Agent.Options.profile`; omitted is
+   * `workspace`. A step that answers a person through the host's flows, such
+   * as a chat reply, declares `conversation`.
+   *
+   * @since 1.0.0-rc.16
+   */
+  readonly profile?: AgentOptions["profile"]
+  /**
    * How many times a decode miss may be corrected before the step fails.
    *
    * A miss goes back to the same session while it has a frame to answer in,
@@ -926,6 +935,7 @@ export const implement = <
                   capacity: { park: false },
                   prompt,
                   system: teaching,
+                  profile: options.profile,
                   memory,
                   registry: host.registry,
                   flows: host.flows,

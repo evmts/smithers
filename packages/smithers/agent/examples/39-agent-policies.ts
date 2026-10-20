@@ -19,7 +19,7 @@ import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import { durableEngine } from "@smthrs/flows/test/TestNodeRuntime"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
@@ -172,7 +172,7 @@ const engine = (filename: string, hostId: string, calls: Array<string>) =>
     Layer.provideMerge(policies(calls)),
     Layer.provideMerge(Agent.layerDefaults),
     Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(durableEngine(filename, hostId)),
+    Layer.provideMerge(TestNodeRuntime.durableEngine(filename, hostId)),
     Layer.provideMerge(NodeCrypto.layer)
   )
 

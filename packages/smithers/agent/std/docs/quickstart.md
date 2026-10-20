@@ -34,7 +34,7 @@ composition is two layers:
 
 ```ts
 import { NodeServices } from "@effect/platform-node"
-import * as PortableSearch from "@smthrs/std/PortableSearch"
+import { PortableSearch } from "@smthrs/std"
 import * as Layer from "effect/Layer"
 
 /** FileSystem, Path, and ChildProcessSpawner, from the Node platform. */
@@ -57,8 +57,7 @@ says so plainly. That is a line range, so it is a read window rather than a
 guess:
 
 ```ts
-import * as Grep from "@smthrs/std/Grep"
-import * as Read from "@smthrs/std/Read"
+import { Grep, Read } from "@smthrs/std"
 import * as Effect from "effect/Effect"
 
 const program = Effect.gen(function*() {

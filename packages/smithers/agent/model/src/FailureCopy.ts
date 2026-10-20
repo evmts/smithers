@@ -4,7 +4,7 @@
  * @since 1.0.0-rc.1
  */
 
-import * as Faults from "@smthrs/flow/Fault"
+import { Fault as Faults } from "@smthrs/flow"
 import * as Schema from "effect/Schema"
 import * as Evaluator from "./Evaluator.ts"
 // A value import, so the model rows register wherever this copy is read.

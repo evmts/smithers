@@ -1,9 +1,10 @@
 import { ModelRequest } from "@smthrs/model"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Stream } from "effect"
+import { ConfiguredModel } from "@smthrs/rpc"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Redacted, Stream } from "effect"
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
 import { afterEach, describe, expect, test } from "vitest"
-import { HostModel } from "../src/HostModel.ts"
+import { HostModel, type HostModelRecord, HostModelUnusable } from "../src/HostModel.ts"
 
 const custom = (record: object) =>
   JSON.stringify({ protocol: "openai-chat", modelId: "fixture-1", credential: "FIXTURE", ...record })
@@ -56,6 +57,46 @@ describe("HostModel.layerConfig", () => {
   test("fails with a config error when the record is not JSON", async () => {
     const exit = await load({ CHAT_MODEL: "not json" })
     expect(Exit.isFailure(exit) && JSON.stringify(exit.cause)).toContain("ConfigError")
+  })
+})
+
+describe("HostModel.make", () => {
+  const record = { protocol: "openai-chat", baseUrl: "https://models.example", modelId: "row-1", credential: "FIXTURE" }
+  const build = (config: Record<string, unknown>, value: HostModelRecord = record) =>
+    Effect.runPromiseExit(
+      HostModel.make(value).pipe(
+        Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(config))
+      )
+    )
+  const unusable = (exit: Exit.Exit<unknown, unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
+
+  test("builds the model a record names at run time, with its key read through Config", async () => {
+    const exit = await build({
+      SMITHERS_MODEL_KEY_FIXTURE: "fixture-key",
+      SMITHERS_MODEL_KEY_FIXTURE_ORIGIN: "https://models.example"
+    })
+    expect(Exit.isSuccess(exit) && exit.value.modelId).toBe("row-1")
+  })
+
+  test("fails with credential_missing, never a defect, when the record's key is unset", async () => {
+    const exit = await build({ SMITHERS_MODEL_KEY_FIXTURE_ORIGIN: "https://models.example" })
+    expect(unusable(exit)).toEqual(new HostModelUnusable({ reason: "credential_missing" }))
+  })
+
+  test("fails with the planner's code for a record it cannot use", async () => {
+    const exit = await build(
+      { SMITHERS_MODEL_KEY_FIXTURE: "fixture-key", SMITHERS_MODEL_KEY_FIXTURE_ORIGIN: "https://models.example" },
+      { ...record, protocol: "not-a-protocol" }
+    )
+    expect(unusable(exit)).toEqual(new HostModelUnusable({ reason: "invalid" }))
+  })
+
+  test("fails with config when the configuration source cannot be read", async () => {
+    const broken = ConfigProvider.make(() => Effect.fail(new ConfigProvider.SourceError({ message: "vault down" })))
+    const exit = await Effect.runPromiseExit(
+      HostModel.make(record).pipe(Effect.provideService(ConfigProvider.ConfigProvider, broken))
+    )
+    expect(unusable(exit)).toEqual(new HostModelUnusable({ reason: "config" }))
   })
 })
 
@@ -124,5 +165,71 @@ describe("HostModel's provider transport", () => {
     })
     expect(Exit.isFailure(exit)).toBe(true)
     expect(elsewhere).toEqual([])
+  })
+})
+
+describe("HostModel's route", () => {
+  const ORIGIN = "https://models.example"
+  const SENTINEL = "sk-SENTINEL-route-0123456789"
+  const request = ModelRequest.ModelRequest.make({
+    modelId: "fixture-1",
+    system: [ModelRequest.SystemPart.make({ text: "be brief" })],
+    messages: [ModelRequest.Message.user("hi")],
+    tools: [],
+    params: ModelRequest.GenerationParams.make({ maxTokens: 8 })
+  })
+  const planned = (key: string) => {
+    const result = ConfiguredModel.planModelBinding(
+      { protocol: "openai-chat", baseUrl: ORIGIN, modelId: "fixture-1", credential: "FIXTURE" },
+      ConfiguredModel.hostModelCredentials({
+        SMITHERS_MODEL_KEY_FIXTURE: key,
+        SMITHERS_MODEL_KEY_FIXTURE_ORIGIN: ORIGIN
+      }),
+      { kind: "generation" }
+    )
+    if (!result.ok) throw new Error(`not planned: ${result.failure.code}`)
+    return result.plan
+  }
+  const hostModel = (key: string, fetch: typeof globalThis.fetch) =>
+    Effect.runPromise(
+      Effect.gen(function*() {
+        return yield* HostModel
+      }).pipe(Effect.provide(HostModel.layer(planned(key), Redacted.make(key), { fetch })))
+    )
+
+  test("prepares exactly the url, public headers and body the provider receives, and never the key", async () => {
+    const sent: Array<{ url: string; headers: Headers; body: string }> = []
+    const fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push({
+        url: String(input),
+        headers: new Headers(init?.headers),
+        body: new TextDecoder().decode(init?.body as Uint8Array)
+      })
+      return new Response("data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } })
+    }, { preconnect() {} })
+    const { model, route } = await hostModel(SENTINEL, fetch)
+    await Effect.runPromise(Stream.runDrain(model.stream(request)))
+    const prepared = await Effect.runPromise(route.prepare(request))
+    expect(sent).toHaveLength(1)
+    const [provider] = sent
+    expect(provider!.url).toBe(prepared.url)
+    expect(provider!.body).toBe(prepared.bodyText)
+    expect(new TextDecoder().decode(prepared.body)).toBe(prepared.bodyText)
+    expect(Object.keys(prepared.publicHeaders)).not.toEqual([])
+    for (const [name, value] of Object.entries(prepared.publicHeaders)) expect(provider!.headers.get(name)).toBe(value)
+    expect(provider!.headers.get("authorization")).toBe(`Bearer ${SENTINEL}`)
+    expect(prepared.url).not.toContain(SENTINEL)
+    expect(JSON.stringify(prepared.publicHeaders)).not.toContain(SENTINEL)
+    expect(prepared.bodyText).not.toContain(SENTINEL)
+  })
+
+  test("prepares the same request for two keys", async () => {
+    const unused = Object.assign(async () => new Response(null, { status: 500 }), { preconnect() {} })
+    const [one, two] = await Promise.all([hostModel(SENTINEL, unused), hostModel("sk-other-key-9876543210", unused)])
+    const [first, second] = await Promise.all([
+      Effect.runPromise(one.route.prepare(request)),
+      Effect.runPromise(two.route.prepare(request))
+    ])
+    expect(second).toEqual(first)
   })
 })

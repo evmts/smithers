@@ -7,6 +7,8 @@ import {
 } from "@smthrs/model-host"
 import { FetchTransport } from "@smthrs/platform-node"
 import { ConfiguredModel } from "@smthrs/rpc"
+import { Effect } from "effect"
+import { HttpEffect } from "effect/http"
 import { createServer } from "node:http"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { parseArgs } from "node:util"
@@ -69,7 +71,9 @@ const requestedMaxTokens = Number(process.env.SMITHERS_CHAT_MAX_TOKENS ?? "4096"
 if (!Number.isSafeInteger(requestedMaxTokens) || requestedMaxTokens <= 0 || requestedMaxTokens > 1_000_000) {
   throw new Error("SMITHERS_CHAT_MAX_TOKENS is invalid")
 }
-const handle = createModelTurnHandler({
+// This program is the boundary: it serves the library's `effect/http` handler
+// as a Fetch handler, which interrupts a turn whose caller went away.
+const handle = HttpEffect.toWebHandler(createModelTurnHandler({
   authorization,
   callbackBaseUrl,
   resolve: environmentModelResolver({ binding, preflightBinding, env: process.env, maxTokens: requestedMaxTokens }),
@@ -82,7 +86,7 @@ const handle = createModelTurnHandler({
   writeDiagnostic: (line) => {
     process.stderr.write(line)
   }
-})
+}))
 const modelProbe = createModelProbe({ env: process.env, egress: true })
 const authorized = bearerAuthorization(authorization)
 const testModel = async (request: Request): Promise<Response> => {
@@ -95,7 +99,9 @@ const testModel = async (request: Request): Promise<Response> => {
   try { body = JSON.parse(new TextDecoder().decode(bytes)) } catch { return Response.json({ code: "request_invalid" }, { status: 400 }) }
   const parsed = ConfiguredModel.ModelTestRequestSchema.safeParse(body)
   if (!parsed.success) return Response.json({ code: "request_invalid" }, { status: 400 })
-  return Response.json(await modelProbe.test(parsed.data.model, parsed.data.input))
+  return Response.json(
+    await Effect.runPromise(modelProbe.test(parsed.data.model, parsed.data.input), { signal: request.signal })
+  )
 }
 const normalize = async (request: Request): Promise<Response> => {
   if (!authorized(request)) return Response.json({ code: "unauthorized" }, { status: 401 })

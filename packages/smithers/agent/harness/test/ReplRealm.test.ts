@@ -6,7 +6,7 @@
  * the channel to the next turn, and the transition is a call rather than a
  * return.
  */
-import { Deferred, Effect, Fiber, Option, Schema } from "effect"
+import { Deferred, Effect, Exit, Fiber, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
@@ -1106,4 +1106,86 @@ describe("the REPL contract's worked example", () => {
     expect(carried._tag === "settled" && carried.transition._tag).toBe("continue")
     expect(frames[1]!.prints).toContain("\n1 1")
   })
+})
+
+/**
+ * Model-written recursion against the host's own stack. QuickJS stops a deep
+ * recursion at its stack bound, as an error the cell can catch. A host stack
+ * that overflows inside the interpreter anyway leaves a runtime that aborts the
+ * process when it is disposed, so the realm abandons it and the next cell runs
+ * in a fresh one.
+ */
+describe("the realm's stack", () => {
+  const recursion = `function f(n) { return f(n + 1) + 1 }`
+
+  it("raises a runaway recursion as a catchable error and keeps the realm", async () => {
+    const frames = await session([
+      `var kept = 1`,
+      `${recursion}\nf(0)`,
+      `try { f(0) } catch (error) { console.log(error.name, error.message) }`,
+      `ctx.done(String(kept))`
+    ])
+
+    expect(frames[1]?.outcome).toEqual(new Cell.Raised({ name: "InternalError", message: "stack overflow" }))
+    expect(frames[2]?.prints).toBe("InternalError stack overflow")
+    expect(frames[3]?.outcome).toMatchObject({ transition: { _tag: "complete", output: "1" } })
+  })
+
+  // A recursion runs while the cell is evaluated, or after an await while its
+  // jobs are drained; the host can overflow inside either.
+  it.each([["evaluation", ""], ["a drained job", "await 0\n"]])(
+    "replaces a runtime the host's stack overflowed inside during %s, and closes without aborting",
+    async (_, prefix) => {
+      // The host's depth budget, then cells evaluated from ever shallower
+      // depths until one overflows the host inside the interpreter rather than
+      // in the parser before it or nowhere at all.
+      const deepest = (depth: number): number => {
+        try {
+          return deepest(depth + 1)
+        } catch {
+          return depth
+        }
+      }
+      const burn = <A>(depth: number, run: () => A): A | undefined => {
+        try {
+          return depth === 0 ? run() : burn(depth - 1, run)
+        } catch {
+          // The host overflowed before the cell reached the interpreter.
+          return undefined
+        }
+      }
+
+      await Effect.gen(function*() {
+        const realm = yield* (yield* QuickJSSandbox.make).openRealm!({ flows })
+        const evaluate = (text: string, frame: number) =>
+          realm.evaluate({ cell: Cell.source(text), frame, call: succeeds })
+        const limit = deepest(0)
+        let overflowed: Sandbox.RealmFrame | undefined
+        for (let percent = 97; overflowed === undefined && percent >= 40; percent--) {
+          yield* evaluate(`var kept = 1`, 0)
+          const exit = burn(
+            Math.floor(limit * percent / 100),
+            () => Effect.runSyncExit(evaluate(`${prefix}${recursion}\nf(0)`, 1))
+          )
+          if (
+            exit !== undefined && Exit.isSuccess(exit) && exit.value.outcome._tag === "rejected" &&
+            exit.value.outcome.reason === "stack"
+          ) {
+            overflowed = exit.value
+          }
+        }
+
+        expect(overflowed?.outcome).toEqual(
+          new Cell.Rejected({
+            code: "limit_exceeded",
+            reason: "stack",
+            message: "The cell overflowed the host's stack. Its realm was reset, so names from earlier cells are gone."
+          })
+        )
+        expect(overflowed?.bindings).toEqual([])
+        const next = yield* evaluate(`ctx.done(typeof kept)`, 2)
+        expect(next.outcome).toMatchObject({ transition: { _tag: "complete", output: "undefined" } })
+      }).pipe(Effect.scoped, Effect.runPromise)
+    }
+  )
 })

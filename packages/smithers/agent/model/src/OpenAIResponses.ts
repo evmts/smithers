@@ -4,6 +4,7 @@
  * @since 0.1.0
  */
 
+import { SpanFailure } from "@smthrs/flow"
 import { Clock, Effect, Option, Schema } from "effect"
 import * as CanonicalJson from "./CanonicalJson.ts"
 import * as DeferredTools from "./DeferredTools.ts"
@@ -368,10 +369,12 @@ const buildBody = (
   }
 }
 
-const fromRequest = Effect.fn("OpenAIResponses.fromRequest")((
-  request: ModelRequest,
-  options: { readonly native: boolean }
-): Effect.Effect<Body, ModelError> => Effect.succeed(buildBody(request, options)))
+const fromRequest = SpanFailure.fn(
+  Effect.fn("OpenAIResponses.fromRequest")((
+    request: ModelRequest,
+    options: { readonly native: boolean }
+  ): Effect.Effect<Body, ModelError> => Effect.succeed(buildBody(request, options)))
+)
 
 const chatgptBody = (request: ModelRequest, options: { readonly native: boolean }): ChatGPTBody => {
   // `chatgptFromRequest` has already refused a request carrying `maxTokens`,
@@ -392,24 +395,26 @@ const chatgptBody = (request: ModelRequest, options: { readonly native: boolean 
   }
 }
 
-const chatgptFromRequest = Effect.fn("OpenAIResponses.chatgptFromRequest")((
-  request: ModelRequest,
-  options: { readonly native: boolean }
-): Effect.Effect<ChatGPTBody, ModelError> =>
-  // The subscription backend rejects `max_output_tokens` and offers no other
-  // output cap, so a budget it cannot honor is refused here, before signing
-  // and transport, rather than dropped: a caller who bounded the request must
-  // not receive an unbounded one. The path names the member, never its value.
-  request.params.maxTokens === undefined
-    ? Effect.succeed(chatgptBody(request, options))
-    : Effect.fail(
-      new ModelError({
-        code: "invalid_request",
-        message:
-          "The ChatGPT-subscription backend rejects max_output_tokens, so this route cannot honor params.maxTokens: omit the budget or use an API-key route",
-        path: "params.maxTokens"
-      })
-    )
+const chatgptFromRequest = SpanFailure.fn(
+  Effect.fn("OpenAIResponses.chatgptFromRequest")((
+    request: ModelRequest,
+    options: { readonly native: boolean }
+  ): Effect.Effect<ChatGPTBody, ModelError> =>
+    // The subscription backend rejects `max_output_tokens` and offers no other
+    // output cap, so a budget it cannot honor is refused here, before signing
+    // and transport, rather than dropped: a caller who bounded the request must
+    // not receive an unbounded one. The path names the member, never its value.
+    request.params.maxTokens === undefined
+      ? Effect.succeed(chatgptBody(request, options))
+      : Effect.fail(
+        new ModelError({
+          code: "invalid_request",
+          message:
+            "The ChatGPT-subscription backend rejects max_output_tokens, so this route cannot honor params.maxTokens: omit the budget or use an API-key route",
+          path: "params.maxTokens"
+        })
+      )
+  )
 )
 
 const eventType = (value: OpenAIEvent): string => value.type
@@ -792,16 +797,18 @@ const terminalEvent = (event: OpenAIEvent): boolean =>
   event.type === "response.completed" || event.type === "response.incomplete"
 
 const stepWith = (continuation: Continuation) =>
-  Effect.fn("OpenAIResponses.step")((
-    state: State,
-    event: OpenAIEvent
-  ): Effect.Effect<readonly [State, ReadonlyArray<ModelEvent.ModelEvent>], ModelError> =>
-    Effect.gen(function*() {
-      const now = yield* Clock.currentTimeMillis
-      const result = stepEvent(state, event, continuation, now)
-      if (result instanceof ModelError) return yield* Effect.fail(result)
-      return [result.state, result.events] as const
-    })
+  SpanFailure.fn(
+    Effect.fn("OpenAIResponses.step")((
+      state: State,
+      event: OpenAIEvent
+    ): Effect.Effect<readonly [State, ReadonlyArray<ModelEvent.ModelEvent>], ModelError> =>
+      Effect.gen(function*() {
+        const now = yield* Clock.currentTimeMillis
+        const result = stepEvent(state, event, continuation, now)
+        if (result instanceof ModelError) return yield* Effect.fail(result)
+        return [result.state, result.events] as const
+      })
+    )
   )
 
 const step = stepWith("stored")

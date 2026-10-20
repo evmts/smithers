@@ -333,7 +333,11 @@ describe("execution snapshot admission boundaries", () => {
         source: {
           entry,
           bytes,
-          modules: new Map([[entry, { bytes, source: mode === "valid" ? Prompt.compile(text) : text, links: [] }]])
+          modules: new Map([[entry, {
+            bytes,
+            source: mode === "valid" ? yield* Prompt.compile(text) : text,
+            links: []
+          }]])
         }
       }
       const snapshots = yield* Snapshot.makeFileSystem({ root })

@@ -227,6 +227,14 @@ The cell contract is the text the model is taught with, and its size is a cost
 the run pays every frame. The package pins a token ceiling on the rendered
 contract, so growing it is a deliberate act with a number attached.
 
+The contract has two profiles. `workspace`, the default, teaches a run that
+changes a checkout: the REPL, rules 1 to 9, a worked bug fix and the
+checkout's history fact. `conversation` teaches a run that answers a person
+through the flows its catalog lists, such as a chat agent: the same REPL and
+rules 1 to 6, byte for byte, without the example, rules 7 to 9 or the history
+fact, whose `grep`, `read` and `edit` calls and tree evidence it has no use for.
+Both texts are pinned to the byte.
+
 The `jev` teaching is a section of its own, rendered between the environment
 facts and the catalog only when the catalog binds `jev`. It carries the
 thresholds a cell acts on (a boolean at probability 0.8, a choice or score at

@@ -6,7 +6,7 @@
  *
  * @since 1.0.0
  */
-import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode, SdkRules } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 
 const cwd = "packages/rpc"
@@ -258,6 +258,18 @@ const reviewDocsAgainstCode = ReviewDocsAgainstCode({
  */
 const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
 
+/** Will's SDK-wide rules (apps/mvp/docs/rules.md): `importRules` runs with `test`; `jevRules` is manual. */
+const { importRules, jevRules } = SdkRules({
+  cwd,
+  role: "app-library",
+  knownDeepImports: {
+    packages: ["@smthrs/canonical"],
+    because: "the contracts stay runtime-free zod (apps/DESIGN.md, \"Dependency law\"), so they import only " +
+      "@smthrs/canonical/Record and @smthrs/canonical/Serializer; the @smthrs/canonical root loads Effect. " +
+      "test/NativeAgent.test.ts pins those two subpaths."
+  }
+})
+
 /**
  * Build, lint, formatting, and test gates for the public wire contracts.
  *
@@ -272,6 +284,8 @@ export const Package = Smithers.Package({
     fmt,
     docs,
     docsFiles,
+    importRules,
+    jevRules,
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
     ...securityReview

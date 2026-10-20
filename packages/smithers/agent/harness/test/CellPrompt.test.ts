@@ -686,3 +686,76 @@ describe("the stance", () => {
     expect(CellPrompt.make({}, {}, "careful")[1]!.text).toBe(Monitor.carefulText)
   })
 })
+
+describe("the conversation profile", () => {
+  const ids = (sections: ReadonlyArray<CellPrompt.Section>) => sections.map((section) => section.id)
+  const conversationText = () =>
+    CellPrompt.make({}, {}, undefined, "conversation").find((section) => section.id === "cell-contract")!.text
+  const workspaceText = contractText
+
+  it("is pinned to the byte, because 0004's evals measure this wording", () => {
+    // Decision 0003 of apps/mvp, 2026-10-19: a chat agent is taught the REPL
+    // and rules 1 to 6 without the bug-fix example and rules 7 to 9. A change
+    // here moves both numbers on purpose.
+    expect(conversationText()).toHaveLength(3_025)
+    expect(Digest.digest(conversationText()))
+      .toBe("8173d67646a135ce1aa85b69ce049f4ccdfb8c58754abe893e79a44bb2ae3e8d")
+  })
+
+  it("is the workspace contract without the bug-fix example and rules 7 to 9, byte for byte", () => {
+    const workspace = workspaceText()
+    const exampleStart = workspace.indexOf("Example bug fix")
+    const exampleEnd = workspace.indexOf("Many calls per cell")
+    expect(exampleStart).toBeGreaterThan(0)
+    expect(exampleEnd).toBeGreaterThan(exampleStart)
+    const withoutExample = workspace.slice(0, exampleStart) + workspace.slice(exampleEnd)
+    const withoutWorkspaceRules = withoutExample.split("\n").filter((line) => !/^[789]\. /.test(line)).join("\n")
+    expect(conversationText()).toBe(withoutWorkspaceRules)
+    // Rules 1 to 6 are the workspace's own lines, unchanged.
+    const rules = (text: string) => text.split("\n").filter((line) => /^\d\. /.test(line))
+    expect(rules(conversationText())).toEqual(rules(workspace).slice(0, 6))
+    expect(rules(conversationText()).map((line) => line[0])).toEqual(["1", "2", "3", "4", "5", "6"])
+  })
+
+  it("names none of the workspace example's flows and no worked cell", () => {
+    expect(conversationText()).not.toContain("```cell")
+    expect(conversationText()).not.toMatch(/ctx\.call\("(?:grep|read|edit|bash)"/)
+    expect(conversationText()).not.toContain("ctx.base")
+    expect(conversationText()).not.toContain("ctx.checkpoint")
+  })
+
+  it("states no history fact, and renders the environment only for facts the host measured", () => {
+    expect(ids(CellPrompt.make({}, {}, undefined, "conversation"))).toEqual(["cell-contract", "cell-catalog"])
+    expect(CellPrompt.make({}, {}, undefined, "conversation").map((section) => section.text).join("\n"))
+      .not.toContain("History:")
+    const measured = CellPrompt.make({}, { locale: "C.UTF-8", absentTools: ["rg"] }, undefined, "conversation")
+    expect(ids(measured)).toEqual(["cell-contract", "cell-environment", "cell-catalog"])
+    expect(measured[1]!.text).toBe(
+      "Harness-computed facts about the checkout and container, not the task.\n" +
+        "- Locale: C.UTF-8; output and files decode as that.\n" +
+        "- Not installed: rg. Calls to them fail; use `ctx.flows`."
+    )
+  })
+
+  it("keeps the stance, jev and catalog sections the workspace profile renders", () => {
+    const flows = { jev: projection("jev", Option.none()) }
+    const workspace = CellPrompt.make(flows, {}, "careful")
+    const conversation = CellPrompt.make(flows, {}, "careful", "conversation")
+    expect(ids(conversation)).toEqual(["cell-contract", "cell-stance", "cell-jev", "cell-catalog"])
+    for (const id of ["cell-stance", "cell-jev", "cell-catalog"] as const) {
+      expect(conversation.find((section) => section.id === id)).toEqual(
+        workspace.find((section) => section.id === id)
+      )
+    }
+    expect(conversation[0]!.digest).not.toBe(workspace[0]!.digest)
+  })
+
+  it("leaves the workspace profile exactly what it was when named or omitted", () => {
+    const flows = { only: projection("only", Option.none()) }
+    expect(CellPrompt.make(flows, {}, undefined, "workspace")).toEqual(CellPrompt.make(flows))
+  })
+
+  it("costs less than the workspace contract", () => {
+    expect(Tokens.estimate(conversationText())).toBeLessThan(Tokens.estimate(workspaceText()))
+  })
+})

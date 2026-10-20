@@ -5,10 +5,11 @@
  * consumes it to produce one decoded value. The sink receives each emitted
  * agent event while the overall step runs.
  *
- * With {@link module:FlowEngineLike}, model deltas arrive at the sealed model-call boundary,
- * after the provider stream settles. That adapter records the complete provider
- * stream before emitting its events. The sink does not report live provider
- * progress. A replay emits the recorded events again without calling the provider.
+ * With {@link module:FlowEngineLike}, model events reach the sink live, from
+ * inside the sealed model-call boundary: each provider delta while the provider
+ * is still streaming, and a transport retry as a `model-retried` event before
+ * the next attempt's deltas. A replay emits the recorded events again without
+ * calling the provider.
  *
  * The service is optional. `AgentAction` resolves it with
  * `Effect.serviceOption`, so a composition that provides none behaves exactly
@@ -24,7 +25,7 @@
  * @since 0.1.0
  */
 
-import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import type { AgentEvent } from "@smthrs/harness"
 import type { StepFact } from "@smthrs/journal"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"

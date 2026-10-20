@@ -1,47 +1,55 @@
-/** Bounded JSON transport shared by the host and its context callback.
+/** Bounded JSON transport shared by the host's routes.
  * @since 1.0.0
  */
+
+import { Effect, Stream } from "effect"
+import type { HttpIncomingMessage } from "effect/http"
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024
 
 /**
  * Reads at most MAX_BODY_BYTES of the body as JSON. The byte count is taken
- * while streaming, so a chunked body with no content-length is cancelled at
- * the limit instead of being buffered whole.
+ * while streaming, so a chunked body with no content-length stops being read
+ * at the limit instead of being buffered whole. Anything else — a declared
+ * length past the limit, an empty or unreadable body, invalid UTF-8 or JSON —
+ * is `undefined`, never a failure.
  *
  * @private
  * @since 1.0.0
  */
-export const boundedJson = async (request: Request | Response): Promise<unknown | undefined> => {
-  try {
-    const length = Number(request.headers.get("content-length") ?? "0")
-    if (!Number.isFinite(length) || length < 0 || length > MAX_BODY_BYTES) {
-      await request.body?.cancel()
-      return undefined
-    }
-    if (request.body === null) return undefined
-    const reader = request.body.getReader()
-    const chunks: Array<Uint8Array> = []
-    let size = 0
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      size += value.byteLength
-      if (size > MAX_BODY_BYTES) {
-        await reader.cancel()
-        return undefined
+export const boundedJson = <E>(
+  message: HttpIncomingMessage.HttpIncomingMessage<E>
+): Effect.Effect<unknown | undefined> => {
+  const length = Number(message.headers["content-length"] ?? "0")
+  if (!Number.isFinite(length) || length < 0 || length > MAX_BODY_BYTES) return Effect.succeed(undefined)
+  const chunks: Array<Uint8Array> = []
+  let size = 0
+  return message.stream.pipe(
+    Stream.runForEachWhile((chunk) =>
+      Effect.sync(() => {
+        size += chunk.byteLength
+        if (size > MAX_BODY_BYTES) return false
+        chunks.push(chunk)
+        return true
+      })
+    ),
+    Effect.flatMap(() => {
+      if (size === 0 || size > MAX_BODY_BYTES) return Effect.succeed(undefined)
+      const bytes = new Uint8Array(size)
+      let offset = 0
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset)
+        offset += chunk.byteLength
       }
-      chunks.push(value)
-    }
-    if (size === 0) return undefined
-    const bytes = new Uint8Array(size)
-    let offset = 0
-    for (const chunk of chunks) {
-      bytes.set(chunk, offset)
-      offset += chunk.byteLength
-    }
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes)) as unknown
-  } catch {
-    return undefined
-  }
+      return Effect.try(() =>
+        JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes)) as unknown
+      )
+    }),
+    // Bytes that are not UTF-8 JSON, or a body the platform cannot read (a
+    // used body is a defect there), are no request. Interruption is neither a
+    // failure nor a defect, so a caller who went away while the body was read
+    // stays interrupted and is never answered as a bad request.
+    Effect.catch(() => Effect.succeed(undefined)),
+    Effect.catchDefect(() => Effect.succeed(undefined))
+  )
 }

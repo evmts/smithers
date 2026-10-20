@@ -1,14 +1,11 @@
-import * as Model from "@smthrs/model/Model"
-import type * as ModelEvent from "@smthrs/model/ModelEvent"
-import * as RequestExecutor from "@smthrs/model/RequestExecutor"
-import * as Route from "@smthrs/model/Route"
-import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { Model, type ModelEvent, RequestExecutor, Route } from "@smthrs/model"
+import type { NativeAgent } from "@smthrs/rpc"
 import { Effect, Fiber, Redacted, Result, Stream } from "effect"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { describe, expect, test } from "vitest"
 import { providerRequest, runModelTurn, StreamingCredentialCutter } from "../src/ModelTurnHost.ts"
 
-const turn: StartAgentTurnRequest = {
+const turn: NativeAgent.StartAgentTurnRequest = {
   runId: "run-1",
   instructions: "help",
   messages: [
@@ -38,7 +35,7 @@ describe("ModelTurnHost", () => {
       { type: "settle", stopReason: "tool-calls" }
     ]
     const model = Model.make({ stream: () => Stream.fromIterable(events) })
-    const frames: Array<AgentTurnFrame> = []
+    const frames: Array<NativeAgent.AgentTurnFrame> = []
     await Effect.runPromise(
       runModelTurn(model, turn, { modelId: "model-a" }, (frame) => Effect.sync(() => frames.push(frame)))
     )
@@ -58,7 +55,7 @@ describe("ModelTurnHost", () => {
       { type: "tool-call-end", id: "call", arguments: "{\"key\":\"sk-secret\"}" },
       { type: "settle", stopReason: "tool-calls" }
     ]
-    const frames: Array<AgentTurnFrame> = []
+    const frames: Array<NativeAgent.AgentTurnFrame> = []
     await Effect.runPromise(
       runModelTurn(Model.make({ stream: () => Stream.fromIterable(events) }), turn, {
         modelId: "m",
@@ -75,7 +72,7 @@ describe("ModelTurnHost", () => {
       { type: "tool-call-end", id: "call-sk-secret", arguments: "{}" },
       { type: "settle", stopReason: "tool-calls" }
     ]
-    const frames: Array<AgentTurnFrame> = []
+    const frames: Array<NativeAgent.AgentTurnFrame> = []
     const exit = await Effect.runPromise(Effect.result(
       runModelTurn(Model.make({ stream: () => Stream.fromIterable(events) }), turn, {
         modelId: "m",
@@ -88,7 +85,7 @@ describe("ModelTurnHost", () => {
   })
 
   test("fiber interruption emits no invented completion", async () => {
-    const frames: Array<AgentTurnFrame> = []
+    const frames: Array<NativeAgent.AgentTurnFrame> = []
     const model = Model.make({ stream: () => Stream.never })
     const fiber = Effect.runFork(
       runModelTurn(model, turn, { modelId: "m" }, (frame) => Effect.sync(() => frames.push(frame)))
@@ -106,7 +103,7 @@ describe("ModelTurnHost", () => {
 })
 
 const collect = async (events: ReadonlyArray<ModelEvent.ModelEvent>, credential?: string) => {
-  const frames: AgentTurnFrame[] = []
+  const frames: NativeAgent.AgentTurnFrame[] = []
   await Effect.runPromise(runModelTurn(
     Model.make({ stream: () => Stream.fromIterable(events) }),
     turn,
@@ -216,7 +213,7 @@ test("reports a Chat Completions usage chunk sent after finish_reason on the don
         )
       ))
   })
-  const frames: Array<AgentTurnFrame> = []
+  const frames: Array<NativeAgent.AgentTurnFrame> = []
   await Effect.runPromise(
     Effect.scoped(
       Route.toModel(route as Route.Config<unknown, string, unknown, unknown>).pipe(

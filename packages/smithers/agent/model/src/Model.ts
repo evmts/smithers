@@ -8,7 +8,8 @@
  * @since 0.1.0
  */
 
-import type { GrantStoreError, PermissionDenied, PermissionRequired } from "@smthrs/capability/Permission"
+import type { Permission } from "@smthrs/capability"
+import { SpanFailure } from "@smthrs/flow"
 import { Context, Effect, Layer, Stream } from "effect"
 import * as CallTiming from "./internal/CallTiming.ts"
 import type { ModelError } from "./ModelError.ts"
@@ -24,7 +25,11 @@ import * as Pricing from "./Pricing.ts"
  * @since 0.1.0
  * @slop
  */
-export type ModelFailure = ModelError | PermissionRequired | PermissionDenied | GrantStoreError
+export type ModelFailure =
+  | ModelError
+  | Permission.PermissionRequired
+  | Permission.PermissionDenied
+  | Permission.GrantStoreError
 
 /**
  * The one provider seam: a request in, a stream of events out.
@@ -96,7 +101,10 @@ export const makeNoop = (overrides: Partial<Model> = {}): Model =>
  * `smithers.model.<stage>` (`smithers.model.headers_ms`,
  * `smithers.model.first_output_ms`, `smithers.model.attempts`) and the tier
  * that served it as `smithers.model.served_tier`. Prompt and response content
- * never reach the span.
+ * never reach the span, and neither does a failure's text: a failed span, and
+ * every span the call opens under it, records the error's tag and code (for
+ * example `flows/model/ModelError: rate_limited`) with no message or stack
+ * from the provider, while the stream still fails with the original error.
  *
  * @category tracing
  * @since 1.0.0
@@ -144,7 +152,8 @@ export const withGenAiSpan =
             "gen_ai.request.model": request.modelId,
             ...(providerName === undefined ? {} : { "gen_ai.provider.name": providerName })
           }
-        })
+        }),
+        SpanFailure.stream
       )
     })
 

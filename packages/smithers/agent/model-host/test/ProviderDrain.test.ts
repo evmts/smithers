@@ -1,12 +1,10 @@
-import * as Model from "@smthrs/model/Model"
-import { ModelError } from "@smthrs/model/ModelError"
-import type * as ModelEvent from "@smthrs/model/ModelEvent"
-import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { Model, ModelError, type ModelEvent } from "@smthrs/model"
+import type { NativeAgent } from "@smthrs/rpc"
 import { Effect, Exit, Fiber, Latch, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import { runModelTurn } from "../src/ModelTurnHost.ts"
 
-const turn: StartAgentTurnRequest = {
+const turn: NativeAgent.StartAgentTurnRequest = {
   runId: "run",
   instructions: "answer",
   messages: [{ role: "user", content: "hi" }]
@@ -69,7 +67,7 @@ describe("a commit in flight", () => {
     // figure a capacity derived from `maxTokens` is given.
     const events = [...deltas(20_000), { type: "settle" as const, stopReason: "stop" as const }]
     const { model, state } = counted(events)
-    const committed: Array<AgentTurnFrame> = []
+    const committed: Array<NativeAgent.AgentTurnFrame> = []
     const fiber = Effect.runFork(
       runModelTurn(model, turn, { modelId: "model", maxTokens: 1024 }, (frame) => {
         committed.push(frame)
@@ -88,7 +86,7 @@ describe("a commit in flight", () => {
 
   test("is written before the provider has finished, so the journal advances early", async () => {
     const latch = Latch.makeUnsafe(false)
-    const committed: Array<AgentTurnFrame> = []
+    const committed: Array<NativeAgent.AgentTurnFrame> = []
     const held: Stream.Stream<ModelEvent.ModelEvent> = Stream.drain(Stream.fromEffect(latch.await))
     const model = Model.make({
       stream: () =>
@@ -116,7 +114,9 @@ describe("buffering the provider's side", () => {
     const model = Model.make({
       stream: () =>
         Stream.fromIterable(deltas(2)).pipe(
-          Stream.concat(Stream.fail(new ModelError({ code: "provider_internal", message: "upstream fault" })))
+          Stream.concat(
+            Stream.fail(new ModelError.ModelError({ code: "provider_internal", message: "upstream fault" }))
+          )
         )
     })
     const exit = await Effect.runPromiseExit(runModelTurn(model, turn, { modelId: "model" }, () => Effect.void))
@@ -152,7 +152,7 @@ describe("buffering the provider's side", () => {
       { type: "tool-call-end", id: "c1" },
       { type: "settle", stopReason: "tool-calls" }
     ]
-    const committed: Array<AgentTurnFrame> = []
+    const committed: Array<NativeAgent.AgentTurnFrame> = []
     const held = await Effect.runPromise(runModelTurn(
       Model.make({ stream: () => Stream.fromIterable(events) }),
       turn,

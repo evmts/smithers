@@ -10,7 +10,7 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { describe, expect, it } from "vitest"
 import * as Fetch from "../src/Fetch.ts"
 import * as HttpPost from "../src/HttpPost.ts"
-import { guarded, refusal, ResolveHost } from "../src/internal/HttpNetwork.ts"
+import { guarded, refusal } from "../src/internal/HttpNetwork.ts"
 import * as WebFetch from "../src/WebFetch.ts"
 
 // Mock clients perform no I/O; explicitly opt these policy fixtures into the contract.
@@ -115,7 +115,7 @@ describe("HTTP tools private network boundary", () => {
       const exit = await Effect.runPromise(Effect.exit(
         run("https://example.test/private").pipe(
           Effect.provideService(HttpClient.HttpClient, client),
-          Effect.provideService(ResolveHost, () => Effect.succeed(addresses)),
+          Effect.provideService(KernelHttpClient.ResolveHost, () => Effect.succeed(addresses)),
           Effect.provide(ordinaryGrant())
         )
       ))
@@ -129,7 +129,7 @@ describe("HTTP tools private network boundary", () => {
     const exit = await Effect.runPromise(Effect.exit(
       run("https://example.test/public").pipe(
         Effect.provideService(HttpClient.HttpClient, client),
-        Effect.provideService(ResolveHost, () => Effect.succeed(["93.184.216.34"])),
+        Effect.provideService(KernelHttpClient.ResolveHost, () => Effect.succeed(["93.184.216.34"])),
         Effect.provide(ordinaryGrant())
       )
     ))
@@ -144,7 +144,7 @@ describe("HTTP tools private network boundary", () => {
       const exit = await Effect.runPromise(Effect.exit(
         run(url).pipe(
           Effect.provideService(HttpClient.HttpClient, client),
-          Effect.provideService(ResolveHost, () => {
+          Effect.provideService(KernelHttpClient.ResolveHost, () => {
             resolved++
             return Effect.succeed(["10.0.0.1"])
           }),
@@ -163,7 +163,7 @@ describe("HTTP tools private network boundary", () => {
       const exit = await Effect.runPromise(Effect.exit(
         run("https://example.test/unresolved").pipe(
           Effect.provideService(HttpClient.HttpClient, client),
-          Effect.provideService(ResolveHost, resolve),
+          Effect.provideService(KernelHttpClient.ResolveHost, resolve),
           Effect.provide(ordinaryGrant())
         )
       ))
@@ -178,6 +178,8 @@ describe("HTTP tools private network boundary", () => {
       const exit = await Effect.runPromise(Effect.exit(
         run(url).pipe(
           Effect.provideService(HttpClient.HttpClient, client),
+          // Only `localhost` is a name; a granted name still needs addresses to pin to.
+          Effect.provideService(KernelHttpClient.ResolveHost, () => Effect.succeed(["127.0.0.1"])),
           Effect.provide(grant(new URL(url).origin))
         )
       ))
@@ -192,7 +194,7 @@ describe("HTTP tools private network boundary", () => {
     const exit = await Effect.runPromise(Effect.exit(
       run(url).pipe(
         Effect.provideService(HttpClient.HttpClient, client),
-        Effect.provideService(ResolveHost, () => Effect.succeed(["10.0.0.1"])),
+        Effect.provideService(KernelHttpClient.ResolveHost, () => Effect.succeed(["10.0.0.1"])),
         Effect.provide(grant("https://private.test:8443"))
       )
     ))
@@ -231,7 +233,7 @@ describe("HTTP tools private network boundary", () => {
     const exit = await Effect.runPromise(Effect.exit(
       run("https://private.test/resource").pipe(
         Effect.provideService(HttpClient.HttpClient, client),
-        Effect.provideService(ResolveHost, () => {
+        Effect.provideService(KernelHttpClient.ResolveHost, () => {
           resolutions++
           return Effect.succeed(["10.0.0.1"])
         }),
@@ -265,7 +267,7 @@ describe("HTTP tools private network boundary", () => {
     const exit = await Effect.runPromise(Effect.exit(
       run("https://example.test/start").pipe(
         Effect.provideService(HttpClient.HttpClient, client),
-        Effect.provideService(ResolveHost, () => Effect.succeed(["93.184.216.34"])),
+        Effect.provideService(KernelHttpClient.ResolveHost, () => Effect.succeed(["93.184.216.34"])),
         Effect.provide(ordinaryGrant())
       )
     ))
@@ -279,7 +281,7 @@ describe("HTTP tools private network boundary", () => {
       const started = yield* Deferred.make<void>()
       const fiber = yield* Fetch.run({ url: "https://pending.test/" }).pipe(
         Effect.provideService(HttpClient.HttpClient, client),
-        Effect.provideService(ResolveHost, () =>
+        Effect.provideService(KernelHttpClient.ResolveHost, () =>
           Deferred.succeed(started, undefined).pipe(
             Effect.andThen(Effect.never)
           )),
@@ -327,7 +329,7 @@ describe("HTTP tools private network boundary", () => {
     })
   })
 
-  it("uses the default DNS resolver for an ordinary hostname", async () => {
+  it("refuses a hostname on a host that provides no resolver, and sends nothing", async () => {
     const { client, requests } = transport()
     const exit = await Effect.runPromise(Effect.exit(
       Fetch.run({ url: "http://localhost.localdomain/" }).pipe(
@@ -335,17 +337,25 @@ describe("HTTP tools private network boundary", () => {
         Effect.provide(ordinaryGrant())
       )
     ))
-    expect(["request_failed", "permission_denied"]).toContain(failureOf(exit)?.code)
+    expect(failureOf(exit)).toMatchObject({
+      code: "unsupported",
+      message:
+        "HTTP host cannot resolve localhost.localdomain: this host has no name resolver for web requests; its platform mediates the network"
+    })
     expect(requests).toHaveLength(0)
   })
 
-  it("the default resolver returns every local DNS answer", async () => {
-    const addresses = await Effect.runPromise(Effect.gen(function*() {
-      const resolve = yield* ResolveHost
-      return yield* resolve("localhost")
-    }))
-    expect(addresses.length).toBeGreaterThan(0)
-    expect(addresses.every((address) => address === "127.0.0.1" || address === "::1")).toBe(true)
+  it("reports a resolver failure as an unresolved destination, and sends nothing", async () => {
+    const { client, requests } = transport()
+    const exit = await Effect.runPromise(Effect.exit(
+      Fetch.run({ url: "http://example.test/" }).pipe(
+        Effect.provideService(HttpClient.HttpClient, client),
+        Effect.provideService(KernelHttpClient.ResolveHost, () => Effect.fail(new Error("ENOTFOUND"))),
+        Effect.provide(ordinaryGrant())
+      )
+    ))
+    expect(failureOf(exit)).toMatchObject({ code: "request_failed", message: "Could not resolve HTTP destination" })
+    expect(requests).toHaveLength(0)
   })
 
   it("returns a typed input error when a private origin exceeds the capability resource limit", async () => {

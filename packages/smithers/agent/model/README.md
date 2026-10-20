@@ -70,10 +70,12 @@ network.
 ## Proxy a model
 
 A browser must not hold a provider key. `ModelProxy.serve` is an `effect/http`
-handler that runs the host's `Model` under the host's policy and streams the
-events as NDJSON; `ModelProxy.layerClient` is a `Model` that calls it, so a
-browser keeps calling `model.stream(request)`. Both record spans, metrics and
-one log line per request, joined by one request id and one trace. See
+handler whose `prepare` hook applies the host's policy and chooses the `Model`
+that answers each request; it streams the events as NDJSON. `attributes` label
+its metrics and `onEnd` hands the host each request's usage for metering.
+`ModelProxy.layerClient` is a `Model` that calls it, so a browser keeps calling
+`model.stream(request)`. Both record spans, metrics and one log line per
+request, joined by one request id and one trace. See
 https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/docs/guides/proxy-a-model.md.
 
 ## Public API
@@ -110,7 +112,7 @@ The root entry point exports these namespaces. Each is also importable from
 - **`ModelEvent`**: The normalized events one model call emits, and the fold that turns them back into a single durable assistant message.
   `Usage`, `TextStart`, `TextDelta`, `TextEnd`, `ThinkingStart`, `ThinkingDelta`, `ThinkingEnd`, `ToolCallStart`, `ToolCallDelta`, `ToolCallEnd`, `ToolResult`, `UsageEvent`, `Retry`, `Settle`, `ModelEvent`, `settledMessage`
 - **`ModelProxy`**: A `Model` served over HTTP, and a `Model` that reads one served elsewhere.
-  `requestIdHeader`, `contentType`, `defaultMaxBodyBytes`, `EndLine`, `ErrorLine`, `Line`, `ErrorBody`, `Refusal`, `requests`, `duration`, `firstEvent`, `tokens`, `ServeOptions`, `serve`, `PolicyOptions`, `policy`, `ClientOptions`, `makeClient`, `layerClient`
+  `requestIdHeader`, `contentType`, `defaultMaxBodyBytes`, `EndLine`, `ErrorLine`, `Line`, `ErrorBody`, `Refusal`, `requests`, `duration`, `firstEvent`, `tokens`, `Prepared`, `End`, `ServeOptions`, `serve`, `ClientOptions`, `makeClient`, `layerClient`
 - **`ModelRequest`**: The serializable, credential-free declaration of one model call.
   `JsonObject`, `StopReason`, `SystemPart`, `TextPart`, `ThinkingPart`, `ToolCallPart`, `ToolResultPart`, `ContentPart`, `AssistantContentPart`, `UserMessage`, `AssistantMessage`, `ToolMessage`, `Message`, `ToolDefinition`, `ReasoningEffort`, `GenerationParams`, `ToolChoice`, `ModelRequest`
 - **`OpenAIChatCompletions`**: OpenAI Chat Completions request lowering and SSE event handling.

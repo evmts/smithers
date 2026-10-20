@@ -27,7 +27,7 @@ import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as Capability from "@smthrs/capability/Capability"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import { durableEngine } from "@smthrs/flows/test/TestNodeRuntime"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -338,7 +338,7 @@ export const main = (filename: string, root: string, model?: Model.Model): Effec
         ScriptedJudge.layer
       ),
       Layer.provideMerge(Action.layerImplementations),
-      Layer.provideMerge(durableEngine(filename, "examples-sandbox"))
+      Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-sandbox"))
     )
 
     const observed = yield* Effect.scoped(

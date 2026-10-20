@@ -1,7 +1,5 @@
-import * as Model from "@smthrs/model/Model"
-import type * as ModelEvent from "@smthrs/model/ModelEvent"
-import type { AgentTurnCursor } from "@smthrs/rpc/AgentTurnJournal"
-import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { Model, type ModelEvent } from "@smthrs/model"
+import type { AgentTurnJournal, NativeAgent } from "@smthrs/rpc"
 import { Duration, Effect, Fiber, Stream } from "effect"
 import { describe, expect, test, vi } from "vitest"
 import { inertCallbackTransport } from "../src/CallbackTransport.ts"
@@ -151,7 +149,7 @@ describe("createHostDiagnostics", () => {
   })
 })
 
-const turn: StartAgentTurnRequest = {
+const turn: NativeAgent.StartAgentTurnRequest = {
   runId: "run",
   instructions: "answer",
   messages: [{ role: "user", content: "hi" }]
@@ -199,7 +197,14 @@ describe("stream consumption diagnostics", () => {
   })
 })
 
-const cursor: AgentTurnCursor = { version: 1, runId: "run", legId: "leg", batch: 0, position: 0, hash: "a".repeat(64) }
+const cursor: AgentTurnJournal.AgentTurnCursor = {
+  version: 1,
+  runId: "run",
+  legId: "leg",
+  batch: 0,
+  position: 0,
+  hash: "a".repeat(64)
+}
 const grant = {
   turnId: "turn",
   ownerId: 1,

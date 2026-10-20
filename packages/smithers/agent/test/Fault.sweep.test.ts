@@ -11,6 +11,7 @@ import { Fault } from "@smthrs/flow"
 import * as Harness from "@smthrs/harness/HarnessError"
 import * as FailureCopy from "@smthrs/model/FailureCopy"
 import * as ModelError from "@smthrs/model/ModelError"
+import { ModelProxy } from "@smthrs/model"
 import { readdirSync, readFileSync } from "node:fs"
 import { join, relative } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -76,6 +77,27 @@ describe("the owners' classes", () => {
     const credit = new ModelError.ModelError({ code: "out_of_credit", message: "no credit" })
     const wrapped = new Harness.HarnessError({ code: "model_failed", message: "model", cause: credit })
     expect(Fault.of(wrapped)).toEqual({ class: "user", tag: "flows/model/ModelError/out_of_credit" })
+  })
+
+  // A host's refusal reaches its client as a ModelError, so both sides read one
+  // class: a refusal ModelStep retries as capacity waits or retries here, and
+  // one it seals goes to the person or the factory.
+  it("reads a proxy refusal as the ModelError its client receives", () => {
+    const refusal = (status: number, code?: ModelError.ModelErrorCode) =>
+      Fault.of(new ModelProxy.Refusal({ status, message: "m", ...(code === undefined ? {} : { code }) }))
+    expect(refusal(429)).toEqual({ class: "wait", tag: "flows/model/ModelProxyRefusal/rate_limited" })
+    expect(refusal(402)).toEqual({ class: "wait", tag: "flows/model/ModelProxyRefusal/quota_exceeded" })
+    expect(refusal(503)).toEqual({ class: "dependency", tag: "flows/model/ModelProxyRefusal/provider_internal" })
+    expect(refusal(401)).toEqual({ class: "user", tag: "flows/model/ModelProxyRefusal/authentication" })
+    expect(refusal(400)).toEqual({ class: "factory", tag: "flows/model/ModelProxyRefusal/invalid_request" })
+    expect(refusal(402, "out_of_credit")).toEqual({ class: "user", tag: "flows/model/ModelProxyRefusal/out_of_credit" })
+    expect(refusal(400, "rate_limited").class).toBe("wait")
+    const wrapped = new Harness.HarnessError({
+      code: "model_failed",
+      message: "model",
+      cause: new ModelProxy.Refusal({ status: 429, message: "m" })
+    })
+    expect(Fault.of(wrapped).class).toBe("wait")
   })
 
   it("blames the factory, never the person, for a request our agent built", () => {

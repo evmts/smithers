@@ -18,7 +18,7 @@ import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import { durableEngine } from "@smthrs/flows/test/TestNodeRuntime"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Route from "@smthrs/model/Route"
@@ -210,7 +210,7 @@ export const liveLayer = (endpoint: Endpoint, database: string, options: LiveOpt
     Layer.provideMerge(Agent.layerDefaults),
     Layer.provideMerge(judge),
     Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(durableEngine(database, "examples-dstack"))
+    Layer.provideMerge(TestNodeRuntime.durableEngine(database, "examples-dstack"))
   )
 }
 

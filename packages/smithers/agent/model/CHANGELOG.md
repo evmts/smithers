@@ -4,6 +4,24 @@
 
 ### Changed
 
+- The span-failure stand-ins come from `@smthrs/flow`'s `SpanFailure`, which
+  the flow engine's own action and flow spans now end through too; this
+  package's private copy is gone. A tagged failure keeps its code when the
+  code is a lowercase token.
+
+- A failed span no longer carries the provider's words. `Model.withGenAiSpan`
+  and every span this package opens (`flows/model/Route.prepare`,
+  `flows/model/Route.stream`, `Auth.sign`, `RequestExecutor.execute` and its
+  HTTP span, each protocol's `fromRequest` and `step`, `Evaluator.evaluate`,
+  `Classifier.evaluate`) end with a stand-in for each failure: its tag, or a
+  defect's class name, and this package's error code, such as
+  `flows/model/ModelError: rate_limited`.
+  An OTLP exporter used to write the provider's error message and stack into
+  the span's status and `exception` event, and a provider message can quote a
+  prompt. Callers still receive the original error. The HTTP span of a failed
+  request now records `HttpClientError: redacted` instead of a `ModelError`
+  naming the redacted url.
+
 - The key of a sealed model step moves. `ModelEvent.Settle` and
   `ModelEvent.Retry` gained optional fields (see Added), and a sealed step's
   key includes the fingerprint of the event schema its record is written in.
@@ -37,16 +55,28 @@
 
 ### Added
 
+- `ModelProxy.prepare(options)` is the credential-free request
+  `ModelProxy.makeClient` sends: the endpoint's URL and the exact body bytes.
+  Hand it to `@smthrs/agent`'s durable model step, or a seat, as the `route`
+  beside the client's `Model`, so a proxied model call is a durable step keyed
+  on what the client really sends. The client's `headers` and request id stay out of the key.
+
 - `ModelProxy` serves a `Model` over HTTP and reads one as a `Model`.
   `ModelProxy.serve` is an `effect/http` handler for Cloudflare Workers, Node
-  and Bun: it reads a `ModelRequest`, runs the host's required `prepare` hook
-  (`ModelProxy.policy` keeps only the caller's messages), and streams NDJSON
-  `ModelEvent` lines ending in an end or error line. `ModelProxy.layerClient`
-  provides `Model` over any Effect `HttpClient` and fails every stream with a
-  typed `ModelError`. Both record a span, request, duration, first-event and
-  token metrics, and one log line per request under one request id and trace,
-  with no prompt, response or provider text. See
-  `docs/guides/proxy-a-model.md`.
+  and Bun: it reads a `ModelRequest`, runs the host's required `prepare` hook,
+  which returns the request the model receives and the `Model` that answers
+  it, and streams NDJSON `ModelEvent` lines ending in an end or error line.
+  `attributes` label its server-side metrics and log line, and `onEnd` hands
+  the host each admitted request's outcome, model id and usage for metering.
+  `ModelProxy.layerClient` provides `Model` over any Effect `HttpClient` and
+  fails every stream with a typed `ModelError`. Both record a span, request,
+  duration, first-event and token (`smithers_model_tokens`) metrics, and one
+  log line per request under one request id and trace, with no prompt,
+  response or provider text. See `docs/guides/proxy-a-model.md`.
+- A `ModelProxy.Refusal` has a fault class, so an agent run that fails with
+  one reads it as the `ModelError` its client receives: a `429` waits, a `401`
+  asks the person, an invalid request is the factory's. Its `modelErrorCode` is
+  that code, and `ModelError.faults` holds the classes both errors share.
 - The `settle` event can say where a call's time went. `ModelEvent.Settle`
   gains optional `timing` and `servedTier`. `ModelEvent.Timing` holds
   `startedAt` (epoch milliseconds) and whole milliseconds from that start:
@@ -123,6 +153,14 @@
   credit left does not recover by waiting (#3043).
 
 ### Fixed
+
+- `ModelProxy.serve` reads every request `ModelProxy.makeClient` sends. The
+  client writes the request through Effect Schema's JSON codec, which writes an
+  optional field that is present but undefined, such as an assistant
+  message's `responseId`, as `null`; the server refused that body with `400`.
+  It now reads the body with the same JSON codec. A conversation with an
+  earlier assistant turn, such as an agent loop's second frame, failed on
+  every call.
 
 - `CanonicalJson` rejects arrays `JSON.stringify` would reshape: a sparse
   array (a hole became `null`), an array with named or symbol-keyed members

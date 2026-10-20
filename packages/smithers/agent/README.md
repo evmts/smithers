@@ -376,9 +376,9 @@ const layer = Layer.mergeAll(
 
 A step answers with one decoded value, which it only knows at the end. Provide
 `EventSink` to observe its provider and controller events, including the cell
-it produced and the calls it made. `FlowEngineLike` records a complete provider
-call before emitting its deltas, so those deltas do not report live provider
-progress.
+it produced and the calls it made. Model deltas reach the sink live, while the
+provider is still streaming; a replay emits the recorded events without calling
+the provider.
 
 ```ts
 import { EventSink } from "@smthrs/agent"
@@ -582,10 +582,11 @@ const program = Effect.gen(function*() {
 
 - **`sealStep`** resolves the route, runs `Route.prepare`, and digests the
   credential-free prepared request together with the harness's declared key
-  material into a `StepKey`. That key is the sealed activity's idempotency key:
-  a replayed turn re-emits the recorded model events instead of calling the
-  provider again, and a provider wire change produces a new key. Credentials
-  are signed on after the digest and never enter it.
+  material into a `StepKey`. It dispatches the call through the same
+  implementation as `ModelStep.run`, under that key as the sealed activity's
+  idempotency key: a replayed turn re-emits the recorded model events instead
+  of calling the provider again, and a provider wire change produces a new
+  key. Credentials are signed on after the digest and never enter it.
 - **`call`** runs one flow call from inside a running cell as its own activity
   at the tier the flow declares. A sealed call is content-addressed on its
   declaration digest, resolved layers, declared capabilities, and arguments, so
@@ -659,9 +660,10 @@ The root entry point exports these namespaces, and each is also importable from
 
 `Agent`, `AgentAction`, `AgentSession`, `Budget`, `CellPlugin`, `Checkpointed`,
 `ChildFlows`, `EngineChildren`, `EventSink`, `FlowEngineLike`, `FlowStore`,
-`InMemoryWorkspaceSandbox`, `MemorySnapshotRecorder`, `PromoteFlows`,
-`QuotaPolicy`, `Seat`, `SeatResolver`, `StandardFlows`, `WorkspaceObservation`,
-`WorkspaceSandbox`.
+`InMemoryWorkspaceSandbox`, `Memory`, `MemoryCalibration`, `MemoryMine`,
+`MemorySnapshotRecorder`, `ModelStep`, `PromoteFlows`, `QuotaPolicy`,
+`RunawayGuard`, `ScriptedJudge`, `Seat`, `SeatResolver`, `SeatRouter`,
+`SmithersPlugin`, `StandardFlows`, `WorkspaceObservation`, `WorkspaceSandbox`.
 
 Every export of every one of them, with its signature and its errors, is
 documented on [the API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/api.md).

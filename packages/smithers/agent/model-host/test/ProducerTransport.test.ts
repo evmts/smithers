@@ -1,8 +1,5 @@
-import * as Model from "@smthrs/model/Model"
-import type * as ModelEvent from "@smthrs/model/ModelEvent"
-import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
-import type { AgentTurnBatch, AgentTurnCursor } from "@smthrs/rpc/AgentTurnJournal"
-import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { Model, type ModelEvent } from "@smthrs/model"
+import { AgentTurnJournal, type NativeAgent } from "@smthrs/rpc"
 import { Duration, Effect, Exit, Fiber, Latch, Stream } from "effect"
 import { createHash } from "node:crypto"
 import { createServer } from "node:http"
@@ -21,12 +18,19 @@ import { runModelTurn } from "../src/ModelTurnHost.ts"
  * that journal does with each request.
  */
 
-const request: StartAgentTurnRequest = {
+const request: NativeAgent.StartAgentTurnRequest = {
   runId: "run",
   instructions: "answer",
   messages: [{ role: "user", content: "hi" }]
 }
-const cursor: AgentTurnCursor = { version: 1, runId: "run", legId: "leg", batch: 0, position: 0, hash: "a".repeat(64) }
+const cursor: AgentTurnJournal.AgentTurnCursor = {
+  version: 1,
+  runId: "run",
+  legId: "leg",
+  batch: 0,
+  position: 0,
+  hash: "a".repeat(64)
+}
 const grantFor = (producerBaseUrl: string) => ({
   turnId: "turn",
   ownerId: 1,
@@ -41,10 +45,10 @@ const grantFor = (producerBaseUrl: string) => ({
 })
 
 const digest = (value: unknown): string =>
-  createHash("sha256").update(agentTurnJournalDigestInput("batch", value)).digest("hex")
+  createHash("sha256").update(AgentTurnJournal.agentTurnJournalDigestInput("batch", value)).digest("hex")
 
 /** The receipt a journal that took this batch answers with. */
-const receipt = (expected: AgentTurnCursor, frame: AgentTurnFrame) => {
+const receipt = (expected: AgentTurnJournal.AgentTurnCursor, frame: NativeAgent.AgentTurnFrame) => {
   const unsigned = {
     version: 1 as const,
     runId: expected.runId,
@@ -54,7 +58,7 @@ const receipt = (expected: AgentTurnCursor, frame: AgentTurnFrame) => {
     previousHash: expected.hash,
     frames: [frame]
   }
-  const batch: AgentTurnBatch = { ...unsigned, hash: digest(unsigned) }
+  const batch: AgentTurnJournal.AgentTurnBatch = { ...unsigned, hash: digest(unsigned) }
   return {
     status: "committed" as const,
     batch,
@@ -142,7 +146,9 @@ const startJournal = async (
         answer.writeHead(204).end()
         return
       }
-      const body = JSON.parse(Buffer.concat(chunks).toString()) as { readonly frames: Array<AgentTurnFrame> }
+      const body = JSON.parse(Buffer.concat(chunks).toString()) as {
+        readonly frames: Array<NativeAgent.AgentTurnFrame>
+      }
       const next = committed.batch + 1
       const attempt: Attempt = { path, batch: next, aborted: false, answered: false }
       state.attempts.push(attempt)
@@ -201,7 +207,7 @@ const waitUntil = async (ready: () => boolean, complaint: string): Promise<void>
   throw new Error(complaint)
 }
 
-const delta = (text: string): AgentTurnFrame => ({ runId: "run", type: "delta", kind: "text", text })
+const delta = (text: string): NativeAgent.AgentTurnFrame => ({ runId: "run", type: "delta", kind: "text", text })
 
 /** The deadline every case here uses, so a bound that fires is quick to see. */
 const deadline = 300
@@ -382,7 +388,7 @@ describe("a journal that answers", () => {
       undefined,
       deadline
     )
-    const committed: Array<AgentTurnFrame> = []
+    const committed: Array<NativeAgent.AgentTurnFrame> = []
     await Effect.runPromise(
       runModelTurn(
         Model.make({ stream: () => Stream.fromIterable(events) }),

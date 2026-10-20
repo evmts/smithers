@@ -1,8 +1,17 @@
-import type { ConfiguredModel, ModelCallInput, ModelCredentialListing } from "@smthrs/rpc/ConfiguredModel"
-import { Redacted } from "effect"
+import type { ConfiguredModel } from "@smthrs/rpc"
+import { Effect, Redacted } from "effect"
 import { describe, expect, test, vi } from "vitest"
 import type { ModelCredentials } from "../src/LocalModel.ts"
-import { createModelProbe } from "../src/ModelProbe.ts"
+import { createModelProbe, type ModelProbeOptions } from "../src/ModelProbe.ts"
+
+/** The probe as a host's boundary runs it: each Test settled as a Promise. */
+const runnableProbe = (options: ModelProbeOptions) => {
+  const probe = createModelProbe(options)
+  return {
+    catalog: probe.catalog,
+    test: (...call: Parameters<typeof probe.test>) => Effect.runPromise(probe.test(...call))
+  }
+}
 
 type Fetch = typeof globalThis.fetch
 const fetchOf = (impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): Fetch =>
@@ -11,14 +20,14 @@ const fetchOf = (impl: (input: RequestInfo | URL, init?: RequestInit) => Promise
 const KEY = "sk-probe-REDACTME-0123456789"
 const ORIGIN = "http://127.0.0.1:9"
 const env = { SMITHERS_MODEL_KEY_LAB: KEY, SMITHERS_MODEL_KEY_LAB_ORIGIN: ORIGIN }
-const generator: ConfiguredModel = {
+const generator: ConfiguredModel.ConfiguredModel = {
   id: "lab",
   protocol: "openai-chat",
   baseUrl: ORIGIN,
   modelId: "lab",
   credential: "LAB"
 }
-const decider: ConfiguredModel = {
+const decider: ConfiguredModel.ConfiguredModel = {
   id: "judge",
   protocol: "evaluation",
   baseUrl: ORIGIN,
@@ -41,7 +50,7 @@ const sse = (...frames: ReadonlyArray<string>) =>
 const answering = (body: unknown) => fetchOf(async () => Response.json(body))
 
 const probe = (fetch: Fetch, deadlineMs?: number) =>
-  createModelProbe({ env, egress: false, fetch, ...(deadlineMs === undefined ? {} : { deadlineMs }) })
+  runnableProbe({ env, egress: false, fetch, ...(deadlineMs === undefined ? {} : { deadlineMs }) })
 
 describe("a generation Test", () => {
   test("passes with the generated words, the credential cut out", async () => {
@@ -60,7 +69,7 @@ describe("a generation Test", () => {
 
   test("sends a composed system prompt and temperature", async () => {
     const fetch = vi.fn<Fetch>(sse(chunk({ content: "ok" }), chunk({}, "stop"), "data: [DONE]\n\n"))
-    const input: ModelCallInput = {
+    const input: ConfiguredModel.ModelCallInput = {
       kind: "generation",
       system: "be brief",
       prompt: "hi",
@@ -130,7 +139,7 @@ describe("a decision Test", () => {
         throw new Error(KEY)
       }
     })
-    const input = { kind: "decision", state: [], questions } as unknown as ModelCallInput
+    const input = { kind: "decision", state: [], questions } as unknown as ConfiguredModel.ModelCallInput
     const result = await probe(answering({})).test(decider, input)
     expect(result).toMatchObject({ ok: false, failure: { code: "unreachable" } })
     expect(JSON.stringify(result)).not.toContain(KEY)
@@ -150,7 +159,7 @@ describe("before any call", () => {
   })
 
   test("names a missing credential", async () => {
-    const result = await createModelProbe({
+    const result = await runnableProbe({
       env: { SMITHERS_MODEL_KEY_LAB_ORIGIN: ORIGIN },
       egress: false,
       fetch: never
@@ -159,7 +168,7 @@ describe("before any call", () => {
   })
 
   test("refuses input of the other kind", async () => {
-    const input: ModelCallInput = { kind: "generation", system: "", prompt: "hi", maxTokens: 8 }
+    const input: ConfiguredModel.ModelCallInput = { kind: "generation", system: "", prompt: "hi", maxTokens: 8 }
     expect(await probe(never).test(decider, input)).toMatchObject({
       ok: false,
       failure: { code: "invalid", field: "protocol" }
@@ -169,7 +178,7 @@ describe("before any call", () => {
 
 describe("stored credentials", () => {
   test("refresh before a Test and back the catalog", async () => {
-    const rows: ReadonlyArray<ModelCredentialListing> = [{
+    const rows: ReadonlyArray<ConfiguredModel.ModelCredentialListing> = [{
       name: "LAB",
       origins: [ORIGIN],
       present: true,
@@ -180,7 +189,7 @@ describe("stored credentials", () => {
       list: () => rows,
       read: () => Redacted.make(KEY)
     }
-    const host = createModelProbe({
+    const host = runnableProbe({
       credentials,
       env: {},
       egress: true,
@@ -192,7 +201,7 @@ describe("stored credentials", () => {
   })
 
   test("a credential store that throws answers unreachable instead of rejecting the Test", async () => {
-    const rows: ReadonlyArray<ModelCredentialListing> = [{
+    const rows: ReadonlyArray<ConfiguredModel.ModelCredentialListing> = [{
       name: "LAB",
       origins: [ORIGIN],
       present: true,
@@ -216,7 +225,7 @@ describe("stored credentials", () => {
     ]
     for (const credentials of stores) {
       const fetch = vi.fn(sse(chunk({ content: "ok" }), chunk({}, "stop"), "data: [DONE]\n\n"))
-      const host = createModelProbe({ credentials, env: {}, egress: true, fetch })
+      const host = runnableProbe({ credentials, env: {}, egress: true, fetch })
       const result = await host.test(generator)
       expect(result).toMatchObject({ ok: false, failure: { code: "unreachable" } })
       expect(JSON.stringify(result)).not.toContain(KEY)
@@ -229,7 +238,7 @@ test("ChatGPT Test uses subscription auth without inventing an output cap; expli
   const access = "private-subscription-token"
   const account = "private-subscription-account"
   const credential = JSON.stringify({ accessToken: access, accountId: account })
-  const model: ConfiguredModel = {
+  const model: ConfiguredModel.ConfiguredModel = {
     id: "chatgpt",
     protocol: "openai-responses-chatgpt",
     modelId: "gpt-6-sol",
@@ -251,7 +260,7 @@ test("ChatGPT Test uses subscription auth without inventing an output cap; expli
       { headers: { "content-type": "text/event-stream" } }
     )
   }))
-  const tester = createModelProbe({ env: { CHATGPT_SUBSCRIPTION: credential }, egress: true, fetch })
+  const tester = runnableProbe({ env: { CHATGPT_SUBSCRIPTION: credential }, egress: true, fetch })
   const result = await tester.test(model)
   expect(result.ok).toBe(true)
   expect(JSON.stringify(result)).not.toContain(access)

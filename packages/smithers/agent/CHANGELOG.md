@@ -2,7 +2,40 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ModelStep.run` calls a model as one durable, sealed step of the running
+  flow. Its key digests the credential-free prepared request (route, protocol,
+  URL, public headers and canonical body bytes) with the encoded request, so a
+  different API key keys the same step and a changed history, model id or base
+  URL keys a new one. Transport faults are retried inside the step with
+  byte-identical bodies; a capacity refusal such as a 429 fails it unsealed for
+  `retryPolicy` to retry (by default one second doubling to thirty, for two
+  minutes); every other provider error is sealed as `Result.error`. Each
+  streamed event is a heartbeat against `heartbeatTimeoutMs` (sixty seconds by
+  default), `onEvent` receives events while the call runs and the recorded
+  events on a replay, and a call cut off mid-flight is made again on resume and
+  counted by `agent_model_step_redispatches`. The guide is
+  `docs/guides/durable-model-call.md`.
+
+### Changed
+
+- `FlowEngineLike`'s `sealStep` dispatches through `ModelStep`'s
+  implementation, so the agent loop and `ModelStep.run` share one key, one
+  recorder and one action. Step keys are unchanged. A step tells a re-issued
+  call from a first one by `@smthrs/flow`'s `Action.CurrentRedispatch`, and
+  each step opens a `ModelStep` span, logs each provider
+  call at debug level, and updates the `agent_model_step_calls`,
+  `agent_model_step_replays` and `agent_model_step_redispatches` counters. A
+  failure crossing a span opened inside a step records only its tag and code.
+
 ### Fixed
+
+- `EventSink` and its docs said model deltas reach a sink only after the
+  provider stream settles. They arrive live, while the provider is still
+  streaming, and a replay emits the recorded events. The docs now say so, and
+  `test/AgentAction.test.ts` proves a delta reaches the sink before its call
+  settles.
 
 - The `jev` flow sends each question as `<id>: <instructions>`. Jev reads a
   question's instructions and the state, never its id, so a cell that keyed

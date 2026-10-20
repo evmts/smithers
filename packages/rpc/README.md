@@ -2,7 +2,7 @@
 
 `LocalApp` defines harness, repository, file, and target records. `LocalLsp` defines code intelligence. `CloudTunnel` defines the cloud proxy, terminal tunnel, and sign-in contracts.
 
-Shared product contracts for the local host, browser, and server. Import individual modules such as `@smthrs/rpc/LocalApp`, `@smthrs/rpc/AppLinks`, and `@smthrs/rpc/TargetGraph`.
+Shared product contracts for the local host, browser, and server. Import them from the root, where each module is a namespace: `import { LocalApp, TargetGraph } from "@smthrs/rpc"`. The root reaches no `node:` or `bun:` built-in. Two modules stay off it: `FormInstructions.generated.ts`, whose `FORM_INSTRUCTION_FIELDS` is part of `UiInstruction`, and the test double `@smthrs/rpc/testing/LiveDocRelay`. The `@smthrs/rpc/<Module>` subpaths still resolve because existing app, Worker and TUI files import them; new code uses the root.
 
 `BrowserFetch` is the one implementation module: the browser tool's guarded fetch-and-extract handler, shared by the product Worker and the local host. It is the only module that performs network I/O, with the DNS resolver injected by each host.
 

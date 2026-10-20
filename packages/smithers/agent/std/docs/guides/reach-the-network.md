@@ -1,6 +1,6 @@
 ---
 title: "Reach the network"
-description: "Get a URL with fetch, post a body with http-post, render a page with webfetch, and search the web through a provider bound to the WebSearch service."
+description: "Get a URL with fetch, post a body with http-post, render a page with webfetch, search the web through a provider bound to the WebSearch service, and know where the web tools resolve names."
 sidebar:
   order: 7
 ---
@@ -16,17 +16,43 @@ kernel sees the request.
 | `http-post` | `irreversible` | `net:post:*` | Sending data. The remote side may already have acted. |
 | `websearch` | `sealed`       | `net:post:*` | A search through a configured provider.               |
 
-Provide the host's `GrantStore` alongside the pin-capable `HttpClient` from
-`@smthrs/platform-node/EgressHttpClient.layer(process.env)` (also used by the
-Bun host bundle). Unsupported transports fail closed. Every destination,
-including redirects, is checked before DNS or transport. Private destinations
-also need an exact `net:private` action grant for the normalized URL origin.
-See [HTTP destination permissions](../reference/flows.md#http-destination-permissions).
+Provide the host's `GrantStore` and an `HttpClient` that pins each request to
+the addresses the tool checked. On Node.js and Bun that client is
+`EgressHttpClient.layer(process.env)` from
+[`@smthrs/platform-node`](/api/platform-node), which `NodeHost` and `BunHost`
+install. The same layer provides the name resolver the tools check addresses
+with. A transport that cannot pin fails closed. Every destination, including
+each redirect, is checked before transport. Private destinations also need an
+exact `net:private` action grant for the normalized URL origin. See
+[HTTP destination permissions](../reference/flows.md#http-destination-permissions).
+
+## Where names resolve
+
+`fetch`, `http-post`, and `webfetch` look a hostname up through
+[`@smthrs/kernel`](/api/kernel)'s `HttpClient.ResolveHost`, check every address
+it returns, and connect only to those addresses. The resolver and the pinning
+client must come from the same host, so the addresses checked are the
+addresses used.
+
+| Host                                     | Resolver                                                         | A request to a hostname                              |
+| ---------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------- |
+| Node.js or Bun, `EgressHttpClient.layer` | `EgressHttpClient.resolveHost`: `getaddrinfo` through `node:dns` | checked, then pinned to the checked addresses        |
+| A browser tab or a Cloudflare Worker     | none                                                             | `unsupported`: the fetch client there cannot pin     |
+| A pinning client with no resolver        | the default `ResolveHost`, which refuses every name              | `unsupported`: `HTTP host cannot resolve <hostname>` |
+
+The default `ResolveHost` fails with `HttpClient.ResolveHostUnavailable`
+(`hostname`, `reason`), because a platform that mediates the network can
+neither look a name up nor hold a connection to the addresses a lookup
+returned. The tools report it as `unsupported` with the message
+`HTTP host cannot resolve <hostname>: <reason>`, so a request that needs a name
+is refused, never sent unchecked. Any other resolver failure, such as an
+unknown name, is `request_failed` with `Could not resolve HTTP destination`. A
+URL whose host is an IP literal skips the lookup.
 
 ## Get a URL
 
 ```ts
-import * as Fetch from "@smthrs/std/Fetch"
+import { Fetch } from "@smthrs/std"
 
 const response = Fetch.run({
   url: "https://example.com/data.json",
@@ -47,7 +73,7 @@ bytes, head first, and says so through `truncated` and `notice`.
 ## Post a body
 
 ```ts
-import * as HttpPost from "@smthrs/std/HttpPost"
+import { HttpPost } from "@smthrs/std"
 
 const response = HttpPost.run({
   url: "https://example.com/hooks/build",
@@ -67,7 +93,7 @@ scheduler treat it as a real side effect rather than a retrievable read.
 `webfetch` is for reading documentation rather than consuming an API:
 
 ```ts
-import * as WebFetch from "@smthrs/std/WebFetch"
+import { WebFetch } from "@smthrs/std"
 
 const page = WebFetch.run({
   url: "https://effect.website/docs",
@@ -101,7 +127,7 @@ Five behaviors are worth knowing:
 host decides who answers:
 
 ```ts
-import * as WebSearch from "@smthrs/std/WebSearch"
+import { WebSearch } from "@smthrs/std"
 
 const results = WebSearch.run({
   query: "effect schema optional fields",
@@ -118,7 +144,7 @@ The package ships one provider. `ExaWebSearch.layer` reads its API key from a
 named credential rather than from the environment:
 
 ```ts
-import * as ExaWebSearch from "@smthrs/std/ExaWebSearch"
+import { ExaWebSearch } from "@smthrs/std"
 
 const provider = ExaWebSearch.layer("exa-api-key")
 ```

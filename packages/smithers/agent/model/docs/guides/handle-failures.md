@@ -32,8 +32,7 @@ decision is what to do next.
 ## Branch on the code
 
 ```ts
-import { Model } from "@smthrs/model"
-import { ModelError } from "@smthrs/model/ModelError"
+import { Model, ModelError } from "@smthrs/model"
 import { Effect, Stream } from "effect"
 
 const program = Effect.gen(function*() {
@@ -41,7 +40,7 @@ const program = Effect.gen(function*() {
   return yield* Stream.runCollect(model.stream(request))
 }).pipe(
   Effect.catchIf(
-    (error): error is ModelError => error instanceof ModelError,
+    (error): error is ModelError.ModelError => error instanceof ModelError.ModelError,
     (error) => {
       switch (error.code) {
         case "quota_exceeded":
@@ -58,7 +57,7 @@ const program = Effect.gen(function*() {
 )
 ```
 
-The twelve codes and their retryability are tabulated in the
+The thirteen codes and their retryability are tabulated in the
 [API reference](../api.md#modelerror). The decision per code:
 
 - `rate_limited`: transient. The executor already waited; a durable caller
@@ -108,7 +107,7 @@ and the supplied environment's proxy policy.
 
 ```ts
 import { RequestExecutor } from "@smthrs/model"
-import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
+import { EgressHttpClient } from "@smthrs/platform-node"
 import { Effect, Layer } from "effect"
 
 const executor = Layer.effect(

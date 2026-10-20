@@ -1,5 +1,4 @@
 import * as ModelPackage from "@smthrs/model"
-import * as ModelErrorModule from "@smthrs/model/ModelError"
 import * as EffectPackage from "effect"
 import { Effect, Stream } from "effect"
 import { readFileSync } from "node:fs"
@@ -9,7 +8,6 @@ import { describe, expect, it } from "vitest"
 const guide = readFileSync(new URL("../docs/guides/handle-failures.md", import.meta.url), "utf8")
 const modules: Record<string, unknown> = {
   "@smthrs/model": ModelPackage,
-  "@smthrs/model/ModelError": ModelErrorModule,
   effect: EffectPackage
 }
 
@@ -26,12 +24,12 @@ describe("failure guide", () => {
   it.each(["quota_exceeded", "context_overflow", "call_timeout", "transport"] as const)(
     "preserves a scripted %s failure without turning the predicate into a defect",
     async (code) => {
-      const error = new ModelErrorModule.ModelError({ code, message: "scripted provider failure" })
+      const error = new ModelPackage.ModelError.ModelError({ code, message: "scripted provider failure" })
       const program = new Function("exports", "require", "request", `${example("Branch on the code")}\nreturn program`)(
         {},
         (id: string) => modules[id],
         { modelId: "test", messages: [] }
-      ) as Effect.Effect<unknown, ModelErrorModule.ModelError, ModelPackage.Model.Model>
+      ) as Effect.Effect<unknown, ModelPackage.ModelError.ModelError, ModelPackage.Model.Model>
 
       const failure = await Effect.runPromise(
         program.pipe(

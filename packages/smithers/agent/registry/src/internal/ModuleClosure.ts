@@ -781,7 +781,7 @@ const walk = (
       const contentDigest = Digest.digest(read.success)
       const rawSource = new TextDecoder().decode(read.success)
       const compiled = yield* Effect.result(
-        Effect.try(() => resolved.endsWith(".mdx") ? Prompt.compile(rawSource) : rawSource)
+        resolved.endsWith(".mdx") ? Prompt.compile(rawSource) : Effect.succeed(rawSource)
       )
       if (compiled._tag === "Failure") {
         const description = `"${recorded}" could not be compiled as MDX`

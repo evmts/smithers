@@ -2,7 +2,23 @@
 
 ## [Unreleased]
 
+### Added
+
+- `QuickJSVariant` on the root: the `Variant` seam, `layerVariant`,
+  `loadModule`, `cacheSuccessful` and the new `compiledModule`, the named
+  build's module compiled once and shared by every QuickJS realm. The
+  presentation realm in `@smthrs/views` compiles through it.
+  `QuickJSSandbox` re-exports the same tag and helpers.
+
 ### Fixed
+
+- A cell that recurses deeply no longer takes down the host. The QuickJS realm
+  bounds its interpreter stack at 128 KiB, so the recursion raises a catchable
+  `InternalError: stack overflow` and the realm keeps its names. If the host's
+  own stack overflows inside the interpreter anyway, the frame is rejected as
+  `limit_exceeded` with the new `Cell.Rejected` reason `"stack"`, and the broken
+  runtime is abandoned rather than disposed, which used to abort the process;
+  the next cell runs in a fresh realm.
 
 - `CellCallStarted.declared` optionally records whether a call was the run's
   declared verification. Journal projections and benchmark replay preserve it;

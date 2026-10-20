@@ -1,4 +1,9 @@
-import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  SdkRules
+} from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
@@ -179,6 +184,9 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
+/** Will's SDK-wide rules (apps/mvp/docs/rules.md): `importRules` runs with `test`; `jevRules` is manual. */
+const { importRules, jevRules } = SdkRules({ cwd, role: "library" })
+
 export const Package = Smithers.Package({
   targets: {
     check,
@@ -186,6 +194,8 @@ export const Package = Smithers.Package({
     docs,
     docsFiles,
     fmt,
+    importRules,
+    jevRules,
     lib,
     lint,
     providerLiveGuards,

@@ -22,7 +22,7 @@ import * as Digest from "@smthrs/core/Digest"
 import * as Effects from "@smthrs/core/Effects"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Action, Flow, type FlowRuntime, Interpreter } from "@smthrs/flow"
-import { durableEngine } from "@smthrs/flows/test/TestNodeRuntime"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
@@ -276,7 +276,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
       Interpreter.layer(Notarize)
     ).pipe(
       Layer.provideMerge(Action.layerImplementations),
-      Layer.provideMerge(durableEngine(filename, "examples-release"))
+      Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-release"))
     )
 
     return yield* Effect.scoped(

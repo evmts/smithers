@@ -92,7 +92,7 @@ An offline host binds `Evaluator.layerScripted` deliberately, dispatches by ques
 
 ## Public API
 
-The root entry point exports one namespace per module; each is also importable from `@smthrs/harness/<Module>`. `QuickJSSandbox` is deliberately _not_ re-exported from the root: it carries an embedded WebAssembly build, so it is imported from its own subpath by hosts that want it.
+The root entry point exports one namespace per module; each is also importable from `@smthrs/harness/<Module>`, except `DoneText` and `QuickJSVariant`, which are on the root only. `QuickJSSandbox` is deliberately _not_ re-exported from the root: it carries an embedded WebAssembly build, so it is imported from its own subpath by hosts that want it.
 
 Every module and every export it publishes is listed in the
 [module and export inventory](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/reference.md).

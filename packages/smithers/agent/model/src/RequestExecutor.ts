@@ -13,22 +13,20 @@
  * @since 0.1.0
  */
 
-import { isRecord } from "@smthrs/canonical/Record"
-import { decodePermissionError } from "@smthrs/capability"
-import type * as Permission from "@smthrs/capability/Permission"
-import * as Redaction from "@smthrs/journal/Redaction"
-import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
-import * as Cause from "effect/Cause"
+import { isRecord } from "@smthrs/canonical"
+import { decodePermissionError, type Permission } from "@smthrs/capability"
+import { SpanFailure } from "@smthrs/flow"
+import { Redaction } from "@smthrs/journal"
+import { HttpClient as KernelHttpClient } from "@smthrs/kernel"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Base64 from "effect/encoding/Base64"
 import * as Base64Url from "effect/encoding/Base64Url"
-import * as Exit from "effect/Exit"
 import * as Headers from "effect/http/Headers"
 import * as HttpClient from "effect/http/HttpClient"
-import * as HttpClientError from "effect/http/HttpClientError"
+import type * as HttpClientError from "effect/http/HttpClientError"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Layer from "effect/Layer"
@@ -736,20 +734,16 @@ const redactedRequest = (
  *
  * Routes refuse a url that names a credential, but the executor takes any
  * request. The HTTP client writes the whole url on its span as `url.full` and
- * `url.query`, and again in the failure it ends the span with on a `4xx`, a
- * `5xx` or a transport error. Both are replaced by the redacted url this
- * module already puts in its own errors.
+ * `url.query`; both are replaced by the redacted url this module already puts
+ * in its own errors. The failure the client ends the span with on a `4xx`, a
+ * `5xx` or a transport error quotes the url too, and `execute` withholds every
+ * span failure's text (see `@smthrs/flow`'s `SpanFailure`).
  */
-const withRedactedUrl = (
-  request: HttpClientRequest.HttpClientRequest,
-  redactedNames: ReadonlyArray<string | RegExp>
-) =>
-(tracer: Tracer.Tracer): Tracer.Tracer =>
+const withRedactedUrl = (request: HttpClientRequest.HttpClientRequest) => (tracer: Tracer.Tracer): Tracer.Tracer =>
   Tracer.make({
     ...tracer,
     span(options) {
       const span = tracer.span(options)
-      const end = span.end.bind(span)
       const attribute = span.attribute.bind(span)
       const url = redactedRequestUrl(request)
       span.attribute = (key, value) =>
@@ -761,25 +755,6 @@ const withRedactedUrl = (
             ? url.split("#", 1)[0]!.split("?").slice(1).join("?")
             : value
         )
-      span.end = (endTime, exit) => {
-        if (exit._tag === "Success" || Cause.hasInterruptsOnly(exit.cause)) return end(endTime, exit)
-        const error = Cause.squash(exit.cause)
-        // A defect is not the request's failure, and is left as it was raised.
-        if (!HttpClientError.isHttpClientError(error)) return end(endTime, exit)
-        const status = error.response?.status
-        return end(
-          endTime,
-          Exit.fail(
-            status === undefined
-              ? transportError(error, redactedNames)
-              : new ModelError({
-                code: "unknown",
-                httpStatus: status,
-                message: `HTTP ${status} (${request.method} ${url})`
-              })
-          )
-        )
-      }
       return span
     }
   })
@@ -1108,7 +1083,7 @@ export const makeWith = (transport: Transport, options: MakeOptions = {}): Effec
             HttpClient.SpanNameGenerator,
             (name) => (sent) => name(redactedRequest(sent, redactedNames))
           ),
-          Effect.updateService(Tracer.Tracer, withRedactedUrl(request, redactedNames)),
+          Effect.updateService(Tracer.Tracer, withRedactedUrl(request)),
           Effect.mapError((error) => mapHttpError(error, redactedNames))
         )
         const answered = (responseStartMs === 0 ? started : started.pipe(
@@ -1154,8 +1129,10 @@ export const makeWith = (transport: Transport, options: MakeOptions = {}): Effec
       })
 
     return RequestExecutor.of({
-      execute: Effect.fn("RequestExecutor.execute")((request, options) =>
-        retryFailures(executeOnce(request, options), maxRetries)
+      execute: SpanFailure.fn(
+        Effect.fn("RequestExecutor.execute")((request: HttpClientRequest.HttpClientRequest, options: ExecuteOptions) =>
+          retryFailures(executeOnce(request, options), maxRetries)
+        )
       )
     })
   })

@@ -34,12 +34,18 @@ const request = (text = "hello", overrides: Partial<ConstructorParameters<typeof
     ...overrides
   })
 
-const hostPolicy = ModelProxy.policy({
-  modelId: "host-model",
-  system: [SystemPart.make({ text: "host system" })],
-  params: GenerationParams.make({ maxTokens: 256 }),
-  maxMessages: 4
-})
+/** The host's `prepare`: its own model id, system prompt and parameters, the caller's messages, and `model`. */
+const hostPrepare = (model: Model.Model) => (received: ModelRequest) =>
+  Effect.succeed({
+    model,
+    request: ModelRequest.make({
+      modelId: "host-model",
+      system: [SystemPart.make({ text: "host system" })],
+      messages: received.messages,
+      tools: [],
+      params: GenerationParams.make({ maxTokens: 256 })
+    })
+  })
 
 /** A model that answers with the text of the request's last user message. */
 const echo = Model.make({
@@ -59,8 +65,11 @@ type StructuredLog = ReturnType<typeof Logger.formatStructured.log>
 
 interface HarnessOptions {
   readonly model?: Model.Model
-  readonly prepare?: ModelProxy.ServeOptions<never>["prepare"]
+  /** Replaces the host's `prepare`; it receives the recording model the harness serves. */
+  readonly prepare?: (model: Model.Model) => ModelProxy.ServeOptions<never>["prepare"]
   readonly maxBodyBytes?: number
+  readonly attributes?: Readonly<Record<string, string>>
+  readonly onEnd?: ModelProxy.ServeOptions<never>["onEnd"]
   /** Replaces or wraps the in-process fetch that reaches the handler. */
   readonly fetch?: (handler: typeof globalThis.fetch) => typeof globalThis.fetch
   readonly headers?: Readonly<Record<string, string>>
@@ -99,12 +108,12 @@ const harness = (options: HarnessOptions = {}) => {
       return model.stream(received)
     }
   })
-  const handler = HttpEffect.toWebHandlerWith<Model.Model, HttpServerRequest.HttpServerRequest | Model.Model>(
-    observed.pipe(Context.add(Model.Model, recording))
-  )(
+  const handler = HttpEffect.toWebHandlerWith<never, HttpServerRequest.HttpServerRequest>(observed)(
     ModelProxy.serve({
-      prepare: options.prepare ?? hostPolicy,
-      ...(options.maxBodyBytes === undefined ? {} : { maxBodyBytes: options.maxBodyBytes })
+      prepare: (options.prepare ?? hostPrepare)(recording),
+      ...(options.maxBodyBytes === undefined ? {} : { maxBodyBytes: options.maxBodyBytes }),
+      ...(options.attributes === undefined ? {} : { attributes: options.attributes }),
+      ...(options.onEnd === undefined ? {} : { onEnd: options.onEnd })
     })
   )
   const direct: typeof globalThis.fetch = (input, init) => handler(new Request(input, init))
@@ -442,7 +451,8 @@ describe("ModelProxy failures", () => {
 
   it("refuses with the Refusal's status, code and message", async () => {
     const h = harness({
-      prepare: () => Effect.fail(new ModelProxy.Refusal({ status: 429, message: "Slow down.", code: "rate_limited" }))
+      prepare: () => () =>
+        Effect.fail(new ModelProxy.Refusal({ status: 429, message: "Slow down.", code: "rate_limited" }))
     })
 
     const { events, error } = await h.call()
@@ -460,7 +470,9 @@ describe("ModelProxy failures", () => {
   })
 
   it("lets a Refusal without a code take its status's code", async () => {
-    const h = harness({ prepare: () => Effect.fail(new ModelProxy.Refusal({ status: 403, message: "Sign in." })) })
+    const h = harness({
+      prepare: () => () => Effect.fail(new ModelProxy.Refusal({ status: 403, message: "Sign in." }))
+    })
 
     const { error } = await h.call()
 
@@ -474,7 +486,7 @@ describe("ModelProxy failures", () => {
   })
 
   it("answers 500 when prepare dies, without its message", async () => {
-    const h = harness({ prepare: () => Effect.die(new Error("prepare broke on secret-config")) })
+    const h = harness({ prepare: () => () => Effect.die(new Error("prepare broke on secret-config")) })
 
     const response = await h.handler(new Request(url, post(encodedRequest(request()))))
 
@@ -577,62 +589,184 @@ describe("ModelProxy failures", () => {
   })
 })
 
-describe("ModelProxy policy", () => {
-  const refusal = (body: ModelRequest) => Effect.runPromise(Effect.flip(hostPolicy(body)))
-
-  it.each(
-    [
-      [
-        "tools",
-        request("q", { tools: [ToolDefinition.make({ name: "t", description: "d", parameters: {} })] }),
-        "Send no tools."
-      ],
-      ["provider-run tools", request("q", { serverTools: [{ type: "web_search" }] }), "Send no tools."],
-      ["no messages", request("q", { messages: [] }), "Send at least one message."],
-      [
-        "more than maxMessages",
-        request("q", { messages: Array.from({ length: 5 }, () => Message.user("q")) }),
-        "Send at most 4 messages."
-      ]
-    ] as const
-  )("refuses %s with 400", async (_, body, message) => {
-    expect(await refusal(body)).toMatchObject({ status: 400, code: "invalid_request", message })
-  })
-
-  it("keeps only the messages and drops every other caller field", async () => {
-    const body = request("q", { cacheKey: "k", cacheBoundary: 1, toolChoice: "none", serverTools: [] })
-
-    const prepared = await Effect.runPromise(hostPolicy(body))
-
-    expect(prepared).toEqual(
-      ModelRequest.make({
-        modelId: "host-model",
-        system: [SystemPart.make({ text: "host system" })],
-        messages: body.messages,
-        tools: [],
-        params: GenerationParams.make({ maxTokens: 256 })
+describe("ModelProxy prepare", () => {
+  it("lets prepare choose the model for each request", async () => {
+    const named = (name: string) =>
+      Model.make({
+        providerName: name,
+        stream: () => Stream.make(ModelEvent.TextDelta({ type: "text-delta", id: "t", text: name }))
       })
-    )
+    const fast = named("fast")
+    const careful = named("careful")
+    const h = harness({
+      prepare: () => (received) =>
+        Effect.succeed({
+          request: received,
+          model: received.messages.length > 1 ? careful : fast
+        })
+    })
+
+    const short = await h.call(request("q"))
+    const long = await h.call(request("q", { messages: [Message.user("a"), Message.user("b")] }))
+
+    expect(short.events).toEqual([{ type: "text-delta", id: "t", text: "fast" }])
+    expect(long.events).toEqual([{ type: "text-delta", id: "t", text: "careful" }])
+    expect(h.served).toEqual([])
+    expect((await h.logLine("server", 0)).annotations.provider).toBe("fast")
+    expect((await h.logLine("server", 1)).annotations.provider).toBe("careful")
   })
 
-  it("defaults to no system prompt, provider parameters and any number of messages", async () => {
-    const body = request("q", { messages: Array.from({ length: 50 }, () => Message.user("q")) })
+  it("keeps the caller's fields that prepare keeps", async () => {
+    const body = request("q", {
+      tools: [ToolDefinition.make({ name: "t", description: "d", parameters: {} })],
+      cacheKey: "k"
+    })
+    const h = harness({ prepare: (model) => (received) => Effect.succeed({ request: received, model }) })
 
-    const prepared = await Effect.runPromise(ModelProxy.policy({ modelId: "m" })(body))
+    await h.call(body)
 
-    expect(prepared.system).toEqual([])
-    expect(prepared.params).toEqual(GenerationParams.make())
-    expect(prepared.messages).toHaveLength(50)
+    expect(h.served).toEqual([body])
   })
 
-  it("refuses tools over HTTP with 400 and the policy's message", async () => {
-    const h = harness()
+  it("adds the host's attributes to every server metric and the log line, never to the client's", async () => {
+    const h = harness({
+      attributes: { role: "agent" },
+      model: Model.make({
+        stream: () =>
+          Stream.make<ReadonlyArray<ModelEvent>>(
+            { type: "text-delta", id: "t", text: "ok" },
+            { type: "usage", inputTokens: 5, outputTokens: 2 }
+          )
+      })
+    })
 
-    const { error } = await h.call(
-      request("q", { tools: [ToolDefinition.make({ name: "t", description: "d", parameters: {} })] })
-    )
+    await h.call()
+    const server = await h.logLine("server")
+    const client = await h.logLine("client")
 
-    expect(error).toMatchObject({ code: "invalid_request", httpStatus: 400, message: "Send no tools." })
+    const role = { role: "agent" }
+    expect(h.metric(ModelProxy.requests, { ...role, side: "server", outcome: "success", status: "200" }).count).toBe(1)
+    expect(h.metric(ModelProxy.duration, { ...role, side: "server", outcome: "success" }).count).toBe(1)
+    expect(h.metric(ModelProxy.firstEvent, { ...role, side: "server" }).count).toBe(1)
+    expect(h.metric(ModelProxy.tokens, { ...role, type: "input", model: "host-model" }).count).toBe(5)
+    expect(h.metric(ModelProxy.tokens, { ...role, type: "output", model: "host-model" }).count).toBe(2)
+    expect(h.metric(ModelProxy.requests, { side: "client", outcome: "success", status: "200" }).count).toBe(1)
+    expect(server.annotations).toMatchObject({ role: "agent", side: "server" })
+    expect(client.annotations).not.toHaveProperty("role")
+  })
+
+  it("keeps the proxy's own attribute over a host attribute of the same name", async () => {
+    const h = harness({ attributes: { side: "spoofed", outcome: "spoofed" } })
+
+    await h.call()
+    const server = await h.logLine("server")
+
+    expect(h.metric(ModelProxy.requests, { side: "server", outcome: "success", status: "200" }).count).toBe(1)
+    expect(server.annotations).toMatchObject({ side: "server", outcome: "success" })
+  })
+
+  it("hands onEnd the outcome, model id and merged usage once the stream ends", async () => {
+    const ends: Array<ModelProxy.End> = []
+    const h = harness({
+      onEnd: (end) => Effect.sync(() => ends.push(end)),
+      model: Model.make({
+        stream: () =>
+          Stream.make<ReadonlyArray<ModelEvent>>(
+            { type: "usage", inputTokens: 5, outputTokens: 1 },
+            { type: "retry", attempt: 1, code: "transport", delayMillis: 0 },
+            { type: "usage", inputTokens: 7 },
+            { type: "usage", outputTokens: 3 },
+            { type: "settle", stopReason: "stop" }
+          )
+      })
+    })
+
+    await h.call()
+    const server = await h.logLine("server")
+
+    expect(ends).toEqual([{
+      requestId: server.annotations.requestId,
+      invocationId: server.annotations.invocationId,
+      outcome: "success",
+      modelId: "host-model",
+      usage: { inputTokens: 7, outputTokens: 3 }
+    }])
+  })
+
+  it("sends the terminal line only after onEnd finished", async () => {
+    const order: Array<string> = []
+    const h = harness({
+      onEnd: () => Effect.sleep("20 millis").pipe(Effect.andThen(Effect.sync(() => order.push("onEnd")))),
+      fetch: (handler) => async (input, init) => {
+        const response = await handler(input, init)
+        const text = await response.text()
+        order.push("body read")
+        return new Response(text, { status: response.status, headers: response.headers })
+      }
+    })
+
+    await h.call()
+
+    expect(order).toEqual(["onEnd", "body read"])
+  })
+
+  it("runs onEnd once when it fails the stream itself", async () => {
+    let ran = 0
+    const h = harness({ onEnd: () => Effect.sync(() => void ran++).pipe(Effect.andThen(Effect.die("meter broke"))) })
+
+    const { error } = await h.call()
+
+    expect(ran).toBe(1)
+    expect(error?.code).toBe("unknown")
+  })
+
+  it("hands onEnd a failed outcome with the usage reported before the failure", async () => {
+    const ends: Array<ModelProxy.End> = []
+    const h = harness({
+      onEnd: (end) => Effect.sync(() => ends.push(end)),
+      model: Model.make({
+        stream: () =>
+          Stream.make<ReadonlyArray<ModelEvent>>({ type: "usage", inputTokens: 9 }).pipe(
+            Stream.concat(Stream.fail(new ModelError({ code: "provider_internal", message: "x" })))
+          )
+      })
+    })
+
+    await h.call()
+
+    expect(ends).toMatchObject([{ outcome: "failed", usage: { inputTokens: 9 } }])
+  })
+
+  it("hands onEnd an interrupted outcome when the client goes away", async () => {
+    let ended: (end: ModelProxy.End) => void = () => undefined
+    const end = new Promise<ModelProxy.End>((resolve) => (ended = resolve))
+    const h = harness({
+      onEnd: (value) => Effect.sync(() => ended(value)),
+      model: Model.make({
+        stream: () =>
+          Stream.make<ReadonlyArray<ModelEvent>>(
+            { type: "usage", inputTokens: 4 },
+            { type: "text-start", id: "t" }
+          ).pipe(Stream.concat(Stream.never))
+      })
+    })
+
+    await h.run(Stream.runCollect(Stream.take(h.stream(request()), 1)))
+
+    expect(await end).toMatchObject({ outcome: "interrupted", usage: { inputTokens: 4 } })
+  })
+
+  it("never runs onEnd for a refused request", async () => {
+    let ran = 0
+    const h = harness({
+      onEnd: () => Effect.sync(() => void ran++),
+      prepare: () => () => Effect.fail(new ModelProxy.Refusal({ status: 401, message: "Sign in." }))
+    })
+
+    await h.call()
+    await h.logLine("server")
+
+    expect(ran).toBe(0)
   })
 })
 
@@ -828,9 +962,8 @@ describe("ModelProxy client", () => {
     await Effect.runPromise(
       Effect.gen(function*() {
         const fiber = yield* Effect.forkChild(
-          ModelProxy.serve({ prepare: hostPolicy }).pipe(
-            Effect.provideService(HttpServerRequest.HttpServerRequest, incoming),
-            Effect.provideService(Model.Model, echo)
+          ModelProxy.serve({ prepare: hostPrepare(echo) }).pipe(
+            Effect.provideService(HttpServerRequest.HttpServerRequest, incoming)
           )
         )
         while (pulls === 0) yield* Effect.sleep("1 millis")
@@ -841,6 +974,81 @@ describe("ModelProxy client", () => {
     expect(logs.map((line) => [line.message, line.level, line.annotations.outcome])).toEqual([
       ["model.proxy.serve", "INFO", "interrupted"]
     ])
+  })
+})
+
+describe("ModelProxy client route", () => {
+  it("prepares the exact bytes the client sends, to the endpoint's URL, without the host's headers", async () => {
+    const sent: Array<{ readonly url: string; readonly body: string; readonly headers: Headers }> = []
+    const h = harness({
+      headers: { authorization: "Bearer host-secret" },
+      fetch: (direct) => async (input, init) => {
+        const request = new Request(input, init)
+        sent.push({ url: request.url, body: await request.clone().text(), headers: request.headers })
+        return direct(request)
+      }
+    })
+    const body = request("prepare me", {
+      tools: [ToolDefinition.make({ name: "t", description: "d", parameters: {} })]
+    })
+
+    await h.call(body)
+    const prepared = await Effect.runPromise(
+      ModelProxy.prepare({ url, headers: { authorization: "Bearer host-secret" } })(body)
+    )
+
+    expect(prepared.url).toBe(sent[0]!.url)
+    expect(prepared.bodyText).toBe(sent[0]!.body)
+    expect(new TextDecoder().decode(prepared.body)).toBe(prepared.bodyText)
+    expect(prepared).toMatchObject({ routeId: "model-proxy", protocolId: "model-proxy/ndjson", method: "POST" })
+    expect(prepared.publicHeaders).toEqual({ accept: ModelProxy.contentType, "content-type": "application/json" })
+    expect(sent[0]!.headers.get("authorization")).toBe("Bearer host-secret")
+    expect(JSON.stringify(prepared)).not.toContain("host-secret")
+  })
+
+  it("prepares the same bytes for the same request, and different bytes for another", async () => {
+    const prepare = ModelProxy.prepare({ url: new URL(url) })
+    const [first, again, other] = await Promise.all(
+      [request("a"), request("a"), request("b")].map((body) => Effect.runPromise(prepare(body)))
+    )
+
+    expect(again!.bodyText).toBe(first!.bodyText)
+    expect(other!.bodyText).not.toBe(first!.bodyText)
+    expect(first!.url).toBe(url)
+  })
+
+  it("serves a request whose assistant turn leaves optional fields undefined, as an agent loop sends it", async () => {
+    const sent: Array<string> = []
+    const h = harness({
+      fetch: (direct) => async (input, init) => {
+        const request = new Request(input, init)
+        sent.push(await request.clone().text())
+        return direct(request)
+      }
+    })
+    const body = request("again", {
+      messages: [Message.user("first"), Message.assistant("answer"), Message.user("again")]
+    })
+
+    const { events, error } = await h.call(body)
+    const prepared = await Effect.runPromise(ModelProxy.prepare({ url })(body))
+
+    expect(error).toBeUndefined()
+    expect(events.find((event) => event.type === "text-delta")).toMatchObject({ text: "again" })
+    expect(sent[0]).toContain("\"responseId\":null")
+    expect(prepared.bodyText).toBe(sent[0])
+  })
+
+  it("fails a request that does not encode as invalid_request", async () => {
+    const broken = { ...request(), messages: [{ role: "user", content: [{ type: "text", text: 1 }] }] } as never
+
+    const exit = await Effect.runPromiseExit(ModelProxy.prepare({ url })(broken))
+
+    expect(exit).toMatchObject({ _tag: "Failure" })
+    expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined).toMatchObject({
+      code: "invalid_request",
+      message: "The request could not be encoded."
+    })
   })
 })
 
@@ -861,6 +1069,32 @@ describe("ModelProxy request ids", () => {
     if (expected === undefined) expect(id).toMatch(/^[0-9a-f]{32}$/)
     else expect(id).toBe(expected)
     expect((await h.logLine("server")).annotations.requestId).toBe(id)
+  })
+
+  it("mints its own invocation id for every served call, even when callers repeat a request id", async () => {
+    const ends: Array<ModelProxy.End> = []
+    const h = harness({ onEnd: (end) => Effect.sync(() => ends.push(end)) })
+    const same = { [ModelProxy.requestIdHeader]: "same" }
+
+    for (let index = 0; index < 2; index++) {
+      await (await h.handler(new Request(url, post(encodedRequest(request()), same)))).text()
+    }
+    const logged = [await h.logLine("server", 0), await h.logLine("server", 1)]
+
+    // Both calls ran the model, and each reaches onEnd as its own call: the caller's id correlates them, never
+    // keys them.
+    expect(h.served).toHaveLength(2)
+    expect(ends.map((end) => end.requestId)).toEqual(["same", "same"])
+    const [first, second] = ends.map((end) => end.invocationId)
+    expect(first).toMatch(/^[0-9a-f]{32}$/)
+    expect(second).toMatch(/^[0-9a-f]{32}$/)
+    expect(first).not.toBe(second)
+    expect(logged.map((line) => line.annotations.invocationId)).toEqual([first, second])
+    expect(
+      h.spans.filter((span) => span.name === "model.proxy.serve").map((span) =>
+        span.attributes.get("smithers.model.proxy.invocation_id")
+      )
+    ).toEqual([first, second])
   })
 })
 
@@ -964,7 +1198,9 @@ describe("ModelProxy observability", () => {
   })
 
   it("records no first event and no tokens for a request that produced none", async () => {
-    const h = harness({ prepare: () => Effect.fail(new ModelProxy.Refusal({ status: 401, message: "Sign in." })) })
+    const h = harness({
+      prepare: () => () => Effect.fail(new ModelProxy.Refusal({ status: 401, message: "Sign in." }))
+    })
 
     await h.call()
     const server = await h.logLine("server")
@@ -1017,7 +1253,7 @@ describe("ModelProxy observability", () => {
       })
     })
     const refused = harness({
-      prepare: () => Effect.fail(new ModelProxy.Refusal({ status: 400, message: "Shorter, please." }))
+      prepare: () => () => Effect.fail(new ModelProxy.Refusal({ status: 400, message: "Shorter, please." }))
     })
 
     const { events, error } = await h.call(request(`tell me about ${sentinel}`))
@@ -1053,9 +1289,8 @@ describe("ModelProxy observability", () => {
     )
 
     const response = await Effect.runPromise(
-      ModelProxy.serve({ prepare: hostPolicy }).pipe(
+      ModelProxy.serve({ prepare: hostPrepare(echo) }).pipe(
         Effect.provideService(HttpServerRequest.HttpServerRequest, incoming),
-        Effect.provideService(Model.Model, echo),
         Effect.provideService(Tracer.Tracer, tracer),
         Effect.provideService(Logger.CurrentLoggers, new Set())
       )

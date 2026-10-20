@@ -2,6 +2,7 @@ import { CapabilityPattern } from "@smthrs/capability/Capability"
 import { Rule } from "@smthrs/capability/Permission"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import { ResolveHost } from "@smthrs/kernel/HttpClient"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import { Cause, Effect, Exit, Layer } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
@@ -16,7 +17,6 @@ import * as tls from "node:tls"
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
 import * as EgressHttpClient from "../../../flows/platform-node/src/EgressHttpClient.ts"
 import * as Fetch from "../src/Fetch.ts"
-import { ResolveHost } from "../src/internal/HttpNetwork.ts"
 
 const servers: Array<Server> = []
 const sockets = new Set<Socket>()

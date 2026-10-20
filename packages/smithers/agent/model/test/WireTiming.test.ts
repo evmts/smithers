@@ -6,8 +6,7 @@
  * moment the script names, and the settle event's `timing` must say exactly
  * those moments. No value in this file depends on how long the test took.
  */
-import * as Capability from "@smthrs/capability/Capability"
-import * as Permission from "@smthrs/capability/Permission"
+import { Capability, Permission } from "@smthrs/capability"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"

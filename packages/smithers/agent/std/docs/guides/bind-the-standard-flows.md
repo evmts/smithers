@@ -15,9 +15,7 @@ Start with a platform layer, then add one layer per service a flow needs:
 
 ```ts
 import { NodeServices } from "@effect/platform-node"
-import * as Container from "@smthrs/std/Container"
-import * as NativeSearch from "@smthrs/std/NativeSearch"
-import * as TestRunner from "@smthrs/std/TestRunner"
+import { Container, NativeSearch, TestRunner } from "@smthrs/std"
 import * as Layer from "effect/Layer"
 
 /** FileSystem, Path, and ChildProcessSpawner. */
@@ -44,9 +42,7 @@ A host that cannot serve a service binds its refusal layer instead of leaving it
 out, so the failure names the missing service rather than a missing context:
 
 ```ts
-import * as Checkpoints from "@smthrs/std/Checkpoints"
-import * as LanguageServer from "@smthrs/std/LanguageServer"
-import * as WebSearch from "@smthrs/std/WebSearch"
+import { Checkpoints, LanguageServer, WebSearch } from "@smthrs/std"
 
 const unavailable = Layer.mergeAll(
   WebSearch.layerNoop, // websearch fails with provider_unavailable
@@ -55,12 +51,17 @@ const unavailable = Layer.mergeAll(
 )
 ```
 
+To answer `lsp` on Node.js or Bun, bind `NodeLanguageServer.layer(config)` from
+[`@smthrs/platform-node`](/api/platform-node) instead of
+`LanguageServer.layerNoop`. See
+[Query a language server](./query-a-language-server.md).
+
 ## Run one handler
 
 A handler is an ordinary Effect. Provide the composed host and run it:
 
 ```ts
-import * as Grep from "@smthrs/std/Grep"
+import { Grep } from "@smthrs/std"
 import * as Effect from "effect/Effect"
 
 const hits = Effect.provide(
@@ -75,7 +76,7 @@ const hits = Effect.provide(
 calls. Offering all 17 is one expression:
 
 ```ts
-import * as Manifest from "@smthrs/std/Manifest"
+import { Manifest } from "@smthrs/std"
 
 const offered = Manifest.names.map((name) => Manifest.flows[name])
 ```

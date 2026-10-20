@@ -1,16 +1,11 @@
-import { MemoryError } from "@smthrs/memory/MemoryError"
-import * as Recall from "@smthrs/memory/Recall"
-import * as Model from "@smthrs/model/Model"
-import type { ModelEvent } from "@smthrs/model/ModelEvent"
-import type { ModelRequest } from "@smthrs/model/ModelRequest"
-import { SelectedContextItemSchema } from "@smthrs/rpc/ContextPreflight"
-import type { ContextPreflightInput } from "@smthrs/rpc/ContextPreflight"
-import { Effect, Layer, Stream } from "effect"
-import { expect, test, vi } from "vitest"
+import { Model, type ModelEvent, type ModelRequest } from "@smthrs/model"
+import { ContextPreflight } from "@smthrs/rpc"
+import { Effect, Stream } from "effect"
+import { expect, test } from "vitest"
 import { runContextPreflight } from "../src/ContextPreflight.ts"
 import { providerRequest } from "../src/ModelTurnHost.ts"
 
-const input: ContextPreflightInput = {
+const input: ContextPreflight.ContextPreflightInput = {
   prompt: "where do we retry webhooks?",
   author: "ben",
   branch: "main",
@@ -28,7 +23,7 @@ const input: ContextPreflightInput = {
   tokenBudget: 24000,
   wikiOnly: false
 }
-const fake = (output: string, requests: ModelRequest[]) =>
+const fake = (output: string, requests: ModelRequest.ModelRequest[]) =>
   Model.make({
     stream: (request) => {
       requests.push(request)
@@ -40,7 +35,7 @@ const fake = (output: string, requests: ModelRequest[]) =>
   })
 
 test("one fast call selects pinned data and the production request excludes the other 497 texts", async () => {
-  const requests: ModelRequest[] = []
+  const requests: ModelRequest.ModelRequest[] = []
   // Recall's literal ranking: file, page, run, TODO (ties by key).
   const answer = await Effect.runPromise(
     runContextPreflight(input, fake("[{\"index\":0,\"reason\":\"Retry implementation\"}]", requests), {
@@ -91,7 +86,7 @@ test.each([0, 159, 160])("whole-item conservative token budget %i", async (budge
 })
 
 test("wiki-only recall excludes files, TODOs and runs and pins page revision", async () => {
-  const requests: ModelRequest[] = []
+  const requests: ModelRequest.ModelRequest[] = []
   const answer = await Effect.runPromise(
     runContextPreflight({ ...input, wikiOnly: true }, fake("[{\"index\":0,\"reason\":\"Wiki policy\"}]", requests), {
       modelId: "fast"
@@ -120,7 +115,7 @@ test.each([
 test("usage before and after settlement preserves the selected pinned context", async () => {
   const model = Model.make({
     stream: () =>
-      Stream.fromIterable<ModelEvent>([
+      Stream.fromIterable<ModelEvent.ModelEvent>([
         { type: "usage", inputTokens: 7 },
         { type: "text-delta", id: "s", text: "[{\"index\":0,\"reason\":\"Retry implementation\"}]" },
         { type: "settle", stopReason: "stop" },
@@ -139,8 +134,10 @@ test("usage before and after settlement preserves the selected pinned context", 
 })
 
 test("new context items require label and reason", () => {
-  expect(SelectedContextItemSchema.safeParse({ kind: "file", ref: "a.ts", reason: "Read" }).success).toBe(false)
-  expect(SelectedContextItemSchema.safeParse({ kind: "file", ref: "a.ts", label: "a.ts" }).success).toBe(false)
+  expect(ContextPreflight.SelectedContextItemSchema.safeParse({ kind: "file", ref: "a.ts", reason: "Read" }).success)
+    .toBe(false)
+  expect(ContextPreflight.SelectedContextItemSchema.safeParse({ kind: "file", ref: "a.ts", label: "a.ts" }).success)
+    .toBe(false)
 })
 
 test.each(
@@ -186,13 +183,13 @@ test.each(
     }
   ] as const
 )("preflight refuses $name", async ({ events }) => {
-  const model = Model.make({ stream: () => Stream.fromIterable<ModelEvent>(events) })
+  const model = Model.make({ stream: () => Stream.fromIterable<ModelEvent.ModelEvent>(events) })
   const failure = await Effect.runPromise(runContextPreflight(input, model, { modelId: "fast" }).pipe(Effect.flip))
   expect(failure).toMatchObject({ code: "invalid_provider_output" })
 })
 
 test("invalid host context refuses before invoking a model", async () => {
-  const requests: ModelRequest[] = []
+  const requests: ModelRequest.ModelRequest[] = []
   await expect(
     Effect.runPromise(runContextPreflight({ ...input, tokenBudget: -1 }, fake("[]", requests), { modelId: "fast" }))
   ).rejects.toThrow()
@@ -211,25 +208,6 @@ test("selector output is bounded and duplicate choices retain their first reason
     ...input.candidates[0],
     item: { ...input.candidates[0]!.item, reason: "First" }
   }])
-})
-
-// The local snapshot never performs storage I/O. Inject the Recall service's
-// declared storage failure only to verify this adapter's error boundary;
-// selection, ranking and budget tests above use the real recall implementation.
-test("recall failure refuses before the selector model", async () => {
-  const requests: ModelRequest[] = []
-  const layer = vi.spyOn(Recall, "layer").mockReturnValue(Layer.succeed(Recall.Recall, {
-    recall: () => Effect.fail(new MemoryError({ code: "store", message: "Snapshot unavailable" }))
-  }))
-  try {
-    const error = await Effect.runPromise(
-      runContextPreflight(input, fake("[]", requests), { modelId: "fast" }).pipe(Effect.flip)
-    )
-    expect(error).toMatchObject({ code: "invalid_provider_output" })
-    expect(requests).toEqual([])
-  } finally {
-    layer.mockRestore()
-  }
 })
 
 test.each([65532, 65533])("selector limit includes a buffered credential-prefix suffix (%i)", async (padding) => {
@@ -251,7 +229,7 @@ test.each([65532, 65533])("selector limit includes a buffered credential-prefix 
 })
 
 test("subscription fallback selects context without sending an unsupported output-token limit", async () => {
-  const requests: ModelRequest[] = []
+  const requests: ModelRequest.ModelRequest[] = []
   const answer = await Effect.runPromise(
     runContextPreflight(input, fake("[{\"index\":0,\"reason\":\"Retry implementation\"}]", requests), {
       modelId: "subscription-coding",

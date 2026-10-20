@@ -19,12 +19,9 @@
  * @since 0.1.0
  */
 /* eslint-disable no-console -- a command-line example reports on stdout and stderr */
-import * as GrantStore from "@smthrs/kernel/GrantStore"
-import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
-import { Message, ModelRequest } from "@smthrs/model/ModelRequest"
-import * as RequestExecutor from "@smthrs/model/RequestExecutor"
-import * as Route from "@smthrs/model/Route"
-import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
+import { GrantStore, HttpClient as KernelHttpClient } from "@smthrs/kernel"
+import { ModelRequest, RequestExecutor, Route } from "@smthrs/model"
+import { EgressHttpClient } from "@smthrs/platform-node"
 import { Effect, Layer, Redacted, Stream } from "effect"
 
 /**
@@ -55,10 +52,10 @@ export const ask = (question: string, modelId: string, baseUrl: string, apiKey: 
       Route.openaiChatCompatible({ id: "smoke", providerName: "openai", baseUrl, apiKey })
     )
     const model = yield* Route.toModel(routeConfig)
-    const request = ModelRequest.make({
+    const request = ModelRequest.ModelRequest.make({
       modelId,
       system: [],
-      messages: [Message.user(question)],
+      messages: [ModelRequest.Message.user(question)],
       tools: [],
       params: {}
     })

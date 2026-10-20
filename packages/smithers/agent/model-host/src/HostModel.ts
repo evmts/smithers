@@ -10,11 +10,10 @@
  * @since 1.0.0
  */
 
-import { type Model, RequestExecutor } from "@smthrs/model"
+import type { Model } from "@smthrs/model"
 import { ConfiguredModel } from "@smthrs/rpc"
 import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { toModel } from "./ConfiguredModelRoute.ts"
-import { providerTransport } from "./ProviderTransport.ts"
+import { type HostModelRoute, toModel } from "./ConfiguredModelRoute.ts"
 
 /**
  * A configured-model record without its name: what `layerConfig` reads.
@@ -41,6 +40,20 @@ export interface HostModelOptions {
   readonly fetch?: typeof globalThis.fetch | undefined
 }
 
+/**
+ * A configured-model record this host cannot use: `reason` is the planner's
+ * failure code (`invalid`, `credential_missing`, `model_not_allowed` and the
+ * other `ConfiguredModel` codes), or `config` when the host's configuration
+ * could not be read. It never carries a key.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class HostModelUnusable extends Schema.TaggedError<HostModelUnusable>()(
+  "@smthrs/model-host/HostModelUnusable",
+  { reason: Schema.String }
+) {}
+
 const RecordJson = Schema.fromJsonString(
   Schema.Struct({
     protocol: Schema.String,
@@ -52,8 +65,9 @@ const RecordJson = Schema.fromJsonString(
 )
 
 /**
- * The host's model: the provider model id every request names, and the
- * `Model` that streams it.
+ * The host's model: the provider model id every request names, the `Model`
+ * that streams it, and the credential-free `route` that prepares a request
+ * exactly as the model sends it, unsigned, for a durable step's key.
  *
  * @category services
  * @since 1.0.0
@@ -61,6 +75,7 @@ const RecordJson = Schema.fromJsonString(
 export class HostModel extends Context.Service<HostModel, {
   readonly modelId: string
   readonly model: Model.Model
+  readonly route: HostModelRoute
 }>()("@smthrs/model-host/HostModel") {
   /**
    * Provides a validated generation plan and its credential. Provider calls go
@@ -78,8 +93,47 @@ export class HostModel extends Context.Service<HostModel, {
     Layer.effect(
       HostModel,
       // A plan from planModelBinding always routes, so a refusal here is a defect.
-      Effect.map(Effect.orDie(toModel(plan, apiKey)), (model) => HostModel.of({ modelId: plan.modelId, model }))
-    ).pipe(Layer.provide(RequestExecutor.layer.pipe(Layer.provide(providerTransport(options.fetch)))))
+      Effect.map(
+        Effect.orDie(toModel(plan, apiKey, { fetch: options.fetch })),
+        ({ model, route }) => HostModel.of({ modelId: plan.modelId, model, route })
+      )
+    )
+
+  /**
+   * Builds the model a configured-model record names, at run time: for a
+   * record read from a database rather than from configuration. Its key and
+   * origin are read through Effect `Config` exactly as {@link layerConfig}
+   * reads them. A record this host cannot use, its key missing included,
+   * fails with {@link HostModelUnusable}.
+   *
+   * @category constructors
+   * @since 1.0.0
+   */
+  static readonly make = (
+    record: HostModelRecord,
+    options: HostModelOptions = {}
+  ): Effect.Effect<HostModel["Service"], HostModelUnusable> =>
+    Effect.gen(function*() {
+      const keyName = ConfiguredModel.modelCredentialEnvName(record.credential)
+      const originName = `${keyName}${ConfiguredModel.MODEL_CREDENTIAL_ORIGIN_SUFFIX}`
+      const apiKey = yield* Config.option(Config.Redacted(keyName))
+      const origin = yield* Config.option(Config.String(originName))
+      const planned = ConfiguredModel.planModelBinding(
+        record,
+        ConfiguredModel.hostModelCredentials({
+          [keyName]: Option.match(apiKey, { onNone: () => undefined, onSome: Redacted.value }),
+          [originName]: Option.getOrUndefined(origin)
+        }),
+        { kind: "generation" }
+      )
+      if (!planned.ok) return yield* new HostModelUnusable({ reason: planned.failure.code })
+      // The planner refuses a record whose key is missing, so a usable plan has one.
+      const key = Option.getOrThrow(apiKey)
+      const { model, route } = yield* Effect.orDie(toModel(planned.plan, key, { fetch: options.fetch }))
+      return HostModel.of({ modelId: planned.plan.modelId, model, route })
+    }).pipe(
+      Effect.catchTag("ConfigError", () => Effect.fail(new HostModelUnusable({ reason: "config" })))
+    )
 
   /**
    * Provides the model a configured-model record names. The record is JSON

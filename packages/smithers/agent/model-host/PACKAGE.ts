@@ -1,4 +1,9 @@
-import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  SdkRules
+} from "@smthrs/repo-targets"
 /** Shared model host library targets and its coverage-gated protocol suite. */
 import { Smithers } from "@smthrs/targets"
 import { Package as rpcPackage } from "../../../rpc/PACKAGE.ts"
@@ -25,6 +30,25 @@ const reviewDocsAgainstCode = ReviewDocsAgainstCode({
 
 /** Changed exports against their own JSDoc. */
 const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
+
+/**
+ * Will's SDK-wide rules (apps/mvp/docs/rules.md). The library returns
+ * Effects; only the program that serves it runs them. A host serves the
+ * handler with `HttpEffect.toWebHandler` and runs a probe's Test at its own
+ * boundary (`apps/model-host`). Run the deterministic half with
+ * `pnpm exec smithers-build test //packages/smithers/agent/model-host:importRules`;
+ * `jevRules` is manual.
+ */
+const { importRules, jevRules } = SdkRules({
+  cwd,
+  role: "app-library",
+  knownDeepImports: {
+    packages: ["@smthrs/cli"],
+    because: "src/HostTools.ts reads the command catalog from @smthrs/cli/Catalog and @smthrs/cli/CatalogRequest. " +
+      "The @smthrs/cli root carries the whole CLI, which this platform-neutral host cannot load, so the catalog " +
+      "has to leave the CLI before the import can use a root."
+  }
+})
 
 const securityReview = Smithers.SecurityReview({
   cwd,
@@ -102,7 +126,7 @@ const securityReview = Smithers.SecurityReview({
         "A caller of the model Test endpoint makes the host send an owner credential to, or probe, an internal or attacker-chosen URL.",
       lookFor: [
         "createModelProbe planning with options other than { egress: false } when options.egress is false, so the offline host reaches a non-loopback origin.",
-        "A decision or generation call in ModelProbe that runs outside the manualRedirects layer or ignores http.redirected() before returning success.",
+        "A decision or generation call in ModelProbe that runs outside providerTransport, or returns success after it refused a redirect.",
         "Caller-composed ModelCallInput (prompt, system, questions, maxTokens) reaching the provider without the rpc schema's size and count bounds."
       ],
       paths: ["src/ModelProbe.ts", "src/LocalModel.ts", "src/ConfiguredModelRoute.ts"]
@@ -139,6 +163,8 @@ export const Package = Smithers.Package({
     docs: standard.docs,
     docsFiles,
     fmt: standard.fmt,
+    importRules,
+    jevRules,
     lib: standard.lib,
     lint: standard.lint,
     reviewDocsAgainstCode,

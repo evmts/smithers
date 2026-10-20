@@ -4,21 +4,8 @@
  * @since 1.0.0-rc.0
  */
 
-import type * as Model from "@smthrs/model/Model"
-import { ModelError } from "@smthrs/model/ModelError"
-import type * as ModelEvent from "@smthrs/model/ModelEvent"
-import {
-  Message,
-  ModelRequest,
-  SystemPart,
-  ToolCallPart,
-  ToolDefinition,
-  ToolResultPart
-} from "@smthrs/model/ModelRequest"
-import type { JsonObject, Message as ModelMessage, ModelRequest as Request } from "@smthrs/model/ModelRequest"
-import { composeAgentInstructions } from "@smthrs/rpc/AgentContext"
-import { cutModelCredential, modelCredentialParts } from "@smthrs/rpc/ConfiguredModel"
-import type { AgentChatMessage, AgentTurnFrame, AgentTurnUsage, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { type Model, ModelError, type ModelEvent, ModelRequest } from "@smthrs/model"
+import { AgentContext, ConfiguredModel, type NativeAgent } from "@smthrs/rpc"
 import { Effect, Stream } from "effect"
 import { createHostDiagnostics } from "./HostDiagnostics.ts"
 import type { HostDiagnostics } from "./HostDiagnostics.ts"
@@ -41,25 +28,29 @@ export interface ModelTurnOptions {
  * @category models
  * @since 1.0.0-rc.0
  */
-export type FrameWriter<E> = (frame: AgentTurnFrame) => Effect.Effect<void, E>
+export type FrameWriter<E> = (frame: NativeAgent.AgentTurnFrame) => Effect.Effect<void, E>
 
-const appendWireMessage = (messages: Array<ModelMessage>, item: AgentChatMessage): void => {
+const appendWireMessage = (messages: Array<ModelRequest.Message>, item: NativeAgent.AgentChatMessage): void => {
   if ("role" in item) {
-    messages.push(item.role === "user" ? Message.user(item.content) : Message.assistant(item.content))
+    messages.push(
+      item.role === "user" ? ModelRequest.Message.user(item.content) : ModelRequest.Message.assistant(item.content)
+    )
     return
   }
   if (item.type === "function_call") {
-    const call = ToolCallPart.make({ id: item.call_id, name: item.name, arguments: item.arguments })
+    const call = ModelRequest.ToolCallPart.make({ id: item.call_id, name: item.name, arguments: item.arguments })
     const prior = messages.at(-1)
     if (prior?.role === "assistant" && prior.stopReason === "tool-calls") {
-      messages[messages.length - 1] = Message.assistant([...prior.content, call], { stopReason: "tool-calls" })
-    } else messages.push(Message.assistant(call, { stopReason: "tool-calls" }))
+      messages[messages.length - 1] = ModelRequest.Message.assistant([...prior.content, call], {
+        stopReason: "tool-calls"
+      })
+    } else messages.push(ModelRequest.Message.assistant(call, { stopReason: "tool-calls" }))
     return
   }
-  const result = ToolResultPart.make({ toolCallId: item.call_id, content: item.output })
+  const result = ModelRequest.ToolResultPart.make({ toolCallId: item.call_id, content: item.output })
   const prior = messages.at(-1)
-  if (prior?.role === "tool") messages[messages.length - 1] = Message.tool([...prior.content, result])
-  else messages.push(Message.tool(result))
+  if (prior?.role === "tool") messages[messages.length - 1] = ModelRequest.Message.tool([...prior.content, result])
+  else messages.push(ModelRequest.Message.tool(result))
 }
 
 /**
@@ -68,20 +59,25 @@ const appendWireMessage = (messages: Array<ModelMessage>, item: AgentChatMessage
  * @category conversions
  * @since 1.0.0-rc.0
  */
-export const providerRequest = (turn: StartAgentTurnRequest, options: ModelTurnOptions): Request => {
-  const messages: Array<ModelMessage> = []
+export const providerRequest = (
+  turn: NativeAgent.StartAgentTurnRequest,
+  options: ModelTurnOptions
+): ModelRequest.ModelRequest => {
+  const messages: Array<ModelRequest.Message> = []
   for (const item of turn.messages) appendWireMessage(messages, item)
-  return ModelRequest.make({
+  return ModelRequest.ModelRequest.make({
     modelId: options.modelId,
     system: [
-      SystemPart.make({ text: composeAgentInstructions(turn.instructions, turn.context, turn.selectedContext) })
+      ModelRequest.SystemPart.make({
+        text: AgentContext.composeAgentInstructions(turn.instructions, turn.context, turn.selectedContext)
+      })
     ],
     messages,
     tools: (turn.tools ?? []).map((tool) =>
-      ToolDefinition.make({
+      ModelRequest.ToolDefinition.make({
         name: tool.name,
         description: tool.description,
-        parameters: tool.parameters as JsonObject
+        parameters: tool.parameters as ModelRequest.JsonObject
       })
     ),
     params: { ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }) }
@@ -107,9 +103,9 @@ export class StreamingCredentialCutter {
   }
   push(value: string): string {
     if (this.secret === undefined || this.secret === "") return value
-    this.pending = cutModelCredential(this.pending + value, this.secret)
+    this.pending = ConfiguredModel.cutModelCredential(this.pending + value, this.secret)
     let held = 0
-    for (const part of modelCredentialParts(this.secret)) {
+    for (const part of ConfiguredModel.modelCredentialParts(this.secret)) {
       for (let size = Math.min(this.pending.length, part.length - 1); size > held; size -= 1) {
         if (this.pending.endsWith(part.slice(0, size))) {
           held = size
@@ -123,7 +119,7 @@ export class StreamingCredentialCutter {
   }
   finish(): string {
     if (this.secret === undefined) return this.pending
-    const emitted = cutModelCredential(this.pending, this.secret)
+    const emitted = ConfiguredModel.cutModelCredential(this.pending, this.secret)
     this.pending = ""
     return this.release(emitted, this.secret)
   }
@@ -133,7 +129,7 @@ export class StreamingCredentialCutter {
    * found from one part-length before the seam straddles it.
    */
   private release(text: string, secret: string): string {
-    const parts = modelCredentialParts(secret)
+    const parts = ConfiguredModel.modelCredentialParts(secret)
     let kept = text
     for (let joined = true; joined;) {
       joined = false
@@ -181,7 +177,7 @@ export interface HeldToolCall {
  */
 export interface HeldToolCalls {
   readonly calls: ReadonlyArray<HeldToolCall>
-  readonly usage: AgentTurnUsage | undefined
+  readonly usage: NativeAgent.AgentTurnUsage | undefined
 }
 
 /**
@@ -193,7 +189,7 @@ export interface HeldToolCalls {
  * @since 1.0.0-rc.0
  */
 export interface HostLeg {
-  readonly usage: AgentTurnUsage | undefined
+  readonly usage: NativeAgent.AgentTurnUsage | undefined
 }
 const usageCount = (value: number | undefined): number | undefined =>
   value === undefined || !Number.isFinite(value) || value < 0 ? undefined : Math.round(value)
@@ -203,8 +199,11 @@ const usageCount = (value: number | undefined): number | undefined =>
  * report input and output in separate events, so a later event overrides only
  * the counters it carries.
  */
-const mergeUsage = (current: AgentTurnUsage | undefined, event: ModelEvent.UsageEvent): AgentTurnUsage | undefined => {
-  const next: AgentTurnUsage = { ...current }
+const mergeUsage = (
+  current: NativeAgent.AgentTurnUsage | undefined,
+  event: ModelEvent.UsageEvent
+): NativeAgent.AgentTurnUsage | undefined => {
+  const next: NativeAgent.AgentTurnUsage = { ...current }
   const inputTokens = usageCount(event.inputTokens)
   const outputTokens = usageCount(event.outputTokens)
   const cachedInputTokens = usageCount(event.cachedInputTokens)
@@ -215,17 +214,24 @@ const mergeUsage = (current: AgentTurnUsage | undefined, event: ModelEvent.Usage
 }
 
 /** Adds one leg's counts to the turn's: a done frame ending a host-owned turn states all of its calls. */
-const addUsage = (turn: AgentTurnUsage | undefined, leg: AgentTurnUsage | undefined): AgentTurnUsage | undefined => {
+const addUsage = (
+  turn: NativeAgent.AgentTurnUsage | undefined,
+  leg: NativeAgent.AgentTurnUsage | undefined
+): NativeAgent.AgentTurnUsage | undefined => {
   if (turn === undefined) return leg
   if (leg === undefined) return turn
-  const total: AgentTurnUsage = {}
+  const total: NativeAgent.AgentTurnUsage = {}
   for (const key of ["inputTokens", "outputTokens", "cachedInputTokens"] as const) {
     if (turn[key] !== undefined || leg[key] !== undefined) total[key] = (turn[key] ?? 0) + (leg[key] ?? 0)
   }
   return total
 }
 
-const doneFrame = (runId: string, event: ModelEvent.Settle, usage: AgentTurnUsage | undefined): AgentTurnFrame => {
+const doneFrame = (
+  runId: string,
+  event: ModelEvent.Settle,
+  usage: NativeAgent.AgentTurnUsage | undefined
+): NativeAgent.AgentTurnFrame => {
   const counted = usage === undefined ? {} : { usage }
   if (event.stopReason === "tool-calls") return { runId, type: "done", reason: "tool_call", ...counted }
   if (event.stopReason === "aborted") return { runId, type: "done", reason: "cancelled", ...counted }
@@ -248,12 +254,12 @@ const doneFrame = (runId: string, event: ModelEvent.Settle, usage: AgentTurnUsag
  */
 export const runModelTurn = <E>(
   model: Model.Model,
-  turn: StartAgentTurnRequest,
+  turn: NativeAgent.StartAgentTurnRequest,
   options: ModelTurnOptions,
   write: FrameWriter<E>,
   host?: HostLeg,
   diagnostics: HostDiagnostics = createHostDiagnostics()
-): Effect.Effect<HeldToolCalls | undefined, Model.ModelFailure | ModelError | E> => {
+): Effect.Effect<HeldToolCalls | undefined, Model.ModelFailure | ModelError.ModelError | E> => {
   const text = new StreamingCredentialCutter(options.credential)
   const reasoning = new StreamingCredentialCutter(options.credential)
   const tools = new Map<string, PendingToolCall>()
@@ -262,11 +268,11 @@ export const runModelTurn = <E>(
   // Completions provider (api.openai.com, Ollama) sends its counters in a
   // chunk after `finish_reason`, and the route ends the stream at that chunk.
   let settled: ModelEvent.Settle | undefined
-  let usage: AgentTurnUsage | undefined
-  const emit = (frame: AgentTurnFrame): Effect.Effect<void, E> => write(frame)
+  let usage: NativeAgent.AgentTurnUsage | undefined
+  const emit = (frame: NativeAgent.AgentTurnFrame): Effect.Effect<void, E> => write(frame)
   const emitDelta = (kind: "text" | "reasoning", value: string): Effect.Effect<void, E> =>
     value === "" ? Effect.void : emit({ runId: turn.runId, type: "delta", kind, text: value })
-  const visit = (event: ModelEvent.ModelEvent): Effect.Effect<void, ModelError | E> => {
+  const visit = (event: ModelEvent.ModelEvent): Effect.Effect<void, ModelError.ModelError | E> => {
     switch (event.type) {
       case "text-delta":
         return emitDelta("text", text.push(event.text))
@@ -276,9 +282,12 @@ export const runModelTurn = <E>(
         // The id goes back to the provider with the tool result, so it cannot
         // be cut like text: a provider that names a call with the credential
         // is refused before the id reaches a frame or the journal.
-        if (cutModelCredential(event.id, options.credential ?? "") !== event.id) {
+        if (ConfiguredModel.cutModelCredential(event.id, options.credential ?? "") !== event.id) {
           return Effect.fail(
-            new ModelError({ code: "invalid_provider_output", message: "tool call id contains the credential" })
+            new ModelError.ModelError({
+              code: "invalid_provider_output",
+              message: "tool call id contains the credential"
+            })
           )
         }
         tools.set(event.id, { name: event.name, arguments: "" })
@@ -287,7 +296,7 @@ export const runModelTurn = <E>(
         const pending = tools.get(event.id)
         if (pending === undefined) {
           return Effect.fail(
-            new ModelError({ code: "invalid_provider_output", message: "tool delta preceded its start" })
+            new ModelError.ModelError({ code: "invalid_provider_output", message: "tool delta preceded its start" })
           )
         }
         pending.arguments += event.arguments
@@ -297,14 +306,14 @@ export const runModelTurn = <E>(
         const pending = tools.get(event.id)
         if (pending === undefined) {
           return Effect.fail(
-            new ModelError({ code: "invalid_provider_output", message: "tool end preceded its start" })
+            new ModelError.ModelError({ code: "invalid_provider_output", message: "tool end preceded its start" })
           )
         }
         tools.delete(event.id)
         const call = {
           id: event.id,
-          name: cutModelCredential(pending.name, options.credential ?? ""),
-          arguments: cutModelCredential(event.arguments ?? pending.arguments, options.credential ?? "")
+          name: ConfiguredModel.cutModelCredential(pending.name, options.credential ?? ""),
+          arguments: ConfiguredModel.cutModelCredential(event.arguments ?? pending.arguments, options.credential ?? "")
         }
         if (host !== undefined) {
           held.push(call)
@@ -320,7 +329,9 @@ export const runModelTurn = <E>(
       }
       case "settle":
         if (settled !== undefined) {
-          return Effect.fail(new ModelError({ code: "invalid_provider_output", message: "model settled twice" }))
+          return Effect.fail(
+            new ModelError.ModelError({ code: "invalid_provider_output", message: "model settled twice" })
+          )
         }
         settled = event
         return Effect.gen(function*() {
@@ -344,7 +355,7 @@ export const runModelTurn = <E>(
   // never reached the application.
   let consumed = 0
   let characters = 0
-  const observe = (event: ModelEvent.ModelEvent): Effect.Effect<void, ModelError | E> => {
+  const observe = (event: ModelEvent.ModelEvent): Effect.Effect<void, ModelError.ModelError | E> => {
     consumed += 1
     if (consumed === 1) diagnostics.record("model_stream", "first_event", { kind: event.type })
     if (event.type === "text-delta" || event.type === "thinking-delta") characters += event.text.length
@@ -372,10 +383,13 @@ export const runModelTurn = <E>(
   // it. The capacity and that deadline are one repair: neither holds alone.
   const buffered = Stream.buffer(model.stream(providerRequest(turn, options)), { capacity: "unbounded" })
   return Stream.runForEach(buffered, observe).pipe(
-    Effect.flatMap((): Effect.Effect<HeldToolCalls | undefined, ModelError | E> => {
+    Effect.flatMap((): Effect.Effect<HeldToolCalls | undefined, ModelError.ModelError | E> => {
       if (settled === undefined) {
         return Effect.fail(
-          new ModelError({ code: "invalid_provider_output", message: "model stream ended without settlement" })
+          new ModelError.ModelError({
+            code: "invalid_provider_output",
+            message: "model stream ended without settlement"
+          })
         )
       }
       const total = addUsage(host?.usage, usage)

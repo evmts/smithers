@@ -114,7 +114,7 @@ delegates to, and returns a durable flow plus the layer that registers it.
 
 ```ts
 import { Action } from "@smthrs/flow"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { Executable, Registry } from "@smthrs/registry"
 import { Layer } from "effect"
 

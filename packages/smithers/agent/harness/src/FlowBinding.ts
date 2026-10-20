@@ -316,19 +316,23 @@ export interface Options<
    * text; never forward messages of transport, SDK, OS, or unknown errors,
    * headers, URLs, or serialized causes.
    * Undefined or a thrown renderer uses the opaque default. Permission errors
-   * and existing HarnessErrors bypass this renderer and stay in the error channel.
+   * and existing HarnessErrors bypass this renderer and stay in the error channel,
+   * so it never receives a `HarnessError`.
    * Inspect raw causes in the host handler, redacting before any persistence.
    */
-  readonly publicError?: ((error: E) => string | undefined) | undefined
+  readonly publicError?: ((error: Exclude<E, HarnessError>) => string | undefined) | undefined
   /**
    * Whether a handler failure is the flow's own timeout (a command past its
    * limit, or a wait that gave up), and the limit in milliseconds it ran past
    * when the failure says. Undefined for any other failure. The cell reads a
    * timeout as a `timeout` call failure, the code of the call boundary's own
    * limit, and a host that guards timeouts parks the run on it with this
-   * limit. Absent, every failure is `flow_failed`.
+   * limit. Absent, every failure is `flow_failed`. Like `publicError`, it
+   * never receives a `HarnessError`, which escalates first.
    */
-  readonly timedOut?: ((error: E) => { readonly limitMillis?: number | undefined } | undefined) | undefined
+  readonly timedOut?:
+    | ((error: Exclude<E, HarnessError>) => { readonly limitMillis?: number | undefined } | undefined)
+    | undefined
 }
 
 /**
@@ -385,14 +389,16 @@ export const make = <
         if (produced._tag === "Failure") {
           const escalate = escalated(produced.failure)
           if (escalate !== undefined) return yield* Effect.fail(escalate)
+          // `escalated` returned every HarnessError, so none reaches the renderers.
+          const failure = produced.failure as Exclude<E, HarnessError>
           // For the run's record only: what kind of failure this was. The
           // cell is told what `publicError` selects below and nothing more.
-          yield* (yield* Failures)(failureKind(produced.failure))
-          const message = publicMessage(produced.failure, options.publicError)
+          yield* (yield* Failures)(failureKind(failure))
+          const message = publicMessage(failure, options.publicError)
           const rendered = message === undefined
             ? `Flow ${descriptor.name} failed.`
             : `Flow ${descriptor.name} failed: ${message}`
-          const timeout = options.timedOut?.(produced.failure)
+          const timeout = options.timedOut?.(failure)
           return timeout === undefined
             ? refusal("flow_failed", rendered)
             : timeout.limitMillis === undefined

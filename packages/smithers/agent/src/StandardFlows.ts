@@ -89,17 +89,16 @@ const publicRefusal = (error: { readonly message: string }): string => error.mes
 /**
  * Shell/test execution failures may contain OS diagnostics. A command bound's
  * harness failure ({@link withinCallLimit}) escalates before any binding
- * reads its error, so it has no public text here.
+ * reads its error, so `FlowBinding` never hands one here.
  */
-const publicExecutionError = (error: StdError | HarnessError): string | undefined => {
-  if (error instanceof HarnessError) return undefined
+const publicExecutionError = (error: StdError): string | undefined => {
   if (error.code === "timeout") return "The command timed out."
   return error.code === "command_failed" || error.code === "request_failed" ? undefined : error.message
 }
 
 /** A command past its own limit (given or default) is a timeout; see `FlowBinding.Options.timedOut`. */
-const commandTimedOut = (error: StdError | HarnessError): { readonly limitMillis?: number | undefined } | undefined =>
-  !(error instanceof HarnessError) && error.code === "timeout" ? { limitMillis: error.limitMillis } : undefined
+const commandTimedOut = (error: StdError): { readonly limitMillis?: number | undefined } | undefined =>
+  error.code === "timeout" ? { limitMillis: error.limitMillis } : undefined
 
 /**
  * A command handler under the host's command bound, `limitMillis`.

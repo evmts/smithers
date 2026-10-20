@@ -10,18 +10,22 @@
  * @since 1.0.0-rc.0
  */
 
-import type * as KernelHttpClient from "@smthrs/kernel/HttpClient"
-import * as Auth from "@smthrs/model/Auth"
-import * as Endpoint from "@smthrs/model/Endpoint"
-import * as Evaluator from "@smthrs/model/Evaluator"
-import type * as Model from "@smthrs/model/Model"
-import { ModelError } from "@smthrs/model/ModelError"
-import * as OpenAIChatGPT from "@smthrs/model/OpenAIChatGPT"
-import type * as RequestExecutor from "@smthrs/model/RequestExecutor"
-import * as Route from "@smthrs/model/Route"
-import type { ModelPlan } from "@smthrs/rpc/ConfiguredModel"
-import { Effect, Redacted as Secret, Result } from "effect"
-import type { Layer, Redacted } from "effect"
+import { HttpClient as KernelHttpClient } from "@smthrs/kernel"
+import {
+  Auth,
+  Endpoint,
+  Evaluator,
+  type Model,
+  ModelError,
+  type ModelRequest,
+  OpenAIChatGPT,
+  RequestExecutor,
+  Route
+} from "@smthrs/model"
+import type { ConfiguredModel } from "@smthrs/rpc"
+import { Effect, Layer, Redacted as Secret, Result } from "effect"
+import type { Redacted } from "effect"
+import { providerTransport } from "./ProviderTransport.ts"
 
 /**
  * Visits a route without erasing its protocol-specific type parameters.
@@ -42,10 +46,10 @@ export interface RouteVisitor<A> {
  * @since 1.0.0-rc.0
  */
 export const withRoute = <A>(
-  plan: ModelPlan,
+  plan: ConfiguredModel.ModelPlan,
   apiKey: Redacted.Redacted<string>,
   visit: RouteVisitor<A>
-): Result.Result<A, ModelError> => {
+): Result.Result<A, ModelError.ModelError> => {
   switch (plan.protocol) {
     case "anthropic-messages":
       return Result.flatMap(
@@ -62,7 +66,9 @@ export const withRoute = <A>(
         access = JSON.parse(Secret.value(apiKey))
         if (!access.accessToken || !access.accountId) throw new Error("missing access")
       } catch {
-        return Result.fail(new ModelError({ code: "authentication", message: "ChatGPT sign-in unavailable" }))
+        return Result.fail(
+          new ModelError.ModelError({ code: "authentication", message: "ChatGPT sign-in unavailable" })
+        )
       }
       const bearer = Auth.bearer(Secret.make(access.accessToken))
       return Result.map(
@@ -94,21 +100,85 @@ export const withRoute = <A>(
         visit
       )
     case "evaluation":
-      return Result.fail(new ModelError({ code: "no_route", message: "A decision model has no generation route" }))
+      return Result.fail(
+        new ModelError.ModelError({ code: "no_route", message: "A decision model has no generation route" })
+      )
   }
 }
 
 /**
- * Builds a model from a validated generation plan and redacted credential.
+ * How {@link toModel} reaches the provider.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface ToModelOptions {
+  /** The fetch every call goes through; it never follows a redirect. Defaults to the runtime's global fetch. */
+  readonly fetch?: typeof globalThis.fetch | undefined
+  /** Told the status of each provider redirect the transport refused. */
+  readonly onRedirect?: ((status: number) => void) | undefined
+  /** Retries and the response-start deadline of each call; `RequestExecutor.makeWith`'s defaults when omitted. */
+  readonly execution?: RequestExecutor.MakeOptions | undefined
+}
+
+/**
+ * The credential-free half of a configured route. `prepare` compiles a request
+ * into exactly the url, public headers and body the model sends, before a
+ * credential signs it, so a durable step can key on what was asked without
+ * reaching the key. It is structurally `RouteResolver` from `@smthrs/agent`.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface HostModelRoute {
+  readonly prepare: (
+    request: ModelRequest.ModelRequest
+  ) => Effect.Effect<Route.PreparedRequest, ModelError.ModelError>
+}
+
+/**
+ * The model a plan names, and the prepare port of the one route it streams through.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface PlannedModel {
+  readonly model: Model.Model
+  readonly route: HostModelRoute
+}
+
+/**
+ * Builds the model a validated generation plan names, with its redacted
+ * credential, and the {@link HostModelRoute} of the same route. Every call
+ * goes over a transport that refuses redirects (`providerTransport`), so the
+ * key never leaves the planned origin. Only `prepare` leaves here, never the
+ * route, whose `Auth` holds the key.
  *
  * @category constructors
  * @since 1.0.0-rc.0
  */
 export const toModel = (
-  plan: ModelPlan,
-  apiKey: Redacted.Redacted<string>
-): Effect.Effect<Model.Model, ModelError, RequestExecutor.RequestExecutor> =>
-  Effect.flatMap(Effect.fromResult(withRoute(plan, apiKey, (route) => Route.toModel(route))), (model) => model)
+  plan: ConfiguredModel.ModelPlan,
+  apiKey: Redacted.Redacted<string>,
+  options: ToModelOptions = {}
+): Effect.Effect<PlannedModel, ModelError.ModelError> =>
+  Effect.flatten(
+    Effect.fromResult(withRoute(plan, apiKey, (route) =>
+      Effect.map(Route.toModel(route), (model): PlannedModel => ({
+        model,
+        route: { prepare: (request) => Route.prepare(route, request) }
+      }))))
+  ).pipe(
+    Effect.provide(
+      Layer.effect(
+        RequestExecutor.RequestExecutor,
+        Effect.flatMap(
+          KernelHttpClient.HttpClient,
+          (http) => RequestExecutor.makeWith(RequestExecutor.fixed(http), options.execution)
+        )
+      ).pipe(Layer.provide(providerTransport(options.fetch, options.onRedirect)))
+    )
+  )
 
 /**
  * Builds the evaluator layer for a validated decision model plan.
@@ -117,7 +187,7 @@ export const toModel = (
  * @since 1.0.0-rc.0
  */
 export const toEvaluatorLayer = (
-  plan: ModelPlan,
+  plan: ConfiguredModel.ModelPlan,
   apiKey: Redacted.Redacted<string>,
   timeoutMs: number
 ): Layer.Layer<Evaluator.Evaluator, never, KernelHttpClient.HttpClient> =>

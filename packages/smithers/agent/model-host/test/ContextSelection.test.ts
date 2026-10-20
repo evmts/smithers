@@ -1,9 +1,18 @@
-import * as Model from "@smthrs/model/Model"
-import type { ContextPreflightInput } from "@smthrs/rpc/ContextPreflight"
+import { Model } from "@smthrs/model"
+import type { ContextPreflight } from "@smthrs/rpc"
 import { Effect, Stream } from "effect"
+import { HttpEffect } from "effect/http"
 import { expect, test, vi } from "vitest"
 import { environmentModelResolver } from "../src/EnvironmentResolver.ts"
-import { createModelTurnHandler, MODEL_HOST_CONTEXT_SELECT_PATH, type ModelTurnResolver } from "../src/HostServer.ts"
+import {
+  createModelTurnHandler,
+  MODEL_HOST_CONTEXT_SELECT_PATH,
+  type ModelTurnHandlerOptions,
+  type ModelTurnResolver
+} from "../src/HostServer.ts"
+
+/** The handler as a host serves it: a Fetch handler. */
+const serve = (options: ModelTurnHandlerOptions) => HttpEffect.toWebHandler(createModelTurnHandler(options))
 
 // A TODO plan step's wiki selection (T-FLW-10): the shared preflight
 // selector alone, on the owner's fast role. Literal fixtures, no derivation.
@@ -29,7 +38,7 @@ const input = {
       text: "export const retry = () => {}"
     }
   ]
-} satisfies ContextPreflightInput
+} satisfies ContextPreflight.ContextPreflightInput
 const body = (contextSelection: unknown = input, extra: Record<string, unknown> = {}) =>
   JSON.stringify({ runId: "select-run", ownerId: 7, instructions: "", messages: [], contextSelection, ...extra })
 const post = (payload: string, authorization = "Bearer host-token") =>
@@ -61,7 +70,7 @@ test("selection runs the fast role over wiki pages only and returns the chosen r
       })
     })
   )
-  const handler = createModelTurnHandler({
+  const handler = serve({
     authorization: "host-token",
     callbackBaseUrl: "http://callback.test",
     resolve
@@ -90,7 +99,7 @@ test("selection runs the fast role over wiki pages only and returns the chosen r
 
 test("selection refuses unauthenticated, malformed and non-POST requests before resolving a model", async () => {
   const resolve = vi.fn<ModelTurnResolver>(() => Effect.die("unreachable"))
-  const handler = createModelTurnHandler({
+  const handler = serve({
     authorization: "host-token",
     callbackBaseUrl: "http://callback.test",
     resolve
@@ -114,7 +123,7 @@ test("selection refuses unauthenticated, malformed and non-POST requests before 
 
 test("selection without a resolved selector or with invalid choices fails without an answer", async () => {
   const answer: Array<any> = []
-  const without = createModelTurnHandler({
+  const without = serve({
     authorization: "host-token",
     callbackBaseUrl: "http://callback.test",
     resolve: () => Effect.succeed({ model: fastModel(answer), options: { modelId: "coding" } })
@@ -123,7 +132,7 @@ test("selection without a resolved selector or with invalid choices fails withou
   expect(refused.status).toBe(502)
   expect(await refused.json()).toEqual({ status: "error", code: "turn_failed" })
   expect(answer).toHaveLength(0)
-  const invalid = createModelTurnHandler({
+  const invalid = serve({
     authorization: "host-token",
     callbackBaseUrl: "http://callback.test",
     resolve: (_grant, selection) =>

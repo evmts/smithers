@@ -269,6 +269,39 @@ it("rejects controller state decoded from the previous journal format before cal
 })
 
 describe("CellTurn frame catalogs", () => {
+  it("re-teaches a conversation run its own contract when the catalog changes", async () => {
+    const contractOf = (profile: CellTurn.Profile) =>
+      ContextWindow.render(CellTurn.teach(ContextWindow.empty("test-model"), [], undefined, undefined, profile))
+        .system[0]!.text
+    let reads = 0
+    const model = ScriptedModel.make([emits(`console.log(Object.keys(ctx.flows))`), emits(`ctx.done("Done.")`)])
+    const fixture = ScriptedEngine.make(model.model)
+    const result = await collect({
+      state: state({
+        contextWindow: CellTurn.teach(opening(), [], undefined, undefined, "conversation"),
+        maxFrames: 2
+      }),
+      flows: [],
+      profile: "conversation",
+      refreshFlows: Effect.sync(() => (reads += 1) === 1 ? [lister] : [descriptor("app/theme/set")])
+    }, { engine: fixture.layer })
+    expect(result.failure).toBeUndefined()
+    expect(model.recorder.requests).toHaveLength(2)
+    for (const request of model.recorder.requests) {
+      const system = request.system.map((part) => part.text)
+      // One contract, the conversation one, every frame: the re-teach replaced
+      // the segments it had taught rather than adding the workspace contract.
+      expect(system.filter((text) => text.startsWith("JavaScript REPL"))).toEqual([contractOf("conversation")])
+      expect(system.join("\n")).not.toContain("History:")
+    }
+    expect(contractOf("conversation")).not.toBe(contractOf("workspace"))
+    const catalogs = model.recorder.requests.map((request) =>
+      request.system.map((part) => part.text).filter((text) => text.startsWith("Flows callable with ctx.call"))
+    )
+    expect(catalogs[0]).toEqual([expect.stringContaining("fs/list")])
+    expect(catalogs[1]).toEqual([expect.stringContaining("app/theme/set")])
+  })
+
   it("replays each catalog snapshot for disclosure, admission and declaration identity", async () => {
     const promoted = descriptor("promoted")
     let reads = 0

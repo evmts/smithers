@@ -3,7 +3,7 @@ title: "API reference"
 description: "Every public export of @smthrs/agent: the Agent service, the AgentSession and AgentAction adapters, seats, the quota and budget policies, the capability catalog, and the durable engine port."
 ---
 
-`@smthrs/agent` exports twenty-seven modules from its root entry point, and each is
+`@smthrs/agent` exports twenty-eight modules from its root entry point, and each is
 also importable from `@smthrs/agent/<Module>`:
 
 ```ts
@@ -82,6 +82,7 @@ itself; every default on the optional half is the conservative one.
 | `prompt`             | `string`                                                                                                                             | The task the run was admitted with. Required.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `registry`           | `Registry.Registry`                                                                                                                  | The catalog shown to the model and the registry its calls resolve against. Required.                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `system`             | `ReadonlyArray<string>`                                                                                                              | Stable system teaching placed ahead of the cell contract.                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `profile`            | `CellTurn.Profile`                                                                                                                   | The cell contract the run is taught. Omitted is `workspace`. `conversation` teaches the REPL and rules 1 to 6 without the bug-fix example, rules 7 to 9, the history fact or the unpinned-tree fact, and defaults `repeatCap` and `narrowingCap` to zero; a value set explicitly still wins.                                                                                                                                                                                                                    |
 | `flows`              | `ReadonlyArray<FlowBinding.Source>`                                                                                                  | Ordered executable-flow sources composed into the run's catalog.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `implementations`    | `ReadonlyMap<string, CellCalls.Implementation>`                                                                                      | Host implementations for module-backed flows, keyed by flow name.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `promptRunner`       | `CellCalls.PromptRunner`                                                                                                             | Runs a rendered markdown flow. A host with none refuses them catchably.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -97,8 +98,8 @@ itself; every default on the optional half is the conservative one.
 | `maxFrames`          | `number`                                                                                                                             | Bounds one loop's frames.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `readOnlyCap`        | `number`                                                                                                                             | Caps consecutive read-only frames. Armed for task runs only; see `CellTurn.make` in [`@smthrs/harness`](/api/harness).                                                                                                                                                                                                                                                                                                                                                                                          |
 | `modelCallMs`        | `number`                                                                                                                             | Caps the wall clock one model call may spend. Armed by default at `CellTurn.modelCallMsFor(effort)` (300,000 ms up to `medium`, 1,800,000 ms at `max`); zero disarms it.                                                                                                                                                                                                                                                                                                                                        |
-| `repeatCap`          | `number`                                                                                                                             | Caps consecutive repeat-observation frames. Armed by default at `CellTurn.defaultRepeatFrames`; zero disarms it.                                                                                                                                                                                                                                                                                                                                                                                                |
-| `narrowingCap`       | `number`                                                                                                                             | Caps completions bounced for narrowed evidence. Armed by default at `CellTurn.defaultNarrowingDemands`.                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `repeatCap`          | `number`                                                                                                                             | Caps consecutive repeat-observation frames. Armed by default at `CellTurn.defaultRepeatFrames`; zero disarms it. A `conversation` run defaults it to zero.                                                                                                                                                                                                                                                                                                                                                      |
+| `narrowingCap`       | `number`                                                                                                                             | Caps completions bounced for narrowed evidence. Armed by default at `CellTurn.defaultNarrowingDemands`. A `conversation` run defaults it to zero.                                                                                                                                                                                                                                                                                                                                                               |
 | `unmovedCap`         | `number`                                                                                                                             | Caps completions bounced for an unmoved tree. Armed by default at `CellTurn.defaultUnmovedDemands`.                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `unresolvedCap`      | `number`                                                                                                                             | Caps completions bounced for a failing check the run replaced rather than answered. Armed by default at `CellTurn.defaultUnresolvedDemands`.                                                                                                                                                                                                                                                                                                                                                                    |
 | `claimCap`           | `number`                                                                                                                             | Caps completions bounced for a claim the run's record does not support; the one brake that asks the `Evaluator`. Off by default (`CellTurn.defaultClaimDemands` is 0); a workflow arms it with a positive cap.                                                                                                                                                                                                                                                                                                  |
@@ -547,21 +548,22 @@ other error schemas throw `TypeError` before the layer is built.
 
 ### AgentAction.Options
 
-| Field         | Type                                               | What it decides                                                                                                                                                                                        |
-| ------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `payload`     | `Schema.Struct.Fields \| Flow.AnyStructSchema`     | The step's typed input, exactly as `Action.make` takes it. Required.                                                                                                                                   |
-| `output`      | `Schema.Top`                                       | The schema the answer must satisfy. Rendered into the prompt and enforced. Required.                                                                                                                   |
-| `seat`        | `ModelSelection \| ((payload) => ModelSelection)`  | One seat or a non-empty ordered list. The first seat is primary, the rest are fallbacks. A callback is evaluated once per execution. Required.                                                         |
-| `phase`       | `SeatRouter.Phase`                                 | The phase of work a `Seat.auto` seat routes as. Jev classifies it when absent. A panel route runs the members in parallel, then the merger on the answers of those that did not fail.                  |
-| `prompt`      | `(payload) => string`                              | The task, built from the decoded payload. Required.                                                                                                                                                    |
-| `system`      | `ReadonlyArray<string>`                            | Stable system teaching for this step, after the host's and before the schema's.                                                                                                                        |
-| `corrections` | `number`                                           | How many times a decode miss may be corrected, in the same session or a fresh one. Falls back to `Host.defaultCorrections`, then to one. Zero declares a first miss terminal.                          |
-| `repair`      | `Repair<Payload>`                                  | One bounded repair ask made after the correction budget is spent, decoded by the same schema.                                                                                                          |
-| `modelParams` | `ModelRequest.GenerationParams`                    | Generation parameters for the step's model calls.                                                                                                                                                      |
-| `timeout`     | `Duration.Input \| ((payload) => Duration.Input)`  | Bounds the entire action, including seat resolution, retries and corrections. Expiry interrupts the agent with a typed `HarnessError`; shared host budgets and model-call limits still apply.          |
-| `maxFrames`   | `number`                                           | The cell-loop bound for this step, ahead of the host's.                                                                                                                                                |
-| `claimCap`    | `number`                                           | Overrides `Host.claimCap` for this step. A positive cap arms the completion claim brake; zero disarms it. Omitted on both, no judge reads the step's completion.                                       |
-| `memory`      | `(payload) => ReadonlyArray<SnapshotRecorder.Row>` | Opening memory rows for this step. A judged step's run-start relevance reading withholds the rows Jev is confident the task does not need and journals `relevance-settled`. Keep them out of `prompt`. |
+| Field         | Type                                               | What it decides                                                                                                                                                                                                                                          |
+| ------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `payload`     | `Schema.Struct.Fields \| Flow.AnyStructSchema`     | The step's typed input, exactly as `Action.make` takes it. Required.                                                                                                                                                                                     |
+| `output`      | `Schema.Top`                                       | The schema the answer must satisfy. Rendered into the prompt and enforced. Required.                                                                                                                                                                     |
+| `seat`        | `ModelSelection \| ((payload) => ModelSelection)`  | One seat or a non-empty ordered list. The first seat is primary, the rest are fallbacks. A callback is evaluated once per execution. Required.                                                                                                           |
+| `phase`       | `SeatRouter.Phase`                                 | The phase of work a `Seat.auto` seat routes as. Jev classifies it when absent. A panel route runs the members in parallel, then the merger on the answers of those that did not fail.                                                                    |
+| `prompt`      | `(payload) => string`                              | The task, built from the decoded payload. Required.                                                                                                                                                                                                      |
+| `system`      | `ReadonlyArray<string>`                            | Stable system teaching for this step, after the host's and before the schema's.                                                                                                                                                                          |
+| `profile`     | `CellTurn.Profile`                                 | The cell contract every ask of this step is taught, corrections and repair included. Forwarded to `Agent.Options.profile`; omitted is `workspace`. A step that answers a person through the host's flows, such as a chat reply, declares `conversation`. |
+| `corrections` | `number`                                           | How many times a decode miss may be corrected, in the same session or a fresh one. Falls back to `Host.defaultCorrections`, then to one. Zero declares a first miss terminal.                                                                            |
+| `repair`      | `Repair<Payload>`                                  | One bounded repair ask made after the correction budget is spent, decoded by the same schema.                                                                                                                                                            |
+| `modelParams` | `ModelRequest.GenerationParams`                    | Generation parameters for the step's model calls.                                                                                                                                                                                                        |
+| `timeout`     | `Duration.Input \| ((payload) => Duration.Input)`  | Bounds the entire action, including seat resolution, retries and corrections. Expiry interrupts the agent with a typed `HarnessError`; shared host budgets and model-call limits still apply.                                                            |
+| `maxFrames`   | `number`                                           | The cell-loop bound for this step, ahead of the host's.                                                                                                                                                                                                  |
+| `claimCap`    | `number`                                           | Overrides `Host.claimCap` for this step. A positive cap arms the completion claim brake; zero disarms it. Omitted on both, no judge reads the step's completion.                                                                                         |
+| `memory`      | `(payload) => ReadonlyArray<SnapshotRecorder.Row>` | Opening memory rows for this step. A judged step's run-start relevance reading withholds the rows Jev is confident the task does not need and journals `relevance-settled`. Keep them out of `prompt`.                                                   |
 
 For a fixed deadline, use `timeout: "2 minutes"`; for an input-dependent
 limit, use `timeout: payload => Duration.minutes(payload.timeout)`. The
@@ -1654,10 +1656,10 @@ consumes the whole event stream itself to owe its caller one decoded value; a
 provided sink is handed each event on the way past, and the step's answer,
 correction budget, and failures are the same with a sink as without one.
 
-With `FlowEngineLike`, model deltas arrive at the sealed model-call boundary,
-after the provider stream settles. The adapter records the complete provider
-stream before emitting its events. The sink does not report live provider
-progress. A replay emits the recorded events again without calling the provider.
+With `FlowEngineLike`, model events reach the sink live, from inside the sealed
+model-call boundary: each provider delta while the provider is still streaming,
+and a transport retry as a `model-retried` event before the next attempt's
+deltas. A replay emits the recorded events again without calling the provider.
 
 ### EventSink.Service and EventSink.EventSink
 
@@ -2569,6 +2571,97 @@ set. `callBoundary` maps a hermetic mode to a hard boundary. `callMaterial` is
 the sandbox's separate content key, intentionally not equal to the durable
 activity key, which nests effects under the body and includes the composition
 digest.
+
+## ModelStep
+
+One model call as a durable, sealed flow step. It runs inside a flow body,
+dispatches the call as one action under a key derived from the request, and
+records the provider's whole answer as that action's value, so a resumed
+execution replays the record instead of calling the provider again.
+`FlowEngineLike`'s `sealStep` dispatches through the same implementation. For
+the walkthrough, see [A durable model call](./guides/durable-model-call.md).
+
+### ModelStep.run
+
+```ts
+const run: (
+  options: Options
+) => Effect.Effect<Result, Failure, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+```
+
+Calls the model once, as one step of the running flow.
+
+- **Key.** A digest of the credential-free prepared request (route id,
+  protocol, method, URL, public headers and canonical body bytes) together with
+  the encoded `ModelRequest`, through `StepKey.fromKeyMaterial`. The step name
+  is part of it; the credential is not. Without a declared cache environment
+  the engine scopes it to the execution, so another execution with an
+  identical request calls the provider itself.
+- **Retries.** Transport faults are retried inside the step with
+  byte-identical bodies. A capacity refusal (`rate_limited`, `quota_exceeded`,
+  `provider_internal`, or HTTP 429, 503, 504 or 529) fails the step without
+  sealing it, and `retryPolicy` decides whether the engine tries again. Every
+  other provider error is sealed as `Result.error`.
+- **Liveness.** Each attempt and each streamed event is a heartbeat. An attempt
+  silent for `heartbeatTimeoutMs` fails with `Action.AttemptTimedOut`, which
+  `retryPolicy` retries.
+- **At least once.** A call cut off mid-flight, by a dying process or an
+  interrupted fiber, is made again when the execution resumes. The
+  `agent_model_step_redispatches` counter counts each repeat.
+
+It fails with the last refusal once `retryPolicy` gives up, with a permission
+failure, with the route's `prepare` error, or with an `engine_failed`
+`HarnessError` when the key cannot be derived.
+
+### ModelStep.Options
+
+| Field                | Type                                                    | What it decides                                                                                                                                                                  |
+| -------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`               | `string`                                                | The action name, such as `chat/answer/model`. Part of the key. Required.                                                                                                         |
+| `request`            | `ModelRequest.ModelRequest`                             | The request. Required.                                                                                                                                                           |
+| `model`              | `Model.Model`                                           | The model that streams the call, with its credential applied. Required.                                                                                                          |
+| `route`              | `FlowEngineLike.RouteResolver`                          | The same route's credential-free preparation, which the key digests. `FlowEngineLike.routeResolver` builds one. Required.                                                        |
+| `retryPolicy`        | `RetryPolicy.RetryPolicy`                               | Retries every failure the step does not seal. Defaults to `defaultRetryPolicy`.                                                                                                  |
+| `heartbeatTimeoutMs` | `number`                                                | Milliseconds an attempt may stream nothing. Defaults to `defaultHeartbeatTimeoutMs`.                                                                                             |
+| `onEvent`            | `(event: ModelEvent.ModelEvent) => Effect.Effect<void>` | Receives each event while the call runs, and the recorded events on a replay. An attempt that follows a failed or cut-off one starts with a `retry` event. Runs inside the step. |
+
+`model` and `route` must describe one configured route: a `route` that
+disagrees with `model` keys the step on bytes the provider never receives.
+
+### ModelStep.Result
+
+```ts
+interface Result {
+  readonly events: ReadonlyArray<ModelEvent.ModelEvent>
+  readonly error?: ModelError.ModelError | undefined
+  readonly replayed: boolean
+}
+```
+
+The provider's events as recorded, the provider refusal the step sealed if
+there was one, and whether this run answered from the record.
+
+### ModelStep.Failure
+
+```ts
+const Failure: Schema.Union<[
+  typeof ModelError.ModelError,
+  typeof Permission.PermissionRequired,
+  typeof Permission.PermissionDenied,
+  typeof Permission.GrantStoreError,
+  typeof HarnessError.HarnessError
+]>
+```
+
+Everything `run` fails with, as one encodable schema. A flow whose body calls
+`run` can declare it as its error schema.
+
+### ModelStep.defaultRetryPolicy, ModelStep.defaultHeartbeatTimeoutMs
+
+| Constant                    | Value                                                                                                                             |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `defaultRetryPolicy`        | 1 s doubling to 30 s, up to a fifth of each delay shaved off at random, for at most 2 min. Permission failures are never retried. |
+| `defaultHeartbeatTimeoutMs` | 60,000                                                                                                                            |
 
 ## Checkpointed
 

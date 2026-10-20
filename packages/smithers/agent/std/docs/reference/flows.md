@@ -369,7 +369,21 @@ Fails with `invalid_input`.
 `fetch`, `http-post`, and `webfetch` resolve every destination before sending,
 including redirect destinations, after checking the ordinary request grant. Loopback, private, link-local, shared,
 multicast, and reserved addresses require a `net:private` grant. Mixed public
-and private DNS answers also require it. Resolution failure refuses the request.
+and private DNS answers also require it. A zoned IPv6 literal such as
+`fe80::1%eth0` is never public. Resolution failure refuses the request.
+
+Names resolve through `@smthrs/kernel`'s `HttpClient.ResolveHost`. Its default
+refuses every name with `HttpClient.ResolveHostUnavailable`, which is the answer
+where the platform mediates the network, in a browser tab or a Cloudflare
+Worker. `EgressHttpClient.layer` from `@smthrs/platform-node` provides the
+system resolver beside its pinning client, so the addresses checked are the
+addresses pinned.
+
+| Resolver outcome               | Code             | Message                                         |
+| ------------------------------ | ---------------- | ----------------------------------------------- |
+| `ResolveHostUnavailable`       | `unsupported`    | `HTTP host cannot resolve <hostname>: <reason>` |
+| Any other resolver failure     | `request_failed` | `Could not resolve HTTP destination`            |
+| No answers, or a non-IP answer | `request_failed` | `HTTP destination has no valid addresses`       |
 
 The grant resource is the normalized URL origin, including the scheme and any
 non-default port, for example `net:private:http://127.0.0.1:8080`. It supplements
@@ -385,9 +399,11 @@ transports are unaffected.
 
 Web tools require a host that enforces connection pinning, such as
 `EgressHttpClient.layer(process.env)` from `@smthrs/platform-node`, which both
-Node and Bun host bundles install. Other transports return `unsupported`
-unless they implement the kernel's destination-pinning contract. Preflight
-DNS validation alone does not prevent DNS rebinding.
+Node and Bun host bundles install. Other transports return `unsupported`,
+`HTTP host must support destination pinning`, unless they implement the
+kernel's destination-pinning contract. This check runs before resolution, so a
+browser or Worker fetch client is refused here. Preflight DNS validation alone
+does not prevent DNS rebinding.
 
 Every redirect resolves and authorizes its destination again. A request uses
 only its approved address snapshot, with no shared connection pool. HTTP Host
@@ -510,7 +526,8 @@ The operations are `hover`, `definition`, `references`, `implementation`,
 Fails with `invalid_input` for a missing or non-absolute path or a missing
 position, and with whatever the bound `LanguageServer` reports: `unsupported`
 from the refusal implementation, or `timeout`, `request_failed`, and
-`command_failed` from `NodeLanguageServer`.
+`command_failed` from [`@smthrs/platform-node`](/api/platform-node)'s
+`NodeLanguageServer`.
 
 ## Failures
 
@@ -539,7 +556,7 @@ all values.
 | `timeout`                  | The call exceeded its wall-clock budget.                      |
 | `rate_limited`             | Provider rate limit reached; back off before retrying.        |
 | `provider_unavailable`     | No host bound the service this flow needs, or it refused.     |
-| `unsupported`              | The service does not implement this query.                    |
+| `unsupported`              | The service or host cannot serve this query or destination.   |
 | `unsupported_content_type` | The response is not a type this flow renders.                 |
 | `response_too_large`       | The response or file exceeded the byte cap before decoding.   |
 | `outside_container`        | A sealed `bash` was asked to run outside its one container.   |

@@ -3,8 +3,9 @@
  *
  * `Agent` is the agent: the production agent loop composed on the durable
  * engine. `AgentSession` runs it as one durable control-plane run. `AgentAction`
- * runs it as one typed step inside a larger flow. `Seat` and `SeatResolver` are
- * how a declaration picks a model without holding a credential; the rest of the
+ * runs it as one typed step inside a larger flow. `ModelStep` is one model call
+ * as a durable, sealed flow step. `Seat` and `SeatResolver` are how a
+ * declaration picks a model without holding a credential; the rest of the
  * package is the capability catalog a run is given and the engine port it runs
  * on.
  *
@@ -16,6 +17,12 @@
  * @since 0.1.0
  */
 export * as FlowEngineLike from "./FlowEngineLike.ts"
+
+/**
+ * @category execution
+ * @since 1.0.0-rc.16
+ */
+export * as ModelStep from "./ModelStep.ts"
 
 /**
  * @category layers

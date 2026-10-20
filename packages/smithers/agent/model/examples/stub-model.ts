@@ -4,10 +4,7 @@
  * message, and `Pricing.cost` prices the usage the stream reported. This is
  * the quickstart's "Run a stub model" step; `test/examples.test.ts` runs it.
  */
-import * as Model from "@smthrs/model/Model"
-import * as ModelEvent from "@smthrs/model/ModelEvent"
-import * as ModelRequest from "@smthrs/model/ModelRequest"
-import * as Pricing from "@smthrs/model/Pricing"
+import { Model, ModelEvent, ModelRequest, Pricing } from "@smthrs/model"
 import { Effect, Stream } from "effect"
 
 const request = ModelRequest.ModelRequest.make({

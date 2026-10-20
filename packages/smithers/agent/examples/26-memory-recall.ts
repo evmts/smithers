@@ -19,7 +19,7 @@ import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import { durableEngine } from "@smthrs/flows/test/TestNodeRuntime"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import * as MemoryFlows from "@smthrs/memory/Flows"
@@ -211,7 +211,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
 
     // The store and the FTS recall service, over the engine's own database.
     const stores = Layer.provideMerge(RecallFts.layer, Layer.orDie(MemoryStore.layer))
-    const base = stores.pipe(Layer.provideMerge(durableEngine(filename, "examples-memory")))
+    const base = stores.pipe(Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-memory")))
 
     const seats = SeatResolver.layer({
       resolve: (id) =>

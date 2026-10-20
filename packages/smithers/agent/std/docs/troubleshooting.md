@@ -258,27 +258,17 @@ lowered rather than honoured. For a raw body without HTML rendering, use `fetch`
 
 **What happened.** `lsp` ran with `LanguageServer.layerNoop` bound.
 
-**What to change.** Bind `NodeLanguageServer.layer({ command, cwd })` with a
-server that speaks LSP on stdio, or implement the ten-method service yourself.
+**What to change.** Bind `NodeLanguageServer.layer({ command, cwd })` from
+[`@smthrs/platform-node`](/api/platform-node) with a server that speaks LSP on
+stdio, or implement the `LanguageServer` service yourself. The failures that
+client reports, such as a server program inside the workspace, are in
+[its troubleshooting page](../../../flows/platform-node/docs/troubleshooting.md).
 
 Two other `lsp` failures are input errors: `A normalized absolute path is
 required` means `path` was missing or relative for an operation that needs one,
 and `1-based line and character are required` means a position operation was
 missing its coordinates. Both are `invalid_input`. A `path` the guarded
 filesystem denies fails with `permission_denied`.
-
-## permission_denied: Language server program is inside the workspace
-
-**What happened.** `NodeLanguageServer.make` resolved `command` to a file under
-`cwd` (a `./` path, a `PATH` entry such as `node_modules/.bin`, or a symlink
-there), an argument named a file under `cwd`, or `command` was a launcher
-(`sh -c`, `env`, `npx`, `pnpm exec`, `yarn`, `bunx`, or `node`/`bun` with `-e`,
-`-p`, `-r`, `--require`, `--import` or `--loader`) whose arguments choose what
-runs. The server would have run workspace-written code on the host.
-
-**What to change.** Install the server outside the workspace and pass its
-absolute path, not a launcher. For typescript-language-server, also pin
-`initializationOptions: { tsserver: { path } }` to a host copy.
 
 ## A write of captured output replaced a file with a fragment
 
@@ -291,14 +281,37 @@ process printed and `test` keeps the tail, never the whole of it.
 [`@smthrs/harness`](/api/harness) reads the same flags and refuses the write for
 you when it is the host running these tools.
 
-## A browser bundle pulls in node:url
+## unsupported: HTTP host must support destination pinning
 
-**What happened.** Importing `@smthrs/std` from a browser bundle. The root entry
-point re-exports `NodeLanguageServer`, which imports `node:url`.
+**What happened.** `fetch`, `http-post`, or `webfetch` ran with an `HttpClient`
+that does not pin a request to the addresses the tool checked. A browser tab's
+or a Cloudflare Worker's fetch client cannot, so the tools refuse there before
+any lookup or request.
 
-**What to change.** Import the browser-safe subpaths directly:
-`@smthrs/std/Grep`, `@smthrs/std/Glob`, `@smthrs/std/Search`, and
-`@smthrs/std/PortableSearch`.
+**What to change.** On Node.js or Bun, provide
+`EgressHttpClient.layer(process.env)` from
+[`@smthrs/platform-node`](/api/platform-node); `NodeHost` and `BunHost` already
+install it. Where the platform owns the network, leave the web tools out of the
+offered set.
+
+## unsupported: HTTP host cannot resolve a hostname
+
+**What happened.** The `HttpClient` pins destinations, but nothing provided
+`@smthrs/kernel`'s `HttpClient.ResolveHost`. Its default refuses every name with
+`ResolveHostUnavailable`, and the message carries the `hostname` and the
+host's `reason`.
+
+**What to change.** Provide the resolver from the same host as the pinning
+client. `EgressHttpClient.layer` provides both, so compose it rather than a
+pinning client on its own. A URL whose host is an IP literal needs no resolver.
+
+## request_failed: Could not resolve HTTP destination
+
+**What happened.** The host's resolver ran and failed, for example because the
+name does not exist or DNS is unreachable.
+
+**What to change.** Check the hostname and the host's DNS. The tools never send
+a request to a name they could not check.
 
 ## invalid_input: at most one step can be in_progress
 

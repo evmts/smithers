@@ -5,14 +5,14 @@ sidebar:
   order: 1
 ---
 
-The package exports 32 modules. Each is reachable from the root entry point as a
-namespace and from its own subpath:
+The package exports 33 modules. Import each one as a namespace from the root
+entry point:
 
 ```ts
 import { Read } from "@smthrs/std"
-import * as Read from "@smthrs/std/Read"
 ```
 
+Each module also has its own subpath, `@smthrs/std/<Module>`.
 `@smthrs/std/internal/*` and `@smthrs/std/<Module>/index` are not public.
 
 Host child processes receive only `PATH`, `HOME`, `USER`, `LANG`, `LC_*`,
@@ -28,7 +28,7 @@ surface.
 
 ```ts
 import { NodeServices } from "@effect/platform-node"
-import * as Read from "@smthrs/std/Read"
+import { Read } from "@smthrs/std"
 
 const page = await Effect.runPromise(
   Effect.provide(Read.run({ path: "./README.md", limit: 20 }), NodeServices.layer)
@@ -88,7 +88,7 @@ The whole library keyed by registry name. Every registry is frozen.
 | `readOnly`   | readonly tuple of 8 names            | The read-only projection.                  |
 
 ```ts
-import * as Manifest from "@smthrs/std/Manifest"
+import { Manifest } from "@smthrs/std"
 
 Manifest.names // ["read", "write", "edit", "ls", "glob", "grep", "bash", ...]
 Manifest.readOnly // ["read", "ls", "glob", "grep", "fetch", "explore", "webfetch", "lsp"]
@@ -104,7 +104,7 @@ The single typed failure every handler uses.
 | `StdError` | `Schema.TaggedError` class              | `{ code, message, path?, base_digest?, current_digest?, method?, rpcError?, stderr?, limitMillis? }`, tagged `@smthrs/std/StdError`. |
 
 ```ts
-import * as StdError from "@smthrs/std/StdError"
+import { StdError } from "@smthrs/std"
 
 const failure = new StdError.StdError({
   code: "not_found",
@@ -137,7 +137,7 @@ verdict about the code it ran, not about the command it was handed.
 | `unjudged`         | `(error: ClassifierError) => StdError`                                                       | The standard-flow failure a judge that did not answer is.                                   |
 
 ```ts
-import * as Probe from "@smthrs/std/Probe"
+import { Probe } from "@smthrs/std"
 
 const attribution = yield * Probe.classify({ command: "pytest tests/x.py::nope", exitCode: 4, output })
 // { to: "unknown-test", executed: false, invalidProbe: { reason: "unknown-test", ... } }
@@ -425,50 +425,9 @@ returning `Effect<unknown, StdError>`. `sync(path, text)` sends a file's new
 text, `close(path)` says it is gone, and `refresh` re-reads every synced file
 from disk, resending changed ones and closing deleted ones.
 
-## NodeLanguageServer
-
-A host LSP client over the permission-checked process spawner, speaking framed
-JSON-RPC on ordinary stdio pipes.
-
-| Export                 | Type                                                                                 | Meaning                                                                                                                    |
-| ---------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `Config`               | interface                                                                            | `command`, `args?`, `cwd`, `extensions?`, `environment?`, `initializationOptions?`, `timeoutMs?`, `settleMs?`, `quietMs?`. |
-| `MAX_QUEUED_FRAMES`    | `256`                                                                                | Frames buffered for the server's standard input.                                                                           |
-| `MAX_PENDING_REQUESTS` | `512`                                                                                | Concurrent in-flight requests.                                                                                             |
-| `make`                 | `(config: Config) => Effect<LanguageServer, StdError, ChildProcessSpawner \| Scope>` |                                                                                                                            |
-| `makeLazy`             | `(config: Config) => Effect<LanguageServer, StdError, ChildProcessSpawner \| Scope>` | Starts each server on the first request for one of its files.                                                              |
-| `layer`                | `(config: Config) => Layer<LanguageServer, StdError, ChildProcessSpawner>`           |                                                                                                                            |
-| `layerLazy`            | `(config: Config) => Layer<LanguageServer, StdError, ChildProcessSpawner>`           | Provides `makeLazy`.                                                                                                       |
-
-`make` sends `initialize` with `cwd` as the root URI and then `initialized`, so
-the service is ready when it resolves. `timeoutMs` defaults to 30,000 and bounds
-every request and every write. A frame body may be 8 MiB and its headers 8 KiB.
-The child receives the host environment allowlist plus `Config.environment`.
-`initializationOptions` is sent on `initialize` unchanged.
-
-The server runs on the host as the host user. `make` fails with
-`permission_denied`, before spawning, when the program it would execute lies
-under `cwd`: a relative or absolute command there, a bare name found through a
-`PATH` entry there, or a workspace symlink to a host binary. An argument, or
-the value after `=` in one, that names an existing file or directory under
-`cwd` is refused the same way; `node <dir>` runs that directory's `index.js` or
-package `main`. A launcher is refused outright, because its arguments are code or
-package names the file check cannot see: a shell (`sh -c`, `bash`, `zsh`),
-`env`, a package runner (`npx`, `pnpm`, `npm`, `yarn`, `bunx`, `bun x`,
-`deno`), or `node` and `bun` given inline code or a preload (`-e`, `--eval`,
-`-p`, `-r`, `--require`, `--import`, `--loader`). Name the server's own host
-binary, or an interpreter and a host script file. What the server loads after it starts is not checked: by default
-typescript-language-server runs the workspace's `node_modules/typescript`,
-tsserver with `--allowLocalPluginLoads` loads `tsconfig` plugins from the
-project, and rust-analyzer runs build scripts and proc macros. Pin those to
-host copies through `initializationOptions` or the server's own flags (for
-typescript-language-server, `{ tsserver: { path: "<host>/tsserver.js" } }`),
-or run the server in a sandbox.
-Request failures include `method`. JSON-RPC refusals retain `rpcError` with the
-server's numeric `code`, `message`, and optional `data`, bounded by the 8 MiB
-frame limit. Failures attach the latest stderr tail when present, capturing at
-most 64 KiB. On stdout closure or process exit, draining stderr gets a bounded
-100 ms grace before pending requests fail.
+`NodeLanguageServer` in [`@smthrs/platform-node`](/api/platform-node) binds this
+service to language-server processes on the host. See
+[Query a language server](./guides/query-a-language-server.md).
 
 ## ExaWebSearch
 
@@ -485,10 +444,20 @@ mapping.
 
 ## Runtime notes
 
-The root entry point is Node-only: it re-exports `NodeLanguageServer`, which
-imports `node:url`. The four browser-safe subpaths are `@smthrs/std/Grep`,
-`@smthrs/std/Glob`, `@smthrs/std/Search`, and `@smthrs/std/PortableSearch`.
-Nothing any of the four imports reaches a Node built-in.
+The root entry point is platform-neutral. It imports and runs in a browser, a
+Cloudflare Worker, Node.js, and Bun, and it reaches no `node:*` module. A
+handler that needs the machine gets it from a host layer:
+
+| Need             | Where it comes from                                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Files and paths  | `FileSystem` and `Path`                                                                                                               |
+| Processes        | `ChildProcessSpawner`, with the environment read through [`@smthrs/kernel`](/api/kernel)'s `ChildProcessSpawner.ambientEnvironment()` |
+| Web destinations | an `HttpClient` that implements the kernel's destination pinning, and the kernel's `HttpClient.ResolveHost`                           |
+| Language servers | `LanguageServer`, bound on Node.js and Bun by `NodeLanguageServer` from [`@smthrs/platform-node`](/api/platform-node)                 |
+
+`HttpClient.ResolveHost` refuses every name by default.
+[Reach the network](./guides/reach-the-network.md#where-names-resolve) covers
+which hosts resolve names and what the web tools return where none does.
 
 The model behind this surface has its own pages:
 

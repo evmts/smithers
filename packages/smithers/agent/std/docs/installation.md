@@ -1,6 +1,6 @@
 ---
 title: "Installation"
-description: "Install @smthrs/std, its runtime requirements and import forms, the browser-safe subpaths, and the packages a host adds to make the handlers runnable."
+description: "Install @smthrs/std, its runtime requirements and import form, the platforms its root entry runs on, and the packages a host adds to make the handlers runnable."
 sidebar:
   order: 1
 ---
@@ -13,8 +13,8 @@ npm install @smthrs/std@next effect
 
 The `next` tag carries the 1.0 release candidates.
 
-It requires
-Node.js 22.19.0 or later and ships as both ESM and CommonJS with TypeScript
+On Node.js it
+requires 22.19.0 or later. It ships as both ESM and CommonJS with TypeScript
 declarations. Its runtime dependencies install with it:
 [`effect`](https://effect.website), plus [`@smthrs/core`](/api/core) for the
 flow declaration type, [`@smthrs/kernel`](/api/kernel) for the permission-aware
@@ -22,43 +22,38 @@ host services, [`@smthrs/capability`](/api/capability) for the capability
 vocabulary, and [`@smthrs/control`](/api/control) for the credential seam
 `ExaWebSearch` reads its API key through.
 
-## Import forms
+## Import form
 
-The root entry point re-exports every module as a namespace:
+The root entry point re-exports every module as a namespace. Import from it:
 
 ```ts
 import { Grep, Manifest, Read, StdError } from "@smthrs/std"
 ```
 
-Each module is also importable from its own subpath, which is the form this
-documentation uses and the form that keeps a bundle to what it needs:
+Each module also has its own subpath, `@smthrs/std/<Module>`. Two subpath forms
+are not public: `@smthrs/std/internal/*` and `@smthrs/std/<Module>/index`. Both
+are blocked in the export map and carry no promise.
+`@smthrs/std/package.json` is exported.
 
-```ts
-import * as Read from "@smthrs/std/Read"
-import * as StdError from "@smthrs/std/StdError"
-```
+## Platforms
 
-Two subpath forms are not public: `@smthrs/std/internal/*` and
-`@smthrs/std/<Module>/index`. Both are blocked in the export map and carry no
-promise. `@smthrs/std/package.json` is exported.
+The root entry point imports and runs in a browser, a Cloudflare Worker,
+Node.js, and Bun. It reaches no `node:*` module, and the repository's browser
+check bundles it for the browser.
 
-## The browser-safe subset
+What a handler can do on a platform depends on the services the host provides:
 
-The root entry point is Node-only. It re-exports `NodeLanguageServer`, which
-imports `node:url`, so importing `@smthrs/std` in a browser bundle pulls a Node
-built-in in with it.
-
-Four subpaths are browser-safe, because nothing they import reaches a Node
-built-in:
-
-- `@smthrs/std/Grep`
-- `@smthrs/std/Glob`
-- `@smthrs/std/Search`
-- `@smthrs/std/PortableSearch`
-
-`PortableSearch` performs its walk through the injected `FileSystem` service, so
-a browser host that provides one gets working `grep` and `glob` with no external
-binary.
+- `PortableSearch` walks the injected `FileSystem`, so a browser host that
+  provides one gets working `grep` and `glob` with no external binary.
+- The process handlers read the environment through `@smthrs/kernel`'s
+  `ChildProcessSpawner.ambientEnvironment()`, which is empty on a host without
+  a `process` global.
+- The web handlers need a client that pins each request to the addresses they
+  checked, and a name resolver. A browser tab or a Worker has neither, so
+  `fetch`, `http-post`, and `webfetch` refuse there with `unsupported`. See
+  [Reach the network](./guides/reach-the-network.md#where-names-resolve).
+- `lsp` needs a bound `LanguageServer`. The client that runs server processes
+  is `NodeLanguageServer` in [`@smthrs/platform-node`](/api/platform-node).
 
 ## What a runnable host adds
 
@@ -103,7 +98,7 @@ service is missing says so instead of succeeding quietly.
 | `TestRunner`     | `TestRunner.layerNoop`     | `TestRunner.layer(runner)`                                                      |
 | `Checkpoints`    | `Checkpoints.layerNoop`    | `Checkpoints.layerGit({ root })` or `Checkpoints.layerContainer({ container })` |
 | `WebSearch`      | `WebSearch.layerNoop`      | `ExaWebSearch.layer(credentialId)`                                              |
-| `LanguageServer` | `LanguageServer.layerNoop` | `NodeLanguageServer.layer(config)`                                              |
+| `LanguageServer` | `LanguageServer.layerNoop` | `NodeLanguageServer.layer(config)` from `@smthrs/platform-node`                 |
 
 `NativeSearch.layer` drives the `rg` executable, so a host that binds it needs
 ripgrep on the path. `PortableSearch.layer` needs nothing beyond `FileSystem`

@@ -15,7 +15,7 @@ import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import { durableEngine } from "@smthrs/flows/test/TestNodeRuntime"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -148,7 +148,7 @@ export const run = <
         Layer.mergeAll(options.actions, Interpreter.layer(flow)).pipe(
           Layer.provideMerge(agents(options.script)),
           Layer.provideMerge(Action.layerImplementations),
-          Layer.provideMerge(durableEngine(options.filename, "examples-use-cases"))
+          Layer.provideMerge(TestNodeRuntime.durableEngine(options.filename, "examples-use-cases"))
         )
       )
     )

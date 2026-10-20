@@ -51,7 +51,6 @@
     "./ModelCatalog": "./src/ModelCatalog.ts",
     "./ModelError": "./src/ModelError.ts",
     "./ModelEvent": "./src/ModelEvent.ts",
-    "./ModelProxy": "./src/ModelProxy.ts",
     "./ModelRequest": "./src/ModelRequest.ts",
     "./OpenAIChatCompletions": "./src/OpenAIChatCompletions.ts",
     "./OpenAIChatGPT": "./src/OpenAIChatGPT.ts",
@@ -221,16 +220,6 @@
         "require": {
           "types": "./dist/cjs/ModelEvent.d.ts",
           "default": "./dist/cjs/ModelEvent.js"
-        }
-      },
-      "./ModelProxy": {
-        "import": {
-          "types": "./dist/esm/ModelProxy.d.ts",
-          "default": "./dist/esm/ModelProxy.js"
-        },
-        "require": {
-          "types": "./dist/cjs/ModelProxy.d.ts",
-          "default": "./dist/cjs/ModelProxy.js"
         }
       },
       "./ModelRequest": {

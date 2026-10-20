@@ -20,6 +20,8 @@ import { Flow, FlowRuntime } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import type * as CellCalls from "@smthrs/harness/CellCalls"
+import * as CellTurn from "@smthrs/harness/CellTurn"
+import * as ContextWindow from "@smthrs/harness/ContextWindow"
 import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as Monitor from "@smthrs/harness/Monitor"
 import type * as Relevance from "@smthrs/harness/Relevance"
@@ -40,6 +42,7 @@ import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import type * as AgentAction from "../src/AgentAction.ts"
 import type * as AgentSession from "../src/AgentSession.ts"
+import * as Checkpointed from "../src/Checkpointed.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
 import * as Seat from "../src/Seat.ts"
@@ -425,6 +428,69 @@ describe("the static stance", () => {
     const { stance, taught } = await run({ supervisor: { stance: "paranoid" } })
     expect(stance).toBeUndefined()
     for (const texts of taught) expect(texts).toEqual([])
+  })
+})
+
+describe("the contract profile", () => {
+  /** The contract text `CellTurn.teach` renders for a profile. */
+  const contractOf = (profile: CellTurn.Profile) =>
+    ContextWindow.render(CellTurn.teach(ContextWindow.empty("test-model"), [], undefined, undefined, profile))
+      .system[0]!.text
+
+  const run = (declared: Pick<RunOptions, "profile" | "repeatCap" | "narrowingCap">) => {
+    const requests: Array<ModelRequest.ModelRequest> = []
+    return drive(
+      collect({
+        registry: registryOf([descriptor("app/theme/set")]),
+        model: scripted([keepGoing, "ctx.done(\"Dark mode is on.\")"], requests),
+        maxFrames: 3,
+        ...declared
+      })
+    ).then((outcome) => {
+      const settled = events(outcome)
+      const armed = settled.find((event) => event._tag === "discipline-armed")
+      return {
+        armed: armed?._tag === "discipline-armed" ? armed : undefined,
+        output: completedOutput(settled),
+        systems: requests.map(systemTexts)
+      }
+    })
+  }
+
+  it("teaches a conversation run the conversation contract every frame, with no tree or history facts", async () => {
+    const { output, systems } = await run({ profile: "conversation" })
+    expect(output).toBe("Dark mode is on.")
+    expect(systems).toHaveLength(2)
+    for (const system of systems) {
+      expect(system.filter((text) => text.startsWith("JavaScript REPL"))).toEqual([contractOf("conversation")])
+      expect(system).not.toContain(Checkpointed.unpinnedFact)
+      expect(system.join("\n")).not.toContain("- History:")
+      expect(system.join("\n")).toContain("app/theme/set")
+    }
+  })
+
+  it("teaches a run that names no profile the workspace contract, as before profiles existed", async () => {
+    for (const profile of [undefined, "workspace"] as const) {
+      const { systems } = await run(profile === undefined ? {} : { profile })
+      for (const system of systems) {
+        expect(system.filter((text) => text.startsWith("JavaScript REPL"))).toEqual([contractOf("workspace")])
+        expect(system).toContain(Checkpointed.unpinnedFact)
+        expect(system.join("\n")).toContain("- History:")
+      }
+    }
+  })
+
+  it("leaves a conversation run's code-evidence caps off unless it sets them", async () => {
+    const conversation = await run({ profile: "conversation" })
+    expect(conversation.armed).toMatchObject({ readOnlyCap: 0, repeatCap: 0, narrowingCap: 0 })
+    const workspace = await run({})
+    expect(workspace.armed).toMatchObject({
+      readOnlyCap: 0,
+      repeatCap: CellTurn.defaultRepeatFrames,
+      narrowingCap: CellTurn.defaultNarrowingDemands
+    })
+    const explicit = await run({ profile: "conversation", repeatCap: 2, narrowingCap: 1 })
+    expect(explicit.armed).toMatchObject({ repeatCap: 2, narrowingCap: 1 })
   })
 })
 

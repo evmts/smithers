@@ -15,7 +15,7 @@ is about filling that seam without drifting from what a pattern means.
 Two methods, both taking normalized input:
 
 ```ts
-import * as Search from "@smthrs/std/Search"
+import { Search } from "@smthrs/std"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 
@@ -49,7 +49,7 @@ Do not reimplement pattern or glob semantics. `SearchContract` exports exactly
 the functions both shipped peers build on:
 
 ```ts
-import * as SearchContract from "@smthrs/std/SearchContract"
+import { SearchContract } from "@smthrs/std"
 
 SearchContract.validatePattern(pattern, fixedStrings) // StdError | undefined
 SearchContract.validateGlob(glob) // StdError | undefined
@@ -77,9 +77,7 @@ nothing about which peer is right: a divergence is the finding.
 ```ts
 import { NodeServices } from "@effect/platform-node"
 import type * as KernelPath from "@smthrs/kernel/Path"
-import * as PortableSearch from "@smthrs/std/PortableSearch"
-import type * as Search from "@smthrs/std/Search"
-import * as SearchConformance from "@smthrs/std/SearchConformance"
+import { PortableSearch, type Search, SearchConformance } from "@smthrs/std"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 

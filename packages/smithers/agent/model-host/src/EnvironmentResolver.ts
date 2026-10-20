@@ -4,18 +4,15 @@
  * @since 1.0.0-rc.0
  */
 
-import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
-import type { Model } from "@smthrs/model/Model"
-import * as RequestExecutor from "@smthrs/model/RequestExecutor"
-import { hostModelCredentials, modelCredentialEnvName, planModelBinding } from "@smthrs/rpc/ConfiguredModel"
-import type { ModelCredentialEnv, ModelPlan } from "@smthrs/rpc/ConfiguredModel"
-import { Effect, Layer, Redacted } from "effect"
+import type { Model } from "@smthrs/model"
+import { ConfiguredModel } from "@smthrs/rpc"
+import { Effect, Redacted } from "effect"
 import { toModel } from "./ConfiguredModelRoute.ts"
 import { fastModelFallback } from "./FastModelFallback.ts"
 import type { ModelTurnResolver } from "./HostServer.ts"
 import { readContextStream } from "./internal/ContextStream.ts"
 import { ResolveFailed } from "./ModelHostError.ts"
-import { providerTransport, refusingRedirects } from "./ProviderTransport.ts"
+import { refusingRedirects } from "./ProviderTransport.ts"
 
 /**
  * Inputs for the single-owner environment-backed model resolver.
@@ -27,7 +24,7 @@ export interface EnvironmentModelResolverOptions {
   readonly binding: unknown
   /** Owner-resolved fast role; absent bindings reuse the resolved answer model. */
   readonly preflightBinding?: unknown
-  readonly env: ModelCredentialEnv
+  readonly env: ConfiguredModel.ModelCredentialEnv
   readonly fetchImpl?: typeof globalThis.fetch
   readonly maxTokens?: number
 }
@@ -46,38 +43,34 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
   grant,
   selection
 ) => {
-  const credentials = hostModelCredentials(options.env)
-  const configured = planModelBinding(options.binding, credentials, { kind: "generation" })
+  const credentials = ConfiguredModel.hostModelCredentials(options.env)
+  const configured = ConfiguredModel.planModelBinding(options.binding, credentials, { kind: "generation" })
   // The wire may carry null for an absent model, as the Go resolver reads it.
   const requested: unknown = grant.request.model ?? undefined
   const planned = requested === undefined
     ? configured
-    : planModelBinding(requested, credentials, { kind: "generation" })
+    : ConfiguredModel.planModelBinding(requested, credentials, { kind: "generation" })
   if (
     !configured.ok || !planned.ok || planned.plan.credential !== configured.plan.credential ||
     planned.plan.origin !== configured.plan.origin
   ) return Effect.fail(new ResolveFailed({ message: "configured model is unavailable" }))
-  const credential = options.env[modelCredentialEnvName(planned.plan.credential)]?.trim()
+  const credential = options.env[ConfiguredModel.modelCredentialEnvName(planned.plan.credential)]?.trim()
   if (credential === undefined || credential === "") {
     return Effect.fail(new ResolveFailed({ message: "configured model credential is unavailable" }))
   }
-  const transport = providerTransport(options.fetchImpl ?? globalThis.fetch)
-  const fastExecutor = Layer.effect(
-    RequestExecutor.RequestExecutor,
-    Effect.flatMap(
-      KernelHttpClient.HttpClient,
-      (http) => RequestExecutor.makeWith(RequestExecutor.fixed(http), { maxRetries: 0, responseStartMs: 9000 })
+  // The fast proxy and its fallbacks answer quickly or not at all: one try, and 9 s for a response to start.
+  const fastExecution = { maxRetries: 0, responseStartMs: 9000 }
+  const modelOf = (plan: ConfiguredModel.ModelPlan, key: string, fast = plan.credential === "SMITHERS_FAST_PROXY") =>
+    Effect.map(
+      toModel(plan, Redacted.make(key), { fetch: options.fetchImpl, ...(fast ? { execution: fastExecution } : {}) }),
+      ({ model }) => model
     )
-  )
-  const executorFor = (plan: ModelPlan) =>
-    plan.credential === "SMITHERS_FAST_PROXY" ? fastExecutor : RequestExecutor.layer
-  return toModel(planned.plan, Redacted.make(credential)).pipe(
-    Effect.provide(executorFor(planned.plan).pipe(Layer.provide(transport))),
+  return modelOf(planned.plan, credential).pipe(
     Effect.flatMap((model) =>
       Effect.gen(function*() {
         const withFallback = (
-          primary: Model,
-          plan: ModelPlan
+          primary: Model.Model,
+          plan: ConfiguredModel.ModelPlan
         ) =>
           Effect.gen(function*() {
             if (plan.credential !== "SMITHERS_FAST_PROXY") return primary
@@ -91,18 +84,16 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
               return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
             }
             const sources: Array<
-              { model: Model; modelId: string; outputTokenLimitSupported?: boolean }
+              { model: Model.Model; modelId: string; outputTokenLimitSupported?: boolean }
             > = [{ model: primary, modelId: plan.modelId }]
             for (const binding of bindings) {
-              const fallback = planModelBinding(binding, credentials, { kind: "generation" })
+              const fallback = ConfiguredModel.planModelBinding(binding, credentials, { kind: "generation" })
               if (!fallback.ok) {
                 return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
               }
-              const key = options.env[modelCredentialEnvName(fallback.plan.credential)]?.trim()
+              const key = options.env[ConfiguredModel.modelCredentialEnvName(fallback.plan.credential)]?.trim()
               if (!key) return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
-              const model = yield* toModel(fallback.plan, Redacted.make(key)).pipe(
-                Effect.provide(fastExecutor.pipe(Layer.provide(transport)))
-              )
+              const model = yield* modelOf(fallback.plan, key, true)
               sources.push({
                 model,
                 modelId: fallback.plan.modelId,
@@ -159,15 +150,13 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
         if (options.preflightBinding === undefined) return { ...resolved, preflight: { ...resolved, input } }
         // This binding is supplied by the host launcher, never by the prompt.
         // It may spend a different owner key, but keeps that key's own origin.
-        const fast = planModelBinding(options.preflightBinding, credentials, { kind: "generation" })
+        const fast = ConfiguredModel.planModelBinding(options.preflightBinding, credentials, { kind: "generation" })
         if (!fast.ok) return yield* Effect.fail(new ResolveFailed({ message: "preflight model is unavailable" }))
-        const fastCredential = options.env[modelCredentialEnvName(fast.plan.credential)]?.trim()
+        const fastCredential = options.env[ConfiguredModel.modelCredentialEnvName(fast.plan.credential)]?.trim()
         if (fastCredential === undefined || fastCredential === "") {
           return yield* Effect.fail(new ResolveFailed({ message: "preflight model credential is unavailable" }))
         }
-        const fastModel = yield* toModel(fast.plan, Redacted.make(fastCredential)).pipe(
-          Effect.provide(executorFor(fast.plan).pipe(Layer.provide(transport)))
-        )
+        const fastModel = yield* modelOf(fast.plan, fastCredential)
         const routedFast = yield* withFallback(fastModel, fast.plan)
         return {
           ...resolved,

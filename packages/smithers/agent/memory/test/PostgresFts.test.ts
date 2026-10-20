@@ -1,5 +1,5 @@
-import * as DurableWriter from "@smthrs/database/DurableWriter"
-import * as PostgresDatabase from "@smthrs/database/postgres/PostgresDatabase"
+import * as Pg from "@effect/sql-pg"
+import { DurableWriter, PostgresDatabase } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Crypto, Effect, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -22,7 +22,7 @@ it.skipIf(!url)(
     const schema = `test_${randomUUID().replaceAll("-", "")}`
     const database = Layer.provideMerge(
       DurableWriter.layer(),
-      PostgresDatabase.layer({ url: url!, schema })
+      PostgresDatabase.layer({ url: url!, driver: Pg, schema })
     )
     const memory = Layer.provideMerge(MemoryStore.layer, Layer.merge(database, crypto))
     const result = await Effect.runPromise(

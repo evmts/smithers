@@ -1,7 +1,5 @@
-import { ModelError } from "@smthrs/model/ModelError"
 import { Effect } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
-import * as ConfiguredModelRoute from "../src/ConfiguredModelRoute.ts"
 import type { DurableChatGrant } from "../src/DurableChatProducer.ts"
 import { environmentModelResolver } from "../src/EnvironmentResolver.ts"
 import { runModelTurn } from "../src/ModelTurnHost.ts"
@@ -194,12 +192,21 @@ test.each([undefined, " "])("refuses a credential removed between planning and r
 })
 
 test("replaces a route failure with a credential-safe diagnostic", async () => {
-  vi.spyOn(ConfiguredModelRoute, "toModel").mockReturnValueOnce(
-    Effect.fail(new ModelError({ code: "no_route", message: "private route diagnostic" }))
+  // A ChatGPT subscription credential that is not the signed-in token pair fails the route itself.
+  const subscription = {
+    protocol: "openai-responses-chatgpt",
+    baseUrl: "https://chatgpt.com/backend-api",
+    path: "/codex/responses",
+    modelId: "gpt-fixture",
+    credential: "CHATGPT_SUBSCRIPTION"
+  } as const
+  const failure = await Effect.runPromise(
+    environmentModelResolver({ binding: subscription, env: { CHATGPT_SUBSCRIPTION: "private-route-diagnostic" } })(
+      grant
+    ).pipe(Effect.flip)
   )
-  await expect(Effect.runPromise(environmentModelResolver({ binding, env })(grant))).rejects.toThrow(
-    /^configured model route is unavailable$/
-  )
+  expect(failure.message).toBe("configured model route is unavailable")
+  expect(JSON.stringify(failure)).not.toContain("private-route-diagnostic")
 })
 
 test("refuses a provider redirect instead of following it with the key header", async () => {

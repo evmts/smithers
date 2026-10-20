@@ -38,23 +38,23 @@ handlers apply:
 | Shell stream capture  | 30,000 bytes                | each captured `bash` stream                                |
 | HTTP response body    | 5 MiB                       | `fetch`, `http-post`, and `webfetch`, refused past the cap |
 | Redirects             | 10                          | one `webfetch` call                                        |
-| Language-server frame | 8 MiB body, 8 KiB header    | one JSON-RPC frame                                         |
 
 These are exported constants, so a host can read them and a caller can raise or
 lower what it passes:
 
-| Constant                                  | Value      | Applies to                                                  |
-| ----------------------------------------- | ---------- | ----------------------------------------------------------- |
-| `Bash.DEFAULT_TIMEOUT_MS`                 | 600,000    | one `bash` call with no `timeoutMs`                         |
-| `TestRun.DEFAULT_TIMEOUT_MS`              | 600,000    | one `test` call with no `timeoutMs`                         |
-| `TestRun.MAX_CAPTURE_BYTES`               | 8,000,000  | runner output one `test` call holds in memory               |
-| `ShellCommand.DEFAULT_TIMEOUT_MS`         | 10,000     | one `shell_command` call with no `timeout_ms`               |
-| `ShellCommand.MAX_CAPTURE_BYTES`          | 8,000,000  | command output one `shell_command` call holds in memory     |
-| `ShellCommand.DEFAULT_MAX_OUTPUT_TOKENS`  | 10,000     | the Codex token budget the output is shaped to              |
-| `ShellCommand.TIMEOUT_EXIT_CODE`          | 124        | the exit code a timed-out `shell_command` reports           |
-| `NativeSearch.MAX_CAPTURE_BYTES`          | 67,108,864 | one `rg` invocation's captured output, refused past the cap |
-| `NodeLanguageServer.MAX_QUEUED_FRAMES`    | 256        | frames buffered for one server's standard input             |
-| `NodeLanguageServer.MAX_PENDING_REQUESTS` | 512        | concurrent in-flight requests to one server                 |
+| Constant                                 | Value      | Applies to                                                  |
+| ---------------------------------------- | ---------- | ----------------------------------------------------------- |
+| `Bash.DEFAULT_TIMEOUT_MS`                | 600,000    | one `bash` call with no `timeoutMs`                         |
+| `TestRun.DEFAULT_TIMEOUT_MS`             | 600,000    | one `test` call with no `timeoutMs`                         |
+| `TestRun.MAX_CAPTURE_BYTES`              | 8,000,000  | runner output one `test` call holds in memory               |
+| `ShellCommand.DEFAULT_TIMEOUT_MS`        | 10,000     | one `shell_command` call with no `timeout_ms`               |
+| `ShellCommand.MAX_CAPTURE_BYTES`         | 8,000,000  | command output one `shell_command` call holds in memory     |
+| `ShellCommand.DEFAULT_MAX_OUTPUT_TOKENS` | 10,000     | the Codex token budget the output is shaped to              |
+| `ShellCommand.TIMEOUT_EXIT_CODE`         | 124        | the exit code a timed-out `shell_command` reports           |
+| `NativeSearch.MAX_CAPTURE_BYTES`         | 67,108,864 | one `rg` invocation's captured output, refused past the cap |
+
+The language-server client's frame, queue and request bounds belong to
+`NodeLanguageServer` in [`@smthrs/platform-node`](/api/platform-node).
 
 ## A page ends on a whole line
 

@@ -1,4 +1,4 @@
-import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import { HttpClient as KernelHttpClient } from "@smthrs/kernel"
 import { Effect, Layer, Redacted, Result, Schema, Stream, Tracer } from "effect"
 import * as Sse from "effect/encoding/Sse"
 import * as HttpClient from "effect/http/HttpClient"

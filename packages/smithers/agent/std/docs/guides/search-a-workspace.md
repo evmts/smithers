@@ -16,7 +16,7 @@ first. The semantics are identical; see
 resolves it inside its workspace. Pass a root to search another directory:
 
 ```ts
-import * as Glob from "@smthrs/std/Glob"
+import { Glob } from "@smthrs/std"
 
 const files = Glob.run({ pattern: "**/*.ts", root: "/workspace" })
 // files.paths, files.total, files.truncated, files.notice
@@ -47,7 +47,7 @@ apply when `noIgnore` is true.
 ## Search contents
 
 ```ts
-import * as Grep from "@smthrs/std/Grep"
+import { Grep } from "@smthrs/std"
 
 const found = Grep.run({
   pattern: "def widen",
@@ -93,7 +93,7 @@ plainly. That is a read window, so the follow-up read is exact rather than a
 guess at `line - 10`:
 
 ```ts
-import * as Read from "@smthrs/std/Read"
+import { Read } from "@smthrs/std"
 
 const hit = found.matches[0]
 if (hit?.symbol !== undefined) {

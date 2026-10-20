@@ -1,33 +1,19 @@
 import { catalogDescriptors } from "@smthrs/cli/Catalog"
-import { estimate } from "@smthrs/harness/Tokens"
-import * as Model from "@smthrs/model/Model"
-import type * as ModelEvent from "@smthrs/model/ModelEvent"
-import type { JsonObject, ModelRequest } from "@smthrs/model/ModelRequest"
-import { commandsToolSpec, unknownCommandResult } from "@smthrs/rpc/AgentCommands"
-import { AGENT_RUNTIME_CONTEXT_VERSION, composeAgentInstructions } from "@smthrs/rpc/AgentContext"
-import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
+import { Tokens } from "@smthrs/harness"
+import { Model, type ModelEvent, type ModelRequest } from "@smthrs/model"
 import {
-  ACCOUNT_NUMBERS_LINE,
-  AGENT_NAME_LINE,
-  ASSISTANT_ACTS_LINE,
-  CONVERSATION_IS_NOT_A_COMMAND_LINE,
-  FAILED_RESULT_LINE,
-  RUN_IS_NOT_RESULT_LINE,
-  SMITHERS_SUBJECT_READS_DOCS_LINE,
-  SMITHERS_SUBJECT_WITHOUT_DOCS_LINE,
-  smithersSubjectLine,
-  WORKFLOW_LAUNDERING_RULE
-} from "@smthrs/rpc/AgentInstructions"
-import { MAX_TOOL_LEGS } from "@smthrs/rpc/AgentToolResult"
-import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
-import type { AgentTurnCursor } from "@smthrs/rpc/AgentTurnJournal"
-import type { DocsPage } from "@smthrs/rpc/DocsPages"
+  AgentCommands,
+  AgentContext,
+  AgentInstructions,
+  AgentToolResult,
+  AgentTurnJournal,
+  type DocsPages,
+  NativeAgent,
+  type TodoCard,
+  UiInstruction
+} from "@smthrs/rpc"
 import { fixtures as homeFixtures } from "@smthrs/rpc/fixtures/Home"
 import { fixtures } from "@smthrs/rpc/fixtures/Todo"
-import { AgentTurnFrameSchema } from "@smthrs/rpc/NativeAgent"
-import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import type { TodoCard } from "@smthrs/rpc/TodoCard"
-import { FORM_INSTRUCTION_FIELDS, UI_INSTRUCTION_FIELDS } from "@smthrs/rpc/UiInstruction"
 import { Effect, Stream } from "effect"
 import { Buffer } from "node:buffer"
 import { createHash } from "node:crypto"
@@ -40,12 +26,19 @@ import { apiCaller, runHostTurn } from "../src/HostTools.ts"
 // Literal fixtures: the question, main's commit and JOURNEY.md's one line.
 const COMMIT = "0123456789abcdef0123456789abcdef01234567"
 const JOURNEY = "Add a greeting to JOURNEY.md\n"
-const question: StartAgentTurnRequest = {
+const question: NativeAgent.StartAgentTurnRequest = {
   runId: "run",
   instructions: "Answer briefly using file cards.",
   messages: [{ role: "user", content: "What is in JOURNEY.md?" }]
 }
-const cursor: AgentTurnCursor = { version: 1, runId: "run", legId: "leg", batch: 0, position: 0, hash: "a".repeat(64) }
+const cursor: AgentTurnJournal.AgentTurnCursor = {
+  version: 1,
+  runId: "run",
+  legId: "leg",
+  batch: 0,
+  position: 0,
+  hash: "a".repeat(64)
+}
 const grant: DurableChatGrant = {
   turnId: "0b6c3f6e-56f1-4ad4-9f87-0d1c3c1f7a10",
   ownerId: 7,
@@ -90,12 +83,12 @@ const producer = (
   api: (path: string, init?: RequestInit) => Response = routes({}),
   list: (path: string) => Response = noDirectory
 ) => {
-  const frames: Array<AgentTurnFrame> = []
+  const frames: Array<NativeAgent.AgentTurnFrame> = []
   const reads: Array<SourceCall> = []
   const lists: Array<SourceCall> = []
   const calls: Array<SourceCall> = []
   let expected = cursor
-  const fetchImpl: FetchLike = async (input, init) => {
+  const fetchImpl: NativeAgent.FetchLike = async (input, init) => {
     const url = new URL(String(input))
     if (url.pathname === "/internal/chat/provider-started") return new Response(null, { status: 204 })
     if (url.pathname.startsWith("/api/")) {
@@ -124,7 +117,7 @@ const producer = (
       lists.push({ authorization: new Headers(init?.headers).get("authorization"), body })
       return list(body.path)
     }
-    const frame = body.frames[0] as AgentTurnFrame
+    const frame = body.frames[0] as NativeAgent.AgentTurnFrame
     frames.push(frame)
     const unsigned = {
       version: 1 as const,
@@ -135,7 +128,9 @@ const producer = (
       previousHash: expected.hash,
       frames: [frame]
     }
-    const hash = createHash("sha256").update(agentTurnJournalDigestInput("batch", unsigned)).digest("hex")
+    const hash = createHash("sha256").update(AgentTurnJournal.agentTurnJournalDigestInput("batch", unsigned)).digest(
+      "hex"
+    )
     expected = { version: 1, runId: "run", legId: "leg", batch: unsigned.batch, position: unsigned.from, hash }
     return Response.json({ status: "committed", batch: { ...unsigned, hash }, cursor: expected })
   }
@@ -183,8 +178,8 @@ const model = (
   calls: ReadonlyArray<{ readonly name: string; readonly arguments: string }>,
   usage: LegUsage = reported
 ) => {
-  const requests: Array<ModelRequest> = []
-  const leg = (request: ModelRequest): ReadonlyArray<ModelEvent.ModelEvent> => {
+  const requests: Array<ModelRequest.ModelRequest> = []
+  const leg = (request: ModelRequest.ModelRequest): ReadonlyArray<ModelEvent.ModelEvent> => {
     const results = request.messages.flatMap((message) => message.role === "tool" ? [message] : [])
     const call = calls[results.length]
     if (call === undefined) {
@@ -219,7 +214,7 @@ const run = (turn: DurableChatGrant, provider: ReturnType<typeof model>, journal
     runDurableChatTurn(provider.model, turn, { modelId: "m" }, "http://callback.test", journal.fetchImpl)
   )
 
-const toolNames = (request: ModelRequest | undefined): ReadonlyArray<string> =>
+const toolNames = (request: ModelRequest.ModelRequest | undefined): ReadonlyArray<string> =>
   (request?.tools ?? []).map((tool) => tool.name)
 
 /** A `commands` call that executes one command with argument text. */
@@ -230,10 +225,10 @@ const execute = (name: string, args?: string) => ({
 const readCall = (args: string) => execute("file", args)
 const listCall = (args?: string) => execute("files", args)
 
-const answerText = (frames: ReadonlyArray<AgentTurnFrame>): string =>
+const answerText = (frames: ReadonlyArray<NativeAgent.AgentTurnFrame>): string =>
   frames.flatMap((frame) => frame.type === "delta" && frame.kind === "text" ? [frame.text] : []).join("")
 
-const systemText = (request: ModelRequest | undefined): string =>
+const systemText = (request: ModelRequest.ModelRequest | undefined): string =>
   (request?.system ?? []).map((part) => part.text).join("\n")
 
 /** The model's copy of each tool result, in the order the last leg read them. */
@@ -243,7 +238,7 @@ const toolOutputs = (provider: ReturnType<typeof model>): ReadonlyArray<string> 
   ) ?? []
 
 /** Literal TODO models, as the install's routes serve them: T12 queued, T13 merged, T14 dropped, T15 working. */
-const queued: TodoCard = fixtures.queued.model
+const queued: TodoCard.TodoCard = fixtures.queued.model
 const stackHome = {
   ...homeFixtures.fresh.model,
   items: [
@@ -360,8 +355,8 @@ const commandLines = (text: string): ReadonlyArray<string> => text.split("\n").f
  * its capability and limitation lines, the tutorial, the Cloud session and the
  * repository check each name commands only the browser runs.
  */
-const browserContext: AgentRuntimeContext = {
-  version: AGENT_RUNTIME_CONTEXT_VERSION,
+const browserContext: AgentContext.AgentRuntimeContext = {
+  version: AgentContext.AGENT_RUNTIME_CONTEXT_VERSION,
   product: "smithers",
   capturedAt: 1,
   revision: 3,
@@ -422,7 +417,7 @@ describe("host-owned turns run their tool calls on the host", () => {
       body: { turnId: grant.turnId, generation: 2, path: "JOURNEY.md" }
     }])
     expect(journal.frames.map((frame) => frame.type)).toEqual(["call.started", "card", "call.settled", "delta", "done"])
-    for (const frame of journal.frames) expect(AgentTurnFrameSchema.safeParse(frame).success).toBe(true)
+    for (const frame of journal.frames) expect(NativeAgent.AgentTurnFrameSchema.safeParse(frame).success).toBe(true)
     expect(journal.frames[0]).toEqual({
       runId: "run",
       type: "call.started",
@@ -471,7 +466,9 @@ describe("host-owned turns run their tool calls on the host", () => {
     // The app agent's one tool, the same contract the browser offers.
     expect(provider.requests[0]?.tools).toHaveLength(1)
     expect(toolNames(provider.requests[0])).toEqual(["commands"])
-    expect(provider.requests[0]?.tools[0]?.parameters as JsonObject).toEqual(commandsToolSpec.parameters)
+    expect(provider.requests[0]?.tools[0]?.parameters as ModelRequest.JsonObject).toEqual(
+      AgentCommands.commandsToolSpec.parameters
+    )
     expect(provider.requests[1]?.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool"])
     // No renderer tool loop is asked to continue: no tool_call frame is committed.
     expect(journal.frames.some((frame) => frame.type === "tool_call")).toBe(false)
@@ -502,7 +499,7 @@ describe("host-owned turns run their tool calls on the host", () => {
       "delta",
       "done"
     ])
-    for (const frame of journal.frames) expect(AgentTurnFrameSchema.safeParse(frame).success).toBe(true)
+    for (const frame of journal.frames) expect(NativeAgent.AgentTurnFrameSchema.safeParse(frame).success).toBe(true)
     const cards = journal.frames.flatMap((frame) => frame.type === "card" ? [frame.card] : [])
     expect(cards.map((card) => [card.id, card.kind, card.title, card.ordinal])).toEqual([
       ["files-acme/app-/", "file-list", "Files · acme/app · /", 0],
@@ -935,30 +932,34 @@ describe("host-owned turns run their tool calls on the host", () => {
 
   test("a turn still calling tools after the leg bound ends at the tool limit", async () => {
     const journal = producer((path) => file(path, JOURNEY))
-    const provider = model(Array.from({ length: MAX_TOOL_LEGS + 1 }, () => readCall("JOURNEY.md")))
+    const provider = model(Array.from({ length: AgentToolResult.MAX_TOOL_LEGS + 1 }, () => readCall("JOURNEY.md")))
     await run(grant, provider, journal)
-    expect(provider.requests).toHaveLength(MAX_TOOL_LEGS)
-    expect(journal.reads).toHaveLength(MAX_TOOL_LEGS - 1)
+    expect(provider.requests).toHaveLength(AgentToolResult.MAX_TOOL_LEGS)
+    expect(journal.reads).toHaveLength(AgentToolResult.MAX_TOOL_LEGS - 1)
     expect(journal.frames.at(-1)).toEqual({
       runId: "run",
       type: "done",
       reason: "tool_limit",
       usage: {
-        inputTokens: 10 * MAX_TOOL_LEGS,
-        outputTokens: 2 * MAX_TOOL_LEGS,
-        cachedInputTokens: 4 * MAX_TOOL_LEGS
+        inputTokens: 10 * AgentToolResult.MAX_TOOL_LEGS,
+        outputTokens: 2 * AgentToolResult.MAX_TOOL_LEGS,
+        cachedInputTokens: 4 * AgentToolResult.MAX_TOOL_LEGS
       }
     })
     // A provider that reports no counts ends the turn without any.
     const silent = producer((path) => file(path, JOURNEY))
-    await run(grant, model(Array.from({ length: MAX_TOOL_LEGS }, () => readCall("JOURNEY.md")), {}), silent)
+    await run(
+      grant,
+      model(Array.from({ length: AgentToolResult.MAX_TOOL_LEGS }, () => readCall("JOURNEY.md")), {}),
+      silent
+    )
     expect(silent.frames.at(-1)).toEqual({ runId: "run", type: "done", reason: "tool_limit" })
   })
 
   test("client tool declarations never replace host command execution", async () => {
     const journal = producer((path) => file(path, JOURNEY))
     const provider = model([{ name: "commands", arguments: JSON.stringify({ action: "list" }) }])
-    await run({ ...grant, request: { ...question, tools: [commandsToolSpec] } }, provider, journal)
+    await run({ ...grant, request: { ...question, tools: [AgentCommands.commandsToolSpec] } }, provider, journal)
     expect(toolNames(provider.requests[0])).toEqual(["commands"])
     expect(provider.requests).toHaveLength(2)
     expect(journal.reads).toEqual([])
@@ -1027,16 +1028,16 @@ describe("an install's host runs the catalog commands its grant allows, as the t
       const system = systemText(provider.requests[0])
       for (
         const line of [
-          AGENT_NAME_LINE,
-          ASSISTANT_ACTS_LINE,
-          RUN_IS_NOT_RESULT_LINE,
-          FAILED_RESULT_LINE,
-          ACCOUNT_NUMBERS_LINE
+          AgentInstructions.AGENT_NAME_LINE,
+          AgentInstructions.ASSISTANT_ACTS_LINE,
+          AgentInstructions.RUN_IS_NOT_RESULT_LINE,
+          AgentInstructions.FAILED_RESULT_LINE,
+          AgentInstructions.ACCOUNT_NUMBERS_LINE
         ]
       ) {
         expect(system).toContain(line)
       }
-      for (const line of WORKFLOW_LAUNDERING_RULE) expect(system).toContain(line)
+      for (const line of AgentInstructions.WORKFLOW_LAUNDERING_RULE) expect(system).toContain(line)
       expect(system).toContain(
         "Everything this list lacks is an ACT you cannot take yet; it is never a subject you cannot discuss. You cannot send or draft email"
       )
@@ -1086,7 +1087,9 @@ describe("an install's host runs the catalog commands its grant allows, as the t
       const journal = producer((path) => file(path, JOURNEY))
       const provider = model([])
       await run({ ...sourceless, request }, provider, journal)
-      expect(systemText(provider.requests[0])).toBe(composeAgentInstructions(request.instructions, request.context))
+      expect(systemText(provider.requests[0])).toBe(
+        AgentContext.composeAgentInstructions(request.instructions, request.context)
+      )
       expect(toolNames(provider.requests[0])).toEqual([])
     }
   })
@@ -1136,7 +1139,7 @@ describe("an install's host runs the catalog commands its grant allows, as the t
     })
     expect(journal.reads).toEqual([])
     expect(journal.frames.map((frame) => frame.type)).toEqual(["call.started", "card", "call.settled", "delta", "done"])
-    for (const frame of journal.frames) expect(AgentTurnFrameSchema.safeParse(frame).success).toBe(true)
+    for (const frame of journal.frames) expect(NativeAgent.AgentTurnFrameSchema.safeParse(frame).success).toBe(true)
     expect(JSON.parse(toolOutputs(provider)[0]!)).toMatchObject({ items: [{ n: 12 }, { n: 13 }, { n: 14 }] })
   })
 
@@ -1345,7 +1348,7 @@ describe("an install's host runs the catalog commands its grant allows, as the t
   test("named flow lookup refuses unavailable responses without rendering a card", async () => {
     for (const answer of [{ code: "call_refused" }, { status: 503, body: {} }] as const) {
       const provider = model([execute("flow", "custom")])
-      const frames: AgentTurnFrame[] = []
+      const frames: NativeAgent.AgentTurnFrame[] = []
       await Effect.runPromise(runHostTurn(provider.model, install, { modelId: "m" }, (frame) =>
         Effect.sync(() => {
           frames.push(frame)
@@ -1364,7 +1367,7 @@ describe("an install's host runs the catalog commands its grant allows, as the t
       const provider = model([
         execute(command, command === "flow" ? "todo" : command === "todo.drop" ? "T12" : undefined)
       ])
-      const frames: AgentTurnFrame[] = []
+      const frames: NativeAgent.AgentTurnFrame[] = []
       await Effect.runPromise(runHostTurn(provider.model, install, { modelId: "m" }, (frame) =>
         Effect.sync(() => {
           frames.push(frame)
@@ -1757,12 +1760,12 @@ describe("an install's host runs the catalog commands its grant allows, as the t
       const provider = model([execute(name, "{}")])
       await run(install, provider, journal)
       expect(journal.frames.filter((frame) => frame.type === "call.settled")).toEqual([])
-      expect(toolOutputs(provider)).toEqual([unknownCommandResult(name)])
+      expect(toolOutputs(provider)).toEqual([AgentCommands.unknownCommandResult(name)])
     }
   })
 
   test("each UI-only flow is a screen-only catalog row whose declared fields the instruction carries", () => {
-    for (const [name, fields] of Object.entries(UI_INSTRUCTION_FIELDS)) {
+    for (const [name, fields] of Object.entries(UiInstruction.UI_INSTRUCTION_FIELDS)) {
       const row = catalogDescriptors.find((entry) => entry.name === name)!
       expect([name, row.actors.includes("app_agent"), row.actors.includes("external_agent")]).toEqual([
         name,
@@ -1782,7 +1785,7 @@ describe("an install's host runs the catalog commands its grant allows, as the t
   })
 
   test("each requested form belongs to a permitted catalog row, never a screen-only one", () => {
-    for (const [name, fields] of Object.entries(FORM_INSTRUCTION_FIELDS)) {
+    for (const [name, fields] of Object.entries(UiInstruction.FORM_INSTRUCTION_FIELDS)) {
       const row = catalogDescriptors.find((entry) => entry.name === name)!
       expect(row.actors, name).toContain("app_agent")
       expect(row.visibility, name).not.toBe("hidden")
@@ -1793,7 +1796,7 @@ describe("an install's host runs the catalog commands its grant allows, as the t
       ]
       for (const field of fields) expect(properties(row.payload.schema), name).toContain(field)
       expect(fields).not.toContain("command")
-      expect(Object.keys(UI_INSTRUCTION_FIELDS)).not.toContain(name)
+      expect(Object.keys(UiInstruction.UI_INSTRUCTION_FIELDS)).not.toContain(name)
     }
   })
 
@@ -1855,14 +1858,14 @@ describe("an install's host runs the catalog commands its grant allows, as the t
       await run(install, model([execute(name, "T12")]), journal)
       expect(journal.calls).toEqual([])
       expect(journal.frames.map((frame) => frame.type)).toEqual(["delta", "done"])
-      expect(answerText(journal.frames)).toBe(`From the source: ${unknownCommandResult(name)}`)
+      expect(answerText(journal.frames)).toBe(`From the source: ${AgentCommands.unknownCommandResult(name)}`)
     }
     // A grant without the install's API runs no TODO command, though it reads main.
     for (const name of ["stack", "todo", "todo.new"]) {
       const journal = producer((path) => file(path, JOURNEY), stackRoutes)
       await run(grant, model([execute(name, "T12")]), journal)
       expect(journal.calls).toEqual([])
-      expect(answerText(journal.frames)).toBe(`From the source: ${unknownCommandResult(name)}`)
+      expect(answerText(journal.frames)).toBe(`From the source: ${AgentCommands.unknownCommandResult(name)}`)
     }
   })
 })
@@ -1930,7 +1933,7 @@ describe("delegated public API transport", () => {
   })
   test("refuses absent authority and non-API destinations before transport", async () => {
     let fetched = false
-    const fetchImpl: FetchLike = async () => {
+    const fetchImpl: NativeAgent.FetchLike = async () => {
       fetched = true
       return Response.json({})
     }
@@ -2006,7 +2009,7 @@ describe("delegated public API transport", () => {
 
 // Literal pages, in table-of-contents order: the host is handed what its build bundles.
 const HTTPS = "## Put HTTPS in front\n\n```sh\ntailscale serve --bg --https=443 http://127.0.0.1:4000\n```\n"
-const PAGES: ReadonlyArray<DocsPage> = [
+const PAGES: ReadonlyArray<DocsPages.DocsPage> = [
   { slug: "quickstart", title: "Quickstart", summary: "Install and run.", markdown: `# Quickstart\n\n${HTTPS}` },
   { slug: "flows", title: "Flows reference", summary: "Every flow.", markdown: "# Flows reference\n" }
 ]
@@ -2020,7 +2023,7 @@ const runWithDocs = (
   turn: DurableChatGrant,
   provider: ReturnType<typeof model>,
   journal: ReturnType<typeof producer>,
-  docs: ReadonlyArray<DocsPage> | undefined
+  docs: ReadonlyArray<DocsPages.DocsPage> | undefined
 ) =>
   Effect.runPromise(
     runDurableChatTurn(
@@ -2049,7 +2052,7 @@ describe("the host-owned app agent answers \"how do I\" from the bundled docs (C
     expect(systemText(provider.requests[0])).toContain(DOCS_LINE)
     expect(toolOutputs(provider)).toEqual([read])
     expect(journal.frames.map((frame) => frame.type)).toEqual(["call.started", "call.settled", "delta", "done"])
-    for (const frame of journal.frames) expect(AgentTurnFrameSchema.safeParse(frame).success).toBe(true)
+    for (const frame of journal.frames) expect(NativeAgent.AgentTurnFrameSchema.safeParse(frame).success).toBe(true)
     expect(journal.frames[0]).toEqual({
       runId: "run",
       type: "call.started",
@@ -2075,7 +2078,7 @@ describe("the host-owned app agent answers \"how do I\" from the bundled docs (C
   })
 
   test("an install turn lists docs beside the commands its grant runs, and nothing else changes", async () => {
-    const listed = async (docs: ReadonlyArray<DocsPage> | undefined) => {
+    const listed = async (docs: ReadonlyArray<DocsPages.DocsPage> | undefined) => {
       const provider = model([])
       await runWithDocs(install, provider, producer((path) => file(path, JOURNEY), stackRoutes), docs)
       return systemText(provider.requests[0])
@@ -2239,7 +2242,7 @@ const ORIGINAL_CLOUD_ACCOUNT_COMMANDS = [
 ]
 
 const CLOUD_ACCOUNT_COMMANDS = [
-  ...new Set([...ORIGINAL_CLOUD_ACCOUNT_COMMANDS, ...Object.keys(FORM_INSTRUCTION_FIELDS)])
+  ...new Set([...ORIGINAL_CLOUD_ACCOUNT_COMMANDS, ...Object.keys(UiInstruction.FORM_INSTRUCTION_FIELDS)])
 ].sort()
 
 // #3823: asked "can we create a workflow" on smithers.sh, the agent had one command, docs, and recited the Flows page.
@@ -2281,14 +2284,14 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
     const cloud = await told(account)
     expect(cloud).toContain("run change.ask with the person’s request in that turn")
     expect(cloud).toContain("the person presses Start agent before any coding run starts")
-    for (const line of [ASSISTANT_ACTS_LINE, FLOW_NEW_LINE, DOCS_LINE]) expect(cloud).toContain(line)
+    for (const line of [AgentInstructions.ASSISTANT_ACTS_LINE, FLOW_NEW_LINE, DOCS_LINE]) expect(cloud).toContain(line)
     // The rule sits after the commands it names and before the can't-yets.
     expect(cloud.indexOf(FLOW_NEW_COMMAND_LINE)).toBeLessThan(cloud.indexOf(FLOW_NEW_LINE))
     expect(cloud.indexOf(FLOW_NEW_LINE)).toBeLessThan(cloud.indexOf("Everything this list lacks is an ACT"))
     // A turn that cannot ask for the form is never told it is on the person's screen.
     for (const turn of [install, grant, https]) {
       const system = await told(turn)
-      expect(system).toContain(ASSISTANT_ACTS_LINE)
+      expect(system).toContain(AgentInstructions.ASSISTANT_ACTS_LINE)
       expect(system).not.toContain("run change.ask with the person’s request")
       expect(system).not.toContain(FLOW_NEW_LINE)
       expect(system).not.toContain("form is on their screen")
@@ -2322,10 +2325,14 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
       return systemText(provider.requests[0])
     }
     const cloud = await told(account)
-    expect(cloud).toContain(CONVERSATION_IS_NOT_A_COMMAND_LINE)
+    expect(cloud).toContain(AgentInstructions.CONVERSATION_IS_NOT_A_COMMAND_LINE)
     // It bounds the two lines the refusals read as a subject whitelist, so it sits between them.
-    expect(cloud.indexOf(ASSISTANT_ACTS_LINE)).toBeLessThan(cloud.indexOf(CONVERSATION_IS_NOT_A_COMMAND_LINE))
-    expect(cloud.indexOf(CONVERSATION_IS_NOT_A_COMMAND_LINE)).toBeLessThan(cloud.indexOf("Everything this list lacks"))
+    expect(cloud.indexOf(AgentInstructions.ASSISTANT_ACTS_LINE)).toBeLessThan(
+      cloud.indexOf(AgentInstructions.CONVERSATION_IS_NOT_A_COMMAND_LINE)
+    )
+    expect(cloud.indexOf(AgentInstructions.CONVERSATION_IS_NOT_A_COMMAND_LINE)).toBeLessThan(
+      cloud.indexOf("Everything this list lacks")
+    )
     // The unscoped sentence that licensed "it isn't a supported command" is gone from every grant.
     for (const turn of [account, install, grant, https]) {
       const system = await told(turn)
@@ -2333,7 +2340,7 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
       expect(system).toContain(
         "Everything this list lacks is an ACT you cannot take yet; it is never a subject you cannot discuss."
       )
-      expect(system).toContain(CONVERSATION_IS_NOT_A_COMMAND_LINE)
+      expect(system).toContain(AgentInstructions.CONVERSATION_IS_NOT_A_COMMAND_LINE)
       // The act rule's own refusal clause names an act, not a request it could simply answer.
       expect(system).toContain(
         "When they ask you to ACT — to change something, or to reach something outside this conversation — and no command does it, say so in one sentence."
@@ -2348,13 +2355,13 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
        * turn offered no documentation command cannot be sent to read a page.
        */
       expect(system).toContain(
-        smithersSubjectLine(commandLines(system).some((line) => line.startsWith("- /docs")))
+        AgentInstructions.smithersSubjectLine(commandLines(system).some((line) => line.startsWith("- /docs")))
       )
       expect(system).not.toContain("never hand it off to docs")
       // Every external fence stands, unchanged.
       expect(system).toContain("You cannot send or draft email")
       expect(system).toContain("push to a branch or open a pull request — not directly, and not through a run")
-      for (const line of WORKFLOW_LAUNDERING_RULE) expect(system).toContain(line)
+      for (const line of AgentInstructions.WORKFLOW_LAUNDERING_RULE) expect(system).toContain(line)
     }
   })
 
@@ -2370,7 +2377,7 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
    * CODE_INTEL_LINE follows `code.hover` in the browser's prompt.
    */
   test("the Smithers-subject clause is stated only when the turn is offered the documentation command", async () => {
-    const told = async (turn: DurableChatGrant, docs: ReadonlyArray<DocsPage> | undefined) => {
+    const told = async (turn: DurableChatGrant, docs: ReadonlyArray<DocsPages.DocsPage> | undefined) => {
       const provider = model([])
       await runWithDocs(turn, provider, producer((path) => file(path, JOURNEY), stackRoutes), docs)
       return systemText(provider.requests[0])
@@ -2378,18 +2385,18 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
     const pages = await told(account, PAGES)
     expect(commandLines(pages).map((line) => line.slice(3).split(" ")[0])).toContain("docs")
     expect(pages).toContain(DOCS_LINE)
-    expect(pages).toContain(SMITHERS_SUBJECT_READS_DOCS_LINE)
-    expect(pages).not.toContain(SMITHERS_SUBJECT_WITHOUT_DOCS_LINE)
+    expect(pages).toContain(AgentInstructions.SMITHERS_SUBJECT_READS_DOCS_LINE)
+    expect(pages).not.toContain(AgentInstructions.SMITHERS_SUBJECT_WITHOUT_DOCS_LINE)
     const none = await told(account, undefined)
     expect(commandLines(none).map((line) => line.slice(3).split(" ")[0])).not.toContain("docs")
     expect(none).not.toContain(DOCS_LINE)
-    expect(none).not.toContain(SMITHERS_SUBJECT_READS_DOCS_LINE)
-    expect(none).toContain(SMITHERS_SUBJECT_WITHOUT_DOCS_LINE)
+    expect(none).not.toContain(AgentInstructions.SMITHERS_SUBJECT_READS_DOCS_LINE)
+    expect(none).toContain(AgentInstructions.SMITHERS_SUBJECT_WITHOUT_DOCS_LINE)
     // No page to read is still not a refusal, and still not an invention.
     expect(none).toContain("never invent a command, a flag, a page or a step")
     // Either way the rule is stated once, and it licenses the world.
     for (const system of [pages, none]) {
-      expect(system.split(CONVERSATION_IS_NOT_A_COMMAND_LINE)).toHaveLength(2)
+      expect(system.split(AgentInstructions.CONVERSATION_IS_NOT_A_COMMAND_LINE)).toHaveLength(2)
       expect(system).toContain("This licenses subjects in the WORLD, nothing about this app")
       expect(system).toContain("You cannot send or draft email")
     }
@@ -2426,7 +2433,7 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
         "delta",
         "done"
       ])
-      for (const frame of journal.frames) expect(AgentTurnFrameSchema.safeParse(frame).success).toBe(true)
+      for (const frame of journal.frames) expect(NativeAgent.AgentTurnFrameSchema.safeParse(frame).success).toBe(true)
       expect(journal.frames[1]).toEqual({
         runId: "run",
         type: "call.settled",
@@ -2480,7 +2487,7 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
     const journal = producer((path) => file(path, JOURNEY))
     await runWithDocs({ ...account, repositoryId: 3 }, provider, journal, PAGES)
     expect(commandLines(systemText(provider.requests[0]))).toEqual(["- /docs — Read the docs in the app"])
-    expect(toolOutputs(provider)).toEqual([unknownCommandResult("flow.new")])
+    expect(toolOutputs(provider)).toEqual([AgentCommands.unknownCommandResult("flow.new")])
     expect(journal.frames.some((frame) => frame.type === "call.settled")).toBe(false)
 
     // An install turn still sends flow.new to the install API, where the server owns the confirmation.
@@ -2525,8 +2532,8 @@ describe("a Cloud account conversation runs the screen-only flows for its author
       commands: ReadonlyArray<{ readonly name: string }>
     }).commands.map((command) => command.name)
     expect(account.api).toBeUndefined()
-    expect([...listed.filter((name) => Object.hasOwn(UI_INSTRUCTION_FIELDS, name))].sort())
-      .toEqual([...Object.keys(UI_INSTRUCTION_FIELDS)].sort())
+    expect([...listed.filter((name) => Object.hasOwn(UiInstruction.UI_INSTRUCTION_FIELDS, name))].sort())
+      .toEqual([...Object.keys(UiInstruction.UI_INSTRUCTION_FIELDS)].sort())
     for (const name of ["search.issues", "history", "help", "wiki.open", "theme"]) expect(listed).toContain(name)
     // The screen is the whole act: nothing reached the API or the repository.
     expect([journal.calls, journal.reads, journal.lists]).toEqual([[], [], []])
@@ -2537,7 +2544,7 @@ describe("a Cloud account conversation runs the screen-only flows for its author
     const provider = model([execute("search.issues", JSON.stringify({ query: "roninjin10/e2e-verify open" }))])
     await runWithDocs(account, provider, journal, PAGES)
     expect(journal.frames.map((frame) => frame.type)).toEqual(["call.started", "call.settled", "delta", "done"])
-    for (const frame of journal.frames) expect(AgentTurnFrameSchema.safeParse(frame).success).toBe(true)
+    for (const frame of journal.frames) expect(NativeAgent.AgentTurnFrameSchema.safeParse(frame).success).toBe(true)
     expect(journal.frames[1]).toEqual({
       runId: "run",
       type: "call.settled",
@@ -2656,7 +2663,7 @@ test("Cloud asks for flow.edit on the author's screen without calling the instal
 })
 
 test("each catalog form reaches only the author's screen with no HTTP call", async () => {
-  for (const name of Object.keys(FORM_INSTRUCTION_FIELDS)) {
+  for (const name of Object.keys(UiInstruction.FORM_INSTRUCTION_FIELDS)) {
     const journal = producer((path) => file(path, JOURNEY), stackRoutes)
     const provider = model([execute(name, "{}")])
     await runWithDocs(account, provider, journal, PAGES)
@@ -2677,7 +2684,7 @@ test("Cloud form command prompt accounting", async () => {
     JSON.stringify({
       metric: "cloud-form-prompt",
       bytes: Buffer.byteLength(system),
-      estimatedTokens: estimate(system)
+      estimatedTokens: Tokens.estimate(system)
     }) + "\n"
   )
   expect(toolNames(provider.requests[0])).toEqual(["commands"])

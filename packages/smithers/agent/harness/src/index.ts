@@ -114,10 +114,25 @@ export * as Cell from "./Cell.ts"
 export * as Sandbox from "./Sandbox.ts"
 
 /**
+ * The QuickJS build a host names, shared by the cell sandbox and every other
+ * QuickJS realm. It carries no build itself.
+ *
+ * @category services
+ * @since 1.0.0-rc.16
+ */
+export * as QuickJSVariant from "./QuickJSVariant.ts"
+
+/**
  * @category streams
  * @since 0.1.0
  */
 export * as CellTurn from "./CellTurn.ts"
+
+/**
+ * @category projections
+ * @since 1.0.0-rc.16
+ */
+export * as DoneText from "./DoneText.ts"
 
 /**
  * @category services

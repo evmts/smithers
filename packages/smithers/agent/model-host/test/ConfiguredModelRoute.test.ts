@@ -1,13 +1,12 @@
-import * as Evaluator from "@smthrs/model/Evaluator"
-import { planModelBinding } from "@smthrs/rpc/ConfiguredModel"
-import type { ModelProtocol } from "@smthrs/rpc/ConfiguredModel"
+import { Evaluator } from "@smthrs/model"
+import { ConfiguredModel } from "@smthrs/rpc"
 import { Effect, Layer, Redacted, Result } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { describe, expect, test } from "vitest"
 import { toEvaluatorLayer, withRoute } from "../src/ConfiguredModelRoute.ts"
 
-const plan = (protocol: ModelProtocol) => {
-  const planned = planModelBinding({
+const plan = (protocol: ConfiguredModel.ModelProtocol) => {
+  const planned = ConfiguredModel.planModelBinding({
     protocol,
     baseUrl: "https://fixture.test",
     modelId: "fixture",

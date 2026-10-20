@@ -1,11 +1,10 @@
 import * as ModelPackage from "@smthrs/model"
 import * as EffectPackage from "effect"
-import { Effect, Stream } from "effect"
+import { Effect, Logger, Stream } from "effect"
 import * as EffectHttp from "effect/http"
 import { readFileSync } from "node:fs"
 import ts from "typescript"
 import { afterEach, describe, expect, it } from "vitest"
-import type * as ModelProxy from "../src/ModelProxy.ts"
 
 const guide = readFileSync(new URL("../docs/guides/proxy-a-model.md", import.meta.url), "utf8")
 const modules: Record<string, unknown> = {
@@ -37,8 +36,8 @@ const request = ModelPackage.ModelRequest.ModelRequest.make({
   params: ModelPackage.ModelRequest.GenerationParams.make()
 })
 
-/** A model that repeats the last user message back, as one text part. */
-const echo = ModelPackage.Model.layer({
+/** A model that repeats the last user message back, as one text part, and reports usage. */
+const echo = ModelPackage.Model.make({
   stream: (received) => {
     const last = received.messages.at(-1)
     const text = last?.role === "user" ? last.content.map((part) => part.text).join("") : ""
@@ -46,10 +45,17 @@ const echo = ModelPackage.Model.layer({
       { type: "text-start", id: "t" } as const,
       { type: "text-delta", id: "t", text: `${received.modelId}: ${text}` } as const,
       { type: "text-end", id: "t" } as const,
+      { type: "usage", outputTokens: 6 } as const,
       { type: "settle", stopReason: "stop" } as const
     )
   }
 })
+
+const post = (body: ModelPackage.ModelRequest.ModelRequest) =>
+  new Request("http://site.test/api/chat", {
+    method: "POST",
+    body: JSON.stringify(EffectPackage.Schema.encodeSync(ModelPackage.ModelRequest.ModelRequest)(body))
+  })
 
 describe("Proxy a model guide", () => {
   const location = Object.getOwnPropertyDescriptor(globalThis, "location")
@@ -58,24 +64,56 @@ describe("Proxy a model guide", () => {
     else Object.defineProperty(globalThis, "location", location)
   })
 
-  it("refuses a signed-out caller and keeps only a signed-in caller's conversation", async () => {
+  it("refuses a signed-out caller and hands a signed-in caller's request to the host's model", async () => {
     const { prepare } = example<{
-      prepare: (signedIn: boolean) => ModelProxy.ServeOptions<never>["prepare"]
+      prepare: (signedIn: boolean, model: ModelPackage.Model.Model) => ModelPackage.ModelProxy.ServeOptions<
+        never
+      >["prepare"]
     }>("Decide what the caller may choose", ["prepare"])
 
-    const refusal = await Effect.runPromise(Effect.flip(prepare(false)(request)))
-    const prepared = await Effect.runPromise(prepare(true)(request))
+    const refusal = await Effect.runPromise(Effect.flip(prepare(false, echo)(request)))
+    const prepared = await Effect.runPromise(prepare(true, echo)(request))
 
     expect(refusal).toMatchObject({ _tag: "flows/model/ModelProxyRefusal", status: 401, message: "Sign in to chat." })
-    expect(prepared.modelId).toBe("qwen-3.8-27b")
-    expect(prepared.messages).toEqual(request.messages)
+    expect(prepared.model).toBe(echo)
+    expect(prepared.request.modelId).toBe("qwen-3.8-27b")
+    expect(prepared.request.messages).toEqual(request.messages)
+  })
+
+  it("labels and meters a request with attributes and onEnd", async () => {
+    const { served } = example<{ served: ReturnType<typeof ModelPackage.ModelProxy.serve<never>> }>(
+      "Meter what each request spends",
+      ["served"],
+      { model: echo }
+    )
+    const lines: Array<{ readonly message: unknown; readonly annotations: Record<string, unknown> }> = []
+    const logger = Logger.make((options) => {
+      const line = Logger.formatStructured.log(options)
+      lines.push({ message: line.message, annotations: line.annotations })
+    })
+    const handler = EffectHttp.HttpEffect.toWebHandler(
+      served.pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger])))
+    )
+
+    await (await handler(post(request))).text()
+
+    const usage = lines.find((line) => line.message === "usage")
+    const serve = lines.find((line) => line.message === "model.proxy.serve")
+    expect(usage?.annotations).toMatchObject({
+      outcome: "success",
+      tokens: 6,
+      requestId: serve?.annotations.requestId,
+      invocationId: serve?.annotations.invocationId
+    })
+    expect(serve?.annotations.invocationId).toMatch(/^[0-9a-f]{32}$/)
+    expect(serve?.annotations).toMatchObject({ role: "agent" })
   })
 
   it("serves the Node handler that the browser example then reads as a Model", async () => {
     const { handler } = example<{ handler: (request: Request) => Promise<Response> }>(
       "Run it on Node or Bun",
       ["handler"],
-      { modelLayer: echo }
+      { model: echo }
     )
     const { answer } = example<{ answer: (question: string) => Stream.Stream<string, unknown> }>(
       "Call it from a browser",

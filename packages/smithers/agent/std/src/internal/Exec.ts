@@ -298,7 +298,7 @@ const unbounded = (
     const settings: ChildProcess.CommandOptions = {
       ...(options.args === undefined ? { shell: true } : {}),
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-      env: ChildProcessEnvironment.make(process.env, options.env),
+      env: ChildProcessEnvironment.make(ChildProcessSpawner.ambientEnvironment(), options.env),
       extendEnv: false,
       // No input is /dev/null, never an open pipe nothing writes to: a
       // command that reads standard input sees end of file at once instead

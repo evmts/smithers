@@ -11,7 +11,7 @@ payload is parsed.
 ## A command line
 
 ```ts
-import * as Bash from "@smthrs/std/Bash"
+import { Bash } from "@smthrs/std"
 
 const result = Bash.run({
   mode: "unhermetic",
@@ -217,7 +217,7 @@ trained on that shape. It takes `command`, `workdir`, and `timeout_ms`, and it
 returns Codex's own rendering:
 
 ```ts
-import * as ShellCommand from "@smthrs/std/ShellCommand"
+import { ShellCommand } from "@smthrs/std"
 
 const result = ShellCommand.run({ command: "ls -la", workdir: "/workspace" })
 // result.output: "Exit code: 0\nWall time: 0.1 seconds\nOutput:\n..."

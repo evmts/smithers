@@ -4,6 +4,7 @@
  * @since 0.1.0
  */
 
+import { SpanFailure } from "@smthrs/flow"
 import { Chunk, Effect, Option, Result, Schema } from "effect"
 import * as DeferredTools from "./DeferredTools.ts"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
@@ -595,10 +596,12 @@ const buildBody = (
     }
   })
 
-const fromRequest = Effect.fn("AnthropicMessages.fromRequest")((
-  request: Request,
-  options: { readonly native: boolean }
-): Effect.Effect<Body, ModelError> => Effect.fromResult(buildBody(request, options)))
+const fromRequest = SpanFailure.fn(
+  Effect.fn("AnthropicMessages.fromRequest")((
+    request: Request,
+    options: { readonly native: boolean }
+  ): Effect.Effect<Body, ModelError> => Effect.fromResult(buildBody(request, options)))
+)
 
 // =============================================================================
 // Stream Parsing
@@ -995,11 +998,13 @@ const stepEvent = (state: State, event: AnthropicEvent): Result.Result<StepResul
   return Result.succeed({ state, events: [] })
 }
 
-const step = Effect.fn("AnthropicMessages.step")((
-  state: State,
-  event: AnthropicEvent
-): Effect.Effect<readonly [State, ReadonlyArray<ModelEvent>], ModelError> =>
-  Effect.map(Effect.fromResult(stepEvent(state, event)), (result) => [result.state, result.events] as const)
+const step = SpanFailure.fn(
+  Effect.fn("AnthropicMessages.step")((
+    state: State,
+    event: AnthropicEvent
+  ): Effect.Effect<readonly [State, ReadonlyArray<ModelEvent>], ModelError> =>
+    Effect.map(Effect.fromResult(stepEvent(state, event)), (result) => [result.state, result.events] as const)
+  )
 )
 
 const finalize = (state: State): ReadonlyArray<ModelEvent> => {

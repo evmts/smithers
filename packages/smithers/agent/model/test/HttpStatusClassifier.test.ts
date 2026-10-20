@@ -1,4 +1,4 @@
-import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import { HttpClient as KernelHttpClient } from "@smthrs/kernel"
 import { Effect, Layer, Redacted, Result, Stream } from "effect"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"

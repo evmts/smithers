@@ -2,7 +2,7 @@
  * The code-intelligence seam behind the `lsp` flow.
  *
  * A host binds {@link LanguageServer} to a client such as
- * `NodeLanguageServer.layer`. Every method answers one language-server request
+ * `@smthrs/platform-node`'s `NodeLanguageServer.layer`. Every method answers one language-server request
  * with the server's own result; {@link layerNoop} answers every request with
  * `unsupported`, for a host that runs no server.
  *

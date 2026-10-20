@@ -7,29 +7,32 @@ sidebar:
 
 A browser must never hold a provider key, so it cannot call a provider route
 itself. `ModelProxy` splits the call across HTTP instead. The host runs
-`ModelProxy.serve`, which owns the key and decides which model, system prompt
-and parameters a request gets. The browser, another Worker or a CLI provides
-`ModelProxy.layerClient`, a `Model` whose `stream` posts the request and reads
-the events back. Code that calls `model.stream(request)` does not change.
+`ModelProxy.serve`, which owns the key and decides, for each request, which
+model answers it and with which system prompt, parameters and tools. The
+browser, another Worker or a CLI provides `ModelProxy.layerClient`, a `Model`
+whose `stream` posts the request and reads the events back. Code that calls
+`model.stream(request)` does not change.
 
 ```text
 browser                         host (Worker, Node, Bun)          provider
 Model.stream ──POST ModelRequest──▶ ModelProxy.serve
   (layerClient)                       prepare: the host's policy
+                                        and the Model that answers
                                       Model.stream ───────────────▶ route
              ◀──NDJSON ModelEvents── … then {"type":"end"}
+                                      onEnd: usage, for metering
 ```
 
 ## Serve from a Cloudflare Worker
 
 `ModelProxy.serve` is an Effect, not a request handler function: it reads the
-current `HttpServerRequest`, needs the `Model` service, and answers an
-`HttpServerResponse`. Alchemy runs a Worker's `fetch` Effect per request, so
-the handler drops in as is. `HostModel.layerConfig` from `@smthrs/model-host`
-picks the host's model and key from the Worker's bindings:
+current `HttpServerRequest` and answers an `HttpServerResponse`. Alchemy runs a
+Worker's `fetch` Effect per request, so the handler drops in as is.
+`HostModel.layerConfig` from `@smthrs/model-host` picks the host's model and
+key from the Worker's bindings, and `prepare` hands it to the proxy:
 
 ```ts
-import { Model, ModelProxy, ModelRequest } from "@smthrs/model"
+import { ModelProxy, ModelRequest } from "@smthrs/model"
 import { HostModel } from "@smthrs/model-host"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
@@ -49,14 +52,19 @@ export default class ChatApi extends Cloudflare.Worker<ChatApi>()(
   Effect.gen(function*() {
     const { model, modelId } = yield* HostModel
     const chat = ModelProxy.serve({
-      prepare: ModelProxy.policy({
-        modelId,
-        system: [ModelRequest.SystemPart.make({ text: "Answer briefly and plainly." })],
-        params: ModelRequest.GenerationParams.make({ reasoningEffort: "low" }),
-        maxMessages: 40
-      }),
+      prepare: (request) =>
+        Effect.succeed({
+          model,
+          request: ModelRequest.ModelRequest.make({
+            modelId,
+            system: [ModelRequest.SystemPart.make({ text: "Answer briefly and plainly." })],
+            messages: request.messages,
+            tools: [],
+            params: ModelRequest.GenerationParams.make({ reasoningEffort: "low" })
+          })
+        }),
       maxBodyBytes: 512 * 1024
-    }).pipe(Effect.provideService(Model.Model, model))
+    })
 
     return {
       fetch: Effect.gen(function*() {
@@ -75,46 +83,75 @@ answer.
 
 ## Decide what the caller may choose
 
-`prepare` runs on every decoded request before the model does, and its result
-is what the model receives. A browser must not choose the model, system prompt,
-parameters or tools on the host's key, so `prepare` is required.
+`prepare` runs on every decoded request before any model does. It returns the
+request the model receives and the `Model` that answers it, so one endpoint can
+serve several models, chosen per request. A browser must not choose the model,
+system prompt, parameters or tools on the host's key, so `prepare` is required:
+keep only the caller's fields you allow.
 
-`ModelProxy.policy` is the common hook: the caller chooses only the
-conversation. It replaces `modelId`, `system` and `params` with the host's,
-drops every other request field, and refuses with `400` a request that
-declares tools or provider-run tools, has no messages, or has more than
-`maxMessages`.
-
-For any other rule, write `prepare` yourself and fail with a `Refusal`. Its
-`status` and `message` reach the client as written, and `code` is the
-`ModelError` code the client fails with (the status picks one when omitted):
+To refuse a request, fail with a `Refusal`. Its `status` and `message` reach
+the client as written, and `code` is the `ModelError` code the client fails
+with (the status picks one when omitted). `prepare` can read any service the
+handler provides, such as the session of the person asking:
 
 ```ts
-import { ModelProxy, type ModelRequest } from "@smthrs/model"
+import { type Model, ModelProxy, ModelRequest } from "@smthrs/model"
 import { Effect } from "effect"
 
-const base = ModelProxy.policy({ modelId: "qwen-3.8-27b", maxMessages: 40 })
-
-const prepare = (signedIn: boolean) => (request: ModelRequest.ModelRequest) =>
+const prepare = (signedIn: boolean, model: Model.Model) => (request: ModelRequest.ModelRequest) =>
   signedIn
-    ? base(request)
+    ? Effect.succeed({ model, request: ModelRequest.ModelRequest.make({ ...request, modelId: "qwen-3.8-27b" }) })
     : Effect.fail(new ModelProxy.Refusal({ status: 401, message: "Sign in to chat." }))
+```
+
+## Meter what each request spends
+
+Two options record usage where the host knows what it means:
+
+- `attributes` labels every server-side metric and the log line of the
+  request, such as `{ role: "agent" }`. Keep them low-cardinality: never ids,
+  prompt text or credentials.
+- `onEnd` runs once after an admitted request's model stream ends, with its
+  `invocationId`, `requestId`, outcome (`success`, `failed` or
+  `interrupted`), model id and the usage the model reported. Use it to record
+  spend against a budget. The terminal line waits for it, so the spend is
+  recorded before the client reads the end, and before a Worker's invocation
+  ends with the response. It never runs for a refused request, and it must
+  handle its own errors.
+- Key spend on `invocationId`, which the server mints for every call it
+  admits. `requestId` is the caller's: it may send one id on any number of
+  calls, and each call still runs the model, so spend keyed on it counts only
+  the first.
+
+```ts
+import { ModelProxy } from "@smthrs/model"
+import { Effect } from "effect"
+
+const served = ModelProxy.serve({
+  prepare: (request) => Effect.succeed({ model, request }),
+  attributes: { role: "agent" },
+  onEnd: ({ invocationId, requestId, outcome, usage }) =>
+    Effect.logInfo("usage").pipe(
+      Effect.annotateLogs({ invocationId, requestId, outcome, tokens: usage.outputTokens ?? 0 })
+    )
+})
 ```
 
 ## Run it on Node or Bun
 
 The same Effect runs under any `effect/http` server. As a web handler, with
-`modelLayer` any layer that provides `Model` (a `Route.layer`, for one):
+`model` any `Model` (a `Route.toModel` result, for one):
 
 ```ts
-import { ModelProxy } from "@smthrs/model"
+import { ModelProxy, ModelRequest } from "@smthrs/model"
 import { Effect } from "effect"
 import { HttpEffect } from "effect/http"
 
 const handler = HttpEffect.toWebHandler(
-  ModelProxy.serve({ prepare: ModelProxy.policy({ modelId: "qwen-3.8-27b" }) }).pipe(
-    Effect.provide(modelLayer)
-  )
+  ModelProxy.serve({
+    prepare: (request) =>
+      Effect.succeed({ model, request: ModelRequest.ModelRequest.make({ ...request, modelId: "qwen-3.8-27b" }) })
+  })
 )
 // Bun.serve({ fetch: handler }), or any server that takes (Request) => Promise<Response>.
 ```
@@ -150,9 +187,29 @@ const answer = (question: string) =>
   )
 ```
 
-The browser's `modelId`, `system` and `params` are placeholders: under
-`policy` the host replaces them. Interrupting the fiber that runs the stream
-aborts the request, and the host's model call stops with it.
+The browser's `modelId` is a placeholder: the host's `prepare` replaces it.
+Interrupting the fiber that runs the stream aborts the request, and the host's
+model call stops with it.
+
+## Make each call a durable step
+
+A flow calls a model through `ModelStep.run` from `@smthrs/agent`, or an agent
+seat, so a resumed run replays a sealed call instead of paying for it again.
+Both key the step on a `route`: the credential-free form of the request.
+`ModelProxy.prepare` is that form for a proxied model, the endpoint's URL and
+the exact bytes the client sends, so hand it over beside the client's `Model`:
+
+```ts
+import { ModelStep } from "@smthrs/agent"
+import { ModelProxy } from "@smthrs/model"
+
+const url = "/api/model/agent"
+const model = yield* ModelProxy.makeClient({ url })
+const result = yield* ModelStep.run({ name: "chat/answer/model", request, model, route: { prepare: ModelProxy.prepare({ url }) } })
+```
+
+The client's `headers`, which may carry the host's own authorization, and its
+per-call request id stay out of the key.
 
 Every failure is a `ModelError`, so the code from
 [Handle failures](./handle-failures.md) applies unchanged. Each one carries
@@ -173,7 +230,8 @@ the request id as `requestId`.
 Both halves record one span, three metrics and one log line per request,
 joined by the request id and by trace context. The client sends a fresh id in
 `x-smithers-request-id`; the server keeps it (or mints one if it is missing or
-malformed) and echoes it in the response. Effect's `HttpClient` sends W3C
+malformed) and echoes it in the response. The server also mints an invocation
+id of its own for every call it admits, which the caller never chooses. Effect's `HttpClient` sends W3C
 `traceparent`, so the browser's span, the host's spans and the provider call
 share one trace:
 
@@ -190,23 +248,25 @@ The `model.proxy.serve` and `model.proxy.stream` spans carry
 `http.response.status_code`, `error.type` (the `ModelError` code),
 `smithers.model.proxy.events`, `smithers.model.proxy.duration_ms` and
 `smithers.model.proxy.first_event_ms`; the server span adds
-`gen_ai.request.model`, `gen_ai.provider.name` and
-`smithers.model.proxy.request_bytes`.
+`smithers.model.proxy.invocation_id`, `gen_ai.request.model`,
+`gen_ai.provider.name` and `smithers.model.proxy.request_bytes`.
 
-| Metric                                | Kind      | Attributes                                       |
-| ------------------------------------- | --------- | ------------------------------------------------ |
-| `smithers_model_proxy_requests`       | counter   | `side`, `outcome`, `status`                      |
-| `smithers_model_proxy_duration_ms`    | histogram | `side`, `outcome`                                |
-| `smithers_model_proxy_first_event_ms` | histogram | `side`                                           |
-| `smithers_model_proxy_tokens`         | counter   | `type` (`input`, `output`), `model`; server only |
+| Metric                                | Kind      | Attributes                                                                |
+| ------------------------------------- | --------- | ------------------------------------------------------------------------- |
+| `smithers_model_proxy_requests`       | counter   | `side`, `outcome`, `status`, the host's `attributes`                      |
+| `smithers_model_proxy_duration_ms`    | histogram | `side`, `outcome`, the host's `attributes`                                |
+| `smithers_model_proxy_first_event_ms` | histogram | `side`, the host's `attributes`                                           |
+| `smithers_model_tokens`               | counter   | `type` (`input`, `output`), `model`, the host's `attributes`; server only |
 
-`outcome` is `success`, `invalid` (bad method or body), `refused`, `failed` or
+The host's `attributes` appear only on the server side. `outcome` is
+`success`, `invalid` (bad method or body), `refused`, `failed` or
 `interrupted`. The log line's message is the span name, and its level follows
 the outcome: Info for `success` and `interrupted`, Warn for `invalid` and
-`refused`, Error for `failed`. Its annotations are `requestId`, `traceId`,
-`side`, `outcome`, `status`, `durationMs`, `events`, and when known `modelId`,
-`provider`, `errorCode`, `errorTag`, `firstEventMs`, `requestBytes`,
-`inputTokens` and `outputTokens`.
+`refused`, Error for `failed`. Its annotations are the host's `attributes`,
+`requestId`, `traceId`, `side`, `outcome`, `status`, `durationMs`, `events`,
+the server's `invocationId`, and when known `modelId`, `provider`, `errorCode`, `errorTag`,
+`firstEventMs`, `requestBytes`, `inputTokens` and `outputTokens`. The
+proxy's own names win over a host attribute of the same name.
 
 No span, metric or log line carries prompt or response text, provider error
 text, or credentials. The test suite proves it with a sentinel prompt that the

@@ -4,17 +4,17 @@
  * @since 1.0.0
  */
 
-import { ContextCandidateSchema, ContextPreflightInputSchema } from "@smthrs/rpc/ContextPreflight"
-import type { ContextPreflightInput } from "@smthrs/rpc/ContextPreflight"
+import { ContextPreflight } from "@smthrs/rpc"
 import { z } from "zod"
 import { ResolveFailed } from "../ModelHostError.ts"
 
 const MAX_RECORD_BYTES = 2 * 1024 * 1024
-const HeaderSchema = ContextPreflightInputSchema.omit({ recent: true, candidates: true })
+const HeaderSchema = ContextPreflight.ContextPreflightInputSchema.omit({ recent: true, candidates: true })
 const RecordSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("input"), version: z.literal(1), value: HeaderSchema }).strict(),
-  z.object({ type: z.literal("recent"), value: ContextPreflightInputSchema.shape.recent.element }).strict(),
-  z.object({ type: z.literal("candidate"), value: ContextCandidateSchema }).strict(),
+  z.object({ type: z.literal("recent"), value: ContextPreflight.ContextPreflightInputSchema.shape.recent.element })
+    .strict(),
+  z.object({ type: z.literal("candidate"), value: ContextPreflight.ContextCandidateSchema }).strict(),
   z.object({
     type: z.literal("end"),
     recent: z.number().int().nonnegative(),
@@ -29,15 +29,15 @@ const RecordSchema = z.discriminatedUnion("type", [
  * @private
  * @since 1.0.0
  */
-export const readContextStream = async (response: Response): Promise<ContextPreflightInput> => {
+export const readContextStream = async (response: Response): Promise<ContextPreflight.ContextPreflightInput> => {
   if (response.headers.get("content-type") !== "application/x-ndjson" || response.body === null) {
     await response.body?.cancel()
     throw new ResolveFailed({ message: "context stream unavailable" })
   }
   const reader = response.body.getReader()
   let header: z.infer<typeof HeaderSchema> | undefined
-  const recent: ContextPreflightInput["recent"] = []
-  const candidates: ContextPreflightInput["candidates"] = []
+  const recent: ContextPreflight.ContextPreflightInput["recent"] = []
+  const candidates: ContextPreflight.ContextPreflightInput["candidates"] = []
   let ended = false
   let complete = false
   let size = 0
@@ -90,7 +90,7 @@ export const readContextStream = async (response: Response): Promise<ContextPref
       }
     }
     if (!ended || size !== 0) throw new ResolveFailed({ message: "incomplete context stream" })
-    const input = ContextPreflightInputSchema.parse({ ...header, recent, candidates })
+    const input = ContextPreflight.ContextPreflightInputSchema.parse({ ...header, recent, candidates })
     complete = true
     return input
   } finally {

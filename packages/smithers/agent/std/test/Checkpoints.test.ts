@@ -6,7 +6,7 @@
  * relocation table it re-exports is pinned by `Relocate.test.ts`.
  */
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
-import { Cause, Effect, Exit, Layer, Option, Sink, Stream } from "effect"
+import { Cause, Effect, Exit, Layer, Logger, Option, Sink, Stream } from "effect"
 import type * as ChildProcess from "effect/process/ChildProcess"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import { readFileSync } from "node:fs"
@@ -676,5 +676,161 @@ describe("Checkpoints.relocate", () => {
     // `Relocate.test.ts` owns the behaviour. This pins only that the name the
     // harness and `@smthrs/agent` import still resolves to it.
     expect(Checkpoints.relocate).toBe(Relocate.relocate)
+  })
+})
+
+describe("Checkpoints.makeGit host faults", () => {
+  /** The text of every warning the run logs. */
+  const warned = () => {
+    const warnings: Array<string> = []
+    const logger = Logger.make((options) => {
+      if (options.logLevel === "Warn") warnings.push([options.message].flat().join(" "))
+    })
+    return { warnings, layer: Logger.layer([logger]) }
+  }
+
+  it("says so when git could not create the shadow repository, and still removes it", async () => {
+    const spawns: Array<ReadonlyArray<string>> = []
+    const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
+      const checkpoints = yield* store(spawns, [["init --quiet --bare", { exitCode: 1 }]])
+      return yield* checkpoints.capture("cp-0-0")
+    })))
+
+    expect(failureOf(exit)).toMatchObject({ code: "command_failed", message: "Could not create a shadow repository: " })
+    expect(lines(spawns).slice(-2)).toEqual([init, "rm -rf -- <shadow>"])
+  })
+
+  it("says so when git could not point the shadow at HEAD, and records nothing", async () => {
+    const spawns: Array<ReadonlyArray<string>> = []
+    const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
+      const checkpoints = yield* store(spawns, [
+        ["update-ref --no-deref HEAD", { exitCode: 1 }],
+        ["HEAD^", { stdout: "head999\n" }]
+      ])
+      return yield* checkpoints.capture("cp-0-0")
+    })))
+
+    expect(failureOf(exit)?.message).toBe("Could not record the working tree: ")
+    expect(lines(spawns).some((line) => line.includes("stash create"))).toBe(false)
+    expect(lines(spawns).at(-1)).toBe("rm -rf -- <shadow>")
+  })
+
+  it("keeps what a materialized checkpoint answered when nothing could be removed, and warns for each", async () => {
+    const spawns: Array<ReadonlyArray<string>> = []
+    const { layer, warnings } = warned()
+    const seen = await Effect.runPromise(
+      Effect.gen(function*() {
+        const checkpoints = yield* store(spawns, [
+          ["--get flows-checkpoint", { stdout: "abc123\n" }],
+          ["rm -rf --", { exitCode: 1 }]
+        ])
+        return yield* checkpoints.materialize("cp-0-1", (found) => Effect.succeed(found.host))
+      }).pipe(Effect.provide(layer))
+    )
+
+    expect(seen).toBe(checkoutPath(spawns))
+    expect(lines(spawns).filter((line) => line.startsWith("rm -rf --"))).toEqual([
+      "rm -rf -- <shadow>",
+      `rm -rf -- ${checkoutPath(spawns)}`
+    ])
+    expect(warnings).toEqual(["could not remove a shadow repository", "could not remove a scratch checkout"])
+  })
+})
+
+describe("Checkpoints.makeGit host edges", () => {
+  /** The argv of the one spawn whose script includes `fragment`. */
+  const script = (spawns: ReadonlyArray<ReadonlyArray<string>>, fragment: string) =>
+    spawns.find((argv) => argv[0] === "sh" && argv[2]?.includes(fragment))!
+
+  /** The shadow `git init` created. */
+  const shadowPath = (spawns: ReadonlyArray<ReadonlyArray<string>>) =>
+    spawns.find((argv) => argv.includes("--bare"))!.at(-1)!
+
+  it("puts the shadow under /tmp when no temporary directory is configured", async () => {
+    for (const name of ["TMPDIR", "TEMP", "TMP"]) vi.stubEnv(name, "")
+    const spawns: Array<ReadonlyArray<string>> = []
+    await Effect.runPromise(
+      GitWorktree.withShadow({
+        root: "/work/repo",
+        toplevel: "/work/repo",
+        common: "/work/repo/.git",
+        index: "/work/repo/.git/index",
+        objectFormat: "sha1",
+        settings: []
+      }, (shadow) => shadow.adoptIndex).pipe(Effect.provide(host(spawns, [])))
+    )
+
+    expect(shadowPath(spawns)).toMatch(/^\/tmp\/smithers-git-[0-9a-f-]{36}$/)
+    expect(spawns.at(-1)).toEqual(["rm", "-rf", "--", shadowPath(spawns)])
+  })
+
+  it("says so when the workspace index could not be copied, and records nothing", async () => {
+    const spawns: Array<ReadonlyArray<string>> = []
+    const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
+      const checkpoints = yield* store(spawns, [
+        ["touch -r", { exitCode: 1 }],
+        ["HEAD^", { stdout: "head999\n" }]
+      ])
+      return yield* checkpoints.capture("cp-0-0")
+    })))
+
+    expect(failureOf(exit)).toMatchObject({ code: "command_failed", message: "Could not read the workspace index: " })
+    expect(lines(spawns).some((line) => /update-ref|stash create/.test(line))).toBe(false)
+    expect(lines(spawns).at(-1)).toBe("rm -rf -- <shadow>")
+  })
+
+  it("gives a sha256 repository's checkout a version 1 config that names its object format", async () => {
+    const spawns: Array<ReadonlyArray<string>> = []
+    await Effect.runPromise(Effect.gen(function*() {
+      const checkpoints = yield* store(spawns, [
+        ["--show-toplevel", { stdout: "/work/repo\n/work/repo/.git\n/work/repo/.git/index\nsha256\n" }],
+        ["--get-regexp", { stdout: "core.filemode false\n" }],
+        ["--get flows-checkpoint", { stdout: "abc123\n" }]
+      ])
+      return yield* checkpoints.materialize("cp-0-1", () => Effect.void)
+    }))
+
+    expect(lines(spawns)).toContain("git init --quiet --bare --template= --object-format=sha256 <shadow>")
+    expect(script(spawns, "mkdir --").at(-1)).toBe(
+      "[core]\n\trepositoryformatversion = 1\n\tbare = false\n\tfilemode = false\n[extensions]\n\tobjectformat = sha256\n"
+    )
+  })
+
+  it("refuses to check out when stat measured no device, rather than matching one empty answer to another", async () => {
+    const spawns: Array<ReadonlyArray<string>> = []
+    const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
+      const checkpoints = yield* store(spawns, [
+        ["--get flows-checkpoint", { stdout: "abc123\n" }],
+        ["stat -c %d", { stdout: "\n\n\n\n" }]
+      ])
+      return yield* checkpoints.materialize("cp-0-1", () => Effect.void)
+    })))
+
+    expect(failureOf(exit)?.message).toBe(
+      `Could not check out abc123: neither ${shadowPath(spawns)} nor /work nor ${cacheRoot} is on the filesystem of `
+        + "/work/repo/.flows-checkpoints"
+    )
+    expect(lines(spawns).some((line) => /mkdir -- |read-tree/.test(line))).toBe(false)
+  })
+
+  it.each([
+    ["an absolute HOME when XDG_CACHE_HOME is relative", "cache", "/home/me/", "/home/me/.cache/smithers"],
+    ["no cache directory when neither is absolute", "", "home/me", ""]
+  ])("stages under %s", async (_, xdg, home, cache) => {
+    vi.stubEnv("XDG_CACHE_HOME", xdg)
+    vi.stubEnv("HOME", home)
+    const spawns: Array<ReadonlyArray<string>> = []
+    const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
+      const checkpoints = yield* store(spawns, [
+        ["--get flows-checkpoint", { stdout: "abc123\n" }],
+        ["stat -c %d", { stdout: "1\n2\n3\n\n" }]
+      ])
+      return yield* checkpoints.materialize("cp-0-1", () => Effect.void)
+    })))
+
+    expect(script(spawns, "stat -c %d").at(-1)).toBe(cache)
+    expect(failureOf(exit)?.message).toMatch(
+      new RegExp(` nor /work nor ${cache === "" ? "a cache directory" : cache} is on the filesystem of `)
+    )
   })
 })

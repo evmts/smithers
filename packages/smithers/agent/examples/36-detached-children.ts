@@ -13,7 +13,7 @@ import { ChildFlows, EngineChildren } from "@smthrs/agent"
 import * as ControlLive from "@smthrs/control/ControlLive"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import { durableEngine } from "@smthrs/flows/test/TestNodeRuntime"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import { RunStore } from "@smthrs/run-store"
@@ -101,7 +101,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
         // is `ChildError { code: "not_found" }`, which the caller can see.
         Layer.provideMerge(EngineChildren.layer({ flows: [Digest] })),
         Layer.provideMerge(controlPlane),
-        Layer.provideMerge(durableEngine(filename, hostId)),
+        Layer.provideMerge(TestNodeRuntime.durableEngine(filename, hostId)),
         Layer.provideMerge(NodeCrypto.layer)
       )
 

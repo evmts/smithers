@@ -2,11 +2,11 @@
  * A `Model` served over HTTP, and a `Model` that reads one served elsewhere.
  *
  * {@link serve} is the host half: an `effect/http` handler that reads a
- * `ModelRequest`, lets the host's `prepare` hook enforce policy, calls the
- * `Model` service and streams its events back. {@link layerClient} is the other
- * half: a `Model` whose `stream` posts the request and decodes the events, so a
- * browser, another Worker or a CLI calls a remote model with the same
- * `model.stream(request)` it would use for a local one.
+ * `ModelRequest`, lets the host's `prepare` hook enforce policy and choose the
+ * `Model` that answers, calls it and streams its events back. {@link layerClient}
+ * is the other half: a `Model` whose `stream` posts the request and decodes the
+ * events, so a browser, another Worker or a CLI calls a remote model with the
+ * same `model.stream(request)` it would use for a local one.
  *
  * The wire is NDJSON: one Schema-encoded {@link Line} per event, then exactly
  * one terminal line, `{"type":"end"}` on a clean finish or an {@link ErrorLine}
@@ -21,6 +21,7 @@
  * @since 1.0.0
  */
 
+import { Fault } from "@smthrs/flow"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
@@ -44,9 +45,10 @@ import * as Tracer from "effect/Tracer"
 import * as FailureCopy from "./FailureCopy.ts"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
 import * as Model from "./Model.ts"
-import { ModelError, ModelErrorCode } from "./ModelError.ts"
+import { faults, ModelError, ModelErrorCode } from "./ModelError.ts"
 import { ModelEvent, type Usage } from "./ModelEvent.ts"
-import { GenerationParams, ModelRequest, type SystemPart } from "./ModelRequest.ts"
+import { ModelRequest } from "./ModelRequest.ts"
+import type { PreparedRequest } from "./Route.ts"
 
 /**
  * The header both halves read and write to correlate one request: the client
@@ -159,6 +161,9 @@ export type ErrorBody = typeof ErrorBody.Type
  * `rate_limited`, `401` and `403` are `authentication`, other 4xx are
  * `invalid_request`).
  *
+ * Its fault is that code's class in `ModelError.faults`, so a host and the
+ * client it refused read one class: a `429` waits, a `401` asks the person.
+ *
  * @category errors
  * @since 1.0.0
  */
@@ -166,7 +171,19 @@ export class Refusal extends Schema.TaggedError<Refusal>()("flows/model/ModelPro
   status: Schema.Int.check(Schema.isBetween({ minimum: 400, maximum: 599 })),
   message: Schema.String,
   code: Schema.optional(ModelErrorCode)
-}) {}
+}) {
+  /**
+   * The `ModelError` code the client fails with: `code`, or the one `status`
+   * chooses.
+   *
+   * @since 1.0.0-rc.16
+   */
+  get modelErrorCode(): ModelErrorCode {
+    return this.code ?? classifyHttpStatus(this.status, undefined, "", "opaque")
+  }
+}
+
+Fault.register("flows/model/ModelProxyRefusal", faults, "modelErrorCode")
 
 /**
  * Requests served or streamed, by `side` (`server` or `client`), `outcome`
@@ -206,39 +223,99 @@ export const firstEvent = Metric.histogram("smithers_model_proxy_first_event_ms"
 })
 
 /**
- * Tokens the served model reported, by `type` (`input` or `output`) and the
- * served `model`. Only the server records them, so a client and its host in
- * one process never count a call twice.
+ * Tokens the served model reported, by `type` (`input` or `output`), the
+ * served `model`, and the host's {@link ServeOptions.attributes}. Only the
+ * server records them, so a client and its host in one process never count a
+ * call twice.
  *
  * @category metrics
  * @since 1.0.0
  */
-export const tokens = Metric.counter("smithers_model_proxy_tokens", {
-  description: "Tokens reported by models served over HTTP, by type and model",
+export const tokens = Metric.counter("smithers_model_tokens", {
+  description: "Tokens reported by models served over HTTP, by type, model and the host's attributes",
   incremental: true
 })
 
 /**
- * What {@link serve} lets a host decide before the model runs.
+ * What a host's `prepare` hook decides for one request: the request the model
+ * receives, and the `Model` that answers it.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Prepared {
+  readonly request: ModelRequest
+  readonly model: Model.Model
+}
+
+/**
+ * How a served request ended, as {@link ServeOptions.onEnd} receives it: its
+ * ids, its outcome, the model id it ran on, and the usage the model reported
+ * (merged field by field; a `retry` event starts it over). An `interrupted`
+ * request reports the usage reported before the client went away.
+ *
+ * `invocationId` is the server's own id for this one call, minted fresh for
+ * every request {@link serve} admits: key metering on it. `requestId` is the
+ * caller's correlation id, which a caller may send again on any number of
+ * calls, so a host that keys spend on it lets a caller spend without paying.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface End {
+  readonly requestId: string
+  /**
+   * The server's id for this call, unique to it and never chosen by the
+   * caller; the key a host meters on.
+   *
+   * @since 1.0.0-rc.16
+   */
+  readonly invocationId: string
+  readonly outcome: "success" | "failed" | "interrupted"
+  readonly modelId: string
+  readonly usage: Usage
+}
+
+/**
+ * What {@link serve} lets a host decide before the model runs, and hear after
+ * it ends.
  *
  * @category models
  * @since 1.0.0
  */
 export interface ServeOptions<R> {
   /**
-   * Turns the decoded request into the one the model receives, or refuses it.
-   * This is where the host chooses the model id, system prompt, parameters and
-   * tools; a browser must not choose them on the host's key. {@link policy}
-   * builds the common one.
+   * Turns the decoded request into the one the model receives and chooses the
+   * `Model` that answers it, or refuses it with a {@link Refusal}. This is
+   * where the host chooses the model, system prompt, parameters and tools,
+   * and checks who is asking; a browser must not choose them on the host's
+   * key.
    */
-  readonly prepare: (request: ModelRequest) => Effect.Effect<ModelRequest, Refusal, R>
+  readonly prepare: (request: ModelRequest) => Effect.Effect<Prepared, Refusal, R>
   /** The largest request body accepted, in bytes; {@link defaultMaxBodyBytes} when omitted. */
   readonly maxBodyBytes?: number | undefined
+  /**
+   * Attributes added to every server-side metric and to the log line of this
+   * request, such as the host's name for what the model is used for. They
+   * must be low-cardinality labels: never ids, prompt text or credentials. The
+   * proxy's own attribute names win over a host attribute of the same name.
+   */
+  readonly attributes?: Readonly<Record<string, string>> | undefined
+  /**
+   * Runs once after the model stream of an admitted request ends, with its
+   * {@link End}: the place to meter usage. The terminal line waits for it, so
+   * what it records is recorded before the client reads the end; a client
+   * that went away gets no terminal line, and `onEnd` runs as the body
+   * closes. It does not run for a request `prepare` refused or that never
+   * reached the model. It must not fail; handle its own errors.
+   */
+  readonly onEnd?: ((end: End) => Effect.Effect<void, never, R>) | undefined
 }
 
 /**
- * Serves the `Model` service over HTTP: one `POST` with a JSON `ModelRequest`
- * body in, an NDJSON event stream out.
+ * Serves a `Model` over HTTP: one `POST` with a JSON `ModelRequest` body in,
+ * an NDJSON event stream out. The host's `prepare` chooses which `Model`
+ * answers each request.
  *
  * It answers `405` to another method, `413` to a body over `maxBodyBytes`
  * (counted while reading, so a chunked body without `content-length` is bounded
@@ -259,22 +336,23 @@ export const serve = <R = never>(
 ): Effect.Effect<
   HttpServerResponse.HttpServerResponse,
   never,
-  HttpServerRequest.HttpServerRequest | Model.Model | R
+  HttpServerRequest.HttpServerRequest | R
 > =>
   Effect.gen(function*() {
     const request = yield* HttpServerRequest.HttpServerRequest
-    const model = yield* Model.Model
     const startedAt = yield* Clock.currentTimeMillis
     const requestId = acceptedRequestId(request.headers[requestIdHeader]) ?? makeRequestId()
+    // The caller chooses `requestId` and may repeat it; this id is the server's alone, one per call.
+    const invocationId = makeRequestId()
     const parent = yield* Effect.serviceOption(Tracer.ParentSpan)
     // A host with no HTTP server span still joins the caller's trace.
     const span = yield* Effect.makeSpan("model.proxy.serve", {
       kind: Option.isSome(parent) ? "internal" : "server",
       parent: Option.isSome(parent) ? undefined : Option.getOrUndefined(HttpTraceContext.fromHeaders(request.headers)),
-      attributes: { [attributes.requestId]: requestId }
+      attributes: { [attributes.requestId]: requestId, [attributes.invocationId]: invocationId }
     })
-    const call = new Call("server", requestId, startedAt, span)
-    call.providerName = model.providerName
+    const call = new Call("server", requestId, startedAt, span, options.attributes ?? {})
+    call.invocationId = invocationId
 
     const admitted = yield* Effect.result(admit(request, options, call)).pipe(
       Effect.onInterrupt(() => call.finish(Exit.interrupt()))
@@ -298,29 +376,45 @@ export const serve = <R = never>(
       )
     }
 
-    const prepared = admitted.success
+    const { model, request: prepared } = admitted.success
     call.modelId = prepared.modelId
+    call.providerName = model.providerName
     call.status = 200
     span.attribute("gen_ai.request.model", prepared.modelId)
     if (model.providerName !== undefined) span.attribute("gen_ai.provider.name", model.providerName)
     // The response body runs after this handler returns, so it carries the
-    // handler's services (tracer, loggers, metric registry) with it.
-    const context = Context.omit(Scope.Scope)(yield* Effect.context<never>())
+    // handler's services (tracer, loggers, metric registry, and what `onEnd`
+    // reads) with it, but not the handler's scope, which has closed by then.
+    const context = Context.omit(Scope.Scope)(yield* Effect.context<R>()) as Context.Context<R>
+    const onEnd = options.onEnd
+    let ended = false
+    /** Runs the host's `onEnd` once, with the outcome and the usage so far. */
+    const end = (outcome: End["outcome"]): Effect.Effect<void, never, R> =>
+      Effect.suspend(() => {
+        if (ended || onEnd === undefined) return Effect.void
+        ended = true
+        return onEnd({ requestId, invocationId, outcome, modelId: prepared.modelId, usage: call.usage })
+      })
+    // The terminal line follows the host's `onEnd`, so a host that meters there has recorded the call before the
+    // client reads the end of it, and before a Worker's response, and with it the invocation, ends.
+    const terminal = (outcome: End["outcome"], line: Line) =>
+      Stream.unwrap(Effect.as(end(outcome), Stream.succeed(line)))
     const body = model.stream(prepared).pipe(
       Model.withGenAiSpan(prepared, model.providerName),
       Stream.tap((event) => call.observe(event)),
       Stream.map((event): Line => event),
-      Stream.concat(Stream.sync((): Line => {
+      Stream.concat(Stream.suspend(() => {
         call.outcome = "success"
-        return endLine
+        return terminal("success", endLine)
       })),
       encodeLines,
       Stream.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) return Stream.failCause(cause)
         call.outcome = "failed"
-        return encodeLines(Stream.succeed(call.failure(cause)))
+        return encodeLines(terminal("failed", call.failure(cause)))
       }),
-      Stream.onExit((exit) => call.finish(exit)),
+      // A client that went away gets no terminal line; `onEnd` still hears of it, as `interrupted`.
+      Stream.onExit((exit) => Effect.andThen(call.finish(exit), end("interrupted"))),
       Stream.provideService(Tracer.ParentSpan, span),
       Stream.provideContext(context)
     )
@@ -329,54 +423,6 @@ export const serve = <R = never>(
       headers: { "cache-control": "no-store", "x-content-type-options": "nosniff", [requestIdHeader]: requestId }
     })
   })
-
-/**
- * What {@link policy} fixes on the host's side.
- *
- * @category models
- * @since 1.0.0
- */
-export interface PolicyOptions {
-  /** The provider model id every request runs on. */
-  readonly modelId: string
-  /** The system prompt every request carries; none when omitted. */
-  readonly system?: ReadonlyArray<SystemPart> | undefined
-  /** The generation parameters every request carries; provider defaults when omitted. */
-  readonly params?: GenerationParams | undefined
-  /** The most messages one request may carry; unbounded when omitted. */
-  readonly maxMessages?: number | undefined
-}
-
-/**
- * A `prepare` hook for a host that lets the caller choose only the
- * conversation. The model id, system prompt and parameters are the host's; a
- * request that declares tools or provider-run tools is refused with `400`, and
- * so is one with no messages or more than `maxMessages`. Every other request
- * field is dropped.
- *
- * @category server
- * @since 1.0.0
- */
-export const policy = (options: PolicyOptions) => (request: ModelRequest): Effect.Effect<ModelRequest, Refusal> => {
-  if (request.tools.length > 0 || (request.serverTools?.length ?? 0) > 0) {
-    return Effect.fail(new Refusal({ status: 400, code: "invalid_request", message: "Send no tools." }))
-  }
-  if (request.messages.length === 0) {
-    return Effect.fail(new Refusal({ status: 400, code: "invalid_request", message: "Send at least one message." }))
-  }
-  if (options.maxMessages !== undefined && request.messages.length > options.maxMessages) {
-    return Effect.fail(
-      new Refusal({ status: 400, code: "invalid_request", message: `Send at most ${options.maxMessages} messages.` })
-    )
-  }
-  return Effect.succeed(ModelRequest.make({
-    modelId: options.modelId,
-    system: options.system ?? [],
-    messages: request.messages,
-    tools: [],
-    params: options.params ?? GenerationParams.make()
-  }))
-}
 
 /**
  * Where {@link makeClient} sends requests.
@@ -422,9 +468,45 @@ export const makeClient = (options: ClientOptions): Effect.Effect<Model.Model, n
 export const layerClient = (options: ClientOptions): Layer.Layer<Model.Model, never, HttpClient.HttpClient> =>
   Layer.effect(Model.Model)(makeClient(options))
 
+// The JSON codec of the request, as the client writes it (`HttpClientRequest.schemaBodyJson` encodes through
+// `Schema.toCodecJson`, which writes an optional field that is present but undefined as `null`), so the server reads
+// every request the client sends.
+const requestJson = Schema.toCodecJson(ModelRequest)
+
+/**
+ * The credential-free form of the request {@link makeClient} sends for
+ * `request`: the endpoint's URL, the public headers, and the exact body bytes.
+ * A durable model step keys on it, so give it to `ModelStep.run` or a seat as
+ * the `route` beside the client's `Model`: a recorded call replays only for
+ * the same request to the same endpoint. `options.headers`, which may carry
+ * the host's own authorization, and the per-attempt request id and trace
+ * context stay out. A request that does not encode fails `invalid_request`.
+ *
+ * @category client
+ * @since 1.0.0
+ */
+export const prepare =
+  (options: ClientOptions) => (request: ModelRequest): Effect.Effect<PreparedRequest, ModelError> =>
+    Schema.encodeEffect(requestJson)(request).pipe(
+      Effect.mapError(() => new ModelError({ code: "invalid_request", message: "The request could not be encoded." })),
+      Effect.map((encoded) => {
+        const bodyText = JSON.stringify(encoded)
+        return {
+          routeId: "model-proxy",
+          protocolId: "model-proxy/ndjson",
+          method: "POST",
+          url: String(options.url),
+          publicHeaders: { accept: contentType, "content-type": "application/json" },
+          body: new TextEncoder().encode(bodyText),
+          bodyText
+        }
+      })
+    )
+
 /** Span attribute names. */
 const attributes = {
   requestId: "smithers.model.proxy.request_id",
+  invocationId: "smithers.model.proxy.invocation_id",
   outcome: "smithers.model.proxy.outcome",
   events: "smithers.model.proxy.events",
   durationMs: "smithers.model.proxy.duration_ms",
@@ -473,14 +555,14 @@ const rejection = (status: number, outcome: Outcome, message: string, code?: Mod
 
 const notModelRequest = rejection(400, "invalid", "Send a JSON ModelRequest.")
 
-const decodeRequest = Schema.decodeUnknownEffect(Schema.fromJsonString(ModelRequest))
+const decodeRequest = Schema.decodeUnknownEffect(Schema.fromJsonString(requestJson))
 
 /** Decodes the body and runs `prepare`; every failure but an interruption becomes a rejection. */
 const admit = <R>(
   request: HttpServerRequest.HttpServerRequest,
   options: ServeOptions<R>,
   call: Call
-): Effect.Effect<ModelRequest, Rejection, R> =>
+): Effect.Effect<Prepared, Rejection, R> =>
   Effect.gen(function*() {
     if (request.method !== "POST") {
       return yield* Effect.fail(rejection(405, "invalid", "Send a POST request.", "invalid_request"))
@@ -494,7 +576,7 @@ const admit = <R>(
     const decoded = yield* Effect.mapError(decodeRequest(text), () => notModelRequest)
     return yield* Effect.mapError(
       options.prepare(decoded),
-      (refusal) => rejection(refusal.status, "refused", refusal.message, refusal.code)
+      (refusal) => rejection(refusal.status, "refused", refusal.message, refusal.modelErrorCode)
     )
   }).pipe(
     Effect.catchDefect(() => {
@@ -684,6 +766,8 @@ class Call {
   readonly requestId: string
   readonly startedAt: number
   readonly span: Tracer.Span
+  /** The server's id for the call; none on the client side. */
+  invocationId: string | undefined
   providerName: string | undefined
   modelId: string | undefined
   requestBytes: number | undefined
@@ -694,12 +778,21 @@ class Call {
   events = 0
   firstEventMs: number | undefined
   usage: Usage = {}
+  /** The host's attributes, added to this request's metrics and log line; none on the client side. */
+  readonly attributes: Readonly<Record<string, string>>
 
-  constructor(side: Side, requestId: string, startedAt: number, span: Tracer.Span) {
+  constructor(
+    side: Side,
+    requestId: string,
+    startedAt: number,
+    span: Tracer.Span,
+    attributes: Readonly<Record<string, string>> = {}
+  ) {
     this.side = side
     this.requestId = requestId
     this.startedAt = startedAt
     this.span = span
+    this.attributes = attributes
   }
 
   /** Counts one model event; usage merges field by field and a retry starts it over, as `withGenAiSpan` does. */
@@ -764,7 +857,9 @@ class Call {
     const status = this.status ?? 0
     const span = this.span
     const fields = {
+      ...this.attributes,
       requestId: this.requestId,
+      ...(this.invocationId === undefined ? {} : { invocationId: this.invocationId }),
       traceId: span.traceId,
       side: this.side,
       outcome,
@@ -787,7 +882,7 @@ class Call {
     if (this.firstEventMs !== undefined) span.attribute(attributes.firstEventMs, this.firstEventMs)
     if (this.requestBytes !== undefined) span.attribute(attributes.requestBytes, this.requestBytes)
     if (this.errorCode !== undefined) span.attribute(attributes.errorType, this.errorCode)
-    const side = { side: this.side }
+    const side = { ...this.attributes, side: this.side }
     const level = outcome === "failed" ? "Error" : outcome === "invalid" || outcome === "refused" ? "Warn" : "Info"
     const firstEventMs = this.firstEventMs
     // The span's error is rebuilt from the code alone, so no provider text reaches the exporter. Every
@@ -814,10 +909,10 @@ class Call {
     return Effect.all([
       inputTokens === undefined
         ? Effect.void
-        : Metric.update(Metric.withAttributes(tokens, { type: "input", model }), inputTokens),
+        : Metric.update(Metric.withAttributes(tokens, { ...this.attributes, type: "input", model }), inputTokens),
       outputTokens === undefined
         ? Effect.void
-        : Metric.update(Metric.withAttributes(tokens, { type: "output", model }), outputTokens)
+        : Metric.update(Metric.withAttributes(tokens, { ...this.attributes, type: "output", model }), outputTokens)
     ], { discard: true })
   }
 }

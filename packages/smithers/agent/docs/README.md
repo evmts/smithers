@@ -116,6 +116,7 @@ from `@smthrs/agent/<Module>`:
 | `QuotaPolicy`                                  | Classifies a provider refusal as a wait with a deadline, so a run parks instead of failing.                         |
 | `Budget`                                       | Accumulates what a run spends across its model calls and refuses past the approved ceiling.                         |
 | `EventSink`                                    | An optional tap that receives each agent event while a step runs.                                                   |
+| `ModelStep`                                    | One model call as a durable, sealed flow step: keyed on the request, replayed on resume, streamed while it runs.    |
 | `StandardFlows`                                | The built-in capabilities as flows: filesystem, shell, tests, memory, durable wait, and approval.                   |
 | `ChildFlows`, `EngineChildren`                 | Detached child agents: the `agent/spawn`, `agent/send`, and `agent/await` flows plus the durable port behind them.  |
 | `CellPlugin`                                   | The cell hooks of the shared plugin kernel: registry, flows, and model-request waterfalls.                          |
@@ -137,6 +138,7 @@ Every export of every namespace, with signatures and errors, is on the
 - [Quickstart](./quickstart.md): run a typed model-backed step end to end with
   a scripted model.
 - Guides: [model-backed steps](./guides/model-backed-steps.md),
+  [a durable model call](./guides/durable-model-call.md),
   [structured output](./guides/structured-output.md),
   [quota waits and budgets](./guides/quota-and-budgets.md),
   [control-plane runs](./guides/control-plane-runs.md),

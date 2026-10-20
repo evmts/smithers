@@ -55,7 +55,7 @@ declaration exists before any input does. `effectsFor` is the other half: hand
 it one decoded input and it returns the envelope that call actually needs.
 
 ```ts
-import * as Read from "@smthrs/std/Read"
+import { Read } from "@smthrs/std"
 
 Read.effects // reads: ["/**"]
 Read.effectsFor({ path: "/workspace/notes.md" }) // reads: ["/workspace/notes.md"]
@@ -82,7 +82,7 @@ the parse that can fail, so the static envelope is the honest answer.
 host needs when it holds a name and a decoded input rather than a module:
 
 ```ts
-import * as Manifest from "@smthrs/std/Manifest"
+import { Manifest } from "@smthrs/std"
 
 const narrow = Manifest.effectsFor["read"]
 ```

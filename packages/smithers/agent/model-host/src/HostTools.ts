@@ -20,52 +20,24 @@
 import { type CatalogDescriptor, catalogDescriptors } from "@smthrs/cli/Catalog"
 import { type CatalogHttpRequest, catalogRequest } from "@smthrs/cli/CatalogRequest"
 import { digestSync } from "@smthrs/crypto"
-import type * as Model from "@smthrs/model/Model"
-import type { ModelError } from "@smthrs/model/ModelError"
+import type { Model, ModelError } from "@smthrs/model"
 import {
-  type AgentCommand,
-  commandsToolSpec,
-  decodeCommandsCall,
-  unknownCommandResult,
-  unknownToolResult
-} from "@smthrs/rpc/AgentCommands"
-import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
-import {
-  ACCOUNT_NUMBERS_LINE,
-  AGENT_NAME_LINE,
-  agentCommandLine,
-  ANNOUNCED_ACT_LINE,
-  ASK_IS_PERMISSION_LINE,
-  ASSISTANT_ACTS_LINE,
-  cantYetsSentence,
-  CONVERSATION_IS_NOT_A_COMMAND_LINE,
-  FAILED_RESULT_LINE,
-  namedCantYets,
-  RUN_IS_NOT_RESULT_LINE,
-  smithersSubjectLine,
-  TOOL_CHANNEL_LINE,
-  WORKFLOW_LAUNDERING_RULE
-} from "@smthrs/rpc/AgentInstructions"
-import { boundToolResult, MAX_TOOL_LEGS } from "@smthrs/rpc/AgentToolResult"
-import type { Card } from "@smthrs/rpc/Cards"
-import { docsCard, type DocsPage, parseDocsArgs, readDocsPage } from "@smthrs/rpc/DocsPages"
-import { fileListCard, FILES_LIST_COMMAND, parseFileListArgs } from "@smthrs/rpc/FileList"
-import { fileReadCard, FILES_READ_COMMAND, parseFileReadArgs } from "@smthrs/rpc/FileRead"
-import { FlowCardSchema } from "@smthrs/rpc/FlowCard"
-import { flowEditTodoInput, flowTitle } from "@smthrs/rpc/FlowEdit"
-import { HomeCardSchema } from "@smthrs/rpc/HomeCard"
-import type { AgentChatMessage, AgentTurnUsage, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import { TodoCardSchema } from "@smthrs/rpc/TodoCard"
-import { todoCard } from "@smthrs/rpc/TodoCommands"
-import {
-  FORM_INSTRUCTION_FIELDS,
-  type FormInstructionCommand,
-  isFormInstructionCommand,
-  isUiInstructionCommand,
-  type UiInstructionCommand,
-  type UiInstructionFrame,
-  UiInstructionFrameSchema
-} from "@smthrs/rpc/UiInstruction"
+  AgentCommands,
+  type AgentContext,
+  AgentInstructions,
+  AgentToolResult,
+  type Cards,
+  DocsPages,
+  FileList,
+  FileRead,
+  FlowCard,
+  FlowEdit,
+  HomeCard,
+  type NativeAgent,
+  TodoCard,
+  TodoCommands,
+  UiInstruction
+} from "@smthrs/rpc"
 import { Effect } from "effect"
 import { z } from "zod"
 import type { DurableChatGrant } from "./DurableChatProducer.ts"
@@ -196,7 +168,7 @@ export interface HostTransport {
   readonly read: SourceRead
   readonly list: SourceList
   readonly api: ApiCall
-  readonly docs?: ReadonlyArray<DocsPage> | undefined
+  readonly docs?: ReadonlyArray<DocsPages.DocsPage> | undefined
 }
 
 const utf8 = new TextEncoder()
@@ -211,7 +183,7 @@ const refusalCode = (response: Response, body: unknown): string =>
 const callback = <A>(
   callbackBaseUrl: string,
   grant: DurableChatGrant,
-  fetchImpl: FetchLike,
+  fetchImpl: NativeAgent.FetchLike,
   path: string,
   body: Record<string, unknown>,
   answer: (response: Response, body: unknown) => A | { readonly code: string }
@@ -238,7 +210,7 @@ const callback = <A>(
  * @since 1.0.0-rc.0
  */
 export const sourceReader =
-  (callbackBaseUrl: string, grant: DurableChatGrant, fetchImpl: FetchLike): SourceRead => (path) =>
+  (callbackBaseUrl: string, grant: DurableChatGrant, fetchImpl: NativeAgent.FetchLike): SourceRead => (path) =>
     callback(callbackBaseUrl, grant, fetchImpl, SOURCE_READ_PATH, { path }, (_response, body): SourceAnswer => {
       const parsed = SourceFileSchema.safeParse(body)
       return parsed.success ? { file: parsed.data } : { code: "invalid_answer" }
@@ -251,7 +223,7 @@ export const sourceReader =
  * @since 1.0.0-rc.0
  */
 export const sourceLister =
-  (callbackBaseUrl: string, grant: DurableChatGrant, fetchImpl: FetchLike): SourceList => (path) =>
+  (callbackBaseUrl: string, grant: DurableChatGrant, fetchImpl: NativeAgent.FetchLike): SourceList => (path) =>
     callback(callbackBaseUrl, grant, fetchImpl, SOURCE_LIST_PATH, { path }, (_response, body): SourceListing => {
       const parsed = SourceDirectorySchema.safeParse(body)
       return parsed.success ? { directory: parsed.data } : { code: "invalid_answer" }
@@ -265,7 +237,7 @@ export const sourceLister =
  * @since 1.0.0-rc.0
  */
 export const apiCaller =
-  (callbackBaseUrl: string, grant: DurableChatGrant, fetchImpl: FetchLike): ApiCall => (path, request) =>
+  (callbackBaseUrl: string, grant: DurableChatGrant, fetchImpl: NativeAgent.FetchLike): ApiCall => (path, request) =>
     Effect.tryPromise({
       try: async (signal): Promise<ApiAnswer> => {
         if (grant.api === undefined) return { code: "forbidden" }
@@ -355,9 +327,9 @@ const refusalText = (path: string, code: string): string => {
 
 /** What one command answered: the cards it shows and the model's copy, or the refusal both are told. */
 type Outcome = {
-  readonly cards: ReadonlyArray<Card>
+  readonly cards: ReadonlyArray<Cards.Card>
   readonly value: string
-  readonly ui?: UiInstructionFrame
+  readonly ui?: UiInstruction.UiInstructionFrame
 } | { readonly refusal: string }
 
 /** One command bound to this turn: it runs with the call's argument text and ordinal. */
@@ -395,7 +367,7 @@ const filesRead: Bind = (grant, { read }) => {
   if (repository === undefined) return undefined
   return (args, ordinal) =>
     Effect.gen(function*() {
-      const input = parseFileReadArgs(args)
+      const input = FileRead.parseFileReadArgs(args)
       if ("error" in input) return { refusal: input.error }
       const { repo, ref, line, column } = input.payload
       if (repo !== undefined && !namesRepository(repository, repo)) {
@@ -407,7 +379,7 @@ const filesRead: Bind = (grant, { read }) => {
       const answer = yield* read(path)
       if (!("file" in answer)) return { refusal: refusalText(path, answer.code) }
       const { file } = answer
-      const { card, value } = fileReadCard(
+      const { card, value } = FileRead.fileReadCard(
         {
           repo: file.repository,
           path: file.path,
@@ -444,7 +416,7 @@ const filesList: Bind = (grant, { list }) => {
   if (repository === undefined) return undefined
   return (args, ordinal) =>
     Effect.gen(function*() {
-      const input = parseFileListArgs(args)
+      const input = FileList.parseFileListArgs(args)
       if ("error" in input) return { refusal: input.error }
       const { repo } = input.payload
       if (repo !== undefined && !namesRepository(repository, repo)) {
@@ -454,7 +426,7 @@ const filesList: Bind = (grant, { list }) => {
       const answer = yield* list(path)
       if (!("directory" in answer)) return { refusal: listRefusalText(path, answer.code) }
       const { directory } = answer
-      const { card, value } = fileListCard(
+      const { card, value } = FileList.fileListCard(
         {
           repo: directory.repository,
           path: directory.path,
@@ -523,16 +495,16 @@ const accountConversation = (grant: DurableChatGrant): boolean =>
  * list issues right now, but I can show you the documentation". A turn with
  * neither an API nor an author's own screen is offered none of them.
  */
-const uiCommand = (row: CatalogDescriptor, command: UiInstructionCommand): Bind => (grant) =>
+const uiCommand = (row: CatalogDescriptor, command: UiInstruction.UiInstructionCommand): Bind => (grant) =>
   grant.api === undefined && !accountConversation(grant) ? undefined : (args) =>
     Effect.sync(() => {
       const refusal = command === "theme"
         ? "Invalid arguments for theme; use light or dark."
         : `Invalid arguments for ${command}; use its declared payload.`
-      let ui: UiInstructionFrame
+      let ui: UiInstruction.UiInstructionFrame
       try {
         const payload = Object.entries(commandPayload(row, args)).filter(([, value]) => value !== null)
-        ui = UiInstructionFrameSchema.parse({ ...Object.fromEntries(payload), command })
+        ui = UiInstruction.UiInstructionFrameSchema.parse({ ...Object.fromEntries(payload), command })
       } catch {
         return { refusal }
       }
@@ -564,19 +536,19 @@ const uiCommand = (row: CatalogDescriptor, command: UiInstructionCommand): Bind 
  * optional. Bare argument text is the form's first field; a null or blank
  * field is an absent one.
  */
-const formCommand = (row: CatalogDescriptor, command: FormInstructionCommand): BoundRun => (args) =>
+const formCommand = (row: CatalogDescriptor, command: UiInstruction.FormInstructionCommand): BoundRun => (args) =>
   Effect.sync(() => {
     const text = (args ?? "").trim()
-    let ui: UiInstructionFrame
+    let ui: UiInstruction.UiInstructionFrame
     try {
       const named: Record<string, unknown> = text.startsWith("{")
         ? JSON.parse(text)
-        : { [FORM_INSTRUCTION_FIELDS[command][0]]: text }
+        : { [UiInstruction.FORM_INSTRUCTION_FIELDS[command][0]]: text }
       const draft = Object.entries(named).flatMap(([field, value]): Array<[string, unknown]> => {
         const given = typeof value === "string" ? value.trim() : value
         return given === null || given === "" ? [] : [[field, given]]
       })
-      ui = UiInstructionFrameSchema.parse({ ...Object.fromEntries(draft), command })
+      ui = UiInstruction.UiInstructionFrameSchema.parse({ ...Object.fromEntries(draft), command })
     } catch {
       return { refusal: `Invalid arguments for ${command}; use its declared payload.` }
     }
@@ -591,10 +563,12 @@ const formCommand = (row: CatalogDescriptor, command: FormInstructionCommand): B
   })
 
 /** The public text draft fields the catalog form accepts, with no field required. */
-const formArgs = (command: FormInstructionCommand): string =>
+const formArgs = (command: UiInstruction.FormInstructionCommand): string =>
   JSON.stringify({
     type: "object",
-    properties: Object.fromEntries(FORM_INSTRUCTION_FIELDS[command].map((field) => [field, { type: "string" }])),
+    properties: Object.fromEntries(
+      UiInstruction.FORM_INSTRUCTION_FIELDS[command].map((field) => [field, { type: "string" }])
+    ),
     additionalProperties: false
   })
 
@@ -607,13 +581,13 @@ const docsCommand: Bind = (_grant, { docs }) => {
   if (docs === undefined || docs.length === 0) return undefined
   return (args, ordinal) =>
     Effect.sync(() => {
-      const input = parseDocsArgs(args)
+      const input = DocsPages.parseDocsArgs(args)
       if ("error" in input) return { refusal: input.error }
       if (input.payload.mode === "read") {
-        const read = readDocsPage(docs, input.payload.page ?? "")
+        const read = DocsPages.readDocsPage(docs, input.payload.page ?? "")
         return "error" in read ? { refusal: read.error } : { cards: [], value: read.value }
       }
-      const { card, value } = docsCard(docs, input.payload.page, ordinal, Date.now())
+      const { card, value } = DocsPages.docsCard(docs, input.payload.page, ordinal, Date.now())
       return { cards: [card], value }
     })
 }
@@ -669,29 +643,29 @@ const flowCommand = (row: CatalogDescriptor): Bind => (grant, { api }) => {
       const name = input.name!
       const answer = yield* api("/api/flows", { method: "GET" })
       if ("code" in answer) return { refusal: answer.code }
-      const parsed = z.array(FlowCardSchema).safeParse(answer.body)
+      const parsed = z.array(FlowCard.FlowCardSchema).safeParse(answer.body)
       if (answer.status !== 200 || !parsed.success) return { refusal: "Flows unavailable" }
       let model = parsed.data.find((flow) => flow.name === name)
       if (model === undefined) {
         const named = yield* api(`/api/flows/${encodeURIComponent(name)}`, { method: "GET" })
         if (!("code" in named) && named.status === 200) {
-          const selected = FlowCardSchema.safeParse(named.body)
+          const selected = FlowCard.FlowCardSchema.safeParse(named.body)
           if (selected.success && selected.data.name === name) model = selected.data
         }
       }
       if (model === undefined) return { refusal: `No flow ${name}` }
-      if (row.name === "flow.edit" && model.system) return { refusal: `${flowTitle(name)} is built in` }
+      if (row.name === "flow.edit" && model.system) return { refusal: `${FlowEdit.flowTitle(name)} is built in` }
       const now = Date.now()
       if (row.name === "flow.edit") {
-        const draft = flowEditTodoInput(name, input.request!, input.diff)
+        const draft = FlowEdit.flowEditTodoInput(name, input.request!, input.diff)
         const request = catalogRequest(catalogDescriptors.find((entry) => entry.name === "todo.new")!, draft)
         return confirmed(yield* api(request.path, { ...request, idempotencyKey: `chat:${grant.turnId}:${ordinal}` }))
       }
 
-      const card: Card = {
+      const card: Cards.Card = {
         id: `flow:${name}`,
         kind: "flow",
-        title: flowTitle(name),
+        title: FlowEdit.flowTitle(name),
         status: "active",
         ordinal,
         createdAt: now,
@@ -742,27 +716,30 @@ const catalogCommand = (row: CatalogDescriptor): Bind => (grant, { api }) => {
       }
       const now = Date.now()
       if (row.name === "stack") {
-        const parsed = HomeCardSchema.safeParse(answer.body)
+        const parsed = HomeCard.HomeCardSchema.safeParse(answer.body)
         if (!parsed.success) return { refusal: "Invalid stack response" }
-        const cards: Array<Card> = []
+        const cards: Array<Cards.Card> = []
         const todo = catalogDescriptors.find((entry) => entry.name === "todo")!
         for (const item of parsed.data.items) {
           if (item.state === "merged" || item.state === "dropped") continue
           const request = catalogRequest(todo, { n: item.n })
           const detail = yield* api(request.path, request)
           if ("code" in detail) return { refusal: detail.code }
-          const model = TodoCardSchema.safeParse(detail.body)
+          const model = TodoCard.TodoCardSchema.safeParse(detail.body)
           if (detail.status !== 200 || !model.success || model.data.n !== item.n) {
             return { refusal: "Invalid TODO response" }
           }
-          cards.push(todoCard(item.n, model.data, ordinal, now))
+          cards.push(TodoCommands.todoCard(item.n, model.data, ordinal, now))
         }
         return { cards, value: JSON.stringify(parsed.data) }
       }
       if (row.name === "todo") {
-        const parsed = TodoCardSchema.safeParse(answer.body)
+        const parsed = TodoCard.TodoCardSchema.safeParse(answer.body)
         if (!parsed.success) return { refusal: "Invalid TODO response" }
-        return { cards: [todoCard(parsed.data.n, parsed.data, ordinal, now)], value: JSON.stringify(parsed.data) }
+        return {
+          cards: [TodoCommands.todoCard(parsed.data.n, parsed.data, ordinal, now)],
+          value: JSON.stringify(parsed.data)
+        }
       }
       return { cards: [], value: JSON.stringify({ status: answer.status, body: answer.body }) }
     })
@@ -770,7 +747,7 @@ const catalogCommand = (row: CatalogDescriptor): Bind => (grant, { api }) => {
 
 /** A command this turn's grant runs. */
 interface Offered {
-  readonly command: AgentCommand & { readonly args: string }
+  readonly command: AgentCommands.AgentCommand & { readonly args: string }
   readonly run: BoundRun
   /** Asked for with its form on the author's screen, never run from here. */
   readonly asked?: true
@@ -783,7 +760,7 @@ const offeredCommands = (grant: DurableChatGrant, transport: HostTransport): Rea
       !row.actors.includes("app_agent") || row.visibility === "hidden" ||
       (row.agent !== "run" && row.agent !== "confirm")
     ) return []
-    if (isFormInstructionCommand(row.name) && accountConversation(grant)) {
+    if (UiInstruction.isFormInstructionCommand(row.name) && accountConversation(grant)) {
       const command: Offered["command"] = {
         name: row.name,
         summary: row.summary,
@@ -798,7 +775,7 @@ const offeredCommands = (grant: DurableChatGrant, transport: HostTransport): Rea
       filesRead
       : row.name === "flow" || row.name === "flow.edit" ?
       flowCommand(row)
-      : isUiInstructionCommand(row.name) ?
+      : UiInstruction.isUiInstructionCommand(row.name) ?
       uiCommand(row, row.name)
       : row.name === "docs" ?
       docsCommand
@@ -808,8 +785,8 @@ const offeredCommands = (grant: DurableChatGrant, transport: HostTransport): Rea
       name: row.name,
       summary: row.summary,
       agent: row.agent,
-      args: row.name === "files" ? FILES_LIST_COMMAND.args : row.name === "file"
-        ? FILES_READ_COMMAND.args
+      args: row.name === "files" ? FileList.FILES_LIST_COMMAND.args : row.name === "file"
+        ? FileRead.FILES_READ_COMMAND.args
         : JSON.stringify({ ...row.payload.schema, $defs: row.payload.definitions, additionalProperties: false })
     }
     return run === undefined ? [] : [{ command, run }]
@@ -820,7 +797,7 @@ const offeredCommands = (grant: DurableChatGrant, transport: HostTransport): Rea
  * it names. A page never stands in for a command: a turn that relays a page's
  * steps for an act a command carries out has handed the work back (#3823).
  */
-const docsReadLine = (docs: ReadonlyArray<DocsPage>): string =>
+const docsReadLine = (docs: ReadonlyArray<DocsPages.DocsPage>): string =>
   `Asked how something in Smithers works, or to be shown its documentation, run docs with {"mode":"read","page":"<page>"} for the page that covers it (pages: ${
     docs.map((page) => page.slug).join(", ")
   }), answer from what it returns, and name the page you read. docs never answers a request a command above carries out: run that command instead of relaying a page's steps.`
@@ -843,9 +820,11 @@ const LIST_BEFORE_READ_LINE =
  * app agent's standing rules and exactly the commands this host runs for the
  * turn's author, and no other.
  */
-const hostInstructions = (offered: ReadonlyArray<Offered>, docs: ReadonlyArray<DocsPage>): string => {
+const hostInstructions = (offered: ReadonlyArray<Offered>, docs: ReadonlyArray<DocsPages.DocsPage>): string => {
   const reads = offered.flatMap(({ command }) =>
-    command.name === FILES_LIST_COMMAND.name || command.name === FILES_READ_COMMAND.name ? [command.name] : []
+    command.name === FileList.FILES_LIST_COMMAND.name || command.name === FileRead.FILES_READ_COMMAND.name
+      ? [command.name]
+      : []
   )
   /*
    * A turn with no bundled pages is offered no `docs` at all, so the rule that
@@ -855,21 +834,21 @@ const hostInstructions = (offered: ReadonlyArray<Offered>, docs: ReadonlyArray<D
    */
   const documentation = offered.some(({ command }) => command.name === "docs")
   return [
-    AGENT_NAME_LINE,
+    AgentInstructions.AGENT_NAME_LINE,
     "You have one tool, \"commands\": action \"list\" returns the commands below; action \"execute\" runs one by name with its argument text, as the person who asked.",
-    TOOL_CHANNEL_LINE,
-    ASK_IS_PERMISSION_LINE,
-    ASSISTANT_ACTS_LINE,
-    CONVERSATION_IS_NOT_A_COMMAND_LINE,
-    smithersSubjectLine(documentation),
-    ANNOUNCED_ACT_LINE,
-    RUN_IS_NOT_RESULT_LINE,
-    FAILED_RESULT_LINE,
-    ACCOUNT_NUMBERS_LINE,
+    AgentInstructions.TOOL_CHANNEL_LINE,
+    AgentInstructions.ASK_IS_PERMISSION_LINE,
+    AgentInstructions.ASSISTANT_ACTS_LINE,
+    AgentInstructions.CONVERSATION_IS_NOT_A_COMMAND_LINE,
+    AgentInstructions.smithersSubjectLine(documentation),
+    AgentInstructions.ANNOUNCED_ACT_LINE,
+    AgentInstructions.RUN_IS_NOT_RESULT_LINE,
+    AgentInstructions.FAILED_RESULT_LINE,
+    AgentInstructions.ACCOUNT_NUMBERS_LINE,
     "",
     "The commands you can run in this conversation, and no others (any other answers \"unknown-command\" and nothing runs):",
     ...offered.map(({ command: { args, ...command } }) =>
-      agentCommandLine({
+      AgentInstructions.agentCommandLine({
         ...command,
         ...(command.name === "todo" ?
           { args: "<Tn>" }
@@ -881,7 +860,7 @@ const hostInstructions = (offered: ReadonlyArray<Offered>, docs: ReadonlyArray<D
       })
     ),
     "Call commands with action list to inspect payload schemas. HTTP commands accept a JSON object; TODO references also accept Tn.",
-    ...(reads.includes(FILES_LIST_COMMAND.name) ? [LIST_BEFORE_READ_LINE] : []),
+    ...(reads.includes(FileList.FILES_LIST_COMMAND.name) ? [LIST_BEFORE_READ_LINE] : []),
     ...(offered.some(({ command, asked }) => asked === true && command.name === "flow.new") ? [FLOW_NEW_LINE] : []),
     ...(offered.some(({ command, asked }) => asked === true && command.name === "change.ask")
       ? [
@@ -891,9 +870,9 @@ const hostInstructions = (offered: ReadonlyArray<Offered>, docs: ReadonlyArray<D
     ...(documentation ? [docsReadLine(docs)] : []),
     "",
     `Everything this list lacks is an ACT you cannot take yet; it is never a subject you cannot discuss. ${
-      cantYetsSentence(namedCantYets(reads))
+      AgentInstructions.cantYetsSentence(AgentInstructions.namedCantYets(reads))
     }`,
-    ...WORKFLOW_LAUNDERING_RULE
+    ...AgentInstructions.WORKFLOW_LAUNDERING_RULE
   ].join("\n")
 }
 
@@ -903,7 +882,7 @@ const hostInstructions = (offered: ReadonlyArray<Offered>, docs: ReadonlyArray<D
  * without the client's blocks that name commands only the client runs (the
  * tutorial, the Cloud session and the repository check).
  */
-const hostContext = (context: AgentRuntimeContext): AgentRuntimeContext => {
+const hostContext = (context: AgentContext.AgentRuntimeContext): AgentContext.AgentRuntimeContext => {
   const { cloud: _cloud, onboarding: _onboarding, repositoryUpdate: _repositoryUpdate, ...facts } = context
   return {
     ...facts,
@@ -920,16 +899,16 @@ const hostContext = (context: AgentRuntimeContext): AgentRuntimeContext => {
 
 /** The request of a turn this host runs commands for: its instructions, context and tool are this host's. */
 const hostRequest = (
-  request: StartAgentTurnRequest,
+  request: NativeAgent.StartAgentTurnRequest,
   offered: ReadonlyArray<Offered>,
-  docs: ReadonlyArray<DocsPage>
-): StartAgentTurnRequest => {
+  docs: ReadonlyArray<DocsPages.DocsPage>
+): NativeAgent.StartAgentTurnRequest => {
   const { context, ...rest } = request
   return {
     ...rest,
     instructions: hostInstructions(offered, docs),
     ...(context === undefined ? {} : { context: hostContext(context) }),
-    tools: [commandsToolSpec]
+    tools: [AgentCommands.commandsToolSpec]
   }
 }
 
@@ -973,7 +952,7 @@ const runCommand = <E>(
       verdict: "run",
       ...(outcome.ui ? { ui: outcome.ui } : {})
     })
-    return boundToolResult(outcome.value).modelOutput
+    return AgentToolResult.boundToolResult(outcome.value).modelOutput
   })
 
 /**
@@ -989,10 +968,10 @@ const runHostTool = <E>(
   write: FrameWriter<E>
 ): Effect.Effect<string, E> => {
   // A turn offered no tool runs none, whatever the model calls.
-  if (call.name !== commandsToolSpec.name || offered.length === 0) {
-    return Effect.succeed(unknownToolResult(call.name))
+  if (call.name !== AgentCommands.commandsToolSpec.name || offered.length === 0) {
+    return Effect.succeed(AgentCommands.unknownToolResult(call.name))
   }
-  const decoded = decodeCommandsCall(call.arguments)
+  const decoded = AgentCommands.decodeCommandsCall(call.arguments)
   if ("failure" in decoded) return Effect.succeed(decoded.failure)
   if (decoded.action === "list") {
     const listed = offered.flatMap(({ command }) =>
@@ -1008,7 +987,7 @@ const runHostTool = <E>(
     return Effect.succeed(JSON.stringify({ commands: listed }))
   }
   const target = offered.find(({ command }) => command.name === decoded.name)
-  if (target === undefined) return Effect.succeed(unknownCommandResult(decoded.name))
+  if (target === undefined) return Effect.succeed(AgentCommands.unknownCommandResult(decoded.name))
   return runCommand(grant, target, decoded.args, link, ordinal, write)
 }
 
@@ -1028,7 +1007,7 @@ export const runHostTurn = <E>(
   write: FrameWriter<E>,
   transport: HostTransport,
   diagnostics?: HostDiagnostics
-): Effect.Effect<void, Model.ModelFailure | ModelError | E> =>
+): Effect.Effect<void, Model.ModelFailure | ModelError.ModelError | E> =>
   Effect.gen(function*() {
     const offered = offeredCommands(grant, transport)
     /*
@@ -1045,7 +1024,7 @@ export const runHostTurn = <E>(
       account: accountConversation(grant)
     })
     // A turn offered no command keeps its request's own instructions and context: this host owns neither.
-    let request: StartAgentTurnRequest = offered.length === 0
+    let request: NativeAgent.StartAgentTurnRequest = offered.length === 0
       ? { ...grant.request, tools: [] }
       : hostRequest(grant.request, offered, transport.docs ?? [])
     if (grant.agentInstructions !== undefined) {
@@ -1079,15 +1058,15 @@ export const runHostTurn = <E>(
       limitations: request.context?.limitations.length ?? 0,
       messages: request.messages.length
     })
-    let usage: AgentTurnUsage | undefined
+    let usage: NativeAgent.AgentTurnUsage | undefined
     let ordinal = 0
     for (let link = 0;; link += 1) {
       const held = yield* runModelTurn(model, request, options, write, { usage }, diagnostics)
       if (held === undefined) return
       usage = held.usage
       // The last leg's calls would have no leg left to read their results.
-      if (link + 1 === MAX_TOOL_LEGS) break
-      const results: Array<AgentChatMessage> = []
+      if (link + 1 === AgentToolResult.MAX_TOOL_LEGS) break
+      const results: Array<NativeAgent.AgentChatMessage> = []
       for (const call of held.calls) {
         const output = yield* runHostTool(grant, offered, call, link, ordinal, write)
         ordinal += 1

@@ -1165,6 +1165,49 @@ describe("AgentAction frame budgets and system teaching", () => {
     expect(requests).toHaveLength(1)
   })
 
+  it("teaches every ask the contract profile the action declares", async () => {
+    const Answering = (profile: AgentAction.Options<{ readonly question: Schema.String }, Schema.String>["profile"]) =>
+      AgentAction.make(`agent/test/Answering/${profile ?? "default"}`, {
+        payload: { question: Schema.String },
+        output: Schema.String,
+        seat: "anthropic:test-model",
+        prompt: ({ question }) => question,
+        ...(profile === undefined ? {} : { profile })
+      })
+    const ask = async (profile: "conversation" | undefined) => {
+      const declared = Answering(profile)
+      const flow = Flow.make(`agent/test/AnsweringFlow/${profile ?? "default"}`, {
+        payload: { question: Schema.String },
+        success: Schema.String,
+        error: AgentAction.AgentFailure,
+        body: ({ question }) => declared.call({ question })
+      })
+      const requests: Array<string> = []
+      const exit = await Effect.runPromise(
+        Effect.exit(
+          flow.execute({ question: "Switch to dark mode." }, { executionId: `profile-${profile ?? "default"}` }).pipe(
+            Effect.provide(
+              stack(
+                Layer.mergeAll(declared.layer, Interpreter.layer(flow)),
+                hostFrames(2),
+                scripted([answering("Dark mode is on.")], requests)
+              )
+            )
+          )
+        )
+      )
+      expect(exit).toMatchObject({ _tag: "Success", value: "Dark mode is on." })
+      return requests[0]!
+    }
+    const conversation = await ask("conversation")
+    expect(conversation).toContain("JavaScript REPL")
+    expect(conversation).not.toContain("Example bug fix")
+    expect(conversation).not.toContain("7. Bug-fix evidence")
+    const workspace = await ask(undefined)
+    expect(workspace).toContain("Example bug fix")
+    expect(workspace).toContain("7. Bug-fix evidence")
+  })
+
   it("orders host teaching, then the action's, then the schema's, in one system context", async () => {
     const requests: Array<string> = []
     await Effect.runPromise(
@@ -1527,6 +1570,50 @@ describe("AgentAction event sink", () => {
     // The terminal answer is unchanged by the sink watching it.
     expect(seen).toContain("transition-applied")
     expect(seen.length).toBeGreaterThan(outcome.during.length)
+  })
+
+  it("hands each model delta to the sink while the provider is still streaming", async () => {
+    const requests: Array<string> = []
+    const seen: Array<string> = []
+    const value = await Effect.runPromise(
+      Effect.gen(function*() {
+        const delivered = yield* Deferred.make<void>()
+        // The provider holds its stream open after the cell's text until the
+        // sink has seen that text. A sink that only heard the model once the
+        // call settled would never open the gate, and the step would hang.
+        const model = Model.make({
+          stream: (request) =>
+            Stream.concat(
+              scripted([decodes], requests).stream(request).pipe(Stream.take(2)),
+              Stream.fromEffect(Deferred.await(delivered)).pipe(
+                Stream.flatMap(() =>
+                  Stream.fromIterable([
+                    ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "cell-1" }),
+                    ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
+                  ])
+                )
+              )
+            )
+        })
+        const sink = EventSink.layer({
+          emit: (event) =>
+            Effect.suspend(() => {
+              if (event._tag !== "model-delta") return Effect.void
+              seen.push(event.delta.type)
+              return event.delta.type === "text-delta" ? Deferred.succeed(delivered, void 0) : Effect.void
+            })
+        })
+        return yield* ReviewFlow.execute({ diff: "-  old\n+  new" }, { executionId: "sink-live-delta" }).pipe(
+          Effect.provide(
+            Layer.merge(stack(Layer.mergeAll(Reviewer.layer, Interpreter.layer(ReviewFlow)), host, model), sink)
+          )
+        )
+      })
+    )
+
+    expect(value).toEqual({ approved: true, issues: [] })
+    expect(seen.slice(0, 2)).toEqual(["text-start", "text-delta"])
+    expect(requests).toHaveLength(1)
   })
 
   it("sees the correction attempt's events as well as the first attempt's", async () => {

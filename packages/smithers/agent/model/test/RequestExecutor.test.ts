@@ -1,6 +1,5 @@
-import * as Capability from "@smthrs/capability/Capability"
-import * as Permission from "@smthrs/capability/Permission"
-import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import { Capability, Permission } from "@smthrs/capability"
+import { HttpClient as KernelHttpClient } from "@smthrs/kernel"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Deferred from "effect/Deferred"
@@ -2088,10 +2087,14 @@ describe("RequestExecutor", () => {
       }
     }
 
+    // A failed span keeps the error's tag and withholds its text, which here
+    // would quote the url.
+    const withheld = { name: "HttpClientError", message: "redacted", stack: "HttpClientError: redacted" }
+
     it.each([
       { status: 200, failure: undefined },
-      { status: 400, failure: { code: "unknown", httpStatus: 400, message: `HTTP 400 (POST ${redactedUrl})` } },
-      { status: 503, failure: { code: "unknown", httpStatus: 503, message: `HTTP 503 (POST ${redactedUrl})` } }
+      { status: 400, failure: withheld },
+      { status: 503, failure: withheld }
     ])(
       "redacts it in the span of a request answered $status, and in the span's failure",
       async ({ failure, status }) => {
@@ -2106,7 +2109,7 @@ describe("RequestExecutor", () => {
         expect(span.attributes.get("url.path")).toBe("/v1/models")
         expect(span.attributes.get("http.response.status_code")).toBe(status)
         if (failure === undefined) expect(spanFailure).toBeUndefined()
-        else expect(spanFailure).toMatchObject({ _tag: "flows/model/ModelError", ...failure })
+        else expect(spanFailure).toMatchObject(failure)
       }
     )
 
@@ -2126,8 +2129,7 @@ describe("RequestExecutor", () => {
       expect(Exit.isFailure(exit)).toBe(true)
       for (const secret of secrets) expect(telemetry).not.toContain(secret)
       expect(span.attributes.get("url.full")).toBe(redactedUrl)
-      expect(spanFailure).toMatchObject({ _tag: "flows/model/ModelError", code: "transport" })
-      expect((spanFailure as ModelError).message).toContain(`(POST ${redactedUrl}`)
+      expect(spanFailure).toMatchObject(withheld)
     })
 
     it("hands a host's span namer the redacted request", async () => {
@@ -2140,11 +2142,12 @@ describe("RequestExecutor", () => {
       expect(span.name).toContain(`POST ${redactedUrl}`)
     })
 
-    it("leaves a defect on the span as it was raised", async () => {
-      const { exit, spanFailure } = await traced(() => Effect.die(new Error("client bug")))
+    it("records a defect on the span as its class name alone, and fails the caller with it", async () => {
+      const defect = new Error("client bug")
+      const { exit, spanFailure } = await traced(() => Effect.die(defect))
 
-      expect(Exit.isFailure(exit)).toBe(true)
-      expect(spanFailure).toMatchObject({ message: "client bug" })
+      expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(defect)
+      expect(spanFailure).toMatchObject({ name: "Error", message: "redacted", stack: "Error: redacted" })
     })
   })
 

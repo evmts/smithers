@@ -162,7 +162,7 @@ exist so that a new peer can be held to the same contract as the shipped ones.
 the meaning of a pattern instead of reimplementing it:
 
 ```ts
-import * as SearchContract from "@smthrs/std/SearchContract"
+import { SearchContract } from "@smthrs/std"
 
 SearchContract.validatePattern("foo.*bar", false) // undefined, or a StdError
 SearchContract.validateGlob("src/**/*.ts") // undefined, or a StdError

@@ -15,7 +15,7 @@ A caller of `test` selects **which** tests, never **how** to run them. The
 invocation is a host declaration, bound through the `TestRunner` service:
 
 ```ts
-import * as TestRunner from "@smthrs/std/TestRunner"
+import { TestRunner } from "@smthrs/std"
 
 const runner = TestRunner.layer({
   command: "python -m pytest -q",
@@ -49,7 +49,7 @@ project's own documentation gives.
 ## Run a selection
 
 ```ts
-import * as TestRun from "@smthrs/std/TestRun"
+import { TestRun } from "@smthrs/std"
 
 const result = TestRun.run({
   selection: ["tests/test_admin.py::AdminViewBasicTest::test_change_list"]

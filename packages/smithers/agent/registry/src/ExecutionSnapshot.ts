@@ -75,11 +75,9 @@ const address = (value: string) => /^[a-f0-9]{64}$/.test(value)
 const verifiedCompilation = (filename: string, module: ClosureModule, descriptor: Descriptor.FlowDescriptor) =>
   Effect.gen(function*() {
     const raw = new TextDecoder().decode(module.bytes)
-    const expected = yield* Effect.try(() =>
-      descriptor.body._tag === "Module" && filename.endsWith(".mdx")
-        ? Prompt.compile(raw) :
-        raw
-    )
+    const expected = descriptor.body._tag === "Module" && filename.endsWith(".mdx")
+      ? yield* Prompt.compile(raw)
+      : raw
     if (
       module.source !== expected ||
       module.links.some((link) =>

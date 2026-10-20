@@ -4,18 +4,8 @@
  * @since 1.0.0-rc.0
  */
 
-import type * as Model from "@smthrs/model/Model"
-import { ModelError } from "@smthrs/model/ModelError"
-import {
-  AgentTurnCursorSchema,
-  agentTurnJournalDigestInput,
-  AgentTurnJournalReplySchema
-} from "@smthrs/rpc/AgentTurnJournal"
-import type { AgentTurnCursor, AgentTurnJournalReply } from "@smthrs/rpc/AgentTurnJournal"
-import { ContextPreflightInputSchema } from "@smthrs/rpc/ContextPreflight"
-import type { ContextPreflightFrame, ContextPreflightInput, ContextPreflightResult } from "@smthrs/rpc/ContextPreflight"
-import type { DocsPage } from "@smthrs/rpc/DocsPages"
-import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { type Model, ModelError } from "@smthrs/model"
+import { AgentTurnJournal, ContextPreflight, type DocsPages, type NativeAgent } from "@smthrs/rpc"
 import { Duration, Effect } from "effect"
 import { inertCallbackTransport } from "./CallbackTransport.ts"
 import type {
@@ -50,9 +40,9 @@ export interface DurableChatGrant {
   readonly legId: string
   readonly generation: number
   readonly token: string
-  readonly cursor: AgentTurnCursor
+  readonly cursor: AgentTurnJournal.AgentTurnCursor
   readonly expiresAt: string
-  readonly request: StartAgentTurnRequest
+  readonly request: NativeAgent.StartAgentTurnRequest
   /** Trusted install origin for API forwarding when the callback uses a private listener. */
   readonly installOrigin?: string
   readonly producerBaseUrl: string
@@ -67,7 +57,7 @@ export interface DurableChatGrant {
   readonly api?: { readonly author: string; readonly token: string }
 }
 
-type CommitReply = Extract<AgentTurnJournalReply, { readonly status: "committed" | "duplicate" }>
+type CommitReply = Extract<AgentTurnJournal.AgentTurnJournalReply, { readonly status: "committed" | "duplicate" }>
 
 /**
  * How long one journal callback attempt may go unanswered.
@@ -159,7 +149,7 @@ const commitReply = (response: Response): Effect.Effect<CommitReply, CommitRefus
   response.ok
     ? Effect.tryPromise({ try: () => response.json() as Promise<unknown>, catch: invalidReceipt }).pipe(
       Effect.flatMap((body) => {
-        const parsed = AgentTurnJournalReplySchema.safeParse(body)
+        const parsed = AgentTurnJournal.AgentTurnJournalReplySchema.safeParse(body)
         return parsed.success && (parsed.data.status === "committed" || parsed.data.status === "duplicate")
           ? Effect.succeed(parsed.data)
           : Effect.fail(invalidReceipt())
@@ -176,10 +166,10 @@ const commitReply = (response: Response): Effect.Effect<CommitReply, CommitRefus
  * @since 1.0.0-rc.0
  */
 export class DurableChatProducer {
-  private cursor: AgentTurnCursor
+  private cursor: AgentTurnJournal.AgentTurnCursor
   private readonly callbackBaseUrl: string
   private readonly grant: DurableChatGrant
-  private readonly fetchImpl: FetchLike
+  private readonly fetchImpl: NativeAgent.FetchLike
   private readonly diagnostics: HostDiagnostics
   private readonly deadlineMillis: number
   private readonly transport: CallbackTransport
@@ -187,7 +177,7 @@ export class DurableChatProducer {
   constructor(
     callbackBaseUrl: string,
     grant: DurableChatGrant,
-    fetchImpl: FetchLike = fetch.bind(globalThis),
+    fetchImpl: NativeAgent.FetchLike = fetch.bind(globalThis),
     diagnostics: HostDiagnostics = createHostDiagnostics({ turnId: grant.turnId }),
     deadlineMillis: number = CHAT_CALLBACK_DEADLINE_MS,
     transport: CallbackTransport = inertCallbackTransport
@@ -198,7 +188,7 @@ export class DurableChatProducer {
     this.diagnostics = diagnostics
     this.deadlineMillis = deadlineMillis
     this.transport = transport
-    this.cursor = AgentTurnCursorSchema.parse(grant.cursor)
+    this.cursor = AgentTurnJournal.AgentTurnCursorSchema.parse(grant.cursor)
   }
 
   providerStarted(): Effect.Effect<void, ProducerUnreachable | ProviderStartRefused> {
@@ -264,13 +254,13 @@ export class DurableChatProducer {
 
   writePreflight(
     phase: "started" | "completed",
-    result: ContextPreflightResult
-  ): Effect.Effect<void, ProducerError | ModelError> {
+    result: ContextPreflight.ContextPreflightResult
+  ): Effect.Effect<void, ProducerError | ModelError.ModelError> {
     return Effect.gen({ self: this }, function*() {
       const at = performance.now()
-      const pages: Array<ContextPreflightResult> = []
-      let current: ContextPreflightResult = { ...result, candidates: [], context: [] }
-      const frame: ContextPreflightFrame = {
+      const pages: Array<ContextPreflight.ContextPreflightResult> = []
+      let current: ContextPreflight.ContextPreflightResult = { ...result, candidates: [], context: [] }
+      const frame: ContextPreflight.ContextPreflightFrame = {
         runId: this.grant.runId,
         type: "context.preflight",
         phase,
@@ -279,7 +269,8 @@ export class DurableChatProducer {
         page: { index: Number.MAX_SAFE_INTEGER - 1, total: Number.MAX_SAFE_INTEGER },
         result: current
       }
-      const bytes = (value: unknown) => new TextEncoder().encode(agentTurnJournalDigestInput("batch", value)).byteLength
+      const bytes = (value: unknown) =>
+        new TextEncoder().encode(AgentTurnJournal.agentTurnJournalDigestInput("batch", value)).byteLength
       // Canonical sizes use the journal's own encoding. Worst-case cursor
       // digits and per-item digest prefixes conservatively cover all overhead.
       const overhead = bytes({
@@ -294,7 +285,10 @@ export class DurableChatProducer {
       })
       if (overhead > 96 * 1024) {
         return yield* Effect.fail(
-          new ModelError({ code: "invalid_provider_output", message: "preflight metadata exceeds journal limit" })
+          new ModelError.ModelError({
+            code: "invalid_provider_output",
+            message: "preflight metadata exceeds journal limit"
+          })
         )
       }
       let size = overhead
@@ -303,7 +297,10 @@ export class DurableChatProducer {
           const cost = bytes(item) + 1
           if (overhead + cost > 96 * 1024) {
             return yield* Effect.fail(
-              new ModelError({ code: "invalid_provider_output", message: "preflight item exceeds journal limit" })
+              new ModelError.ModelError({
+                code: "invalid_provider_output",
+                message: "preflight item exceeds journal limit"
+              })
             )
           }
           if (size + cost > 96 * 1024) {
@@ -332,7 +329,7 @@ export class DurableChatProducer {
     })
   }
 
-  write(frame: AgentTurnFrame): Effect.Effect<void, ProducerError> {
+  write(frame: NativeAgent.AgentTurnFrame): Effect.Effect<void, ProducerError> {
     const expected = this.cursor
     const body = JSON.stringify({
       turnId: this.grant.turnId,
@@ -393,7 +390,7 @@ export class DurableChatProducer {
       Effect.flatMap((reply) =>
         Effect.tryPromise({
           try: async () => {
-            const expectedHash = await sha256Hex(agentTurnJournalDigestInput("batch", {
+            const expectedHash = await sha256Hex(AgentTurnJournal.agentTurnJournalDigestInput("batch", {
               version: 1,
               runId: expected.runId,
               legId: expected.legId,
@@ -438,13 +435,13 @@ export const runDurableChatTurn = (
   grant: DurableChatGrant,
   options: ModelTurnOptions,
   callbackBaseUrl: string = grant.producerBaseUrl,
-  fetchImpl: FetchLike = fetch.bind(globalThis),
+  fetchImpl: NativeAgent.FetchLike = fetch.bind(globalThis),
   preflight?: {
-    readonly input: ContextPreflightInput
+    readonly input: ContextPreflight.ContextPreflightInput
     readonly model: Model.Model
     readonly options: ModelTurnOptions
   },
-  docs?: ReadonlyArray<DocsPage>,
+  docs?: ReadonlyArray<DocsPages.DocsPage>,
   diagnostics: HostDiagnostics = createHostDiagnostics({ turnId: grant.turnId }),
   observeTransport: CallbackTransportObserver = unobserved
 ): Effect.Effect<void, Model.ModelFailure | ProducerError> =>
@@ -464,16 +461,16 @@ const runTurn = (
   grant: DurableChatGrant,
   options: ModelTurnOptions,
   callbackBaseUrl: string,
-  fetchImpl: FetchLike,
+  fetchImpl: NativeAgent.FetchLike,
   observer: ObservedCallbackTransport,
   preflight:
     | {
-      readonly input: ContextPreflightInput
+      readonly input: ContextPreflight.ContextPreflightInput
       readonly model: Model.Model
       readonly options: ModelTurnOptions
     }
     | undefined,
-  docs: ReadonlyArray<DocsPage> | undefined,
+  docs: ReadonlyArray<DocsPages.DocsPage> | undefined,
   diagnostics: HostDiagnostics
 ): Effect.Effect<void, Model.ModelFailure | ProducerError> =>
   Effect.gen(function*() {
@@ -485,7 +482,7 @@ const runTurn = (
       CHAT_CALLBACK_DEADLINE_MS,
       observer
     )
-    const write = (frame: AgentTurnFrame) => producer.write(frame)
+    const write = (frame: NativeAgent.AgentTurnFrame) => producer.write(frame)
     // The guest's own runtime build, as its transport observer names it,
     // written before this turn's first callback. Why a commit attempt never
     // put a socket on the wire is still open, and its one untested variable is
@@ -500,7 +497,10 @@ const runTurn = (
     // while the authorized host context provider is unavailable.
     if (grant.request.sharedConversation === true && preflight === undefined) {
       return yield* Effect.fail(
-        new ModelError({ code: "invalid_provider_output", message: "shared conversation preflight is unavailable" })
+        new ModelError.ModelError({
+          code: "invalid_provider_output",
+          message: "shared conversation preflight is unavailable"
+        })
       )
     }
     // Selected content is only supplied by the trusted provider; a renderer
@@ -508,10 +508,10 @@ const runTurn = (
     const { selectedContext: _untrustedSelection, ...request } = grant.request
     let prepared: DurableChatGrant = { ...grant, request }
     if (preflight !== undefined) {
-      const decoded = ContextPreflightInputSchema.safeParse(preflight.input)
+      const decoded = ContextPreflight.ContextPreflightInputSchema.safeParse(preflight.input)
       if (!decoded.success) {
         return yield* Effect.fail(
-          new ModelError({ code: "invalid_provider_output", message: "context preflight input is invalid" })
+          new ModelError.ModelError({ code: "invalid_provider_output", message: "context preflight input is invalid" })
         )
       }
       // Prove durable step writes before spending on either model. A failed

@@ -44,7 +44,7 @@ import * as Agent from "../src/Agent.ts"
 import * as AgentAction from "../src/AgentAction.ts"
 import * as Budget from "../src/Budget.ts"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import * as InternalFlowEngineLike from "../src/internal/FlowEngineLike.ts"
+import * as InternalModelStep from "../src/internal/ModelStep.ts"
 import * as QuotaPolicy from "../src/QuotaPolicy.ts"
 import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
 import * as Seat from "../src/Seat.ts"
@@ -571,7 +571,7 @@ const recordedCorrections = (runId: string, attempts: ReadonlyArray<AttemptRecor
         Schema.decodeUnknownResult(FlowEngineLike.RecordedModelStep)(row.value.outcome)
       ).pipe(Effect.option)
       if (Option.isNone(decoded)) continue
-      const normalized = InternalFlowEngineLike.normalizeRecordedModelStep(decoded.value)
+      const normalized = InternalModelStep.normalizeRecordedModelStep(decoded.value)
       // A model step is the only outcome with model events in it; an empty
       // array decodes as the legacy branch and is some other action's.
       if (normalized.events.length === 0) continue

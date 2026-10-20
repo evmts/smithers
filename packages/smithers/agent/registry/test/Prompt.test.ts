@@ -147,26 +147,28 @@ export default Flow.make("mdx", {
     })
     expect(JSON.parse(output)).toMatchObject({ assertions: "passed" })
   })
-  it("compiles expressions and imported components without evaluating them", () => {
+  it("compiles expressions and imported components without evaluating them", async () => {
     const source =
       `import { Greeting } from "./component.ts"\n\n# Hello {props.name}\n\n<Greeting name={props.name} />\n\n{(() => { throw new Error("must not run during compilation") })()}`
-    const compiled = Prompt.compile(source)
+    const compiled = await Effect.runPromise(Prompt.compile(source))
     expect(compiled).toContain("\"./component.ts\"")
     expect(compiled).toContain("props.name")
     expect(compiled).toContain("must not run during compilation")
     expect(compiled).toContain("@smthrs/registry/Prompt/jsx-runtime")
   })
 
-  it("refuses malformed MDX", () => {
-    expect(() => Prompt.compile("<Unclosed>")).toThrow()
+  it("refuses malformed MDX", async () => {
+    const exit = await Effect.runPromise(Effect.exit(Prompt.compile("<Unclosed>")))
+    expect(exit._tag).toBe("Failure")
   })
 
-  it("compiles empty prompts, layouts, and conflicting authored helper names", () => {
-    expect(Prompt.compile("")).toContain("export default props")
-    expect(Prompt.compile("export default function Layout({children}) { return children }\n\n# Layout")).toContain(
+  it("compiles empty prompts, layouts, and conflicting authored helper names", async () => {
+    const compile = (source: string) => Effect.runPromise(Prompt.compile(source))
+    expect(await compile("")).toContain("export default props")
+    expect(await compile("export default function Layout({children}) { return children }\n\n# Layout")).toContain(
       "Layout"
     )
-    expect(Prompt.compile("export const _smithersRenderPrompt = 1\n\nHello")).toContain(
+    expect(await compile("export const _smithersRenderPrompt = 1\n\nHello")).toContain(
       "render as _smithersRenderPrompt_"
     )
   })

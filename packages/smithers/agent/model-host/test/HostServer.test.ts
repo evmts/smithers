@@ -1,19 +1,22 @@
-import * as Model from "@smthrs/model/Model"
-import { ModelError } from "@smthrs/model/ModelError"
-import type * as ModelEvent from "@smthrs/model/ModelEvent"
-import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
-import { FORM_INSTRUCTION_FIELDS, UI_INSTRUCTION_FIELDS } from "@smthrs/rpc/UiInstruction"
-import { Effect, Metric, Stream } from "effect"
+import { Model, ModelError, type ModelEvent } from "@smthrs/model"
+import { AgentTurnJournal, UiInstruction } from "@smthrs/rpc"
+import { Effect, Logger, Metric, Stream } from "effect"
+import { HttpEffect } from "effect/http"
 import { createHash } from "node:crypto"
 import { describe, expect, test, vi } from "vitest"
 import {
+  bearerAuthorization,
   createModelTurnHandler,
   MODEL_HOST_PROTOCOL,
   MODEL_HOST_STREAM_PATH,
+  type ModelTurnHandlerOptions,
   type ModelTurnResolver,
   turnFailures
 } from "../src/HostServer.ts"
 import { ResolveFailed } from "../src/ModelHostError.ts"
+
+/** The handler as a host serves it: a Fetch handler that interrupts the turn when its caller goes away. */
+const serve = (options: ModelTurnHandlerOptions) => HttpEffect.toWebHandler(createModelTurnHandler(options))
 
 const cursor = { version: 1 as const, runId: "run", legId: "leg", batch: 0, position: 0, hash: "a".repeat(64) }
 const grant = {
@@ -43,7 +46,7 @@ const committed = (body: Record<string, any>) => {
   }
   const batch = {
     ...unsigned,
-    hash: createHash("sha256").update(agentTurnJournalDigestInput("batch", unsigned)).digest("hex")
+    hash: createHash("sha256").update(AgentTurnJournal.agentTurnJournalDigestInput("batch", unsigned)).digest("hex")
   }
   return {
     status: "committed",
@@ -59,7 +62,7 @@ describe("model host HTTP binding", () => {
       type: "settle",
       stopReason: "stop"
     }]
-    const handler = createModelTurnHandler({
+    const handler = serve({
       installOrigin: "http://127.0.0.1:4567",
       authorization: "host-token",
       callbackBaseUrl: "http://callback.test",
@@ -94,7 +97,7 @@ describe("model host HTTP binding", () => {
 
 test("the authenticated model stream emits provider frames through the configured owner model", async () => {
   let resolvedOwner = 0
-  const handler = createModelTurnHandler({
+  const handler = serve({
     authorization: "host-token",
     callbackBaseUrl: "http://callback.test",
     resolve: (accepted) => {
@@ -162,7 +165,7 @@ test.each(["http://127.0.0.1:4567", "https://mini.example:8443", "http://[::1]:4
       expect(accepted.producerBaseUrl).toBe(grant.producerBaseUrl)
       return Effect.fail(new ResolveFailed({ message: "stop after grant validation" }))
     })
-    const response = await createModelTurnHandler({ ...options, resolve })(
+    const response = await serve({ ...options, resolve })(
       post(JSON.stringify({ ...grant, installOrigin }))
     )
     expect(response.status).toBe(502)
@@ -183,7 +186,7 @@ test.each([
   "refuses an invalid backend install origin before model work (%s)",
   async (installOrigin) => {
     const resolve = vi.fn(options.resolve)
-    const response = await createModelTurnHandler({ ...options, resolve })(
+    const response = await serve({ ...options, resolve })(
       post(JSON.stringify({ ...grant, installOrigin }))
     )
     expect(response.status).toBe(400)
@@ -193,7 +196,7 @@ test.each([
 
 test("the model stream rejects non-POST requests before resolving a model", async () => {
   const resolve = vi.fn(options.resolve)
-  const response = await createModelTurnHandler({ ...options, resolve })(
+  const response = await serve({ ...options, resolve })(
     new Request(`http://host.test${MODEL_HOST_STREAM_PATH}`)
   )
   expect(response.status).toBe(405)
@@ -209,7 +212,7 @@ test.each([
   { runId: "run", messages: [], tools: {} }
 ])("the model stream refuses malformed input before selecting an owner model %#", async (body) => {
   const resolve = vi.fn(options.resolve)
-  const response = await createModelTurnHandler({ ...options, resolve })(streamPost(body))
+  const response = await serve({ ...options, resolve })(streamPost(body))
   expect(response.status).toBe(400)
   expect(await response.json()).toEqual({ status: "error", code: "request_invalid" })
   expect(resolve).not.toHaveBeenCalled()
@@ -227,7 +230,7 @@ test.each([undefined, 1.5])(
         options: { modelId: "fixture" }
       })
     })
-    const response = await createModelTurnHandler({ ...options, resolve })(
+    const response = await serve({ ...options, resolve })(
       streamPost({ runId: "run", ownerId, messages: [], tools: [] })
     )
     expect(response.status).toBe(200)
@@ -237,7 +240,7 @@ test.each([undefined, 1.5])(
 )
 
 test("the model stream names the stage that refused it and hides the resolver's diagnostic", async () => {
-  const response = await createModelTurnHandler(options)(streamPost({ runId: "run", messages: [] }))
+  const response = await serve(options)(streamPost({ runId: "run", messages: [] }))
   expect(response.status).toBe(502)
   // The stage and the failure's tag, never the resolver's message: a refused
   // model is told apart from a provider that never answered without reading
@@ -252,7 +255,7 @@ test("the model stream names the stage that refused it and hides the resolver's 
 
 test("a refused model stream records its stage on the guest's diagnostics", async () => {
   const records: Array<Record<string, unknown>> = []
-  const response = await createModelTurnHandler({
+  const response = await serve({
     ...options,
     writeDiagnostic: (line) => records.push(JSON.parse(line))
   })(streamPost({ runId: "run", messages: [] }))
@@ -273,7 +276,7 @@ test("a refused model stream names the provider's own code, and no other field i
   // the one field beyond the tag this route can carry. A journal's refusal
   // status is not: a sealed stream commits nothing, so nothing on this route
   // has one, and the response must not imply it could.
-  const response = await failing(new ModelError({ code: "rate_limited", message: "signed request detail" }))(
+  const response = await failing(new ModelError.ModelError({ code: "rate_limited", message: "signed request detail" }))(
     streamPost({ runId: "run", messages: [] })
   )
   expect(response.status).toBe(502)
@@ -295,20 +298,22 @@ test.each([
 ])(
   "refuses unsafe configured and wire callback URL %s",
   async (url) => {
-    expect(() => createModelTurnHandler({ ...options, callbackBaseUrl: url })).toThrow(
+    expect(() => serve({ ...options, callbackBaseUrl: url })).toThrow(
       "invalid model host callback URL"
     )
-    const response = await createModelTurnHandler(options)(post(JSON.stringify({ ...grant, producerBaseUrl: url })))
+    const response = await serve(options)(post(JSON.stringify({ ...grant, producerBaseUrl: url })))
     expect(response.status).toBe(400)
   }
 )
 
 test("requires authorization configuration and rejects unknown routes and methods", async () => {
-  expect(() => createModelTurnHandler({ ...options, authorization: " " })).toThrow("authorization is required")
-  const handler = createModelTurnHandler(options)
+  expect(() => serve({ ...options, authorization: " " })).toThrow("authorization is required")
+  const handler = serve(options)
   expect((await handler(new Request("http://host.test/unknown"))).status).toBe(404)
   expect((await handler(new Request("http://host.test/health", { method: "POST" }))).status).toBe(404)
   expect((await handler(new Request("http://host.test/v1/chat/turn"))).status).toBe(405)
+  // A path that reads as another host once its own is removed routes nowhere.
+  expect((await handler(new Request("http://host.test//["))).status).toBe(404)
 })
 
 test.each([
@@ -338,7 +343,7 @@ test.each([
   { ...grant, api: { author: "ben", token: "session" } }
 ])("rejects malformed or mismatched grants before resolving a model %#", async (value) => {
   let resolved = false
-  const handler = createModelTurnHandler({
+  const handler = serve({
     ...options,
     resolve: () => {
       resolved = true
@@ -352,25 +357,25 @@ test.each([
 })
 
 test.each(["NaN", "-1", String(2 * 1024 * 1024 + 1)])("bounds declared body length %s", async (length) => {
-  const response = await createModelTurnHandler(options)(post(JSON.stringify(grant), { "content-length": length }))
+  const response = await serve(options)(post(JSON.stringify(grant), { "content-length": length }))
   expect(response.status).toBe(400)
 })
 
 test.each([null, " ".repeat(2 * 1024 * 1024 + 1), "{", new Uint8Array([0xff])])(
   "rejects empty, oversized, malformed JSON, and invalid UTF-8 bodies %#",
   async (body) => {
-    expect((await createModelTurnHandler(options)(post(body))).status).toBe(400)
+    expect((await serve(options)(post(body))).status).toBe(400)
   }
 )
 
 test("refuses an unreadable request body", async () => {
   const request = post(JSON.stringify(grant))
   await request.arrayBuffer()
-  expect((await createModelTurnHandler(options)(request)).status).toBe(400)
+  expect((await serve(options)(request)).status).toBe(400)
 })
 
 test("preserves the repository, source and API grants and hides provider failures", async () => {
-  const handler = createModelTurnHandler({
+  const handler = serve({
     ...options,
     callbackBaseUrl: "https://callback.test/nested",
     resolve: (accepted) => {
@@ -397,11 +402,11 @@ test("preserves the repository, source and API grants and hides provider failure
 })
 
 const failing = (error: unknown) =>
-  createModelTurnHandler({
+  serve({
     ...options,
     resolve: () =>
       Effect.succeed({
-        model: Model.make({ stream: () => Stream.fail(error as ModelError) }),
+        model: Model.make({ stream: () => Stream.fail(error as ModelError.ModelError) }),
         options: { modelId: "fixture" }
       }),
     fetchImpl: async () => new Response(null, { status: 204 })
@@ -420,7 +425,7 @@ test("logs the failure class and turn identity, never the cause text", async () 
   })
   try {
     const before = await failureCount("ResolveFailed")
-    const response = await createModelTurnHandler(options)(post(JSON.stringify(grant)))
+    const response = await serve(options)(post(JSON.stringify(grant)))
     expect(response.status).toBe(502)
     expect(await response.json()).toEqual({ status: "error", code: "turn_failed" })
     expect(await failureCount("ResolveFailed")).toBe(before + 1)
@@ -434,6 +439,20 @@ test("logs the failure class and turn identity, never the cause text", async () 
   expect(text).not.toContain("private provider diagnostic")
 })
 
+test("records a failed turn through the logger of the program that serves it", async () => {
+  // The handler runs in its server's fiber, so that program's services reach
+  // every turn: here its logger, which sees the record and never the cause.
+  const records: Array<{ readonly message: unknown; readonly level: string }> = []
+  const logger = Logger.make(({ logLevel, message }) => {
+    records.push({ message, level: logLevel })
+  })
+  const handler = HttpEffect.toWebHandler(createModelTurnHandler(options).pipe(Effect.provide(Logger.layer([logger]))))
+  const response = await handler(post(JSON.stringify(grant)))
+  expect(response.status).toBe(502)
+  expect(records).toEqual([{ message: ["model host turn failed"], level: "Error" }])
+  expect(JSON.stringify(records)).not.toContain("private provider diagnostic")
+})
+
 test.each(
   [
     ["rate_limited", "provider_quota"],
@@ -444,7 +463,7 @@ test.each(
     ["invalid_request", "turn_failed"]
   ] as const
 )("answers a provider %s as %s", async (code, answer) => {
-  const response = await failing(new ModelError({ code, message: "signed request detail" }))(
+  const response = await failing(new ModelError.ModelError({ code, message: "signed request detail" }))(
     post(JSON.stringify(grant))
   )
   expect(response.status).toBe(502)
@@ -460,7 +479,7 @@ test("answers the caller with the phase a failed callback reached", async () => 
   // observer's (`FetchTransport` on Node); here it is scripted, and says the
   // dispatcher never took the request.
   const opened: Array<string> = []
-  const handler = createModelTurnHandler({
+  const handler = serve({
     ...options,
     observeTransport: (callbackBaseUrl) => {
       opened.push(callbackBaseUrl)
@@ -496,7 +515,7 @@ test("writes a turn's diagnostics only to the sink the host passes", async () =>
   const records: Array<Record<string, unknown>> = []
   const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
   const handler = (writeDiagnostic?: (line: string) => void) =>
-    createModelTurnHandler({
+    serve({
       ...options,
       ...(writeDiagnostic === undefined ? {} : { writeDiagnostic }),
       resolve: () =>
@@ -525,7 +544,7 @@ test("writes a turn's diagnostics only to the sink the host passes", async () =>
 })
 
 test("answers a failed callback without a phase when the host observes none", async () => {
-  const handler = createModelTurnHandler({
+  const handler = serve({
     ...options,
     resolve: () =>
       Effect.succeed({
@@ -545,7 +564,7 @@ test("answers a failed callback without a phase when the host observes none", as
 
 test("counts a refused commit under its own failure class", async () => {
   const before = await failureCount("CommitRefused")
-  const handler = createModelTurnHandler({
+  const handler = serve({
     ...options,
     resolve: () =>
       Effect.succeed({
@@ -567,16 +586,32 @@ test("counts a refused commit under its own failure class", async () => {
 test.each(["Bearer host-toke", "Bearer host-tokenx", "host-token", ""])(
   "refuses a near-miss token %j",
   async (value) => {
-    const response = await createModelTurnHandler(options)(post(JSON.stringify(grant), { authorization: value }))
+    const response = await serve(options)(post(JSON.stringify(grant), { authorization: value }))
     expect(response.status).toBe(401)
   }
 )
 
-test("answers an aborted turn as cancelled and a dying provider as a defect", async () => {
+test("bearerAuthorization admits only the exact bearer to a host's own Fetch routes", () => {
+  // apps/model-host guards its model Test and transcript routes with it.
+  const authorized = bearerAuthorization("host-token")
+  const presenting = (authorization?: string) =>
+    new Request("http://host.test/v1/model/test", authorization === undefined ? {} : { headers: { authorization } })
+  expect(authorized(presenting("Bearer host-token"))).toBe(true)
+  for (const value of ["Bearer host-toke", "Bearer host-tokenx", "host-token", undefined]) {
+    expect(authorized(presenting(value))).toBe(false)
+  }
+})
+
+test("answers an aborted turn as cancelled, counting it, and a dying provider as a defect", async () => {
+  // A caller that goes away interrupts the turn, and the turn still records how it ended.
   const abort = new AbortController()
-  const hanging = createModelTurnHandler({
+  let reached: () => void = () => {}
+  const resolving = new Promise<void>((resolve) => {
+    reached = resolve
+  })
+  const hanging = serve({
     ...options,
-    resolve: () => Effect.never,
+    resolve: () => Effect.andThen(Effect.sync(() => reached()), Effect.never),
     fetchImpl: async () => new Response(null, { status: 204 })
   })
   const request = new Request("http://host.test/v1/chat/turn", {
@@ -585,12 +620,15 @@ test("answers an aborted turn as cancelled and a dying provider as a defect", as
     body: JSON.stringify(grant),
     signal: abort.signal
   })
+  const interrupted = await failureCount("Interrupted")
   const pending = hanging(request)
-  setTimeout(() => abort.abort(), 10)
+  await resolving
+  abort.abort()
   expect(await (await pending).json()).toEqual({ status: "error", code: "cancelled" })
+  expect(await failureCount("Interrupted")).toBe(interrupted + 1)
 
   const before = await failureCount("Defect")
-  const dying = createModelTurnHandler({
+  const dying = serve({
     ...options,
     resolve: () =>
       Effect.succeed({
@@ -620,9 +658,38 @@ test("cancels a chunked body with no content-length once it passes the byte limi
     duplex: "half"
   } as RequestInit)
   expect(request.headers.get("content-length")).toBeNull()
-  const response = await createModelTurnHandler({ ...options, resolve })(request)
+  const response = await serve({ ...options, resolve })(request)
   expect(response.status).toBe(400)
   expect(pulled).toBeLessThanOrEqual(2 * 1024 * 1024 + 2 * chunk.byteLength)
+  expect(resolve).not.toHaveBeenCalled()
+})
+
+test("a caller who leaves while its body is read is never resolved or answered", async () => {
+  const resolve = vi.fn(options.resolve)
+  const abort = new AbortController()
+  let reading: () => void = () => {}
+  const read = new Promise<void>((resolve) => {
+    reading = resolve
+  })
+  // The body's first chunk never arrives; its read is the wait the caller abandons.
+  const body = new ReadableStream<Uint8Array>({
+    pull: () => {
+      reading()
+      return new Promise<void>(() => {})
+    }
+  }, { highWaterMark: 0 })
+  const request = new Request(`http://host.test${MODEL_HOST_STREAM_PATH}`, {
+    method: "POST",
+    headers: { authorization: "Bearer host-token" },
+    body,
+    duplex: "half",
+    signal: abort.signal
+  } as RequestInit)
+  const pending = serve({ ...options, resolve })(request)
+  await read
+  abort.abort()
+  // 499: effect/http's answer to a client that closed its request.
+  expect((await pending).status).toBe(499)
   expect(resolve).not.toHaveBeenCalled()
 })
 
@@ -635,14 +702,14 @@ test("rejects a present but empty body before resolving a model", async () => {
     duplex: "half"
   } as RequestInit)
   expect(request.body).not.toBeNull()
-  const response = await createModelTurnHandler({ ...options, resolve })(request)
+  const response = await serve({ ...options, resolve })(request)
   expect(response.status).toBe(400)
   expect(resolve).not.toHaveBeenCalled()
 })
 
 test("the model stream refuses a response that outgrows the stream byte ceiling", async () => {
   const text = "x".repeat(1024 * 1024)
-  const response = await createModelTurnHandler({
+  const response = await serve({
     ...options,
     resolve: () =>
       Effect.succeed({
@@ -684,7 +751,7 @@ test("trusted preflight precedes the answer and its choices cross the durable HT
       ])
     }
   })
-  const handler = createModelTurnHandler({
+  const handler = serve({
     authorization: "host-token",
     callbackBaseUrl: "http://callback.test",
     resolve: () =>
@@ -756,7 +823,7 @@ test("trusted preflight precedes the answer and its choices cross the durable HT
 test("shared prompt refuses without authorized preflight before model or producer calls", async () => {
   const stream = vi.fn(() => Stream.empty)
   const callbacks = vi.fn(async () => new Response(null, { status: 204 }))
-  const handler = createModelTurnHandler({
+  const handler = serve({
     authorization: "host-token",
     callbackBaseUrl: "http://callback.test",
     resolve: () => Effect.succeed({ model: Model.make({ stream }), options: { modelId: "coding" } }),
@@ -780,7 +847,7 @@ test("unavailable durable preflight writes refuse before either model or provide
       return Stream.empty
     }
   })
-  const handler = createModelTurnHandler({
+  const handler = serve({
     authorization: "host-token",
     callbackBaseUrl: "http://callback.test",
     resolve: () =>
@@ -834,7 +901,7 @@ test.each([24000, 68000, 80000])(
         ])
       }
     })
-    const handler = createModelTurnHandler({
+    const handler = serve({
       authorization: "host-token",
       callbackBaseUrl: "http://callback.test",
       resolve: () =>
@@ -921,7 +988,7 @@ test.each(["trailing-text", "tool-call", "invalid-input"])(
           ])
       }
     })
-    const handler = createModelTurnHandler({
+    const handler = serve({
       authorization: "host-token",
       callbackBaseUrl: "http://callback.test",
       resolve: () =>
@@ -976,7 +1043,7 @@ test.each(["trailing-text", "tool-call", "invalid-input"])(
 test("a Cloud account conversation's private marker reaches the turn through the grant wire", async () => {
   const offered = async (request: Record<string, unknown>, extra: Record<string, unknown> = {}) => {
     const systems: Array<string> = []
-    const handler = createModelTurnHandler({
+    const handler = serve({
       authorization: "host-token",
       callbackBaseUrl: "http://callback.test",
       resolve: () =>
@@ -1012,7 +1079,10 @@ test("a Cloud account conversation's private marker reaches the turn through the
     "- /flow.new — Create a new flow (asks the person: it only shows them what to confirm, and their press acts)"
   )
   expect(lines.map((line) => line.slice(3).split(" ")[0]!).sort())
-    .toEqual([...Object.keys(UI_INSTRUCTION_FIELDS), ...Object.keys(FORM_INSTRUCTION_FIELDS)].sort())
+    .toEqual(
+      [...Object.keys(UiInstruction.UI_INSTRUCTION_FIELDS), ...Object.keys(UiInstruction.FORM_INSTRUCTION_FIELDS)]
+        .sort()
+    )
   // Without the marker, or on a turn that belongs to a repository, the host offers what it did: nothing here.
   expect(await offered({ ...account, privateConversation: false })).toEqual([])
   expect(await offered({ ...account, privateConversation: true }, { repositoryId: 3 })).toEqual([])

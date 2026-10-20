@@ -1,7 +1,5 @@
-import * as Classifier from "@smthrs/model/Classifier"
-import * as Evaluator from "@smthrs/model/Evaluator"
-import { decodeModelAnswers } from "@smthrs/rpc/ConfiguredModel"
-import type { ModelQuestion } from "@smthrs/rpc/ConfiguredModel"
+import { Classifier, Evaluator } from "@smthrs/model"
+import { ConfiguredModel } from "@smthrs/rpc"
 import { Effect, Exit, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { modelAnswersOf } from "../src/ModelProbe.ts"
@@ -14,7 +12,7 @@ import { modelAnswersOf } from "../src/ModelProbe.ts"
  * every refusal, so a raw answer never reads as two different typed answers
  * depending on which host asked.
  */
-const questions: Record<string, ModelQuestion> = {
+const questions: Record<string, ConfiguredModel.ModelQuestion> = {
   ok: { type: "boolean", instructions: "Did it pass?" },
   which: { type: "choice", instructions: "Which?", criteria: { a: "src/a.ts", b: "src/b.ts" } },
   risk: { type: "score", instructions: "How risky?", criteria: ["low", "mid", "high"] },
@@ -106,7 +104,7 @@ describe("the contract's answer decoder agrees with the classifier", () => {
     const reserved = JSON.parse(`{
       "risk": { "type": "score", "instructions": "How risky?", "criteria": ["__proto__", "other"] },
       "which": { "type": "choice", "instructions": "Which?", "criteria": { "__proto__": "the first", "other": "the second" } }
-    }`) as Record<string, ModelQuestion>
+    }`) as Record<string, ConfiguredModel.ModelQuestion>
     const questions = { risk: decodeQuestion(reserved.risk), which: decodeQuestion(reserved.which) }
     const which = `"which": { "type": "choice", "choice": "__proto__" }`
     const raws = [
@@ -119,7 +117,7 @@ describe("the contract's answer decoder agrees with the classifier", () => {
       const exit = Effect.runSyncExit(Classifier.decodeAnswers(questions, raw as Evaluator.RawAnswers))
       if (!Exit.isSuccess(exit)) throw new Error("the classifier refused the answer")
       const local = modelAnswersOf(questions, exit.value)
-      const worker = decodeModelAnswers(reserved, raw)
+      const worker = ConfiguredModel.decodeModelAnswers(reserved, raw)
       if (!worker.ok) throw new Error("the contract refused the answer")
       for (const id of ["risk", "which"]) {
         const [here, there] = [worker.answers[id], local[id]]
@@ -136,7 +134,7 @@ describe("the contract's answer decoder agrees with the classifier", () => {
 
   for (const [name, raw] of cases) {
     test(name, () => {
-      expect(decodeModelAnswers(questions, raw)).toEqual(classifier(raw))
+      expect(ConfiguredModel.decodeModelAnswers(questions, raw)).toEqual(classifier(raw))
     })
   }
   test("an answer no question names passes through as the classifier gave it", () => {

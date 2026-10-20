@@ -1,7 +1,5 @@
-import * as Model from "@smthrs/model/Model"
-import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
-import type { AgentTurnBatch, AgentTurnCursor } from "@smthrs/rpc/AgentTurnJournal"
-import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { Model } from "@smthrs/model"
+import { AgentTurnJournal, type NativeAgent } from "@smthrs/rpc"
 import { Cause, Effect, Exit, Stream } from "effect"
 import { createHash } from "node:crypto"
 import { describe, expect, test } from "vitest"
@@ -24,12 +22,19 @@ import type { HostDiagnosticFields } from "../src/HostDiagnostics.ts"
  * socket.
  */
 
-const request: StartAgentTurnRequest = {
+const request: NativeAgent.StartAgentTurnRequest = {
   runId: "run",
   instructions: "answer",
   messages: [{ role: "user", content: "hi" }]
 }
-const cursor: AgentTurnCursor = { version: 1, runId: "run", legId: "leg", batch: 0, position: 0, hash: "a".repeat(64) }
+const cursor: AgentTurnJournal.AgentTurnCursor = {
+  version: 1,
+  runId: "run",
+  legId: "leg",
+  batch: 0,
+  position: 0,
+  hash: "a".repeat(64)
+}
 const grant = {
   turnId: "turn",
   ownerId: 1,
@@ -44,9 +49,9 @@ const grant = {
 }
 
 const digest = (value: unknown): string =>
-  createHash("sha256").update(agentTurnJournalDigestInput("batch", value)).digest("hex")
+  createHash("sha256").update(AgentTurnJournal.agentTurnJournalDigestInput("batch", value)).digest("hex")
 
-const receipt = (expected: AgentTurnCursor, frame: AgentTurnFrame) => {
+const receipt = (expected: AgentTurnJournal.AgentTurnCursor, frame: NativeAgent.AgentTurnFrame) => {
   const unsigned = {
     version: 1 as const,
     runId: expected.runId,
@@ -56,7 +61,7 @@ const receipt = (expected: AgentTurnCursor, frame: AgentTurnFrame) => {
     previousHash: expected.hash,
     frames: [frame]
   }
-  const batch: AgentTurnBatch = { ...unsigned, hash: digest(unsigned) }
+  const batch: AgentTurnJournal.AgentTurnBatch = { ...unsigned, hash: digest(unsigned) }
   return {
     status: "committed" as const,
     batch,
@@ -71,7 +76,7 @@ const receipt = (expected: AgentTurnCursor, frame: AgentTurnFrame) => {
   }
 }
 
-const delta = (text: string): AgentTurnFrame => ({ runId: "run", type: "delta", kind: "text", text })
+const delta = (text: string): NativeAgent.AgentTurnFrame => ({ runId: "run", type: "delta", kind: "text", text })
 
 const recorderInto = (lines: Array<Record<string, unknown>>) => ({
   record: () => {},
@@ -127,7 +132,7 @@ describe("a journal callback's attempt", () => {
     const observer = scripted([{ transport: "received", reusedSocket: false }])
     const lines: Array<Record<string, unknown>> = []
     const ran: Array<boolean> = []
-    const fetchImpl: FetchLike = async (_input, init) => {
+    const fetchImpl: NativeAgent.FetchLike = async (_input, init) => {
       ran.push(observer.state.inside)
       const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}")
       return Response.json(receipt(body.expected, body.frames[0]))
@@ -223,7 +228,7 @@ describe("a turn's callback observer", () => {
   test("is closed when the turn succeeds", async () => {
     const observer = scripted([])
     let expected = cursor
-    const fetchImpl: FetchLike = async (input, init) => {
+    const fetchImpl: NativeAgent.FetchLike = async (input, init) => {
       if (String(input).includes("provider-started")) return new Response(null, { status: 204 })
       const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}")
       const answer = receipt(expected, body.frames[0])

@@ -4,10 +4,7 @@
  * @since 1.0.0
  */
 
-import type * as Model from "@smthrs/model/Model"
-import { ModelError } from "@smthrs/model/ModelError"
-import type { ModelEvent } from "@smthrs/model/ModelEvent"
-import { ModelRequest } from "@smthrs/model/ModelRequest"
+import { type Model, ModelError, type ModelEvent, ModelRequest } from "@smthrs/model"
 import { Effect, Stream } from "effect"
 
 /**
@@ -30,16 +27,16 @@ export const fastModelFallback = (
   stream: (request) =>
     Stream.suspend(() => {
       if (sources.length === 0) {
-        return Stream.fail(new ModelError({ code: "no_route", message: "Fast model unavailable" }))
+        return Stream.fail(new ModelError.ModelError({ code: "no_route", message: "Fast model unavailable" }))
       }
       const attempt = (
         index: number
-      ): Stream.Stream<ModelEvent, Model.ModelFailure> => {
+      ): Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure> => {
         const source = sources[index]!
         let emitted = false
         const { maxTokens: _maxTokens, ...unlimited } = request.params
         return source.model.stream(
-          new ModelRequest({
+          new ModelRequest.ModelRequest({
             ...request,
             modelId: source.modelId,
             params: source.outputTokenLimitSupported === false ? unlimited : request.params

@@ -20,6 +20,7 @@ import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
 import { newVariant } from "quickjs-emscripten-core"
 import { describe, expect, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
+import { QuickJSVariant } from "../src/index.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as Sandbox from "../src/Sandbox.ts"
 
@@ -114,5 +115,26 @@ describe("QuickJSSandbox variant", () => {
 
     expect(variant.type).toBe("sync")
     expect(variant).not.toBe(base)
+  })
+
+  it("hands every realm over one variant the same compiled module", async () => {
+    // The presentation realm in @smthrs/views compiles through the same seam
+    // as the cell sandbox, so a host that names one build pays for one
+    // compile, whichever realm opens first.
+    const variant = await hostVariant()
+    const compile = QuickJSVariant.compiledModule.pipe(Effect.provide(QuickJSVariant.layerVariant(variant)))
+
+    const first = await Effect.runPromise(compile)
+    const second = await Effect.runPromise(compile)
+
+    expect(second).toBe(first)
+    expect(first.evalCode("6 * 7")).toBe(42)
+  })
+
+  it("is the seam QuickJSSandbox names", () => {
+    // One service, one tag: a host that provides the root's `QuickJSVariant`
+    // has provided the sandbox's `Variant` too.
+    expect(QuickJSSandbox.Variant).toBe(QuickJSVariant.Variant)
+    expect(QuickJSSandbox.layerVariant).toBe(QuickJSVariant.layerVariant)
   })
 })
