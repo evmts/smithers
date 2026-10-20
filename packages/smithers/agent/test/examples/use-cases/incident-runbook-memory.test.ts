@@ -1,6 +1,6 @@
 import { afterAll, expect, it } from "@effect/vitest"
-import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -76,7 +76,11 @@ const seedOnCall = (filename: string, onCall: string) =>
     Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
       yield* store.putFact({ namespace, key: "on-call", value: onCall, provenance: {} })
-    }).pipe(Effect.provide(Layer.orDie(MemoryStore.layer).pipe(Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "seed")))))
+    }).pipe(
+      Effect.provide(
+        Layer.orDie(MemoryStore.layer).pipe(Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "seed")))
+      )
+    )
   )
 
 it.effect("banks a lesson per incident and ratifies a rule once three have piled up", () =>
