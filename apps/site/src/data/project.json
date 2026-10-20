@@ -1,7 +1,7 @@
 {
   "description": "Smithers maintains your codebase. It turns issues into tested changes for you to review and, when enabled, keeps the project wiki current. Flows beside your code define how.",
   "support": {
-    "summary": "The release candidate's required platform is Linux with Node 26.4.0."
+    "summary": "Smithers needs Node.js 22.19 or later. The release candidate is certified on Linux with Node 26.4.0."
   },
   "tagline": "Automate maintaining your codebase",
   "animation": {
