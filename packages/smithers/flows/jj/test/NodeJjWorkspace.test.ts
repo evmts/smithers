@@ -385,3 +385,36 @@ exec jj "$@"
     30_000
   )
 })
+
+describe.skipIf(!jjInstalled)("NodeJj workspaces in a colocated repository", () => {
+  let repository: string
+  let previousCwd: string
+
+  const run = <A, E>(effect: Effect.Effect<A, E, Jj>) => Effect.provide(effect, budgeted(NodeJj.layer))
+
+  beforeAll(async () => {
+    previousCwd = process.cwd()
+    repository = await mkdtemp(join(tmpdir(), "flows-node-jj-colocated-"))
+    execFileSync("jj", ["git", "init", "--colocate", repository], { stdio: "ignore" })
+    process.chdir(repository)
+  })
+
+  afterAll(async () => {
+    process.chdir(previousCwd)
+    await rm(repository, { recursive: true, force: true })
+  })
+
+  // jj 0.46 would colocate the lane with `git worktree add --orphan`, which
+  // Apple's git 2.39 rejects. A lane stays a plain jj workspace.
+  it.effect("adds a lane without a git worktree", () =>
+    Effect.gen(function*() {
+      const lane = join(repository, "..", `colocated-lane-${process.pid}`)
+
+      yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceAdd("colocated-lane", lane)))
+      expect(existsSync(join(lane, ".jj"))).toBe(true)
+      expect(existsSync(join(lane, ".git"))).toBe(false)
+
+      yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceForget("colocated-lane")))
+      yield* Effect.promise(() => rm(lane, { recursive: true, force: true }))
+    }))
+})

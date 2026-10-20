@@ -575,6 +575,13 @@ const HOST_ONLY_CONFIG: ReadonlyArray<string> = [
   "fsmonitor.backend=none"
 ]
 
+/**
+ * `workspace add` keeps a lane a plain jj workspace, as it was before jj 0.46.
+ * In a colocated repository jj 0.46 colocates the new workspace with
+ * `git worktree add --orphan`, which needs git 2.42; Apple's git 2.39 fails it.
+ */
+const NO_COLOCATION: ReadonlyArray<string> = ["--config", "git.colocate=false"]
+
 const isFile = (path: string): boolean => {
   try {
     return statSync(path).isFile()
@@ -1005,7 +1012,7 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
       revision === undefined
         ? repositoryCritical(
           "workspaceAdd",
-          inRepository("workspaceAdd", ["workspace", "add", `--name=${name}`, "--", path])
+          inRepository("workspaceAdd", ["workspace", "add", ...NO_COLOCATION, `--name=${name}`, "--", path])
         )
         : Effect.flatMap(requireRevision("workspaceAdd", "jj workspace add", revision), (pinned) =>
           // The commands remain cancellable; only the handoff from a completed
@@ -1016,6 +1023,7 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
               restore(inRepository("workspaceAdd", [
                 "workspace",
                 "add",
+                ...NO_COLOCATION,
                 `--name=${name}`,
                 `--revision=parents(${pinned})`,
                 "--",
