@@ -69,7 +69,8 @@
     "@smthrs/crypto": "workspace:*",
     "@smthrs/flow": "workspace:*",
     "@smthrs/harness": "workspace:*",
-    "sucrase": "3.35.1"
+    "sucrase": "3.35.1",
+    "@smthrs/view-frame": "workspace:*"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

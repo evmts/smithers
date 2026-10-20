@@ -6,7 +6,7 @@
  * @category parsing
  * @since 0.1.0
  */
-export const REPO_TOKEN = /^[\w.-]+\/[\w.-]+$/
+export { REPO_TOKEN } from "./form-input"
 
 /** The registry spelling of a command name: trimmed, leading slashes gone. */
 export const canonicalCommandName = (name: string): string => name.trim().replace(/^\/+/, "")

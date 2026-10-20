@@ -5939,6 +5939,9 @@ importers:
       '@smthrs/ui-styleguide':
         specifier: workspace:*
         version: link:ui-styleguide
+      '@smthrs/view-frame':
+        specifier: workspace:*
+        version: link:view-frame
       '@smthrs/views':
         specifier: workspace:*
         version: link:views
@@ -6028,6 +6031,61 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
+  packages/smithers/ui/view-frame:
+    dependencies:
+      '@smthrs/crypto':
+        specifier: workspace:*
+        version: link:../../flows/crypto
+    devDependencies:
+      '@effect/language-service':
+        specifier: 0.87.2
+        version: 0.87.2
+      '@eslint/js':
+        specifier: 9.39.5
+        version: 9.39.5
+      '@types/node':
+        specifier: 26.4.1
+        version: 26.4.1
+      '@vitest/coverage-v8':
+        specifier: 5.0.0
+        version: 5.0.0(vitest@5.0.0)
+      dprint:
+        specifier: 0.57.1
+        version: 0.57.1
+      effect:
+        specifier: 4.0.5
+        version: 4.0.5
+      eslint:
+        specifier: 9.39.5
+        version: 9.39.5(jiti@2.7.0)(supports-color@10.2.2)
+      eslint-import-resolver-typescript:
+        specifier: 4.4.5
+        version: 4.4.5(eslint-plugin-import@2.32.0)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-import:
+        specifier: 2.32.0
+        version: 2.32.0(@typescript-eslint/parser@8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2))(eslint-import-resolver-typescript@4.4.5)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-jsdoc:
+        specifier: 64.3.4
+        version: 64.3.4(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-unicorn:
+        specifier: 65.0.0
+        version: 65.0.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))
+      fast-check:
+        specifier: 4.9.0
+        version: 4.9.0
+      madge:
+        specifier: 8.0.0
+        version: 8.0.0(supports-color@10.2.2)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      typescript-eslint:
+        specifier: 8.69.0
+        version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      vitest:
+        specifier: 5.0.0
+        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+
   packages/smithers/ui/views:
     dependencies:
       '@babel/parser':
@@ -6042,6 +6100,9 @@ importers:
       '@smthrs/harness':
         specifier: workspace:*
         version: link:../../agent/harness
+      '@smthrs/view-frame':
+        specifier: workspace:*
+        version: link:../view-frame
       sucrase:
         specifier: 3.35.1
         version: 3.35.1

@@ -1,9 +1,5 @@
-
-/** The run reference is separate from backend IDs and from freeform message/JSON arguments. */
-export const splitRunSource = (args: string | undefined): { readonly args: string | undefined; readonly sourceCard?: string } => {
-  const match = /^\s*sourceCard=(\S+)(?:\s+([\s\S]*))?$/.exec(args ?? "")
-  return match === null ? { args } : { args: match[2], sourceCard: match[1]! }
-}
+import { splitRunSource } from "./form-input"
+export { splitRunSource } from "./form-input"
 
 export const takesRunSource = (name: string): boolean =>
   (name.startsWith("runs.") && name !== "runs.list") || name === "approvals.open" || name === "flow.run.stop-all" || name === "flow.run" || name === "flow.plan" ||
