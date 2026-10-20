@@ -65,3 +65,15 @@ func hostedImportWorkspaces(cfg *config.Config, next services.GitHubImportWorksp
 	}
 	return staffImportWorkspaces{next: next, staff: cfg.Sandbox.HostedWorkspaceUsers}
 }
+
+// hostedWorkflowOwners is whose repository workflow jobs the sandbox
+// scheduler runs on machines: on a multitenant deployment, the hosted staff
+// list's own repositories and the service-payer organizations' (nobody by
+// default), because anyone can create a repository or an organization there.
+// Elsewhere it is nil, and every owner's run as before.
+func hostedWorkflowOwners(cfg *config.Config) *services.WorkflowOwners {
+	if !config.IsMultitenant(cfg.Auth) {
+		return nil
+	}
+	return &services.WorkflowOwners{Users: cfg.Sandbox.HostedWorkspaceUsers, Orgs: cfg.Billing.ServicePayerOrgIDs}
+}

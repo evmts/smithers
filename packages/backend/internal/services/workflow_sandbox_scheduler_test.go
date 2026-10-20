@@ -45,6 +45,7 @@ type mockWorkflowSandboxSchedulerQuerier struct {
 	updateWorkflowRunJJHubTokenIDFn    func(ctx context.Context, arg db.UpdateWorkflowRunJJHubTokenIDParams) error
 	clearWorkflowRunJJHubTokenIDFn     func(ctx context.Context, id int64) error
 	cancelWorkflowTasksFn              func(ctx context.Context, workflowRunID int64) error
+	workflowName                       string
 	getWorkflowRunJJHubTokenIDFn       func(ctx context.Context, id int64) (pgtype.Int8, error)
 	// NixOS CI plane (workflow_nix_ci.go). Unset, the run carries no task
 	// graph and fails without booting anything.
@@ -176,6 +177,10 @@ func (m *mockWorkflowSandboxSchedulerQuerier) CancelWorkflowTasks(ctx context.Co
 		return m.cancelWorkflowTasksFn(ctx, workflowRunID)
 	}
 	return nil
+}
+
+func (m *mockWorkflowSandboxSchedulerQuerier) GetWorkflowDefinitionNameByRunID(context.Context, int64) (string, error) {
+	return m.workflowName, nil
 }
 
 func (m *mockWorkflowSandboxSchedulerQuerier) GetRepoByID(ctx context.Context, id int64) (db.Repository, error) {

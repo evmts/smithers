@@ -1408,6 +1408,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			// The run service settles the commit status, check run and
 			// workflow_run webhook it announced when it created the run.
 			services.WithWorkflowSandboxSchedulerTerminalPublisher(workflowRunTerminalPublisher),
+			// A multitenant deployment runs repository workflow jobs on
+			// machines only for listed owners (ITEM 11).
+			services.WithWorkflowSandboxSchedulerOwners(hostedWorkflowOwners(cfg)),
 		)
 	}
 	gitHubWebhookEventWorker := services.NewGitHubWebhookEventWorker(queries, workflowRunService)
@@ -1754,6 +1757,11 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	repositoryJobService.SetGitHubReadAccess(gitHubUserReposService)
 	repositoryJobService.SetOutsiderEgress(workspaceService)
 	repositoryJobService.SetRepositoryPolicyReader(repoHostClient)
+	// A multitenant deployment starts no repository job from an event a
+	// stranger can raise with their own code (ITEM 11).
+	if hostedWorkflowOwners(cfg) != nil {
+		repositoryJobService.AdmitMemberEventsOnly()
+	}
 	mythicalService.SetPolicyReader(repoHostClient)
 	// InvokeWorkflow runs a file flow through the same Flow dispatcher.
 	invokedFlowService := services.NewInvokedFlowService(pool, repositoryJobService, workspaceService)

@@ -86,6 +86,17 @@ type RepositoryJobService struct {
 	githubRead     RepositoryJobGitHubReadAccess
 	outsiderEgress RepositoryJobOutsiderEgress
 	policy         repositoryPolicyHost
+	// memberEventsOnly drops GitHub events outside hostedMemberCodeTriggers.
+	memberEventsOnly bool
+}
+
+// AdmitMemberEventsOnly makes the service take only GitHub events whose code
+// and text members control, the events the sandbox scheduler runs on a
+// multitenant deployment. Any GitHub user can open a pull request, review one
+// or start a check suite or run on a public repository, so such an event
+// starts no repository job there (ITEM 11).
+func (s *RepositoryJobService) AdmitMemberEventsOnly() {
+	s.memberEventsOnly = true
 }
 
 // SetRepositoryPolicyReader wires the repo host the worker reads the default

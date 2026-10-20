@@ -283,3 +283,25 @@ func TestHostedImportStartsABoxOnlyForStaff(t *testing.T) {
 	assert.Equal(t, "w1", workspace.ID)
 	assert.Equal(t, 1, next.calls)
 }
+
+// Anyone can create a repository or an organization on a hosted deployment,
+// so its sandbox scheduler runs workflow jobs on machines only for the staff
+// list's own repositories and the service-payer organizations', nobody by
+// default. Outside multitenant mode every owner's run (ITEM 11).
+func TestHostedWorkflowOwnersFollowTheStaffAndPayerLists(t *testing.T) {
+	staff := config.HostedWorkspaceUsers{UserIDs: []int64{1, 24, 60}}
+	payers := []int64{2, 4}
+	for _, tc := range []struct {
+		mode string
+		want *services.WorkflowOwners
+	}{
+		{config.AuthModeMultitenant, &services.WorkflowOwners{Users: staff, Orgs: payers}},
+		{config.AuthModeSelfHosted, nil},
+		{"", nil},
+	} {
+		cfg := &config.Config{Auth: config.AuthConfig{Mode: tc.mode}, Sandbox: config.SandboxConfig{HostedWorkspaceUsers: staff}, Billing: config.BillingConfig{ServicePayerOrgIDs: payers}}
+		assert.Equal(t, tc.want, hostedWorkflowOwners(cfg), "%q", tc.mode)
+	}
+	empty := &config.Config{Auth: config.AuthConfig{Mode: config.AuthModeMultitenant}}
+	assert.Equal(t, &services.WorkflowOwners{}, hostedWorkflowOwners(empty), "unset lists admit nobody")
+}

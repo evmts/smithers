@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -49,6 +51,7 @@ type WorkflowSandboxSchedulerQuerier interface {
 	GetOrgCredentialOwnerID(ctx context.Context, organizationID int64) (int64, error)
 
 	CancelWorkflowTasks(ctx context.Context, workflowRunID int64) error
+	GetWorkflowDefinitionNameByRunID(ctx context.Context, id int64) (string, error)
 
 	// NixOS CI plane: a sandbox-plane run that carries a rendered job graph
 	// runs each job in its own kind=vm guest (see workflow_nix_ci.go).
@@ -111,6 +114,27 @@ type WorkflowSandboxSchedulerWorker struct {
 	// terminalPublisher settles the commit status, check run and workflow_run
 	// webhook the run announced at creation, and fires downstream triggers.
 	terminalPublisher WorkflowRunTerminalPublisher
+
+	// owners, when set, are the repository owners whose workflow jobs run on
+	// machines. Unset, every owner's do, as on a single-owner install.
+	owners *WorkflowOwners
+}
+
+// WorkflowOwners are the repository owners whose workflow jobs run on
+// machines on a multitenant deployment: a listed user's own repositories and
+// a listed organization's. An organization is admitted only by its own id,
+// never through a member: any person can create one and add anyone as an
+// owner without their acceptance (ITEM 11).
+type WorkflowOwners struct {
+	Users config.HostedWorkspaceUsers
+	Orgs  []int64
+}
+
+func (o WorkflowOwners) admits(repository db.Repository) bool {
+	if repository.OrgID.Valid {
+		return slices.Contains(o.Orgs, repository.OrgID.Int64)
+	}
+	return repository.UserID.Valid && o.Users.Allows(repository.UserID.Int64)
 }
 
 func WithWorkflowSandboxSchedulerLogger(logger *slog.Logger) WorkflowSandboxSchedulerOption {
@@ -160,6 +184,16 @@ func WithWorkflowSandboxSchedulerCIGuests(provisioner WorkflowCIGuestProvisioner
 func WithWorkflowSandboxSchedulerTerminalPublisher(publisher WorkflowRunTerminalPublisher) WorkflowSandboxSchedulerOption {
 	return func(w *WorkflowSandboxSchedulerWorker) {
 		w.terminalPublisher = publisher
+	}
+}
+
+// WithWorkflowSandboxSchedulerOwners runs workflow jobs on machines only for
+// the owners' repositories. Anyone can create a repository on a multitenant
+// deployment, so an unlisted owner's run is refused before any secret is read
+// or machine made. Nil runs every owner's.
+func WithWorkflowSandboxSchedulerOwners(owners *WorkflowOwners) WorkflowSandboxSchedulerOption {
+	return func(w *WorkflowSandboxSchedulerWorker) {
+		w.owners = owners
 	}
 }
 
@@ -438,6 +472,9 @@ func (w *WorkflowSandboxSchedulerWorker) executeRun(ctx context.Context, claim w
 	if w.ciGuests == nil {
 		return w.failRun(ctx, claim, 0, "CI guests are not configured on this deployment")
 	}
+	if w.owners != nil && !hostedMemberCodeTriggers[NormalizeTriggerName(run.TriggerEvent)] {
+		return w.refuseRun(ctx, claim, "trigger_may_run_outside_code")
+	}
 
 	// Each job carries its own 120m ceiling; this is the whole-run backstop.
 	runCtx, cancel := context.WithTimeout(ctx, w.nixCIRunTimeout())
@@ -445,14 +482,17 @@ func (w *WorkflowSandboxSchedulerWorker) executeRun(ctx context.Context, claim w
 
 	logger := middleware.LoggerWithWorkflowRun(runCtx, run.ID)
 
-	// The claim flipped the row to running; tell status streamers (the run's
-	// lifecycle SSE subscribers) that execution has actually started.
-	NotifyWorkflowRunEvent(runCtx, w.queries, run.ID, "workflow_sandbox.running")
-
 	repository, owner, cloneUserID, err := w.resolveRepositoryOwner(runCtx, run.RepositoryID)
 	if err != nil {
 		return w.failRun(runCtx, claim, 0, "failed to resolve workflow repository owner")
 	}
+	if w.owners != nil && !w.owners.admits(repository) {
+		return w.refuseRun(runCtx, claim, "owner_not_listed")
+	}
+
+	// The claim flipped the row to running; tell status streamers (the run's
+	// lifecycle SSE subscribers) that execution has actually started.
+	NotifyWorkflowRunEvent(runCtx, w.queries, run.ID, "workflow_sandbox.running")
 
 	// redactEnv collects every sensitive value bound for the guests (true
 	// repository/org secrets plus per-run tokens, NOT plain variables) so run
@@ -551,6 +591,41 @@ func (w *WorkflowSandboxSchedulerWorker) cancelRunTasks(ctx context.Context, run
 	if err := w.queries.CancelWorkflowTasks(ctx, runID); err != nil {
 		w.logger.Warn("failed to cancel workflow tasks after sandbox terminalization", "run_id", runID, "error", err)
 	}
+}
+
+// hostedMemberCodeTriggers are the events whose runs execute only code members
+// put in the repository: the default branch, or a ref only writers move. A
+// pull request, a review of one, or a check suite or run can carry a fork's
+// head, and a workflow_run or workflow_artifact run copies its parent's, so a
+// multitenant deployment refuses every other event, listed owners' too.
+var hostedMemberCodeTriggers = map[string]bool{
+	"push":                       true,
+	SystemPushTriggerEvent:       true,
+	"schedule":                   true,
+	"workflow_dispatch":          true,
+	"landing_request":            true,
+	"stack_submit":               true,
+	"issue":                      true,
+	"issue_comment":              true,
+	AlertRemediationTriggerEvent: true,
+}
+
+// workflowsUnavailable is why a refused run failed. A retry cannot change it.
+const workflowsUnavailable = "workflows_unavailable"
+
+// refuseRun fails a run this deployment does not run on machines, before any
+// secret is read or machine created, and records why on its first job.
+func (w *WorkflowSandboxSchedulerWorker) refuseRun(ctx context.Context, claim workflowSandboxRunClaim, detail string) error {
+	name, err := w.queries.GetWorkflowDefinitionNameByRunID(ctx, claim.Run.ID)
+	if err != nil || strings.TrimSpace(name) == "" {
+		name = "<name>"
+	}
+	var stepID int64
+	if tasks, err := loadNixCITasks(ctx, w.queries, claim.Run.ID, claim.Run.RepositoryID); err == nil && len(tasks) > 0 {
+		stepID = tasks[0].StepID
+	}
+	w.logger.Info("workflow run refused", "run_id", claim.Run.ID, "repository_id", claim.Run.RepositoryID, "reason", workflowsUnavailable, "detail", detail)
+	return w.failRun(ctx, claim, stepID, "Repository workflows don't run on smithers.sh yet. Run them locally with npx smthrs@next flow start "+name+".")
 }
 
 // failRun mints its own finalize context (detached from the caller's, which may

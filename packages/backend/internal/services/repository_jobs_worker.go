@@ -21,6 +21,9 @@ import (
 // AdmitGitHubEvent is only called from the signed, deduplicated GitHub job
 // worker. The original issue/comment objects never grant repository authority.
 func (s *RepositoryJobService) AdmitGitHubEvent(ctx context.Context, repoID int64, job db.GithubWebhookJob, event TriggerEvent) error {
+	if s.memberEventsOnly && !hostedMemberCodeTriggers[NormalizeTriggerName(event.Type)] {
+		return nil
+	}
 	if strings.TrimSpace(job.DeliveryID) == "" {
 		return fmt.Errorf("github job is missing its signed-body delivery identity")
 	}
