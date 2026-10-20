@@ -171,11 +171,16 @@ export function checkBuiltSite(root, requiredReferences = [], appPaths = []) {
   const pages = new Map()
   const failures = new Set()
   const redirects = readRedirects(root)
+  // The docs pages' Markdown copies (scripts/sync-app-docs.mjs) link pages and
+  // screenshots by absolute smithers.sh URL; each must land in this build.
+  const markdown = new Map()
   function walk(directory) {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const path = join(directory, entry.name)
       if (entry.isDirectory()) walk(path)
-      else if (entry.name.endsWith(".html")) {
+      else if (entry.name.endsWith(".md")) {
+        markdown.set(path, [...readFileSync(path, "utf8").matchAll(/\]\((https:\/\/smithers\.sh\/[^)\s]*)\)/g)].map((match) => match[1]))
+      } else if (entry.name.endsWith(".html")) {
         const html = readFileSync(path, "utf8")
         pages.set(path, {
           ids: new Set([...html.matchAll(/\bid="([^"]*)"/g)].map((match) => decode(match[1]))),
@@ -250,6 +255,9 @@ export function checkBuiltSite(root, requiredReferences = [], appPaths = []) {
       if (siteUrl(reference, base) === undefined) continue
       check(reference, relative(root, page), base)
     }
+  }
+  for (const [file, references] of markdown) {
+    for (const reference of references) check(reference, relative(root, file))
   }
   for (const reference of requiredReferences) check(reference, "release URL")
   for (const rule of redirects) {

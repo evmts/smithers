@@ -3,6 +3,8 @@ title: "Flows reference"
 summary: "Find, customize and run the factory's flows."
 ---
 
+Every action in Smithers is a flow: a typed, durable program that a button, a slash command and an agent all run the same way. This page shows how to find a flow, change one and write your own.
+
 ## Find a command
 
 Type `/` in Chat to see commands and groups. Type more letters to filter them. `/help` opens the Commands card. `/flows` lists repository flows; `/flow todo` opens the TODO flow's steps and versions.
@@ -57,4 +59,4 @@ After a merge, learning can propose an improvement with evidence from prior TODO
 
 On a scratch branch, open the Flow card and choose **Plan** to inspect its working-copy version without running steps, or **Run** with a test input. The run is labeled draft version. It is separate from a TODO attempt. A draft run of `todo` stops before proposing onto the stack and writes nothing to GitHub.
 
-See [Quickstart](quickstart.md#first-todo-to-merged) for your first change.
+See [Self-host Smithers](self-host.md#first-todo-to-merged) for your first change.

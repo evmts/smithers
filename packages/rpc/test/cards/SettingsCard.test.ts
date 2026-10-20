@@ -55,7 +55,7 @@ describe("Settings", () => {
     const tags = (story: keyof typeof fixtures) => fixtures[story].actions.map((action) => action.tag)
     expect(tags("ready")).not.toContain("docs")
     expect(fixtures.notifications_need_https.actions.find((action) => action.tag === "docs")?.args).toEqual({
-      page: "quickstart#put-https-in-front"
+      page: "self-host#put-https-in-front"
     })
   })
   test("the Obsidian folder is optional and keeps its sync error", () => {

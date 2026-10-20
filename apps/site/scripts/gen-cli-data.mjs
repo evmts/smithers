@@ -1,9 +1,11 @@
 /**
  * Capture the checked-out CLI's schemas, help and version pins for docs lint,
  * and write the migration guide the CLI links (migration-guide.mjs).
- * M-35 retires the public CLI pages and the migration page under /docs; source
- * facts remain available. The guide at /migration/1.0 stays, because every
- * published 1.0 package sends a 0.x project there (issue 3845).
+ * M-35 retired the per-command pages under /docs/reference/cli/ and the
+ * migration page under /docs; gen-cli-reference.mjs renders the one CLI
+ * reference page from these captures (M-50). The guide at /migration/1.0
+ * stays, because every published 1.0 package sends a 0.x project there
+ * (issue 3845).
  * Run with --check to report drift without writing.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
@@ -136,7 +138,7 @@ for (const command of [...commandPaths].sort()) {
   outputs.set(join(helpDir, ...tokens.slice(0, -1), `${tokens.at(-1)}.txt`), await help(tokens))
 }
 
-// M-35: retain source CLI schemas and help, without publishing CLI pages.
+// M-35: retain source CLI schemas and help; remove the retired per-command pages.
 const helpFiles = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
   entry.isDirectory() ? helpFiles(join(dir, entry.name)) : [join(dir, entry.name)]
 )

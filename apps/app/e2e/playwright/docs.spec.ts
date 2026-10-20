@@ -8,16 +8,36 @@ test("Docs navigation clears a missing page and supports an anchor on the defaul
   await say(page, "/docs no-such-page")
   const docs = page.getByRole("article", { name: "Docs", exact: true })
   await expect(docs).toContainText("Page not found: no-such-page")
-  await docs.getByRole("navigation", { name: "Docs pages" }).getByRole("link", { name: "Quickstart", exact: true }).press("Enter")
+  await docs.getByRole("navigation", { name: "Docs pages" }).getByRole("link", { name: "Welcome to Smithers", exact: true }).press("Enter")
   await expect(docs.locator(".mvp-docs-missing")).toHaveCount(0)
-  await say(page, "/docs #put-https-in-front")
-  await expect(docs.locator("#put-https-in-front")).toBeInViewport()
+  await say(page, "/docs #two-ways-to-use-smithers")
+  await expect(docs.locator("#two-ways-to-use-smithers")).toBeInViewport()
   await expect(page.getByTestId("composer-input")).toBeEditable()
   await page.reload()
   await expect(page.getByTestId("composer-input")).toBeEditable()
-  await expect(docs.locator("#put-https-in-front")).toBeVisible()
+  await expect(docs.locator("#two-ways-to-use-smithers")).toBeVisible()
   await expect(docs.locator(".mvp-docs-missing")).toHaveCount(0)
 })
+
+// Docs screenshots ship as hashed assets in the app bundle: a page's block image
+// must load in the docs card, and only the variant for the current theme shows.
+for (const theme of ["light", "dark"] as const) {
+  test(`Docs screenshots load and show only the ${theme} variant`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: theme })
+    await owner(page)
+    await page.goto("/")
+    await expect(page.locator(`html[data-theme="${theme}"]`)).toHaveCount(1)
+    await say(page, "/docs quickstart")
+    const docs = page.getByRole("article", { name: "Docs", exact: true })
+    const shot = docs.locator("figure img:visible").first()
+    await shot.scrollIntoViewIfNeeded()
+    await expect(shot).toHaveAttribute("src", new RegExp(`\\.${theme}-[^/]*\\.webp$`))
+    await expect(shot).toHaveAttribute("alt", /\S/)
+    await expect.poll(() => shot.evaluate((img: HTMLImageElement) => img.complete ? img.naturalWidth : 0)).toBe(2880)
+    const other = theme === "light" ? "dark" : "light"
+    await expect(docs.locator(`figure img:visible[src*=".${other}-"]`)).toHaveCount(0)
+  })
+}
 
 // Serve the production bundle at literal browser origins; only HTTP providers
 // are fixtures. Docs dispatch, bundled loading, and CardRenderers stay real.
@@ -54,10 +74,10 @@ for (const origin of ["http://mini.test", "https://mini.test", "http://localhost
   })
 }
 
-// Settings and the quickstart are taller than the window. A person who reads to their end stays there through a
+// Settings and the self-host page are taller than the window. A person who reads to their end stays there through a
 // re-render, and a control there is still under the pointer when a held press is released (macOS WebKit moves focus
 // to the conversation on the press, which re-rendered it and rewound the card to its top).
-test("The end of Settings and of a docs page stays in view, and a held press on the hint opens the quickstart", async ({ page, baseURL }) => {
+test("The end of Settings and of a docs page stays in view, and a held press on the hint opens the self-host page", async ({ page, baseURL }) => {
   const origin = "http://mini.test"
   await page.route(`${origin}/**`, async route => {
     const url = new URL(route.request().url())

@@ -1,9 +1,11 @@
 /*
  * The in-app docs (M-35): one Markdown file per page under pages/, each
  * opening with exactly a `title` and a `summary` in its frontmatter, in the
- * order toc.ts lists them. This module is pure: it parses the files it is
- * handed. bundled.ts hands it the build's files; the test suites hand it the
- * same files read from disk (DiskPages.ts).
+ * order toc.ts lists them. A page shows a screenshot as a block image,
+ * `![Alt text](images/<id>.webp)`, drawn from images/<id>.light.webp and
+ * images/<id>.dark.webp for the current theme. This module is pure: it parses
+ * the files it is handed. bundled.ts hands it the build's files; the test
+ * suites hand it the same files read from disk (DiskPages.ts).
  */
 import type { DocsPage } from "@smthrs/rpc/DocsPages"
 import { resolveMarkdownLink } from "../mainview/cards/MarkdownLinks"
@@ -14,10 +16,20 @@ export type { DocsSection } from "./toc"
 /** One page: its slug (the file name without `.md`), its frontmatter, and the Markdown after it. */
 export type { DocsPage }
 
-/** Every page, in toc order, beside the sections that order them. */
+/** A screenshot's two files, one per theme. */
+export interface DocsImage {
+  readonly light: string
+  readonly dark: string
+}
+
+/**
+ * Every page, in toc order, beside the sections that order them, and each
+ * screenshot's files keyed by the source a page writes (`images/<id>.webp`).
+ */
 export interface Docs {
   readonly sections: ReadonlyArray<DocsSection>
   readonly pages: ReadonlyArray<DocsPage>
+  readonly images: Readonly<Record<string, DocsImage>>
 }
 
 const KEYS = ["title", "summary"] as const
@@ -60,15 +72,39 @@ export const parsePage = (source: string): ParsedPage => {
 
 const SLUG = "[a-z0-9]+(?:-[a-z0-9]+)*"
 const PAGE_FILE = new RegExp(`^\\./pages/(${SLUG})\\.md$`)
+const IMAGE_FILE = new RegExp(`^\\./images/(${SLUG})\\.(light|dark)\\.webp$`)
 const SIBLING_PAGE = new RegExp(`^(${SLUG})\\.md$`)
+
+/** Pairs `./images/<id>.<theme>.webp` files (path to URL) by id; a stray name or a lone theme throws. */
+const pairImages = (files: Readonly<Record<string, string>>): Record<string, DocsImage> => {
+  const found = new Map<string, { light?: string; dark?: string }>()
+  for (const [path, url] of Object.entries(files)) {
+    const match = IMAGE_FILE.exec(path)
+    if (match === null) throw new Error(`${path.replace(/^\.\//, "")} is not named <id>.light.webp or <id>.dark.webp.`)
+    const id = match[1]!
+    found.set(id, { ...found.get(id), [match[2]!]: url })
+  }
+  const images: Record<string, DocsImage> = {}
+  for (const [id, { light, dark }] of found) {
+    if (light === undefined) throw new Error(`images/${id}.dark.webp has no images/${id}.light.webp.`)
+    if (dark === undefined) throw new Error(`images/${id}.light.webp has no images/${id}.dark.webp.`)
+    images[`images/${id}.webp`] = { light, dark }
+  }
+  return images
+}
 
 /**
  * Builds the docs from the page files, keyed `./pages/<slug>.md` as Vite's
- * glob keys them. A file that is not a valid page, a toc slug without a page,
- * a page the toc leaves out and a slug listed twice all throw: the docs ship
- * whole or the suite fails.
+ * glob keys them, and the screenshot files, keyed `./images/<file>.webp` with
+ * each file's URL. A file that is not a valid page, a toc slug without a page,
+ * a page the toc leaves out, a slug listed twice and a screenshot without both
+ * themes all throw: the docs ship whole or the suite fails.
  */
-export const loadDocs = (files: Readonly<Record<string, string>>, toc: ReadonlyArray<DocsSection> = TOC): Docs => {
+export const loadDocs = (
+  files: Readonly<Record<string, string>>,
+  toc: ReadonlyArray<DocsSection> = TOC,
+  imageFiles: Readonly<Record<string, string>> = {}
+): Docs => {
   const parsed = new Map<string, DocsPage>()
   for (const [path, source] of Object.entries(files)) {
     const name = path.replace(/^\.\//, "")
@@ -87,7 +123,7 @@ export const loadDocs = (files: Readonly<Record<string, string>>, toc: ReadonlyA
     if (!parsed.has(slug)) throw new Error(`toc.ts lists ${slug}, but pages/${slug}.md does not exist.`)
   }
   for (const slug of parsed.keys()) if (!seen.has(slug)) throw new Error(`pages/${slug}.md is not in toc.ts.`)
-  return { sections: toc, pages: listed.map((slug) => parsed.get(slug)!) }
+  return { sections: toc, pages: listed.map((slug) => parsed.get(slug)!), images: pairImages(imageFiles) }
 }
 
 /** The page with this slug, or undefined. */

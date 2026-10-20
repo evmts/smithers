@@ -70,7 +70,7 @@ export const SettingsContainer = ({ View, install, dispatch, owner, origin, view
       input: [{ name: "name", label: "Package", kind: "text", required: true }],
       resolve_input: input => ({ name: input.name ?? "" }) },
     ...(needsHttps && docsAvailable() ? [{ tag: "docs" as const, label: "Notifications need HTTPS ↗",
-      args: { page: "quickstart#put-https-in-front" }, command_input: { page: "quickstart#put-https-in-front" } }] : []),
+      args: { page: "self-host#put-https-in-front" }, command_input: { page: "self-host#put-https-in-front" } }] : []),
     settingsControl("capacity", { tag: "settings", label: "Machines", args: { field: "capacity", min: "1", max: String(model.this_mac.capacity) }, command_input: { capacity: model.capacity },
       input: [{ name: "value", label: "Machines", kind: "text", required: true, value: String(model.capacity) }],
       resolve_input: input => ({ capacity: Number(input.value ?? input.capacity ?? model.capacity) }) }),
@@ -110,7 +110,7 @@ const SettingsBody = ({ presentation }: { readonly presentation: CardActions["pr
   // MOCK SEAM: the seed's per-member view state holds the Address choice until the `view:<member>` topic lands.
   const viewer = controller.design.viewer()
   const listen = useLiveQuery(settingsViewsOf(controller.design)).data.find(row => row.id === viewer)?.listen
-  return <SettingsContainer View={SettingsView} install={install} owner={owner} docsAvailable={() => controller.docsTargetAvailable("quickstart#put-https-in-front")}
+  return <SettingsContainer View={SettingsView} install={install} owner={owner} docsAvailable={() => controller.docsTargetAvailable("self-host#put-https-in-front")}
     origin={typeof window === "undefined" ? "http://localhost" : window.location.origin}
     view={{ maximized: presentation === "maximized", ...(listen === undefined ? {} : { tab: listen }) }} onView={patch => setSettingsView(controller.design, viewer, patch)}
     dispatch={(name, payload, gesture) => controller.commands.submit({ name, payload: (payload ?? {}) as Record<string, unknown>, actor: "user", gesture })} />

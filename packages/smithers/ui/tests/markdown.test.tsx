@@ -525,3 +525,129 @@ describe("Markdown (document mode): blockquotes, alerts and images", () => {
     }
   });
 });
+
+/*
+ * Block screenshots. A line that is exactly `![alt](src)` is an image block;
+ * the host's `resolveImage` maps the source to its light and dark files and
+ * the sheet shows the one that matches `html[data-theme]`. Markdown never
+ * puts a source it was handed into an `<img>`: without a resolver or on a miss
+ * the line reads exactly as it would as a paragraph in that variant, and an
+ * image inside a paragraph is never drawn.
+ */
+describe("Markdown (images)", () => {
+  const shot = { light: "/assets/repo-home.light-a1.webp", dark: "/assets/repo-home.dark-b2.webp" };
+  const resolveImage = (src: string) => (src === "images/repo-home.webp" ? shot : undefined);
+  const BLOCK = "Before.\n\n![The repository home with its file tree](images/repo-home.webp)\n\nAfter.";
+
+  test("a resolved block image is a figure with one image per theme", () => {
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(<Markdown content={BLOCK} resolveImage={resolveImage} />);
+    const figure = host.querySelector("figure.sui-md-figure");
+    expect(figure).toBeTruthy();
+    const images = [...figure!.querySelectorAll("img")];
+    expect(
+      images.map((img) => ({
+        variant: img.getAttribute("data-variant"),
+        src: img.getAttribute("src"),
+        alt: img.getAttribute("alt"),
+        width: img.getAttribute("width"),
+        height: img.getAttribute("height"),
+        loading: img.getAttribute("loading"),
+        decoding: img.getAttribute("decoding"),
+      })),
+    ).toEqual(
+      (["light", "dark"] as const).map((variant) => ({
+        variant,
+        src: shot[variant],
+        alt: "The repository home with its file tree",
+        width: "1440",
+        height: "900",
+        loading: "lazy",
+        decoding: "async",
+      })),
+    );
+    expect(host.textContent).toBe("Before.After.");
+    expect(host.querySelector("a")).toBeNull();
+  });
+
+  test("a block image a resolver misses shows its alt text; without a resolver the line reads as before", () => {
+    for (const variant of ["chat", "document"] as const) {
+      for (const resolve of [() => undefined, (src: string) => (src === "images/other.webp" ? shot : undefined)]) {
+        const host = document.createElement("div");
+        host.innerHTML = renderToStaticMarkup(<Markdown content={BLOCK} variant={variant} resolveImage={resolve} />);
+        expect(host.querySelector("img")).toBeNull();
+        expect(host.querySelector("a")).toBeNull();
+        expect(host.innerHTML).toContain('<p class="sui-md-p">The repository home with its file tree</p>');
+        expect(host.textContent).not.toContain("!");
+      }
+      expect(renderToStaticMarkup(<Markdown content={BLOCK} variant={variant} />)).not.toContain("<img");
+    }
+    // No resolver: the chat line keeps main's rendering, a bang and a link to the file.
+    expect(renderToStaticMarkup(<Markdown content={"![Gone](images/missing.webp)"} />)).toContain("!");
+  });
+
+  test("an image inside a paragraph, list or table is never drawn, even when it resolves", () => {
+    for (const variant of ["chat", "document"] as const) {
+      for (const content of [
+        "See ![the home](images/repo-home.webp) here.",
+        "- ![the home](images/repo-home.webp)",
+        "| a |\n| --- |\n| ![the home](images/repo-home.webp) |",
+      ]) {
+        const html = renderToStaticMarkup(<Markdown content={content} variant={variant} resolveImage={resolveImage} />);
+        expect({ variant, content, img: html.includes("<img") }).toEqual({ variant, content, img: false });
+      }
+    }
+  });
+
+  test("an image line ends the paragraph above it", () => {
+    const html = renderToStaticMarkup(
+      <Markdown content={"Open the repository.\n![The repository home](images/repo-home.webp)"} resolveImage={resolveImage} />,
+    );
+    expect(html).toContain('<p class="sui-md-p">Open the repository.</p><figure class="sui-md-figure">');
+    expect(markdownBlockParser.scan("Text\n![a](b.webp)\nMore").map((span) => span.kind)).toEqual([
+      "paragraph",
+      "image",
+      "paragraph",
+    ]);
+  });
+
+  test("the sheet shows only the variant that matches html[data-theme]", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const shown: Record<string, Array<string | null>> = {};
+    for (const theme of ["light", "dark"]) {
+      document.documentElement.setAttribute("data-theme", theme);
+      const host = document.createElement("div");
+      document.body.appendChild(host);
+      const root = createRoot(host);
+      try {
+        await act(async () => root.render(<Markdown content={BLOCK} resolveImage={resolveImage} />));
+        shown[theme] = [...host.querySelectorAll("img")]
+          .filter((img) => getComputedStyle(img).display !== "none")
+          .map((img) => img.getAttribute("data-variant"));
+      } finally {
+        await act(async () => root.unmount());
+        host.remove();
+        document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((el) => el.remove());
+        document.documentElement.removeAttribute("data-theme");
+      }
+    }
+    expect(shown).toEqual({ light: ["light"], dark: ["dark"] });
+  });
+
+  test("a new resolver re-renders completed blocks", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(<Markdown content={BLOCK} />));
+      expect(host.querySelector("img")).toBeNull();
+      await act(async () => root.render(<Markdown content={BLOCK} resolveImage={resolveImage} />));
+      expect(host.querySelectorAll("img")).toHaveLength(2);
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((el) => el.remove());
+    }
+  });
+});

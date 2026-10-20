@@ -4,11 +4,15 @@ import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import test from "node:test"
+import { MARKER, parseToc, route } from "./sync-app-docs.mjs"
+import { MARKER as CLI_MARKER } from "./gen-cli-reference.mjs"
 
 const site = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const root = resolve(site, "../..")
 const read = (path) => readFileSync(join(root, path), "utf8")
 const installation = read("apps/site/docs/installation.mdx")
+const toc = parseToc(read("apps/app/src/docs/toc.ts"))
+const appPages = readdirSync(join(root, "apps/app/src/docs/pages")).filter((name) => name.endsWith(".md")).sort()
 
 // In-app commands and released source schemas have no planned exceptions.
 const snippets = (text) => [...text.matchAll(/```(?:bash|sh|shell)\s*\n([\s\S]*?)```|`(smthrs [^`\n]+)`/g)].flatMap((match) => {
@@ -65,10 +69,8 @@ test("all documented CLI commands and arguments exist in the source CLI", async 
   assert.equal(status, 0, output)
   assert.ok(output.includes(JSON.parse(read("packages/smithers/package.json")).version), output)
   validateCommands(installation, [...commands, { name: "--version" }])
-  for (const name of ["quickstart", "flows"]) {
-    const text = read(`apps/app/src/docs/pages/${name}.md`)
-    validateCommands(text, commands)
-  }
+  assert.ok(appPages.length > 0, "the app docs must have pages")
+  for (const name of appPages) validateCommands(read(`apps/app/src/docs/pages/${name}`), commands)
 })
 
 test("command guard rejects invented commands, flags and invalid positional arguments", () => {
@@ -80,12 +82,26 @@ test("command guard rejects invented commands, flags and invalid positional argu
   validateCommands("`smthrs host restore /Users/will/Backups/smithers`", commands)
 })
 
-test("the public sidebar contains only installation and the API", () => {
+test("the public sidebar is the app's toc, then Install beside self-hosting, then the reference with the CLI", () => {
   const config = read("apps/site/astro.config.mjs")
-  const sidebar = config.match(/sidebar:\s*\[([\s\S]*?)\]/)?.[1]
-  assert.ok(sidebar, "explicit public sidebar must exist")
-  assert.deepEqual([...sidebar.matchAll(/slug:\s*["']([^"']+)["']/g)].map((match) => match[1]), ["docs/installation", "docs/reference/http-api"])
-  assert.doesNotMatch(sidebar, /autogenerate|items:/)
+  assert.match(config, /^import sidebar from "\.\/src\/data\/docs-sidebar\.json" with \{ type: "json" \}$/m)
+  assert.match(config, /^\s*sidebar\n\s*\}\)/m, "Starlight must take the generated sidebar unchanged")
+  const sidebar = JSON.parse(read("apps/site/src/data/docs-sidebar.json"))
+  const slug = (page) => page === "welcome" ? "docs" : `docs/${page}`
+  const expected = toc.map(({ label, pages }) => ({ label, items: pages.map((page) => ({ slug: slug(page) })) }))
+  const ownMac = expected.find(({ label }) => label === "On your own Mac")
+  assert.ok(ownMac, "toc.ts must keep the On your own Mac section that Install joins")
+  ownMac.items.push({ slug: "docs/installation" })
+  expected.push({
+    label: "Reference",
+    items: [
+      { label: "HTTP and RPC API", slug: "docs/reference/http-api" },
+      { label: "CLI", slug: "docs/reference/cli" },
+      { label: "Library API", slug: "docs/reference/api" }
+    ]
+  })
+  assert.deepEqual(sidebar, expected)
+  assert.doesNotMatch(JSON.stringify(sidebar), /autogenerate/)
 })
 
 test("installation keeps the project opening", () => {
@@ -98,7 +114,7 @@ test("installation keeps the project opening", () => {
 // Frozen retirement inventory for #3458; installation is the replacement page.
 test("every retired inventory path is absent", () => {
   const retired = JSON.parse(read("apps/site/docs/retired-pages.json"))
-  assert.equal(retired.length, 53)
+  assert.equal(retired.length, 51)
   assert.equal(new Set(retired).size, retired.length)
   for (const path of retired) assert.equal(existsSync(join(root, path)), false, `retired page exists: ${path}`)
 })
@@ -129,17 +145,25 @@ test("setup puts Address and App before the owner claim and repository", () => {
 })
 
 
-test("only installation and the API remain in the published docs tree", () => {
+test("the published docs tree holds the app's pages, installation, the CLI reference and the API", () => {
   const content = join(site, "src/content/docs/docs")
   const paths = readdirSync(content, { recursive: true }).filter(path => /\.mdx?$/.test(path))
+  const projected = toc.flatMap(({ pages }) => pages).map((page) => page === "welcome" ? "index.md" : `${page}.md`)
   assert.ok(paths.includes("installation.mdx"))
   assert.ok(paths.includes("reference/http-api.mdx"))
-  for (const path of paths) assert.ok(path === "installation.mdx" || path === "reference/http-api.mdx" || path.startsWith("reference/api/"), `retired projection remains: ${path}`)
+  assert.ok(paths.includes("reference/cli.md"))
+  assert.ok(readFileSync(join(content, "reference/cli.md"), "utf8").includes(CLI_MARKER), "the CLI reference must be generated from the captured help")
+  assert.ok(existsSync(join(site, "public/docs/reference/cli.md")), "the CLI reference must publish its Markdown copy")
+  assert.ok(projected.includes("index.md"), "the welcome page publishes at /docs/")
+  for (const path of paths) assert.ok(path === "installation.mdx" || path === "reference/http-api.mdx" || path === "reference/cli.md" || path.startsWith("reference/api/") || projected.includes(path), `retired projection remains: ${path}`)
+  for (const path of projected) assert.ok(readFileSync(join(content, path), "utf8").includes(MARKER), `${path} must be projected from apps/app/src/docs`)
   const retired = JSON.parse(read("apps/site/docs/retired-projections.json"))
   for (const path of retired) assert.equal(existsSync(join(root, path)), false, `retired projection exists: ${path}`)
   const redirects = read("apps/site/public/_redirects")
+  const live = new Set([...toc.flatMap(({ pages }) => pages).map(route), "/docs/reference/cli/"].flatMap((path) => [path, path.slice(0, -1)]))
   for (const line of redirects.split("\n").filter(line => line && !line.startsWith("#"))) {
-    const [, destination] = line.split(/\s+/)
+    const [source, destination] = line.split(/\s+/)
+    assert.ok(!live.has(source), `redirect hides a published docs page: ${line}`)
     if (destination.startsWith("/docs/")) assert.ok(destination === "/docs/installation/" || destination === "/docs/reference/http-api/" || destination.startsWith("/docs/reference/api/"), `redirect points at retired page: ${line}`)
   }
   for (const [, destination] of installation.matchAll(/\]\(([^)]+)\)/g)) {

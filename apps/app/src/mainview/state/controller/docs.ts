@@ -15,6 +15,8 @@ export interface DocsController {
   /** `docs [page]`: embed the page (the toc's first when none is named) and tell the agent what was embedded. */
   readonly docsTargetAvailable: (target: string) => boolean
   readonly docsAvailable: () => boolean
+  /** Each screenshot's light and dark file URLs, keyed `images/<id>.webp`, for the Docs card to draw. */
+  readonly docsImages: () => Docs["images"]
   readonly openDocsPage: (page?: string) => string | { readonly value: string }
   /** `docs {mode:"read", page}`: the page's title, summary and Markdown as JSON. */
   readonly readDocsPage: (page: string) => string | { readonly value: string }
@@ -44,5 +46,5 @@ export const createDocsController = (
     const found = docsPage(deps.docs(), slug!)
     return found !== undefined && (!anchor || headingLine(found.markdown, anchor) !== undefined)
   }
-  return { docsTargetAvailable, docsAvailable: deps.available, openDocsPage, readDocsPage }
+  return { docsTargetAvailable, docsAvailable: deps.available, docsImages: () => deps.docs().images, openDocsPage, readDocsPage }
 }

@@ -9,5 +9,7 @@ export interface DocsSection {
 }
 
 export const TOC: ReadonlyArray<DocsSection> = [
-  { label: "Get started", pages: ["quickstart", "flows"] }
+  { label: "Get started", pages: ["welcome", "quickstart"] },
+  { label: "On your own Mac", pages: ["self-host"] },
+  { label: "Flows", pages: ["flows"] }
 ]

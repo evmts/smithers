@@ -80,6 +80,19 @@ const supportDocs = Smithers.Generate({
   ]
 })
 
+/**
+ * The app's docs (apps/app/src/docs, mvp.md M-35) on smithers.sh/docs: one
+ * Starlight page per toc.ts page (`welcome` at /docs/), its Markdown copy at
+ * /docs/<slug>.md, and the sidebar astro.config.mjs reads. The screenshots are
+ * not projected: the build serves them from the app's directory (`build`).
+ */
+const appDocs = Smithers.Generate({
+  summary: "Project the app's docs pages, their Markdown copies, and the docs sidebar from apps/app/src/docs; check drift under lint.",
+  script: Smithers.file("scripts/sync-app-docs.mjs"),
+  data: [uiPackage.docsInputs, uiPackage.docsImages, Smithers.file("//apps/app/src/docs/toc.ts"), Smithers.file("scripts/docs-text.mjs")],
+  changes: ["src/content/docs/docs/*.md", "public/docs/*.md", "src/data/docs-sidebar.json"]
+})
+
 /** The pages, docs content, components, layouts, styles, scripts, public assets, Astro config, and tsconfig. */
 const sources = [
   Smithers.glob("//apps/site/src/**/*"),
@@ -120,7 +133,9 @@ const check = Smithers.ToolRun({
 
 /**
  * Build the site and verify its links against the CLI and release changelog.
- * Vite transforms the browser app island under apps/app/tsconfig.json.
+ * Vite transforms the browser app island under apps/app/tsconfig.json, and
+ * scripts/app-docs-integration.mjs copies the docs screenshots from
+ * apps/app/src/docs/images (the app's `docsInputs`) into dist/images/docs.
  */
 const build = Smithers.ToolBuild({
   tool: "astro",
@@ -128,7 +143,7 @@ const build = Smithers.ToolBuild({
   args: ["run", "build"],
   inputs: [...sources, Smithers.file("//CHANGELOG.md")],
   outputs: ["dist"],
-  deps: [cliPackage.docsSources, appSources, docsKit],
+  deps: [cliPackage.docsSources, appSources, docsKit, uiPackage.docsInputs, uiPackage.docsImages],
   env: {},
   cache: true,
   cwd
@@ -180,6 +195,25 @@ const cliData = Smithers.Generate({
   ]
 })
 // --- end CLI data ----------------------------------------------------------
+
+/**
+ * The CLI reference at /docs/reference/cli/ and its Markdown copy, rendered
+ * from the command manifest and help captures `cliData` writes. Nothing on the
+ * page is typed by hand, and a help capture that disagrees with the manifest
+ * fails the generator rather than publishing.
+ */
+const cliReference = Smithers.Generate({
+  summary: "Render the CLI reference page and its Markdown copy from the captured command manifest and help; check drift under lint.",
+  script: Smithers.file("scripts/gen-cli-reference.mjs"),
+  data: [Smithers.file("src/data/cli-commands.json"), Smithers.glob("src/data/help/**/*.txt")],
+  changes: ["src/content/docs/docs/reference/cli.md", "public/docs/reference/cli.md"]
+})
+
+/** The CLI reference generator: fixture help and manifest in, Markdown sections out, plus write, check and drift. */
+const cliReferenceTest = Smithers.Shell.Test({
+  shell: "node --test apps/site/scripts/gen-cli-reference.test.mjs",
+  data: [Smithers.file("scripts/gen-cli-reference.mjs"), Smithers.file("scripts/gen-cli-reference.test.mjs")]
+})
 
 // --- API reference pages ---------------------------------------------------
 // One page per published package, stitched from its colocated docs/api.md by
@@ -258,6 +292,9 @@ const llms = Smithers.Generate({
   script: Smithers.file("scripts/generate-llms.mjs"),
   data: [
     Smithers.glob("src/content/docs/**/*.mdx"),
+    Smithers.glob("src/content/docs/**/*.md"),
+    Smithers.glob("public/docs/**/*.md"),
+    Smithers.file("src/data/docs-sidebar.json"),
     Smithers.file("src/data/project.json"),
     Smithers.file("src/data/versions.json"),
     Smithers.glob("src/data/help/**/*.txt"),
@@ -309,14 +346,17 @@ const checkExitTest = Smithers.Shell.Test({
       "check-docs",
       "docs-text",
       "gen-cli-data",
+      "gen-cli-reference",
       "generate-llms",
       "generate-project-copy",
       "ingest-reference",
       "sync-api-docs",
+      "sync-app-docs",
       "sync-support-docs"
     ].map((name) => Smithers.file(`scripts/${name}.mjs`)),
     Smithers.glob("src/content/docs/docs/**/*"),
     Smithers.glob("src/data/**/*"),
+    Smithers.glob("public/docs/**"),
     Smithers.file("public/llms.txt"),
     Smithers.file("public/llms-full.txt"),
     docsKit,
@@ -352,11 +392,20 @@ const projectCopyTest = Smithers.Shell.Test({
   ]
 })
 
-/** Installation commands resolve against the source CLI; planned commands stay ticket-bound. */
+/**
+ * Installation and app docs commands resolve against the source CLI; planned
+ * commands stay ticket-bound; the sidebar and published tree follow toc.ts.
+ */
 const installPageTest = Smithers.Shell.Test({
   shell: "node --test apps/site/scripts/install-page.test.mjs",
   data: [
     Smithers.file("scripts/install-page.test.mjs"),
+    Smithers.file("scripts/sync-app-docs.mjs"),
+    Smithers.file("scripts/gen-cli-reference.mjs"),
+    Smithers.file("scripts/docs-text.mjs"),
+    Smithers.file("src/data/docs-sidebar.json"),
+    Smithers.file("//apps/app/src/docs/toc.ts"),
+    uiPackage.docsInputs,
     Smithers.file("src/layouts/Base.astro"),
     Smithers.glob("src/pages/**/*.astro"),
     Smithers.glob("docs/**/*"),
@@ -367,6 +416,17 @@ const installPageTest = Smithers.Shell.Test({
     Smithers.glob("src/content/docs/docs/**/*"),
     cliPackage.docsSources,
     repoTargetsPackage.repositoryInputs
+  ]
+})
+
+/** The app docs projection: toc.ts parsing, link and screenshot rewrites, the sidebar, and write, check and retirement. */
+const appDocsTest = Smithers.Shell.Test({
+  shell: "node --test apps/site/scripts/sync-app-docs.test.mjs",
+  data: [
+    Smithers.file("scripts/sync-app-docs.test.mjs"),
+    Smithers.file("scripts/sync-app-docs.mjs"),
+    Smithers.file("scripts/docs-text.mjs"),
+    Smithers.file("//apps/app/src/docs/toc.ts")
   ]
 })
 
@@ -500,7 +560,13 @@ const docsLint = Smithers.Shell.Test({
     Smithers.file("//apps/site/src/data/versions.json"),
     Smithers.file("//apps/site/public/_redirects"),
     Smithers.file("//apps/site/scripts/catalog-publication.mjs"),
-    Smithers.file("//.smithers/flows/release/pack-release.mjs")
+    Smithers.file("//apps/site/scripts/app-docs-integration.mjs"),
+    Smithers.file("//apps/site/scripts/sync-app-docs.mjs"),
+    Smithers.file("//apps/site/scripts/docs-text.mjs"),
+    Smithers.file("//.smithers/flows/release/pack-release.mjs"),
+    // The screenshots a page shows are checked against the app's directory.
+    uiPackage.docsInputs,
+    uiPackage.docsImages
   ]
 })
 
@@ -661,8 +727,12 @@ export const Package = Smithers.Package({
     check,
     build,
     supportDocs,
+    appDocs,
+    appDocsTest,
     referenceIngest,
     cliData,
+    cliReference,
+    cliReferenceTest,
     apiDocs,
     docsLint,
     docsTextTest,

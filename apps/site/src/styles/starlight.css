@@ -107,3 +107,21 @@ img.hero-anim {
 
 /* The single call to action on a page, such as Register a repository. */
 .sl-link-button.cta-big { font-size: 1.125rem; padding: 0.9rem 1.6rem; }
+
+/* A docs screenshot (scripts/sync-app-docs.mjs): the light and dark captures
+   share one framed figure, and Starlight's light:sl-hidden and dark:sl-hidden
+   utilities hide the one that does not match the theme. Nothing here sets
+   `display` on the images, so those utilities keep the last word. */
+.sl-markdown-content figure.docs-shot {
+	margin-inline: 0;
+	margin-block-end: 0;
+	overflow: hidden;
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: 0.75rem;
+	background: var(--sl-color-gray-6);
+	box-shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 12%);
+}
+.sl-markdown-content figure.docs-shot > img {
+	width: 100%;
+	margin: 0;
+}

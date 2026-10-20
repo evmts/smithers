@@ -26,6 +26,8 @@ const crateInputs = Smithers.Filegroup({
 const proofProductInputs = Smithers.Filegroup({ cwd: ".specs/product", srcs: [Smithers.glob("**/*")] })
 const proofMockInputs = Smithers.Filegroup({ cwd: ".specs/design/mock", srcs: [Smithers.glob("src/**/*")] })
 const docsInputs = Smithers.Filegroup({ cwd, srcs: [Smithers.glob("src/docs/pages/*.md")] })
+/** The docs screenshots (`<id>.light.webp`, `<id>.dark.webp`) every build that draws the pages bundles beside them. */
+const docsImages = Smithers.Filegroup({ cwd, srcs: [Smithers.glob("src/docs/images/*")] })
 
 /**
  * Uncached release assembly: external toolchains and registry inputs are validated by the assembler,
@@ -144,6 +146,7 @@ const unitTests = Smithers.NodeTest({
     componentSources,
     styleSources,
     Smithers.glob("//apps/app/src/docs/pages/*.md"),
+    Smithers.glob("//apps/app/src/docs/images/*"),
     contractSources,
     harnessSources,
     suiteSources,
@@ -225,6 +228,8 @@ const browserTier = (shard?: string) => Smithers.NodeTest({
   runner: Smithers.entrypoint(Smithers.file("scripts/run-pr-e2e.mjs"), shard ? [shard] : []),
   timeout: "45m",
   srcs: [sources, componentSources, styleSources, harnessSources, suiteSources, ...buildConfigs,
+    // The SPA build inlines the docs pages and emits their screenshots.
+    Smithers.glob("//apps/app/src/docs/pages/*.md"), Smithers.glob("//apps/app/src/docs/images/*"),
     Smithers.file("playwright.config.ts"), Smithers.file("playwright.site.config.ts"), Smithers.file("playwright.graph.config.ts"),
     Smithers.file("playwright.showcase.config.ts"), Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml"),
     // `bun test` steps preload the toolchain floor.
@@ -500,6 +505,8 @@ const proofPage = Smithers.Shell.Build({
 const webSources = Smithers.Filegroup({
   srcs: [
     Smithers.glob("src/mainview/**/*"),
+    // mainview bundles the docs (src/docs/bundled.ts): their pages and screenshots.
+    Smithers.glob("src/docs/**/*"),
     Smithers.file("//.smithers/front-door.json"),
     Smithers.file("//apps/site/src/lib/appHistory.ts"),
     Smithers.glob("src/debugApi/**/*"),
@@ -648,5 +655,5 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { crateInputs, proofProductInputs, proofMockInputs, docsInputs, serverBundle, solidCodegenInputs, check, unitTests, frontDoorRules, conformance, browserE2e, browserE2eShard1, browserE2eShard2, browserE2eShard3, installE2e, viewStories, journeyJ1Activation, journeyJ1Release, journeyKeyboard, journeyFreshRepository, journeyWikiGeneratedRefresh, journeyWikiCoedit, journeySetup, journeyWikiObsidian, journeyTodoFromIssue, journeyTodoNeedsYou, journeyTodoEvidence, journeyTodoMerge, journeyAskRepository, journeyTodoStackActions, journeyGitHubMerge, journeyGitHubMergeContinuation, journeyGitHubPRShape, journeyFlowSourceRun, journeyWikiDecisionFollow, journeyBranchPresence, journeyDuplicateLaunch, journeyFileCoedit, journeyHome, journeyTodoMergeOrder, journeyTodoPlacement, journeyTodoSteer, journeyFlowActivation, journeyLearning, journeyAgentTerminal, journeyTerminalSignin, journeyFileGone, journeyGitHubSyncHealth, journeyForkAddToStack, journeySshBranch, journeyInstallOrigins, journeyFileIntelligence, journeyForkDropInstall, journeyGitHubForeignPush, journeyGitHubMainMovedRebase, proofRecord, proofPage, webSources, ...securityReview }
+  targets: { crateInputs, proofProductInputs, proofMockInputs, docsInputs, docsImages, serverBundle, solidCodegenInputs, check, unitTests, frontDoorRules, conformance, browserE2e, browserE2eShard1, browserE2eShard2, browserE2eShard3, installE2e, viewStories, journeyJ1Activation, journeyJ1Release, journeyKeyboard, journeyFreshRepository, journeyWikiGeneratedRefresh, journeyWikiCoedit, journeySetup, journeyWikiObsidian, journeyTodoFromIssue, journeyTodoNeedsYou, journeyTodoEvidence, journeyTodoMerge, journeyAskRepository, journeyTodoStackActions, journeyGitHubMerge, journeyGitHubMergeContinuation, journeyGitHubPRShape, journeyFlowSourceRun, journeyWikiDecisionFollow, journeyBranchPresence, journeyDuplicateLaunch, journeyFileCoedit, journeyHome, journeyTodoMergeOrder, journeyTodoPlacement, journeyTodoSteer, journeyFlowActivation, journeyLearning, journeyAgentTerminal, journeyTerminalSignin, journeyFileGone, journeyGitHubSyncHealth, journeyForkAddToStack, journeySshBranch, journeyInstallOrigins, journeyFileIntelligence, journeyForkDropInstall, journeyGitHubForeignPush, journeyGitHubMainMovedRebase, proofRecord, proofPage, webSources, ...securityReview }
 })

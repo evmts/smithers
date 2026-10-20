@@ -22,6 +22,8 @@
  *      registers a repository through GitHub sign-in and app installation)
  *  12. every package a page heads a section with, or teaches installing, is in
  *      the release roster unless the page labels it workspace-private
+ *  13. every docs screenshot a page shows (/images/docs/) exists in the app's
+ *      image directory, which the build publishes (scripts/app-docs-integration.mjs)
  *
  * Usage: node apps/site/scripts/check-docs.mjs
  */
@@ -29,6 +31,7 @@ import { readdirSync, readFileSync, existsSync } from "node:fs"
 import { join, dirname, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import { catalogPublicationErrors } from "./catalog-publication.mjs"
+import { IMAGE_PREFIX, publishedImages } from "./app-docs-integration.mjs"
 import { publishedPackages } from "../../../.smithers/flows/release/pack-release.mjs"
 
 const siteRoot = join(dirname(fileURLToPath(import.meta.url)), "..")
@@ -43,7 +46,7 @@ const pages = [] // { path, rel, route, frontmatter, headings:Set, prose }
 function walk(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.isDirectory()) walk(join(dir, entry.name))
-    else if (entry.name.endsWith(".mdx")) pages.push(load(join(dir, entry.name)))
+    else if (/\.mdx?$/.test(entry.name)) pages.push(load(join(dir, entry.name)))
   }
 }
 function fm(text, key) {
@@ -61,7 +64,7 @@ function slugger(text) {
 function load(path) {
   const text = readFileSync(path, "utf8")
   const rel = relative(docsRoot, path)
-  let route = "/" + rel.replace(/\.mdx$/, "").replace(/\/index$/, "").replace(/^index$/, "")
+  let route = "/" + rel.replace(/\.mdx?$/, "").replace(/\/index$/, "").replace(/^index$/, "")
   const slug = fm(text, "slug")
   if (slug) route = "/" + slug.replace(/^docs\/?/, "").replace(/\/$/, "")
   route = "/docs" + (route === "/" ? "/" : route + "/")
@@ -96,6 +99,7 @@ function redirectTarget(path) {
   }
   return path
 }
+const screenshots = new Set(publishedImages())
 const staticRoutes = new Set(["/", "/download/", "/demo/", "/pricing/", "/terms/", "/privacy/", "/refunds/", "/migration/1.0", "/migration/1.0/", "/llms.txt", "/llms-full.txt"])
 
 // --- repo package roster (any @smthrs/* package that exists in the tree) ---
@@ -196,7 +200,7 @@ for (const p of pages) {
   // 4/5. links and anchors
   const links = [
     ...p.noFences.matchAll(/\]\(([^)\s]+)\)/g),
-    ...p.noFences.matchAll(/\bhref=["']([^"']+)["']/g)
+    ...p.noFences.matchAll(/\b(?:href|src)=["']([^"']+)["']/g)
   ]
   for (const m of links) {
     const target = m[1]
@@ -207,6 +211,10 @@ for (const p of pages) {
     }
     if (!target.startsWith("/")) {
       err(p.path, `non-absolute link: ${target}`)
+      continue
+    }
+    if (target.startsWith(IMAGE_PREFIX)) {
+      if (!screenshots.has(target.slice(IMAGE_PREFIX.length))) err(p.path, `missing screenshot: ${target} (apps/app/src/docs/images)`)
       continue
     }
     if (/^\/(media|images|favicon|icon)/.test(target)) {

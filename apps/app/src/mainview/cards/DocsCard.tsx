@@ -9,9 +9,11 @@ import { DocsView } from "./views/DocsView"
 
 type StoredDocs = Extract<Card, { kind: "docs" }>
 
-export const DocsCard = ({ card, View, dispatch, available, maximized = false }: {
+export const DocsCard = ({ card, View, dispatch, available, maximized = false, images }: {
   card: StoredDocs; View: ComponentType<DocsViewProps>; dispatch: CardCommandDispatch;
   available: boolean; maximized?: boolean
+  /** The build's screenshot files; never persisted, since their hashed URLs change with each build. */
+  images?: DocsViewProps["model"]["images"]
 }) => {
   const bindings = cardActions<"open">(dispatch, available ? [{
     tag: "docs", label: "Open", gesture: "open", command_input: {},
@@ -21,12 +23,13 @@ export const DocsCard = ({ card, View, dispatch, available, maximized = false }:
     toc: card.payload.toc ?? [{ slug: card.payload.page, title: card.title }],
     page: { slug: card.payload.page, title: card.title, summary: card.payload.summary ?? "", markdown: card.payload.markdown },
     ...(card.payload.anchor ? { anchor: card.payload.anchor } : {}),
-    ...(card.payload.not_found ? { not_found: card.payload.not_found } : {})
+    ...(card.payload.not_found ? { not_found: card.payload.not_found } : {}),
+    ...(images ? { images } : {})
   }} {...bindings} view={{ maximized }} onView={() => {}} />
 }
 const DocsBody = ({ card, maximized }: { card: StoredDocs; maximized: boolean }) => {
   const controller = useController()
-  return <DocsCard card={card} View={DocsView} maximized={maximized} available={controller.docsAvailable()}
+  return <DocsCard card={card} View={DocsView} maximized={maximized} available={controller.docsAvailable()} images={controller.docsImages()}
     dispatch={(name, payload) => controller.commands.submit({ name, payload: payload ?? {}, actor: "user" })} />
 }
 export const docsCardFamily: CardFamily<"docs"> = {

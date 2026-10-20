@@ -69,8 +69,8 @@ export const unknownDocsPage = (pages: ReadonlyArray<DocsPage>, slug: string): s
   `There is no docs page named ${slug}. Pages: ${pageList(pages)}.`
 
 /**
- * The agent's argument text for `docs`: a JSON payload (`{"mode":"read","page":"quickstart"}`), or the page as
- * the slash writes it (`quickstart#put-https-in-front`), which embeds it.
+ * The agent's argument text for `docs`: a JSON payload (`{"mode":"read","page":"self-host"}`), or the page as
+ * the slash writes it (`self-host#put-https-in-front`), which embeds it.
  * @since 1.0.0
  * @category parsers
  */

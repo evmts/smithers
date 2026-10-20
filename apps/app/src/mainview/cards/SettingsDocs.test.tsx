@@ -16,7 +16,7 @@ import { createAppStore } from "../state/AppStore"
 import { memoryStorage, silentAgent } from "../state/TestFixtures"
 const createAppController = scopedControllers()
 
-const PAGE = "quickstart#put-https-in-front"
+const PAGE = "self-host#put-https-in-front"
 for (const origin of ["http://mini.local:4000", "https://mini.local", "http://localhost", "http://127.0.0.1", "http://[::1]"]) {
   for (const available of [false, true]) test(`Settings docs at ${origin}, available=${available}`, async () => {
     let props!: CardProps<SettingsCard>, ready = available
@@ -65,7 +65,7 @@ for (const dependency of ["ready", "catalog", "anchor", "settings"] as const) te
   const snapshot = dependency === "settings" ? {} : { model: installFixture() }
   await act(async () => root.render(<SettingsContainer View={SettingsView} owner origin="http://mini.local:4000"
     install={{ get: () => snapshot, subscribe: () => () => {} }}
-    docsAvailable={() => controller.docsTargetAvailable("quickstart#put-https-in-front")}
+    docsAvailable={() => controller.docsTargetAvailable("self-host#put-https-in-front")}
     dispatch={(name, payload) => {
       calls.push({ name, payload })
       pending = controller.commands.submit({ name, payload: payload ?? {}, actor: "user" })
@@ -76,10 +76,10 @@ for (const dependency of ["ready", "catalog", "anchor", "settings"] as const) te
     expect(!!hint).toBe(dependency === "ready")
     if (hint) {
       await act(async () => { hint.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); await pending })
-      expect(calls).toEqual([{ name: "docs", payload: { page: "quickstart#put-https-in-front" } }])
-      const card = store.collections.cards.get("docs-quickstart")!
+      expect(calls).toEqual([{ name: "docs", payload: { page: "self-host#put-https-in-front" } }])
+      const card = store.collections.cards.get("docs-self-host")!
       if (card.kind !== "docs") throw Error("Expected Docs")
-      expect(card.payload).toMatchObject({ page: "quickstart", anchor: "put-https-in-front" })
+      expect(card.payload).toMatchObject({ page: "self-host", anchor: "put-https-in-front" })
       await act(async () => root.render(<DocsCard card={card} View={DocsView} available dispatch={() => {}} />))
       expect(host.querySelector("#put-https-in-front")?.textContent).toBe("Put HTTPS in front")
     } else {

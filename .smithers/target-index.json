@@ -40507,6 +40507,16 @@
         "path": "apps/app/postcss.config.js"
       },
       {
+        "kind": "glob",
+        "pattern": "apps/app/src/docs/pages/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/docs/images/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/app/playwright.config.ts"
       },
@@ -40604,6 +40614,16 @@
       {
         "kind": "file",
         "path": "apps/app/postcss.config.js"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/docs/pages/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/docs/images/*",
+        "exclude": []
       },
       {
         "kind": "file",
@@ -40705,6 +40725,16 @@
         "path": "apps/app/postcss.config.js"
       },
       {
+        "kind": "glob",
+        "pattern": "apps/app/src/docs/pages/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/docs/images/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/app/playwright.config.ts"
       },
@@ -40802,6 +40832,16 @@
       {
         "kind": "file",
         "path": "apps/app/postcss.config.js"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/docs/pages/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/docs/images/*",
+        "exclude": []
       },
       {
         "kind": "file",
@@ -41045,6 +41085,26 @@
       "//packages/smithers-machined:ffiInputs",
       "//packages/smithers/flows/jj-wasm:nativeSources"
     ],
+    "source": {
+      "file": "apps/app/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/app:docsImages",
+    "package": "apps/app",
+    "name": "docsImages",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/docs/images/*",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
     "source": {
       "file": "apps/app/PACKAGE.ts"
     }
@@ -43155,6 +43215,11 @@
       },
       {
         "kind": "glob",
+        "pattern": "apps/app/src/docs/images/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
         "pattern": "apps/app/e2e/contracts/**/*.ts",
         "exclude": []
       },
@@ -43325,6 +43390,11 @@
       {
         "kind": "glob",
         "pattern": "apps/app/src/mainview/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/docs/**/*",
         "exclude": []
       },
       {
@@ -44868,6 +44938,78 @@
     }
   },
   {
+    "label": "//apps/site:appDocs",
+    "package": "apps/site",
+    "name": "appDocs",
+    "rule": "Generate",
+    "kinds": [
+      "run",
+      "lint"
+    ],
+    "summary": "Project the app's docs pages, their Markdown copies, and the docs sidebar from apps/app/src/docs; check drift under lint.",
+    "mode": "write",
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/sync-app-docs.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/docs/toc.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/docs-text.mjs"
+      }
+    ],
+    "outputs": [
+      "apps/site/public/docs/*.md",
+      "apps/site/src/content/docs/docs/*.md",
+      "apps/site/src/data/docs-sidebar.json"
+    ],
+    "dependencies": [
+      "//apps/app:docsImages",
+      "//apps/app:docsInputs"
+    ],
+    "source": {
+      "file": "apps/site/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/site:appDocsTest",
+    "package": "apps/site",
+    "name": "appDocsTest",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/sync-app-docs.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/sync-app-docs.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/docs-text.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/docs/toc.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "apps/site/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//apps/site:build",
     "package": "apps/site",
     "name": "build",
@@ -44917,6 +45059,8 @@
       "apps/site/dist"
     ],
     "dependencies": [
+      "//apps/app:docsImages",
+      "//apps/app:docsInputs",
       "//apps/app:webSources",
       "//packages/smithers:docsSources"
     ],
@@ -45323,6 +45467,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/site/scripts/gen-cli-reference.mjs"
+      },
+      {
+        "kind": "file",
         "path": "apps/site/scripts/generate-llms.mjs"
       },
       {
@@ -45339,6 +45487,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/site/scripts/sync-app-docs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "apps/site/scripts/sync-support-docs.mjs"
       },
       {
@@ -45349,6 +45501,11 @@
       {
         "kind": "glob",
         "pattern": "apps/site/src/data/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/site/public/docs/**",
         "exclude": []
       },
       {
@@ -45738,6 +45895,67 @@
     }
   },
   {
+    "label": "//apps/site:cliReference",
+    "package": "apps/site",
+    "name": "cliReference",
+    "rule": "Generate",
+    "kinds": [
+      "run",
+      "lint"
+    ],
+    "summary": "Render the CLI reference page and its Markdown copy from the captured command manifest and help; check drift under lint.",
+    "mode": "write",
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/gen-cli-reference.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/src/data/cli-commands.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/site/src/data/help/**/*.txt",
+        "exclude": []
+      }
+    ],
+    "outputs": [
+      "apps/site/public/docs/reference/cli.md",
+      "apps/site/src/content/docs/docs/reference/cli.md"
+    ],
+    "dependencies": [],
+    "source": {
+      "file": "apps/site/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/site:cliReferenceTest",
+    "package": "apps/site",
+    "name": "cliReferenceTest",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/gen-cli-reference.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/gen-cli-reference.test.mjs"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "apps/site/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//apps/site:docsLint",
     "package": "apps/site",
     "name": "docsLint",
@@ -45775,11 +45993,26 @@
       },
       {
         "kind": "file",
+        "path": "apps/site/scripts/app-docs-integration.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/sync-app-docs.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/docs-text.mjs"
+      },
+      {
+        "kind": "file",
         "path": ".smithers/flows/release/pack-release.mjs"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/app:docsImages",
+      "//apps/app:docsInputs"
+    ],
     "source": {
       "file": "apps/site/PACKAGE.ts"
     }
@@ -45949,6 +46182,26 @@
       },
       {
         "kind": "file",
+        "path": "apps/site/scripts/sync-app-docs.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/gen-cli-reference.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/docs-text.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/src/data/docs-sidebar.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/src/docs/toc.ts"
+      },
+      {
+        "kind": "file",
         "path": "apps/site/src/layouts/Base.astro"
       },
       {
@@ -45993,6 +46246,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//apps/app:docsInputs",
       "//packages/repo-targets:repositoryInputs",
       "//packages/smithers:docsSources"
     ],
@@ -46021,6 +46275,20 @@
         "kind": "glob",
         "pattern": "apps/site/src/content/docs/**/*.mdx",
         "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/site/src/content/docs/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/site/public/docs/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/src/data/docs-sidebar.json"
       },
       {
         "kind": "file",

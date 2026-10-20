@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -31,7 +32,7 @@ import (
 // main conversation "How do I put HTTPS in front?" through the production
 // prompt route. The packaged model host, built by apps/model-host/build.mjs
 // with the app's bundled docs, offers `docs`, runs the read on the host, and
-// the answer the conversation serves cites the quickstart's shipped Markdown.
+// the answer the conversation serves cites the self-host page's shipped Markdown.
 // Asked to open the page, the agent embeds the Docs card at the heading, and
 // the shared conversation serves it.
 // Prompt authentication, admission, the dispatcher, the host, its callbacks
@@ -41,13 +42,13 @@ import (
 // library the real reader needs is not on every developer machine
 // (TestLocalSharedPreflight covers that reader).
 func TestInstallAgentAnswersHowDoIFromBundledDocs(t *testing.T) {
-	quickstart := shippedDocsPage(t, "quickstart")
-	require.Contains(t, quickstart, "## Put HTTPS in front")
-	require.Contains(t, quickstart, "tailscale serve --bg --https=443 http://127.0.0.1:4000")
+	selfHost := shippedDocsPage(t, "self-host")
+	require.Contains(t, selfHost, "## Put HTTPS in front")
+	require.Contains(t, selfHost, "tailscale serve --bg --https=443 http://127.0.0.1:4000")
 
 	const (
 		howDo = "How do I put HTTPS in front?"
-		open  = "Open the quickstart at Put HTTPS in front."
+		open  = "Open the self-host page at Put HTTPS in front."
 	)
 	var mu sync.Mutex
 	var systems, reads []string
@@ -97,13 +98,13 @@ func TestInstallAgentAnswersHowDoIFromBundledDocs(t *testing.T) {
 			case read != "" && opening:
 				delta = map[string]any{"content": read}
 			case read != "":
-				delta = map[string]any{"content": "From docs.read quickstart: " + read}
+				delta = map[string]any{"content": "From docs.read self-host: " + read}
 			case !strings.Contains(system, `run docs with {"mode":"read","page":"<page>"}`):
 				delta = map[string]any{"content": "The instructions offer no docs."}
 			case opening:
-				execute("quickstart#put-https-in-front")
+				execute("self-host#put-https-in-front")
 			default:
-				execute(`{"mode":"read","page":"quickstart"}`)
+				execute(`{"mode":"read","page":"self-host"}`)
 			}
 		}
 		chunk, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}})
@@ -265,36 +266,41 @@ func TestInstallAgentAnswersHowDoIFromBundledDocs(t *testing.T) {
 	mu.Lock()
 	require.Len(t, systems, 2, "one leg asks, one answers from the read")
 	require.Contains(t, systems[0], "- /docs — Read the docs in the app")
-	require.Contains(t, systems[0], `Asked how something in Smithers works, or to be shown its documentation, run docs with {"mode":"read","page":"<page>"} for the page that covers it (pages: quickstart, flows)`)
-	// The model read the quickstart exactly as the app ships it.
+	toc := shippedDocsToc(t)
+	slugs := make([]string, len(toc))
+	for i, entry := range toc {
+		slugs[i] = entry.Slug
+	}
+	require.Contains(t, systems[0], `Asked how something in Smithers works, or to be shown its documentation, run docs with {"mode":"read","page":"<page>"} for the page that covers it (pages: `+strings.Join(slugs, ", ")+`)`)
+	// The model read the self-host page exactly as the app ships it.
 	require.Len(t, reads, 1)
 	var page struct{ Title, Summary, Markdown string }
 	require.NoError(t, json.Unmarshal([]byte(reads[0]), &page))
 	mu.Unlock()
-	require.Equal(t, "Quickstart", page.Title)
-	require.Equal(t, quickstart, page.Markdown)
+	require.Equal(t, "Self-host Smithers", page.Title)
+	require.Equal(t, selfHost, page.Markdown)
 	require.Equal(t, []string{"call.started docs", "call.settled docs run"}, calls(asked))
 	// The conversation the app renders serves the cited answer, and a read embeds nothing.
 	served := conversation()[asked]
 	require.Equal(t, howDo, served.prompt)
-	require.True(t, strings.HasPrefix(served.answer, "From docs.read quickstart: "), served.answer)
+	require.True(t, strings.HasPrefix(served.answer, "From docs.read self-host: "), served.answer)
 	require.Contains(t, served.answer, "tailscale serve --bg --https=443 http://127.0.0.1:4000")
 	require.Empty(t, served.cards)
 
 	opened := ask(open, "docs-open")
 	require.Equal(t, []string{"call.started docs", "call.settled docs run"}, calls(opened))
 	shown := conversation()[opened]
-	require.Equal(t, "Embedded the Quickstart docs page.", shown.answer)
+	require.Equal(t, "Embedded the Self-host Smithers docs page.", shown.answer)
 	require.Len(t, shown.cards, 1, "the shared conversation serves the Docs card")
 	card := shown.cards[0]
-	require.Equal(t, "docs-quickstart", card.ID)
+	require.Equal(t, "docs-self-host", card.ID)
 	require.Equal(t, "docs", card.Kind)
-	require.Equal(t, "Quickstart", card.Title)
-	require.Equal(t, "quickstart", card.Payload.Page)
+	require.Equal(t, "Self-host Smithers", card.Title)
+	require.Equal(t, "self-host", card.Payload.Page)
 	require.Equal(t, "put-https-in-front", card.Payload.Anchor)
 	require.Empty(t, card.Payload.NotFound)
-	require.Equal(t, quickstart, card.Payload.Markdown)
-	require.Equal(t, []struct{ Slug, Title string }{{"quickstart", "Quickstart"}, {"flows", "Flows reference"}}, card.Payload.Toc)
+	require.Equal(t, selfHost, card.Payload.Markdown)
+	require.Equal(t, toc, card.Payload.Toc)
 }
 
 // shippedDocsPage is a page's Markdown after its frontmatter, read from the
@@ -308,4 +314,27 @@ func shippedDocsPage(t *testing.T, slug string) string {
 	parts := strings.SplitN(string(raw), "\n---\n", 2)
 	require.Len(t, parts, 2, "the page opens with frontmatter")
 	return strings.TrimLeft(parts[1], "\n")
+}
+
+// shippedDocsToc is the docs' table of contents as the app and the host both
+// bundle it: every slug toc.ts lists, in order, with its page's title.
+func shippedDocsToc(t *testing.T) []struct{ Slug, Title string } {
+	t.Helper()
+	_, source, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	docs := filepath.Join(filepath.Dir(source), "../../../../apps/app/src/docs")
+	raw, err := os.ReadFile(filepath.Join(docs, "toc.ts"))
+	require.NoError(t, err)
+	var toc []struct{ Slug, Title string }
+	for _, list := range regexp.MustCompile(`pages: \[([^\]]*)\]`).FindAllStringSubmatch(string(raw), -1) {
+		for _, slug := range regexp.MustCompile(`"([a-z0-9-]+)"`).FindAllStringSubmatch(list[1], -1) {
+			page, err := os.ReadFile(filepath.Join(docs, "pages", slug[1]+".md"))
+			require.NoError(t, err)
+			title := regexp.MustCompile(`(?m)^title: "([^"]+)"$`).FindStringSubmatch(string(page))
+			require.Len(t, title, 2, "the page %s has a quoted title", slug[1])
+			toc = append(toc, struct{ Slug, Title string }{slug[1], title[1]})
+		}
+	}
+	require.NotEmpty(t, toc)
+	return toc
 }

@@ -64,13 +64,13 @@ describe("docs", () => {
   test("unknown pages embed the fallback without a failure", async () => {
     const { store, controller } = await setup()
     expect((await controller.commands.run("docs", "nowhere")).status).toBe("executed")
-    expect(store.collections.cards.get("docs-quickstart")?.payload).toMatchObject({ page: "quickstart", not_found: "nowhere" })
+    expect(store.collections.cards.get("docs-welcome")?.payload).toMatchObject({ page: "welcome", not_found: "nowhere" })
   })
 
   test("an anchor survives slash and typed button dispatch", async () => {
     const { store, controller } = await setup()
-    await controller.runCommandForResult("docs", "#open-the-command-list")
-    expect(store.collections.cards.get("docs-quickstart")?.payload).toMatchObject({ anchor: "open-the-command-list" })
+    await controller.runCommandForResult("docs", "self-host#open-the-command-list")
+    expect(store.collections.cards.get("docs-self-host")?.payload).toMatchObject({ anchor: "open-the-command-list" })
     await controller.commands.submit({ name: "docs", payload: { page: "flows#find-a-command" }, actor: "user" })
     expect(store.collections.cards.get("docs-flows")?.payload).toMatchObject({ anchor: "find-a-command" })
   })
@@ -159,9 +159,9 @@ describe("the docs doors", () => {
 
 test("HTTPS docs target resolves the shipped heading and refuses missing pages", async () => {
   const { controller } = await setup()
-  expect(controller.docsTargetAvailable("quickstart#put-https-in-front")).toBe(true)
-  expect(controller.docsTargetAvailable("quickstart#missing-heading")).toBe(false)
-  expect(controller.docsTargetAvailable("quickstart#open-the-command-list")).toBe(true)
+  expect(controller.docsTargetAvailable("self-host#put-https-in-front")).toBe(true)
+  expect(controller.docsTargetAvailable("self-host#missing-heading")).toBe(false)
+  expect(controller.docsTargetAvailable("self-host#open-the-command-list")).toBe(true)
   expect(controller.docsTargetAvailable("missing")).toBe(false)
 })
 
@@ -170,7 +170,7 @@ test("the bundled docs are reachable without a test-only availability override",
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, silentAgent, { docs: () => DOCS })
   expect((await controller.commands.run("docs")).status).toBe("executed")
-  expect(store.collections.cards.get("docs-quickstart")).toMatchObject({ kind: "docs", payload: { markdown: expect.stringContaining("## Put HTTPS in front") } })
+  expect(store.collections.cards.get("docs-welcome")).toMatchObject({ kind: "docs", payload: { markdown: expect.stringContaining("## How Smithers relates to GitHub") } })
   expect((await controller.commands.run("docs", "flows")).status).toBe("executed")
   expect(store.collections.cards.get("docs-flows")).toMatchObject({ kind: "docs", payload: { markdown: expect.stringContaining("Flow.make") } })
 })
