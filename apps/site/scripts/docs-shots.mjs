@@ -29,7 +29,7 @@ export const shots = [
   {
     id: "quickstart-repo-home",
     page: "quickstart",
-    alt: "The smithersai/vibelang repository on smithers.sh, open on its file tree: the branch (1) and a folder (2)",
+    alt: "The smithersai/vibelang repository on smithers.sh, open on its file tree: the branch (1) and a folder (2), with the latest commit's author hidden",
     path: "/smithersai/vibelang",
     auth: "signed-out",
     ready: ".repo-code-home-latest",
@@ -38,7 +38,8 @@ export const shots = [
       { n: 1, target: ".repo-code-home-toolbar > details:first-child > summary" },
       { n: 2, target: 'a[href="/smithersai/vibelang/tree/main/docs"]' }
     ],
-    mask: []
+    // The latest commit's author is a real person; its relative time changes daily.
+    mask: [".repo-code-home-latest > strong", ".repo-code-home-latest time"]
   },
   {
     id: "quickstart-file",
