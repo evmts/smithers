@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -114,6 +115,15 @@ func newMetrics(registry *prometheus.Registry) (*Metrics, error) {
 		return nil, err
 	}
 	if err := registry.Register(staleGitLocks); err != nil {
+		return nil, err
+	}
+	// The server shares its pod's memory limit with the git processes it
+	// starts. Its own heap and resident memory tell an OOM risk apart from
+	// page cache, which the container's working set also counts.
+	if err := registry.Register(collectors.NewGoCollector()); err != nil {
+		return nil, err
+	}
+	if err := registry.Register(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{})); err != nil {
 		return nil, err
 	}
 
