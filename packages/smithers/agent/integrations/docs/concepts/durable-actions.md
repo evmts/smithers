@@ -61,6 +61,12 @@ owns is the classification that policy reads:
   comment twice. A caller that knows its endpoint is idempotent opts in with
   `retryUnsafeWrites` on `GitHubClient.request`.
 
+`Core.IssueSync.make(...).ingest` also makes one request per call. An intake
+conflict rejects with `status: 409` and preserves the response's `retryAfter`
+header; it neither acknowledges the event nor calls `onMessage`. A durable
+caller decides whether to retry and supplies the same provider delivery
+identity on the next attempt.
+
 `CommentOnIssue` declares no retry policy, so a rate-limited comment fails
 with the server's `retryAfterMillis` and a flow may call again once it has
 passed.

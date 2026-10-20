@@ -8,49 +8,31 @@ const connector: IssueSync.Connector = {
   reconcile: async () => undefined
 }
 
-it("retries an early reaction with the same provider identity before acknowledging intake", async () => {
+it.each(["reaction_add", "reaction_remove"])("leaves %s conflicts to the durable caller", async (kind) => {
   const received: unknown[] = []
+  const notifications: unknown[] = []
+  const body = { ...reaction, kind }
   const sync = IssueSync.make({
     owner: "owner",
     repo: "repo",
     connector,
+    onMessage: async (message) => {
+      notifications.push(message)
+    },
     request: async (_path, init) => {
       received.push(JSON.parse(String(init?.body)))
-      return received.length === 1 ? new Response(null, { status: 409 }) : Response.json({ issue_id: 42 })
+      return received.length === 1
+        ? new Response(null, { status: 409, headers: { "Retry-After": "2" } })
+        : Response.json({ issue_id: 42 })
     }
   })
-  expect(await sync.ingest(reaction)).toBe("applied")
-  expect(received).toEqual([reaction, reaction])
-})
-
-it("bounds receipt-race retries and leaves an exhausted delivery unacknowledged", async () => {
-  let attempts = 0
-  const sync = IssueSync.make({
-    owner: "owner",
-    repo: "repo",
-    connector,
-    request: async () => {
-      attempts++
-      return new Response(null, { status: 409 })
-    }
-  })
-  await expect(sync.ingest(reaction)).rejects.toMatchObject({ status: 409 })
-  expect(attempts).toBe(4)
-})
-
-it("retries a reaction removal without acknowledging it early", async () => {
-  let attempts = 0
-  const sync = IssueSync.make({
-    owner: "owner",
-    repo: "repo",
-    connector,
-    request: async () => {
-      attempts++
-      return attempts === 1 ? new Response(null, { status: 409 }) : Response.json({ issue_id: 42 })
-    }
-  })
-  expect(await sync.ingest({ ...reaction, kind: "reaction_remove" })).toBe("applied")
-  expect(attempts).toBe(2)
+  await expect(sync.ingest(body, messageEvent)).rejects.toMatchObject({ status: 409, retryAfter: "2" })
+  expect(received).toEqual([body])
+  expect(notifications).toEqual([])
+  // A new durable attempt supplies the same identity; intake never schedules it itself.
+  expect(await sync.ingest(body, messageEvent)).toBe("applied")
+  expect(received).toEqual([body, body])
+  expect(notifications).toEqual([{ issueId: 42, event: messageEvent }])
 })
 
 it.each([

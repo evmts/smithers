@@ -31,9 +31,9 @@ the client id and secret as HTTP Basic in place of any token; error text never
 carries either.
 
 ```ts
-const app = yield* GitHub.GitHubClient.make({ clientCredentials: { clientId, clientSecret } }, {})
+const app = yield * GitHub.GitHubClient.make({ clientCredentials: { clientId, clientSecret } }, {})
 // Revokes a user's token: 204, or 404 or 422 when GitHub no longer has it.
-yield* app.request("DELETE", `/applications/${clientId}/token`, { access_token })
+yield * app.request("DELETE", `/applications/${clientId}/token`, { access_token })
 ```
 
 ## Call the REST API
