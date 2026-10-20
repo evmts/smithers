@@ -876,6 +876,31 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  evals/docs:
+    dependencies:
+      '@smthrs/evals':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/evals
+      '@smthrs/scorers':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/scorers
+      effect:
+        specifier: 4.0.5
+        version: 4.0.5
+    devDependencies:
+      '@smthrs/targets':
+        specifier: workspace:*
+        version: link:../../packages/smithers/build/targets
+      '@types/node':
+        specifier: 26.4.1
+        version: 26.4.1
+      bun-types:
+        specifier: ^1.4.0
+        version: 1.4.3
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   packages/backend/modelhost/recommend-eval:
     dependencies:
       '@smthrs/core':
