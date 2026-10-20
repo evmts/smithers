@@ -1,132 +1,116 @@
+import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import type { Effect } from "effect"
-import * as Collections from "../../lib/collections"
-import {
-  type Ask,
-  CHAT_FAILED,
-  type Composer,
-  type FailedMessage,
-  type History,
-  type Message,
-  PENDING_POSITION,
-  type SyncHealth,
-} from "./schema"
+import { COULDNT_ANSWER } from "./contract"
+import type { Asking, Composer, Connection, History, Message, Unsent } from "./schema"
 
-// What every frontend reads. Each is a live query: React renders it with `useLiveQuery`, a TUI with
-// `Collections.changes`. They're built once per ChatStore and start on first read.
-//
-// `messages` syncs on demand, so its queries decide what Electric sends of the past: `recent`'s `orderBy` and `limit`.
-// Rows this tab inserted stay out of that window until Postgres gives them a position (`pending`), so asking, or a
-// question rolling back, never makes the window reload its rows from Electric.
+// What every frontend reads. Each is a live query over this device's collections, built once per ChatStore; it starts
+// on first read. React renders its `tanstack` collection with `useLiveQuery`; a TUI reads its `rows` stream. No query
+// waits for the network: they read only what the device has.
 
 /**
- * The most recent `limit` messages Postgres has, newest first: the window of history this tab loads and shows.
- * "Load earlier" widens it (`setWindow`).
+ * The whole conversation on this device: `messages ∪ (unsent − messages) ∪ (asking − messages − unsent)`.
+ * - Synced rows come first, in Postgres' order (`position`); a failed answer reads the failure copy.
+ * - Then this device's own rows, in the order they were asked (`queuedAt`): questions the server refused or the outbox
+ *   couldn't take (`unsent`; `sendAgain` when the outbox couldn't, so Retry applies rather than Edit), unless Postgres
+ *   has that very question with the answer this device made for it, and questions the outbox holds that Postgres
+ *   doesn't have yet (`queued`).
+ *   A queued question never overlays a synced row: once Postgres has it, only the synced row shows.
  */
-export const recentQuery = (messages: Collections.ElectricCollection<Message>, limit: number) =>
-  Collections.liveQuery((q) =>
+export const conversationQuery = (
+  messages: Collection.Collection<Message>,
+  unsent: Collection.Collection<Unsent, string>,
+  asking: Collection.Collection<Asking, string>,
+) =>
+  LiveQuery.make((q) =>
     q
-      .from({ message: messages })
-      .where(({ message }) => Collections.lt(message.position, PENDING_POSITION))
-      .orderBy(({ message }) => message.position, "desc")
+      .unionAll(
+        q.from({ synced: messages.tanstack }).select(({ synced }) => ({
+          id: synced.id,
+          role: synced.role,
+          text: Query.caseWhen(Query.eq(synced.status, "failed"), COULDNT_ANSWER, synced.text),
+          status: synced.status,
+          sendAgain: false,
+          local: 0,
+          at: synced.position,
+        })),
+        q
+          .from({ refused: unsent.tanstack })
+          // Postgres' answer to a question with this id. When it is the answer this device made for it, Postgres has
+          // this very question, and its synced row shows instead: an unsent copy the device couldn't drop never shows
+          // twice. A question whose id another message took has another answer, and stays.
+          .leftJoin({ answer: messages.tanstack }, ({ refused, answer }) => Query.eq(refused.id, answer.questionId))
+          .where(({ refused, answer }) =>
+            Query.or(Query.isUndefined(answer?.id), Query.not(Query.eq(answer?.id, refused.answerId))),
+          )
+          .select(({ refused }) => ({
+            id: refused.id,
+            role: "user" as const,
+            text: refused.text,
+            status: "unsent",
+            sendAgain: Query.eq(refused.reason, "not_admitted"),
+            local: 1,
+            at: refused.queuedAt,
+          })),
+        q
+          .from({ queued: asking.tanstack })
+          .leftJoin({ inPostgres: messages.tanstack }, ({ queued, inPostgres }) => Query.eq(queued.id, inPostgres.id))
+          .leftJoin({ inUnsent: unsent.tanstack }, ({ queued, inUnsent }) => Query.eq(queued.id, inUnsent.id))
+          .where(({ inPostgres, inUnsent }) =>
+            Query.and(Query.isUndefined(inPostgres?.id), Query.isUndefined(inUnsent?.id)),
+          )
+          .select(({ queued }) => ({
+            id: queued.id,
+            role: "user" as const,
+            text: queued.text,
+            status: "queued",
+            sendAgain: false,
+            local: 1,
+            at: queued.queuedAt,
+          })),
+      )
+      .orderBy(({ $selected }) => $selected.local)
+      .orderBy(({ $selected }) => $selected.at),
+  )
+
+/** The conversation's live query. */
+export type Conversation = Effect.Success<ReturnType<typeof conversationQuery>>
+
+/** The most recent `limit` messages of the conversation, newest first: the window "Load earlier" widens. */
+export const latestQuery = (conversation: Conversation, limit: number) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ message: conversation.tanstack })
+      .orderBy(({ message }) => message.local, "desc")
+      .orderBy(({ message }) => message.at, "desc")
       .limit(limit),
   )
 
-/** The window's collection. */
-export type Recent = Effect.Success<ReturnType<typeof recentQuery>>
+/** The window's live query. */
+export type Latest = Effect.Success<ReturnType<typeof latestQuery>>
 
-/** Rows this tab inserted that Postgres hasn't stored yet, in the order asked. */
-export const pendingQuery = (messages: Collections.ElectricCollection<Message>) =>
-  Collections.liveQuery((q) =>
-    q.from({ message: messages }).where(({ message }) => Collections.gte(message.position, PENDING_POSITION)),
+/** The window, oldest first: what the conversation view shows. */
+export const shownQuery = (latest: Latest) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ message: latest.tanstack })
+      .orderBy(({ message }) => message.local)
+      .orderBy(({ message }) => message.at),
   )
 
-/** The pending rows' collection. */
-export type Pending = Effect.Success<ReturnType<typeof pendingQuery>>
-
-/**
- * The conversation, in Postgres' order (`position`): the recent window, then this tab's pending rows, with this tab's
- * failed questions where they were shown.
- * - A failed answer reads the failure copy, whatever text it had streamed.
- * - A failed question shows only while neither the window nor the pending rows have it, so a question that rolled
- *   back here but reached Postgres after all shows once, as Postgres has it. It also means the rollback and the
- *   failure appear in one change.
- */
-export const conversationQuery = (
-  recent: Recent,
-  pending: Pending,
-  failures: Collections.LocalCollection<FailedMessage, string>,
-) =>
-  Collections.liveQuery((q) =>
-    q
-      .unionAll(
-        q.from({ stored: recent }).select(({ stored }) => ({
-          id: stored.id,
-          role: stored.role,
-          text: Collections.caseWhen(Collections.eq(stored.status, "failed"), CHAT_FAILED, stored.text),
-          status: stored.status,
-          position: stored.position,
-          seq: 0,
-        })),
-        q.from({ asking: pending }).select(({ asking }) => ({
-          id: asking.id,
-          role: asking.role,
-          text: asking.text,
-          status: asking.status,
-          position: asking.position,
-          seq: 0,
-        })),
-        q
-          .from({ failure: failures })
-          .leftJoin({ stillAsking: pending }, ({ failure, stillAsking }) => Collections.eq(failure.id, stillAsking.id))
-          .leftJoin({ storedAfterAll: recent }, ({ failure, storedAfterAll }) =>
-            Collections.eq(failure.id, storedAfterAll.id),
-          )
-          .where(({ stillAsking, storedAfterAll }) =>
-            Collections.and(Collections.isUndefined(stillAsking?.id), Collections.isUndefined(storedAfterAll?.id)),
-          )
-          .select(({ failure }) => ({
-            id: failure.id,
-            role: failure.role,
-            text: Collections.caseWhen(Collections.eq(failure.status, "failed"), CHAT_FAILED, failure.text),
-            status: failure.status,
-            position: failure.position,
-            seq: failure.seq,
-          })),
-      )
-      .orderBy(({ $selected }) => $selected.position)
-      .orderBy(({ $selected }) => $selected.seq),
+/** The questions queued on this device that Postgres doesn't have yet: the pill counts them. */
+export const queuedQuery = (conversation: Conversation) =>
+  LiveQuery.make((q) =>
+    q.from({ message: conversation.tanstack }).where(({ message }) => Query.eq(message.status, "queued")),
   )
 
 /** This tab's composer. */
-export const composerQuery = (composer: Collections.LocalCollection<Composer, string>) =>
-  Collections.liveQuery((q) => q.from({ composer }).findOne())
+export const composerQuery = (composer: Collection.Collection<Composer, string>) =>
+  LiveQuery.make((q) => q.from({ composer: composer.tanstack }).findOne())
 
-/**
- * The answer this tab asked for that is still streaming, if any: while there is one, this tab is waiting. The answer
- * is pending until Postgres stores it, then in the window, as the newest message.
- */
-export const waitingQuery = (asks: Collections.LocalCollection<Ask, string>, recent: Recent, pending: Pending) =>
-  Collections.liveQuery((q) =>
-    q
-      .unionAll(
-        q
-          .from({ ask: asks })
-          .innerJoin({ answer: pending }, ({ ask, answer }) => Collections.eq(ask.id, answer.id))
-          .where(({ answer }) => Collections.eq(answer.status, "streaming"))
-          .select(({ answer }) => ({ id: answer.id })),
-        q
-          .from({ asked: asks })
-          .innerJoin({ stored: recent }, ({ asked, stored }) => Collections.eq(asked.id, stored.id))
-          .where(({ stored }) => Collections.eq(stored.status, "streaming"))
-          .select(({ stored }) => ({ id: stored.id })),
-      )
-      .findOne(),
-  )
+/** This tab's connection, as the pill shows it. */
+export const connectionQuery = (connection: Collection.Collection<Connection, string>) =>
+  LiveQuery.make((q) => q.from({ connection: connection.tanstack }).findOne())
 
-/** This tab's sync health: `syncing`, `ready` or `failed` with a reason. */
-export const syncQuery = (sync: Collections.LocalCollection<SyncHealth, string>) =>
-  Collections.liveQuery((q) => q.from({ sync }).findOne())
-
-/** This tab's history window: whether it has opened, whether "Load earlier" applies, and whether it is loading. */
-export const historyQuery = (history: Collections.LocalCollection<History, string>) =>
-  Collections.liveQuery((q) => q.from({ history }).findOne())
+/** This tab's view of the conversation: whether it has opened, and whether "Load earlier" applies. */
+export const historyQuery = (history: Collection.Collection<History, string>) =>
+  LiveQuery.make((q) => q.from({ history: history.tanstack }).findOne())

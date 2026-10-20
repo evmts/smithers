@@ -45,7 +45,7 @@ test("ask: a user asks Smithers and gets a streamed answer", async ({ page }) =>
   await expect(answerTo(conversation, `Reply with exactly the word: ${word}`)).toContainText(word, { timeout: 60_000 })
 })
 
-test("reload mid-answer: the answer continues on the server and completes after the reload, and the composer works", async ({ page }) => {
+test("reload mid-answer: the browser's agent resumes the answer after the reload and completes it, and the composer works", async ({ page }) => {
   await page.goto("/app")
   await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
   await page.keyboard.press("ControlOrMeta+k")
@@ -56,7 +56,8 @@ test("reload mid-answer: the answer continues on the server and completes after 
   await composer.fill(question)
   await composer.press("Enter")
 
-  // ChatApi took the question (202), so the server is answering it. The page reloads while the answer is unfinished.
+  // ChatApi took the question (202), so this tab's agent is answering it. The page reloads while the answer is unfinished;
+  // the reloaded page's engine resumes the run from its journal.
   const conversation = page.getByRole("region", { name: "Conversation", exact: true })
   const answer = answerTo(conversation, question)
   expect((await taken).status()).toBe(202)
@@ -99,4 +100,29 @@ test("in view: opening chat shows the newest message and the Chat button, and a 
   await expect(answerTo(conversation, question)).toContainText(word, { timeout: 60_000 })
   await expect(answerTo(conversation, question), "its answer shows without scrolling").toBeInViewport()
   await expect(composer).toBeInViewport()
+})
+
+// A message is one element from the moment it shows: a question syncing and its answer settling change it in place, so
+// its fade-in plays once, not again at each change of status.
+test("steady: a question and its answer keep their elements as the question syncs and the answer settles", async ({ page }) => {
+  await page.goto("/app")
+  await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
+  await page.keyboard.press("ControlOrMeta+k")
+  const composer = page.getByRole("textbox", { name: "Message Smithers" })
+  const conversation = page.getByRole("region", { name: "Conversation", exact: true })
+  const word = `steady-${Date.now()}`
+  const question = `Reply with exactly the word: ${word}`
+  await composer.fill(question)
+  await composer.press("Enter")
+
+  // The question as it first shows, before Postgres has it, and the answer as it first shows, before it settles.
+  const asked = await conversation.locator(".sui-chat-message", { hasText: question }).first().elementHandle()
+  const answer = answerTo(conversation, question)
+  await expect(answer).toHaveAttribute("data-state", "streaming", { timeout: 60_000 })
+  const streaming = await answer.elementHandle()
+  await expect(answer).toContainText(word, { timeout: 60_000 })
+  await expect(answer.locator('[data-slot="message-response"]')).toHaveAttribute("data-streaming", "false", { timeout: 60_000 })
+
+  expect(await asked!.evaluate((element) => element.isConnected), "the question's element survived syncing").toBe(true)
+  expect(await streaming!.evaluate((element) => element.isConnected), "the answer's element survived settling").toBe(true)
 })

@@ -16,15 +16,10 @@
 .app-shell-composer > * { flex: 1; }
 .app-shell-composer > button { flex: none; }
 
-.app-status {
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-}
+/* The header: the connection pill, the theme button and the account, at the end of the row. */
+.app-shell-header { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; }
+.app-shell-header [aria-label="Account"] { display: flex; align-items: center; gap: 0.5rem; }
 
-.app-shell-sync { display: flex; align-items: center; gap: 0.75rem; }
-.app-shell-sync:empty { display: none; }
-.app-shell-sync > [role="alert"] { flex: 1; }
+/* The connection pill's live region: always rendered, so screen readers hear each change; it takes no room while empty. */
+.app-shell-connection { display: flex; align-items: center; gap: 0.5rem; }
+.app-shell-connection:empty { margin-inline-end: -0.5rem; }

@@ -1,16 +1,13 @@
 import { Effect } from "effect"
-import { Boundary } from "../../lib/runtime"
 import { closeComposer, toggleComposer } from "./actions"
-import { ChatStore } from "./store"
+import type { ChatStore } from "./store"
 
 // ⌘K (Ctrl+K) toggles the composer and Esc hides it from anywhere on `target`, whatever has focus, as in the old app
-// (apps/app/src/mainview/state/controller/controlFocus.ts). The listener is bound while the scope is open.
-// `preventDefault` runs in the listener, because ⌘K's browser default can only be stopped inside the event.
+// (apps/app/src/mainview/state/controller/controlFocus.ts). The listener is bound while the scope is open, and runs
+// each action with the services it was bound with. `preventDefault` runs in the listener, because ⌘K's browser default
+// can only be stopped inside the event.
 export const chatShortcuts = Effect.fnUntraced(function* (target: EventTarget) {
-  const boundary = yield* Boundary
-  const store = yield* ChatStore
-  const run = (action: Effect.Effect<void, never, ChatStore>) =>
-    boundary.runSync(Effect.provideService(action, ChatStore, store))
+  const run = Effect.runSyncWith(yield* Effect.context<ChatStore>())
   const onKeyDown = (event: Event) => {
     // Some keydown events carry no key, such as Chrome's autofill.
     const { key, metaKey, ctrlKey } = event as Partial<KeyboardEvent>

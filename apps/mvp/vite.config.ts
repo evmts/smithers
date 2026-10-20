@@ -1,9 +1,69 @@
+import { join } from "node:path"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
+import { VitePWA } from "vite-plugin-pwa"
+
+// The app's shell, for the service worker to precache: everything a reload needs before it reaches the network.
+const SHELL = ["**/*.{js,css,html,woff2,svg,png}"]
+
+// Never the service worker's: ChatApi, the Electric shape proxy, the telemetry relay and the model endpoint.
+const API = /^\/api\//
 
 // Alchemy injects the Cloudflare plugin, which runs worker/index.ts beside the app in dev and build.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // The app is a PWA (docs/decisions/0011-the-agent-runs-in-the-browser.md §5): installable, and its service worker
+    // serves the shell offline after one online visit (0002 §8). The service worker only serves files; it never runs
+    // the flow engine, and never caches or answers /api/*.
+    VitePWA({
+      registerType: "autoUpdate",
+      // The plugin adds the registration script to index.html, so the app's code registers nothing itself.
+      injectRegister: "script-defer",
+      // The shell's glob already lists the icons.
+      includeManifestIcons: false,
+      manifest: {
+        name: "Smithers",
+        short_name: "Smithers",
+        start_url: "/app",
+        scope: "/",
+        display: "standalone",
+        background_color: "#f7f6f1",
+        theme_color: "#3a756b",
+        icons: [
+          { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+          { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          { src: "/icon.svg", sizes: "any", type: "image/svg+xml" },
+        ],
+      },
+      workbox: {
+        globPatterns: SHELL,
+        navigateFallback: "index.html",
+        navigateFallbackDenylist: [API],
+        cleanupOutdatedCaches: true,
+        // A module the precache doesn't list (under the dev server, every one) is kept from the last visit, so an
+        // offline reload still has it. The network answers first whenever it can.
+        runtimeCaching: [
+          {
+            urlPattern: ({ url, sameOrigin, request }) =>
+              sameOrigin && request.method === "GET" && !url.pathname.startsWith("/api/"),
+            handler: "NetworkFirst",
+            options: { cacheName: "smithers-shell", networkTimeoutSeconds: 3 },
+          },
+        ],
+      },
+      devOptions: {
+        enabled: true,
+        type: "module",
+        navigateFallback: "index.html",
+        // Every app route falls back to the shell offline, as in production; /api/* never does.
+        navigateFallbackAllowlist: [/^\/(?!api\/)/],
+        // The dev service worker is generated here, outside the source tree.
+        resolveTempFolder: () => join(import.meta.dirname, "node_modules", ".vite-pwa-dev"),
+      },
+    }),
+  ],
   worker: { format: "es" },
   server: { port: 5190, strictPort: true, fs: { strict: false } },
   build: { target: "esnext" },

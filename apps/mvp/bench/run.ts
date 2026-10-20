@@ -202,10 +202,10 @@ const main = async () => {
     ...(counts["concurrent.asks"] === undefined
       ? []
       : [
-          `Concurrent asks: ${counts["concurrent.asks"]} (${concurrency} at once × ${bursts}). HTTP: ${Object.entries(counts)
+          `Concurrent asks: ${counts["concurrent.asks"]} (${concurrency} at once × ${bursts}). Their POSTs: ${Object.entries(counts)
             .filter(([name]) => name.startsWith("concurrent.http."))
             .map(([name, count]) => `${count} × ${name.slice("concurrent.http.".length)}`)
-            .join(", ")}. 429s: ${counts["concurrent.rate_limited"] ?? 0}. Failed: ${counts["concurrent.failed"] ?? 0}.`,
+            .join(", ")}. Answers the model refused with 429: ${counts["concurrent.rate_limited"] ?? 0}. Failed: ${counts["concurrent.failed"] ?? 0}.`,
         ]),
     ...Object.entries(counts)
       .filter(([name]) => name.endsWith(".rate_limited") && !name.startsWith("concurrent."))

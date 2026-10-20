@@ -1,0 +1,45 @@
+import { Button } from "@smthrs/ui"
+import { useLiveQuery } from "@tanstack/react-db"
+import { createContext, useContext } from "react"
+import type { ThemeView } from "../theme"
+
+// The theme's one door for a person (decision 0003 §5): an icon button in the header, labelled for assistive tech
+// only. It shows the mode it switches to, and dispatches `app/theme/set` through the theme layer's `toggle`.
+
+const ThemeContext = createContext<ThemeView | null>(null)
+
+/** Gives the button the theme layer (src/features/theme/theme.ts). */
+export const ThemeProvider = ThemeContext.Provider
+
+export function ThemeButton() {
+  const theme = useContext(ThemeContext)
+  if (theme === null) throw new Error("ThemeButton needs a ThemeProvider")
+  const { data: preference } = useLiveQuery(theme.queries.theme)
+  const dark = (preference?.mode ?? theme.queries.shown()) === "dark"
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+      onClick={() => void theme.actions.toggle()}
+    >
+      {dark ?
+        (
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="3.5" fill="currentColor" />
+            <path
+              d="M8 0.5v2M8 13.5v2M0.5 8h2M13.5 8h2M2.7 2.7l1.4 1.4M11.9 11.9l1.4 1.4M2.7 13.3l1.4-1.4M11.9 4.1l1.4-1.4"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeLinecap="round"
+            />
+          </svg>
+        ) :
+        (
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M13.5 9.6A6 6 0 0 1 6.4 2.5a6 6 0 1 0 7.1 7.1z" fill="currentColor" />
+          </svg>
+        )}
+    </Button>
+  )
+}

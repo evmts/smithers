@@ -1,13 +1,14 @@
 import { test as base, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
-import { CHAT_FAILED, expect, flowName, PAGE_SIZE, SYNC_LOST } from "./fixtures"
+import { faultyApp, faults } from "./faults"
+import { COULDNT_ANSWER, expect, flowName, NOT_SENT, OFFLINE, PAGE_SIZE, QUEUED, spinnersSeen, SYNC_FAILED, watchForSpinners } from "./fixtures"
 
 // Multi-device helpers for the local-first tests. A device is its own browser context: its own memory, network and
 // video. A tab is one page in a device. Every tab holds the conversation Electric syncs from Postgres, and asks
-// through ChatApi (`POST /api/questions`). No mocks: `setOffline` is the device losing its network, and aborting a
-// route's requests stands for that service being down.
+// through ChatApi (`POST /api/questions`). No mocks: `setOffline` is the device losing its network, and a device
+// opened on the app's faulty services (`openFaulty`, e2e/faults.ts) throws a switch for the sync service being down.
 
-export { CHAT_FAILED, expect, PAGE_SIZE, SYNC_LOST }
+export { COULDNT_ANSWER, expect, NOT_SENT, OFFLINE, PAGE_SIZE, QUEUED, SYNC_FAILED }
 
 // Narrow devices, so two or three fit side by side in one GIF.
 const VIEWPORT = { width: 560, height: 720 }
@@ -85,6 +86,8 @@ export class Device {
   constructor(
     readonly name: string,
     readonly context: BrowserContext,
+    // Its tabs run the app on its faulty services (`/app?faults`), healthy until the test throws a switch.
+    readonly faulty: boolean,
   ) {}
 
   // The device loses its network: no sync and no asking.
@@ -98,16 +101,21 @@ export class Device {
     await this.paint("")
   }
 
-  // The sync service is down for this device: every shape request fails as if Electric (or its proxy) were
-  // unreachable. Asking still reaches ChatApi.
+  // The sync service is down for this device: every shape request its tabs make from now on fails on the network,
+  // as if Electric (or its proxy) were unreachable. Asking still reaches ChatApi. Only a faulty device has the switch.
   async syncDown() {
-    await this.context.route("**/api/shapes/**", (route) => route.abort("connectionrefused"))
+    for (const tab of this.faultyTabs()) await faults(tab.page).shapes.down()
     await this.paint("sync down")
   }
 
   async syncUp() {
-    await this.context.unroute("**/api/shapes/**")
+    for (const tab of this.faultyTabs()) await faults(tab.page).shapes.heal()
     await this.paint("")
+  }
+
+  private faultyTabs() {
+    if (!this.faulty) throw new Error(`${this.name} runs the real services; open it with devices.openFaulty to throw a fault`)
+    return this.tabs.filter((tab) => !tab.page.isClosed())
   }
 
   private async paint(state: string) {
@@ -124,21 +132,18 @@ export class Device {
 }
 
 const isQuestions = (url: string) => new URL(url).pathname === "/api/questions"
-const isShape = (url: string) => new URL(url).pathname.startsWith("/api/shapes/")
 
 export class Tab {
   readonly conversation: Locator
   readonly composer: Locator
   readonly composerForm: Locator
   readonly chatButton: Locator
-  // "Smithers lost its connection.": sync has failed on this tab.
-  readonly syncLost: Locator
+  // The connection pill, in the header's live region: empty while the connection is up.
+  readonly pill: Locator
   readonly loadEarlier: Locator
   readonly log: Array<string> = []
   // Every question this tab posted to ChatApi, in order.
   readonly asked: Array<Asked> = []
-  // Shape requests that never got an answer: the device was offline or the sync service down.
-  shapeFailures = 0
   // Seconds from the test's first device to this tab opening: where its video starts in the GIF.
   readonly openedAt: number
 
@@ -152,7 +157,7 @@ export class Tab {
     this.composer = page.getByRole("textbox", { name: "Message Smithers" })
     this.composerForm = page.locator('form[data-slot="chat-composer"]')
     this.chatButton = page.getByRole("button", { name: /Chat/ })
-    this.syncLost = page.getByRole("alert").filter({ hasText: SYNC_LOST })
+    this.pill = page.locator('[aria-label="Connection"]')
     this.loadEarlier = page.getByRole("button", { name: "Load earlier" })
     this.openedAt = (Date.now() - startedAt) / 1000
     const at = () => `${((Date.now() - startedAt) / 1000).toFixed(2)}s`
@@ -173,7 +178,6 @@ export class Tab {
     })
     page.on("requestfailed", (request) => {
       const error = request.failure()?.errorText
-      if (isShape(request.url())) this.shapeFailures++
       if (isQuestions(request.url())) {
         const body = request.postDataJSON() as { id: string }
         const asked = this.asked.find(({ questionId }) => questionId === body.id)
@@ -188,8 +192,18 @@ export class Tab {
     await expect(this.page.getByRole("main", { name: "App" }), `${this.name}: the app opens`).toBeVisible({ timeout: 30_000 })
   }
 
+  // A reload another navigation overtakes, such as the service worker's update reloading the page, still ends with
+  // the app open, which `ready` checks.
+  // Closes the tab without its unload handlers, as a killed tab or a crashed browser does. Its device keeps what it
+  // stored: the conversation, the outbox and the engine's journal.
+  async close() {
+    await this.page.close({ runBeforeUnload: false })
+  }
+
   async reload() {
-    await this.page.reload()
+    await this.page.reload().catch((error: Error) => {
+      if (!error.message.includes("ERR_ABORTED")) throw error
+    })
     await this.ready()
   }
 
@@ -210,10 +224,33 @@ export class Tab {
     return this.question(text).first().locator("xpath=following-sibling::*[1]")
   }
 
-  // The answer ended as failed: the failure copy only, no "Smithers is answering" and no streaming caret.
+  // The pill says the device is offline, with `queued` questions waiting: `Offline` or `Offline · 2`.
+  async expectOffline(queued = 0, timeout = 30_000) {
+    const copy = queued === 0 ? OFFLINE : `${OFFLINE} · ${queued}`
+    await expect(this.pill, `${this.name}: the pill says ${copy}`).toContainText(copy, { timeout })
+  }
+
+  // The pill is gone: the shape is up to date and nothing is queued.
+  async expectUp(timeout = 30_000) {
+    await expect(this.pill, `${this.name}: the pill hides`).toBeEmpty({ timeout })
+  }
+
+  // The question shows queued: badged Queued, since the pill shows.
+  async expectQueued(text: string) {
+    await expect(this.question(text), `${this.name}: "${text}" shows queued`).toHaveAttribute("data-state", "queued")
+    await expect(this.question(text).getByText(QUEUED, { exact: true })).toBeVisible()
+  }
+
+  // The question stays on this device, Not sent.
+  async expectNotSent(text: string, timeout = 30_000) {
+    await expect(this.question(text), `${this.name}: "${text}" is not sent`).toHaveAttribute("data-state", "unsent", { timeout })
+    await expect(this.question(text).getByText(NOT_SENT, { exact: true })).toBeVisible()
+  }
+
+  // The answer ended as failed: the failure copy only, with Retry; no "Smithers is answering" and no streaming caret.
   async expectFailed(text: string, timeout = 30_000) {
     const answer = this.answerTo(text)
-    await expect(answer, `${this.name}: the answer to "${text}" ends as failed`).toHaveText(CHAT_FAILED, { timeout })
+    await expect(answer.locator(".sui-chat-bubble"), `${this.name}: the answer to "${text}" ends as failed`).toHaveText(COULDNT_ANSWER, { timeout })
     await expect(answer).toHaveAttribute("data-role", "assistant")
     await expect(answer.getByRole("status")).toHaveCount(0)
     await expect(answer.locator('[data-slot="message-response"]')).toHaveAttribute("data-streaming", "false")
@@ -244,11 +281,16 @@ export class Tab {
     await this.composer.press("Enter")
   }
 
-  // Asks a question and checks it shows on this tab at once, whatever the network: the insert is optimistic.
+  // Asks a question and checks it shows on this tab at once, whatever the network: it shows from the device.
   async ask(text: string) {
     await this.send(text)
     await expect(this.question(text), `${this.name}: "${text}" shows at once`).toHaveCount(1, { timeout: 1_000 })
     await expect(this.composer).toHaveValue("")
+  }
+
+  // The id of the question with `text`, from the conversation.
+  async idOf(text: string) {
+    return (await this.question(text).first().getAttribute("data-id"))!
   }
 
   // Asks a question and waits until ChatApi took it (202): from then on the server answers it, whatever this tab does.
@@ -345,35 +387,58 @@ class Devices {
     private readonly testInfo: TestInfo,
   ) {}
 
-  // Opens one device per name, in parallel, each on /app with its conversation open.
-  async open(...names: Array<string>) {
+  // Opens one device per name, in parallel, each on /app with its conversation open, on the real services.
+  open(...names: Array<string>) {
+    return this.openOn(false, names)
+  }
+
+  // As `open`, on the app's faulty services: healthy until the test throws a switch, such as `Device.syncDown`.
+  openFaulty(...names: Array<string>) {
+    return this.openOn(true, names)
+  }
+
+  private async openOn(faulty: boolean, names: Array<string>) {
     return Promise.all(
       names.map(async (name) => {
         const context = await this.browser.newContext({
           viewport: VIEWPORT,
           recordVideo: { dir: this.testInfo.outputPath("videos"), size: VIEWPORT },
         })
-        const device = new Device(name, context)
+        const device = new Device(name, context, faulty)
         this.all.push(device)
         return this.tab(device, name)
       }),
     )
   }
 
-  // Opens another tab of the same device: same browser context, its own page and memory.
+  // Opens another tab of the same device: same browser context, its own page and memory. A device's first page waits
+  // until the service worker is active, then loads again online, under its control: that is the one earlier visit an
+  // offline reload needs. In production the service worker precaches the whole shell as it installs; under the dev server it keeps
+  // each module a controlled page fetched, and the first page's modules came before it took control.
   async tab(device: Device, name: string) {
+    const first = device.tabs.length === 0
     const page = await device.context.newPage()
     await page.addInitScript(label, name)
+    await page.addInitScript(watchForSpinners)
     const tab = new Tab(name, device, page, this.startedAt)
     device.tabs.push(tab)
-    await page.goto("/app")
+    await page.goto(device.faulty ? faultyApp() : "/app")
     await tab.ready()
+    if (first) {
+      await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined))
+      await tab.reload()
+      await page.waitForFunction(() => navigator.serviceWorker.controller !== null, undefined, { timeout: 30_000 })
+    }
     return tab
   }
 
   async teardown() {
-    const failed = this.testInfo.status !== this.testInfo.expectedStatus
     const tabs = this.all.flatMap((device) => device.tabs)
+    for (const tab of tabs) {
+      if (tab.page.isClosed()) continue
+      expect.soft(await spinnersSeen(tab.page), `${tab.name} never showed a loading state`).toEqual([])
+    }
+    const failed = this.testInfo.status !== this.testInfo.expectedStatus
     if (failed) {
       // Saved beside the test's videos and attached: each tab's browser and network log, screenshot, and what it showed.
       const save = async (name: string, body: string | Buffer, contentType: string) => {

@@ -3,12 +3,12 @@ import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { test } from "node:test"
-import { apply, Follower, initialSync, postQuestion, type Row, type ShapeMessage } from "./chatapi.ts"
+import { apply, Follower, initialSync, type Row, type ShapeMessage } from "./chatapi.ts"
 
-const change = (operation: "insert" | "update" | "delete", value: Partial<Row>, txid = 1): ShapeMessage => ({
+const change = (operation: "insert" | "update" | "delete", value: Partial<Row>): ShapeMessage => ({
   key: `"public"."messages"/"${value.id}"`,
   value,
-  headers: { operation, txids: [txid] },
+  headers: { operation },
 })
 const upToDate: ShapeMessage = { headers: { control: "up-to-date" } }
 
@@ -18,10 +18,6 @@ const electric = async (respond: (params: URLSearchParams) => Reply | Promise<Re
   const requests: Array<URLSearchParams> = []
   const server = createServer(async (request, response) => {
     const url = new URL(request.url!, "http://localhost")
-    if (url.pathname === "/api/questions") {
-      response.writeHead(202, { "content-type": "application/json" }).end(JSON.stringify({ txid: 42 }))
-      return
-    }
     requests.push(url.searchParams)
     const { status = 200, offset, body } = await respond(url.searchParams)
     response.writeHead(status, { "content-type": "application/json", "electric-handle": "h1", "electric-offset": offset }).end(JSON.stringify(body))
@@ -75,15 +71,15 @@ test("initialSync fails on an error status", async () => {
   }
 })
 
-test("a Follower joins at offset=now, long-polls live, and records each row's first text, settling and txid", async () => {
+test("a Follower joins at offset=now, long-polls live, and records each row's first text and settling", async () => {
   let polls = 0
   const server = await electric(async (params) => {
     if (params.get("offset") === "now") return { offset: "1_0", body: [upToDate] }
     assert.equal(params.get("live"), "true")
     polls++
-    if (polls === 1) return { offset: "2_0", body: [change("insert", { id: "q", role: "user", text: "ask w1" }, 7), change("insert", { id: "a", role: "assistant", text: "", status: "streaming", question_id: "q" }, 7), upToDate] }
-    if (polls === 2) return { offset: "3_0", body: [change("update", { id: "a", text: "w1" }, 8), upToDate] }
-    if (polls === 3) return { offset: "4_0", body: [change("update", { id: "a", status: "done" }, 9), upToDate] }
+    if (polls === 1) return { offset: "2_0", body: [change("insert", { id: "q", role: "user", text: "ask w1" }), change("insert", { id: "a", role: "assistant", text: "", status: "streaming", question_id: "q" }), upToDate] }
+    if (polls === 2) return { offset: "3_0", body: [change("update", { id: "a", text: "w1" }), upToDate] }
+    if (polls === 3) return { offset: "4_0", body: [change("update", { id: "a", status: "done" }), upToDate] }
     return new Promise<Reply>(() => {}) // a long-poll with nothing new: held open until the follower stops
   })
   const follower = new Follower(server.baseUrl)
@@ -97,7 +93,8 @@ test("a Follower joins at offset=now, long-polls live, and records each row's fi
     assert.equal(answer.text, "w1")
     const timeline = follower.timelines.get("a")!
     assert.ok(timeline.seenAt > 0 && timeline.seenAt <= timeline.firstTextAt && timeline.firstTextAt <= timeline.settledAt)
-    assert.deepEqual([...follower.txids.keys()], [7, 8, 9])
+    // The question arrived with its answer, in one response: when the bench's pages count it confirmed.
+    assert.equal(follower.timelines.get("q")?.seenAt, timeline.seenAt)
     assert.deepEqual(
       server.requests.slice(1, 4).map((params) => params.get("offset")),
       ["1_0", "2_0", "3_0"],
@@ -107,18 +104,4 @@ test("a Follower joins at offset=now, long-polls live, and records each row's fi
     await follower.stop()
     await server.close()
   }
-})
-
-test("postQuestion reports the status and txid, and status 0 when the request fails", async () => {
-  const server = await electric(() => ({ offset: "0_0", body: [] }))
-  try {
-    const posted = await postQuestion(server.baseUrl, { id: "a", answerId: "b", text: "t" })
-    assert.equal(posted.status, 202)
-    assert.equal(posted.txid, 42)
-    assert.ok(posted.respondedAt >= posted.sentAt)
-  } finally {
-    await server.close()
-  }
-  const failed = await postQuestion(server.baseUrl, { id: "a", answerId: "b", text: "t" })
-  assert.deepEqual([failed.status, failed.txid], [0, null])
 })

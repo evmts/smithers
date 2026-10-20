@@ -1,4 +1,4 @@
-import { Data, type Duration, Effect, Schema } from "effect"
+import { Context, Data, type Duration, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 
 /** A question for `POST /api/questions` (docs/features/chat.md#post-apiquestions). */
@@ -18,11 +18,10 @@ const Inserted = Schema.Struct({ txid: Schema.Number })
  * ChatApi didn't take the question:
  * - `unreachable`: no whole answer within the deadline, its body included, for example offline;
  * - `refused`: an answer other than 200 or 202, such as 409 for a retry that doesn't match the stored question;
- * - `invalid_response`: 202 with a body outside the contract, or one that broke off;
- * - `unconfirmed`: ChatApi took it, but Electric didn't deliver it in time.
+ * - `invalid_response`: 202 with a body outside the contract, or one that broke off.
  */
 export class QuestionNotTaken extends Data.TaggedError("QuestionNotTaken")<{
-  readonly reason: "unreachable" | "refused" | "invalid_response" | "unconfirmed"
+  readonly reason: "unreachable" | "refused" | "invalid_response"
   readonly status?: number
 }> {}
 
@@ -57,3 +56,27 @@ export const postQuestion = Effect.fn("chat.question.post")(function* (
     }),
   )
 })
+
+/**
+ * ChatApi's client, as a service: the one way the browser asks a question. The real one posts `POST /api/questions`
+ * (`postQuestion`). Tests of what happens when ChatApi refuses or times out provide a faulty one
+ * (src/test/faults.ts); every other test uses the real one.
+ */
+export class ChatClient extends Context.Service<
+  ChatClient,
+  { readonly ask: (question: Question) => Effect.Effect<Taken, QuestionNotTaken> }
+>()("@smthrs/mvp/chat/ChatClient") {
+  /** The real client: ChatApi at `url`, with `within` for each whole request. */
+  static readonly layer = (options: { readonly url: string; readonly within: Duration.Input }) =>
+    Layer.effect(
+      ChatClient,
+      Effect.map(HttpClient.HttpClient, (client) =>
+        ChatClient.of({
+          ask: (question) =>
+            postQuestion(options.url, question, options.within).pipe(
+              Effect.provideService(HttpClient.HttpClient, client),
+            ),
+        }),
+      ),
+    )
+}

@@ -1,19 +1,13 @@
 import { Schema } from "effect"
 
-export const CHAT_FAILED = "Smithers couldn't answer. Try again."
-
-/** What a frontend shows while chat's sync has stopped (`SyncHealth` `failed`), beside a Retry action. */
-export const SYNC_LOST = "Smithers lost its connection."
-
-/** How many messages a tab loads at first, and how many more each "Load earlier" adds. */
-export const PAGE_SIZE = 50
-
-// The longest question a person can ask, in characters after trimming (docs/features/chat.md#post-apiquestions).
-export const QUESTION_MAX_LENGTH = 8_000
+// Every row chat's collections hold, as the Effect Schema its collection checks it with. Constants the browser shares
+// with ChatApi live in contract.ts. A row stored on the device (`messages`, `unsent`) or in the outbox (`asking`) is
+// read by the next version of the app too: change its shape only with its collection's `schemaVersion`, or its `v`.
 
 /**
- * One row of Postgres `messages`, as Electric delivers it (docs/features/chat.md#messages-postgres): column names in
- * camelCase, `position` (int8) parsed to a number, timestamps as Postgres prints them.
+ * One row of Postgres `messages` as Electric delivers it (docs/features/chat.md#messages-postgres): columns in
+ * camelCase, `position` (int8) parsed to a number, timestamps as Postgres prints them. The Electric collection decodes
+ * every synced row with it, column by column, and keeps them on the device.
  */
 export const Message = Schema.Struct({
   id: Schema.String,
@@ -21,12 +15,11 @@ export const Message = Schema.Struct({
   text: Schema.String,
   status: Schema.Literals(["done", "streaming", "failed"]),
   questionId: Schema.NullOr(Schema.String),
-  failure: Schema.NullOr(Schema.Literals(["rate_limited", "model_error", "empty", "abandoned"])),
+  failure: Schema.NullOr(Schema.Literals(["rate_limited", "model_error", "empty", "abandoned", "unfinished"])),
   modelId: Schema.NullOr(Schema.String),
   stopReason: Schema.NullOr(Schema.String),
   inputTokens: Schema.NullOr(Schema.Number),
   outputTokens: Schema.NullOr(Schema.Number),
-  attempts: Schema.Number,
   position: Schema.Number,
   createdAt: Schema.String,
   updatedAt: Schema.String,
@@ -34,64 +27,73 @@ export const Message = Schema.Struct({
 export type Message = typeof Message.Type
 
 /**
- * Where a row this tab inserted sorts until Electric delivers its real `position`: after every synced row, in the
- * order this tab asked. Postgres identity positions never reach 2^52.
+ * A question asked on this device that Postgres doesn't have yet: the optimistic row of its outbox write, keyed by the
+ * question's id. `answerId` is the id its answer gets. `queuedAt` (epoch ms) orders it among other local rows, after
+ * every synced one; it never orders synced rows (docs/state.md rule 7). `v` is the row's version in the outbox.
  */
-export const PENDING_POSITION = 2 ** 52
+export const Asking = Schema.Struct({
+  id: Schema.String,
+  answerId: Schema.String,
+  text: Schema.String,
+  queuedAt: Schema.Number,
+  v: Schema.Literal(1),
+})
+export type Asking = typeof Asking.Type
 
-// This tab's composer: open or hidden, and the unsent draft. One row.
+/**
+ * Why a question stays unsent on this device:
+ * - `refused`: ChatApi refused it (400);
+ * - `conflict`: its id already holds another message (409);
+ * - `too_large`: its body was over ChatApi's limit (413);
+ * - `not_admitted`: the outbox couldn't take it, so it was never sent.
+ */
+export const UnsentReason = Schema.Literals(["refused", "conflict", "too_large", "not_admitted"])
+export type UnsentReason = typeof UnsentReason.Type
+
+/**
+ * A question that stays on this device until the person edits or discards it, or, when it was never admitted, sends
+ * it again. Keyed by the question's id; kept on the device, so it survives a reload.
+ */
+export const Unsent = Schema.Struct({
+  id: Schema.String,
+  answerId: Schema.String,
+  text: Schema.String,
+  queuedAt: Schema.Number,
+  reason: UnsentReason,
+})
+export type Unsent = typeof Unsent.Type
+
+/** This tab's composer: open or hidden, and the unsent draft. One row. */
 export const COMPOSER = "composer"
-export type Composer = { id: typeof COMPOSER; open: boolean; draft: string }
-
-// An answer this tab asked for, keyed by the answer's id: what "this tab is waiting" joins on.
-export type Ask = { id: string }
+export const Composer = Schema.Struct({ id: Schema.Literal(COMPOSER), open: Schema.Boolean, draft: Schema.String })
+export type Composer = typeof Composer.Type
 
 /**
- * This tab's sync with Postgres, through Electric. One row:
- * - `syncing`: until a shape request first succeeds, and after one fails until another succeeds;
- * - `ready`: the last request succeeded, so the conversation follows every change;
- * - `failed`: the conversation shown may be stale. `reason` is `unreachable` (requests kept failing on the network, or
- *   with 5xx, for `openWithin`; they keep retrying, and the first to succeed makes it `ready`), `refused` (a 4xx) or
- *   `invalid_response` (a response Electric couldn't read); those two wait for a retry. `httpStatus` is the last status
- *   when there was one. Both are null unless `failed`.
+ * This tab's connection, as the connection pill shows it. One row:
+ * - `up`: nothing to show;
+ * - `offline`: the device is offline, or, with `retry`, Smithers has been unreachable for `unreachableAfter`;
+ * - `failed`: Electric refused the shape, or answered with something it couldn't read; it waits for Retry;
+ * - `stopped`: this tab's engine worker failed, so this device can't answer or keep its rows; only a reload can help.
  */
-export const SYNC = "sync"
-export type SyncFailure = "unreachable" | "refused" | "invalid_response"
-export type SyncHealth = {
-  id: typeof SYNC
-  status: "syncing" | "ready" | "failed"
-  reason: SyncFailure | null
-  httpStatus: number | null
-}
+export const CONNECTION = "connection"
+export const Connection = Schema.Struct({
+  id: Schema.Literal(CONNECTION),
+  status: Schema.Literals(["up", "offline", "failed", "stopped"]),
+  retry: Schema.Boolean,
+})
+export type Connection = typeof Connection.Type
 
 /**
- * This tab's view of the conversation's history. One row:
- * - `opened`: the first window has loaded;
- * - `limit`: how many of the most recent messages the conversation shows;
- * - `earlier`: whether there may be messages before them (the window is full);
- * - `loading`: a "Load earlier" is loading.
+ * This tab's view of the conversation. One row:
+ * - `opened`: the conversation has been restored from the device or synced, so an empty one is truly empty;
+ * - `limit`: how many of the most recent messages it shows;
+ * - `earlier`: whether the device has messages before them.
  */
 export const HISTORY = "history"
-export type History = { id: typeof HISTORY; opened: boolean; limit: number; earlier: boolean; loading: boolean }
-
-/**
- * A question this tab couldn't ask, kept so it and the failure copy stay where they were shown after TanStack DB
- * rolls the optimistic rows back. Two rows per question, shaped like messages: they sort after the synced row at
- * `position`, then by `seq`, the order they were asked in.
- */
-export type FailedMessage = {
-  id: string
-  role: "user" | "assistant"
-  text: string
-  status: "done" | "failed"
-  position: number
-  seq: number
-}
-
-// A row of the conversation as every frontend shows it.
-export type ConversationMessage = {
-  id: string
-  role: "user" | "assistant"
-  text: string
-  status: Message["status"]
-}
+export const History = Schema.Struct({
+  id: Schema.Literal(HISTORY),
+  opened: Schema.Boolean,
+  limit: Schema.Number,
+  earlier: Schema.Boolean,
+})
+export type History = typeof History.Type

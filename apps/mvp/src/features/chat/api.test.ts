@@ -1,13 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
-import { type Duration, Effect } from "effect"
+import { Effect } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, expect, test } from "vitest"
-import { makeRuntime } from "../../lib/runtime"
 import { postQuestion } from "./api"
 
-// `POST /api/questions` from the browser's side, against a local HTTP server that plays ChatApi's network: real
-// sockets, so a stalled body and an aborted request are what a browser would meet.
+// The real ChatApi client from the browser's side, against a local HTTP server that plays a gateway: real sockets, so
+// a stalled body, a body cut short and an aborted request are what a browser would meet. Every answer ChatApi itself
+// gives is tested through its real handler in chat.test.ts.
 
 const question = { id: crypto.randomUUID(), answerId: crypto.randomUUID(), text: "hello" }
 
@@ -34,14 +34,8 @@ const serve = async (respond: (request: IncomingMessage, response: ServerRespons
   return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/questions`, closed }
 }
 
-const post = async (url: string, within: Duration.Input = "300 millis") => {
-  const runtime = makeRuntime(FetchHttpClient.layer)
-  try {
-    return await runtime.runPromise(Effect.result(postQuestion(url, question, within)))
-  } finally {
-    await runtime.dispose()
-  }
-}
+const post = (url: string) =>
+  Effect.runPromise(Effect.result(postQuestion(url, question, "300 millis")).pipe(Effect.provide(FetchHttpClient.layer)))
 
 test("202 headers and a body that stalls fail as unreachable at the deadline, and the request is aborted", async () => {
   const { url, closed } = await serve((_, response) => {
@@ -63,28 +57,16 @@ test("no answer at all fails as unreachable at the deadline, and the request is 
   await closed[0]
 })
 
-test("a whole answer inside the deadline is taken: 202 with its txid, or 200 for a question already there", async () => {
-  const inserted = await serve((_, response) => {
+test("a 202 whose body a gateway cuts short is an invalid response", async () => {
+  const { url } = await serve((_, response) => {
     response.writeHead(202, { "content-type": "application/json" })
-    response.end(JSON.stringify({ txid: 42 }))
+    response.end('{"txid":')
   })
-  expect(await post(inserted.url)).toMatchObject({ _tag: "Success", success: { _tag: "inserted", txid: 42 } })
-  const existing = await serve((_, response) => {
-    response.writeHead(200, { "content-type": "application/json" })
-    response.end(JSON.stringify({ txid: null, existing: true }))
-  })
-  expect(await post(existing.url)).toMatchObject({ _tag: "Success", success: { _tag: "existing" } })
+  expect(await post(url)).toMatchObject({ _tag: "Failure", failure: { reason: "invalid_response", status: 202 } })
 })
 
-test("409 is refused with its status, and a 202 body outside the contract is an invalid response", async () => {
-  const conflict = await serve((_, response) => {
-    response.writeHead(409, { "content-type": "application/json" })
-    response.end(JSON.stringify({ message: "id belongs to another message." }))
-  })
-  expect(await post(conflict.url)).toMatchObject({ _tag: "Failure", failure: { reason: "refused", status: 409 } })
-  const invalid = await serve((_, response) => {
-    response.writeHead(202, { "content-type": "application/json" })
-    response.end(JSON.stringify({ txid: "soon" }))
-  })
-  expect(await post(invalid.url)).toMatchObject({ _tag: "Failure", failure: { reason: "invalid_response", status: 202 } })
+test("nothing listening is unreachable at once", async () => {
+  const { url } = await serve(() => {})
+  await servers.splice(0)[0]!()
+  expect(await post(url)).toMatchObject({ _tag: "Failure", failure: { reason: "unreachable" } })
 })

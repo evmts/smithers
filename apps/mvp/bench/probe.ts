@@ -17,8 +17,8 @@ export type Exchange = {
 }
 
 export type Probe = {
-  // When the Chat ⌘K button (or the open composer) is in the DOM. The /app route suspends until the conversation's
-  // first snapshot from Electric is in its TanStack DB collection, so the button renders with the conversation.
+  // When the Chat ⌘K button (or the open composer) is in the DOM: the app's shell, which renders from the device
+  // without waiting for the network.
   usableAt: number
   // When the conversation shows the run's newest message, and how many messages it held then.
   newestAt: number
@@ -32,6 +32,22 @@ export type Probe = {
 }
 
 export type BenchWindow = Window & { __bench: Probe }
+
+/**
+ * One `POST /api/questions` the page sent, from Resource Timing, in absolute times (timeOrigin + performance.now()):
+ * when it started, when its response's first byte arrived, and its HTTP status.
+ */
+export type Post = { startAt: number; responseAt: number; status: number }
+
+// The page's `POST /api/questions` requests that started at or after `since` (performance.now() milliseconds), in
+// order. Only the chat outbox requests that path. A request is listed once its response has ended, so one still in
+// flight isn't.
+export function questionPosts(since: number): Array<Post> {
+  const origin = performance.timeOrigin
+  return (performance.getEntriesByType("resource") as Array<PerformanceResourceTiming>)
+    .filter((entry) => entry.startTime >= since && new URL(entry.name).pathname === "/api/questions")
+    .map((entry) => ({ startAt: origin + entry.startTime, responseAt: origin + entry.responseStart, status: entry.responseStatus }))
+}
 
 // Installed before the page's own scripts on every navigation (BrowserContext.addInitScript).
 export function installProbe(newestWord: string) {
@@ -83,25 +99,23 @@ export function installProbe(newestWord: string) {
   observer.observe(document, { childList: true, subtree: true, characterData: true })
 }
 
-// Records when the question containing `word` and each state of its answer reach this page's DOM.
+// Records when the question containing `word` and each state of its answer reach this page's DOM. Both are found again
+// after every change, never kept: the app remounts a message when its status changes (a queued question once Postgres
+// has it, an answer when it settles), so an element found earlier may have left the DOM.
 export function watchExchange(word: string) {
   const probe = (window as unknown as BenchWindow).__bench
   const exchange: Exchange = { questionAt: 0, questionText: "", firstTextAt: 0, completeAt: 0, answerText: "", samples: [] }
   probe.exchanges[word] = exchange
   const conversation = document.querySelector('[aria-label="Conversation"]')
   if (conversation === null) throw new Error("the page has no Conversation region")
-  const isQuestion = (element: Element) => element.matches('article[data-role="user"]') && (element.textContent ?? "").includes(word)
-  let question: Element | undefined
 
-  const observer = new MutationObserver((records) => {
+  const observer = new MutationObserver(() => {
     const now = performance.now()
-    if (question === undefined) {
-      for (const record of records) {
-        for (const node of record.addedNodes) {
-          if (question === undefined && node instanceof Element) question = [node, ...node.querySelectorAll("article")].find(isQuestion)
-        }
-      }
-      if (question === undefined) return
+    const question = Array.from(conversation.querySelectorAll('article[data-role="user"]')).find((element) =>
+      (element.textContent ?? "").includes(word),
+    )
+    if (question === undefined) return
+    if (exchange.questionAt === 0) {
       exchange.questionAt = now
       exchange.questionText = question.textContent ?? ""
     }

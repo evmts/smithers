@@ -1,50 +1,68 @@
-import { allServerRows, CHAT_FAILED, expect, expectSameThread, PAGE_SIZE, pairs, serverRows, test } from "./devices"
+import { allServerRows, expect, expectSameThread, PAGE_SIZE, pairs, serverRows, test } from "./devices"
 
-// Local-first guarantees across real devices: separate browser contexts, each holding the conversation Electric syncs
-// from Postgres and asking through ChatApi, which answers on the server. No mocks. `setOffline` is a device losing its
-// network; aborting `/api/shapes/*` is the sync service being down for one device. Every device records video:
-// `pnpm e2e:gifs` makes one GIF per flow. The conversation is shared and keeps earlier runs, so every assertion is
-// scoped to the test's own word (`devices.word`), and answers are matched on a word they contain, never exact wording.
-// One-word answers keep the model's token use low; the few long answers are what make "mid-answer" possible.
+// Local-first guarantees across real devices (docs/decisions/0002-local-first.md §7): separate browser contexts, each
+// keeping the conversation on the device (SQLite on OPFS) and every question in its outbox (IndexedDB) until Postgres
+// has it. The asking device's agent answers, on its own durable engine. No mocks. `setOffline` is a device losing its network; a switch of the app's
+// faulty services (e2e/faults.ts) is the sync service being down for one device. A page opened again in the same
+// context is a reload or a restart: the same device. Every device records video: `pnpm e2e:gifs` makes one GIF per
+// flow, and every page runs the no-spinner observer (e2e/fixtures.ts). The conversation is shared and keeps earlier
+// runs, so every assertion is scoped to the test's own word (`devices.word`), and answers are matched on a word they
+// contain, never exact wording. One-word answers keep the model's token use low; the few long answers are what make
+// "mid-answer" possible.
 
 // A long answer that ends in a word of its own, so "complete" means its last line arrived.
 const longQuestion = (start: string, end: string) =>
   `Write ${start} on the first line, then count from 1 to 120 in words, one number per line, then write ${end} on the last line.`
 
-test("offline ask: the question shows at once and fails, chat works after reconnecting, and no other device sees it", async ({ devices, request }) => {
+test("offline ask: two questions asked offline queue, survive a reload offline, and are answered in order once online", async ({ devices, request }) => {
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
   await a.offline()
+  await a.expectOffline()
 
-  // A asks with no network: the question shows at once (ask checks it within 1 s), then reads the failure copy.
-  const offline = `Asked offline ${word}`
-  await a.ask(offline)
-  await a.expectFailed(offline, 20_000)
-  expect(a.asked.map(({ text, error }) => ({ text, reached: error === undefined })), "the ask never reached ChatApi").toEqual([
-    { text: offline, reached: false },
-  ])
-  await expect(a.composerForm, "the composer is ready again").toHaveAttribute("data-status", "ready")
+  // A asks twice with no network: each question shows at once, queued, and the pill counts them.
+  const first = `Reply with exactly the word: first-${word}`
+  const second = `Reply with exactly the word: second-${word}`
+  await a.ask(first)
+  await a.ask(second)
+  await a.expectQueued(first)
+  await a.expectQueued(second)
+  await a.expectOffline(2)
 
-  // Back online, chat is usable: the next question is answered, on A and on B.
+  // A reload offline: the service worker serves the app, the device its conversation and both queued questions.
+  await a.reload()
+  await a.expectOffline(2)
+  await a.expectQueued(first)
+  await a.expectQueued(second)
+  expect(a.asked.filter(({ status }) => status !== undefined), "nothing reached ChatApi").toEqual([])
+
+  // Online: both reach Postgres once each, in the order asked, and both are answered, on A and on B.
   await a.online()
-  const next = `Reply with exactly the word: next-${word}`
-  await a.ask(next)
-  await a.expectAnswered(next, `next-${word}`)
-  await b.expectAnswered(next, `next-${word}`)
-
-  // A keeps its failed question where it showed it, before the next one.
-  const onA = pairs(await a.thread(word))
-  expect(onA.map(([question]) => question.text)).toEqual([offline, next])
-  expect(onA[0]![1].text).toBe(CHAT_FAILED)
-
-  // B never sees the failed question, and Postgres never had it.
-  await expect(b.question(offline)).toHaveCount(0)
-  expect(pairs(await b.thread(word)).map(([question]) => question.text)).toEqual([next])
+  await a.expectAnswered(first, `first-${word}`)
+  await a.expectAnswered(second, `second-${word}`)
+  await a.expectUp()
+  const thread = await expectSameThread([a, b], word, 4)
+  expect(pairs(thread).map(([question]) => question.text)).toEqual([first, second])
   const rows = await serverRows(request, word)
-  expect(rows.map(({ role, text }) => ({ role, asked: role === "user" ? text : undefined }))).toEqual([
-    { role: "user", asked: next },
-    { role: "assistant", asked: undefined },
-  ])
+  expect(rows.filter(({ role }) => role === "user").map(({ text }) => text)).toEqual([first, second])
+})
+
+test("restart offline: a question asked offline survives closing the app, and a page opened again sends it once", async ({ devices, request }) => {
+  const word = devices.word
+  const [a] = await devices.open("A")
+  await a.offline()
+  const asked = `Reply with exactly the word: restart-${word}`
+  await a.ask(asked)
+  await a.expectOffline(1)
+  // The app closes with the question stored, never sent; it opens again, still offline.
+  await a.page.close()
+  const again = await devices.tab(a.device, "A again")
+  await again.expectOffline(1)
+  await again.expectQueued(asked)
+  await again.online()
+  await again.expectAnswered(asked, `restart-${word}`)
+  const rows = await serverRows(request, word)
+  expect(rows.map(({ role }) => role)).toEqual(["user", "assistant"])
 })
 
 test("late joiner: a device that opens later shows the same latest messages, and Load earlier pages back through Postgres' order", async ({ devices, request }) => {
@@ -84,7 +102,7 @@ test("late joiner: a device that opens later shows the same latest messages, and
   }).toPass({ timeout: 30_000 })
 })
 
-test("two tabs: one browser's tabs share the conversation, and each tab keeps its own composer", async ({ devices }) => {
+test("two tabs: each keeps its own composer; a question asked in the tab that doesn't lead is sent once it leads", async ({ devices }) => {
   const word = devices.word
   const [one] = await devices.open("Tab 1")
   const two = await devices.tab(one.device, "Tab 2")
@@ -99,25 +117,35 @@ test("two tabs: one browser's tabs share the conversation, and each tab keeps it
   await expect(two.composer).toHaveValue("")
   await expect(one.composer).toHaveValue(draft)
 
-  // Tab 2 asks; tab 1 watches the answer arrive, and its draft is untouched.
-  const asked = `Reply with exactly the word: tabs-${word}`
-  await two.ask(asked)
-  await one.expectAnswered(asked, `tabs-${word}`)
-  await two.expectAnswered(asked, `tabs-${word}`)
-  await expect(one.composer).toHaveValue(draft)
-
-  // Hiding tab 2's composer leaves tab 1's open; tab 1 sends its draft and tab 2 sees it answered.
-  await two.page.keyboard.press("Escape")
-  await expect(two.composer).toBeHidden()
-  await expect(one.composer).toBeVisible()
+  // Tab 1 leads the outbox (it opened first): its question is answered, and tab 2 watches it.
   await one.composer.press("Enter")
   await two.expectAnswered(draft, `draft-${word}`)
 
-  const thread = await expectSameThread([one, two], word, 4)
-  expect(pairs(thread).map(([question]) => question.text)).toEqual([asked, draft])
-  // Each tab asked ChatApi once, for its own question.
-  expect(one.asked.map(({ text }) => text)).toEqual([draft])
-  expect(two.asked.map(({ text }) => text)).toEqual([asked])
+  // Tab 2 asks while tab 1 leads: the question stays on the device, not sent. Tab 1 closes, tab 2 leads and sends it.
+  const handed = `Reply with exactly the word: handed-${word}`
+  await two.ask(handed)
+  await two.expectNotSent(handed)
+  await one.page.close()
+  await two.expectAnswered(handed, `handed-${word}`)
+  const thread = await expectSameThread([two], word, 4)
+  expect(pairs(thread).map(([question]) => question.text)).toEqual([draft, handed])
+})
+
+test("two tabs offline: the leading tab closes, and the other restores its queued question and sends it once online", async ({ devices, request }) => {
+  const word = devices.word
+  const [one] = await devices.open("Tab 1")
+  const two = await devices.tab(one.device, "Tab 2")
+  await one.offline()
+  const asked = `Reply with exactly the word: tabs-${word}`
+  await one.ask(asked)
+  await one.expectQueued(asked)
+  await one.page.close()
+  // Tab 2 leads now: it restores the question tab 1 stored, and sends it once the device is back online.
+  await two.expectQueued(asked)
+  await two.online()
+  await two.expectAnswered(asked, `tabs-${word}`)
+  const rows = await serverRows(request, word)
+  expect(rows.map(({ role }) => role)).toEqual(["user", "assistant"])
 })
 
 test("concurrent asks: two devices ask at the same moment, and each question gets exactly one answer, in one order everywhere", async ({ devices, request }) => {
@@ -150,16 +178,22 @@ test("concurrent asks: two devices ask at the same moment, and each question get
   expect(rows.filter(({ role }) => role === "user").map(({ text }) => text)).toEqual(pairs(thread).map(([question]) => question.text))
 })
 
-test("tab closes mid-answer: the watching device sees the answer complete, because the server owns it", async ({ devices, request }) => {
+test("tab closes mid-answer: the answer waits for the asking device, and completes on both devices once it opens the app again", async ({ devices, request }) => {
+  test.setTimeout(180_000)
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
   const asked = longQuestion(`gone-${word}`, `end-${word}`)
   await a.askAndWaitTaken(asked)
+  await expect(a.answerTo(asked), "the answer starts").toContainText(`gone-${word}`, { timeout: 60_000 })
 
-  // The asking device goes away for good while the server is still answering: closed laptop, killed browser.
-  await a.device.context.close()
+  // The asking device's tab closes while its agent is answering. The run belongs to that device (decision 0011), so
+  // the answer waits; the device keeps the run's journal.
+  await a.close()
+  await expect(b.answerTo(asked)).toContainText(`gone-${word}`)
 
-  await b.expectAnswered(asked, `end-${word}`)
+  // The device opens the app again: its engine resumes the run, and both devices see the whole answer.
+  const again = await devices.tab(a.device, "A again")
+  for (const tab of [b, again]) await tab.expectAnswered(asked, `end-${word}`)
   const [question, answer] = await serverRows(request, word)
   expect(question?.text).toBe(asked)
   expect(answer?.status).toBe("done")
@@ -184,15 +218,14 @@ test("reload mid-answer: the asking device reloads while another watches, and bo
   expect(pairs(thread).map(([question]) => question.text)).toEqual([asked, next])
 })
 
-test("long outage: a device offline until it says it lost its connection catches up on everything asked meanwhile", async ({ devices }) => {
+test("long outage: a device offline catches up on everything asked meanwhile", async ({ devices }) => {
   test.setTimeout(180_000)
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
   await a.offline()
 
-  // A request A had open may still deliver until it ends: going offline doesn't cancel it. Once no request has
-  // succeeded for 10 s, A says it lost its connection, and from then on nothing reaches it.
-  await expect(a.syncLost, "A says it lost its connection").toBeVisible({ timeout: 60_000 })
+  // The browser's offline event shows the pill at once; from then on nothing reaches A.
+  await a.expectOffline()
 
   const meanwhile = [`Reply with exactly the word: away1-${word}`, `Reply with exactly the word: away2-${word}`]
   for (const [index, question] of meanwhile.entries()) {
@@ -200,82 +233,164 @@ test("long outage: a device offline until it says it lost its connection catches
     await b.expectAnswered(question, `away${index + 1}-${word}`)
   }
   for (const question of meanwhile) await expect(a.question(question)).toHaveCount(0)
-  await expect(a.syncLost).toBeVisible()
+  await a.expectOffline()
 
-  // Back online, A syncs at once: the alert clears by itself and A has both questions and answers, as B has them.
+  // Back online, A syncs at once: the pill hides by itself and A has both questions and answers, as B has them.
   const back = Date.now()
   await a.online()
-  await expect(a.syncLost, "A's alert clears once sync is back").toBeHidden({ timeout: 30_000 })
+  await a.expectUp()
   const thread = await expectSameThread([a, b], word, 4, 30_000)
   expect(pairs(thread).map(([question]) => question.text)).toEqual(meanwhile)
   test.info().annotations.push({ type: "catch-up", description: `${Date.now() - back} ms from online to A showing both answers` })
 })
 
-test("flapping network: questions asked online between drops arrive once each, in order, and asks made offline fail visibly", async ({ devices, request }) => {
+test("flapping network: a question asked during each drop queues, and every one reaches Postgres once, in order", async ({ devices, request }) => {
   test.setTimeout(180_000)
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
-  const kept: Array<string> = []
-  const dropped: Array<string> = []
+  const asked: Array<string> = []
   for (const round of [1, 2, 3]) {
     await a.offline()
-    const lost = `Asked during drop ${round} ${word}`
-    await a.ask(lost)
-    await a.expectFailed(lost, 20_000)
-    dropped.push(lost)
-
-    await a.online()
     const question = `Reply with exactly the word: flap${round}-${word}`
     await a.ask(question)
+    await a.expectQueued(question)
+    asked.push(question)
+    await a.online()
     await a.expectAnswered(question, `flap${round}-${word}`)
-    kept.push(question)
   }
 
-  // B has exactly the questions A asked online, once each, in order, each answered.
-  const onB = pairs(await expectSameThread([b], word, 6))
-  expect(onB.map(([question]) => question.text)).toEqual(kept)
-  for (const [index, [, answer]] of onB.entries()) expect(answer.text).toContain(`flap${index + 1}-${word}`)
-
-  // A shows all six in the order asked, each dropped one failed where it was asked.
-  const onA = pairs(await a.thread(word))
-  expect(onA.map(([question]) => question.text)).toEqual([dropped[0], kept[0], dropped[1], kept[1], dropped[2], kept[2]])
-  for (const [question, answer] of onA) {
-    if (dropped.includes(question.text)) expect(answer.text).toBe(CHAT_FAILED)
-    else expect(answer.text).not.toBe(CHAT_FAILED)
-  }
-
-  // Postgres has the kept questions only.
+  // A and B show the three questions, once each, in the order asked, each answered.
+  const thread = await expectSameThread([a, b], word, 6)
+  expect(pairs(thread).map(([question]) => question.text)).toEqual(asked)
+  for (const [index, [, answer]] of pairs(thread).entries()) expect(answer.text).toContain(`flap${index + 1}-${word}`)
   const rows = await serverRows(request, word)
-  expect(rows.filter(({ role }) => role === "user").map(({ text }) => text)).toEqual(kept)
+  expect(rows.filter(({ role }) => role === "user").map(({ text }) => text)).toEqual(asked)
 })
 
-test("sync down while asking: a question ChatApi took shows failed, then its answer replaces the failure once sync returns", async ({ devices }) => {
+test("sync down while asking: a question ChatApi took stays queued until the device sees it, then shows once, answered", async ({ devices }) => {
   test.setTimeout(180_000)
   const word = devices.word
-  const [a, b] = await devices.open("A", "B")
+  const [[a], [b]] = await Promise.all([devices.openFaulty("A"), devices.open("B")])
 
-  // The sync service goes down for A only. Once A's open request ends and the next fails for 10 s, A says so.
+  // The sync service goes down for A only; requests failing for 10 s show the pill, with Retry.
   await a.device.syncDown()
-  await expect(a.syncLost, "A says it lost its connection").toBeVisible({ timeout: 60_000 })
-  await expect(b.syncLost).toHaveCount(0)
-
-  // ChatApi takes A's question and answers it; B sees the answer. A can't confirm it, so A shows it failed.
   const asked = `Reply with exactly the word: unsynced-${word}`
   await a.askAndWaitTaken(asked)
+  await expect(a.pill.getByRole("button", { name: "Retry" }), "A offers Retry").toBeVisible({ timeout: 60_000 })
+  await expect(b.pill).toBeEmpty()
+
+  // ChatApi took A's question and answered it; B sees the answer. A can't see it yet, so it stays queued on A.
   await b.expectAnswered(asked, `unsynced-${word}`)
-  await a.expectFailed(asked, 30_000)
+  await a.expectQueued(asked)
 
-  // Sync returns: A recovers by itself, and Postgres' rows replace A's failure, so A shows the question once, answered.
+  // Sync returns: A shows Postgres' rows in place of its queued question, once, answered.
   await a.device.syncUp()
-  await expect(a.syncLost, "A's alert clears by itself once sync is back").toBeHidden({ timeout: 30_000 })
+  await a.pill.getByRole("button", { name: "Retry" }).click()
   await a.expectAnswered(asked, `unsynced-${word}`, 30_000)
+  await a.expectUp()
   await expectSameThread([a, b], word, 2)
+})
 
-  // A's chat works: the next question is answered.
-  const next = `Reply with exactly the word: resynced-${word}`
-  await a.ask(next)
-  await a.expectAnswered(next, `resynced-${word}`)
-  await expectSameThread([a, b], word, 4)
+test("Retry: syncs at once instead of waiting out the backoff", async ({ devices }) => {
+  test.setTimeout(120_000)
+  const [[a]] = await Promise.all([devices.openFaulty("A")])
+  await a.device.syncDown()
+  // Something must change for the live request Electric holds to end, so the next request fails: the device asks, and
+  // its own agent answers, as a person's question would. (A question posted from outside the app has no browser to
+  // answer it, so its streaming answer would hold later answers in the shared conversation up.)
+  const asked = `Reply with exactly the word: retry-${devices.word}`
+  await a.ask(asked)
+  const retry = a.pill.getByRole("button", { name: "Retry" })
+  await expect(retry).toBeVisible({ timeout: 60_000 })
+  await a.device.syncUp()
+  const sent = a.page.waitForRequest((request) => new URL(request.url()).pathname === "/api/shapes/messages", { timeout: 1_000 })
+  await retry.click()
+  await sent
+  await a.expectAnswered(asked, `retry-${devices.word}`)
+  await a.expectUp()
+})
+
+test("conflict: a queued question whose id another message took shows Not sent, and Edit puts it back in the composer", async ({ devices, request }) => {
+  const word = devices.word
+  const [a] = await devices.open("A")
+  await a.offline()
+  const mine = `Reply with exactly the word: mine-${word}`
+  await a.ask(mine)
+  await a.expectQueued(mine)
+  // Another writer stores a different question under the same id while A is offline.
+  const id = await a.idOf(mine)
+  const other = await request.post("/api/questions", {
+    data: { id, answerId: crypto.randomUUID(), text: `Reply with exactly the word: other-${word}` },
+  })
+  expect(other.status(), `${id}: ${await other.text()}`).toBe(202)
+  await a.online()
+  await a.expectNotSent(mine)
+  await a.question(mine).getByRole("button", { name: "Edit" }).click()
+  await expect(a.composer).toHaveValue(mine)
+  await expect(a.question(mine)).toHaveCount(0)
+})
+
+test("two devices ask offline and come back in reverse order: both questions stored, in one order everywhere, each answered", async ({ devices, request }) => {
+  const word = devices.word
+  const [a, b] = await devices.open("A", "B")
+  await a.offline()
+  await b.offline()
+  const fromA = `Reply with exactly the word: froma-${word}`
+  const fromB = `Reply with exactly the word: fromb-${word}`
+  await a.ask(fromA)
+  await b.ask(fromB)
+  // B comes back first, then A.
+  await b.online()
+  await b.expectAnswered(fromB, `fromb-${word}`)
+  await a.online()
+  await a.expectAnswered(fromA, `froma-${word}`)
+  const thread = await expectSameThread([a, b], word, 4)
+  expect(pairs(thread).map(([question]) => question.text)).toEqual([fromB, fromA])
+  const rows = await serverRows(request, word)
+  expect(rows.filter(({ role }) => role === "user").map(({ text }) => text)).toEqual([fromB, fromA])
+})
+
+test("offline mid-answer: the text so far stays, and the whole answer arrives once back online", async ({ devices }) => {
+  test.setTimeout(180_000)
+  const word = devices.word
+  const [a] = await devices.open("A")
+  const asked = longQuestion(`mid-${word}`, `end-${word}`)
+  await a.askAndWaitTaken(asked)
+  await expect(a.answerTo(asked), "the answer starts").toContainText(`mid-${word}`, { timeout: 60_000 })
+  await a.offline()
+  await a.expectOffline()
+  await expect(a.answerTo(asked)).toContainText(`mid-${word}`)
+  await a.online()
+  await a.expectAnswered(asked, `end-${word}`)
+})
+
+test("Electric down at boot: after one visit, the conversation shows from the device, and the pill says so", async ({ devices }) => {
+  test.setTimeout(120_000)
+  const word = devices.word
+  const [a] = await devices.open("A")
+  const asked = `Reply with exactly the word: stored-${word}`
+  await a.ask(asked)
+  await a.expectAnswered(asked, `stored-${word}`)
+  // The app opens again on its faulty services with the sync service already down.
+  await a.page.goto("/app?faults=down")
+  await a.ready()
+  await a.expectAnswered(asked, `stored-${word}`, 5_000)
+  await expect(a.pill.getByRole("button", { name: "Retry" })).toBeVisible({ timeout: 60_000 })
+})
+
+test("back/forward: leaving the app and coming back shows the same conversation, and it still asks", async ({ devices }) => {
+  const word = devices.word
+  const [a] = await devices.open("A")
+  const asked = `Reply with exactly the word: before-${word}`
+  await a.ask(asked)
+  await a.expectAnswered(asked, `before-${word}`)
+  await a.page.goto("/")
+  await a.page.goBack()
+  await a.ready()
+  await a.expectAnswered(asked, `before-${word}`, 10_000)
+  const after = `Reply with exactly the word: after-${word}`
+  await a.ask(after)
+  await a.expectAnswered(after, `after-${word}`)
 })
 
 test("duplicate ask: resending a question ChatApi already took, or reusing its id, changes nothing on any device or in Postgres", async ({ devices, request }) => {

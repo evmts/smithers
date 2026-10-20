@@ -38,3 +38,10 @@ test("the table lists known metrics in order and marks regressions", () => {
   ])
   assert.match(out, /\| ⌘K to composer focused \| 10 \| 130 \| 150 \| 120 \| 160 \| \*\*\+30%\*\* \| \+0% \|/)
 })
+
+test("the table never drops a metric: the repo suite's have labels, and an unlabelled one shows under its key, last", () => {
+  const summary = { n: 1, p50: 5, p95: 5, min: 5, max: 5 }
+  const out = table({ "zz.unlabelled": summary, "repo.tree.cached": summary, "cmdk.focus": summary }, undefined, [])
+  const rows = out.split("\n").slice(2).map((row) => row.split(" | ")[0])
+  assert.deepEqual(rows, ["| ⌘K to composer focused", "| Repo: GET tree, cached", "| zz.unlabelled"])
+})

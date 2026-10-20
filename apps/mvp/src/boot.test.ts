@@ -1,80 +1,248 @@
-import { Effect, Fiber, Layer, Logger, Metric, References } from "effect"
+import { Effect, Fiber, Layer, ManagedRuntime } from "effect"
+import { SqlClient } from "effect/sql"
 import { afterEach, expect, test, vi } from "vitest"
-import { appLayer, boot, bootTime, logPageErrors } from "./boot"
-import type { Chat } from "./features/chat/store"
+import * as TestDatabase from "../db/TestDatabase.ts"
+import { boot, logPageErrors, realServices, start } from "./boot"
+import { Auth } from "./features/auth/auth"
+import { AuthStore, SESSION } from "./features/auth/store"
+import { Chat, type ChatView } from "./features/chat/chat"
 import { ChatStore } from "./features/chat/store"
-import * as Collections from "./lib/collections"
-import { makeRuntime } from "./lib/runtime"
-import { openTestApp } from "./test/chatApi"
+import { repoId, SIGN_IN_TO_CLONE } from "./features/repo/contract"
+import { Repo } from "./features/repo/repo"
+import { headerOf } from "./features/repo/view"
+import { Theme } from "./features/theme/theme"
+import { StoragePersistence } from "@smthrs/platform-browser"
+import { nodeDevice, openTab, openTestApp, TestChatApi } from "./test/chatApi"
+import { faultyServices } from "./test/faults"
+import { read } from "./test/otlp"
 
-// The browser program, on the app's own layer, as main.tsx runs it.
+// The browser program and its boundary, on the app's own layer over a Node device, against ChatApi's real handler.
+// Records are read back from the OTLP exports the browser sent.
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
   for (const runtime of runtimes.splice(0).reverse()) await runtime.dispose()
 })
 
+const until = (assertion: () => void) => vi.waitFor(assertion, { timeout: 10_000, interval: 20 })
+
 const cmdK = () => Object.assign(new Event("keydown", { cancelable: true }), { key: "k", metaKey: true })
 
-test("renders with the store, binds the keys, records boot time once the conversation is ready, and unbinds when stopped", async () => {
+/** The browser app over a fresh ChatApi, its ChatApi, and its exports once every runtime has closed. */
+const app = async () => {
   const runtime = openTestApp()
   runtimes.push(runtime)
-  const target = new EventTarget()
-  const rendered: Array<Chat> = []
-  const fiber = runtime.runFork(boot({ target, startedAt: Date.now() - 1_000, render: (chat) => rendered.push(chat) }))
-  await vi.waitFor(() => expect(runtime.runSync(Metric.value(bootTime)).count).toBe(1), { timeout: 10_000 })
-  const chat = await runtime.runPromise(Effect.service(ChatStore))
-  expect(rendered).toEqual([chat])
-  expect(runtime.runSync(Metric.value(bootTime)).sum).toBeGreaterThanOrEqual(1_000)
-  expect(chat.conversation.status).toBe("ready")
+  const api = await runtime.runPromise(Effect.service(TestChatApi))
+  const exported = async () => {
+    for (const each of runtimes.splice(0).reverse()) await each.dispose()
+    return read(api.telemetry)
+  }
+  return { runtime, api, exported }
+}
 
+const granted = StoragePersistence.make({ persist: () => Promise.resolve(true) })
+
+test("renders the chat, sign-in, theme and repository layers, binds the keys, asks to keep the device's storage, records boot time once the device's conversation is restored, and unbinds when stopped", async () => {
+  const { runtime, exported } = await app()
+  const target = new EventTarget()
+  const views: Array<ReadonlyArray<unknown>> = []
+  const rendered: Array<ChatView> = []
+  const fiber = runtime.runFork(
+    boot({
+      target,
+      startedAt: Date.now() - 1_000,
+      render: (...view) => {
+        views.push(view)
+        rendered.push(view[0])
+      },
+      storage: granted,
+    }),
+  )
+  const store = await runtime.runPromise(Effect.service(ChatStore))
+  await until(() => expect(store.history.tanstack.get("history")?.opened).toBe(true))
+  expect(rendered).toHaveLength(1)
+  const [chat, auth, theme, repo] = await runtime.runPromise(
+    Effect.all([Effect.service(Chat), Effect.service(Auth), Effect.service(Theme), Effect.service(Repo)]),
+  )
+  expect(views[0]).toHaveLength(4)
+  expect(views[0]![0]).toBe(chat)
+  expect(views[0]![1]).toBe(auth)
+  expect(views[0]![2]).toBe(theme)
+  expect(views[0]![3]).toBe(repo)
+  await runtime.runPromise(store.composerState.preload)
   target.dispatchEvent(cmdK())
-  expect(chat.composer.get("composer")?.open).toBe(true)
+  expect(rendered[0]!.queries.composer.toArray[0]?.open).toBe(true)
   await runtime.runPromise(Fiber.interrupt(fiber))
   target.dispatchEvent(cmdK())
-  expect(chat.composer.get("composer")?.open).toBe(true)
+  expect(rendered[0]!.queries.composer.toArray[0]?.open).toBe(true)
+
+  const records = await exported()
+  expect(records.log("chat ready")).toEqual([
+    expect.objectContaining({ severity: "Info", attributes: { feature: "app" } }),
+  ])
+  expect(records.point("smithers_web_boot_ms")?.count).toBe(1)
+  expect(records.log("persistent storage requested")).toEqual([
+    expect.objectContaining({ attributes: { granted: "true", feature: "app" } }),
+  ])
+  expect(records.points.find(({ metric }) => metric === "smithers_web_storage_persisted")?.attributes).toEqual({
+    granted: "true",
+  })
 })
 
-test("keeps running, with no boot time, when the conversation can't open, and sync says why", async () => {
-  const refuse: typeof globalThis.fetch = async () => Response.json({ message: "Invalid request" }, { status: 400 })
-  const runtime = makeRuntime(
-    appLayer({ origin: "http://chatapi.test", fetch: refuse }).pipe(
-      Layer.provideMerge(Layer.succeed(Metric.MetricRegistry, new Map())),
-    ),
-  )
+test("the repository layer: its routes open over the app's RepoApi and Electric, sign-in's row decides Clone, and Copy permalink writes to the host's clipboard", async () => {
+  const host = nodeDevice()
+  const runtime = openTestApp({ host })
   runtimes.push(runtime)
-  const fiber = runtime.runFork(boot({ target: new EventTarget(), startedAt: Date.now(), render: () => {} }))
-  const chat = await runtime.runPromise(Effect.service(ChatStore))
-  await vi.waitFor(() => expect(chat.conversation.status).toBe("error"), { timeout: 10_000 })
-  await runtime.runPromise(Collections.preload(chat.syncState))
-  expect(chat.syncState.toArray[0]).toEqual(
-    expect.objectContaining({ status: "failed", reason: "refused", httpStatus: 400 }),
-  )
-  expect(runtime.runSync(Metric.value(bootTime)).count).toBe(0)
+  const api = await runtime.runPromise(Effect.service(TestChatApi))
+  const [repo, signIn] = await runtime.runPromise(Effect.all([Effect.service(Repo), Effect.service(AuthStore)]))
+  // What React's live query starts on first render.
+  await repo.queries.view.preload()
+  const view = () => repo.queries.view.toArray[0]!
+  const header = () => headerOf(view().repository, view().clone, view().view.signedIn)
+
+  // A repository nobody cloned offers Clone until sign-in's own row, the one the account shows, says nobody is in.
+  repo.actions.openRoute("tree", { owner: "octocat", repo: "Hello-World" }, {})
+  await until(() => expect(signIn.session.tanstack.get(SESSION)?.status).not.toBe("loading"))
+  await until(() => expect(header()).toEqual({ kind: "clone" }))
+  await runtime.runPromise(signIn.session.update(SESSION, (row) => void (row.status = "signed_out")))
+  await until(() => expect(header()).toEqual({ kind: "sign_in", text: SIGN_IN_TO_CLONE }))
+
+  // A ready repository reaches the tab through the app's `repositories` shape: RepoApi's proxy over Electric.
+  const sha = "a".repeat(40)
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql`INSERT INTO repositories (id, owner, name, status, default_branch, head_sha)
+      VALUES (${repoId("octocat", "Spoon-Knife")}, 'octocat', 'Spoon-Knife', 'ready', 'main', ${sha})`))
+  repo.actions.openRoute("blob", { owner: "octocat", repo: "Spoon-Knife", ref: "main", _splat: "README.md" }, { L: 3 })
+  await until(() => expect(header()).toEqual({ kind: "ready" }))
+  await until(() => expect(view().view.sha).toBe(sha))
+  repo.actions.copyPermalink()
+  await until(() => expect(host.copied).toEqual([`${api.origin}/octocat/Spoon-Knife/blob/${sha}/README.md?L=3`]))
+})
+
+/** A ChatApi of its own, with no browser on it. */
+const chatApi = async () => {
+  const host = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(TestDatabase.layer("test_boot"))))
+  runtimes.push(host)
+  return host.runPromise(Effect.service(TestChatApi))
+}
+
+test("when the device's conversation can't be restored, it logs that, records no boot time, and keeps running", async () => {
+  const api = await chatApi()
+  const device = nodeDevice()
+  // A database that opens, then fails every statement: the restore fails.
+  const broken = {
+    ...device,
+    persistence: {
+      ...device.persistence,
+      open: () => ({ execute: () => Promise.reject(new Error("disk")), close: () => undefined }),
+    },
+  }
+  const runtime = openTab(api, { host: broken })
+  runtimes.push(runtime)
+  const fiber = runtime.runFork(boot({ target: new EventTarget(), startedAt: Date.now(), render: () => {}, storage: granted }))
+  const store = await runtime.runPromise(Effect.service(ChatStore))
+  await until(() => expect(store.messages.tanstack.status).toBe("error"))
   expect(fiber.pollUnsafe()).toBeUndefined()
+  await runtime.runPromise(Fiber.interrupt(fiber))
+  await runtimes.pop()!.dispose()
+
+  const records = read(api.telemetry)
+  expect(records.log("chat couldn't restore")).toEqual([
+    expect.objectContaining({ severity: "Error", attributes: { feature: "app" } }),
+  ])
+  expect(records.log("chat ready")).toEqual([])
+  expect(records.points.some(({ metric }) => metric === "smithers_web_boot_ms")).toBe(false)
+})
+
+test("a browser that won't keep the storage is counted as not granted", async () => {
+  const { runtime, exported } = await app()
+  const refused = StoragePersistence.make({ persist: () => Promise.resolve(false) })
+  const fiber = runtime.runFork(boot({ target: new EventTarget(), startedAt: Date.now(), render: () => {}, storage: refused }))
+  const store = await runtime.runPromise(Effect.service(ChatStore))
+  await until(() => expect(store.history.tanstack.get("history")?.opened).toBe(true))
+  await runtime.runPromise(Fiber.interrupt(fiber))
+  const records = await exported()
+  expect(records.points.find(({ metric }) => metric === "smithers_web_storage_persisted")?.attributes).toEqual({
+    granted: "false",
+  })
 })
 
 test("logs an uncaught error by name and place, and an unhandled rejection by name, never their messages", async () => {
-  const logs: Array<{ message: unknown; annotations: Record<string, unknown> }> = []
-  const recorder = Logger.make(({ message, fiber }) => {
-    logs.push({ message, annotations: { ...fiber.getRef(References.CurrentLogAnnotations) } })
-  })
-  const runtime = makeRuntime(Logger.layer([recorder]))
-  runtimes.push(runtime)
+  const { runtime, exported } = await app()
   const target = new EventTarget()
+  const secret = `sentinel-${crypto.randomUUID()}`
   await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
     yield* logPageErrors(target)
-    const secret = "what someone wrote"
     target.dispatchEvent(
       Object.assign(new Event("error"), { error: new TypeError(secret), filename: "app.js", lineno: 3, colno: 7 }),
     )
+    target.dispatchEvent(Object.assign(new Event("error"), { error: new Error(secret) }))
     target.dispatchEvent(Object.assign(new Event("unhandledrejection"), { reason: new RangeError(secret) }))
     target.dispatchEvent(Object.assign(new Event("unhandledrejection"), { reason: secret }))
   })))
   target.dispatchEvent(Object.assign(new Event("error"), { error: new Error("after the scope") }))
-  expect(logs).toEqual([
-    { message: ["page error"], annotations: { feature: "app", name: "TypeError", source: "app.js:3:7" } },
-    { message: ["unhandled rejection"], annotations: { feature: "app", name: "RangeError" } },
-    { message: ["unhandled rejection"], annotations: { feature: "app", name: "string" } },
+
+  const records = await exported()
+  expect(records.log("page error").map(({ severity, attributes }) => ({ severity, attributes }))).toEqual([
+    { severity: "Error", attributes: { name: "TypeError", source: "app.js:3:7", feature: "app" } },
+    { severity: "Error", attributes: { name: "Error", feature: "app" } },
   ])
+  expect(records.log("unhandled rejection").map(({ attributes }) => attributes)).toEqual([
+    { name: "RangeError", feature: "app" },
+    { name: "string", feature: "app" },
+  ])
+  expect(JSON.stringify(records.logs)).not.toContain(secret)
+})
+
+test("reload counts and logs the reload, then asks the page to reload", async () => {
+  const { runtime, api, exported } = await app()
+  const { actions } = await runtime.runPromise(Effect.service(Chat))
+  actions.reload()
+  expect(api.reloads()).toBe(1)
+  const records = await exported()
+  expect(records.log("page reloaded")).toEqual([
+    expect.objectContaining({ severity: "Info", attributes: { feature: "app" } }),
+  ])
+  expect(records.point("smithers_web_page_reloads")?.value).toBe(1)
+})
+
+test("start is the boundary: it builds the one runtime, renders the chat layer once, and stops everything", async () => {
+  const api = await chatApi()
+  const unbound: Array<string> = []
+  const target = new (class extends EventTarget {
+    override removeEventListener(...args: Parameters<EventTarget["removeEventListener"]>) {
+      unbound.push(args[0])
+      super.removeEventListener(...args)
+    }
+  })()
+  const rendered: Array<ChatView> = []
+  const page = { origin: api.origin, fetch: api.fetch, reload: api.reload, host: nodeDevice() }
+  const { stop } = start(
+    { ...page, target, startedAt: Date.now(), render: (chat) => rendered.push(chat) },
+    realServices(page),
+  )
+  await until(() => expect(rendered).toHaveLength(1))
+  const [chat] = rendered
+  // What React's live queries start on first render.
+  await Promise.all([chat!.queries.connection.preload(), chat!.queries.composer.preload()])
+  expect(chat!.queries.connection.toArray[0]?.status).toBe("up")
+  target.dispatchEvent(cmdK())
+  expect(chat!.queries.composer.toArray[0]?.open).toBe(true)
+  await stop()
+  expect(unbound.sort()).toEqual(["error", "keydown", "offline", "online", "pageshow", "unhandledrejection"])
+  expect(chat!.queries.conversation.status).toBe("cleaned-up")
+})
+
+test("start takes faulty services in place of the real ones, as the end-to-end entry gives them", async () => {
+  const api = await chatApi()
+  const page = { origin: api.origin, fetch: api.fetch, reload: api.reload, host: nodeDevice() }
+  const rendered: Array<ChatView> = []
+  const { stop } = start(
+    { ...page, target: new EventTarget(), startedAt: Date.now(), render: (chat) => rendered.push(chat) },
+    faultyServices(page, (shapes) => shapes.refuse(400)),
+  )
+  await until(() => expect(rendered).toHaveLength(1))
+  await rendered[0]!.queries.connection.preload()
+  await until(() => expect(rendered[0]!.queries.connection.toArray[0]).toMatchObject({ status: "failed", retry: true }))
+  await stop()
 })

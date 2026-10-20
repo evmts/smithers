@@ -1,22 +1,14 @@
-import type { Effect } from "effect"
 import { createContext, useContext } from "react"
-import type { Chat, ChatStore } from "./features/chat/store"
+import type { ChatView } from "./features/chat/chat"
 
-/**
- * What React components get: the store to read through live queries, and `run` to perform an action with the app's
- * runtime (`runSync`; every action finishes synchronously, see features/chat/actions.ts).
- */
-export type App = {
-  readonly chat: Chat
-  readonly run: <A>(action: Effect.Effect<A, never, ChatStore>) => A
-}
+// What React components get: the chat layer's live queries to render and plain actions to call (features/chat/chat.ts).
 
-const AppContext = createContext<App | null>(null)
+const ChatContext = createContext<ChatView | null>(null)
 
-export const AppProvider = AppContext.Provider
+export const ChatProvider = ChatContext.Provider
 
-export const useApp = (): App => {
-  const app = useContext(AppContext)
-  if (app === null) throw new Error("useApp needs an AppProvider: main.tsx renders one")
-  return app
+export const useChat = (): ChatView => {
+  const chat = useContext(ChatContext)
+  if (chat === null) throw new Error("useChat needs a ChatProvider: main.tsx renders one")
+  return chat
 }

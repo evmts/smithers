@@ -1,413 +1,463 @@
-import { Clock, Context, Duration, Effect, FiberHandle, Latch, Layer, Metric, Option, Ref, type Scope, Stream } from "effect"
-import { HttpClient } from "effect/http"
-import * as Collections from "../../lib/collections"
-import { postQuestion, QuestionNotTaken } from "./api"
-import { askFailures, firstAnswerText, historyLoads, syncFailures } from "./metrics"
+import { ElectricCollection, type ShapeSource } from "@smthrs/effect-electric"
+import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
+import { BrowserEngine } from "@smthrs/platform-browser"
+import {
+  Clock,
+  Context,
+  Duration,
+  Effect,
+  FiberHandle,
+  Layer,
+  Metric,
+  Option,
+  Ref,
+  type Schedule,
+  type Scope,
+  Stream,
+} from "effect"
+import { FlowDispatch } from "../../flows/dispatch"
+import { ChatClient, type Taken } from "./api"
+import { PAGE_SIZE, SHAPE_ROUTE } from "./contract"
+import { askFailures, connectionDrops, firstAnswerText } from "./metrics"
 import {
   composerQuery,
+  connectionQuery,
   conversationQuery,
   historyQuery,
-  pendingQuery,
-  recentQuery,
-  syncQuery,
-  waitingQuery,
+  latestQuery,
+  queuedQuery,
+  shownQuery,
 } from "./queries"
 import {
-  type Ask,
+  Asking,
   COMPOSER,
-  type Composer,
-  type FailedMessage,
+  Composer,
+  CONNECTION,
+  Connection,
   HISTORY,
-  type History,
-  type Message,
-  PAGE_SIZE,
-  PENDING_POSITION,
-  SYNC,
-  type SyncFailure,
-  type SyncHealth,
+  History,
+  Message,
+  Unsent,
+  type UnsentReason,
 } from "./schema"
 
-/** Where this tab reaches ChatApi, and its deadlines. */
+/**
+ * Where this tab syncs from, its deadlines and its sync policy. It asks through `ChatClient`, syncs through
+ * `ShapeSource`, and keeps its rows through `Persistence`: the services the layer is given.
+ */
 export interface ChatConfig {
   /** Electric's shape for `messages`, served by ChatApi's proxy, which fixes the table. */
   readonly shapeUrl: string
-  /** `POST /api/questions`. */
-  readonly questionsUrl: string
-  /** How long ChatApi gets to answer `POST /api/questions`, its body included. Default 15 s. */
-  readonly answerWithin?: Duration.Input
-  /** How long Electric gets to deliver a question ChatApi took before the ask counts as failed. Default 15 s. */
+  /** How long Electric gets to deliver a question ChatApi took before the send counts as failed. Default 15 s. */
   readonly confirmWithin?: Duration.Input
   /**
-   * How long sync may go without a shape request succeeding, at open or once one failed, before it counts as failed.
-   * Default 10 s.
+   * How long shape requests or sends may keep failing, with the browser online, before the pill says the device is
+   * offline, with Retry. Default 10 s.
    */
-  readonly openWithin?: Duration.Input
-  /** How long a failed shape request waits before it retries. Default 1 s, doubling to 10 s. */
-  readonly backoff?: Collections.Backoff
-  /** How many of the most recent messages the conversation loads, and how many more "Load earlier" adds. Default 50. */
+  readonly unreachableAfter?: Duration.Input
+  /** How long a failed shape request waits before it is sent again. Default `SyncPolicy.defaultPolicy`. */
+  readonly retry?: Schedule.Schedule<unknown, ShapeSource.RequestFailed>
+  /** How many of the most recent messages the conversation shows, and how many more "Load earlier" adds. */
   readonly pageSize?: number
-  /** The fetch the shape stream uses. Defaults to the global one; `POST /api/questions` goes through `HttpClient`. */
-  readonly fetch?: typeof globalThis.fetch
 }
 
-/** ChatApi on `origin`, as the browser reaches it. */
-export const chatConfig = (origin: string, options: Omit<ChatConfig, "shapeUrl" | "questionsUrl"> = {}): ChatConfig => ({
-  shapeUrl: `${origin}/api/shapes/messages`,
-  questionsUrl: `${origin}/api/questions`,
+/**
+ * What the host gives chat: the outbox's entry point, storage and network detector; the lock service that elects the
+ * tab leading the outbox (`@smthrs/platform-browser`'s `WebLock`); and whether the browser says it is online now
+ * (`navigator.onLine`).
+ */
+export interface ChatHost {
+  readonly outbox: Omit<Outbox.Options<never>, "collections" | "mutations" | "leader">
+  readonly lock: Outbox.Lock
+  readonly isOnline: () => boolean
+}
+
+/** The Web Lock the tab leading the outbox holds. */
+export const OUTBOX_LOCK = "smithers-outbox"
+
+/** ChatApi's shape on `origin`, as the browser reaches it. */
+export const chatConfig = (origin: string, options: Omit<ChatConfig, "shapeUrl">): ChatConfig => ({
+  shapeUrl: `${origin}${SHAPE_ROUTE}`,
   ...options,
 })
 
+type Query<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>>
+
 /**
  * Chat's state for one tab:
- * - `messages`: the conversation in Postgres, synced by Electric on demand: only what `recent` asks for, plus every
- *   change after the tab opened. Inserting into it asks ChatApi.
- * - `recent`: the window of most recent messages Postgres has, which this tab loads and shows; "Load earlier" widens
- *   it. `pending`: the rows this tab inserted until Postgres stores them.
- * - `composer`, `asks`, `failures`, `sync`, `history`: this tab's own state, in memory.
- * - `conversation`, `composerState`, `waiting`, `syncState`, `historyState`: what frontends read (queries.ts).
- * - `scope`: where background work an action starts runs, until the store closes.
- * - `restart`, `reconnect`, `watchSync`: what `retrySync` uses to restart a failed sync.
+ * - `messages`: the conversation in Postgres, synced by Electric and kept on the device; read-only.
+ * - `asking`: questions the outbox holds, as the optimistic rows of their writes; in memory, restored by the outbox.
+ * - `unsent`: questions the server refused or the outbox couldn't take; kept on the device.
+ * - `composer`, `connection`, `history`: this tab's own state, in memory.
+ * - `outbox`: the durable outbox every ask goes through.
+ * - the live queries frontends read (queries.ts), and `scope`, where background work an action starts runs.
  */
 export class ChatStore extends Context.Service<
   ChatStore,
   {
-    readonly messages: Collections.ElectricCollection<Message>
-    readonly recent: Effect.Success<ReturnType<typeof recentQuery>>
-    readonly pending: Effect.Success<ReturnType<typeof pendingQuery>>
-    readonly composer: Collections.LocalCollection<Composer, string>
-    readonly asks: Collections.LocalCollection<Ask, string>
-    readonly failures: Collections.LocalCollection<FailedMessage, string>
-    readonly sync: Collections.LocalCollection<SyncHealth, string>
-    readonly history: Collections.LocalCollection<History, string>
-    readonly conversation: Effect.Success<ReturnType<typeof conversationQuery>>
-    readonly composerState: Effect.Success<ReturnType<typeof composerQuery>>
-    readonly waiting: Effect.Success<ReturnType<typeof waitingQuery>>
-    readonly syncState: Effect.Success<ReturnType<typeof syncQuery>>
-    readonly historyState: Effect.Success<ReturnType<typeof historyQuery>>
+    readonly messages: ElectricCollection.ElectricCollection<Message>
+    readonly asking: Collection.Collection<Asking, string>
+    readonly unsent: Collection.Collection<Unsent, string>
+    readonly composer: Collection.Collection<Composer, string>
+    readonly connection: Collection.Collection<Connection, string>
+    readonly history: Collection.Collection<History, string>
+    readonly outbox: Outbox.Service
+    readonly conversation: Query<typeof conversationQuery>
+    readonly latest: Query<typeof latestQuery>
+    readonly shown: Query<typeof shownQuery>
+    readonly queued: Query<typeof queuedQuery>
+    readonly composerState: Query<typeof composerQuery>
+    readonly connectionState: Query<typeof connectionQuery>
+    readonly historyState: Query<typeof historyQuery>
     readonly scope: Scope.Scope
-    /** Opened to restart a shape Electric gave up on (a 4xx); closed again by the next such failure. */
-    readonly restart: Latch.Latch
-    /** Retries now every shape request waiting out its backoff. */
-    readonly reconnect: Effect.Effect<void>
-    /** Starts the `openWithin` deadline over: a shape request must succeed within it, or sync fails. */
-    readonly watchSync: Effect.Effect<void>
     readonly pageSize: number
-    /** Counts this tab's asks: the order of rows it inserted, until Postgres gives them a position. */
-    readonly asked: Ref.Ref<number>
+    /** When this tab last queued a question: each takes a later `queuedAt`, so questions asked in one millisecond keep their order. */
+    readonly lastQueuedAt: Ref.Ref<number>
+    /** The browser went offline (`true`) or online (`false`). */
+    readonly browserOffline: (offline: boolean) => Effect.Effect<void>
+    /** Retry: syncs and sends now, and gives failing requests `unreachableAfter` again. */
+    readonly retryNow: Effect.Effect<void>
   }
 >()("@smthrs/mvp/chat/ChatStore") {
-  /** The store, its collections cleaned up and its Electric shape closed when the layer's scope closes. */
-  static readonly layer = (config: ChatConfig) => Layer.effect(ChatStore, make(config))
+  /**
+   * The store; its collections cleaned up, its outbox stopped and its Electric shape closed when the scope closes. It
+   * dispatches each question ChatApi takes to this device's agent through `FlowDispatch`.
+   */
+  static readonly layer = (config: ChatConfig, host: ChatHost) => Layer.effect(ChatStore, make(config, host))
 }
 
-/** The store's value: what `yield* ChatStore` gives and what frontends render. */
-export type Chat = ChatStore["Service"]
+/**
+ * What a refused send keeps the question as, by ChatApi's status: 400, 401 (signed out) and 403 (not a Member) are
+ * `refused`, 409 `conflict`, 413 `too_large`. Any other failure is sent again.
+ */
+const refusal = (status: number | undefined): UnsentReason | undefined =>
+  status === 400 || status === 401 || status === 403
+    ? "refused"
+    : status === 409
+      ? "conflict"
+      : status === 413
+        ? "too_large"
+        : undefined
 
-/** Why Electric gave up on the shape: a 4xx, or a response it couldn't read. */
-const syncFailure = ({ status }: Collections.SyncFailed): SyncFailure =>
-  status === undefined ? "invalid_response" : status >= 500 || status === 429 ? "unreachable" : "refused"
+/**
+ * Keeps a question on the device as unsent, once: a send replayed after a crash finds it there. The row shows at once;
+ * the Effect it returns waits until the device has stored it.
+ */
+export const keepUnsent = (unsent: Collection.Collection<Unsent, string>, row: Asking, reason: UnsentReason) =>
+  Effect.gen(function* () {
+    if (Option.isSome(yield* unsent.get(row.id))) return Effect.void
+    const kept = yield* unsent.insert({ id: row.id, answerId: row.answerId, text: row.text, queuedAt: row.queuedAt, reason })
+    return Effect.orDie(kept.persisted)
+  }).pipe(Effect.orDie)
 
-const make = Effect.fnUntraced(function* (config: ChatConfig) {
+/**
+ * What the connection pill follows, besides the questions queued: the browser's `offline` event, the last shape request
+ * (`pending` until one is answered), why Electric stopped the shape, whether sends are failing, and whether failures
+ * have lasted `unreachableAfter`.
+ */
+interface Signals {
+  readonly offline: boolean
+  readonly shape: "pending" | "ok" | "failing" | "stopped"
+  readonly stopReason: "refused" | "invalid_response" | null
+  readonly sending: boolean
+  readonly overdue: boolean
+  /** This tab's engine worker failed. */
+  readonly engine: boolean
+}
+
+const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
   const scope = yield* Effect.scope
-  const http = yield* HttpClient.HttpClient
-  const answerWithin = config.answerWithin ?? Duration.seconds(15)
+  const flows = yield* FlowDispatch
   const confirmWithin = config.confirmWithin ?? Duration.seconds(15)
-  const openWithin = config.openWithin ?? Duration.seconds(10)
+  const unreachableAfter = config.unreachableAfter ?? Duration.seconds(10)
   const pageSize = config.pageSize ?? PAGE_SIZE
 
-  const composer = yield* Collections.localOnly<Composer, string>({
+  const composer = yield* Collection.local<Composer, string>({
     id: "chat-composer",
+    schema: Composer,
     getKey: (row) => row.id,
     initialData: [{ id: COMPOSER, open: false, draft: "" }],
   })
-  const asks = yield* Collections.localOnly<Ask, string>({ id: "chat-asks", getKey: (row) => row.id })
-  const failures = yield* Collections.localOnly<FailedMessage, string>({ id: "chat-failures", getKey: (row) => row.id })
-  const sync = yield* Collections.localOnly<SyncHealth, string>({
-    id: "chat-sync",
+  const connection = yield* Collection.local<Connection, string>({
+    id: "chat-connection",
+    schema: Connection,
     getKey: (row) => row.id,
-    initialData: [{ id: SYNC, status: "syncing", reason: null, httpStatus: null }],
+    initialData: [{ id: CONNECTION, status: host.isOnline() ? "up" : "offline", retry: false }],
   })
-  const history = yield* Collections.localOnly<History, string>({
+  const history = yield* Collection.local<History, string>({
     id: "chat-history",
+    schema: History,
     getKey: (row) => row.id,
-    initialData: [{ id: HISTORY, opened: false, limit: pageSize, earlier: false, loading: false }],
+    initialData: [{ id: HISTORY, opened: false, limit: pageSize, earlier: false }],
+  })
+  const asking = yield* Collection.local<Asking, string>({ id: "chat-asking", schema: Asking, getKey: (row) => row.id })
+  const unsent = yield* Collection.persisted<Unsent, string>({
+    id: "chat-unsent",
+    schema: Unsent,
+    getKey: (row) => row.id,
+    schemaVersion: 1,
+  })
+  const messages = yield* ElectricCollection.make<Message>({
+    id: "chat-messages",
+    schema: Message,
+    getKey: (row) => row.id,
+    syncMode: "eager",
+    // 2: `attempts` is gone (server answering went with it) and an answer can fail `unfinished`.
+    persist: { schemaVersion: 2 },
+    shape: {
+      url: config.shapeUrl,
+      columnMapper: ElectricCollection.snakeCamelMapper(),
+      parser: { int8: (value: string) => Number(value) },
+    },
+    ...(config.retry === undefined ? {} : { retry: config.retry }),
   })
 
-  // --- Sync health (schema.ts `SyncHealth`) ---
+  // --- Sending: the outbox's `ask` mutation (docs/decisions/0002-local-first.md §3) ---
 
-  const restart = yield* Latch.make(false)
-  // The last shape request's outcome (`none` before the first is sent) and status, whether one ever succeeded, and
-  // whether the deadline has passed.
-  const lastRequest = yield* Ref.make<Collections.RequestEvent["_tag"] | "none">("none")
-  const lastStatus = yield* Ref.make<number | null>(null)
-  const everSucceeded = yield* Ref.make(false)
-  const overdue = yield* Ref.make(false)
-  const deadline = yield* FiberHandle.make<void, never>()
-
-  const syncNow = Effect.map(Collections.get(sync, SYNC), Option.getOrThrow)
-  const setSync = (next: Omit<SyncHealth, "id">) =>
-    Collections.update(sync, SYNC, (row) => {
-      Object.assign(row, next)
-    }).pipe(Effect.orDie)
-
-  // The deadline, if it is still running, finds sync no longer `syncing` and ends.
-  const failSync = (reason: SyncFailure, httpStatus: number | null) =>
+  // Waits until Electric delivers the question: by the transaction id ChatApi inserted it in, or, for a question that
+  // was already there (a resend, 200), by its id, unless the device already has it.
+  const delivered = (taken: Taken, id: string) =>
     Effect.gen(function* () {
-      yield* setSync({ status: "failed", reason, httpStatus })
-      yield* Metric.update(Metric.withAttributes(syncFailures, { reason }), 1)
-      yield* Effect.logError("chat sync failed").pipe(
-        Effect.annotateLogs({ reason, ...(httpStatus === null ? {} : { status: httpStatus }) }),
-      )
+      if (taken._tag === "inserted") return yield* messages.awaitTxId(taken.txid, confirmWithin)
+      if (Option.isSome(yield* messages.get(id))) return
+      yield* messages.awaitMatch((change) => change.value.id === id, confirmWithin)
     })
 
-  // Past the deadline, sync fails as `unreachable` when requests are failing, or one was sent and none has ever
-  // succeeded. A request in flight may be a long poll that reached Electric, so it has until it settles. Nothing sent
-  // yet (a tab opened hidden, whose shape Electric pauses) is no failure.
-  const checkOverdue = Effect.gen(function* () {
-    if ((yield* syncNow).status !== "syncing" || !(yield* Ref.get(overdue))) return
-    const last = yield* Ref.get(lastRequest)
-    if (last === "failed" || (last === "sent" && !(yield* Ref.get(everSucceeded)))) {
-      yield* failSync("unreachable", yield* Ref.get(lastStatus))
-    }
-  })
-  const watchSync = Ref.set(overdue, false).pipe(
-    Effect.andThen(
-      FiberHandle.run(
-        deadline,
-        Effect.sleep(openWithin).pipe(Effect.andThen(Ref.set(overdue, true)), Effect.andThen(checkOverdue)),
-      ),
-    ),
-    Effect.asVoid,
-    Effect.annotateLogs({ feature: "chat" }),
-  )
+  // This device's agent answers the question ChatApi took: `chat/Answer`, with the answer's id as its execution id, in
+  // the background. The engine starts an execution once, so a resend that dispatches it again starts no second run. A
+  // dispatch that fails is already logged and counted.
+  const answer = (row: Asking) =>
+    flows.dispatch("chat/Answer", { answerId: row.answerId }, { door: "composer", executionId: row.answerId }).pipe(
+      Effect.ignore,
+      Effect.forkIn(scope),
+    )
 
-  // Every shape request reports here (Collections.electric). One that succeeds makes sync `ready`, unless Electric
-  // gave up on the shape; one that fails while `ready` starts the deadline.
-  const onRequest = (event: Collections.RequestEvent) =>
-    Effect.gen(function* () {
-      yield* Ref.set(lastRequest, event._tag)
-      const now = yield* syncNow
-      if (event._tag === "succeeded") {
-        yield* Ref.set(everSucceeded, true)
-        yield* Ref.set(lastStatus, null)
-        if (now.status === "ready" || (now.status === "failed" && now.reason !== "unreachable")) return
-        yield* FiberHandle.clear(deadline)
-        yield* setSync({ status: "ready", reason: null, httpStatus: null })
-        yield* Effect.logInfo("chat sync up to date")
-      } else if (event._tag === "failed") {
-        yield* Ref.set(lastStatus, event.status ?? null)
-        if (now.status !== "ready") return yield* checkOverdue
-        yield* setSync({ status: "syncing", reason: null, httpStatus: null })
-        yield* watchSync
-      }
-    }).pipe(Effect.annotateLogs({ feature: "chat" }))
-
-  // Electric gave up on the shape: a 4xx, or a response it couldn't read. The rows stay, sync shows `failed`, and the
-  // shape waits for `retrySync`, then restarts from where it stopped.
-  const onSyncError = (error: Collections.SyncFailed) =>
-    Effect.gen(function* () {
-      yield* restart.close
-      yield* failSync(syncFailure(error), error.status ?? null)
-      yield* restart.await
-      return "retry" as const
-    }).pipe(Effect.annotateLogs({ feature: "chat" }))
-
-  // --- Asking ---
-
-  // Keeps a question ChatApi didn't take, and its failure, where this tab showed them: after the last synced row.
-  const keepFailed = (rows: ReadonlyArray<Message>) =>
-    Effect.gen(function* () {
-      const synced = (yield* Collections.toArray(messages)).filter(({ position }) => position < PENDING_POSITION)
-      const after = synced.reduce((last, { position }) => Math.max(last, position), 0)
-      yield* Collections.insert(
-        failures,
-        rows.map(({ id, role, text, position }) => ({
-          id,
-          role,
-          text: role === "user" ? text : "",
-          status: role === "user" ? ("done" as const) : ("failed" as const),
-          position: after,
-          seq: position,
-        })),
-      )
-    }).pipe(Effect.orDie)
-
-  // `onInsert`: asks ChatApi, then waits until Electric delivers both rows, so TanStack DB swaps the optimistic rows
-  // for the synced ones and they never vanish in between. That holds for a question that was already there (a retry,
-  // 200), whose rows may not have arrived yet. Any failure rolls them back; `keepFailed` keeps them visible as failed.
-  const ask = ({ transaction, collection }: Collections.InsertParams<Message>) => {
-    const rows = transaction.mutations.map(({ modified }) => modified)
-    const question = rows.find(({ role }) => role === "user")
-    const answer = rows.find(({ role }) => role === "assistant")
-    if (question === undefined || answer === undefined) {
-      return Effect.die(new Error("messages takes a question and its answer together"))
-    }
-    const delivered = (id: string) =>
-      Collections.awaitMatch(
-        collection,
-        (message) => Collections.isChangeMessage(message) && message.value.id === id,
-        confirmWithin,
-      )
+  // Sends one queued question. A refusal (400, 401, 403, 409, 413) keeps it as unsent and stops; anything else is sent
+  // again. Once ChatApi takes it, this device's agent answers it.
+  const send = ({ rows }: { readonly rows: ReadonlyArray<unknown> }) => {
+    const row = rows[0] as Asking
     return Effect.gen(function* () {
-      const taken = yield* postQuestion(
-        config.questionsUrl,
-        { id: question.id, answerId: answer.id, text: question.text },
-        answerWithin,
+      const client = yield* ChatClient
+      const taken = yield* client.ask({ id: row.id, answerId: row.answerId, text: row.text }).pipe(
+        Effect.catchTag("QuestionNotTaken", (error): Effect.Effect<never, Outbox.Retry | Outbox.Refused> => {
+          const reason = refusal(error.status)
+          return reason === undefined
+            ? Effect.fail(new Outbox.Retry(error.status === undefined ? {} : { status: error.status }))
+            : keepUnsent(unsent, row, reason).pipe(
+                Effect.flatten,
+                Effect.andThen(Metric.update(Metric.withAttributes(askFailures, { reason }), 1)),
+                Effect.andThen(
+                  Effect.logWarning("question not sent").pipe(Effect.annotateLogs({ reason, status: error.status })),
+                ),
+                Effect.andThen(Effect.fail(new Outbox.Refused({ status: error.status! }))),
+              )
+        }),
       )
-      yield* Effect.annotateCurrentSpan({ taken: taken._tag, ...(taken._tag === "inserted" ? { txid: taken.txid } : {}) })
-      yield* Effect.all([delivered(question.id), delivered(answer.id)], { concurrency: "unbounded", discard: true }).pipe(
-        Effect.mapError(() => new QuestionNotTaken({ reason: "unconfirmed" })),
-      )
-      yield* Effect.annotateCurrentSpan({ outcome: "asked" })
-      yield* Effect.logInfo("question taken").pipe(Effect.annotateLogs({ taken: taken._tag }))
+      yield* Effect.annotateCurrentSpan({ taken: taken._tag })
+      yield* answer(row)
+      yield* delivered(taken, row.id).pipe(Effect.mapError(() => new Outbox.Retry({})))
+      yield* Effect.logInfo("question stored").pipe(Effect.annotateLogs({ taken: taken._tag }))
     }).pipe(
-      Effect.tapError((error) =>
-        Effect.all([
-          Effect.annotateCurrentSpan({ outcome: error.reason }),
-          keepFailed(rows),
-          Metric.update(Metric.withAttributes(askFailures, { reason: error.reason }), 1),
-          Effect.logWarning("question not taken").pipe(
-            Effect.annotateLogs({ reason: error.reason, ...(error.status === undefined ? {} : { status: error.status }) }),
-          ),
-        ]),
-      ),
-      Effect.annotateLogs({ feature: "chat", questionId: question.id, answerId: answer.id }),
-      Effect.withSpan("chat.ask", {
-        attributes: { questionId: question.id, answerId: answer.id, "question.length": question.text.length },
-      }),
-      Effect.provideService(HttpClient.HttpClient, http),
+      Effect.annotateLogs({ feature: "chat", questionId: row.id, answerId: row.answerId }),
+      Effect.withSpan("chat.ask.send", { attributes: { questionId: row.id, answerId: row.answerId } }),
     )
   }
 
-  const electric: Collections.Electric<Message> = yield* Collections.electric<Message, QuestionNotTaken>({
-    id: "chat-messages",
-    getKey: (row) => row.id,
-    syncMode: "on-demand",
-    shape: {
-      url: config.shapeUrl,
-      columnMapper: Collections.snakeCamelMapper(),
-      parser: { int8: (value: string) => Number(value) },
-      ...(config.fetch === undefined ? {} : { fetchClient: config.fetch }),
-    },
-    ...(config.backoff === undefined ? {} : { backoff: config.backoff }),
-    onInsert: ask,
-    onRequest,
-    onSyncError,
-  })
-  const messages = electric.collection
+  const leader = yield* Outbox.lockLeader({ lock: host.lock, name: OUTBOX_LOCK })
+  const outbox = Context.get(
+    yield* Layer.build(Outbox.layer({ ...host.outbox, leader, collections: { asking }, mutations: { ask: send } })),
+    Outbox.Outbox,
+  )
 
-  const recent = yield* recentQuery(messages, pageSize)
-  const pending = yield* pendingQuery(messages)
+  // --- The conversation, as frontends read it ---
+
+  const conversation = yield* conversationQuery(messages, unsent, asking)
+  const latest = yield* latestQuery(conversation, pageSize)
+  const queued = yield* queuedQuery(conversation)
+
+  // --- The connection pill (schema.ts `Connection`), from the browser, the shape and the outbox ---
+
+  const state = yield* Ref.make<Signals>({
+    offline: !host.isOnline(),
+    shape: "pending",
+    stopReason: null,
+    sending: false,
+    overdue: false,
+    engine: false,
+  })
+  const deadline = yield* FiberHandle.make<void, never>()
+  // A request sent after failures, or after a restart, that hasn't failed within `reachedAfter` reached Electric: a live
+  // request is held there until Postgres changes, so it may not answer for a long time.
+  const reachedAfter = Duration.seconds(1)
+  const reaching = yield* FiberHandle.make<void, never>()
+
+  const connectionNow = Effect.map(connection.get(CONNECTION), Option.getOrThrow)
+  // What the pill shows now. While it shows, reconnecting has no state of its own: it hides once the shape is up to
+  // date, nothing is failing and every queued question reached Postgres.
+  const settle = Effect.gen(function* () {
+    const now = yield* Ref.get(state)
+    const shown = yield* connectionNow
+    // Read now, not from a stream that may not have caught up with an ask this tick.
+    const waiting = (yield* queued.toArray).length
+    const next: Omit<Connection, "id"> =
+      now.engine
+        ? { status: "stopped", retry: false }
+        : now.shape === "stopped"
+        ? { status: "failed", retry: true }
+        : now.offline
+          ? { status: "offline", retry: false }
+          : now.overdue
+            ? { status: "offline", retry: true }
+            : shown.status !== "up" && !(now.shape === "ok" && !now.sending && waiting === 0)
+              ? { status: shown.status, retry: shown.retry }
+              : { status: "up", retry: false }
+    if (next.status === shown.status && next.retry === shown.retry) return
+    yield* connection
+      .update(CONNECTION, (row) => {
+        row.status = next.status
+        row.retry = next.retry
+      })
+      .pipe(Effect.orDie)
+    if (next.status !== "up") {
+      const reason = next.status === "stopped"
+        ? "engine"
+        : next.status === "failed"
+        ? now.stopReason!
+        : now.offline
+        ? "offline"
+        : "unreachable"
+      yield* Metric.update(Metric.withAttributes(connectionDrops, { reason }), 1)
+    }
+    yield* Effect.logInfo("chat connection changed").pipe(Effect.annotateLogs({ status: next.status }))
+  })
+
+  // Shape requests or sends failing, with the browser online, for `unreachableAfter` show as offline, with Retry.
+  const watchFailures = Effect.gen(function* () {
+    const now = yield* Ref.get(state)
+    if (now.shape !== "failing" && !now.sending) {
+      yield* FiberHandle.clear(deadline)
+      return yield* Ref.update(state, (s) => ({ ...s, overdue: false }))
+    }
+    if (yield* FiberHandle.get(deadline).pipe(Effect.map(Option.isSome))) return
+    yield* FiberHandle.run(
+      deadline,
+      Effect.sleep(unreachableAfter).pipe(
+        Effect.andThen(Ref.update(state, (s) => ({ ...s, overdue: true }))),
+        Effect.andThen(settle),
+      ),
+    )
+  })
+
+  const update = (change: (now: Signals) => Partial<Signals>) =>
+    Ref.update(state, (now) => ({ ...now, ...change(now) })).pipe(
+      Effect.andThen(watchFailures),
+      Effect.andThen(settle),
+      Effect.annotateLogs({ feature: "chat" }),
+    )
+
+  const onSync = (event: ElectricCollection.SyncEvent) => {
+    switch (event._tag) {
+      case "Sent":
+        return Effect.gen(function* () {
+          const shape = (yield* Ref.get(state)).shape
+          if (shape !== "failing" && shape !== "pending") return
+          yield* FiberHandle.run(
+            reaching,
+            Effect.sleep(reachedAfter).pipe(
+              Effect.andThen(update((now) => (now.shape === "failing" || now.shape === "pending" ? { shape: "ok" } : {}))),
+            ),
+          )
+        })
+      case "Succeeded":
+        return update(() => ({ shape: "ok", stopReason: null }))
+      case "Failed":
+        return FiberHandle.clear(reaching).pipe(Effect.andThen(update(() => ({ shape: "failing" }))))
+      case "Stopped":
+        return update(() => ({
+          shape: "stopped",
+          stopReason: event.error.status === undefined ? "invalid_response" : "refused",
+        }))
+    }
+  }
+
   const store = ChatStore.of({
     messages,
-    recent,
-    pending,
+    asking,
+    unsent,
     composer,
-    asks,
-    failures,
-    sync,
+    connection,
     history,
-    conversation: yield* conversationQuery(recent, pending, failures),
+    outbox,
+    conversation,
+    latest,
+    shown: yield* shownQuery(latest),
+    queued,
     composerState: yield* composerQuery(composer),
-    waiting: yield* waitingQuery(asks, recent, pending),
-    syncState: yield* syncQuery(sync),
+    connectionState: yield* connectionQuery(connection),
     historyState: yield* historyQuery(history),
     scope,
-    restart,
-    reconnect: electric.reconnect,
-    watchSync,
     pageSize,
-    asked: yield* Ref.make(0),
+    lastQueuedAt: yield* Ref.make(0),
+    browserOffline: (offline) => update(() => ({ offline })),
+    retryNow: Effect.all([messages.reconnect, outbox.retryNow], { discard: true }).pipe(
+      Effect.andThen(FiberHandle.clear(deadline)),
+      Effect.andThen(
+        update((now) => ({ overdue: false, shape: now.shape === "stopped" ? "pending" : now.shape })),
+      ),
+    ),
   })
 
-  // A shape request has `openWithin` to first succeed.
-  yield* watchSync
-  // The first window: `opened` once it loads. Whether there may be earlier messages follows the window's changes.
-  const windowChanges = yield* Collections.changes(recent)
-  yield* windowChanges.pipe(
-    Stream.runForEach(() => markEarlier(store)),
-    Effect.forkIn(scope),
+  const background = <E>(stream: Stream.Stream<E>, each: (event: E) => Effect.Effect<void>) =>
+    stream.pipe(Stream.runForEach(each), Effect.forkIn(scope, { startImmediately: true }))
+  yield* background(messages.sync, onSync)
+  // This tab's engine failing is for good: the pill says so until the page reloads.
+  yield* (yield* BrowserEngine.BrowserEngine).unavailable.pipe(
+    Effect.andThen(update(() => ({ engine: true }))),
+    Effect.forkIn(scope, { startImmediately: true }),
   )
-  yield* Collections.preload(recent).pipe(
+  yield* background(outbox.status, ({ failing }) => update(() => ({ sending: failing !== null })))
+  yield* background(queued.rows, () => update(() => ({})))
+  // Whether the device has messages before the window.
+  yield* background(conversation.rows, (rows) => markEarlier(history, rows.length))
+  // The conversation has opened once the device's rows are restored, or, failing that, synced.
+  yield* messages.restored.pipe(
+    Effect.catch(() => messages.preload),
     Effect.andThen(
-      Collections.update(history, HISTORY, (row) => {
+      history.update(HISTORY, (row) => {
         row.opened = true
       }),
     ),
-    Effect.andThen(markEarlier(store)),
     Effect.ignore,
-    Effect.forkIn(scope),
+    Effect.forkIn(scope, { startImmediately: true }),
   )
   return store
 })
 
-/** Sets `history.earlier`: the window is full, so there may be messages before it. Not while a page is loading. */
-const markEarlier = ({ recent, history }: Chat) =>
+/** Sets `history.earlier`: the device has more messages than the window shows. */
+export const markEarlier = (history: Collection.Collection<History, string>, total: number) =>
   Effect.gen(function* () {
-    const now = Option.getOrThrow(yield* Collections.get(history, HISTORY))
-    if (now.loading || !now.opened) return
-    const earlier = (yield* Collections.toArray(recent)).length >= now.limit
+    const now = Option.getOrThrow(yield* history.get(HISTORY))
+    const earlier = total > now.limit
     if (earlier === now.earlier) return
-    yield* Collections.update(history, HISTORY, (row) => {
+    yield* history.update(HISTORY, (row) => {
       row.earlier = earlier
     })
   }).pipe(Effect.orDie)
 
 /**
- * Widens the window from `from` to `limit` messages and records how it went: `history.loading` until the rows load,
- * then whether there may be more. If they don't load, the window stays at `from` and "Load earlier" applies again.
- * Run it with `startImmediately`, so the window moves before the action returns.
+ * Records how long the answer to a question this tab just asked took to show its first text, counted from asking, so a
+ * question queued offline counts its time in the queue. Ends without a record when the answer settles with no text,
+ * and with the store otherwise. Run it with `startImmediately`, so it follows changes before the ask returns.
  */
-export const loadWindow = Effect.fnUntraced(function* (limit: number, from: number) {
-  const store = yield* ChatStore
-  const settle = (next: Partial<History>) =>
-    Collections.update(store.history, HISTORY, (row) => {
-      Object.assign(row, next, { loading: false })
-    }).pipe(Effect.orDie)
-  yield* Collections.setWindow(store.recent, { limit }).pipe(
-    Effect.matchEffect({
-      onSuccess: () =>
-        Effect.all([
-          settle({}),
-          markEarlier(store),
-          Metric.update(Metric.withAttributes(historyLoads, { outcome: "loaded" }), 1),
-          Effect.annotateCurrentSpan({ outcome: "loaded" }),
-          Effect.logInfo("earlier messages loaded"),
-        ]),
-      onFailure: () =>
-        Effect.all([
-          settle({ limit: from }),
-          Metric.update(Metric.withAttributes(historyLoads, { outcome: "failed" }), 1),
-          Effect.annotateCurrentSpan({ outcome: "failed" }),
-          Effect.logWarning("earlier messages didn't load"),
-        ]),
-    }),
-    Effect.annotateLogs({ feature: "chat", limit }),
-    Effect.withSpan("chat.history.load", { attributes: { limit } }),
+export const timeFirstText = Effect.fnUntraced(function* (answerId: string, askedAt: number) {
+  const { messages } = yield* ChatStore
+  const decided = yield* messages.changes({ initial: true }).pipe(
+    Stream.flattenIterable,
+    Stream.filter((change) => change.key === answerId),
+    Stream.takeUntil((change) => change.value.text !== "" || change.value.status !== "streaming"),
+    Stream.runLast,
   )
+  if (Option.isSome(decided) && decided.value.value.text !== "") {
+    yield* Metric.update(firstAnswerText, (yield* Clock.currentTimeMillis) - askedAt)
+  }
 })
-
-/**
- * Records how long the answer to a question this tab just asked took to show its first text. Ends without a record
- * when the answer fails first, rolls back, or takes over five minutes. Run it with `startImmediately`, so it is
- * subscribed before the ask returns: it follows changes from then on, without asking Electric for any rows.
- */
-export const timeFirstText = Effect.fnUntraced(
-  function* (answerId: string, askedAt: number) {
-    const { messages } = yield* ChatStore
-    const changes = yield* Collections.changes(messages)
-    const decided = yield* changes.pipe(
-      Stream.flattenIterable,
-      Stream.filter((change) => change.key === answerId),
-      Stream.takeUntil(
-        (change) => change.type === "delete" || change.value.text !== "" || change.value.status !== "streaming",
-      ),
-      Stream.runLast,
-      Effect.timeoutOrElse({ duration: "5 minutes", orElse: () => Effect.succeed(Option.none()) }),
-    )
-    if (Option.isSome(decided) && decided.value.type !== "delete" && decided.value.value.text !== "") {
-      yield* Metric.update(firstAnswerText, (yield* Clock.currentTimeMillis) - askedAt)
-    }
-  },
-  Effect.scoped,
-)

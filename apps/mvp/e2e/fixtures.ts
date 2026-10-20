@@ -1,15 +1,35 @@
-import { test as base, type Locator, type TestInfo } from "@playwright/test"
+import { test as base, expect, type Locator, type TestInfo } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
 import { basename } from "node:path"
 
-// The failure copy an answer shows when Smithers couldn't answer (src/features/chat/schema.ts).
-export const CHAT_FAILED = "Smithers couldn't answer. Try again."
+// The status copy (docs/decisions/0002-local-first.md §2) and how many messages show before Load earlier: chat's
+// contract, which the app and these tests share.
+export { COULDNT_ANSWER, NOT_SENT, OFFLINE, PAGE_SIZE, QUEUED, SYNC_FAILED } from "../src/features/chat/contract"
 
-// What the app says while sync has failed (src/features/chat/schema.ts), with Try again beside it.
-export const SYNC_LOST = "Smithers lost its connection."
+/**
+ * The no-spinner observer (0002 §7), an init script: it records every loading marker the page ever shows, `aria-busy`
+ * true or a progress bar, on `window.__busy`. The only animation the app may show is a streaming answer's dots,
+ * inside `[data-answer=streaming]`. The app has no Suspense boundary, so no fallback can show.
+ */
+export const watchForSpinners = () => {
+  const seen: Array<string> = []
+  Object.assign(window, { __busy: seen })
+  const busy = '[aria-busy="true"], [role="progressbar"]'
+  const check = (root: ParentNode) => {
+    for (const element of root.querySelectorAll(busy)) {
+      if (element.closest("[data-answer=streaming]")) continue
+      seen.push(element.outerHTML.slice(0, 160))
+    }
+  }
+  addEventListener("DOMContentLoaded", () => {
+    check(document)
+    new MutationObserver(() => check(document)).observe(document, { subtree: true, childList: true, attributes: true })
+  })
+}
 
-// How many messages the conversation shows before Load earlier (src/features/chat/schema.ts PAGE_SIZE).
-export const PAGE_SIZE = 50
+/** What the observer saw on `page`: empty when it never showed a loading state. */
+export const spinnersSeen = (page: import("@playwright/test").Page) =>
+  page.evaluate(() => (window as unknown as { __busy?: Array<string> }).__busy ?? []).catch(() => [])
 
 // A flow's name, for its GIF: the spec file and the test title up to its colon, e.g. `chat-reload-mid-answer`.
 export const flowName = (testInfo: TestInfo) => {
@@ -32,10 +52,12 @@ const writeLog = async (path: string, log: Array<string>) => {
 export const test = base.extend<{ browserLog: Array<string> }>({
   browserLog: [
     async ({ page }, use, testInfo) => {
+      await page.addInitScript(watchForSpinners)
       const log: Array<string> = []
       page.on("console", (message) => log.push(`${message.type()}: ${message.text()}`))
       page.on("pageerror", (error) => log.push(`pageerror: ${error.message}`))
       await use(log)
+      if (!page.isClosed()) expect(await spinnersSeen(page), "the page never showed a loading state").toEqual([])
       if (testInfo.status !== testInfo.expectedStatus) {
         await testInfo.attach("browser-log", { path: await writeLog(testInfo.outputPath("browser.log"), log), contentType: "text/plain" })
       }
@@ -49,7 +71,7 @@ export const test = base.extend<{ browserLog: Array<string> }>({
   ],
 })
 
-export { expect } from "@playwright/test"
+export { expect }
 
 // The answer bubble right after the first message that contains `question`.
 export const answerTo = (conversation: Locator, question: string) =>

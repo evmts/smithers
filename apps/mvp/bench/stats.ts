@@ -3,7 +3,8 @@
 export type Summary = { n: number; p50: number; p95: number; min: number; max: number }
 export type Baseline = { p50: number; p95: number }
 
-// Metric keys in display order, with their labels. Every value is milliseconds.
+// Metric keys in display order, with their labels. Every value is milliseconds. The table shows a metric missing here
+// under its key, after these.
 export const METRICS: Record<string, string> = {
   "load.cold.ttfb": "Cold load: TTFB",
   "load.cold.fcp": "Cold load: FCP",
@@ -17,18 +18,21 @@ export const METRICS: Record<string, string> = {
   "load.warm.newest": "Warm load: newest message shown",
   "cmdk.focus": "⌘K to composer focused",
   "shape.initial_sync": "Shape initial sync, offset -1 to up-to-date",
-  "question.accepted": "API: POST /api/questions to 202",
-  "question.confirmed": "API: POST to the question's txid from Electric",
-  "question.first_text": "API: POST to first answer text from Electric",
-  "question.done": "API: POST to answer done from Electric",
+  "repo.shape.initial_sync": "Repo: repositories shape initial sync",
+  "repo.tree.first": "Repo: GET tree, first",
+  "repo.tree.cached": "Repo: GET tree, cached",
+  "repo.blob.first": "Repo: GET README, first",
+  "repo.blob.cached": "Repo: GET README, cached",
   "answer.question": "UI: ask to question shown",
+  "answer.accepted": "UI: the page's POST /api/questions to 202",
+  "answer.confirmed": "UI: the page's POST to the question from Electric",
   "answer.first_text": "UI: ask to first answer text",
   "answer.done": "UI: ask to answer done",
   "sync.question": "Fan-out: ask on A to question on B",
   "sync.answer_done": "Fan-out: ask on A to answer done on B",
   "concurrent.accepted": "Concurrent asks: POST to 202",
-  "concurrent.confirmed": "Concurrent asks: POST to txid from Electric",
-  "concurrent.done": "Concurrent asks: POST to answer done",
+  "concurrent.confirmed": "Concurrent asks: POST to the question from Electric",
+  "concurrent.done": "Concurrent asks: POST to answer done from Electric",
 }
 
 // Linear interpolation between the closest ranks: R's type 7, NumPy's default. `sorted` is ascending.
@@ -88,11 +92,11 @@ export const table = (
   const header = baseline
     ? ["| Metric (ms) | n | p50 | p95 | min | max | p50 vs baseline | p95 vs baseline |", "|---|--:|--:|--:|--:|--:|--:|--:|"]
     : ["| Metric (ms) | n | p50 | p95 | min | max |", "|---|--:|--:|--:|--:|--:|"]
-  const rows = Object.keys(METRICS)
-    .filter((metric) => metrics[metric] !== undefined)
+  const known = Object.keys(METRICS).filter((metric) => metrics[metric] !== undefined)
+  const rows = [...known, ...Object.keys(metrics).filter((metric) => METRICS[metric] === undefined).sort()]
     .map((metric) => {
       const s = metrics[metric]!
-      const cells = [METRICS[metric], String(s.n), ms(s.p50), ms(s.p95), ms(s.min), ms(s.max)]
+      const cells = [METRICS[metric] ?? metric, String(s.n), ms(s.p50), ms(s.p95), ms(s.min), ms(s.max)]
       if (baseline) {
         cells.push(change(s.p50, baseline[metric]?.p50, isFlagged(metric, "p50")))
         cells.push(change(s.p95, baseline[metric]?.p95, isFlagged(metric, "p95")))

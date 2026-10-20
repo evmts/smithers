@@ -1,0 +1,141 @@
+import { describe, expect, test } from "vitest"
+import { blobKey, encodePath, hrefFor, lineSearch, parseLines, readmeOf, resolveRef, targetOf, treeKey } from "./paths"
+
+// Where things are in a repository and in the app's URLs: the pure functions the actions, queries and views share.
+
+const SHA = "a".repeat(40)
+const OTHER = "b".repeat(40)
+const repo = { owner: "octocat", name: "Spoon-Knife", defaultBranch: "main" }
+
+describe("keys", () => {
+  test("name a file list and a file by repository, commit and path", () => {
+    expect(treeKey("github/o/n", SHA)).toBe(`github/o/n@${SHA}`)
+    expect(blobKey("github/o/n", SHA, "docs/a.md")).toBe(`github/o/n@${SHA}:docs/a.md`)
+  })
+})
+
+describe("readmeOf", () => {
+  const paths = ["README.md", "docs/readme.MD", "docs/guide.md", "docs/deep/README.md", "src/index.ts"]
+  test("finds the directory's own README in any case, never a deeper one", () => {
+    expect(readmeOf(paths, "")).toBe("README.md")
+    expect(readmeOf(paths, "docs")).toBe("docs/readme.MD")
+    expect(readmeOf(paths, "docs/deep")).toBe("docs/deep/README.md")
+    expect(readmeOf(paths, "src")).toBeUndefined()
+    expect(readmeOf(["docs/README.md"], "")).toBeUndefined()
+  })
+})
+
+describe("resolveRef", () => {
+  const ready = { defaultBranch: "main", headSha: SHA }
+  test("the default branch, or no ref, reads at the head commit", () => {
+    expect(resolveRef(ready, null, "")).toEqual({ revision: "main", sha: SHA, path: "" })
+    expect(resolveRef(ready, "main", "docs/a.md")).toEqual({ revision: "main", sha: SHA, path: "docs/a.md" })
+  })
+
+  test("a full SHA reads at itself, even before the repository has a head", () => {
+    expect(resolveRef(ready, OTHER, "a.md")).toEqual({ revision: OTHER, sha: OTHER, path: "a.md" })
+    expect(resolveRef({ defaultBranch: null, headSha: null }, OTHER, "")).toEqual({
+      revision: OTHER,
+      sha: OTHER,
+      path: "",
+    })
+  })
+
+  test("a default branch with a slash is matched across the ref and the path", () => {
+    const slashed = { defaultBranch: "release/1.x", headSha: SHA }
+    expect(resolveRef(slashed, "release", "1.x/docs/a.md")).toEqual({
+      revision: "release/1.x",
+      sha: SHA,
+      path: "docs/a.md",
+    })
+    expect(resolveRef(slashed, "release", "1.x")).toEqual({ revision: "release/1.x", sha: SHA, path: "" })
+    expect(resolveRef(slashed, "release", "2.x/a.md")).toBeUndefined()
+    expect(resolveRef(slashed, "release/1.x", "")).toEqual({ revision: "release/1.x", sha: SHA, path: "" })
+  })
+
+  test("any other ref, or a repository without a head, names nothing", () => {
+    expect(resolveRef(ready, "dev", "a.md")).toBeUndefined()
+    expect(resolveRef(ready, "mainline", "")).toBeUndefined()
+    expect(resolveRef({ defaultBranch: null, headSha: null }, null, "")).toBeUndefined()
+    expect(resolveRef({ defaultBranch: "main", headSha: null }, "main", "")).toBeUndefined()
+  })
+})
+
+describe("parseLines", () => {
+  test("reads a line or a range, as a string or the number the router parsed", () => {
+    expect(parseLines("3")).toEqual({ line: 3, lineEnd: null })
+    expect(parseLines(3)).toEqual({ line: 3, lineEnd: null })
+    expect(parseLines("3-7")).toEqual({ line: 3, lineEnd: 7 })
+  })
+
+  test("a range that doesn't go forward is its first line; anything else anchors nothing", () => {
+    expect(parseLines("7-3")).toEqual({ line: 7, lineEnd: null })
+    expect(parseLines("3-3")).toEqual({ line: 3, lineEnd: null })
+    for (const value of [undefined, null, "", "0", "-3", "a", "3-", "3-x", 1.5, "1234567890"]) {
+      expect(parseLines(value)).toEqual({ line: null, lineEnd: null })
+    }
+  })
+})
+
+describe("lineSearch", () => {
+  test("keeps only the line anchor, as the router parsed it", () => {
+    expect(lineSearch({ L: 3, tab: "x" })).toEqual({ L: 3 })
+    expect(lineSearch({ L: "3-5" })).toEqual({ L: "3-5" })
+    expect(lineSearch({ tab: "x" })).toEqual({})
+    expect(lineSearch({})).toEqual({})
+  })
+})
+
+describe("hrefFor", () => {
+  test("the root at the default branch is the repository's own path", () => {
+    expect(hrefFor(repo, "main", { kind: "tree", path: "" })).toBe("/octocat/Spoon-Knife")
+  })
+
+  test("anything else names its kind, revision and path, each segment encoded", () => {
+    expect(hrefFor(repo, SHA, { kind: "tree", path: "" })).toBe(`/octocat/Spoon-Knife/tree/${SHA}`)
+    expect(hrefFor(repo, "main", { kind: "tree", path: "docs" })).toBe("/octocat/Spoon-Knife/tree/main/docs")
+    expect(hrefFor(repo, "release/1.x", { kind: "blob", path: "a b/c#.md" })).toBe(
+      "/octocat/Spoon-Knife/blob/release%2F1.x/a%20b/c%23.md",
+    )
+    expect(encodePath("a b/c")).toBe("a%20b/c")
+  })
+
+  test("a file's line anchor is a line or a forward range; a directory has none", () => {
+    expect(hrefFor(repo, "main", { kind: "blob", path: "a.ts", line: 3 })).toBe(
+      "/octocat/Spoon-Knife/blob/main/a.ts?L=3",
+    )
+    expect(hrefFor(repo, "main", { kind: "blob", path: "a.ts", line: 3, lineEnd: 9 })).toBe(
+      "/octocat/Spoon-Knife/blob/main/a.ts?L=3-9",
+    )
+    expect(hrefFor(repo, "main", { kind: "blob", path: "a.ts", line: 3, lineEnd: 3 })).toBe(
+      "/octocat/Spoon-Knife/blob/main/a.ts?L=3",
+    )
+    expect(hrefFor(repo, "main", { kind: "tree", path: "src", line: 3 })).toBe("/octocat/Spoon-Knife/tree/main/src")
+  })
+})
+
+describe("targetOf", () => {
+  test("a repository's root, a directory, and a file with its line anchor", () => {
+    expect(targetOf("tree", { owner: "o", repo: "n" }, {})).toEqual({
+      owner: "o",
+      name: "n",
+      kind: "tree",
+      ref: null,
+      path: "",
+      line: null,
+      lineEnd: null,
+    })
+    expect(targetOf("tree", { owner: "o", repo: "n", ref: "main", _splat: "docs/" }, { L: "3" })).toMatchObject({
+      ref: "main",
+      path: "docs",
+      line: null,
+    })
+    expect(targetOf("blob", { owner: "o", repo: "n", ref: "main", _splat: "a.ts" }, { L: "2-4" })).toMatchObject({
+      kind: "blob",
+      path: "a.ts",
+      line: 2,
+      lineEnd: 4,
+    })
+    expect(targetOf("blob", {}, {})).toMatchObject({ owner: "", name: "", path: "", line: null })
+  })
+})

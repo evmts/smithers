@@ -1,5 +1,6 @@
-// ChatApi over plain HTTP from Node: `POST /api/questions`, and Electric's `messages` shape through ChatApi's proxy
-// (docs/features/chat.md#contract). The bench's view of the server, beside the browsers' view of the app.
+// Electric's `messages` shape through ChatApi's proxy, over plain HTTP from Node (docs/features/chat.md#contract): the
+// bench's view of the server, beside the browsers' view of the app. Node never asks: nothing would answer a question it
+// posted, so the pages ask (docs/benchmarks.md#method).
 //
 // Times are epoch milliseconds with sub-millisecond precision (`performance.timeOrigin + performance.now()`), the
 // same clock the pages report on, since everything runs on one machine.
@@ -24,7 +25,7 @@ export type Row = {
 export type ShapeMessage = {
   key?: string
   value?: Partial<Row>
-  headers: { operation?: "insert" | "update" | "delete"; control?: string; txids?: Array<number> }
+  headers: { operation?: "insert" | "update" | "delete"; control?: string }
 }
 
 /**
@@ -99,13 +100,11 @@ export type Timeline = { seenAt: number; firstTextAt: number; settledAt: number 
 
 /**
  * A device that only listens: follows the shape live from `offset=now`, so it holds only rows written after it
- * started, and records when each row and each transaction id (`txid`) reached it.
+ * started, and records when each row, and each change to it, reached it.
  */
 export class Follower {
   readonly rows = new Map<string, Row>()
   readonly timelines = new Map<string, Timeline>()
-  /** Each Postgres transaction id Electric delivered, and when it first arrived. */
-  readonly txids = new Map<number, number>()
   /** Electric answered 409 (`must-refetch`); the follower started again from `offset=now`. */
   refetches = 0
   /** Requests that failed or answered another error; each is retried after a second. */
@@ -163,9 +162,6 @@ export class Follower {
   }
 
   #receive(messages: ReadonlyArray<ShapeMessage>, at: number) {
-    for (const message of messages) {
-      for (const txid of message.headers.txids ?? []) if (!this.txids.has(txid)) this.txids.set(txid, at)
-    }
     for (const id of apply(this.rows, messages).changed) {
       const timeline = this.timelines.get(id) ?? { seenAt: at, firstTextAt: 0, settledAt: 0 }
       const row = this.rows.get(id)
@@ -220,33 +216,3 @@ export class Follower {
 /** A settled row (`done` or `failed`), or `undefined` while it is missing or still streaming. */
 export const settled = (row: Row | undefined) =>
   row?.status !== undefined && row.status !== "streaming" ? row : undefined
-
-export type Posted = {
-  /** The HTTP status, or 0 when the request failed without one. */
-  status: number
-  txid: number | null
-  sentAt: number
-  /** When the response's headers arrived. */
-  respondedAt: number
-}
-
-/** `POST /api/questions`, as the browser sends it. */
-export const postQuestion = async (
-  baseUrl: string,
-  question: { id: string; answerId: string; text: string },
-): Promise<Posted> => {
-  const sentAt = now()
-  try {
-    const response = await fetch(`${baseUrl}/api/questions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(question),
-      signal: AbortSignal.timeout(30_000),
-    })
-    const respondedAt = now()
-    const body = (await response.json().catch(() => null)) as { txid?: unknown } | null
-    return { status: response.status, txid: typeof body?.txid === "number" ? body.txid : null, sentAt, respondedAt }
-  } catch {
-    return { status: 0, txid: null, sentAt, respondedAt: now() }
-  }
-}

@@ -1,4 +1,5 @@
-import { expect, SYNC_LOST, test } from "./fixtures"
+import { faultyApp, faults } from "./faults"
+import { expect, OFFLINE, test } from "./fixtures"
 
 test("landing: a first-time visitor sees the landing and clicks Get started for free", async ({ page }) => {
   await page.goto("/")
@@ -15,23 +16,22 @@ test("landing: a first-time visitor sees the landing and clicks Get started for 
   await expect(page.getByRole("link", { name: "Get started for free" })).toBeVisible()
 })
 
-// The sync service is unreachable when the app opens: every shape request through ChatApi's proxy fails, as when
-// Electric or the network to it is down. The app must say so and offer a retry, never spin on "Opening" forever, and
-// the retry opens the conversation once sync is back. Aborting the route is the outage; nothing answers in its place.
-test("sync down at boot: the app says it lost its connection, and Try again opens chat once sync is back", async ({ page, context }) => {
-  const shapes = "**/api/shapes/**"
-  await context.route(shapes, (route) => route.abort("connectionrefused"))
-  await page.goto("/app")
-
-  // Sync down at boot fails after 10 s with no successful shape request.
-  await expect(page.getByRole("main", { name: "Lost connection" })).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByRole("alert")).toHaveText(SYNC_LOST)
-  const retry = page.getByRole("button", { name: "Try again" })
-  await expect(retry).toBeVisible()
-
-  await context.unroute(shapes)
-  await retry.click()
+// The sync service is unreachable when the app opens: every shape request fails on the network, as when Electric or
+// the network to it is down. The app opens at once anyway, never on a loading or lost-connection screen; the pill says
+// Offline with Retry once requests have failed for 10 s, and Retry syncs once sync is back. The app opens on its faulty
+// services with sync down (e2e/faults.ts); nothing intercepts a request.
+test("sync down at boot: the app opens at once, the pill says Offline with Retry, and Retry syncs once sync is back", async ({ page }) => {
+  await page.goto(faultyApp("down"))
   await expect(page.getByRole("main", { name: "App" })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible()
-  await expect(page.getByRole("alert")).toHaveCount(0)
+
+  const pill = page.locator('[aria-label="Connection"]')
+  await expect(pill).toContainText(OFFLINE, { timeout: 30_000 })
+  const retry = pill.getByRole("button", { name: "Retry" })
+  await expect(retry).toBeVisible({ timeout: 30_000 })
+
+  await faults(page).shapes.heal()
+  await retry.click()
+  await expect(pill).toBeEmpty({ timeout: 30_000 })
+  await expect(page.locator(".sui-chat-message").first()).toBeVisible({ timeout: 30_000 })
 })
