@@ -201,6 +201,13 @@ test("the public installation entry gives the current npm path before planned ho
   assert.doesNotMatch(cli, /host start|smithersai\/tap/)
 })
 
+// The landing's install card states the same floor, so it moves with engines too.
+test("the landing's run note names the published CLI's Node floor", () => {
+  const floor = JSON.parse(read("packages/smithers/package.json")).engines.node.replace(">=", "").replace(/\.0$/, "")
+  const copy = read("apps/site/src/data/landingCopy.ts")
+  assert.ok(copy.includes(`runNote: "Needs Node.js ${floor} or later.`), "the landing run note must match the published CLI's engines")
+})
+
 test("MCP doctor help describes the smoke test instead of registration", async () => {
   const { installEffectResolution } = await import(join(root, "packages/smithers/build/build-cli/src/effect-resolution.js"))
   installEffectResolution()
