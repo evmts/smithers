@@ -110,14 +110,14 @@ Read the whole diff, including generated flow files. Check that the tests cover 
 
 ## Commit and push yourself
 
-Configure `origin` for your repository if it is not already set. With jj:
+Configure `origin` for your repository if it is not already set. With jj 0.46 or later (`jj --version`):
 
 ```bash
 jj git remote add origin /path/to/your/origin.git
 jj describe -m 'Add slugify'
 jj bookmark set main -r @
 jj new
-jj git push --remote origin --bookmark main --allow-new
+jj git push --remote origin --bookmark main
 ```
 
 With Git, use these commands instead:

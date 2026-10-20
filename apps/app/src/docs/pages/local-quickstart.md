@@ -90,7 +90,7 @@ The diff includes the files `smthrs generate flow coding` added (`.gitignore` an
 
 ## 6. Commit and push yourself
 
-Replace the path with your repository's remote. Skip `jj git remote add` when `origin` already exists.
+Replace the path with your repository's remote. Skip `jj git remote add` when `origin` already exists. These commands are for Jujutsu 0.46 or later (`jj --version`).
 
 ```sh
 jj git remote add origin /path/to/your/origin.git
