@@ -53,7 +53,7 @@ export default function View({ props, state }: ViewProps<Board>) {
   or third-party widgets. `ViewCode` refuses the names that reach them;
   [the API reference](api.md#viewcode) lists the rest.
 
-`ViewCode.check` returns every problem at once, with its line and column, so
+`ViewCode.check` returns up to 20 problems at once, with its line and column, so
 a renderer corrects the module in one step. The problems quote the module, so
 they are redacted; unwrap them only for the correction prompt:
 

@@ -13,7 +13,8 @@
  * its HTML and state by size. An infinite loop or a memory bomb fails as a
  * `RealmError` with reason `limit_exceeded` and names the limit; the realm
  * then loads again on its next use, so one bad module never leaves a damaged
- * realm behind.
+ * realm behind. A host stack overflow quarantines its shared WASM module;
+ * further calls fail closed until the host supplies a fresh variant.
  *
  * A failure's telemetry is content-free. The `PresentationRealm.render` and
  * `PresentationRealm.interact` spans end through `SpanFailure`, carrying only
@@ -261,6 +262,9 @@ const failed = (reason: typeof Reason.Type, detail: string, limit?: Limit): Outc
 
 const crossed = (limit: Limit, detail: string): Outcome<never> => failed("limit_exceeded", detail, limit)
 
+/** A host overflow leaves one undisposable runtime; never allocate another in that module. */
+const quarantined = new WeakSet<QuickJSWASMModule>()
+
 const close = (loaded: Loaded): void => {
   loaded.render.dispose()
   loaded.reduce.dispose()
@@ -292,6 +296,12 @@ export const make = (
         failure("load_failed", `QuickJS could not be compiled: ${error.message}`)
       )
     )
+
+    if (quarantined.has(module)) {
+      return yield* Effect.fail(
+        failure("load_failed", "The QuickJS module was quarantined after a host stack overflow")
+      )
+    }
 
     let deadline = 0
     let budget = Number.POSITIVE_INFINITY
@@ -382,8 +392,8 @@ export const make = (
     /** Runs one call against a loaded realm, reloading it first after a crossed bound. */
     const within = <A>(call: (realm: Loaded) => Outcome<A>): Effect.Effect<A, RealmError> =>
       Effect.suspend(() => {
-        if (closed) {
-          return Effect.fail(failure("load_failed", "The realm's scope has closed"))
+        if (closed || quarantined.has(module)) {
+          return Effect.fail(failure("load_failed", "The realm is closed or its QuickJS module is quarantined"))
         }
         if (loaded === undefined) {
           const reloaded = load()
@@ -440,6 +450,7 @@ export const make = (
       } catch {
         // The host's own stack overflowed inside the interpreter. Disposing the
         // runtime now would abort on its unbalanced heap, so it is abandoned.
+        quarantined.add(module)
         realm.broken = true
         return crossed("stack", "The view overflowed the host's stack")
       }
@@ -475,7 +486,6 @@ export const make = (
         const [props, state] = args.value
         const reduced = invoke(realm, realm.reduce, input.module, [state, JSON.stringify(input.event)])
         if (!reduced.ok) return reduced
-        const next: unknown = JSON.parse(reduced.value)
         const bytes = utf8Length(reduced.value)
         if (bytes > Bridge.maxStateBytes) {
           return crossed(
@@ -483,6 +493,7 @@ export const make = (
             `reduce returned ${bytes} bytes of state, over the ${Bridge.maxStateBytes}-byte limit`
           )
         }
+        const next: unknown = JSON.parse(reduced.value)
         const html = renderIn(realm, input.module, props, reduced.value)
         return html.ok ? { ok: true, value: { state: next, html: html.value } } : html
       }).pipe(SpanFailure.withSpan("PresentationRealm.interact"))

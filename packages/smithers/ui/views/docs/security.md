@@ -67,8 +67,10 @@ limits and counts (`obs.content-free`).
 - **The stack bound is relative to the host's stack.** QuickJS must stop a
   recursion before the host's own stack does. The default, 128 KiB, costs
   about 384 KiB of host stack. A host stack overflow inside the realm leaves
-  that runtime unusable; the realm abandons it, does not dispose it, and loads
-  a fresh one.
+  that runtime unusable; the realm abandons it and quarantines the shared WASM
+  module. Further calls and realm construction over that module fail closed,
+  bounding abandoned runtimes to one per module. A host must supply a fresh
+  variant to recover.
 - **The checker is depth, not the boundary.** A computed property name passes
   it; the realm, the render guard and the frame stand behind it.
 - **`detail` is the caller's to guard.** It is redacted so that printing,

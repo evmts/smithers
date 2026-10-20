@@ -76,6 +76,17 @@ describe("PresentationRealm in workerd", () => {
     expect(body.error).toMatchObject({ _tag: "@smthrs/views/RealmError", reason: "limit_exceeded" })
   })
 
+  it("stops recursion inside workerd and still renders the next request", async () => {
+    const { body, status } = await inWorkerd({
+      source: "export default function View() { function deep(n) { return deep(n + 1) + 1 } return <p>{deep(0)}</p> }",
+      props: {},
+      state: null
+    })
+    expect(status).toBe(422)
+    expect(body.error).toMatchObject({ reason: "limit_exceeded", limit: "stack" })
+    expect((await inWorkerd(jobs[1]!)).status).toBe(200)
+  })
+
   it("refuses a module the checker refuses, inside workerd too", async () => {
     const { body, status } = await inWorkerd({ source: "export default () => <script />", props: {}, state: null })
     expect(status).toBe(422)

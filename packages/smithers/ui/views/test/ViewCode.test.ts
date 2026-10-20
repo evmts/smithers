@@ -23,6 +23,15 @@ describe("ViewCode.check accepts", () => {
     expect(checked.compiled).not.toContain("import ")
   })
 
+  it("accepts an explicit class constructor while refusing constructor access", () => {
+    expect(
+      check(
+        "class Value { n: number; constructor(n: number) { this.n = n } } export default () => <p>{new Value(3).n}</p>"
+      ).compiled
+    ).toContain("constructor")
+    expect(messages("export default () => <p>{({}).constructor}</p>").join(" ")).toContain("constructor")
+  })
+
   it("a view with no interactions", () => {
     const checked = check(comparison)
     expect(checked.interactions).toEqual({})

@@ -173,7 +173,9 @@ class RealmError {
 ```
 
 After a time, step, memory or stack limit the realm loads again on its next
-call. After a host stack overflow it is abandoned, never disposed.
+call. A host stack overflow instead abandons the runtime without disposal and
+quarantines its shared WASM module. Calls and new realms over that module fail
+closed; supply a fresh variant to recover.
 
 `detail` says what went wrong for the renderer that wrote the module, such as
 `RangeError: no board`. It can quote the module or what the module threw,
@@ -214,7 +216,7 @@ element constructors refuse refused elements and attributes at render time.
 
 ### `Presentation.make`
 
-The same renderer without publishing it or freezing anything, for tests.
+The same renderer without publishing it on the global, for tests. It shallow-freezes the React, JSX-runtime, component and `smithers:view` facades; deep hardening happens only during `install`.
 
 ### `Presentation.Installed`
 

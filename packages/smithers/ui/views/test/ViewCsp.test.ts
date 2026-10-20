@@ -57,7 +57,7 @@ describe("ViewCsp.frameDocument", () => {
     const runtime = "window.started = true"
     const html = document(runtime)
     expect(html).toContain(`<script>${runtime}</script>`)
-    expect(html).toContain(ViewCsp.policy(ViewCsp.hash(runtime)).replace(/'/g, "'"))
+    expect(html).toContain(ViewCsp.policy(ViewCsp.hash(runtime)))
     expect(html.match(/<script/g)).toHaveLength(1)
   })
 

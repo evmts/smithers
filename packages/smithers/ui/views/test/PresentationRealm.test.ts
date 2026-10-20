@@ -28,6 +28,49 @@ const compiled = (body: string) =>
   `"use strict";var _j = require("react/jsx-runtime");exports.default = function View(input) { ${body} };`
 
 describe("PresentationRealm renders in Node", () => {
+  it("exposes no host globals even when the checker is bypassed", async () => {
+    const names = ["fetch", "XMLHttpRequest", "WebSocket", "setTimeout", "document", "WeakRef", "FinalizationRegistry"]
+    const html = await withRealm((realm) =>
+      realm.render({
+        module: unchecked(
+          compiled(`return _j.jsx("p", { children: [${names.map((name) => `typeof ${name}`).join(",")}].join(",") })`)
+        ),
+        props: {},
+        state: null
+      })
+    )
+    expect(html).toBe(`<p>${names.map(() => "undefined").join(",")}</p>`)
+  })
+
+  it("has no dynamic import loader in the QuickJS module the realm uses", async () => {
+    const module = await QuickJSVariant.compiledModule.pipe(Effect.provide(layerSingleFile), Effect.runPromise)
+    const runtime = module.newRuntime()
+    const context = runtime.newContext()
+    try {
+      const promise = context.unwrapResult(context.evalCode("import(\"https://example.invalid/escape.js\")"))
+      try {
+        const jobs = runtime.executePendingJobs()
+        expect(jobs.error).toBeUndefined()
+        const state = context.getPromiseState(promise)
+        expect(state.type).toBe("rejected")
+        if (state.type !== "rejected") throw new Error("Dynamic import unexpectedly admitted")
+        try {
+          expect(context.dump(state.error)).toMatchObject({
+            name: "ReferenceError",
+            message: expect.stringContaining("could not load module")
+          })
+        } finally {
+          state.error.dispose()
+        }
+      } finally {
+        promise.dispose()
+      }
+    } finally {
+      context.dispose()
+      runtime.dispose()
+    }
+  })
+
   it("renders real components, keeping their classes and data-event attributes", async () => {
     const html = await withRealm((realm) =>
       realm.render({ module: checked(ticTacToe), props: { title: "Game" }, state: emptyBoard })
@@ -166,7 +209,7 @@ describe("PresentationRealm bounds every render", () => {
     expect(error).toMatchObject({ reason: "limit_exceeded", limit: "stack" })
   })
 
-  it("abandons a realm whose host stack overflowed, and renders the next module in a fresh one", async () => {
+  it("quarantines a module after host stack overflow instead of leaking more runtimes", async () => {
     // A stack bound larger than the host's lets the host overflow first. A
     // variant of its own keeps the damaged module away from the other tests.
     const variant = QuickJSVariant.layerVariant(newVariant(singlefile as unknown as QuickJSSyncVariant, {}))
@@ -179,7 +222,7 @@ describe("PresentationRealm bounds every render", () => {
             state: null
           })
         )
-        const after = yield* realm.render({ module: checked(comparison), props: { rows: [] }, state: null })
+        const after = yield* failure(realm.render({ module: checked(comparison), props: { rows: [] }, state: null }))
         return [error, after] as const
       }), { limits: { stackBytes: 1024 * 1024 }, variant })
     expect(described(error)).toMatchObject({
@@ -188,7 +231,25 @@ describe("PresentationRealm bounds every render", () => {
       message: "The view crossed its stack limit",
       detail: "The view overflowed the host's stack"
     })
-    expect(after).toContain("<table>")
+    expect(after).toMatchObject({ reason: "load_failed" })
+    const again = await Effect.gen(function*() {
+      return yield* Effect.flip(PresentationRealm.make({ bundle: yield* Effect.promise(bundle) }))
+    }).pipe(Effect.scoped, Effect.provide(variant), Effect.runPromise)
+    expect(again).toMatchObject({ reason: "load_failed" })
+  })
+
+  it("bounds reduce output before parsing host JSON", async () => {
+    const source = `globalThis.__smithersPresentation = { components: [], render: () => "", reduce: () => "x".repeat(${
+      Bridge.maxStateBytes + 1
+    }) }`
+    const error = await withRealm((realm) =>
+      failure(realm.interact({
+        module: unchecked(""),
+        props: {},
+        state: null,
+        event: { name: "go" }
+      })), { bundle: source })
+    expect(error).toMatchObject({ reason: "limit_exceeded", limit: "state" })
   })
 
   it("refuses HTML over the bridge's bound", async () => {
@@ -483,6 +544,9 @@ describe("PresentationRealm loads its bundle", () => {
     const error = await Effect.runPromise(
       Effect.flip(realm.render({ module: checked(comparison), props: { rows: [] }, state: null }))
     )
-    expect(described(error)).toMatchObject({ reason: "load_failed", detail: "The realm's scope has closed" })
+    expect(described(error)).toMatchObject({
+      reason: "load_failed",
+      detail: "The realm is closed or its QuickJS module is quarantined"
+    })
   })
 })

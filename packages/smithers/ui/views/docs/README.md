@@ -24,7 +24,8 @@ page: GeneratedView ─▶ iframe sandbox="allow-scripts" srcdoc (ViewCsp) ─�
 - **Bounded renders.** Time, interpreter steps, memory, stack, HTML size,
   state size and props size bound every render. An infinite loop, a memory
   bomb or unbounded recursion fails as a typed `RealmError`, and the realm
-  loads again for the next render.
+  loads again for the next render. A host stack overflow quarantines the shared
+  WASM module instead; a fresh variant is required to recover.
 - **Views stay apart.** The realm freezes everything reachable from its
   global after the bundle loads, so one module cannot change what the next
   one renders.
@@ -34,8 +35,7 @@ page: GeneratedView ─▶ iframe sandbox="allow-scripts" srcdoc (ViewCsp) ─�
 - **Declared events only.** The page refuses a message from any other window,
   a wrong nonce, an undeclared event, form values over 16 KB, and more than
   ten interactions a second.
-- **The same render everywhere.** The same module renders byte for byte the
-  same in Node, a browser, Bun and local workerd.
+- **The same render everywhere.** Node and local workerd tests compare the same module byte for byte. Browser and Bun render parity is unverified.
 
 ## Pages
 

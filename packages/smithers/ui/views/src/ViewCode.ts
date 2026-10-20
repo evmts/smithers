@@ -485,7 +485,10 @@ const walk = (program: Node, components: ReadonlySet<string>, findings: Findings
         if (isReference(parent, key) && refusedNames.has(name)) {
           findings.problems.push(at(node, `${name} is refused in a view`))
         }
-        if (!isReference(parent, key) && refusedProperties.has(name)) {
+        if (
+          !isReference(parent, key) && refusedProperties.has(name) &&
+          !(parent.type === "ClassMethod" && parent.kind === "constructor" && key === "key")
+        ) {
           findings.problems.push(at(node, `The property ${name} is refused in a view`))
         }
         break
