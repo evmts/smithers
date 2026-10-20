@@ -41,10 +41,21 @@ export const toolchainRefusal = (engines, found) => {
   return `Smithers requires Bun ${engines.bun} and Node ${engines.node}; found ${measured.join(", ")}.`
 }
 
-/** The release of the `node` on PATH, or undefined when there is none. */
+/**
+ * The release of the `node` on PATH, or undefined when there is none or it
+ * printed no release. Bun's spawn on Linux CI can report a clean exit with
+ * empty output for every later file of a long run (#3763); an unread Node is
+ * not judged, as an absent one is not, rather than failing each file's preload.
+ * It says so in one line holding what the spawn returned, for #3763.
+ */
 const nodeOnPath = () => {
   const result = spawnSync("node", ["--version"], { encoding: "utf8", timeout: 5_000 })
-  return result.status === 0 ? result.stdout.trim().replace(/^v/, "") : undefined
+  if (result.error?.code === "ENOENT") return undefined
+  const stdout = String(result.stdout ?? "")
+  const release = result.status === 0 ? stdout.trim().replace(/^v/, "") : ""
+  if (/^\d+\.\d+\.\d+/.test(release)) return release
+  process.stderr.write(`require-toolchain: Node unmeasured: node --version gave status ${result.status}, signal ${result.signal}, error ${result.error?.code ?? "none"}, stdout ${JSON.stringify(stdout.slice(0, 80))}, stderr ${String(result.stderr ?? "").length} bytes (#3763)\n`)
+  return undefined
 }
 
 /**
