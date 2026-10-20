@@ -16,6 +16,7 @@
  */
 
 import { lstatSync, readdirSync, readFileSync } from "node:fs"
+import { isBuiltin } from "node:module"
 import { join, matchesGlob } from "node:path"
 import * as ImportAnalysis from "./ImportAnalysis.ts"
 
@@ -134,12 +135,22 @@ export interface ForbidCallsRule extends RuleScope {
 }
 
 /**
+ * Forbids Node builtins (including bare names) and Node/Bun module schemes.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface ForbidHostModulesRule extends RuleScope, TypeOnlyOption {
+  readonly kind: "forbidHostModules"
+}
+
+/**
  * One rule of an `ImportRules` declaration.
  *
  * @category models
  * @since 0.1.0
  */
-export type ImportRule = ForbidRule | ForbidNamesRule | RootImportsOnlyRule | ForbidCallsRule
+export type ImportRule = ForbidHostModulesRule | ForbidRule | ForbidNamesRule | RootImportsOnlyRule | ForbidCallsRule
 
 /**
  * One source that breaks one rule.
@@ -184,11 +195,12 @@ export const sourceExtensions: ReadonlyArray<string> = [".ts", ".tsx", ".mts", "
  */
 const skippedDirectories = new Set(["node_modules", "dist", "coverage", "target", "tmp", "test-results", "playwright-report"])
 
-const kinds = ["forbid", "forbidNames", "rootImportsOnly", "forbidCalls"] as const
+const kinds = ["forbid", "forbidNames", "rootImportsOnly", "forbidCalls", "forbidHostModules"] as const
 
 /** The keys each rule kind accepts, beyond `kind`, `because` and `files`. */
 const kindKeys: Readonly<Record<ImportRule["kind"], ReadonlyArray<string>>> = {
   forbid: ["modules", "allowTypeOnly"],
+  forbidHostModules: ["allowTypeOnly"],
   forbidNames: ["modules", "names", "allowTypeOnly"],
   rootImportsOnly: ["packages", "allowTypeOnly"],
   forbidCalls: ["callees"]
@@ -341,6 +353,12 @@ const breaches = (
       continue
     }
     if (allowTypeOnly && reference.typeOnly) continue
+    if (rule.kind === "forbidHostModules") {
+      if (specifier.startsWith("node:") || specifier.startsWith("bun:") || specifier === "bun" || isBuiltin(specifier)) {
+        found.push({ line: reference.line, usage: `${verb(reference)} "${specifier}"` })
+      }
+      continue
+    }
     if (rule.kind === "forbid") {
       if (matchesAny(specifier, rule.modules)) found.push({ line: reference.line, usage: `${verb(reference)} "${specifier}"` })
       continue

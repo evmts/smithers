@@ -14,6 +14,7 @@ export type {
   ForbidCallsRule,
   ForbidNamesRule,
   ForbidRule,
+  ForbidHostModulesRule,
   ImportRule,
   RootImportsOnlyRule,
   RuleScope as ImportRuleScope,

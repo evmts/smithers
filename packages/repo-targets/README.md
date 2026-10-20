@@ -49,11 +49,13 @@ export const Package = Smithers.Package({ targets: { importRules: ImportRules({ 
 
 Run it with `pnpm exec smithers-build test '//apps/mvp:importRules'`; `ci` plans it too. It is not cached.
 
+`forbidHostModules` uses the AST import analysis and Node’s builtin registry, including bare names such as `stream/web`, plus every `node:` and `bun:` specifier and `bun`. `SdkRules` applies it to library and app-library sources; host and component roles are exempt. See [host boundaries](docs/host-boundaries.md).
+
 Every rule takes:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `kind` | `"forbid"`, `"forbidNames"`, `"rootImportsOnly"` or `"forbidCalls"` | What the rule checks. |
+| `kind` | `"forbid"`, `"forbidNames"`, `"rootImportsOnly"`, `"forbidCalls"` or `"forbidHostModules"` | What the rule checks. |
 | `because` | `string`, required | Why, naming the `AGENTS.md` rule that governs it. Every violation prints it. |
 | `files` | `ReadonlyArray<string>`, optional | Package-relative globs of the sources the rule reads, matched with `node:path` `matchesGlob`: `*` stops at `/`, `**` crosses it. Default: every source. |
 | `allowTypeOnly` | `boolean`, optional, not on `forbidCalls` | Let through a reference that loads nothing at runtime: `import type`, `export type`, a `type` modifier on a named element, or an `import()` type. Default `false`: type-only imports count. `import { type A } from "x"` still counts as importing `x`, because `verbatimModuleSyntax` keeps it. |
@@ -61,6 +63,7 @@ Every rule takes:
 | Kind | Field | Fails on |
 | --- | --- | --- |
 | `forbid` | `modules`: specifier globs (`effect` is the root, `effect/*` one level, `effect/**` every subpath) | A static import, a re-export, `import x = require()`, `import()`, `require()` or an `import()` type of a matching module. |
+| `forbidHostModules` | none | A parsed import of a Node builtin or a Node/Bun module scheme. |
 | `forbidNames` | `modules`, and `names`: exported names matched exactly | A named import or re-export of a name, a default import (`default`), or a member read through a namespace or default binding, such as `React.useState`. |
 | `rootImportsOnly` | `packages`: package-name globs, such as `@smthrs/*` | A specifier naming a subpath of a matching package, such as `@smthrs/model/ModelError`. |
 | `forbidCalls` | `callees`: callee texts matched exactly, such as `Model.stream`, or `*.<member>`, such as `*.route` | A call whose callee reads as an exact entry, or ends in an entry's `<member>` whatever the receiver. See [Callees](#callees). |

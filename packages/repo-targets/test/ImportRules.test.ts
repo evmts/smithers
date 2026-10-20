@@ -44,7 +44,8 @@ describe("validateRules", () => {
       valid,
       { kind: "forbidNames", files: ["src/**/*.tsx"], modules: ["react"], names: ["useState"], allowTypeOnly: true, because },
       { kind: "rootImportsOnly", packages: ["@smthrs/*"], because },
-      { kind: "forbidCalls", callees: ["Model.stream", "*.route", "*.#send", "*.$"], because }
+      { kind: "forbidCalls", callees: ["Model.stream", "*.route", "*.#send", "*.$"], because },
+      { kind: "forbidHostModules", because }
     ]
     expect(validateRules(rules)).toBe(rules)
   })
@@ -55,7 +56,7 @@ describe("validateRules", () => {
     ["a null rule", [null], "ImportRules rule 0: must be an object"],
     ["an array rule", [[]], "ImportRules rule 0: must be an object"],
     ["a string rule", ["forbid"], "ImportRules rule 0: must be an object"],
-    ["an unknown kind", [{ kind: "ban", because }], "ImportRules rule 0: `kind` must be one of forbid, forbidNames, rootImportsOnly, forbidCalls"],
+    ["an unknown kind", [{ kind: "ban", because }], "ImportRules rule 0: `kind` must be one of forbid, forbidNames, rootImportsOnly, forbidCalls, forbidHostModules"],
     ["a misspelled key", [valid, { kind: "forbid", module: ["effect"], because }], "ImportRules rule 1: forbid does not take `module`"],
     ["a type option on calls", [{ kind: "forbidCalls", callees: ["f"], allowTypeOnly: true, because }], "ImportRules rule 0: forbidCalls does not take `allowTypeOnly`"],
     ["no reason", [{ kind: "forbid", modules: ["effect"] }], "ImportRules rule 0: `because` must say why, naming the AGENTS.md rule that governs it"],

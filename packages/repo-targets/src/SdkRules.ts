@@ -90,7 +90,6 @@ const effectFirst: ReadonlyArray<Role> = ["library", "app-library", "host"]
 const platformNeutral: ReadonlyArray<Role> = ["library", "app-library"]
 const generic: ReadonlyArray<Role> = ["library", "host"]
 
-const hostModules = ["node:*", "bun:*", "fs", "path", "crypto", "child_process", "os", "url", "module"]
 const runCalls = ["*.runPromise", "*.runPromiseExit", "*.runSync", "*.runSyncExit", "*.runFork", "*.runCallback"]
 
 /** The `@smthrs/*` glob that leaves out the packages a declaration still deep-imports. */
@@ -112,9 +111,8 @@ const rootImportPackages = (known: KnownDeepImports | undefined): string => {
 const importRulesFor = (role: Role, known: KnownDeepImports | undefined): ReadonlyArray<ImportRule> => [
   ...(platformNeutral.includes(role)
     ? [{
-      kind: "forbid" as const,
+      kind: "forbidHostModules" as const,
       files: ["src/**"],
-      modules: hostModules,
       because: "sdk.platform-neutral: host code lives in @smthrs/platform-* and arrives as injected services. See " +
         "\"Use the Smithers libraries\" in the root AGENTS.md."
     }]

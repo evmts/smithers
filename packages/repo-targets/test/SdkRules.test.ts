@@ -1,3 +1,4 @@
+import { builtinModules } from "node:module"
 import { Smithers } from "@smthrs/targets"
 import { describe, expect, it } from "vitest"
 import type { ImportRule } from "../src/ImportRulesCheck.ts"
@@ -44,12 +45,39 @@ describe("SdkRules", () => {
   it("holds a library to every deterministic rule, in src/ and, for root imports, examples/", () => {
     expect(found("library")).toEqual([
       "examples/deep.ts:1 rootImportsOnly",
-      "src/Bad.ts:1 forbid",
+      "src/Bad.ts:1 forbidHostModules",
       "src/Bad.ts:2 rootImportsOnly",
       "src/Bad.ts:3 rootImportsOnly",
       "src/Bad.ts:5 forbidCalls"
     ])
     expect(found("app-library")).toEqual(found("library"))
+  })
+
+  it("rejects nested host specifiers and all bare builtins through parsed imports", () => {
+    const specifiers = [...builtinModules, "node:fs/promises", "node:assert/strict", "node:test/reporters", "node:future/nested", "fs/promises", "assert/strict", "stream/web", "timers/promises", "http", "v8", "vm", "worker_threads", "bun:ffi/nested", "bun"]
+    const forms = [
+      (name: string) => `import value from "${name}"`,
+      (name: string) => `export * from "${name}"`,
+      (name: string) => `const value = import("${name}")`,
+      (name: string) => `const value = require("${name}")`,
+      (name: string) => `type Value = import("${name}").Value`
+    ]
+    for (const role of ["library", "app-library", "host", "components"] as const) {
+      const rules = importRulesOf(SdkRules({ cwd: "packages/x", role }).importRules)
+      for (const name of specifiers) {
+        for (const form of forms) {
+          const violations = check(rules, [{ path: "src/Boundary.ts", text: form(name) }])
+          expect(violations, `${role}: ${form(name)}`).toHaveLength(role === "library" || role === "app-library" ? 1 : 0)
+        }
+      }
+      if (role === "library") {
+        expect(check([{ kind: "forbidHostModules", allowTypeOnly: true, because: "host boundary" }], [
+          { path: "src/Types.ts", text: 'import type { Stats } from "fs"' }
+        ])).toEqual([])
+      }
+      const portable = ["@smthrs/platform-node", "effect", "http-client", "node-fetch", "./fs", "fs-extra", "@scope/fs", "bun-tools"]
+      expect(check(rules, portable.map((name, i) => ({ path: `src/Portable${i}.ts`, text: `import value from "${name}"` })))).toEqual([])
+    }
   })
 
   it("lets a host package import platform code, and a component package also run Effects", () => {
@@ -70,7 +98,7 @@ describe("SdkRules", () => {
     const because = "HostTools reads the CLI catalog, which the CLI root cannot carry into a neutral host."
     expect(found("library", { packages: ["@smthrs/cli"], because })).toEqual([
       "examples/deep.ts:1 rootImportsOnly",
-      "src/Bad.ts:1 forbid",
+      "src/Bad.ts:1 forbidHostModules",
       "src/Bad.ts:2 rootImportsOnly",
       "src/Bad.ts:5 forbidCalls"
     ])
