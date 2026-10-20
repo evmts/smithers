@@ -28,7 +28,7 @@ import { test, type TestContext } from "node:test"
 import { fileURLToPath } from "node:url"
 import { factory } from "../../FACTORY.ts"
 import { bundle } from "../coding/build.mjs"
-import { missingCodingExecutables, provisionHostBuiltins } from "../coding/host.ts"
+import { missingCodingExecutables, provisionHostBuiltins, repositoryJobsServed } from "../coding/host.ts"
 import { Landing } from "../coding/landing.ts"
 import { loadProject } from "../coding/project-config.ts"
 import { bindRepositoryRegistry, provisionBuiltins, repositoryCatalog } from "../repository/registry.ts"
@@ -78,12 +78,24 @@ const workspace = async (t: TestContext) => {
   return { repositoryPath, stateRoot }
 }
 
-/** What the host's startup check reports missing, and the names the registry lists. */
-const startup = (repositoryPath: string, stateRoot: string, provision: "host" | "defaults", withLanding = true) =>
+/** What the host's startup check reports missing, the names the registry lists
+ * and the delegates its catalog resolved. `hosted` is the fixed flow catalog a
+ * hosted box serves. */
+const startup = (
+  repositoryPath: string,
+  stateRoot: string,
+  provision: "host" | "defaults",
+  withLanding = true,
+  hosted = false
+) =>
   Effect.gen(function*() {
     const planning = yield* loadProject(repositoryPath, undefined)
     assert.ok(planning?.wiki, "the project configures planning and its wiki")
-    const options = withLanding ? { planning, landing } : { planning }
+    const options = {
+      planning,
+      ...(withLanding ? { landing } : {}),
+      ...(hosted ? { fixedFlowCatalog: true } : {})
+    }
     const builtins = provision === "host"
       ? yield* provisionHostBuiltins(stateRoot, policy, options)
       : yield* provisionBuiltins(stateRoot, policy)
@@ -91,11 +103,14 @@ const startup = (repositoryPath: string, stateRoot: string, provision: "host" | 
       sources: [{ root: join(repositoryPath, ".smithers", "flows"), source: "project", naming: "path" }]
     }).pipe(Effect.provide(Discovery.layer))
     const registry = bindRepositoryRegistry(project, builtins.registry, policy, systemFlows)
-    const built = yield* repositoryCatalog({ delegates: [RunSetup, RunJob, RunTrigger] }, builtins.load).pipe(
+    // The host's own delegate list: the job delegates only where it serves jobs.
+    const delegates = repositoryJobsServed(options) ? [RunSetup, RunJob, RunTrigger] : []
+    const built = yield* repositoryCatalog({ delegates }, builtins.load).pipe(
       Effect.provideService(Registry.Registry, registry)
     )
     const listed = (yield* registry.list()).map((entry) => entry.name)
-    return { missing: missingCodingExecutables(built, options), listed }
+    const delegated = built.executables.flatMap((entry) => entry.delegate === undefined ? [] : [entry.delegate])
+    return { missing: missingCodingExecutables(built, options), listed, delegated }
   }).pipe(Effect.provide(platform), Effect.runPromise)
 
 test("a coding project with no .smithers/flows/coding tree serves every configured coding route", async (t) => {
@@ -183,6 +198,39 @@ test("fresh and reused install hosts refuse the five-job setup and maintainer co
       Effect.runPromise
     )
     for (const name of retired) await assert.rejects(access(join(root, name)), { code: "ENOENT" })
+  }
+})
+
+test("fresh and reused hosted hosts serve no repository job and keep every coding route", async (t) => {
+  const { repositoryPath, stateRoot } = await workspace(t)
+  const root = join(stateRoot, "builtin-flows", policy)
+  // A job runs the repository's stored command checks with the network (gate item 2b).
+  const jobs = ["repository/setup", "repository/trigger", "repository-jobs/issues", "repository-jobs/review"]
+  for (const reused of [false, true]) {
+    // A host that served jobs under the same policy left their doors on disk.
+    if (reused) assert.ok((await startup(repositoryPath, stateRoot, "host")).listed.includes("repository-jobs/review"))
+    const started = await startup(repositoryPath, stateRoot, "host", true, true)
+    assert.deepEqual(started.missing, [], "a hosted host still starts with every coding route")
+    for (const name of jobs) assert.equal(started.listed.includes(name), false, name)
+    for (const tag of [RunSetup._tag, RunJob._tag, RunTrigger._tag]) {
+      assert.equal(started.delegated.includes(tag), false, tag)
+    }
+    await Effect.gen(function*() {
+      const { routes } = yield* FileRouter.scan({ root })
+      const commands = yield* Command.make(routes)
+      for (const name of jobs) {
+        assert.equal(routes.some((route) => route.name === name), false, name)
+        assert.equal((yield* commands.execute(name.replaceAll("/", " ")).pipe(Effect.result))._tag, "Failure", name)
+      }
+    }).pipe(
+      Effect.provideService(
+        FlowInvoker.FlowInvoker,
+        FlowInvoker.make({ invoke: () => Effect.die("Hosted job doors must not dispatch") })
+      ),
+      Effect.provide(platform),
+      Effect.runPromise
+    )
+    for (const name of jobs) await assert.rejects(access(join(root, name)), { code: "ENOENT" })
   }
 })
 

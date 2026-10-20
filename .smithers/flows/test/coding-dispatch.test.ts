@@ -28,9 +28,11 @@ import { conversation, DispatchInput, dispatchModels, noChange, seatFor } from "
 import Dispatch, { dispatchRegistration } from "../coding/dispatch/flow.ts"
 import * as CodingFileSystem from "../coding/filesystem.ts"
 import * as HostRegistry from "../coding/host-registry.ts"
-import { repositoryFlowsServed, roleResolver } from "../coding/host.ts"
+import { provisionHostBuiltins, repositoryFlowsServed, roleResolver } from "../coding/host.ts"
 import { NativeCoding } from "../coding/native.ts"
 import { composeRoot } from "../coding/serve-host.ts"
+import { bindRepositoryRegistry } from "../repository/registry.ts"
+import { systemFlows } from "./fixtures/system-flows.ts"
 
 const changeId = "k".repeat(32)
 const commitId = "a".repeat(40)
@@ -430,12 +432,20 @@ for (const hosted of [false, true]) {
           const state = await realpath(await mkdtemp(join(tmpdir(), "coding-dispatch-state-")))
           t.after(() => rm(state, { recursive: true, force: true }))
           const services = Layer.merge(NodeServices.layer, NodeCrypto.layer)
-          const registry = HostRegistry.layer(
-            root,
-            state,
-            services,
-            repositoryFlowsServed({ repositoryPath: root, ...start.adapters })
-          ).pipe(Layer.provide(services))
+          const policy = "a".repeat(64)
+          const registry = Layer.effect(Registry.Registry)(
+            Effect.gen(function*() {
+              const base = yield* Registry.Registry
+              const builtins = yield* provisionHostBuiltins(state, policy, start.adapters)
+              return bindRepositoryRegistry(base, builtins.registry, policy, systemFlows)
+            })
+          ).pipe(
+            Layer.provide(
+              HostRegistry.layer(root, state, services, repositoryFlowsServed({ repositoryPath: root, ...start.adapters }))
+            ),
+            Layer.provide(services),
+            Layer.orDie
+          )
           shown = await Effect.runPromise(
             Effect.scoped(
               Effect.flatMap(Layer.build(registry), (context) => Context.get(context, Registry.Registry).visible())
@@ -454,6 +464,11 @@ for (const hosted of [false, true]) {
       // And what its prompt names: an install renders them, a hosted host has none.
       for (const name of names) {
         assert.equal(prompts.some((prompt) => prompt.includes(name)), !hosted, `${name} in the model's prompt`)
+      }
+      // The turn completes on a hosted host that serves no repository job (gate item 2b).
+      for (const name of ["repository/setup", "repository/trigger", "repository-jobs/issues", "repository-jobs/review"]) {
+        assert.equal(shown.includes(name), !hosted, `${name} shown: ${shown.join(",")}`)
+        if (hosted) assert.ok(!prompts.some((prompt) => prompt.includes(name)), `${name} in the model's prompt`)
       }
     }
   )
