@@ -12,8 +12,10 @@ describe("integration product scope", () => {
     expect(Object.keys(Integrations).sort()).toEqual(["Core", "GitHub"])
     expect(Object.keys(Integrations.GitHub).sort()).toEqual([
       "Actions",
+      "AppAuth",
       "Config",
       "GitHubClient",
+      "Issues",
       "Payload",
       "Proxy",
       "RateLimit",

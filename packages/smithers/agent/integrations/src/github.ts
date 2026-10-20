@@ -17,6 +17,12 @@
 export * as Actions from "./github/Actions.ts"
 
 /**
+ * @category services
+ * @since 1.0.0
+ */
+export * as AppAuth from "./github/AppAuth.ts"
+
+/**
  * @category constructors
  * @since 1.0.0
  */
@@ -27,6 +33,12 @@ export * as Config from "./github/Config.ts"
  * @since 1.0.0
  */
 export * as GitHubClient from "./github/GitHubClient.ts"
+
+/**
+ * @category constructors
+ * @since 1.0.0
+ */
+export * as Issues from "./github/Issues.ts"
 
 /**
  * @category schemas

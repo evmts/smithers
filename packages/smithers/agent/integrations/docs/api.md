@@ -391,6 +391,25 @@ request's result type: a caller cannot name a response type the client never
 decoded. `Page` fields: `items` and `truncated`. `RequestMethod` is
 `"GET" | "POST" | "PATCH" | "PUT" | "DELETE"`.
 
+### GitHub.AppAuth
+
+A GitHub App's own authentication: the RS256 JWT and installation tokens,
+through WebCrypto. The private key may be PKCS#1 PEM, as GitHub downloads it,
+or PKCS#8 PEM, with newlines optionally escaped as `\n`. Every call goes
+through a `GitHubClient` built with the JWT and an empty environment. Neither
+the key, the JWT, nor a minted token appears in an error or a span attribute.
+
+| Export                      | Signature                                                                        | Notes                                                                                                                                                                                                              |
+| --------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `make`                      | `(credentials: AppCredentials) => Effect<AppAuth, IntegrationError, HttpClient>` | `AppCredentials`: `appId`, `privateKey: Redacted<string>`, `apiBaseUrl?`, `requestTimeout?`. A key that does not parse or import, or a bad `appId`, fails `invalid-config`.                                        |
+| `layer`                     | `(credentials: AppCredentials) => Layer<AppAuth, IntegrationError, HttpClient>`  | Service tag `AppAuth` (`@smthrs/integrations/AppAuth`).                                                                                                                                                            |
+| `AppAuth.jwt`               | `Effect<Redacted<string>, IntegrationError>`                                     | RS256; `iat` 60 s back, `exp` 9 minutes ahead, `iss` the app ID; time from the `Clock` service.                                                                                                                    |
+| `AppAuth.installation`      | `(owner, repo) => Effect<{ id: number }, IntegrationError>`                      | `GET /repos/{owner}/{repo}/installation`. Not installed fails `delivery-failed`, `details.status` 404, not retryable.                                                                                              |
+| `AppAuth.installationToken` | `(options) => Effect<InstallationToken, IntegrationError>`                       | `POST /app/installations/{id}/access_tokens`, narrowed by `repositories`, `repositoryIds` and `permissions`. `InstallationToken`: `token: Redacted<string>`, `expiresAt` (epoch ms). A lost answer is `retryable`. |
+| `importPrivateKey`          | `(pem: Redacted<string>) => Effect<CryptoKey, IntegrationError>`                 | PKCS#1 or PKCS#8 PEM to a non-extractable RS256 signing key.                                                                                                                                                       |
+| `JWT_BACKDATE_SECONDS`      | `60`                                                                             | How far back `iat` is set.                                                                                                                                                                                         |
+| `JWT_LIFETIME_SECONDS`      | `540`                                                                            | How far ahead `exp` is set.                                                                                                                                                                                        |
+
 ### GitHub.RateLimit
 
 The limiter the [GitHub proxy](#githubproxy) runs for each principal, so a
@@ -485,6 +504,29 @@ explains the pattern.
 | `closesIssue`                                                                   | `(body, issue, sameRepository) => boolean`                    | Whether a description closes the issue with any GitHub closing keyword.                                                                                                                                                                                                                                                     |
 | `layerAddLabels`, `layerUpsertComment`, `layerCheckRun`, `layerLinkPullRequest` | same as `layerCommentOnIssue`                                 | Implement each action over the client in context.                                                                                                                                                                                                                                                                           |
 | `layer`                                                                         | same                                                          | Every GitHub action's implementation in one layer.                                                                                                                                                                                                                                                                          |
+
+### GitHub.Issues
+
+Issue and issue-comment operations over the `GitHubClient` in context, plus
+the hidden write marker a step adopts its own earlier write by. A step POSTs
+once; on a retry after `outcomeUnknown` it calls the finder first, adopts what
+it finds, and writes only when nothing carries its marker. Coordinates are
+validated as `Repository.repositoryPath` does.
+
+| Export                               | Signature                                                                                                   | Notes                                                                                                                                                |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getIssue`                           | `(owner, repo, number) => Effect<Issue, IntegrationError, GitHubClient>`                                    | `GET /repos/{owner}/{repo}/issues/{number}`.                                                                                                         |
+| `listComments`                       | `(owner, repo, number, options?) => Effect<{ items, truncated }, IntegrationError, GitHubClient>`           | Oldest first; `options.since` (ISO 8601) and `options.maxPages` (default 10).                                                                        |
+| `createIssue`                        | `(owner, repo, { title, body }) => Effect<Issue, IntegrationError, GitHubClient>`                           | `POST /repos/{owner}/{repo}/issues`. A lost answer fails `outcomeUnknown`.                                                                           |
+| `createComment`                      | `(owner, repo, number, body) => Effect<IssueComment, IntegrationError, GitHubClient>`                       | `POST /repos/{owner}/{repo}/issues/{number}/comments`. A lost answer fails `outcomeUnknown`.                                                         |
+| `findIssueByWrite`                   | `(owner, repo, { writeId, since }) => Effect<Option<Issue>, IntegrationError, GitHubClient>`                | Issues updated since `since`, newest created first, at most `Actions.RECONCILE_PAGES` pages; pull requests skipped. The earliest-created match wins. |
+| `findCommentByWrite`                 | `(owner, repo, number, { writeId, since }) => Effect<Option<IssueComment>, IntegrationError, GitHubClient>` | The same for one issue's comments.                                                                                                                   |
+| `writeMarker`                        | `(writeId: string) => string`                                                                               | `<!-- smithers:write=ID -->`; `ID` is 1 to 100 letters, digits and hyphens, else throws `invalid-config`.                                            |
+| `withWriteMarker`                    | `(body: string, writeId: string) => string`                                                                 | `body`, a blank line, then the marker.                                                                                                               |
+| `writeIdOf`                          | `(body: string \| null \| undefined) => string \| undefined`                                                | The last marker's write id; whitespace tolerated.                                                                                                    |
+| `withoutWriteMarker`                 | `(body: string) => string`                                                                                  | The body with every marker, and the blank line before it, removed.                                                                                   |
+| `Issue`, `IssueComment`, `IssueUser` | schemas                                                                                                     | GitHub's JSON narrowed to the fields Smithers reads; a missing `state_reason` decodes as `null`, and `pull_request` is present on a pull request.    |
+| `WRITE_ID_PATTERN`                   | regex                                                                                                       | The write id rule.                                                                                                                                   |
 
 ### GitHub.Sync
 

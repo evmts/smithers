@@ -1,6 +1,6 @@
 ---
 title: "GitHub"
-description: "Configure the GitHub adapter: credentials, REST calls, and the comment action."
+description: "Configure the GitHub adapter: credentials, App authentication, REST calls, idempotent issue writes, and the comment action."
 sidebar:
   order: 1
 ---
@@ -35,6 +35,45 @@ const app = yield * GitHub.GitHubClient.make({ clientCredentials: { clientId, cl
 // Revokes a user's token: 204, or 404 or 422 when GitHub no longer has it.
 yield * app.request("DELETE", `/applications/${clientId}/token`, { access_token })
 ```
+
+## Authenticate as the App
+
+`GitHub.AppAuth` signs a GitHub App's JWT and mints installation tokens.
+Pass the App's ID (or client ID) and its private key as GitHub downloads it,
+PKCS#1 PEM; a PKCS#8 PEM works too, and so does a key whose newlines an
+environment variable carries escaped as `\n`. A key that does not parse or
+import fails `invalid-config` without quoting it.
+
+```ts
+import { GitHub } from "@smthrs/integrations"
+import { Effect, Redacted } from "effect"
+import { FetchHttpClient } from "effect/http"
+
+const token = Effect.gen(function*() {
+  const app = yield* GitHub.AppAuth.make({ appId: APP_ID, privateKey: Redacted.make(PRIVATE_KEY) })
+  const { id } = yield* app.installation("OWNER", "REPO")
+  return yield* app.installationToken({
+    installationId: id,
+    repositories: ["REPO"],
+    permissions: { issues: "write" }
+  })
+}).pipe(Effect.provide(FetchHttpClient.layer))
+```
+
+Replace `APP_ID` and `PRIVATE_KEY` with the App's ID and key, and `OWNER` and
+`REPO` with the repository coordinates.
+
+- `jwt` is RS256 with `iat` 60 seconds back and `exp` 9 minutes ahead, inside
+  GitHub's 10-minute ceiling, on the `Clock` service's time.
+- `installation` fails `delivery-failed` with `details.status` 404 when the
+  App is not installed on the repository.
+- `installationToken` returns the token as `Redacted` and `expiresAt` in
+  epoch milliseconds. A lost answer is `retryable`, because minting again is
+  harmless.
+
+The App's calls never read the ambient environment, so `GITHUB_TOKEN` and
+`SMITHERS_GITHUB_API_BASE_URL` never decide who calls or where the JWT goes.
+Neither the key, the JWT, nor a minted token appears in an error or a span.
 
 ## Call the REST API
 
@@ -206,6 +245,45 @@ The [quickstart](../quickstart.md) shows the complete wiring: the flow, the
 implementation layer, and the client layer. The action fails with
 `Core.ActionFailure.IntegrationFailure`; when `outcomeUnknown` is set, the
 comment may already exist, so check the issue before posting again.
+
+## Write issues and comments idempotently
+
+`GitHub.Issues` reads and writes issues and issue comments over the
+`GitHubClient` in context, so the calling flow step chooses the token by
+providing the client: a person's user token, or an installation token.
+
+A POST whose answer is lost fails with `details.outcomeUnknown: true`, because
+GitHub may have created the issue anyway. Mark every body with a write id the
+step keeps, such as a UUID, and on a retry look before writing again:
+
+```ts
+import { GitHub } from "@smthrs/integrations"
+import { Effect, Option } from "effect"
+
+const { Issues } = GitHub
+
+// `writeId` and `since` are the step's own: a UUID, and when it first ran.
+const openIssue = (writeId: string, since: string, retry: boolean) =>
+  Effect.gen(function*() {
+    if (retry) {
+      const found = yield* Issues.findIssueByWrite("OWNER", "REPO", { writeId, since })
+      if (Option.isSome(found)) return found.value
+    }
+    return yield* Issues.createIssue("OWNER", "REPO", {
+      title: "Crash on start",
+      body: Issues.withWriteMarker("Steps to reproduce", writeId)
+    })
+  })
+```
+
+- `withWriteMarker` appends a blank line and `<!-- smithers:write=ID -->`,
+  which GitHub renders as nothing. `writeIdOf` reads it back and
+  `withoutWriteMarker` removes it for display.
+- `findIssueByWrite` searches the repository's issues, skipping pull
+  requests; `findCommentByWrite` searches one issue's comments. Each returns
+  the earliest-created match, so a copy posted after the original never wins.
+- Each finder reads at most `Actions.RECONCILE_PAGES` pages of items updated
+  since `since`. Keep `since` close to the first attempt.
 
 ## Add another endpoint
 

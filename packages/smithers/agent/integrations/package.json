@@ -58,8 +58,10 @@
     "./core/Sync": "./src/core/Sync.ts",
     "./github": "./src/github.ts",
     "./github/Actions": "./src/github/Actions.ts",
+    "./github/AppAuth": "./src/github/AppAuth.ts",
     "./github/Config": "./src/github/Config.ts",
     "./github/GitHubClient": "./src/github/GitHubClient.ts",
+    "./github/Issues": "./src/github/Issues.ts",
     "./github/Payload": "./src/github/Payload.ts",
     "./github/Proxy": "./src/github/Proxy.ts",
     "./github/RateLimit": "./src/github/RateLimit.ts",
@@ -315,6 +317,16 @@
           "default": "./dist/cjs/github/Actions.js"
         }
       },
+      "./github/AppAuth": {
+        "import": {
+          "types": "./dist/esm/github/AppAuth.d.ts",
+          "default": "./dist/esm/github/AppAuth.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/AppAuth.d.ts",
+          "default": "./dist/cjs/github/AppAuth.js"
+        }
+      },
       "./github/Config": {
         "import": {
           "types": "./dist/esm/github/Config.d.ts",
@@ -333,6 +345,16 @@
         "require": {
           "types": "./dist/cjs/github/GitHubClient.d.ts",
           "default": "./dist/cjs/github/GitHubClient.js"
+        }
+      },
+      "./github/Issues": {
+        "import": {
+          "types": "./dist/esm/github/Issues.d.ts",
+          "default": "./dist/esm/github/Issues.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Issues.d.ts",
+          "default": "./dist/cjs/github/Issues.js"
         }
       },
       "./github/Payload": {
