@@ -79,3 +79,8 @@ limits and counts (`obs.content-free`).
   a correction prompt only.
 - **An app-wide CSP must carry the runtime's hash.** An `about:srcdoc` frame
   inherits the page's policy too. The app sets none today.
+
+The realm shares portable lifecycle primitives and module quarantine with the
+cell sandbox through `QuickJSLifecycle` from `@smthrs/harness`. Presentation
+still removes weak references and hardens the bundle independently; sharing
+lifecycle code never grants a view the harness host bridge.

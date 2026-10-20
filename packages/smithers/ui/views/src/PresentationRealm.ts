@@ -30,7 +30,7 @@
  */
 
 import { SpanFailure } from "@smthrs/flow"
-import { QuickJSVariant, type Sandbox } from "@smthrs/harness"
+import { QuickJSLifecycle, QuickJSVariant, type Sandbox } from "@smthrs/harness"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
@@ -82,7 +82,7 @@ export interface Limits {
  */
 export const defaultLimits: Limits = Object.freeze({
   memoryBytes: 64 * 1024 * 1024,
-  stackBytes: 128 * 1024,
+  stackBytes: QuickJSLifecycle.stackBytes,
   loadMs: 10_000,
   renderMs: 1_000,
   steps: 2_000,
@@ -233,11 +233,7 @@ export const limitHits: Metric.Counter<number> = Metric.counter("realm.limit_hit
 
 /** Removes the realm's clock, randomness and reflection traps before the bundle loads. */
 const prelude = `"use strict";
-delete globalThis.Date;
-delete Math.random;
-delete globalThis.Proxy;
-delete globalThis.WeakRef;
-delete globalThis.FinalizationRegistry;
+${QuickJSLifecycle.prelude(["WeakRef", "FinalizationRegistry"])}
 globalThis.console = Object.freeze({ log() {}, info() {}, warn() {}, error() {}, debug() {} });`
 
 interface Loaded {
@@ -261,9 +257,6 @@ const failed = (reason: typeof Reason.Type, detail: string, limit?: Limit): Outc
 })
 
 const crossed = (limit: Limit, detail: string): Outcome<never> => failed("limit_exceeded", detail, limit)
-
-/** A host overflow leaves one undisposable runtime; never allocate another in that module. */
-const quarantined = new WeakSet<QuickJSWASMModule>()
 
 const close = (loaded: Loaded): void => {
   loaded.render.dispose()
@@ -297,21 +290,16 @@ export const make = (
       )
     )
 
-    if (quarantined.has(module)) {
+    if (QuickJSLifecycle.isQuarantined(module)) {
       return yield* Effect.fail(
         failure("load_failed", "The QuickJS module was quarantined after a host stack overflow")
       )
     }
 
-    let deadline = 0
-    let budget = Number.POSITIVE_INFINITY
-    let steps = 0
+    const interrupt = QuickJSLifecycle.interruptBudget(() => clock.currentTimeMillisUnsafe())
     let hit: Limit | undefined
-
     const arm = (ms: number, stepBudget: number): void => {
-      deadline = clock.currentTimeMillisUnsafe() + ms
-      budget = stepBudget
-      steps = 0
+      interrupt.arm(ms, stepBudget)
       hit = undefined
     }
 
@@ -336,8 +324,7 @@ export const make = (
       runtime.setMemoryLimit(limits.memoryBytes)
       runtime.setMaxStackSize(limits.stackBytes)
       runtime.setInterruptHandler(() => {
-        if (clock.currentTimeMillisUnsafe() >= deadline) hit ??= "time"
-        else if (++steps > budget) hit ??= "steps"
+        hit = interrupt.poll()
         return hit !== undefined
       })
       const context = runtime.newContext()
@@ -392,7 +379,7 @@ export const make = (
     /** Runs one call against a loaded realm, reloading it first after a crossed bound. */
     const within = <A>(call: (realm: Loaded) => Outcome<A>): Effect.Effect<A, RealmError> =>
       Effect.suspend(() => {
-        if (closed || quarantined.has(module)) {
+        if (closed || QuickJSLifecycle.isQuarantined(module)) {
           return Effect.fail(failure("load_failed", "The realm is closed or its QuickJS module is quarantined"))
         }
         if (loaded === undefined) {
@@ -450,7 +437,7 @@ export const make = (
       } catch {
         // The host's own stack overflowed inside the interpreter. Disposing the
         // runtime now would abort on its unbalanced heap, so it is abandoned.
-        quarantined.add(module)
+        QuickJSLifecycle.abandon(module)
         realm.broken = true
         return crossed("stack", "The view overflowed the host's stack")
       }

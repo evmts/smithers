@@ -611,8 +611,10 @@ The QuickJS realm bounds its interpreter stack at 128 KiB, so a runaway
 recursion raises a catchable `InternalError: stack overflow` inside the cell.
 If the host's own stack overflows inside the interpreter anyway, the frame is
 rejected with `code: "limit_exceeded"` and `reason: "stack"`, the broken
-runtime is abandoned without being disposed, and the next cell runs in a fresh
-realm that holds none of the earlier names.
+runtime is abandoned without being disposed, and its compiled module is
+quarantined. Later frames and new realms fail with `runtime_failed`. A fresh
+variant is required to resume; ordinary interpreter stack errors remain
+catchable and preserve the realm.
 
 Flow-result heap checks conservatively include value and property storage plus
 bridge scratch space, not just serialized JSON bytes. A reply can be refused

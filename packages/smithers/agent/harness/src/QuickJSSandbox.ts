@@ -37,6 +37,7 @@ import * as bytes from "./internal/bytes.ts"
 import * as elide from "./internal/elide.ts"
 import * as printChannel from "./internal/printChannel.ts"
 import { refusal } from "./internal/refusal.ts"
+import * as QuickJSLifecycle from "./QuickJSLifecycle.ts"
 import * as QuickJSVariant from "./QuickJSVariant.ts"
 import * as Sandbox from "./Sandbox.ts"
 import * as VariablesPanel from "./VariablesPanel.ts"
@@ -246,8 +247,7 @@ ${preludeHelpers}
   delete globalThis.__checkpoint
   delete globalThis.__print
   delete globalThis.__intent
-  delete globalThis.Date
-  delete Math.random
+${QuickJSLifecycle.prelude([])}
   // Removed for the same reason as the two above: it makes the realm answer a
   // question dishonestly. Every reading the panel probe takes goes through the
   // intrinsics captured before any cell ran, and every property comes off its
@@ -260,7 +260,6 @@ ${preludeHelpers}
   // handler chose — and nothing else in this realm can construct one, so the
   // constructor goes rather than the accounting. \`Reflect\` stays: it offers no
   // way to make a proxy and the probe does not read through it.
-  delete globalThis.Proxy
   // The seal: once this frame has said how the run ends, it has ended, and the
   // calls a cell would have made after that line are not dispatched. It lives
   // here rather than on the host because ctx.call has to answer synchronously,
@@ -482,17 +481,7 @@ const capabilities: Sandbox.Capabilities = {
   timeMs: true
 }
 
-/**
- * The interpreter's stack, the same bound `@smthrs/views`' presentation realm
- * sets. QuickJS must stop a deep recursion before the host's own stack does:
- * each byte here costs about three bytes of host stack, and a host stack that
- * overflows inside the interpreter leaves a runtime that aborts the process
- * when it is disposed. Under this bound a runaway recursion is a catchable
- * `InternalError` inside the cell instead.
- */
-const stackBytes = 128 * 1024
-
-/** A realm whose runtime the host's own stack overflowed inside, and that the next cell replaces. */
+/** A realm whose runtime the host's own stack overflowed inside. */
 interface RealmRuntime extends Sandbox.Realm {
   readonly broken: () => boolean
 }
@@ -500,7 +489,7 @@ interface RealmRuntime extends Sandbox.Realm {
 const hostStackOverflow = new Cell.Rejected({
   code: "limit_exceeded",
   reason: "stack",
-  message: "The cell overflowed the host's stack. Its realm was reset, so names from earlier cells are gone."
+  message: "The cell overflowed the host's stack. Its QuickJS module was quarantined; use a fresh variant to resume."
 })
 
 const timeLimitExceeded = (timeMs: number): Cell.Rejected =>
@@ -950,6 +939,12 @@ const openRuntime = (
   clock: ComputeClockService
 ): Effect.Effect<RealmRuntime, Sandbox.SandboxError, Scope.Scope> =>
   Effect.gen(function*() {
+    if (QuickJSLifecycle.isQuarantined(module)) {
+      return yield* new Sandbox.SandboxError({
+        code: "runtime_failed",
+        message: "The QuickJS module was quarantined after a host stack overflow"
+      })
+    }
     const realmLimits = Sandbox.withDefaults(capabilities, options.limits)
     /* v8 ignore next -- `withDefaults` fills `timeMs` from `defaultLimits` whenever the `timeMs` capability is declared, and this binding declares it, so the coalesce never reaches its fallback; it only discharges the optional type on `Sandbox.Limits` */
     let timeMs = realmLimits.timeMs ?? Sandbox.defaultLimits.timeMs
@@ -957,8 +952,8 @@ const openRuntime = (
     const memoryBytes = realmLimits.memoryBytes ?? Sandbox.defaultLimits.memoryBytes
     let stepBudget = realmLimits.steps
 
-    let clockBase = clock.now()
-    let steps = 0
+    const interrupt = QuickJSLifecycle.interruptBudget(() => clock.now())
+    interrupt.arm(timeMs, stepBudget)
     let exhausted: Cell.Rejected | undefined
     let pending: Array<Sandbox.PendingCall> = []
     let closing = true
@@ -984,6 +979,7 @@ const openRuntime = (
         return call()
       } catch (error) {
         broken = true
+        QuickJSLifecycle.abandon(module)
         throw error
       }
     }
@@ -995,13 +991,14 @@ const openRuntime = (
         if (realmLimits.memoryBytes !== undefined) {
           runtime.setMemoryLimit(realmLimits.memoryBytes)
         }
-        runtime.setMaxStackSize(stackBytes)
+        runtime.setMaxStackSize(QuickJSLifecycle.stackBytes)
         runtime.setInterruptHandler(() => {
-          if (clock.now() - clockBase >= timeMs) {
+          const hit = interrupt.poll()
+          if (hit === "time") {
             exhausted = exhausted ?? timeLimitExceeded(timeMs)
             return true
           }
-          if (stepBudget !== undefined && ++steps > stepBudget) {
+          if (hit === "steps") {
             exhausted = exhausted ?? new Cell.Rejected({
               code: "limit_exceeded",
               message: `This cell exceeded its limit of ${stepBudget} interpreter steps`
@@ -1256,8 +1253,7 @@ const openRuntime = (
         // a realm that outlives one cell still charges each cell its own — and
         // resetting them first is what keeps a frame that ends before its cell
         // runs from being handed the previous frame's print buffer.
-        clockBase = clock.now()
-        steps = 0
+        interrupt.arm(timeMs, stepBudget)
         exhausted = undefined
         pending = []
         closing = false
@@ -1377,7 +1373,7 @@ const openRuntime = (
                   return evaluation.mint!(mint).pipe(
                     Effect.onExit(() =>
                       Effect.sync(() => {
-                        clockBase += clock.now() - pausedAt
+                        interrupt.pause(clock.now() - pausedAt)
                       })
                     )
                   )
@@ -1410,7 +1406,7 @@ const openRuntime = (
               return evaluation.call(call).pipe(
                 Effect.onExit(() =>
                   Effect.sync(() => {
-                    clockBase += clock.now() - pausedAt
+                    interrupt.pause(clock.now() - pausedAt)
                     if (pausesFrame) {
                       pausedMs += clock.now() - pausedAt
                       pausedAtForFrame = undefined
@@ -1524,12 +1520,11 @@ const openRuntime = (
 
 /**
  * Opens one QuickJS realm that lives for a whole run, over a runtime it
- * replaces when the host's own stack overflowed inside the interpreter.
+ * quarantines when the host's own stack overflowed inside the interpreter.
  *
  * That runtime is unusable and aborts the process when it is disposed, so it
- * is abandoned undisposed, its memory with it, and the next cell runs in a
- * fresh one. The frame that overflowed says so, because the fresh realm holds
- * none of the names earlier cells bound.
+ * is abandoned undisposed, its memory with it. The overflowing frame reports
+ * the stack refusal; later frames and new realms refuse the quarantined module.
  */
 const openRealm = (
   module: QuickJSWASMModule,
@@ -1537,23 +1532,19 @@ const openRealm = (
   clock: ComputeClockService
 ): Effect.Effect<Sandbox.Realm, Sandbox.SandboxError, Scope.Scope> =>
   Effect.gen(function*() {
-    const scope = yield* Effect.scope
-    const open = Effect.gen(function*() {
-      const owned = yield* Scope.fork(scope)
-      const runtime = yield* openRuntime(module, options, clock).pipe(Scope.provide(owned))
-      return { owned, runtime }
-    })
-    let current: Effect.Success<typeof open> | undefined = yield* open
+    const owned = yield* Scope.fork(yield* Effect.scope)
+    const runtime = yield* openRuntime(module, options, clock).pipe(Scope.provide(owned))
     return {
       evaluate: (evaluation) =>
         Effect.gen(function*() {
-          current ??= yield* open
-          const { owned, runtime } = current
-          const frame = yield* runtime.evaluate(evaluation)
-          if (runtime.broken()) {
-            current = undefined
-            yield* Scope.close(owned, Exit.void)
+          if (QuickJSLifecycle.isQuarantined(module)) {
+            return yield* new Sandbox.SandboxError({
+              code: "runtime_failed",
+              message: "The QuickJS module was quarantined after a host stack overflow"
+            })
           }
+          const frame = yield* runtime.evaluate(evaluation)
+          if (runtime.broken()) yield* Scope.close(owned, Exit.void)
           return frame
         })
     }

@@ -10,7 +10,7 @@
  * @private
  */
 
-const encoder = new TextEncoder()
+import { utf8Length } from "../QuickJSLifecycle.ts"
 
 /**
  * Measures a string in UTF-8 bytes.
@@ -19,7 +19,7 @@ const encoder = new TextEncoder()
  * @since 0.1.0
  * @private
  */
-export const size = (text: string): number => encoder.encode(text).byteLength
+export const size = utf8Length
 
 /**
  * Returns the longest code-point-aligned prefix no wider than `limit` UTF-8 bytes.

@@ -44,7 +44,7 @@ Nothing under `src/internal/` is public.
 ## The namespaces on the root
 
 Every namespace on the root barrel is also importable from its own subpath,
-except `DoneText` and `QuickJSVariant`, which are on the root only.
+except `DoneText`, `QuickJSVariant` and `QuickJSLifecycle`, which are on the root only.
 The complete list, with what each one is for, is the
 [module index](./api.md#module-index) of the API reference.
 

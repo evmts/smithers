@@ -1,5 +1,5 @@
 import singlefile from "@jitl/quickjs-singlefile-browser-release-sync"
-import { QuickJSVariant } from "@smthrs/harness"
+import { QuickJSLifecycle, QuickJSVariant } from "@smthrs/harness"
 import { Effect, Layer, Metric, Redacted } from "effect"
 import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
 import { newVariant } from "quickjs-emscripten-core"
@@ -207,6 +207,21 @@ describe("PresentationRealm bounds every render", () => {
       )
     )
     expect(error).toMatchObject({ reason: "limit_exceeded", limit: "stack" })
+  })
+
+  it("honors quarantine recorded by another consumer of the compiled module", async () => {
+    const variant = QuickJSVariant.layerVariant(newVariant(singlefile as unknown as QuickJSSyncVariant, {}))
+    const result = await Effect.gen(function*() {
+      const module = yield* QuickJSVariant.compiledModule
+      const realm = yield* PresentationRealm.make({ bundle: yield* Effect.promise(bundle) })
+      // The shared lifecycle seam records the same event as a harness overflow.
+      QuickJSLifecycle.abandon(module)
+      const existing = yield* failure(realm.render({ module: checked(comparison), props: { rows: [] }, state: null }))
+      const fresh = yield* Effect.flip(PresentationRealm.make({ bundle: "" }))
+      return { existing, fresh }
+    }).pipe(Effect.scoped, Effect.provide(variant), Effect.runPromise)
+    expect(result.existing).toMatchObject({ reason: "load_failed" })
+    expect(result.fresh).toMatchObject({ reason: "load_failed" })
   })
 
   it("quarantines a module after host stack overflow instead of leaking more runtimes", async () => {

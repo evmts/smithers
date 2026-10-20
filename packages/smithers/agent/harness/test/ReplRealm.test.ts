@@ -6,8 +6,11 @@
  * the channel to the next turn, and the transition is a call rather than a
  * return.
  */
+import singlefile from "@jitl/quickjs-singlefile-browser-release-sync"
 import { Deferred, Effect, Exit, Fiber, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
+import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
+import { newVariant } from "quickjs-emscripten-core"
 import { describe, expect, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
 import * as CellValidation from "../src/CellValidation.ts"
@@ -1112,8 +1115,8 @@ describe("the REPL contract's worked example", () => {
  * Model-written recursion against the host's own stack. QuickJS stops a deep
  * recursion at its stack bound, as an error the cell can catch. A host stack
  * that overflows inside the interpreter anyway leaves a runtime that aborts the
- * process when it is disposed, so the realm abandons it and the next cell runs
- * in a fresh one.
+ * process when it is disposed, so the realm abandons it and quarantines the
+ * shared module against further allocations.
  */
 describe("the realm's stack", () => {
   const recursion = `function f(n) { return f(n + 1) + 1 }`
@@ -1134,7 +1137,7 @@ describe("the realm's stack", () => {
   // A recursion runs while the cell is evaluated, or after an await while its
   // jobs are drained; the host can overflow inside either.
   it.each([["evaluation", ""], ["a drained job", "await 0\n"]])(
-    "replaces a runtime the host's stack overflowed inside during %s, and closes without aborting",
+    "quarantines a runtime the host's stack overflowed inside during %s, and closes without aborting",
     async (_, prefix) => {
       // The host's depth budget, then cells evaluated from ever shallower
       // depths until one overflows the host inside the interpreter rather than
@@ -1155,8 +1158,9 @@ describe("the realm's stack", () => {
         }
       }
 
+      const variant = QuickJSSandbox.layerVariant(newVariant(singlefile as unknown as QuickJSSyncVariant, {}))
       await Effect.gen(function*() {
-        const realm = yield* (yield* QuickJSSandbox.make).openRealm!({ flows })
+        const realm = yield* (yield* QuickJSSandbox.makeWithVariant).openRealm!({ flows })
         const evaluate = (text: string, frame: number) =>
           realm.evaluate({ cell: Cell.source(text), frame, call: succeeds })
         const limit = deepest(0)
@@ -1179,13 +1183,14 @@ describe("the realm's stack", () => {
           new Cell.Rejected({
             code: "limit_exceeded",
             reason: "stack",
-            message: "The cell overflowed the host's stack. Its realm was reset, so names from earlier cells are gone."
+            message:
+              "The cell overflowed the host's stack. Its QuickJS module was quarantined; use a fresh variant to resume."
           })
         )
         expect(overflowed?.bindings).toEqual([])
-        const next = yield* evaluate(`ctx.done(typeof kept)`, 2)
-        expect(next.outcome).toMatchObject({ transition: { _tag: "complete", output: "undefined" } })
-      }).pipe(Effect.scoped, Effect.runPromise)
+        const next = yield* Effect.flip(evaluate(`ctx.done(typeof kept)`, 2))
+        expect(next).toMatchObject({ code: "runtime_failed", message: expect.stringContaining("quarantined") })
+      }).pipe(Effect.scoped, Effect.provide(variant), Effect.provide(QuickJSSandbox.layerClockLive), Effect.runPromise)
     }
   )
 })

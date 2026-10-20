@@ -967,3 +967,17 @@ a build whose module came from its toolchain.
 | `make` | const | constructors | Constructs the QuickJS sandbox with the live clock layer. |
 | `layerWithVariant` | const | layers | Provides the QuickJS sandbox over the build the host names. |
 | `layer` | const | layers | Provides the QuickJS sandbox over the single-file build. |
+
+
+## QuickJSLifecycle
+
+`import { QuickJSLifecycle } from "@smthrs/harness"`
+
+Portable primitives shared by the cell sandbox and presentation realm:
+`stackBytes`, `prelude(additionalGlobals)`, `interruptBudget(now)`,
+`utf8Length(text)`, `abandon(module)` and `isQuarantined(module)`.
+The interrupt budget exposes `arm(ms, polls)`, `pause(ms)` and `poll()`;
+`poll()` preserves the first `"time"` or `"steps"` crossing until rearmed.
+Quarantine is shared by compiled module identity and permits at most one
+abandoned runtime. These utilities install no host bridge or object hardening;
+each consumer retains its security policy.

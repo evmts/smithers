@@ -217,3 +217,9 @@ export * as VacuousVerification from "./VacuousVerification.ts"
  * @since 0.1.0
  */
 export * as VariablesPanel from "./VariablesPanel.ts"
+
+/**
+ * @category models
+ * @since 1.0.0-rc.16
+ */
+export * as QuickJSLifecycle from "./QuickJSLifecycle.ts"
