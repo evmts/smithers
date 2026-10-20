@@ -118,9 +118,9 @@ test("Docs draws a page's screenshots from the build's files for the current the
     expect(text).toContain("Not captured yet")
     expect(text).not.toContain("!")
     expect(host.querySelectorAll(".mvp-docs-markdown img")).toHaveLength(2)
-    // The links after the screenshots still open their pages through the flow.
-    expect([...host.querySelectorAll<HTMLAnchorElement>(".mvp-docs-markdown a")].map(link => [link.textContent, link.dataset.flow]))
-      .toEqual([["Flows", "docs"]])
+    // The links after the screenshots still open their pages through the flow, each with its own target.
+    expect([...host.querySelectorAll<HTMLAnchorElement>(".mvp-docs-markdown a")].map(link => [link.textContent, link.dataset.flow, link.getAttribute("href")]))
+      .toEqual([["Flows", "docs", "flows.md"]])
 
     // A card with no build files (the model host's, or a test's) shows only alt text.
     let props!: DocsViewProps

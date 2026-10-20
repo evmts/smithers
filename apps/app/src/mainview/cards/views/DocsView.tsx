@@ -8,7 +8,11 @@ export function DocsView({ model, actions, gestures, onAction }: DocsViewProps) 
   const open = gestures.open
   const body = model.page.markdown.replace(new RegExp(`^#\\s+${model.page.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\n`), "")
   const go = (page: string) => { if (open && !open.disabled) onAction(open.tag, { ...open.args, page }) }
-  // Derive targets from the shared renderer's actual links, keeping callbacks to one flow.
+  // A page's screenshot is drawn only from the build's files; any other source renders its alt text.
+  const images = model.images
+  const resolveImage = useCallback((src: string) => images && Object.hasOwn(images, src) ? images[src] : undefined, [images])
+  // Derive targets from the shared renderer's actual links, keeping callbacks to one flow. The parse
+  // uses the same resolver as the drawn page, so its links line up one for one with the DOM's.
   const pages: Record<string, string> = Object.create(null)
   const hrefs: (string | undefined)[] = []
   const collectLinks = (nodes: ReactNode) => Children.forEach(nodes, node => {
@@ -21,11 +25,8 @@ export function DocsView({ model, actions, gestures, onAction }: DocsViewProps) 
     }
     collectLinks(node.props.children)
   })
-  collectLinks(markdownBlockParser.render(body))
+  collectLinks(markdownBlockParser.render(body, undefined, "chat", resolveImage))
   const follow = (href: string) => { if (pages[href] !== undefined) go(pages[href]) }
-  // A page's screenshot is drawn only from the build's files; any other source renders its alt text.
-  const images = model.images
-  const resolveImage = useCallback((src: string) => images && Object.hasOwn(images, src) ? images[src] : undefined, [images])
   // The shared renderer owns parsing. A commit ref decorates its headings and
   // reveals the supplied anchor when the page or anchor changes, without effects.
   const reveal = useCallback((node: HTMLDivElement | null) => {
