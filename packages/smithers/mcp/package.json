@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/package.json",
   "name": "@smthrs/mcp",
   "type": "module",
-  "version": "1.0.0-rc.15",
+  "version": "1.0.0-rc.16",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -136,23 +136,23 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/canonical": "1.0.0-rc.15",
-    "@smthrs/capability": "1.0.0-rc.15",
-    "@smthrs/core": "1.0.0-rc.15",
-    "@smthrs/harness": "1.0.0-rc.15",
-    "@smthrs/journal": "1.0.0-rc.15",
-    "@smthrs/kernel": "1.0.0-rc.15"
+    "@smthrs/canonical": "1.0.0-rc.16",
+    "@smthrs/capability": "1.0.0-rc.16",
+    "@smthrs/core": "1.0.0-rc.16",
+    "@smthrs/harness": "1.0.0-rc.16",
+    "@smthrs/journal": "1.0.0-rc.16",
+    "@smthrs/kernel": "1.0.0-rc.16"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
     "@effect/platform-node": "4.0.5",
     "@effect/vitest": "4.0.5",
     "@eslint/js": "9.39.5",
-    "@smthrs/agent": "1.0.0-rc.15",
-    "@smthrs/flow": "1.0.0-rc.15",
-    "@smthrs/flows": "1.0.0-rc.15",
-    "@smthrs/model": "1.0.0-rc.15",
-    "@smthrs/registry": "1.0.0-rc.15",
+    "@smthrs/agent": "1.0.0-rc.16",
+    "@smthrs/flow": "1.0.0-rc.16",
+    "@smthrs/flows": "1.0.0-rc.16",
+    "@smthrs/model": "1.0.0-rc.16",
+    "@smthrs/registry": "1.0.0-rc.16",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

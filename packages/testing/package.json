@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/testing",
   "type": "module",
-  "version": "1.0.0-rc.15",
+  "version": "1.0.0-rc.16",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -477,17 +477,17 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/core": "1.0.0-rc.15",
-    "@smthrs/engine": "1.0.0-rc.15",
-    "@smthrs/flow": "1.0.0-rc.15",
-    "@smthrs/jj": "1.0.0-rc.15",
-    "@smthrs/journal": "1.0.0-rc.15",
-    "@smthrs/kernel": "1.0.0-rc.15",
-    "@smthrs/model": "1.0.0-rc.15",
-    "@smthrs/plan": "1.0.0-rc.15",
-    "@smthrs/platform-browser": "1.0.0-rc.15",
-    "@smthrs/scorers": "1.0.0-rc.15",
-    "@smthrs/canonical": "1.0.0-rc.15"
+    "@smthrs/core": "1.0.0-rc.16",
+    "@smthrs/engine": "1.0.0-rc.16",
+    "@smthrs/flow": "1.0.0-rc.16",
+    "@smthrs/jj": "1.0.0-rc.16",
+    "@smthrs/journal": "1.0.0-rc.16",
+    "@smthrs/kernel": "1.0.0-rc.16",
+    "@smthrs/model": "1.0.0-rc.16",
+    "@smthrs/plan": "1.0.0-rc.16",
+    "@smthrs/platform-browser": "1.0.0-rc.16",
+    "@smthrs/scorers": "1.0.0-rc.16",
+    "@smthrs/canonical": "1.0.0-rc.16"
   },
   "peerDependencies": {
     "effect": "4.0.5",
@@ -506,7 +506,7 @@
     "@effect/language-service": "0.87.2",
     "@effect/vitest": "4.0.5",
     "@eslint/js": "9.39.5",
-    "@smthrs/platform-node": "1.0.0-rc.15",
+    "@smthrs/platform-node": "1.0.0-rc.16",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
