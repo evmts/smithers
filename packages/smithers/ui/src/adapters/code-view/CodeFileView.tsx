@@ -96,6 +96,13 @@ export type CodeFileViewProps = {
    * it moves the mark and scrolls again; omitting it clears the mark.
    */
   line?: number | undefined;
+  /**
+   * The last line of the anchored range, 1-based, when it spans more than
+   * `line`: the lines from `line` to here are marked, and `line` is the one
+   * scrolled to. A value before `line` marks `line` alone; without `line` it
+   * does nothing.
+   */
+  lineEnd?: number | undefined;
   /** Theme mode. Defaults to the active house theme (`data-theme` on the root). */
   mode?: CodeViewMode | undefined;
   /** Palette override. Defaults to the active `data-palette` value. */
@@ -147,6 +154,7 @@ export function CodeFileView({
   name,
   contents,
   line,
+  lineEnd,
   mode,
   palette,
   className,
@@ -162,7 +170,10 @@ export function CodeFileView({
   const resolvedPalette = palette ?? housePalette;
   const language = languageForFile(name);
   const file = useMemo(() => ({ name, contents }), [name, contents]);
-  const selectedLines = useMemo(() => (line === undefined ? null : { start: line, end: line }), [line]);
+  const selectedLines = useMemo(
+    () => (line === undefined ? null : { start: line, end: Math.max(line, lineEnd ?? line) }),
+    [line, lineEnd],
+  );
   const theme = diffsThemeForMode(resolvedMode, resolvedPalette);
 
   /*

@@ -231,6 +231,13 @@ export { formatRelativeTime } from "./time/formatRelativeTime";
 export { RelativeTime, useRelativeTime, type RelativeTimeProps } from "./time/RelativeTime";
 export { useDialogFocusTrap, type UseDialogFocusTrapOptions } from "./internal/useDialogFocusTrap";
 export { EmptyState, type EmptyStateProps } from "./empty-state";
+export { Breadcrumbs, type BreadcrumbItem, type BreadcrumbsProps } from "./breadcrumbs";
+export {
+  DirectoryListing,
+  type DirectoryEntry,
+  type DirectoryListingProps,
+  type DirectoryTarget,
+} from "./directory-listing";
 export { SectionHeader, Eyebrow, type SectionHeaderProps } from "./section-header";
 export { RowButton, type RowButtonProps } from "./row-button";
 export { KpiStat, type KpiStatProps } from "./kpi-stat";
@@ -703,3 +710,26 @@ export {
 export { useAutosaveDoc, type UseAutosaveDocOptions, type UseAutosaveDocResult } from "./vault/useAutosaveDoc";
 
 export { copyText, canCopyText, reserveCopyText, type CopyResult, type CopyFailureCode } from "./internal/copyToClipboard";
+
+// Agent UI (decision 0004): generated views in a sandboxed frame, the
+// presentation subset a view may import, and the form and issues templates.
+export {
+  GeneratedView,
+  generatedViewCss,
+  sanitizeViewHtml,
+  type GeneratedViewInteraction,
+  type GeneratedViewProps,
+} from "./generated-view";
+export { frameRuntime } from "./generated-view/runtime.generated";
+export { loadPresentationBundle, presentationComponentNames, presentationComponents } from "./presentation";
+export { FlowFormView, flowFormViewCss, type FlowFormSubmission, type FlowFormViewProps } from "./flow-form-view";
+export { IssuesView, issuesViewCss, type IssuesViewIssue, type IssuesViewProps } from "./issues-view";
+export {
+  declaredInput,
+  formFieldsFor,
+  type FieldKind,
+  type FieldValue,
+  type FormDraft,
+  type FormField,
+  type FormHints,
+} from "./flow-form";

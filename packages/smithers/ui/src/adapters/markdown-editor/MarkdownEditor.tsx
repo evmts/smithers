@@ -162,7 +162,8 @@ export const MARKDOWN_EDITOR_STYLE_ATTR = "data-smithers-markdown-editor";
 /** Host chrome for the Crepe editor plus the fallback textarea, namespaced. */
 const hostCss = `
 .sui-markdown-editor { min-width:0; min-height:0; height:100%; overflow:auto; }
-.sui-markdown-editor .milkdown { height:100%; }
+.sui-markdown-editor .milkdown { height:100%; background:transparent; }
+.sui-markdown-editor .milkdown .milkdown-code-block { background:var(--code-bg, #efeae0); }
 .sui-markdown-editor .milkdown .ProseMirror { padding:16px 20px; }
 .sui-markdown-editor-fallback { display:block; box-sizing:border-box; width:100%; min-height:180px; height:100%; padding:16px 20px; border:0; outline:none; resize:none; background:transparent; color:inherit; font:inherit; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size:13px; line-height:1.6; tab-size:2; }
 .sui-markdown-editor-fallback:read-only { cursor:default; }

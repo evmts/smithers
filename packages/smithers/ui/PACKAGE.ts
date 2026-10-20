@@ -21,6 +21,7 @@
  * workspace; wiring them requires package tooling that this target does not
  * provide.
  */
+import { SdkRules } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 
 const cwd = "packages/smithers/ui"
@@ -30,6 +31,20 @@ const sources = [
   Smithers.glob("//packages/smithers/ui/src/**/*.ts"),
   Smithers.glob("//packages/smithers/ui/src/**/*.tsx")
 ]
+
+/**
+ * What generated views are built from beyond `src/`: the script that
+ * generates the presentation bundle and the frame runtime.
+ */
+const generatedViewInputs = [Smithers.file("//packages/smithers/ui/scripts/build-views.mjs")]
+
+/**
+ * The `@smthrs/views` sources the realm and the bridge come from, as that
+ * package's `sourceFiles` label. A selector, not an import of its PACKAGE.ts:
+ * that file reaches the root PACKAGE.ts, which imports this one through
+ * `apps/app`.
+ */
+const viewsSources = Smithers.Target.subtree("//packages/smithers/ui/views/...", "sourceFiles")
 
 /**
  * Checks every component source against the package tsconfig.
@@ -63,10 +78,34 @@ const unitTests = Smithers.NodeTest({
   runner: Smithers.testSuite(["tests"]),
   srcs: [
     ...sources,
+    ...generatedViewInputs,
     Smithers.glob("//packages/smithers/ui/tests/**/*.ts"),
     Smithers.glob("//packages/smithers/ui/tests/**/*.tsx")
   ],
-  deps: [],
+  deps: [viewsSources],
+  cwd
+})
+
+/**
+ * Browser probes for generated views: real Chromium through Playwright. A
+ * hostile view's HTML, a hostile frame runtime, the bridge, and the sanitizer
+ * fuzzed with Chromium's parser, each checked against the parent page's DOM,
+ * storage, the network, navigation and inline handlers. Needs Playwright's
+ * Chromium (`pnpm exec playwright install chromium`).
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const browserProbes = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.testSuite(["browser"]),
+  srcs: [
+    ...sources,
+    ...generatedViewInputs,
+    Smithers.glob("//packages/smithers/ui/browser/**/*.ts"),
+    Smithers.glob("//packages/smithers/ui/browser/**/*.tsx")
+  ],
+  deps: [viewsSources],
   cwd
 })
 
@@ -215,6 +254,20 @@ const securityReview = Smithers.SecurityReview({
       paths: ["src/agentic/**", "src/artifacts/SchemaDisplay.tsx", "src/diff*.ts", "src/diff-hunks.tsx", "src/vault/**"]
     },
     {
+      id: "generated-view-frame",
+      title: "A generated view's HTML is shown only through the sandboxed frame, its pinned runtime and its sanitizer",
+      threat:
+        "Model-authored view HTML runs script, reads the app's DOM, storage or cookies, loads from the network, or navigates, in the signed-in user's session.",
+      lookFor: [
+        "GeneratedView rendering view HTML outside the iframe, or an iframe sandbox with allow-same-origin, allow-forms, allow-popups, allow-modals or allow-top-navigation, or an `allow` delegation.",
+        "A srcdoc not built by ViewCsp.frameDocument, a runtime other than the hashed one, or view HTML written into the srcdoc.",
+        "The handshake answering a message whose source is not this mount's contentWindow or whose nonce differs, or a later message that skips Bridge.receive.",
+        "sanitize keeping an element or attribute that runs, loads or navigates: script, iframe, a, meta, base, link, style, on*, href, a non-data:image src, srcset, action, formaction, xlink:href, or a style with url().",
+        "The frame runtime reading document.body or other document properties after view content is inserted (DOM clobbering), or sending an interaction for an untrusted event."
+      ],
+      paths: ["src/generated-view/**", "src/presentation/**"]
+    },
+    {
       id: "attachment-intake",
       title: "Prompt attachments enforce accept, size, and count limits and revoke their object URLs",
       threat: "A pasted or dropped file bypasses the configured type or size limit, or leaked object URLs keep file bytes readable after removal.",
@@ -227,6 +280,22 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
+/**
+ * Will's SDK-wide rules (apps/mvp/docs/rules.md). The package renders React,
+ * so only root imports, dead code and tests are held to them. `jevRules` is
+ * manual.
+ */
+const { importRules, jevRules } = SdkRules({ cwd, role: "components", tests: ["tests/**/*.test.{ts,tsx}"] })
+
 export const Package = Smithers.Package({
-  targets: { solidCodegenInputs, check, docsFiles, unitTests, ...securityReview }
+  targets: {
+    solidCodegenInputs,
+    check,
+    docsFiles,
+    importRules,
+    jevRules,
+    unitTests,
+    browserProbes,
+    ...securityReview
+  }
 })

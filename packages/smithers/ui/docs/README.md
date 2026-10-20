@@ -112,7 +112,8 @@ and Paper light/dark, rather than restating them.
   [render a run status](./guides/render-run-status.md),
   [render agent output](./guides/render-agent-output.md),
   [collect a prompt](./guides/collect-a-prompt.md),
-  [use a heavy renderer](./guides/use-a-heavy-renderer.md), and
+  [use a heavy renderer](./guides/use-a-heavy-renderer.md),
+  [show a generated view](./guides/show-a-generated-view.md), and
   [test a component](./guides/test-a-component.md).
 - [API reference](./api.md): every export of the base barrel and the ten
   subpaths, with signatures.

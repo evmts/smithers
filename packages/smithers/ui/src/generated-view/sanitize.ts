@@ -1,0 +1,112 @@
+/**
+ * The frame's sanitizer: an inert parse, then an allowlist copy.
+ *
+ * A generated view's HTML comes from React's static renderer in a QuickJS
+ * realm, so it is already escaped and holds only what `ViewCode` and the realm
+ * admitted. The frame still trusts none of it. `sanitize` parses the HTML with
+ * `DOMParser`, where nothing runs and nothing loads, and builds new nodes in
+ * the frame's own document from what the allowlist names: text, layout,
+ * tables, form controls, `data:` images and basic SVG shapes, with their
+ * presentation attributes. Everything else is dropped with its subtree:
+ * comments, every `on*` attribute, `href`, `src` other than a `data:image`
+ * on `<img>`, `action`, `formaction`, `srcset`, `xlink:href`, and a `style` or
+ * presentation attribute that names a URL. The frame's CSP stands behind it.
+ */
+
+const SVG = "http://www.w3.org/2000/svg";
+const HTML = "http://www.w3.org/1999/xhtml";
+
+/** HTML elements the frame keeps. */
+const htmlElements: ReadonlySet<string> = new Set([
+  "abbr", "address", "article", "aside", "b", "bdi", "bdo", "blockquote", "br", "button", "caption", "code", "col",
+  "colgroup", "data", "dd", "del", "details", "dfn", "div", "dl", "dt", "em", "fieldset", "figcaption", "figure",
+  "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "i", "img", "input", "ins", "kbd", "label",
+  "legend", "li", "main", "mark", "meter", "nav", "ol", "optgroup", "option", "output", "p", "pre", "progress", "q",
+  "rp", "rt", "ruby", "s", "samp", "section", "select", "small", "span", "strong", "sub", "summary", "sup", "table",
+  "tbody", "td", "textarea", "tfoot", "th", "thead", "time", "tr", "u", "ul", "var", "wbr",
+]);
+
+/** SVG elements the frame keeps, in their DOM spelling. */
+const svgElements: ReadonlySet<string> = new Set([
+  "svg", "g", "path", "circle", "ellipse", "line", "polyline", "polygon", "rect", "text", "tspan", "defs",
+  "linearGradient", "radialGradient", "stop", "clipPath", "mask", "marker", "desc",
+]);
+
+/** Attributes the frame keeps on any element, lowercased. `aria-*` and `data-*` are kept too. */
+const attributes: ReadonlySet<string> = new Set([
+  "abbr", "align", "alt", "autocomplete", "checked", "class", "cols", "colspan", "datetime", "dir", "disabled", "for",
+  "headers", "height", "hidden", "high", "id", "inputmode", "label", "lang", "low", "max", "maxlength", "min",
+  "minlength", "multiple", "name", "open", "optimum", "pattern", "placeholder", "readonly", "required", "reversed",
+  "role", "rows", "rowspan", "scope", "selected", "size", "span", "src", "start", "step", "style", "tabindex",
+  "title", "type", "value", "width", "wrap",
+  // SVG presentation, lowercased.
+  "clip-path", "clip-rule", "cx", "cy", "d", "dominant-baseline", "dx", "dy", "fill", "fill-opacity", "fill-rule",
+  "font-family", "font-size", "font-weight", "gradienttransform", "gradientunits", "marker-end", "marker-mid",
+  "marker-start", "mask", "offset", "opacity", "points", "preserveaspectratio", "r", "rx", "ry", "stop-color",
+  "stop-opacity", "stroke", "stroke-dasharray", "stroke-dashoffset", "stroke-linecap", "stroke-linejoin",
+  "stroke-opacity", "stroke-width", "text-anchor", "transform", "vector-effect", "viewbox", "x", "x1", "x2", "y",
+  "y1", "y2",
+]);
+
+/** Input types the frame keeps. `image` loads a URL and `file` reads the disk, so neither is one. */
+const inputTypes: ReadonlySet<string> = new Set([
+  "button", "checkbox", "color", "date", "datetime-local", "email", "hidden", "month", "number", "radio", "range",
+  "reset", "search", "submit", "tel", "text", "time", "url", "week",
+]);
+
+const imageData = /^data:image\/(?:png|gif|jpeg|webp|avif|bmp|svg\+xml)[;,]/i;
+
+/** Attributes whose value CSS or SVG may resolve as a URL. */
+const urlCapable: ReadonlySet<string> = new Set([
+  "style", "fill", "stroke", "clip-path", "mask", "marker-start", "marker-mid", "marker-end",
+]);
+
+/** A value that reaches for a URL other than a `#fragment`, or hides one behind a CSS escape. */
+const reaching = /url\s*\(\s*(?!['"]?#)|image-set\s*\(|expression\s*\(|@import|\\/i;
+
+/** Whether to keep one attribute of one element, and with what value. */
+const keep = (element: string, name: string, value: string): boolean => {
+  if (name.startsWith("on")) return false;
+  if (name === "src") return element === "img" && imageData.test(value.trim());
+  if (name === "type" && element === "input") return inputTypes.has(value.toLowerCase());
+  // A named form or image shadows the document's own properties (DOM clobbering).
+  if (name === "name" && (element === "form" || element === "img")) return false;
+  if (!(attributes.has(name) || name.startsWith("aria-") || name.startsWith("data-"))) return false;
+  return !(urlCapable.has(name) && reaching.test(value));
+};
+
+/** Copies `source` into `target`'s document as allowlisted nodes, or `null` to drop it. */
+const copy = (source: Node, target: Document): Node | null => {
+  if (source.nodeType === 3) return target.createTextNode(source.nodeValue ?? "");
+  if (source.nodeType !== 1) return null;
+  const element = source as Element;
+  const svg = element.namespaceURI === SVG;
+  if (!svg && element.namespaceURI !== HTML) return null;
+  const name = svg ? element.localName : element.localName.toLowerCase();
+  if (!(svg ? svgElements : htmlElements).has(name)) return null;
+  const copied = svg ? target.createElementNS(SVG, name) : target.createElement(name);
+  for (const attribute of Array.from(element.attributes)) {
+    if (attribute.namespaceURI !== null) continue;
+    const attributeName = attribute.name.toLowerCase();
+    if (keep(name.toLowerCase(), attributeName, attribute.value)) copied.setAttribute(attribute.name, attribute.value);
+  }
+  for (const child of Array.from(element.childNodes)) {
+    const node = copy(child, target);
+    if (node !== null) copied.appendChild(node);
+  }
+  return copied;
+};
+
+/**
+ * Parses `html` inertly and returns the allowlisted copy, built in `target`.
+ * `parser` is the frame's `DOMParser`.
+ */
+export const sanitize = (html: string, target: Document, parser: DOMParser): DocumentFragment => {
+  const parsed = parser.parseFromString(`<!doctype html><html><head></head><body>${html}</body></html>`, "text/html");
+  const fragment = target.createDocumentFragment();
+  for (const child of Array.from(parsed.body.childNodes)) {
+    const node = copy(child, target);
+    if (node !== null) fragment.appendChild(node);
+  }
+  return fragment;
+};

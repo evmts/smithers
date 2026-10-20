@@ -8,6 +8,14 @@ describe("Wordmark", () => {
     expect(new Set(WORDMARK.map((row) => [...row].length)).size).toBe(1);
   });
 
+  test("casts the bottom shadow only under ink", () => {
+    const above = [...WORDMARK[WORDMARK.length - 2]];
+    const floating = [...WORDMARK[WORDMARK.length - 1]].flatMap((cell, column) =>
+      cell !== " " && above[column] === " " ? [column] : [],
+    );
+    expect(floating).toEqual([]);
+  });
+
   test("renders one row per line, hidden from assistive technology", () => {
     const html = renderToStaticMarkup(<Wordmark className="extra" />);
     expect(html).toStartWith('<pre class="sui-wordmark extra" aria-hidden="true">');

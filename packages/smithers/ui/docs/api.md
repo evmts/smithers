@@ -27,6 +27,7 @@ it takes an explicit props bag instead.
 | `@smthrs/ui/adapters/chart`            | [Chart](#chart)                                               | `recharts`       |
 | `@smthrs/ui/adapters/terminal`         | [Terminal](#terminal)                                         | `@xterm/*`       |
 | `@smthrs/ui/adapters/code-view`        | [Code view](#code-view)                                       | `@pierre/diffs`  |
+| `@smthrs/ui/adapters/repo-view`        | [Repo view](#repo-view)                                       | `@pierre/diffs`, `@milkdown/*` |
 | `@smthrs/ui/adapters/pierre-diff-view` | [Pierre diff view](#pierre-diff-view)                         | `@pierre/diffs`  |
 | `@smthrs/ui/adapters/markdown-editor`  | [Markdown editor](#markdown-editor)                           | `@milkdown/*`    |
 | `@smthrs/ui/adapters/knowledge-graph`  | [Knowledge graph](#knowledge-graph)                           | `d3-force`       |
@@ -131,7 +132,7 @@ sourced from a host cannot resolve through `Object.prototype`.
 | Export                                                                                     | Props type                     | Notes                                                                                        |
 | ------------------------------------------------------------------------------------------ | ------------------------------ | -------------------------------------------------------------------------------------------- |
 | `Button`, `buttonVariants`                                                                 | `ButtonProps`                  | Variants `default` (house tinted brand), `solid`, `secondary`, `outline`, `ghost`, `destructive`, `link`. Sizes `sm`, `default`, `lg`, `icon`. `asChild`, `loading`. Defaults `type="button"`. |
-| `Wordmark`, `WORDMARK`                                                                     | `WordmarkProps`                | The Smithers mark: six rows of box-drawing text in brand color, sized to the viewport, with an entrance scan and hover ripple. Decorative (`aria-hidden`); name the surrounding element. Also at `@smthrs/ui/wordmark`. |
+| `Wordmark`, `WORDMARK`                                                                     | `WordmarkProps`                | The Smithers mark: six rows of box-drawing text in brand color, sized to the viewport, with an entrance scan and hover ripple. Decorative (`aria-hidden`); name the surrounding element. |
 | `Badge`, `badgeVariants`                                                                   | `BadgeProps`                   | `asChild`.                                                                                    |
 | `StatusPill`                                                                               | `StatusPillProps`              | `status`, `label`, `withDot`.                                                                 |
 | `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardAction`, `CardContent`, `CardFooter` | Element props               | The panel family.                                                                             |
@@ -154,6 +155,8 @@ sourced from a host cannot resolve through `Object.prototype`.
 | `CollapsiblePanel`                                                                          | `CollapsiblePanelProps`        | `title`, `status`, `statusLabel`, `meta`, controlled or uncontrolled `open`.                  |
 | `Markdown`                                                                                  | `MarkdownProps`, `MarkdownLinkClick`, `MarkdownVariant`, `MarkdownImageResolver` | Dependency-free renderer. Builds React children rather than `innerHTML`, and scheme-filters link hrefs. `variant="document"` reads a repository file as GitHub does: HTML comments dropped, `<pre>` kept preformatted, other tags reduced to their text, single newlines joined, `>` blockquotes nested, a quote whose first line is `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` drawn as a GitHub alert, and images reduced to their alt text (no `<img>`, no request). `resolveImage` draws a line that is exactly `![alt](src)` as the light and dark files it returns, one shown per `html[data-theme]`; on a miss the line renders as it would without it. |
 | `FileTree`                                                                                  | `FileTreeProps`, `FileTreeItem`, `FileTreeNode`, `FileTreeNodeProps`, `FileTreeDirectoryProps` | Flat `/`-delimited paths grouped into a nested tree, with controlled single selection. |
+| `Breadcrumbs`                                                                               | `BreadcrumbsProps`, `BreadcrumbItem` | A path trail. Every step but the last is an `<a href>`, and the last is `aria-current="page"`. `onNavigate` takes a plain click; a modified click stays the browser's. |
+| `DirectoryListing`                                                                          | `DirectoryListingProps`, `DirectoryEntry`, `DirectoryTarget` | One directory's entries as links with folder and file icons, under a `..` row when `parent` is set. `href` builds each link, `onOpen` takes a plain click, and `empty` shows when there is nothing to list. |
 | `useDialogFocusTrap`                                                                        | `UseDialogFocusTrapOptions`    | `{ active, containerRef, initialFocusRef, onClose }`. Focus containment for a custom overlay. |
 
 ## Diffs
@@ -566,7 +569,8 @@ const subscribeCodeViewPool: (listener: () => void) => () => void
 
 `CodeFileView` (`CodeFileViewProps`) renders one file: `name` supplies the
 grammar, `contents` the text, `line` a 1-based anchor that is marked and
-scrolled into view, and `mode` and `palette` override the document's theme.
+scrolled into view, `lineEnd` widens the mark to the range from `line` to it,
+and `mode` and `palette` override the document's theme.
 `annotations` (`CodeLineAnnotation`) render under their lines, and the consumer
 must memoize the array because a new one redraws the rows. `onTokenRest` fires
 once per token after the pointer rests for `CODE_VIEW_REST_MS`, reporting a
@@ -575,6 +579,62 @@ once per token after the pointer rests for `CODE_VIEW_REST_MS`, reporting a
 `languageForFile` answers `null` when no grammar claims the name, which is the
 signal to keep your own plain text. Until the highlighter paints, the component
 renders a plain `<pre>`.
+
+## Repo view
+
+`@smthrs/ui/adapters/repo-view`. Pulls in `@pierre/diffs`, Shiki and
+`@milkdown/*`, through the code view and the Markdown editor.
+
+```ts
+type RepoViewLocation = { kind: "tree" | "blob"; path: string; line?: number; lineEnd?: number }
+type RepoViewTree =
+  | { state: "loading" }
+  | { state: "ready"; paths: ReadonlyArray<string>; truncated?: boolean }
+  | { state: "failed"; message: ReactNode }
+type RepoViewFile =
+  | { state: "loading" }
+  | { state: "text"; contents: string; size: number }
+  | { state: "binary"; size: number }
+  | { state: "too-large"; size: number }
+  | { state: "failed"; message: ReactNode }
+type RepoViewSize = "inline" | "full"
+type RepoViewMarkdownMode = "preview" | "source"
+```
+
+`RepoView` (`RepoViewProps`) is a repository browser. It shows the file tree
+beside a directory's listing and its README, or a file as code or as a
+Markdown document.
+
+- **It fetches nothing.**
+  - `tree` is every file's path at the revision.
+  - `file` is the file at a `blob` location.
+  - `readme` (`{ path, file }`) is a directory's README, which the host
+    chooses.
+- **The host owns the location.** `location` says where the view is, `href`
+  builds every link, and `onNavigate` takes a plain click on any of them,
+  including a relative link in a Markdown document, which resolves against the
+  repository as GitHub resolves it. One view therefore serves a routed page
+  and a conversation.
+- **`size`:** `full` (the default) puts the tree beside the content. `inline`
+  drops the tree and bounds the content's height. Below 720 px of its own
+  width, a `full` view drops the tree too: the view measures its container,
+  not the window.
+- **The tree's open directories:** `expanded` and `onToggle`. Uncontrolled,
+  the view opens the location's directories as it navigates; a host that
+  controls `expanded` does the same.
+- **Markdown:** a file renders as a read-only WYSIWYG document by default.
+  Preview and Code switch it to its source and back, through `markdownMode`
+  and `onMarkdownModeChange`, controlled or not.
+- **The host's slots:** `revision` leads the header, `actions` trails it,
+  `summary` sits between the header and the content, and `fileActions` trails
+  a file's toolbar.
+- **Other props:** `codeMode` sets the code theme. `markdownEditor` passes the
+  editor's `fallback` and `loadEditor` seams.
+- **States:**
+  - A tree or file still `loading` shows a spinner.
+  - A `failed` one shows its message as an alert.
+  - A location that isn't in the tree shows "Not found".
+  - A binary or too-large file shows its size.
 
 ## Pierre diff view
 
@@ -682,6 +742,96 @@ the human confirms.
 `@smthrs/ui/app-operations/wiki` exports `wikiSurfaceOperations` and
 `wikiOperations`, the Wiki acts in registration order, with
 `WIKI_DISPLAY_NAME` and the user-only reasons they quote.
+
+## Generated views
+
+Decision 0004's UI: views an agent writes, shown without running its code in
+the page. See [show a generated view](./guides/show-a-generated-view.md) and
+[`@smthrs/views`](../views/docs/api.md).
+
+```ts
+function GeneratedView(props: GeneratedViewProps): JSX.Element
+
+type GeneratedViewProps = Omit<ComponentProps<"div">, "children" | "title"> & {
+  html: string
+  interactions: Interactions.Declared
+  title: string
+  theme: "light" | "dark"
+  size?: "inline" | "full"                    // default "inline"
+  onInteraction: (interaction: GeneratedViewInteraction) => void
+  onRefused?: (reason: Bridge.Refusal) => void
+  runtime?: string                            // default frameRuntime
+  styles?: string                             // default the component sheet with its theme
+  now?: () => number                          // default Date.now
+}
+
+type GeneratedViewInteraction =
+  | { _tag: "State"; event: { name: string; arg?: string } }
+  | { _tag: "Message"; event: { name: string; arg?: string }; label: string; values: Record<string, string | number | boolean> }
+```
+
+`GeneratedView` shows `html` in `<iframe sandbox="allow-scripts" srcdoc>`,
+written by `ViewCsp.frameDocument` with a fresh nonce on each mount. It
+answers one `ui/initialize`, from its own frame with that nonce, with the
+HTML, theme and size and a `MessagePort`; every later message passes
+`Bridge.receive`. A changed `html` or `theme` goes to the frame as
+`ui/notifications/host-context-changed`. `inline` takes the reported height,
+80 to 480 pixels; `full` fills its container. The frame mounts only while it
+is near the screen.
+
+| Export | What it is |
+| --- | --- |
+| `frameRuntime` | the frame runtime as one script, generated by `scripts/build-views.mjs` from `src/generated-view/runtime.ts` |
+| `sanitizeViewHtml(html, document, parser)` | the frame's sanitizer: an inert `DOMParser` parse, then an allowlist copy into `document` |
+| `generatedViewCss` | the component's sheet, part of `smithersUiCss` |
+| `loadPresentationBundle()` | `Promise<string>`: the presentation bundle a `PresentationRealm` loads, imported on first use |
+| `presentationComponents`, `presentationComponentNames` | the presentation subset, by the name a view imports, and its sorted names |
+
+`node scripts/build-views.mjs` regenerates `frameRuntime` and the presentation
+bundle; `tests/views-generated.test.ts` fails while either is stale.
+
+## Templates: forms and issues
+
+```ts
+function FlowFormView(props: FlowFormViewProps): JSX.Element
+
+type FlowFormViewProps = Omit<ComponentProps<"section">, "title" | "onSubmit"> & {
+  title: string
+  schema: unknown                     // a JSON Schema object, or a { schema, definitions } document
+  submitLabel: string
+  submitted?: boolean
+  values?: Readonly<Record<string, unknown>>
+  size?: "inline" | "full"
+  onSubmit: (submission: FlowFormSubmission) => void
+}
+
+type FlowFormSubmission = { text: string; data: Readonly<Record<string, string | number | boolean>>; writeOnly: ReadonlyArray<string> }
+```
+
+The `form` template. Its fields come from `schema` through `declaredInput` and
+`formFieldsFor`. Submit calls `onSubmit` once with `text` as the submit label;
+a required field left blank blocks it. `writeOnly` names the secret fields.
+`submitted` disables the form and shows `values`, never a write-only one. A
+schema it cannot read shows `Form unavailable`.
+
+```ts
+function IssuesView(props: IssuesViewProps): JSX.Element
+
+type IssuesViewProps = Omit<ComponentProps<"section">, "children"> & {
+  repo: string
+  issues: ReadonlyArray<IssuesViewIssue>
+  size?: "inline" | "full"
+}
+
+type IssuesViewIssue = { number: number; title: string; state: "open" | "closed"; labels?: ReadonlyArray<string>; author?: string; comments?: number; updatedAt?: string }
+```
+
+The `issues` template: the issues the host passed in, with no navigation. An
+empty list shows `EmptyState`. `inline` scrolls inside 320 pixels.
+
+`declaredInput(document)` and `formFieldsFor(input, hints?, payload?)`, with
+their `FieldKind`, `FieldValue`, `FormDraft`, `FormField` and `FormHints`
+types, are on the root as well as `@smthrs/ui/flow-form`.
 
 ## Related
 

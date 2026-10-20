@@ -17,10 +17,6 @@
       "types": "./src/button.tsx",
       "default": "./src/button.tsx"
     },
-    "./wordmark": {
-      "types": "./src/wordmark/Wordmark.tsx",
-      "default": "./src/wordmark/Wordmark.tsx"
-    },
     "./marker": {
       "types": "./src/chat/Marker.tsx",
       "default": "./src/chat/Marker.tsx"
@@ -49,6 +45,11 @@
       "types": "./src/adapters/pierre-diff-view.tsx",
       "import": "./src/adapters/pierre-diff-view.tsx",
       "default": "./src/adapters/pierre-diff-view.tsx"
+    },
+    "./adapters/repo-view": {
+      "types": "./src/adapters/repo-view/index.ts",
+      "import": "./src/adapters/repo-view/index.ts",
+      "default": "./src/adapters/repo-view/index.ts"
     },
     "./adapters/code-view": {
       "types": "./src/adapters/code-view/index.ts",
@@ -178,7 +179,8 @@
     "y-codemirror.next": "0.3.6",
     "yjs": "13.6.32",
     "@lezer/highlight": "1.2.3",
-    "y-protocols": "1.0.6"
+    "y-protocols": "1.0.6",
+    "@smthrs/views": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.2.8",
@@ -192,6 +194,13 @@
     "@types/react-dom": "^19.2.7",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "@jitl/quickjs-singlefile-browser-release-sync": "0.32.0",
+    "@smthrs/harness": "workspace:*",
+    "esbuild": "0.28.2",
+    "fast-check": "4.9.0",
+    "playwright": "1.62.1",
+    "quickjs-emscripten-core": "0.32.0",
+    "happy-dom": "20.13.2"
   }
 }

@@ -32,6 +32,7 @@ budgets.
 | `@smthrs/ui/adapters/markdown-editor`   |     about 2.9 MB | `@milkdown/crepe` and `@milkdown/kit`         |
 | `@smthrs/ui/adapters/code-view`         |      about 10 MB | `@pierre/diffs`, and Shiki's grammars and themes |
 | `@smthrs/ui/adapters/pierre-diff-view`  |      about 10 MB | The same Shiki payload                        |
+| `@smthrs/ui/adapters/repo-view`         |      about 14 MB | The code view's Shiki payload and the Markdown editor |
 
 The two pierre surfaces are the reason this boundary exists at all. A single
 `export` line that pulled `CodeFileView` onto the root barrel would multiply

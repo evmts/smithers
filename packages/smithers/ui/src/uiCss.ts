@@ -43,6 +43,10 @@ import { canvasCss } from "./canvas/canvasCss";
 import { calendarCss } from "./calendar/calendarCss";
 import { vaultCss } from "./vault/vaultCss";
 import { wordmarkCss } from "./wordmark/wordmarkCss";
+import { breadcrumbsCss, directoryListingCss, repoViewCss } from "./repositoryCss";
+import { flowFormViewCss } from "./flow-form-view/flowFormViewCss";
+import { generatedViewCss } from "./generated-view/generatedViewCss";
+import { issuesViewCss } from "./issues-view/issuesViewCss";
 
 const shadowCard = t.shadow2;
 const shadowOverlay = t.shadow3;
@@ -717,11 +721,14 @@ export const smithersUiCss = [
   collapsiblePanelCss,
   diffCss,
   fileTreeCss,
+  breadcrumbsCss,
+  directoryListingCss,
   markdownCss,
   agenticResponseCss,
   agentOutputCss,
   pierreDiffCss,
   codeViewCss,
+  repoViewCss,
   stageStripCss,
   agenticReasoningCss,
   conversationFoundationCss,
@@ -737,6 +744,9 @@ export const smithersUiCss = [
   calendarCss,
   vaultCss,
   wordmarkCss,
+  generatedViewCss,
+  flowFormViewCss,
+  issuesViewCss,
   reducedMotionCss,
 ]
   .map((block) => block.trim())

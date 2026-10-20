@@ -362,6 +362,18 @@ describe("CodeFileView token model (happy-dom, main thread)", () => {
     expect(shadow().querySelectorAll("[data-line][data-selected-line]")).toHaveLength(0);
   }, 90_000);
 
+  test("an anchored range marks every line from line to lineEnd; an end before the line marks the line alone", async () => {
+    await mount(<CodeFileView name={FIXTURES.ts.name} contents={FIXTURES.ts.contents} line={3} lineEnd={5} mode="dark" palette="paper" />);
+    await highlighted();
+    const marked = () =>
+      [...shadow().querySelectorAll("[data-line][data-selected-line]")].map((row) => row.getAttribute("data-line"));
+    expect(marked()).toEqual(["3", "4", "5"]);
+    await rerender(<CodeFileView name={FIXTURES.ts.name} contents={FIXTURES.ts.contents} line={4} lineEnd={2} mode="dark" palette="paper" />);
+    expect(marked()).toEqual(["4"]);
+    await rerender(<CodeFileView name={FIXTURES.ts.name} contents={FIXTURES.ts.contents} lineEnd={5} mode="dark" palette="paper" />);
+    expect(marked()).toEqual([]);
+  }, 90_000);
+
   test("the anchored line is scrolled to the middle of the nearest scroller, on mount and again when the anchor moves", async () => {
     const contents = Array.from({ length: 60 }, (_line, index) => `const v${index} = ${index}`).join("\n") + "\n";
     /*
