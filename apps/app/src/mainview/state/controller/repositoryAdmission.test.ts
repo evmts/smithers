@@ -714,6 +714,32 @@ test("a URL refused before sign-in reopens from its authorized repository docume
   } finally { await h.close() }
 })
 
+// The return from sign-in to ask (`/<o>/<r>/?ask=1`) on a private repository: the anonymous read refuses first,
+// and the reopened entry must keep the Ask request so the frame opens Ask (PM f-v0gcc0, QA f-dawg5j).
+test("a URL refused before sign-in keeps its Ask request when it reopens", async () => {
+  const h = await setup(undefined, async input => String(input) === DOCUMENT ? json(200, { full_name: repo, is_public: false }) : json(200, []))
+  try {
+    const requestId = beginRepositoryEntry(h.store, repo, true)!
+    expect(h.store.session().repositoryEntry).toMatchObject({ requestId, ask: true, phase: "pending" })
+    await openRequestedRepo(h.controller, async () => json(404, {}), repo, requestId)
+    expect(h.store.session().repositoryEntry).toMatchObject({ phase: "failed", failureKind: "not-public", ask: true })
+    await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", admin: false, scopesPlain: null }).isPersisted.promise
+    await until(() => h.store.session().repositoryEntry?.phase === "ready")
+    expect(h.store.session().repositoryEntry?.requestId).not.toBe(requestId)
+    expect(h.store.session().repositoryEntry).toMatchObject({ repo, phase: "ready", ask: true })
+  } finally { await h.close() }
+})
+
+test("a URL refused before sign-in without an Ask request reopens without one", async () => {
+  const h = await setup(undefined, async input => String(input) === DOCUMENT ? json(200, { full_name: repo, is_public: false }) : json(200, []))
+  try {
+    await openRequestedRepo(h.controller, async () => json(404, {}), repo, h.store.session().repositoryEntry!.requestId)
+    await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", admin: false, scopesPlain: null }).isPersisted.promise
+    await until(() => h.store.session().repositoryEntry?.phase === "ready")
+    expect(h.store.session().repositoryEntry?.ask).toBeUndefined()
+  } finally { await h.close() }
+})
+
 test("a member whose inventory lacks the URL's repository keeps the refusal without reopening it again", async () => {
   let catalogReads = 0, inventoryReads = 0
   const h = await setup(undefined, async input => {

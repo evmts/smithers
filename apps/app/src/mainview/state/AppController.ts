@@ -32,7 +32,7 @@ import { createDebugApiSeam, debugApiFailureCopy, presentDebugApiFailure, type D
 import { confirmCancelRefusal } from "@smthrs/rpc/ConfirmCard"
 import { refusalOf, type Refusal } from "@smthrs/rpc/Refusal"
 import { refusalLine } from "@smthrs/rpc/RefusalCopy"
-import { loadPublicCatalog, openRequestedRepo } from "../RepoLink"
+import { beginRepositoryEntry, loadPublicCatalog, openRequestedRepo } from "../RepoLink"
 import { createRepositoryReadiness } from "./controller/repositoryAdmission"
 
 import { createConversationHistoryController } from "./controller/conversationHistory"
@@ -3094,8 +3094,11 @@ export const createAppController = (
     const key = `${identity.login ?? ""}:${entry.repo.toLowerCase()}`
     if (reopenedEntries.has(key)) return
     reopenedEntries.add(key)
+    // The refused entry's Ask request (`?ask=1`, Design d-fbhqgy) carries into the reopened one: a
+    // person who signed in to ask about their own private repository lands with Ask open.
+    const requestId = beginRepositoryEntry(store, entry.repo, entry.ask === true)
     void openRequestedRepo({ store, selectRepo, loadRepositories: repositoriesSeam.loadRepositories, runCommand: (name, args) => runCommand(name, args) },
-      ctx.http, entry.repo)
+      ctx.http, entry.repo, requestId)
   }
   const setupIdentitySubscription = store.collections.identitySessions.subscribeChanges(() => {
     const owner = setupOwner()
