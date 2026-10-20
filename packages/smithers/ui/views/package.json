@@ -31,7 +31,10 @@
   "sideEffects": false,
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./Bridge": "./src/Bridge.ts",
+    "./Interactions": "./src/Interactions.ts",
+    "./ViewCsp": "./src/ViewCsp.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -52,6 +55,21 @@
         "types": "./dist/esm/index.d.ts",
         "import": "./dist/esm/index.js",
         "require": "./dist/cjs/index.js"
+      },
+      "./Bridge": {
+        "types": "./dist/esm/Bridge.d.ts",
+        "import": "./dist/esm/Bridge.js",
+        "require": "./dist/cjs/Bridge.js"
+      },
+      "./Interactions": {
+        "types": "./dist/esm/Interactions.d.ts",
+        "import": "./dist/esm/Interactions.js",
+        "require": "./dist/cjs/Interactions.js"
+      },
+      "./ViewCsp": {
+        "types": "./dist/esm/ViewCsp.d.ts",
+        "import": "./dist/esm/ViewCsp.js",
+        "require": "./dist/cjs/ViewCsp.js"
       }
     }
   },

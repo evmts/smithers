@@ -1,5 +1,9 @@
 /** @jsxImportSource react */
-import { Bridge, type Interactions, ViewCsp } from "@smthrs/views";
+// The frame-side modules only: the package root also exports the presentation
+// realm, whose harness a shared View must not reach (C-UI-08).
+import * as Bridge from "@smthrs/views/Bridge";
+import type * as Interactions from "@smthrs/views/Interactions";
+import * as ViewCsp from "@smthrs/views/ViewCsp";
 import { type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../cn";
 import { composeSmithersUiStyles, useInjectUiCss } from "../styles";
@@ -9,7 +13,8 @@ import { frameRuntime } from "./runtime.generated";
 /** An interaction the page admitted: a declared `state` or `message` event. */
 export type GeneratedViewInteraction = Extract<Bridge.Verdict, { readonly _tag: "State" | "Message" }>;
 
-export type GeneratedViewProps = Omit<ComponentProps<"div">, "children" | "title"> & {
+/** Only layout passes through to the host element: a handler there would bypass the declared interactions (C-UI-08). */
+export type GeneratedViewProps = Pick<ComponentProps<"div">, "className" | "style"> & {
   /** The view's HTML, as the presentation realm rendered it. */
   html: string;
   /** The view's declared events: anything else the frame sends is refused. */
@@ -78,7 +83,6 @@ export function GeneratedView({
   now = Date.now,
   className,
   style,
-  ...props
 }: GeneratedViewProps) {
   useInjectUiCss();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
@@ -162,7 +166,6 @@ export function GeneratedView({
       data-size={size}
       className={cn("sui-generated-view", className)}
       style={size === "inline" ? { height, ...style } : style}
-      {...props}
     >
       {srcDoc === undefined ? null : (
         <iframe
