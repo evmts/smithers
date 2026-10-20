@@ -6,7 +6,8 @@ and its changes and live query results are `Stream`s. The TanStack DB
 collection stays available for framework bindings such as `@tanstack/react-db`,
 so a view layer renders the same live queries the Effect program writes to.
 `Persistence` keeps a collection's rows on the device in SQLite, and `Outbox`
-stores writes durably and sends them until they succeed or are refused.
+stores writes durably and sends them until they succeed or are refused, or
+until the program takes one back before it is sent.
 
 The package will move to its own repository as an open-source library; its
 proposed npm name is `effect-tanstack-db`.

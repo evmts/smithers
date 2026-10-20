@@ -29,7 +29,7 @@ describe("live", () => {
   })
 
   test.skipIf(missing.length > 0 || !githubUp)(
-    "mirrors a public GitHub repository, waits for its sync, then lists and reads it",
+    "mirrors a public GitHub repository, waits for its sync, then lists and reads it, and lists its branches and tags",
     async () => {
       const program = Effect.gen(function*() {
         const head = yield* GitRemote.head(REMOTE)
@@ -56,11 +56,15 @@ describe("live", () => {
           ref: commits.commits[0]!.sha,
           maxBytes: 512 * 1024
         })
+        const branches = yield* client.listBranches(name, { limit: 100 })
+        const tags = yield* client.listTags(name, { limit: 100 })
         return {
           head,
           sha: commits.commits[0]!.sha,
           paths: files.paths,
-          readme: new TextDecoder().decode(readme.bytes)
+          readme: new TextDecoder().decode(readme.bytes),
+          branches: branches.branches,
+          tags: tags.tags
         }
       })
       const result = await Effect.runPromise(program.pipe(
@@ -70,6 +74,10 @@ describe("live", () => {
       expect(result.sha).toBe(result.head.sha)
       expect(result.paths).toContain("README.md")
       expect(result.readme.length).toBeGreaterThan(0)
+      // The mirror carries every branch, the default one at the head GitHub reported.
+      expect(result.branches.find((branch) => branch.name === result.head.branch)?.sha).toBe(result.head.sha)
+      expect(result.branches.length).toBeGreaterThan(1)
+      expect(result.tags.every((tag) => /^[0-9a-f]{40}$/.test(tag.sha))).toBe(true)
     },
     180_000
   )

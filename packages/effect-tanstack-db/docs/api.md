@@ -235,7 +235,7 @@ TanStack DB adds its virtual properties (`$synced`, `$key`, `$origin`,
 ## `Query`
 
 ```ts
-export { and, caseWhen, eq, gt, gte, isNull, isUndefined, lt, lte, not, or } from "@tanstack/db"
+export { and, caseWhen, coalesce, eq, gt, gte, isNull, isUndefined, lt, lte, not, or } from "@tanstack/db"
 ```
 
 TanStack DB's expressions, re-exported as they are. They are pure data: each
@@ -389,6 +389,7 @@ interface Service {
   ) => Effect.Effect<Write, NotAdmitted | MutationRefused>
   readonly status: Stream.Stream<Status>
   readonly retryNow: Effect.Effect<void>
+  readonly withdraw: (idempotencyKey: string) => Effect.Effect<void, NotWithdrawn>
 }
 
 interface Write {
@@ -408,6 +409,7 @@ interface Status {
 | `transact` | Writes through mutation `name`. `mutate` runs at once, synchronously, inside the write, so its inserts, updates and deletes show as optimistic rows until the write settles. Fails with `NotAdmitted` when this program doesn't lead (it never takes the library's online-only path), and with `mutate`'s `MutationRefused`, after rolling the write back. The current span, if any, is stored with the write. |
 | `status`   | The outbox's state now, then each change: whether this program leads, and whether the last send failed on the `network` (no status) or at the `server`; null once a send gets through.                                                                                                                                                                                                                         |
 | `retryNow` | Sends every waiting write now instead of waiting out its backoff: the network detector's `notifyOnline`.                                                                                                                                                                                                                                                                                                       |
+| `withdraw` | Takes back a write not sent yet, by its idempotency key: deletes it from the storage, so it is never sent, and rolls back its optimistic rows. Fails with `NotWithdrawn` when it can't. See below.                                                                                                                                                                                                             |
 
 `Write.admitted` succeeds once the write is stored, and fails with
 `NotAdmitted` (`reason: "storage"`) when the storage refused it, or
@@ -415,32 +417,91 @@ interface Status {
 rolls back. `Write.settled` succeeds once the mutation succeeded, and fails
 with `TransactionFailed` when the write rolled back.
 
+#### Taking a write back
+
+`withdraw(idempotencyKey)` takes back a stored write that is waiting to be
+sent: queued while offline, waiting out its backoff, or restored after a
+reload. Use it to let a person edit or cancel a write before the outbox sends
+it.
+
+```ts
+const write = yield * outbox.transact("ask", { idempotencyKey: question.id }, Effect.asVoid(questions.insert(question)))
+yield * write.admitted
+// The person edits the question before it was sent.
+yield * outbox.withdraw(question.id)
+```
+
+When `withdraw` succeeds, the write is gone from the storage and its rows are
+gone from the collection. Its `settled` fails with `TransactionFailed`, whose
+`cause` is an error named `OutboxWithdrawn`. As when the server refuses a
+write, TanStack DB also rolls back the rows of later pending writes on the same
+keys; those writes are still sent. A restored write's rows roll back the same
+way. When the outbox reaches the withdrawn write in its queue, it settles it
+without calling the mutation and counts `outbox_attempts` with outcome
+`withdrawn`; the writes behind it are sent in order.
+
+A send claims its write under the same lock `withdraw` holds, so a write is
+never both sent and taken back. The lock is one per program: a takeover by
+another tab in the moment of the withdraw is not covered by it.
+
+| `NotWithdrawn` reason | Means                                                                                                                                                                                        |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `follower`            | This program doesn't lead the outbox, so another program may be sending the write.                                                                                                           |
+| `gone`                | No stored write waiting to be sent has that key: it was sent or refused already, isn't stored yet (`admitted` hasn't succeeded), or was never made.                                          |
+| `sending`             | The write's mutation is running now, or the write was just sent or refused and the library is deleting it. It settles as usual.                                                              |
+| `storage`             | Reading or deleting the storage failed. The write is sent as usual, and the failure is logged as `outbox write not withdrawn` at Warn level with `reason`. Other reasons log at Debug level. |
+
+A withdraw is a span, `outbox.withdraw`, with `outcome` (`withdrawn` or the
+reason), and a success is logged as `outbox write withdrawn` at Info level with
+the mutation's `name`, never the write's rows.
+
 ### `Outbox.lockLeader` and `Outbox.Lock`
 
 ```ts
 interface Lock {
-  readonly hold: (name: string) => Effect.Effect<void, never, Scope.Scope>
+  readonly hold: (
+    name: string,
+    options?: { readonly steal?: boolean }
+  ) => Effect.Effect<{ readonly lost: Effect.Effect<void> }, never, Scope.Scope>
 }
 
 const lockLeader: (options: {
   readonly lock: Lock
   readonly name: string
   readonly grantWithin?: Duration.Input
-}) => Effect.Effect<Leader & { readonly dispose: () => void }, never, Scope.Scope>
+}) => Effect.Effect<
+  Leader & { readonly take: Effect.Effect<void>; readonly dispose: () => void },
+  never,
+  Scope.Scope
+>
 ```
 
 A leader for the outbox over a lock service, so the outbox shares the host's one
 election mechanism: `hold(name)` waits until this program holds the exclusive
-lock `name` and holds it until the scope closes, as `@smthrs/platform-browser`'s
-`WebLock` does. Unlike the library's `WebLocksLeader`, a program that doesn't
-get the lock waits for it, so when the leader closes, the next one leads and
-restores the writes it stored. `requestLeadership` answers within
-`grantWithin` (default 100 ms); a lock granted later is reported through
-`onLeadershipChange`. The lock is released when the outbox stops or the scope
-closes.
+lock `name` and holds it until the scope closes, or with `steal` takes it at
+once from whichever program holds it; `lost` completes when another program
+steals it. `@smthrs/platform-browser`'s `WebLock` is one. Unlike the library's
+`WebLocksLeader`, a program that doesn't get the lock waits for it, so when the
+leader closes, the next one leads and restores the writes it stored.
+`requestLeadership` answers within `grantWithin` (default 100 ms); a lock
+granted later is reported through `onLeadershipChange`.
+
+`take` makes this program lead at once, as the tab a person is using should: it
+steals the lock unless this program leads already, and completes once the
+outbox has heard it leads, so a write made next is admitted. The program it
+took the lead from hears a moment later that it lost the lock, stops leading
+(its send in flight finishes), and waits for the lock again, so it leads again
+once the taker closes. A write is sent only while the storage holds it: one the
+first program still had queued, which the taker sent and deleted meanwhile,
+settles without a second send when the first leads again (counted
+`sent_elsewhere`). Only a write both of them are sending in the moment the lead
+moves reaches the server twice, under one idempotency key, so the server must
+dedupe on it. The lock is released when the outbox stops or the scope closes.
 
 ```ts
 const leader = yield * Outbox.lockLeader({ lock: WebLock.make(navigator.locks), name: "app-outbox" })
+// The person focused this tab: it leads, and writes made here are admitted.
+yield * leader.take
 ```
 
 ### `Outbox.Online.always`
@@ -456,15 +517,17 @@ offline.
 
 ### Models, errors and records
 
-| Export             | Is                                                                                                                                                                             |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Leader`           | The library's `LeaderElection`.                                                                                                                                                |
-| `Online`           | The library's `OnlineDetector`.                                                                                                                                                |
-| `Refused`          | `Data.TaggedError` with `status?: number`: the server refused the write for good.                                                                                              |
-| `Retry`            | `Data.TaggedError` with `status?: number`: the write didn't get through (a 5xx, 408 or 429, or no status for the network or a deadline).                                       |
-| `NotAdmitted`      | `Data.TaggedError` with `reason: "follower" \| "storage"`: another program leads, or the storage failed to store the write. Nothing was sent and the write's rows rolled back. |
-| `attempts`         | Counter `outbox_attempts`, by `name` and `outcome`: `sent`, `retry`, `refused` or `defect`.                                                                                    |
-| `refused`          | Counter `outbox_refused`, by `name` and `status` (`none` without one).                                                                                                         |
-| `queuedMs`         | Histogram `outbox_queued_ms`, by `name`: milliseconds from a write to its mutation succeeding.                                                                                 |
-| `leaderChanges`    | Counter `outbox_leader_changes`, by `leader` (`true` or `false`).                                                                                                              |
-| span `outbox.send` | One per send, with `name`, `attempt` and `outcome`, linked to the span the write was made in, so a send after a reload still points at the ask.                                |
+| Export                 | Is                                                                                                                                                                                                                     |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Leader`               | The library's `LeaderElection`.                                                                                                                                                                                        |
+| `Online`               | The library's `OnlineDetector`.                                                                                                                                                                                        |
+| `Refused`              | `Data.TaggedError` with `status?: number`: the server refused the write for good.                                                                                                                                      |
+| `Retry`                | `Data.TaggedError` with `status?: number`: the write didn't get through (a 5xx, 408 or 429, or no status for the network or a deadline).                                                                               |
+| `NotAdmitted`          | `Data.TaggedError` with `reason: "follower" \| "storage"`: another program leads, or the storage failed to store the write. Nothing was sent and the write's rows rolled back.                                         |
+| `NotWithdrawn`         | `Data.TaggedError` with `reason: "follower" \| "gone" \| "sending" \| "storage"`: `withdraw` didn't take the write back, and nothing changed. See [Taking a write back](#taking-a-write-back).                         |
+| `attempts`             | Counter `outbox_attempts`, by `name` and `outcome`: `sent`, `retry`, `refused`, `defect`, `sent_elsewhere` (another program sent the write while this one followed), or `withdrawn` (settled unsent after `withdraw`). |
+| `refused`              | Counter `outbox_refused`, by `name` and `status` (`none` without one).                                                                                                                                                 |
+| `queuedMs`             | Histogram `outbox_queued_ms`, by `name`: milliseconds from a write to its mutation succeeding.                                                                                                                         |
+| `leaderChanges`        | Counter `outbox_leader_changes`, by `leader` (`true` or `false`).                                                                                                                                                      |
+| span `outbox.send`     | One per send, with `name`, `attempt` and `outcome`, linked to the span the write was made in, so a send after a reload still points at the ask.                                                                        |
+| span `outbox.withdraw` | One per `withdraw`, with `outcome`: `withdrawn`, or the `NotWithdrawn` reason.                                                                                                                                         |

@@ -1,4 +1,5 @@
 import { Effect, Exit, Fiber, Schedule } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
@@ -43,6 +44,21 @@ describe("the real source", () => {
   test("sends a request with the fetch in FetchHttpClient.Fetch and answers with the response", async () => {
     const text = await Effect.runPromise(Effect.flatMap(request("/v1/shape?offset=-1"), body))
     expect(JSON.parse(text)).toEqual({ url: "/v1/shape?offset=-1" })
+  })
+
+  test("never reads or keeps a response in the HTTP cache: every request is sent with cache: no-store", async () => {
+    const sent: Array<RequestInit | undefined> = []
+    const recording: typeof globalThis.fetch = (input, init) => {
+      sent.push(init)
+      return globalThis.fetch(input, init)
+    }
+    const text = await Effect.runPromise(
+      Effect.flatMap(request("/v1/shape?offset=-1"), body).pipe(
+        Effect.provideService(FetchHttpClient.Fetch, recording)
+      )
+    )
+    expect(JSON.parse(text)).toEqual({ url: "/v1/shape?offset=-1" })
+    expect(sent).toEqual([expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) })])
   })
 
   test("fails with RequestFailed, without a status, when nothing answers", async () => {

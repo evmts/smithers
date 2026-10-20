@@ -45,6 +45,10 @@ export interface Repo {
   syncing: number
   files: Record<string, Uint8Array>
   commits: Array<Record<string, unknown>>
+  /** Branches as Code Storage lists them: `{ name, head_sha, created_at }`. */
+  branches: Array<{ name: string; head_sha: string; created_at: string }>
+  /** Tags as Code Storage lists them: `{ name, sha }`. */
+  tags: Array<{ name: string; sha: string }>
 }
 
 /** A response the next matching request gets instead of the service's own answer; `throw` makes `fetch` reject. */
@@ -106,7 +110,9 @@ export const codeStorage = (publicKey: CryptoKey) => {
       return answer
     }
 
-    const route = /^\/api\/repos(?:\/([^/]+))?(\/upstream\/pull|\/files|\/file|\/commits)?$/.exec(url.pathname)
+    const route = /^\/api\/repos(?:\/([^/]+))?(\/upstream\/pull|\/files|\/file|\/commits|\/branches|\/tags)?$/.exec(
+      url.pathname
+    )
     if (route === null || url.origin !== BASE) {
       record(undefined)
       return problem(404, "route_not_found")
@@ -138,7 +144,9 @@ export const codeStorage = (publicKey: CryptoKey) => {
         defaultBranch: default_branch ?? "main",
         syncing: 0,
         files: {},
-        commits: []
+        commits: [],
+        branches: [],
+        tags: []
       })
       return Response.json({ repo_id: "r", repo_name: name, http_url: name, message: "created" }, { status: 201 })
     }
@@ -176,23 +184,53 @@ export const codeStorage = (publicKey: CryptoKey) => {
         }
       })
     }
+    if (action === "/branches" || action === "/tags") {
+      const all = action === "/branches" ? repo.branches : repo.tags
+      const start = Number(url.searchParams.get("cursor") ?? "0")
+      const limit = Number(url.searchParams.get("limit") ?? "20")
+      const page = all.slice(start, start + limit).map((ref, index) => ({ ...ref, cursor: String(start + index) }))
+      const more = start + limit < all.length
+      return Response.json({
+        [action === "/branches" ? "branches" : "tags"]: page,
+        has_more: more,
+        ...(more ? { next_cursor: String(start + limit) } : {})
+      })
+    }
     return Response.json({ commits: repo.commits, has_more: false })
   }
 
   return { fetch, repos, seen, faults }
 }
 
-/** A body that streams `size` bytes of `a` in 64 KiB chunks, as a long response would arrive. */
-export const longBody = (size: number) => {
+/** A body that streams `size` bytes of `a` in `chunkBytes` chunks, as a long response would arrive. */
+export const longBody = (size: number, chunkBytes = 64 * 1024) => {
   let sent = 0
   return new ReadableStream<Uint8Array>({
     pull: (controller) => {
-      const chunk = Math.min(64 * 1024, size - sent)
+      const chunk = Math.min(chunkBytes, size - sent)
       if (chunk <= 0) return controller.close()
       controller.enqueue(new Uint8Array(chunk).fill(97))
       sent += chunk
     }
   })
+}
+
+/**
+ * How much longer `run(4 * n)` takes than `run(n)`: about 4 when its cost is linear in `n`, about 16 when it is
+ * quadratic. Each size runs three times after a warm-up and keeps its fastest, so a pause can't pass for growth.
+ */
+export const growth = async (run: (n: number) => Promise<unknown>, n: number): Promise<number> => {
+  const fastest = async (size: number) => {
+    let best = Number.POSITIVE_INFINITY
+    for (let round = 0; round < 3; round++) {
+      const start = performance.now()
+      await run(size)
+      best = Math.min(best, performance.now() - start)
+    }
+    return best
+  }
+  await run(n)
+  return (await fastest(4 * n)) / (await fastest(n))
 }
 
 /** A body that sends `first` and then breaks, as a connection reset mid-response would. */

@@ -2,7 +2,7 @@
 
 [Code Storage](https://code.storage), Pierre's git hosting, for Effect
 programs. Import a public GitHub repository with no GitHub App, start its
-sync, list its files, read a file and list its commits. Every request carries
+sync, list its files, read a file, and list its commits, branches and tags. Every request carries
 its own short ES256 token, signed with WebCrypto by your organization's key,
 for one repository and one scope. Failures are typed, bodies are bounded, and
 nothing the server says in free text reaches your errors or telemetry.

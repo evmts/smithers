@@ -32,16 +32,51 @@ const program = Effect.gen(function*() {
 Point the client's shape URL at the route that serves the handler, for example
 `GET /api/shapes/items`.
 
-`ShapeProxy.config` reads three variables with Effect `Config`:
+`ShapeProxy.config` reads four variables with Effect `Config`:
 
-| Variable             | Use                                                                                                |
-| -------------------- | -------------------------------------------------------------------------------------------------- |
-| `ELECTRIC_URL`       | Electric's origin. The proxy calls its `/v1/shape`. Required unless you pass `url` as the default. |
-| `ELECTRIC_SECRET`    | Electric's secret, read as a redacted value and sent as `secret`. Optional.                        |
-| `ELECTRIC_SOURCE_ID` | Electric Cloud's source id, sent as `source_id`. Optional.                                         |
+| Variable             | Use                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------- |
+| `ELECTRIC_URL`       | Electric's origin. The proxy calls its `/v1/shape`. Required unless you pass `url` as the default.      |
+| `ELECTRIC_SECRET`    | Electric's secret, read as a redacted value and sent as `secret`. Optional.                             |
+| `ELECTRIC_SECRET_AS` | How the secret is sent: `parameter` (the default) or `bearer`. Optional. See [The secret](#the-secret). |
+| `ELECTRIC_SOURCE_ID` | Electric Cloud's source id, sent as `source_id`. Optional.                                              |
 
-You can also pass `url`, `secret` (a `Redacted` string) and `sourceId` to `make`
-directly.
+You can also pass `url`, `secret` (a `Redacted` string), `secretAs` and
+`sourceId` to `make` directly.
+
+## Decide the shape per request
+
+`shape` can be an Effect that decides the shape for each request, for example
+from the session, after the method check and before Electric is called. Its
+requirements become the handler's. When it can't decide, it fails with
+`ShapeProxy.Refused`, and the proxy answers that status without calling
+Electric:
+
+```ts
+const messages = ShapeProxy.make({
+  ...connection,
+  shape: Effect.gen(function*() {
+    const person = yield* whoIsAsking.pipe(
+      Effect.mapError(() => new ShapeProxy.Refused({ status: 503, retryAfter: 5 }))
+    )
+    return { table: "messages", where: "owner = $1", params: { "1": person.id } }
+  })
+})
+```
+
+| `Refused` status | When                                                    |
+| ---------------- | ------------------------------------------------------- |
+| `401`            | Signed out                                              |
+| `403`            | Not allowed                                             |
+| `503`            | The host can't tell right now, for example its sessions |
+
+A refusal carries `cache-control: private, no-store`, and `retry-after` when
+`retryAfter` (seconds) is set. Refuse rather than serve a narrower shape under
+the same URL: a device holds the shape's `handle` and `offset`, and a `where`
+or `params` that changes under them makes Electric answer
+`409 must-refetch`, which empties the device's copy. An Electric collection
+keeps its rows on a refusal: it retries a `503` under its sync policy and stops
+on a `401` or `403`.
 
 ## What reaches Electric
 
@@ -54,7 +89,8 @@ The proxy builds every upstream request itself, in this order:
 2. The host's shape: `table`, then `where` and its `params` when `shape` sets
    them, as `params[1]`, `params[2]` and so on, then `columns`, comma-separated,
    when `shape` lists them.
-3. `secret` and `source_id`, when the connection has them.
+3. `secret` and `source_id`, when the connection has them; `secret` only when
+   `secretAs` is `"parameter"`, the default.
 
 Every other parameter the browser sends is dropped, including `table`,
 `where`, `params`, `columns`, `replica`, `secret`, `source_id` and every
@@ -69,13 +105,49 @@ Electric's status, headers and body stream back. `content-encoding` and
 so is every `access-control-*` header, because the proxy serves the browser's
 own origin.
 
+## Caching
+
+Electric marks a shape's responses cacheable: a first response says
+`public, max-age=604800`. The browser's URL doesn't name the person, so when
+your server builds `where` from the session, or serves the shape only after a
+session check, a cached response answers the next person in that browser, or
+anyone after sign-out. So by default (`cache: "no-store"`) the proxy drops
+Electric's `cache-control`, `etag`, `surrogate-control`, `cdn-cache-control`
+and `expires`, and every response it sends, a 405 or 502 included, says
+`cache-control: private, no-store`.
+
+Opt a shape in to Electric's own caching only when it is the same for everyone
+and served without a session check:
+
+```ts
+ShapeProxy.make({ ...connection, shape: { table: "releases" }, cache: "public" })
+```
+
+Electric's protocol doesn't depend on a cache: a live request carries
+`cursor` and a retry `cache-buster`, so a shape syncs and follows changes the
+same either way. On the browser side, `ShapeSource.fetchSource` sends every
+request with `cache: "no-store"`, so the HTTP cache never answers a shape
+request, even one a server marked cacheable.
+
+## The secret
+
+Electric takes its secret only as the `secret` query parameter, so that is the
+default. A URL is what platforms log and trace: Cloudflare's invocation logs
+record a request's URL, and its traces record a subrequest's `url.full` and
+`url.query`. When Electric sits behind your own gateway, set `secretAs:
+"bearer"` (or `ELECTRIC_SECRET_AS=bearer`): the proxy sends
+`authorization: Bearer <secret>` instead, which those records leave out, and
+the gateway checks it in constant time and doesn't pass it on. The proxy's own
+client span records the header redacted.
+
 ## Refusals
 
 A request the proxy refuses never reaches Electric:
 
-| Request                   | Status                 | Body |
-| ------------------------- | ---------------------- | ---- |
-| A method other than `GET` | 405, with `allow: GET` | none |
+| Request                               | Status                      | Body |
+| ------------------------------------- | --------------------------- | ---- |
+| A method other than `GET`             | 405, with `allow: GET`      | none |
+| A `shape` Effect that fails `Refused` | its status, 401, 403 or 503 | none |
 
 When Electric can't be reached, the proxy answers 502.
 
@@ -101,6 +173,9 @@ clause or a parameter value.
 
 ## Limits
 
+- **A cached response is outside the proxy's reach.** A `"public"` shape's
+  responses can be served by a browser or CDN without reaching your server, so
+  a session check there doesn't apply to them.
 - **The shape is the read boundary.** A browser reads the whole shape. To keep
   a browser to some rows, set `shape.where` and `shape.params` on the server;
   to keep a column on the server, list the others in `shape.columns`, the

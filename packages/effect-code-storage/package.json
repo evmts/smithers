@@ -7,7 +7,7 @@
   "smthrs": {
     "group": "agent"
   },
-  "description": "Code Storage, Pierre's git hosting, as Effect: import a public GitHub repository, list its files, read a file and its commits, with ES256 tokens signed by WebCrypto; plus a git remote's HEAD over smart HTTP",
+  "description": "Code Storage, Pierre's git hosting, as Effect: import a public GitHub repository, list its files, branches and tags, read a file and its commits, with ES256 tokens signed by WebCrypto; plus a git remote's HEAD over smart HTTP",
   "homepage": "https://github.com/smithersai/smithers/tree/main/packages/effect-code-storage",
   "repository": {
     "type": "git",

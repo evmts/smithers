@@ -1,5 +1,19 @@
 import { startOfflineExecutor } from "@tanstack/offline-transactions"
-import { Context, Effect, Exit, Layer, Metric, Option, Queue, Scope, Stream, Tracer } from "effect"
+import {
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Metric,
+  Option,
+  Queue,
+  References,
+  Scope,
+  Stream,
+  Tracer
+} from "effect"
 import { describe, expect, test, vi } from "vitest"
 import { Collection, Outbox } from "../src/index.ts"
 import { id, memoryStorage, Note, note, withLogs } from "./fixtures.ts"
@@ -29,10 +43,11 @@ const start = (options: {
   readonly sent: Array<{ readonly rows: ReadonlyArray<unknown>; readonly idempotencyKey: string }>
   readonly leader?: Outbox.Leader | undefined
   readonly notes?: string
+  readonly online?: Outbox.Online
 }) =>
   Effect.gen(function*() {
     const notes = yield* Collection.local({ id: options.notes ?? id("notes"), schema: Note, getKey: (row) => row.id })
-    const online = Outbox.Online.always()
+    const online = options.online ?? Outbox.Online.always()
     const context = yield* Layer.build(
       Outbox.layer({
         start: startOfflineExecutor,
@@ -71,6 +86,22 @@ const save = (outbox: Outbox.Service, notes: Collection.Collection<Note, string>
   outbox.transact("save", { idempotencyKey: row.id }, Effect.asVoid(notes.insert(row)))
 
 const texts = (rows: ReadonlyArray<Note>) => rows.map(({ id }) => id)
+
+/** A network detector that starts offline; `connect` brings it online and tells the outbox, as a browser does. */
+const offline = () => {
+  const detector = Outbox.Online.always()
+  const state = { online: false }
+  return {
+    ...detector,
+    isOnline: () => state.online,
+    connect: () => {
+      state.online = true
+      detector.notifyOnline()
+    }
+  }
+}
+
+const withdrawnCount = Metric.value(Metric.withAttributes(Outbox.attempts, { name: "save", outcome: "withdrawn" }))
 
 describe("a write", () => {
   test("shows its rows at once, is stored before it is sent, is sent once with its key, and settles", async () => {
@@ -345,6 +376,320 @@ describe("admission", () => {
   })
 })
 
+describe("withdraw", () => {
+  const keys = (sent: ReadonlyArray<{ readonly idempotencyKey: string }>) =>
+    sent.map(({ idempotencyKey }) => idempotencyKey)
+  // Why `withdraw` refused, failing the test if it took the write back.
+  const refusal = (outbox: Outbox.Service, key: string) =>
+    Effect.map(Effect.flip(outbox.withdraw(key)), (error: Outbox.NotWithdrawn) => error.reason)
+
+  test("takes back a write waiting to be sent: its rows and stored copy go at once, it is never sent, and the writes after it are", async () => {
+    const world = await setup(["ok", "ok"])
+    const network = offline()
+    const seen = await scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start({ ...world, online: network })
+      const a = yield* save(outbox, notes, note("a", 1))
+      yield* a.admitted
+      const b = yield* save(outbox, notes, note("b", 2))
+      yield* b.admitted
+      yield* outbox.withdraw("a")
+      const rows = texts(yield* notes.toArray)
+      const stored = world.storage.entries.has(`tx:${a.id}`)
+      const settled = yield* Effect.flip(a.settled)
+      const c = yield* save(outbox, notes, note("c", 3))
+      yield* c.admitted
+      // Offline, asking to send now sends nothing.
+      yield* outbox.retryNow
+      const sentOffline = keys(world.sent)
+      network.connect()
+      yield* b.settled
+      yield* c.settled
+      return {
+        rows,
+        stored,
+        cause: (settled.cause as Error).name,
+        sentOffline,
+        withdrawn: (yield* withdrawnCount).count,
+        left: world.storage.entries.size
+      }
+    }))
+    expect(seen).toEqual({
+      rows: ["b"],
+      stored: false,
+      cause: "OutboxWithdrawn",
+      sentOffline: [],
+      withdrawn: 1,
+      left: 0
+    })
+    expect(keys(world.sent)).toEqual(["b", "c"])
+  })
+
+  test("takes back a write waiting out its backoff, and the write behind it is sent", async () => {
+    const world = await setup([new Outbox.Retry({})])
+    const seen = await scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start(world)
+      const a = yield* save(outbox, notes, note("a", 1))
+      // Its send didn't get through: the library stores its next attempt, at least a second away.
+      yield* Effect.promise(() =>
+        until(() => expect(JSON.parse(world.storage.entries.get(`tx:${a.id}`)!).retryCount).toBe(1))
+      )
+      const b = yield* save(outbox, notes, note("b", 2))
+      yield* b.admitted
+      yield* outbox.withdraw("a")
+      yield* Queue.offer(world.outcomes, "ok")
+      yield* outbox.retryNow
+      yield* b.settled
+      return { withdrawn: (yield* withdrawnCount).count, left: world.storage.entries.size }
+    }))
+    expect(seen).toEqual({ withdrawn: 1, left: 0 })
+    expect(keys(world.sent)).toEqual(["a", "b"])
+  })
+
+  /** `storage` whose next store, once `close` is called, waits until `open`: the library's write after a send. */
+  const gated = (storage: ReturnType<typeof memoryStorage>) => {
+    const gate = { closed: false, reached: false, open: () => {} }
+    return {
+      gate,
+      storage: {
+        ...storage,
+        set: async (key: string, value: string) => {
+          if (gate.closed) {
+            gate.closed = false
+            gate.reached = true
+            await new Promise<void>((open) => {
+              gate.open = open
+            })
+          }
+          return storage.set(key, value)
+        }
+      }
+    }
+  }
+
+  test("leaves a write alone until the library has stored its next attempt, so one taken back never comes back", async () => {
+    const world = await setup([])
+    const { gate, storage } = gated(world.storage)
+    const seen = await scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start({ ...world, storage })
+      const a = yield* save(outbox, notes, note("a", 1))
+      yield* Effect.promise(() => until(() => expect(world.sent).toHaveLength(1)))
+      gate.closed = true
+      yield* Queue.offer(world.outcomes, new Outbox.Retry({}))
+      // The send didn't get through, and the library is storing the write's next attempt.
+      yield* Effect.promise(() => until(() => expect(gate.reached).toBe(true)))
+      const storing = yield* refusal(outbox, "a")
+      gate.open()
+      yield* Effect.promise(() =>
+        until(() => expect(JSON.parse(world.storage.entries.get(`tx:${a.id}`)!).retryCount).toBe(1))
+      )
+      yield* outbox.withdraw("a")
+      const b = yield* save(outbox, notes, note("b", 2))
+      yield* Queue.offer(world.outcomes, "ok")
+      yield* outbox.retryNow
+      yield* b.settled
+      return { storing, withdrawn: (yield* withdrawnCount).count, left: world.storage.entries.size }
+    }))
+    expect(seen).toEqual({ storing: "sending", withdrawn: 1, left: 0 })
+    expect(keys(world.sent)).toEqual(["a", "b"])
+  })
+
+  test("leaves a write the server just took alone while the library deletes it: it fails with sending", async () => {
+    const world = await setup([])
+    const { gate, storage } = gated(world.storage)
+    const seen = await scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start({ ...world, storage })
+      const a = yield* save(outbox, notes, note("a", 1))
+      yield* Effect.promise(() => until(() => expect(world.sent).toHaveLength(1)))
+      gate.closed = true
+      yield* Queue.offer(world.outcomes, "ok")
+      // The server took it; the library is marking it sent before deleting it.
+      yield* Effect.promise(() => until(() => expect(gate.reached).toBe(true)))
+      const deleting = yield* refusal(outbox, "a")
+      gate.open()
+      yield* a.settled
+      return { deleting, rows: texts(yield* notes.toArray), left: world.storage.entries.size }
+    }))
+    expect(seen).toEqual({ deleting: "sending", rows: [], left: 0 })
+    expect(keys(world.sent)).toEqual(["a"])
+  })
+
+  test("leaves a write being sent alone: it fails with sending, and the write is sent once and settles", async () => {
+    const world = await setup([])
+    const seen = await scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start(world)
+      const a = yield* save(outbox, notes, note("a", 1))
+      // Its mutation is running, waiting for the server's answer.
+      yield* Effect.promise(() => until(() => expect(world.sent).toHaveLength(1)))
+      const refused = yield* refusal(outbox, "a")
+      const rows = texts(yield* notes.toArray)
+      yield* Queue.offer(world.outcomes, "ok")
+      yield* a.settled
+      return { refused, rows, left: world.storage.entries.size }
+    }))
+    expect(seen).toEqual({ refused: "sending", rows: ["a"], left: 0 })
+    expect(keys(world.sent)).toEqual(["a"])
+  })
+
+  test("leaves a sent write whose deletion was cut short alone: it fails with sending, and it isn't sent again", async () => {
+    const world = await setup([])
+    const collection = id("notes")
+    await scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start({ ...world, notes: collection, online: offline() })
+      yield* (yield* save(outbox, notes, note("a", 1))).admitted
+    }))
+    // As the library stores a write the server took, before it deletes it: the program closed in between.
+    const [key, value] = [...world.storage.entries][0]!
+    world.storage.entries.set(key, JSON.stringify({ ...JSON.parse(value), outboxPhase: "deletion-pending" }))
+    const network = offline()
+    const refused = await scoped(Effect.gen(function*() {
+      const { outbox } = yield* start({ ...world, notes: collection, online: network })
+      const refused = yield* refusal(outbox, "a")
+      network.connect()
+      yield* Effect.promise(() => until(() => expect(world.storage.entries.size).toBe(0)))
+      return refused
+    }))
+    expect(refused).toBe("sending")
+    expect(world.sent).toEqual([])
+  })
+
+  test("takes back a write restored by the next program: its restored rows roll back and it is never sent", async () => {
+    const world = await setup(["ok"])
+    const collection = id("notes")
+    await scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start({ ...world, notes: collection, online: offline() })
+      yield* (yield* save(outbox, notes, note("a", 1))).admitted
+    }))
+    const network = offline()
+    const seen = await scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start({ ...world, notes: collection, online: network })
+      const restored = texts(yield* notes.toArray)
+      yield* outbox.withdraw("a")
+      const rows = texts(yield* notes.toArray)
+      const left = world.storage.entries.size
+      // A write made after it is sent once the network is back; the outbox reaches the withdrawn one first.
+      const b = yield* save(outbox, notes, note("b", 2))
+      network.connect()
+      yield* b.settled
+      return { restored, rows, left, withdrawn: (yield* withdrawnCount).count }
+    }))
+    expect(seen).toEqual({ restored: ["a"], rows: [], left: 0, withdrawn: 1 })
+    expect(keys(world.sent)).toEqual(["b"])
+  })
+
+  test("by a follower changes nothing: it fails with follower, and the leader sends the write", async () => {
+    const world = await setup(["ok"])
+    const follower: Outbox.Leader = {
+      ...single,
+      requestLeadership: () => Promise.resolve(false),
+      isLeader: () => false
+    }
+    const network = offline()
+    const seen = await scoped(Effect.gen(function*() {
+      const leading = yield* start({ ...world, online: network })
+      const a = yield* save(leading.outbox, leading.notes, note("a", 1))
+      yield* a.admitted
+      const following = yield* start({ ...world, leader: follower })
+      const refused = yield* refusal(following.outbox, "a")
+      const stored = world.storage.entries.has(`tx:${a.id}`)
+      const rows = texts(yield* leading.notes.toArray)
+      network.connect()
+      yield* a.settled
+      return { refused, stored, rows }
+    }))
+    expect(seen).toEqual({
+      refused: "follower",
+      stored: true,
+      rows: ["a"]
+    })
+    expect(keys(world.sent)).toEqual(["a"])
+  })
+
+  test("of a key no waiting write has fails with gone: one never made, or one sent already", async () => {
+    const world = await setup(["ok"])
+    const seen = await scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start(world)
+      const never = yield* refusal(outbox, "a")
+      yield* (yield* save(outbox, notes, note("a", 1))).settled
+      return { never, sent: yield* refusal(outbox, "a") }
+    }))
+    expect(seen).toEqual({ never: "gone", sent: "gone" })
+  })
+
+  test("over a storage that can't be read or deleted from fails with storage, and the write is still sent", async () => {
+    const world = await setup(["ok"])
+    // How many of the next calls fail.
+    const failing = { keys: 0, deletes: 0 }
+    const fails = (call: "keys" | "deletes") => {
+      if (failing[call] === 0) return false
+      failing[call]--
+      return true
+    }
+    const storage = {
+      ...world.storage,
+      keys: () => fails("keys") ? Promise.reject(new Error("unreadable")) : world.storage.keys(),
+      delete: (key: string) => fails("deletes") ? Promise.reject(new Error("blocked")) : world.storage.delete(key)
+    }
+    const network = offline()
+    const { result, logs } = await withLogs(Effect.scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start({ ...world, storage, online: network })
+      const a = yield* save(outbox, notes, note("a", 1))
+      yield* a.admitted
+      failing.keys = 1
+      const unread = yield* refusal(outbox, "a")
+      failing.deletes = 1
+      const undeleted = yield* refusal(outbox, "a")
+      const rows = texts(yield* notes.toArray)
+      network.connect()
+      yield* a.settled
+      return { unread, undeleted, rows }
+    })))
+    expect(result).toEqual({ unread: "storage", undeleted: "storage", rows: ["a"] })
+    expect(keys(world.sent)).toEqual(["a"])
+    expect(logs).toContainEqual(expect.objectContaining({
+      message: ["outbox write not withdrawn"],
+      level: "Warn",
+      annotations: { reason: "storage" }
+    }))
+  })
+
+  test("is a span with its outcome, and is logged without the write's rows", async () => {
+    const world = await setup([])
+    const spans: Array<Tracer.NativeSpan> = []
+    const tracer = Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      }
+    })
+    const { logs } = await withLogs(
+      Effect.scoped(Effect.gen(function*() {
+        const { notes, outbox } = yield* start({ ...world, online: offline() })
+        yield* Effect.exit(outbox.withdraw("a"))
+        yield* (yield* save(outbox, notes, note("a", 1, "a private question"))).admitted
+        yield* outbox.withdraw("a")
+      })).pipe(
+        Effect.provideService(Tracer.Tracer, tracer),
+        Effect.provideService(References.MinimumLogLevel, "Debug")
+      )
+    )
+    expect(
+      spans.filter(({ name }) => name === "outbox.withdraw").map(({ attributes }) => attributes.get("outcome"))
+    ).toEqual(["gone", "withdrawn"])
+    expect(logs).toContainEqual(expect.objectContaining({
+      message: ["outbox write not withdrawn"],
+      level: "Debug",
+      annotations: { reason: "gone" }
+    }))
+    expect(logs).toContainEqual(expect.objectContaining({
+      message: ["outbox write withdrawn"],
+      level: "Info",
+      annotations: { name: "save" }
+    }))
+    expect(JSON.stringify(logs)).not.toContain("private")
+  })
+})
+
 describe("Online.always and leadership", () => {
   test("always is always online and notifies its listeners until disposed", async () => {
     const online = Outbox.Online.always()
@@ -378,21 +723,29 @@ describe("Online.always and leadership", () => {
 })
 
 describe("lockLeader", () => {
-  // A lock service over Node's own Web Locks, shaped as @smthrs/platform-browser's WebLock: `hold` waits for the lock
-  // and holds it until the scope closes.
+  // A lock service over Node's own Web Locks, shaped as @smthrs/platform-browser's WebLock: `hold` waits for the lock,
+  // or takes it at once with `steal`, and holds it until the scope closes; `lost` completes when another program steals
+  // it. Interrupting the wait withdraws the request.
   const lock: Outbox.Lock = {
-    hold: (name) =>
-      Effect.acquireRelease(
-        Effect.callback<() => void>((resume, signal) => {
-          navigator.locks.request(
-            name,
-            { signal },
-            () => new Promise<void>((release) => resume(Effect.succeed(release)))
-          )
-            .catch(() => undefined)
-        }),
-        (release) => Effect.sync(release)
-      ).pipe(Effect.asVoid)
+    hold: (name, options) =>
+      Effect.gen(function*() {
+        const lost = yield* Deferred.make<void>()
+        yield* Effect.acquireRelease(
+          Effect.callback<() => void>((resume, signal) => {
+            let granted = false
+            navigator.locks.request(name, options?.steal === true ? { steal: true } : { signal }, () => {
+              if (signal.aborted) return Promise.resolve()
+              granted = true
+              return new Promise<void>((release) => resume(Effect.succeed(release)))
+            })
+              .catch(() => {
+                if (granted) Deferred.doneUnsafe(lost, Exit.void)
+              })
+          }).pipe(Effect.interruptible),
+          (release) => Effect.sync(release)
+        )
+        return { lost: Deferred.await(lost) }
+      })
   }
 
   test("the first program leads; the next waits, and when the first closes it leads and sends what was stored", async () => {
@@ -433,5 +786,111 @@ describe("lockLeader", () => {
       unsubscribe()
     }))
     expect(changes).toEqual([true, false])
+  })
+
+  test("take leads at once: the program that led stops leading, waits again, and leads again once the taker closes", async () => {
+    const world = await setup(["ok", "ok"])
+    const name = id("outbox")
+    const seen = await scoped(Effect.gen(function*() {
+      const notes = id("notes")
+      const firstLeader = yield* Outbox.lockLeader({ lock, name })
+      const first = yield* start({ ...world, leader: firstLeader, notes })
+      const secondScope = yield* Scope.make()
+      const secondLeader = yield* Scope.provide(
+        Outbox.lockLeader({ lock, name, grantWithin: "20 millis" }),
+        secondScope
+      )
+      const second = yield* Scope.provide(start({ ...world, leader: secondLeader, notes }), secondScope)
+      const following = yield* Effect.exit(save(second.outbox, second.notes, note("a", 1)))
+
+      yield* secondLeader.take
+      const taken = secondLeader.isLeader()
+      // The program it took the lead from hears so a moment later, as a browser tells a lock's holder it was stolen.
+      yield* Effect.promise(() => until(() => expect(firstLeader.isLeader()).toBe(false)))
+      yield* (yield* save(second.outbox, second.notes, note("b", 2))).settled
+      // Taking the lead again changes nothing.
+      yield* secondLeader.take
+      yield* Scope.close(secondScope, Exit.void)
+      yield* Effect.promise(() => until(() => expect(firstLeader.isLeader()).toBe(true)))
+      yield* (yield* save(first.outbox, first.notes, note("c", 3))).settled
+      return { following, taken }
+    }))
+    expect(seen.following).toEqual(Exit.fail(new Outbox.NotAdmitted({ reason: "follower" })))
+    expect(seen.taken).toBe(true)
+    expect(world.sent.map(({ idempotencyKey }) => idempotencyKey)).toEqual(["b", "c"])
+  })
+
+  test("a write sent by the program that took the lead isn't sent again when this one leads again", async () => {
+    const world = await setup([new Outbox.Retry({}), "ok", "ok"])
+    const name = id("outbox")
+    const seen = await scoped(Effect.gen(function*() {
+      const notes = id("notes")
+      const firstLeader = yield* Outbox.lockLeader({ lock, name })
+      const first = yield* start({ ...world, leader: firstLeader, notes })
+      // The first program's send doesn't get through: the write waits out its backoff, still queued here.
+      const write = yield* save(first.outbox, first.notes, note("a", 1))
+      yield* Effect.promise(() => until(() => expect(world.sent).toHaveLength(1)))
+
+      // The second takes the lead, sends the write and deletes it, then closes.
+      const secondScope = yield* Scope.make()
+      const secondLeader = yield* Scope.provide(
+        Outbox.lockLeader({ lock, name, grantWithin: "20 millis" }),
+        secondScope
+      )
+      yield* Scope.provide(start({ ...world, leader: secondLeader, notes }), secondScope)
+      yield* secondLeader.take
+      yield* Effect.promise(() => until(() => expect(world.storage.entries.size).toBe(0)))
+      yield* Scope.close(secondScope, Exit.void)
+
+      // The first leads again: its queued copy settles without a third send.
+      yield* Effect.promise(() => until(() => expect(firstLeader.isLeader()).toBe(true)))
+      yield* write.settled
+      return (yield* Metric.value(Metric.withAttributes(Outbox.attempts, { name: "save", outcome: "sent_elsewhere" })))
+        .count
+    }))
+    expect(world.sent.map(({ idempotencyKey }) => idempotencyKey)).toEqual(["a", "a"])
+    expect(seen).toBe(1)
+  })
+
+  test("a storage read that fails doesn't stop a send", async () => {
+    const world = await setup(["ok"])
+    // The next read fails, once: the send's own look at the storage.
+    const unreadable = { reads: 0 }
+    const storage = {
+      ...world.storage,
+      get: (key: string) =>
+        unreadable.reads > 0 && unreadable.reads-- > 0
+          ? Promise.reject(new Error("unreadable"))
+          : world.storage.get(key)
+    }
+    await scoped(Effect.gen(function*() {
+      const { notes, outbox, online } = yield* start({ ...world, storage: storage as typeof world.storage })
+      unreadable.reads = 1
+      yield* (yield* save(outbox, notes, note("a", 1))).settled
+      online.dispose()
+    }))
+    expect(world.sent.map(({ idempotencyKey }) => idempotencyKey)).toEqual(["a"])
+  })
+
+  test("a program that took the lead answers requestLeadership at once", async () => {
+    const name = id("outbox")
+    await scoped(Effect.gen(function*() {
+      const leader = yield* Outbox.lockLeader({ lock, name })
+      yield* leader.take
+      expect(yield* Effect.promise(() => leader.requestLeadership())).toBe(true)
+    }))
+  })
+
+  test("a take the lock never grants leaves the program following, and can be interrupted", async () => {
+    const name = id("outbox")
+    const never: Outbox.Lock = { hold: () => Effect.never }
+    await scoped(Effect.gen(function*() {
+      const leader = yield* Outbox.lockLeader({ lock: never, name, grantWithin: "20 millis" })
+      const taking = yield* Effect.forkChild(leader.take, { startImmediately: true })
+      // The take's hold is in line: asking to lead adds no second one, and isn't granted.
+      expect(yield* Effect.promise(() => leader.requestLeadership())).toBe(false)
+      yield* Fiber.interrupt(taking)
+      expect(leader.isLeader()).toBe(false)
+    }))
   })
 })

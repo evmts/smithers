@@ -1,12 +1,12 @@
 ---
 title: "API reference"
-description: "Every export of @smthrs/effect-code-storage: the CodeStorage and GitRemote namespaces, their service, layers, models, errors and metrics."
+description: "Every export of @smthrs/effect-code-storage: the CodeStorage, GitRemote and GitProxy namespaces, their service, layers, models, errors and metrics."
 ---
 
 The package root exports two namespaces and nothing else:
 
 ```ts
-import { CodeStorage, GitRemote } from "@smthrs/effect-code-storage"
+import { CodeStorage, GitProxy, GitRemote } from "@smthrs/effect-code-storage"
 ```
 
 ## `CodeStorage`
@@ -33,6 +33,9 @@ interface Client {
   readonly listFiles: (repo: string, options?: ListFilesOptions) => Effect.Effect<FilesPage, CodeStorageError>
   readonly readFile: (repo: string, options: ReadFileOptions) => Effect.Effect<FileContents, CodeStorageError>
   readonly listCommits: (repo: string, options?: ListCommitsOptions) => Effect.Effect<CommitsPage, CodeStorageError>
+  readonly listBranches: (repo: string, options?: ListRefsOptions) => Effect.Effect<BranchesPage, CodeStorageError>
+  readonly listTags: (repo: string, options?: ListRefsOptions) => Effect.Effect<TagsPage, CodeStorageError>
+  readonly gitRemote: (repo: string) => Effect.Effect<GitRemote.Upstream>
 }
 ```
 
@@ -45,6 +48,13 @@ interface Client {
   another page.
 - `readFile` reads one file's bytes, up to `maxBytes`.
 - `listCommits` lists one page of commits, newest first.
+- `listBranches` lists one page of branches, each with its head commit.
+- `gitRemote` signs a five-minute `git:read` token for `repo` and returns
+  `{ url: "https://<org>.code.storage/<repo>.git", authorization }`, the token
+  as Basic `t:<token>` in a redacted value. It sends nothing; hand the result to
+  `GitProxy.uploadPack` or `GitRemote.ref`, never to a guest.
+- `listTags` lists one page of tags in lexical order, each with the commit it
+  names (dereferenced for an annotated tag).
 
 ### `CodeStorage.Credentials` and `CodeStorage.config`
 
@@ -129,10 +139,37 @@ interface CommitsPage {
   readonly nextCursor: string | undefined
   readonly bytesRead: number
 }
+
+interface ListRefsOptions {
+  readonly cursor?: string | undefined
+  readonly limit?: number | undefined
+}
+interface Branch {
+  readonly name: string
+  readonly sha: string
+  readonly createdAt: string
+}
+interface BranchesPage {
+  readonly branches: ReadonlyArray<Branch>
+  readonly nextCursor: string | undefined
+  readonly bytesRead: number
+}
+interface Tag {
+  readonly name: string
+  readonly sha: string
+}
+interface TagsPage {
+  readonly tags: ReadonlyArray<Tag>
+  readonly nextCursor: string | undefined
+  readonly bytesRead: number
+}
 ```
 
 - A `ref` is a branch, a tag or a commit SHA, and defaults to the repository's
   default branch.
+- `listBranches` and `listTags` send only the options given; Code Storage's
+  `limit` defaults to 20. A branch's `sha` is its head commit, Code Storage's
+  `head_sha`.
 - `listFiles` sends only the options given. Code Storage's `limit` defaults to
   1,000 and allows up to 5,000. `paths` lists blobs only; `entries` also has
   trees, symlinks and submodules, with `type` and git's six-digit `mode`.
@@ -147,7 +184,7 @@ interface CommitsPage {
 
 ```ts
 class CodeStorageError extends Schema.TaggedError<CodeStorageError>()("@smthrs/effect-code-storage/CodeStorageError", {
-  operation: "configure" | "createRepo" | "pullUpstream" | "listFiles" | "readFile" | "listCommits",
+  operation: "configure" | "createRepo" | "pullUpstream" | "listFiles" | "readFile" | "listCommits" | "listBranches" | "listTags",
   code: string,
   status?: number,
   retryAfterMillis?: number,
@@ -204,7 +241,15 @@ const bytesRead: Metric.Counter<number>
 ### `CodeStorage.Operation`
 
 ```ts
-type Operation = "configure" | "createRepo" | "pullUpstream" | "listFiles" | "readFile" | "listCommits"
+type Operation =
+  | "configure"
+  | "createRepo"
+  | "pullUpstream"
+  | "listFiles"
+  | "readFile"
+  | "listCommits"
+  | "listBranches"
+  | "listTags"
 ```
 
 ## `GitRemote`
@@ -212,7 +257,7 @@ type Operation = "configure" | "createRepo" | "pullUpstream" | "listFiles" | "re
 ### `GitRemote.head`
 
 ```ts
-const head: (remote: string) => Effect.Effect<Head, GitRemoteError, HttpClient.HttpClient>
+const head: (remote: string | Upstream) => Effect.Effect<Head, GitRemoteError, HttpClient.HttpClient>
 interface Head {
   readonly sha: string
   readonly branch: string | undefined
@@ -221,20 +266,44 @@ interface Head {
 
 - **What it reads:** the HEAD of the git remote at `remote`, such as
   `https://github.com/octocat/Spoon-Knife.git`. It sends
-  `GET <remote>/info/refs?service=git-upload-pack` with no credential.
+  `GET <remote>/info/refs?service=git-upload-pack` with no credential, or, for
+  an `Upstream`, with its credential.
 - **How much it reads:** only the start of the answer, up to the first ref
-  line, and never more than 64 KiB.
+  line, and never more than 64 KiB. An answer whose first ref line doesn't
+  arrive inside 64 KiB fails `too_large`.
 - **`branch`:** the target of `symref=HEAD:refs/heads/<branch>`, or
   `undefined` when HEAD is detached. Any name git allows reads back exactly,
   `日本語` and emoji included: packets are framed by their byte lengths, and
   each one is decoded only once it is whole.
 - **`sha`:** a SHA-1 or a SHA-256 commit id.
 
+### `GitRemote.Upstream` and `GitRemote.ref`
+
+```ts
+interface Upstream {
+  readonly url: string
+  readonly authorization?: Redacted.Redacted<string> | undefined
+}
+const ref: (upstream: Upstream, branch: string) => Effect.Effect<string, GitRemoteError, HttpClient.HttpClient>
+```
+
+- **`Upstream`:** a remote's smart HTTP base and the `Authorization` value the
+  host adds to every request it sends there.
+- **`ref`:** the commit `refs/heads/<branch>` points at. It asks git protocol
+  v2's `ls-refs` for that ref (`POST <url>/git-upload-pack`, `Git-Protocol:
+  version=2`, `ref-prefix refs/heads/<branch>`) with the credential, so a
+  remote with many pull request refs answers in one line. It reads the answer
+  one packet at a time as it arrives and stops at the branch's line, or at the
+  flush that ends the answer, when the remote has no such branch
+  (`ref_not_found`). Reading costs time linear in the answer however the
+  network cuts it, and stops at 1 MiB: an answer that reaches that cap before
+  the branch's line or the flush fails `too_large`.
+
 ### `GitRemote.GitRemoteError`
 
 ```ts
 class GitRemoteError extends Schema.TaggedError<GitRemoteError>()("@smthrs/effect-code-storage/GitRemoteError", {
-  code: "not_found" | "empty" | "unavailable" | "transport" | "invalid_response",
+  code: "not_found" | "empty" | "ref_not_found" | "unavailable" | "transport" | "too_large" | "invalid_response",
   status?: number
 })
 ```
@@ -243,9 +312,11 @@ class GitRemoteError extends Schema.TaggedError<GitRemoteError>()("@smthrs/effec
 | ------------------ | ----------------------------------------------------------------------------------------------------------- |
 | `not_found`        | The remote answered 401, 403 or 404. That is how GitHub answers for a repository that is missing or private |
 | `empty`            | The remote has no HEAD: no commits, or refs but no HEAD                                                     |
+| `ref_not_found`    | `ref` only: the remote has no such branch                                                                   |
 | `unavailable`      | Any other failing status, in `status`                                                                       |
 | `transport`        | No answer, or the answer broke off                                                                          |
-| `invalid_response` | The answer isn't a smart HTTP upload-pack advertisement, or its service or HEAD line isn't UTF-8            |
+| `too_large`        | The answer reached the read's cap (64 KiB for `head`, 1 MiB for `ref`) before it said what was asked        |
+| `invalid_response` | Not an upload-pack advertisement or `ls-refs` answer, malformed, or a line it needed isn't UTF-8            |
 
 ### `GitRemote.requests`
 
@@ -253,4 +324,48 @@ class GitRemoteError extends Schema.TaggedError<GitRemoteError>()("@smthrs/effec
 const requests: Metric.Counter<number>
 ```
 
-`git_remote_requests`: one count per `head`, by `outcome` (`ok`, `interrupted`, or the failure's code). Each call is also one span, `GitRemote.head`, with the attribute `git.remote`.
+`git_remote_requests`: one count per `head` or `ref`, by `outcome` (`ok`, `interrupted`, or the failure's code). Each call is also one span, `GitRemote.head` or `GitRemote.ref`, with the attribute `git.remote`.
+
+## `GitProxy`
+
+### `GitProxy.uploadPack`
+
+```ts
+const uploadPack: (
+  request: HttpServerRequest.HttpServerRequest,
+  upstream: GitRemote.Upstream
+) => Effect.Effect<HttpServerResponse.HttpServerResponse, never, HttpClient.HttpClient>
+```
+
+- **What it admits:** `GET <path>/info/refs?service=git-upload-pack` and
+  `POST <path>/git-upload-pack`, whatever `<path>` is. Anything else is 403 and
+  nothing is sent.
+- **What it sends:** the same request to `upstream.url`, with only the guest's
+  `Content-Type`, `Content-Encoding`, `Accept` and `Git-Protocol` headers and
+  the upstream's `Authorization`. The request body streams through.
+- **What it answers:** the upstream's status and body, with only its
+  `Content-Type` and `Cache-Control`. It asks for `Accept-Encoding: identity`
+  and never passes `Content-Encoding` on: the host's `fetch` decodes a
+  compressed answer (GitHub gzips `info/refs`). No answer is 502.
+
+### `GitProxy.classify`
+
+```ts
+type Service = "info-refs" | "upload-pack"
+const classify: (method: string, url: string) => Service | undefined
+```
+
+Which service a request asks for, or `undefined` when `uploadPack` refuses it.
+
+### `GitProxy.requests`
+
+```ts
+const requests: Metric.Counter<number>
+```
+
+`git_proxy_requests`: one count per request, by `service` (`info-refs`,
+`upload-pack` or `refused`) and `outcome` (`ok`, `refused`, the upstream's
+status class such as `4xx`, `transport`, or `broken` for an answer that broke
+off), counted once the answer's body has ended. Each request is also one span,
+`GitProxy.uploadPack`, and one log line, `git.proxy`, with the service, the
+outcome, the status and the duration.

@@ -202,11 +202,11 @@ const fetchSource: Source
 class RequestFailed extends Data.TaggedError("RequestFailed")<{ readonly status?: number }> {}
 ```
 
-| Export          | Is                                                                                                                                     |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `ShapeSource`   | The service, a `Context.Reference` whose default is `fetchSource`.                                                                     |
-| `fetchSource`   | The real source: each request sent with the `fetch` in Effect's `FetchHttpClient.Fetch`, the global one unless a program provides one. |
-| `RequestFailed` | A shape request failed on the network (no `status`) or with a 5xx or 429. The sync policy is stepped with it.                          |
+| Export          | Is                                                                                                                                                                                                                         |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ShapeSource`   | The service, a `Context.Reference` whose default is `fetchSource`.                                                                                                                                                         |
+| `fetchSource`   | The real source: each request sent with the `fetch` in Effect's `FetchHttpClient.Fetch`, the global one unless a program provides one, with `cache: "no-store"`, so the HTTP cache never answers or keeps a shape request. |
+| `RequestFailed` | A shape request failed on the network (no `status`) or with a 5xx or 429. The sync policy is stepped with it.                                                                                                              |
 
 ### Testing unhappy paths: `layerFaulty` and `Faults`
 
@@ -275,26 +275,34 @@ forever, each wait jittered to between 80% and 120% of its delay.
 ## `ShapeProxy`
 
 ```ts
-const make: (
-  options: Options
+const make: <R = never>(
+  options: Options<R>
 ) => Effect.Effect<
   HttpServerResponse.HttpServerResponse,
   never,
-  HttpServerRequest.HttpServerRequest | HttpClient.HttpClient
+  HttpServerRequest.HttpServerRequest | HttpClient.HttpClient | R
 >
 
 const config: (options?: { readonly url?: string }) => Config.Config<Connection>
 
 const defaultMetric: Metric.Counter<number>
+
+class Refused extends Data.TaggedError("Refused")<{
+  readonly status: 401 | 403 | 503
+  readonly retryAfter?: number
+}> {}
 ```
 
 | Model        | Fields                                                                                                                                                               |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Connection` | `url: string`, `secret?: Redacted<string>`, `sourceId?: string`                                                                                                      |
+| `Connection` | `url: string`, `secret?: Redacted<string>`, `secretAs?: SecretAs`, `sourceId?: string`                                                                               |
+| `SecretAs`   | `"parameter"` (Electric's `secret` query parameter; the default) or `"bearer"` (`authorization: Bearer <secret>`, for a gateway in front of Electric)                |
 | `Shape`      | `table: string`, `where?: string`, `params?: Readonly<Record<string, string>>`, `columns?: ReadonlyArray<string>` (the only columns sent; every column when omitted) |
-| `Options`    | everything in `Connection`, and `shape: Shape`, `name?: string`, `metric?: Metric.Counter<number>`                                                                   |
+| `Cache`      | `"no-store"` (every response `private, no-store`; the default) or `"public"` (Electric's caching headers pass through)                                               |
+| `Options<R>` | everything in `Connection`, and `shape: Shape \| Effect<Shape, Refused, R>`, `cache?: Cache`, `name?: string`, `metric?: Metric.Counter<number>`                     |
 
-`make` serves one shape; `config` reads `ELECTRIC_URL`, `ELECTRIC_SECRET` and
-`ELECTRIC_SOURCE_ID`; `defaultMetric` is the `electric_shape_requests` counter
+`make` serves one shape, fixed or decided per request, and answers a
+`Refused` with its status; `config` reads `ELECTRIC_URL`, `ELECTRIC_SECRET`,
+`ELECTRIC_SECRET_AS` and `ELECTRIC_SOURCE_ID`; `defaultMetric` is the `electric_shape_requests` counter
 `make` updates when `metric` is omitted. See
 [Proxy shapes through your server](shape-proxy.md).

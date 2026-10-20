@@ -30,8 +30,8 @@ scope.
   `initial`, the current rows come first. `LiveQuery.rows` streams the whole
   result: once when the stream starts, then after every change.
 - **Pure query expressions.** `Query` re-exports TanStack DB's comparisons,
-  logic, null checks and `caseWhen` as they are: they build data and run
-  nothing. Nothing else from TanStack DB is re-exported.
+  logic, null checks, `coalesce` and `caseWhen` as they are: they build data
+  and run nothing. Nothing else from TanStack DB is re-exported.
 - **Rows kept on the device.** `Persistence.layer` opens a SQLite database
   (OPFS in a tab, a file in Node) through TanStack DB's persistence. A
   collection made with `persist`, or with `Collection.persisted`, restores its
@@ -43,7 +43,8 @@ scope.
   again with the library's backoff until a mutation succeeds or refuses it, and
   restored after a reload or restart. Only the program that leads the outbox
   admits a write; a follower gets `NotAdmitted`, never the library's
-  online-only path.
+  online-only path. `withdraw` takes back a write not sent yet, under the lock
+  a send claims its write with, so a write is never both sent and taken back.
 - **Host capabilities as arguments.** The database, its persistence, the tab
   coordinator, the outbox's entry point, storage, leader and network detector
   all come from the host, so the root imports no Node or browser module.

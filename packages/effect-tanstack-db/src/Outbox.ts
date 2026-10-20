@@ -22,6 +22,9 @@
  * fails with `NotAdmitted` instead. Who leads is injected (`leader`); without
  * one, the library elects with its own Web Lock.
  *
+ * `withdraw` takes back a write not sent yet, under the same lock a send
+ * claims its write with, so a write is never both sent and taken back.
+ *
  * The host supplies the library's entry point and storage as arguments
  * (`startOfflineExecutor`, `IndexedDBAdapter`), so this module imports and
  * runs anywhere Effect does.
@@ -44,11 +47,12 @@ import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
-import * as Fiber from "effect/Fiber"
+import type * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import type * as Scope from "effect/Scope"
+import * as Semaphore from "effect/Semaphore"
 import type * as Stream from "effect/Stream"
 import * as SubscriptionRef from "effect/SubscriptionRef"
 import * as Tracer from "effect/Tracer"
@@ -84,6 +88,25 @@ export class Retry extends Data.TaggedError("Retry")<{ readonly status?: number 
  */
 export class NotAdmitted extends Data.TaggedError("NotAdmitted")<{
   readonly reason: "follower" | "storage"
+}> {}
+
+/**
+ * `withdraw` didn't take the write back, so nothing changed:
+ * - `follower`: this program doesn't lead the outbox, so another program may
+ *   be sending the write;
+ * - `gone`: no stored write waiting to be sent has that idempotency key: it
+ *   was sent or refused already, isn't stored yet (`admitted` hasn't
+ *   succeeded), or was never made;
+ * - `sending`: the write is being sent now, or was just sent or refused and is
+ *   leaving the storage; it settles as usual;
+ * - `storage`: reading or deleting the outbox's storage failed; the write is
+ *   sent as usual.
+ *
+ * @category errors
+ * @since 0.2.0
+ */
+export class NotWithdrawn extends Data.TaggedError("NotWithdrawn")<{
+  readonly reason: "follower" | "gone" | "sending" | "storage"
 }> {}
 
 /**
@@ -189,6 +212,16 @@ export interface Service {
   readonly status: Stream.Stream<Status>
   /** Sends every waiting write now instead of waiting out its backoff. */
   readonly retryNow: Effect.Effect<void>
+  /**
+   * Takes back a write not sent yet, by its idempotency key: it is deleted from the storage, never sent, and its
+   * optimistic rows roll back, whether it was made by this program or restored after a reload. Its rows are gone when
+   * `withdraw` succeeds, and its `settled` fails with `TransactionFailed`, whose cause is an error named
+   * `OutboxWithdrawn`. The check and the moment a send claims its write share one lock, so a write is never both sent
+   * and taken back: one being sent fails with `NotWithdrawn` `sending` and settles as usual. Fails with `follower`
+   * when this program doesn't lead, `gone` when no write waiting to be sent has the key, and `storage` when the
+   * storage can't be read or deleted from. Each call is a span, `outbox.withdraw`, with `outcome`.
+   */
+  readonly withdraw: (idempotencyKey: string) => Effect.Effect<void, NotWithdrawn>
 }
 
 /**
@@ -200,7 +233,9 @@ export interface Service {
 export class Outbox extends Context.Service<Outbox, Service>()("@smthrs/effect-tanstack-db/Outbox") {}
 
 /**
- * Each send, by `name` and `outcome`: `sent`, `retry`, `refused` or `defect`.
+ * Each send, by `name` and `outcome`: `sent`, `retry`, `refused` or `defect`; `sent_elsewhere`, a write this
+ * program queued that another program sent and deleted while this one followed, settled here without sending it; or
+ * `withdrawn`, a write `withdraw` took back, settled without sending it.
  *
  * @category metrics
  * @since 0.2.0
@@ -249,6 +284,7 @@ const KEY_PREFIX = "tx:"
 // The error names a mutation's failure becomes. Their messages are fixed, so the library's substring rules never read
 // anything else, and `shouldRetry` decides on the name alone.
 const RETRY = "OutboxRetry"
+const WITHDRAWN = "OutboxWithdrawn"
 
 const thrown = (name: string, message: string): Error => Object.assign(new Error(message), { name })
 
@@ -277,6 +313,19 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
       const status = yield* SubscriptionRef.make<Status>({ leader: false, failing: null })
       const setStatus = (next: Partial<Status>) => run(SubscriptionRef.update(status, (now) => ({ ...now, ...next })))
 
+      // One permit for the moment a send claims its write and for `withdraw`, so a write is never both sent and
+      // taken back.
+      const permit = yield* Semaphore.make(1)
+      // The write this program's send claimed, held until the library is done with it. The library sends one write at
+      // a time. A write sent or refused stays held until the library deletes it, so `withdraw` finds it held or gone.
+      // A write to be sent again (`retry`) is released once the library has stored its next attempt, so `withdraw`
+      // never deletes it under that store.
+      let inFlight: { readonly id: string; readonly retry: boolean } | undefined
+      // Writes `withdraw` took back that the library hasn't reached yet: when it does, the send settles them unsent.
+      const withdrawn = new Set<string>()
+      // Each write this program made, until it settles: `withdraw` waits for it, so its rows are gone when it returns.
+      const live = new Map<string, Promise<void>>()
+
       // Admission is the storage write of the write's own key; whoever waits on a write learns of it here.
       const admissions = new Map<string, Deferred.Deferred<void, NotAdmitted>>()
       const storage: StorageAdapter = {
@@ -285,7 +334,8 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         delete: options.storage.delete.bind(options.storage),
         clear: options.storage.clear.bind(options.storage),
         set: async (key, value) => {
-          const admission = admissions.get(key.slice(KEY_PREFIX.length))
+          const id = key.slice(KEY_PREFIX.length)
+          const admission = admissions.get(id)
           try {
             await options.storage.set(key, value)
           } catch (error) {
@@ -293,6 +343,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
             if (admission) run(Deferred.fail(admission, new NotAdmitted({ reason: "storage" })))
             throw error
           }
+          if (inFlight?.retry === true && inFlight.id === id) inFlight = undefined
           if (admission) run(Deferred.succeed(admission, undefined))
         }
       }
@@ -310,7 +361,13 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
             Effect.annotateCurrentSpan({ outcome: value }),
             Metric.update(Metric.withAttributes(attempts, { name, outcome: value }), 1)
           ], { discard: true })
-        const program: Effect.Effect<void, Refused | Retry, R> = mutation({
+        // A write is sent only while the storage holds it. One this program queued, then followed while another led,
+        // may have been sent and deleted by the other: leading again, this program settles it without sending it twice.
+        // A storage that can't be read doesn't stop a send.
+        const stored = Effect.promise(() =>
+          options.storage.get(`${KEY_PREFIX}${id}`).then((value) => value !== null, () => true)
+        )
+        const sending: Effect.Effect<void, Refused | Retry, R> = mutation({
           rows: params.transaction.mutations.map((change) => change.modified),
           idempotencyKey: params.idempotencyKey
         }).pipe(
@@ -336,20 +393,35 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
               outcome("defect"),
               Effect.logError("outbox write failed").pipe(Effect.annotateLogs({ name, outcome: "defect" }))
             ])
-          ),
-          Effect.withSpan("outbox.send", {
-            attributes: { name, attempt },
-            ...(trace ? { links: [{ span: Tracer.externalSpan(trace), attributes: {} }] } : {})
-          })
+          )
         )
+        // Under the permit, so `withdraw` sees this write either taken back, and it settles here unsent, or in flight.
+        const claim = permit.withPermit(Effect.gen(function*() {
+          if (withdrawn.delete(id)) return "withdrawn" as const
+          if (!(yield* stored)) return "sent_elsewhere" as const
+          inFlight = { id, retry: false }
+          return "sent" as const
+        }))
+        // Succeeds with whether the write reached a server, which clears `failing`: a withdrawn one never did.
+        const program = Effect.flatMap(claim, (claimed) =>
+          claimed === "sent"
+            ? Effect.as(sending, true)
+            : Effect.as(outcome(claimed), claimed === "sent_elsewhere")).pipe(
+            Effect.withSpan("outbox.send", {
+              attributes: { name, attempt },
+              ...(trace ? { links: [{ span: Tracer.externalSpan(trace), attributes: {} }] } : {})
+            })
+          )
         return Effect.runPromiseExitWith(context)(program).then((exit) => {
           if (Exit.isSuccess(exit)) {
             sends.delete(id)
-            setStatus({ failing: null })
+            if (exit.value) setStatus({ failing: null })
             return
           }
           const error = Cause.findErrorOption(exit.cause)
           if (Option.isSome(error) && error.value._tag === "Retry") {
+            // Free to withdraw again once the library has stored its next attempt.
+            inFlight = { id, retry: true }
             setStatus({ failing: error.value.status === undefined ? "network" : "server" })
             throw thrown(RETRY, "The write didn't get through; it is sent again.")
           }
@@ -415,6 +487,12 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           }
           const admission = yield* Deferred.make<void, NotAdmitted>()
           admissions.set(transaction.id, admission)
+          live.set(
+            transaction.id,
+            transaction.isPersisted.promise.then(() => undefined, () => undefined).finally(() =>
+              live.delete(transaction.id)
+            )
+          )
           // Admitted, the write settles through the executor; refused by the storage, it rolls back before that.
           void offline.commit().catch(() => undefined)
           void transaction.isPersisted.promise.then(
@@ -437,10 +515,53 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           } satisfies Write
         })
 
+      const notWithdrawn = (reason: NotWithdrawn["reason"]) => new NotWithdrawn({ reason })
+      const withdraw: Service["withdraw"] = (idempotencyKey) =>
+        permit.withPermit(Effect.uninterruptible(Effect.gen(function*() {
+          // A follower's view of the storage is no lock: the leader may be sending the write.
+          if (!executor.isOfflineEnabled) return yield* notWithdrawn("follower")
+          const writes = yield* Effect.tryPromise({
+            try: () => executor.peekOutbox(),
+            catch: () => notWithdrawn("storage")
+          })
+          const write = writes.find((entry) => entry.idempotencyKey === idempotencyKey)
+          if (write === undefined) return yield* notWithdrawn("gone")
+          // A write with an `outboxPhase` was sent or refused, and only its deletion is left.
+          if (write.outboxPhase !== undefined || inFlight?.id === write.id) return yield* notWithdrawn("sending")
+          yield* Effect.tryPromise({
+            try: () => executor.removeFromOutbox(write.id),
+            catch: () => notWithdrawn("storage")
+          })
+          withdrawn.add(write.id)
+          // Rejects the waiter of a write made here, whose transaction rolls its rows back, or rolls back a restored
+          // write's rows at once.
+          executor.rejectTransaction(write.id, thrown(WITHDRAWN, "The write was withdrawn before it was sent."))
+          return write
+        }))).pipe(
+          Effect.tap((write) => Effect.promise(() => live.get(write.id) ?? Promise.resolve())),
+          Effect.tap((write) =>
+            Effect.all([
+              Effect.annotateCurrentSpan({ outcome: "withdrawn" }),
+              Effect.logInfo("outbox write withdrawn").pipe(Effect.annotateLogs({ name: write.mutationFnName }))
+            ], { discard: true })
+          ),
+          Effect.tapError(({ reason }) =>
+            Effect.all([
+              Effect.annotateCurrentSpan({ outcome: reason }),
+              (reason === "storage" ? Effect.logWarning : Effect.logDebug)("outbox write not withdrawn").pipe(
+                Effect.annotateLogs({ reason })
+              )
+            ], { discard: true })
+          ),
+          Effect.asVoid,
+          Effect.withSpan("outbox.withdraw")
+        )
+
       return Outbox.of({
         transact,
         status: SubscriptionRef.changes(status),
-        retryNow: Effect.sync(() => executor.getOnlineDetector().notifyOnline())
+        retryNow: Effect.sync(() => executor.getOnlineDetector().notifyOnline()),
+        withdraw
       })
     })
   )
@@ -475,14 +596,18 @@ export const Online = {
 
 /**
  * A lock service: `hold(name)` waits until this program holds the exclusive
- * lock `name`, and holds it until the scope closes. `@smthrs/platform-browser`'s
- * `WebLock` is one.
+ * lock `name`, and holds it until the scope closes; with `steal`, it takes the
+ * lock at once from whichever program holds it. `lost` completes when another
+ * program steals it. `@smthrs/platform-browser`'s `WebLock` is one.
  *
  * @category models
  * @since 0.2.0
  */
 export interface Lock {
-  readonly hold: (name: string) => Effect.Effect<void, never, Scope.Scope>
+  readonly hold: (
+    name: string,
+    options?: { readonly steal?: boolean }
+  ) => Effect.Effect<{ readonly lost: Effect.Effect<void> }, never, Scope.Scope>
 }
 
 /**
@@ -491,8 +616,13 @@ export interface Lock {
  * program that doesn't get the lock waits for it, so when the leader closes,
  * the next one leads and restores the writes it stored. `requestLeadership`
  * answers within `grantWithin` (default 100 ms); a lock granted later is
- * reported through `onLeadershipChange`. The lock is released when the
- * outbox stops or the scope closes.
+ * reported through `onLeadershipChange`.
+ *
+ * `take` makes this program lead at once, as the tab a person is using should:
+ * it steals the lock unless this program leads already, and completes once it
+ * leads. The program it took the lead from stops leading, and waits for the
+ * lock again, so it leads again once this one closes. The lock is released
+ * when the outbox stops or the scope closes.
  *
  * @category constructors
  * @since 0.2.0
@@ -501,36 +631,61 @@ export const lockLeader = (options: {
   readonly lock: Lock
   readonly name: string
   readonly grantWithin?: Duration.Input
-}): Effect.Effect<Leader & { readonly dispose: () => void }, never, Scope.Scope> =>
+}): Effect.Effect<
+  Leader & { readonly take: Effect.Effect<void>; readonly dispose: () => void },
+  never,
+  Scope.Scope
+> =>
   Effect.gen(function*() {
     const context = yield* Effect.context<never>()
     const fork = Effect.runForkWith(context)
     const listeners = new Set<(leader: boolean) => void>()
     let leader = false
-    let holding: Fiber.Fiber<never> | undefined
+    let holding: Fiber.Fiber<void> | undefined
+    // Whoever waits for this program to lead: `requestLeadership`'s answer and `take`.
+    const waiting = new Set<() => void>()
     const set = (next: boolean) => {
+      if (next === leader) return
       leader = next
       for (const listener of listeners) listener(next)
+      // After the outbox heard: whoever waited may write at once.
+      if (!next) return
+      const led = [...waiting]
+      waiting.clear()
+      for (const lead of led) lead()
+    }
+    // Holds the lock, by waiting for it or stealing it, until the scope closes; stolen, it waits for it again. It
+    // starts once `holding` names it.
+    const hold = (steal: boolean) => {
+      holding = fork(
+        Effect.scoped(
+          Effect.yieldNow.pipe(
+            Effect.andThen(options.lock.hold(options.name, steal ? { steal: true } : undefined)),
+            Effect.tap(() => Effect.sync(() => set(true))),
+            Effect.flatMap((held) => held.lost)
+          )
+        ).pipe(Effect.andThen(Effect.sync(() => {
+          set(false)
+          hold(false)
+        })))
+      )
+    }
+    // Interrupted at once, so a hold let go never leads: a wait is withdrawn, a held lock released.
+    const letGo = () => {
+      holding?.interruptUnsafe()
+      holding = undefined
     }
     const release = () => {
-      if (holding) fork(Fiber.interrupt(holding))
-      holding = undefined
+      letGo()
+      set(false)
     }
     yield* Effect.addFinalizer(() => Effect.sync(release))
     return {
       requestLeadership: () =>
         new Promise<boolean>((granted) => {
-          holding = fork(
-            Effect.scoped(
-              options.lock.hold(options.name).pipe(
-                Effect.andThen(Effect.sync(() => {
-                  set(true)
-                  granted(true)
-                })),
-                Effect.andThen(Effect.never)
-              )
-            ).pipe(Effect.onInterrupt(() => Effect.sync(() => leader && set(false))))
-          )
+          if (leader) return granted(true)
+          waiting.add(() => granted(true))
+          if (holding === undefined) hold(false)
           fork(
             Effect.sleep(Duration.fromInputUnsafe(options.grantWithin ?? "100 millis")).pipe(
               Effect.andThen(Effect.sync(() => granted(false)))
@@ -543,6 +698,15 @@ export const lockLeader = (options: {
         listeners.add(listener)
         return () => listeners.delete(listener)
       },
+      take: Effect.callback<void>((resume) => {
+        if (leader) return resume(Effect.void)
+        const led = () => resume(Effect.void)
+        waiting.add(led)
+        // The wait in line is withdrawn: the steal replaces it.
+        letGo()
+        hold(true)
+        return Effect.sync(() => waiting.delete(led))
+      }),
       dispose: () => {
         release()
         listeners.clear()

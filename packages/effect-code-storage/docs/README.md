@@ -1,6 +1,6 @@
 ---
 title: "@smthrs/effect-code-storage"
-description: "Code Storage, Pierre's git hosting, for Effect programs: import a public GitHub repository, sync it, list its files, read a file and list commits, with per-request ES256 tokens; and read a git remote's HEAD with no credential."
+description: "Code Storage, Pierre's git hosting, for Effect programs: import a public GitHub repository, sync it, list its files, read a file and list commits, with per-request ES256 tokens; read a git remote's HEAD or a branch; and proxy a guest's clone read-only with the credential added outside it."
 ---
 
 `@smthrs/effect-code-storage` is an Effect client for
@@ -60,7 +60,46 @@ upstream to stay public. It does not support Git LFS.
 4. `listCommits(name, { ref: branch, limit: 1 })` succeeds once the sync is
    done, with the head commit. From then on, read at that commit's SHA:
    `listFiles(name, { ref, recursive: true, limit: 5000 })`, then
-   `readFile(name, { path, ref, maxBytes })`.
+   `readFile(name, { path, ref, maxBytes })`. `listBranches(name)` and
+   `listTags(name)` page through the mirror's branches and tags, each with
+   its commit: a public mirror carries every branch the upstream had at the
+   sync.
+
+## Cloning in a sandbox without a credential in it
+
+A sandbox's guest clones through a proxy the host runs, so no token ever
+enters the box:
+
+1. The host picks the upstream: `client.gitRemote(name)` for a Code Storage
+   repository (`https://<org>.code.storage/<name>.git` and Basic `t:<token>`,
+   a five-minute `git:read` token), or any `GitRemote.Upstream` such as
+   `{ url: "https://github.com/<owner>/<name>.git" }`.
+2. The guest's remote is the proxy's own URL, such as
+   `http://forge.smithers.internal/<owner>/<name>`, and the host routes its
+   requests to `GitProxy.uploadPack(request, upstream)`.
+3. `uploadPack` admits only `GET …/info/refs?service=git-upload-pack` and
+   `POST …/git-upload-pack` (protocol v0 or v2) and refuses everything else
+   with 403, a push included. It forwards only `Content-Type`,
+   `Content-Encoding`, `Accept` and `Git-Protocol`, adds the upstream's
+   credential, asks for an uncompressed answer, and streams it back with only
+   `Content-Type` and `Cache-Control`: the host's `fetch` has already decoded
+   any compressed answer. The repository named in the guest's
+   path is ignored: the host's upstream decides it.
+4. Each request is one span, `GitProxy.uploadPack`, one log line `git.proxy`
+   and one count on `git_proxy_requests` by `service` and `outcome`; none
+   carries the credential, a path or any bytes.
+
+`GitRemote.ref(upstream, branch)` reads one branch's commit with git protocol
+v2's `ls-refs` for that ref alone, with the upstream's credential, and fails
+`ref_not_found` for a branch the remote doesn't have. `octocat/Spoon-Knife`'s
+full advertisement lists every pull request ref and took 40 to 70 seconds to
+read from a Worker on 2026-10-20; `ls-refs` answers in one line.
+
+Code Storage's own guide describes the same proxy:
+`https://code.storage/docs/guides/proxy-git-with-your-own-auth.md`, read
+2026-10-20: the upstream is `https://{org}.code.storage/{repo}.git/{path}`,
+the token goes as Basic `t:<token>`, and the guest's own `Authorization` is
+never forwarded.
 
 ## Code Storage facts it relies on
 
@@ -73,6 +112,8 @@ From `https://code.storage/docs/openapi.json`, read 2026-10-19:
 | `listFiles`    | `GET /api/repos/{repo}/files`                                    | `git:read`   |
 | `readFile`     | `GET /api/repos/{repo}/file`                                     | `git:read`   |
 | `listCommits`  | `GET /api/repos/{repo}/commits`                                  | `git:read`   |
+| `listBranches` | `GET /api/repos/{repo}/branches`                                 | `git:read`   |
+| `listTags`     | `GET /api/repos/{repo}/tags`                                     | `git:read`   |
 
 A repository name may contain `/`; the client encodes it into one path
 segment. The organization's API origin is `https://api.<org>.code.storage`.

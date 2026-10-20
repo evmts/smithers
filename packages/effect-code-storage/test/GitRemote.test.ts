@@ -1,7 +1,8 @@
-import { Effect, Fiber } from "effect"
+import { Effect, Fiber, Redacted } from "effect"
+import * as Result from "effect/Result"
 import { describe, expect, test } from "vitest"
 import { GitRemote } from "../src/index.ts"
-import { brokenBody, httpClient, telemetry } from "./fixtures.ts"
+import { brokenBody, growth, httpClient, telemetry } from "./fixtures.ts"
 
 // A scripted git host on the `fetch` seam, answering `info/refs` the way GitHub does (checked against
 // github.com/octocat/Spoon-Knife on 2026-10-19): the service line, a flush, then HEAD with its capabilities.
@@ -21,8 +22,8 @@ const headLine = (capabilities: string, sha = SHA) =>
   `${sha} HEAD\0multi_ack thin-pack side-band ofs-delta ${capabilities} agent=git/github\n`
 
 /** Bytes as a stream of `size`-byte chunks, then (when `endless`) chunks of more refs forever, counted in `extra`. */
-const trickle = (text: string, endless = false, size = 1) => {
-  const bytes = encoder.encode(text)
+const trickle = (text: string | Uint8Array, endless = false, size = 1) => {
+  const bytes = typeof text === "string" ? encoder.encode(text) : text
   let index = 0
   const stream = new ReadableStream<Uint8Array>({
     pull: (controller) => {
@@ -178,7 +179,7 @@ describe("GitRemote.head", () => {
     const { run } = read(() => new Response(null, { status: 502 }))
     const failure = (await run as { failure: GitRemote.GitRemoteError }).failure
     expect(failure).toMatchObject({ code: "unavailable", status: 502 })
-    expect(failure.message).toBe("git remote HEAD: unavailable (502)")
+    expect(failure.message).toBe("git remote: unavailable (502)")
   })
 
   test("an answer that isn't a smart HTTP advertisement is invalid_response", async () => {
@@ -192,14 +193,20 @@ describe("GitRemote.head", () => {
       ok(`${pkt("# service=git-upload-pack\n")}${pkt("x\n")}`),
       ok(`${pkt("# service=git-upload-pack\n")}0000${pkt("not a ref line\n")}`),
       // A byte order mark is kept, not stripped, so it can't pass for the service line.
-      ok(`${pkt("\ufeff# service=git-upload-pack\n")}0000${pkt(headLine(""))}0000`),
-      // The first ref packet never completes inside the 64 KiB cap.
-      ok(trickle(`${pkt("# service=git-upload-pack\n")}0000fff0${"a".repeat(70_000)}`, false, 4096))
+      ok(`${pkt("\ufeff# service=git-upload-pack\n")}0000${pkt(headLine(""))}0000`)
     ]
     for (const body of bodies) {
       const { run } = read(() => body)
       expect(await run).toMatchObject({ failure: { code: "invalid_response" } })
     }
+  })
+
+  test("an advertisement whose HEAD line doesn't arrive inside the 64 KiB cap is too_large", async () => {
+    const { run, recorded } = read(() =>
+      ok(trickle(`${pkt("# service=git-upload-pack\n")}0000fff0${"a".repeat(70_000)}`, false, 4096))
+    )
+    expect(await run).toMatchObject({ failure: { code: "too_large", status: 200 } })
+    expect(recorded.count(GitRemote.requests, { outcome: "too_large" })).toBe(1)
   })
 
   test("an advertisement that ends before HEAD, at each step, is invalid_response", async () => {
@@ -212,9 +219,7 @@ describe("GitRemote.head", () => {
   test("no answer, or an answer that breaks off, is transport", async () => {
     const thrown = read(() => "throw")
     expect(await thrown.run).toMatchObject({ failure: { code: "transport" } })
-    expect((await thrown.run as { failure: GitRemote.GitRemoteError }).failure.message).toBe(
-      "git remote HEAD: transport"
-    )
+    expect((await thrown.run as { failure: GitRemote.GitRemoteError }).failure.message).toBe("git remote: transport")
     const broken = read(() => ok(brokenBody("001e")))
     expect(await broken.run).toMatchObject({ failure: { code: "transport", status: 200 } })
   })
@@ -236,5 +241,164 @@ describe("GitRemote.head", () => {
       }).pipe(Effect.provide(httpClient(fetch)))
     ))
     expect(recorded.count(GitRemote.requests, { outcome: "interrupted" })).toBe(1)
+  })
+})
+
+describe("GitRemote.ref", () => {
+  const OTHER = "1111111111111111111111111111111111111111"
+  const RESULT = "application/x-git-upload-pack-result"
+  /** An ls-refs answer listing `refs`, then a flush, as GitHub answers (checked 2026-10-20). */
+  const listed = (...refs: Array<string>) => `${refs.map(pkt).join("")}0000`
+  const answer = (body: string | ReadableStream<Uint8Array>, type = RESULT) =>
+    new Response(body, { status: 200, headers: { "content-type": type } })
+  const readRef = (
+    respond: (request: Request, body: string) => Response | "throw",
+    branch: string,
+    authorization?: string
+  ) => {
+    const seen: Array<{ readonly request: Request; readonly body: string }> = []
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const body = await request.text()
+      seen.push({ request, body })
+      const response = respond(request, body)
+      if (response === "throw") throw new TypeError("fetch failed")
+      return response
+    }
+    const recorded = telemetry()
+    const upstream = {
+      url: "https://git.example/acme/repo.git/",
+      ...(authorization === undefined ? {} : { authorization: Redacted.make(authorization) })
+    }
+    const run = Effect.runPromise(
+      recorded.provide(Effect.result(GitRemote.ref(upstream, branch)).pipe(Effect.provide(httpClient(fetch))))
+    )
+    return { run, seen, recorded }
+  }
+
+  test("asks ls-refs for that one branch with the upstream's credential, and records neither", async () => {
+    const { run, seen, recorded } = readRef(
+      () => answer(listed(`${OTHER} refs/heads/feature/x\n`)),
+      "feature/x",
+      "Basic c2VjcmV0"
+    )
+    expect(await run).toEqual(Result.succeed(OTHER))
+    const { request, body } = seen[0]!
+    expect(request.method).toBe("POST")
+    expect(request.url).toBe("https://git.example/acme/repo.git/git-upload-pack")
+    expect(request.headers.get("git-protocol")).toBe("version=2")
+    expect(request.headers.get("content-type")).toBe("application/x-git-upload-pack-request")
+    expect(request.headers.get("authorization")).toBe("Basic c2VjcmV0")
+    expect(body).toBe(`${pkt("command=ls-refs\n")}0001${pkt("ref-prefix refs/heads/feature/x\n")}0000`)
+    expect(recorded.recorded()).not.toContain("c2VjcmV0")
+    expect(recorded.count(GitRemote.requests, { outcome: "ok" })).toBe(1)
+    expect(recorded.spans.map((span) => span.name)).toContain("GitRemote.ref")
+  })
+
+  test("takes the exact ref among those the prefix lists, with attributes, across chunks, and no credential", async () => {
+    const { run, seen } = readRef(
+      () =>
+        answer(trickle(listed(`${OTHER} refs/heads/main-old\n`, `${SHA} refs/heads/main symref-target:x\n`), false, 5)),
+      "main"
+    )
+    expect(await run).toEqual(Result.succeed(SHA))
+    expect(seen[0]!.request.headers.get("authorization")).toBeNull()
+  })
+
+  test("Unicode branch names frame by bytes, however the network cuts the answer", async () => {
+    for (const branch of ["日本語", "feature/🚀", "cafe\u0301", "a\u3000b"]) {
+      const body = encoder.encode(listed(`${OTHER} refs/heads/${branch}-old\n`, `${SHA} refs/heads/${branch}\n`))
+      for (let cut = 1; cut < body.length; cut++) {
+        const { run } = readRef(() => answer(cutAt(body, cut)), branch)
+        expect(await run, `${branch} cut at ${cut}`).toEqual(Result.succeed(SHA))
+      }
+      expect(await readRef(() => answer(trickle(body)), branch).run, branch).toEqual(Result.succeed(SHA))
+    }
+  })
+
+  test("stops reading at the wanted ref, so an endless answer answers once that ref arrives", async () => {
+    const body = trickle(pkt(`${OTHER} refs/heads/main\n`), true)
+    const { run } = readRef(() => answer(body), "main")
+    expect(await run).toEqual(Result.succeed(OTHER))
+    // The stream reads ahead at most a chunk or two past the ref, never the 1 MiB cap's worth of refs.
+    expect(body.extra).toBeLessThanOrEqual(2)
+  })
+
+  test("an answer that passes the 1 MiB cap before the ref or the flush is too_large", async () => {
+    const body = trickle(pkt(`${OTHER} refs/heads/main-old\n`), true)
+    const { run, recorded } = readRef(() => answer(body), "main")
+    const result = await run
+    expect(Result.isFailure(result) && result.failure).toMatchObject({ code: "too_large", status: 200 })
+    expect(recorded.count(GitRemote.requests, { outcome: "too_large" })).toBe(1)
+    expect(body.extra * pkt(`${SHA} refs/pull/1/head\n`).length).toBeLessThan(1024 * 1024 + 1024)
+  })
+
+  test("reading an answer costs time linear in its refs, however finely the network cuts it", async () => {
+    const refs = (n: number) =>
+      encoder.encode(listed(...Array.from({ length: n }, (_, index) => `${SHA} refs/pull/${index}/head\n`)))
+    const lookup = async (n: number) => {
+      const body = refs(n)
+      const result = await readRef(() => answer(trickle(body, false, 1024)), "main").run
+      expect(Result.isFailure(result) && result.failure.code).toBe("ref_not_found")
+    }
+    // 3,000 refs, then 12,000 (about 780 KB), in 1 KiB chunks: linear grows about 4x; re-parsing every chunk read so
+    // far grows about 16x.
+    expect(await growth(lookup, 3_000)).toBeLessThan(8)
+  })
+
+  const failures: ReadonlyArray<readonly [string, () => Response | "throw", string, string]> = [
+    ["a branch the remote doesn't have", () => answer("0000"), "nope", "ref_not_found"],
+    [
+      "only a longer name under the prefix",
+      () => answer(listed(`${OTHER} refs/heads/nope-2\n`)),
+      "nope",
+      "ref_not_found"
+    ],
+    ["a missing repository", () => new Response("", { status: 404 }), "main", "not_found"],
+    ["a refused credential", () => new Response("", { status: 401 }), "main", "not_found"],
+    ["a forbidden repository", () => new Response("", { status: 403 }), "main", "not_found"],
+    ["a failing remote", () => new Response("", { status: 503 }), "main", "unavailable"],
+    ["no answer", () => "throw" as const, "main", "transport"],
+    ["another content type", () => answer(listed(`${SHA} refs/heads/main\n`), "text/html"), "main", "invalid_response"],
+    ["no content type", () => new Response(encoder.encode("0000"), { status: 200 }), "main", "invalid_response"],
+    ["an answer with no end", () => answer(pkt(`${SHA} refs/heads/main-2\n`)), "main", "invalid_response"],
+    ["a malformed packet header", () => answer("zzzz"), "main", "invalid_response"],
+    ["a malformed ref line", () => answer(listed("not a ref\n")), "main", "invalid_response"],
+    [
+      "a ref that isn't UTF-8",
+      () => answer(new Blob([rawPkt(new Uint8Array([0xff, 0xfe])), encoder.encode("0000")]).stream()),
+      "main",
+      "invalid_response"
+    ],
+    ["a body that breaks off", () => answer(brokenBody(pkt(`${SHA} refs/heads/other\n`))), "main", "transport"]
+  ]
+  test.each(failures)("fails on %s", async (_, respond, branch, code) => {
+    const { run, recorded } = readRef(respond, branch)
+    const result = await run
+    expect(Result.isFailure(result) && result.failure.code).toBe(code)
+    expect(recorded.count(GitRemote.requests, { outcome: code })).toBe(1)
+  })
+})
+
+describe("GitRemote.head with an upstream", () => {
+  test("sends the upstream's credential and records only its URL", async () => {
+    const seen: Array<Request> = []
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      seen.push(request)
+      return ok(advertisement(headLine("symref=HEAD:refs/heads/main")))
+    }
+    const recorded = telemetry()
+    const result = await Effect.runPromise(recorded.provide(
+      Effect.result(
+        GitRemote.head({ url: "https://acme.code.storage/r.git", authorization: Redacted.make("Basic eDp5") })
+      )
+        .pipe(Effect.provide(httpClient(fetch)))
+    ))
+    expect(result).toMatchObject({ success: { sha: SHA, branch: "main" } })
+    expect(seen[0]!.headers.get("authorization")).toBe("Basic eDp5")
+    const span = recorded.spans.find((each) => each.name === "GitRemote.head")!
+    expect(span.attributes.get("git.remote")).toBe("https://acme.code.storage/r.git")
+    expect(recorded.recorded()).not.toContain("eDp5")
   })
 })

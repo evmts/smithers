@@ -1,4 +1,5 @@
 import { PgClient } from "@effect/sql-pg"
+import { isChangeMessage, ShapeStream } from "@electric-sql/client"
 import { ConfigProvider, Effect, Fiber, Layer, Logger, Metric, Redacted, References, Tracer } from "effect"
 import { FetchHttpClient, HttpEffect, HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -48,13 +49,15 @@ const postgresUp = electricUp &&
 
 type Fault =
   | { readonly _tag: "down" }
+  | { readonly _tag: "answer"; readonly headers: Record<string, string> }
   | { readonly _tag: "hold" }
   | { readonly _tag: "breakBody" }
   | { readonly _tag: "endlessBody" }
 
 /** The proxy with `options`, recording every log line, span, count and upstream URL. */
-const harness = (options: Partial<ShapeProxy.Options> = {}) => {
+const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServerRequest>> = {}) => {
   const upstream: Array<URL> = []
+  const upstreamHeaders: Array<Headers> = []
   const logs: Array<{ message: unknown; level: string; annotations: Record<string, unknown> }> = []
   const spans: Array<Tracer.NativeSpan> = []
   const registry = new Map()
@@ -64,6 +67,7 @@ const harness = (options: Partial<ShapeProxy.Options> = {}) => {
   const fetch: typeof globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input))
     upstream.push(url)
+    upstreamHeaders.push(new Headers(input instanceof Request ? input.headers : init?.headers))
     switch (fault?._tag) {
       case "down":
         throw new TypeError("fetch failed")
@@ -83,6 +87,8 @@ const harness = (options: Partial<ShapeProxy.Options> = {}) => {
           }),
           { status: 200, headers: { "content-type": "application/json" } }
         )
+      case "answer":
+        return new Response("[]", { status: 200, headers: fault.headers })
       case "endlessBody":
         return new Response(
           new ReadableStream({ start: (controller) => controller.enqueue(new TextEncoder().encode("[")) }),
@@ -111,6 +117,7 @@ const harness = (options: Partial<ShapeProxy.Options> = {}) => {
   const handler = HttpEffect.toWebHandler(program)
   return {
     upstream,
+    upstreamHeaders,
     logs,
     spans,
     held: () => held,
@@ -118,6 +125,8 @@ const harness = (options: Partial<ShapeProxy.Options> = {}) => {
       fault = next
     },
     request: (search: string, init?: RequestInit) => handler(new Request(`http://app.test/api/shape${search}`, init)),
+    /** The route as a browser's `fetch` reaches it, for an Electric client. */
+    fetch: (input: RequestInfo | URL, init?: RequestInit) => handler(new Request(input, init)),
     /** The handler as a host runs it, in a fiber the host interrupts when the browser goes away. */
     fork: (search: string) =>
       Effect.runFork(
@@ -154,6 +163,53 @@ describe("refusals: no Electric needed", () => {
       annotations: { status: 405, live: false, bytes: 0, outcome: "complete" }
     })
     expect(h.line()?.annotations).not.toHaveProperty("subset")
+  })
+
+  test("a shape the host decides per request: its refusal is answered, recorded, and never reaches Electric", async () => {
+    const decide = Effect.gen(function*() {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const who = new URL(request.url, "http://localhost").searchParams.get("who")
+      if (who === "stranger") return yield* new ShapeProxy.Refused({ status: 403 })
+      if (who === null) return yield* new ShapeProxy.Refused({ status: 401 })
+      if (who === "blip") return yield* new ShapeProxy.Refused({ status: 503, retryAfter: 5 })
+      return { table: "items", where: "owner = $1", params: { "1": who } }
+    })
+    const h = harness({ shape: decide })
+    const answers = []
+    for (const who of ["", "&who=stranger", "&who=blip"]) {
+      const response = await h.request(`?offset=-1&handle=h-1${who}`)
+      answers.push({
+        status: response.status,
+        cacheControl: response.headers.get("cache-control"),
+        retryAfter: response.headers.get("retry-after"),
+        body: await response.text(),
+        level: h.line()?.level,
+        logged: h.line()?.annotations.status
+      })
+    }
+    expect(answers).toEqual([
+      { status: 401, cacheControl: "private, no-store", retryAfter: null, body: "", level: "Warn", logged: 401 },
+      { status: 403, cacheControl: "private, no-store", retryAfter: null, body: "", level: "Warn", logged: 403 },
+      { status: 503, cacheControl: "private, no-store", retryAfter: "5", body: "", level: "Error", logged: 503 }
+    ])
+    expect(h.upstream).toEqual([])
+    expect(h.count(ShapeProxy.defaultMetric, { status: "503", live: "false" })).toBe(1)
+    const servers = h.spans.filter(({ kind }) => kind === "server")
+    expect(servers.map(({ attributes }) => attributes.get("http.response.status_code"))).toEqual([401, 403, 503])
+
+    h.fault({ _tag: "down" })
+    await h.request("?offset=-1&who=person-1&params%5B1%5D=person-2")
+    expect([...h.upstream[0]!.searchParams]).toEqual([
+      ["offset", "-1"],
+      ["table", "items"],
+      ["where", "owner = $1"],
+      ["params[1]", "person-1"]
+    ])
+  })
+
+  test("a refusal is never kept, even on a public shape", async () => {
+    const h = harness({ cache: "public", shape: Effect.fail(new ShapeProxy.Refused({ status: 401 })) })
+    expect((await h.request("?offset=-1")).headers.get("cache-control")).toBe("private, no-store")
   })
 })
 
@@ -210,6 +266,26 @@ describe("faults: no Electric needed", () => {
     expect(h.line()).toMatchObject({ level: "Info", annotations: { status: 499, live: true, outcome: "aborted" } })
   })
 
+  test("a secret sent as a bearer token is in no URL, log line or span: only in the authorization header", async () => {
+    const sentinel = "electric-secret-sentinel-7f3a"
+    const h = harness({ secret: Redacted.make(sentinel), secretAs: "bearer", sourceId: "source-1" })
+    h.fault({ _tag: "down" })
+    await h.request(`?offset=-1&secret=${sentinel}x`)
+    expect([...h.upstream[0]!.searchParams]).toEqual([["offset", "-1"], ["table", "items"], ["source_id", "source-1"]])
+    expect(h.upstreamHeaders[0]!.get("authorization")).toBe(`Bearer ${sentinel}`)
+    expect(JSON.stringify(h.logs)).not.toContain(sentinel)
+    expect(h.spans.length).toBeGreaterThan(1)
+    for (const span of h.spans) expect(JSON.stringify([...span.attributes])).not.toContain(sentinel)
+  })
+
+  test("a secret sent as a parameter, the default, sends no authorization header", async () => {
+    const h = harness({ secret: Redacted.make("s") })
+    h.fault({ _tag: "down" })
+    await h.request("?offset=-1")
+    expect(h.upstream[0]!.searchParams.get("secret")).toBe("s")
+    expect(h.upstreamHeaders[0]!.get("authorization")).toBeNull()
+  })
+
   test("a body that breaks off is recorded at Error as failed, with the bytes sent", async () => {
     const h = harness()
     h.fault({ _tag: "breakBody" })
@@ -232,6 +308,62 @@ describe("faults: no Electric needed", () => {
     await reader.cancel()
     await until(() => expect(h.logs).toHaveLength(1))
     expect(h.line()).toMatchObject({ level: "Info", annotations: { status: 200, outcome: "aborted", bytes: 1 } })
+  })
+})
+
+describe("caching: no Electric needed", () => {
+  // The cache headers Electric 1.8.1 sends with a shape's first response, plus the CDN ones a host's Electric may add.
+  const electric = {
+    "content-type": "application/json",
+    "cache-control": "public, max-age=604800, s-maxage=3600, stale-while-revalidate=2629746",
+    etag: "\"h-1:-1:0_0\"",
+    "surrogate-control": "max-age=3600",
+    "cdn-cache-control": "max-age=3600",
+    "electric-handle": "h-1",
+    "electric-offset": "0_0"
+  }
+  const cacheHeaders = (response: Response) =>
+    Object.fromEntries(
+      ["cache-control", "etag", "surrogate-control", "cdn-cache-control"].map((name) => [
+        name,
+        response.headers.get(name)
+      ])
+    )
+
+  test("by default no browser or CDN keeps a response: Electric's cache headers become private, no-store", async () => {
+    const h = harness()
+    h.fault({ _tag: "answer", headers: electric })
+    const response = await h.request("?offset=-1")
+    expect(response.status).toBe(200)
+    expect(cacheHeaders(response)).toEqual({
+      "cache-control": "private, no-store",
+      etag: null,
+      "surrogate-control": null,
+      "cdn-cache-control": null
+    })
+    expect(response.headers.get("electric-handle")).toBe("h-1")
+    expect(response.headers.get("electric-offset")).toBe("0_0")
+    expect(await response.text()).toBe("[]")
+  })
+
+  test("the proxy's own 405 and 502 aren't kept either", async () => {
+    const h = harness({ cache: "no-store" })
+    expect((await h.request("?offset=-1", { method: "POST" })).headers.get("cache-control")).toBe("private, no-store")
+    h.fault({ _tag: "down" })
+    expect((await h.request("?offset=-1")).headers.get("cache-control")).toBe("private, no-store")
+  })
+
+  test("a public shape, opted in, passes Electric's cache headers through", async () => {
+    const h = harness({ cache: "public" })
+    h.fault({ _tag: "answer", headers: electric })
+    const response = await h.request("?offset=-1")
+    expect(cacheHeaders(response)).toEqual({
+      "cache-control": electric["cache-control"],
+      etag: electric.etag,
+      "surrogate-control": electric["surrogate-control"],
+      "cdn-cache-control": electric["cdn-cache-control"]
+    })
+    expect((await h.request("?offset=-1", { method: "POST" })).headers.get("cache-control")).toBeNull()
   })
 })
 
@@ -328,6 +460,51 @@ describe.skipIf(!electricUp)("through Electric", () => {
       })
       expect(h.count(ShapeProxy.defaultMetric, { status: "200", live: "false" })).toBe(1)
     })
+
+    test("a public shape, opted in, keeps Electric's own caching", async () => {
+      const h = harness({ shape: { table }, cache: "public" })
+      const response = await h.request("?offset=-1")
+      expect(response.status).toBe(200)
+      expect(response.headers.get("cache-control")).toMatch(/^public, max-age=\d+/)
+      expect(response.headers.get("etag")).toEqual(expect.any(String))
+      await response.text()
+    })
+
+    test("an Electric client follows a no-store shape through the proxy: its rows, then a live insert", async () => {
+      const h = harness({ shape: { table } })
+      const cacheControl: Array<string | null> = []
+      const aborted = new AbortController()
+      const stream = new ShapeStream({
+        url: "http://app.test/api/shape",
+        signal: aborted.signal,
+        fetchClient: async (input, init) => {
+          const response = await h.fetch(input, init)
+          cacheControl.push(response.headers.get("cache-control"))
+          return response
+        }
+      })
+      const ids = new Set<unknown>()
+      let upToDate = false
+      const unsubscribe = stream.subscribe((messages) => {
+        for (const message of messages) {
+          if (isChangeMessage(message)) ids.add(message.value.id)
+          else if (message.headers.control === "up-to-date") upToDate = true
+        }
+      })
+      try {
+        await until(() => expect(upToDate).toBe(true))
+        expect([...ids].sort()).toEqual(["a", "b", "c", "d"])
+        await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe(`insert into ${table} values ('e', 5)`)))
+        await until(() => expect(ids).toContain("e"))
+        expect(h.upstream.some((url) => url.searchParams.get("live") === "true")).toBe(true)
+        expect(h.upstream.at(-1)?.searchParams.get("handle")).toEqual(expect.any(String))
+        expect(cacheControl.length).toBeGreaterThan(1)
+        expect(new Set(cacheControl)).toEqual(new Set(["private, no-store"]))
+      } finally {
+        unsubscribe()
+        aborted.abort()
+      }
+    })
   })
 })
 
@@ -352,6 +529,14 @@ describe("config", () => {
     expect(Redacted.isRedacted(connection?.secret)).toBe(true)
     expect(Redacted.value(connection!.secret!)).toBe("s")
     expect(connection?.sourceId).toBe("src")
+    expect(connection?.secretAs).toBeUndefined()
+  })
+
+  test("reads ELECTRIC_SECRET_AS, parameter or bearer, and refuses anything else", async () => {
+    const as = (value: string) => read({ ELECTRIC_URL: "https://electric.test", ELECTRIC_SECRET_AS: value })
+    expect(await as("bearer")).toMatchObject({ _tag: "Success", success: { secretAs: "bearer" } })
+    expect(await as("parameter")).toMatchObject({ _tag: "Success", success: { secretAs: "parameter" } })
+    expect((await as("header"))._tag).toBe("Failure")
   })
 
   test("falls back to the given url, leaves the credentials out, and needs ELECTRIC_URL without one", async () => {

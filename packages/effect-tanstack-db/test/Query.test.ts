@@ -61,3 +61,25 @@ test("caseWhen picks a value per row", async () => {
   })))
   expect(labels).toEqual(["x", "none", "y"])
 })
+
+test("coalesce picks the first value that isn't null, typed as never null", async () => {
+  const labels = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+    const source = yield* Collection.local({
+      id: id("items"),
+      schema: Item,
+      getKey: (row) => row.id,
+      initialData: items
+    })
+    const query = yield* LiveQuery.make((q) =>
+      q.from({ item: source.tanstack }).orderBy(({ item }) => item.id).select(({ item }) => ({
+        id: item.id,
+        label: Query.coalesce(item.tag, "none")
+      }))
+    )
+    yield* query.preload
+    const rows = yield* query.toArray
+    const label: string = rows[0]!.label
+    return [label, ...rows.slice(1).map(({ label }) => label)]
+  })))
+  expect(labels).toEqual(["x", "none", "y"])
+})

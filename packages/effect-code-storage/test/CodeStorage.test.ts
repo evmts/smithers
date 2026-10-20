@@ -1,7 +1,18 @@
 import { ConfigProvider, Effect, Exit, Fiber, Layer, Option, Redacted } from "effect"
 import { beforeAll, describe, expect, test } from "vitest"
 import { CodeStorage } from "../src/index.ts"
-import { BASE, brokenBody, codeStorage, httpClient, keyPair, longBody, ORG, telemetry } from "./fixtures.ts"
+import {
+  BASE,
+  brokenBody,
+  codeStorage,
+  decodeClaims,
+  growth,
+  httpClient,
+  keyPair,
+  longBody,
+  ORG,
+  telemetry
+} from "./fixtures.ts"
 
 let pem: string
 let publicKey: CryptoKey
@@ -213,6 +224,17 @@ describe("readFile", () => {
     expect(error.size).toBeUndefined()
   })
 
+  test("reading a body costs time linear in its size, however finely the network cuts it", async () => {
+    const h = await seeded({})
+    const read = async (size: number) => {
+      h.faults.push(new Response(longBody(size, 1024)))
+      const file = await h.run((client) => client.readFile("r", { path: "big.bin", maxBytes: size }))
+      expect(file.bytes.length).toBe(size)
+    }
+    // 512 KiB, then 2 MiB, in 1 KiB chunks: linear grows about 4x; re-joining every chunk read so far grows about 16x.
+    expect(await growth(read, 512 * 1024)).toBeLessThan(8)
+  })
+
   test("a missing file is not_found; a body that breaks off is transport", async () => {
     const h = await seeded({})
     expect(await h.fail((client) => client.readFile("r", { path: "nope", maxBytes: 10 }))).toMatchObject({
@@ -262,6 +284,86 @@ describe("listCommits", () => {
     })
     await h.run((client) => client.listCommits("r"))
     expect(h.seen[3]!.url.search).toBe("")
+  })
+})
+
+describe("listBranches", () => {
+  test("maps each branch's head and pages with the cursor, git:read only", async () => {
+    const h = harness()
+    await h.run((client) => client.createRepo({ name: "acme/r" }))
+    h.repos.get("acme/r")!.branches = [
+      { name: "main", head_sha: "a".repeat(40), created_at: "2026-10-18T10:00:00Z" },
+      { name: "feature/x", head_sha: "b".repeat(40), created_at: "2026-10-19T10:00:00Z" }
+    ]
+    const first = await h.run((client) => client.listBranches("acme/r", { limit: 1 }))
+    expect(first).toEqual({
+      branches: [{ name: "main", sha: "a".repeat(40), createdAt: "2026-10-18T10:00:00Z" }],
+      nextCursor: "1",
+      bytesRead: expect.any(Number)
+    })
+    expect(h.seen[1]!.url.pathname).toBe("/api/repos/acme%2Fr/branches")
+    expect(h.seen[1]!.claims!.scopes).toEqual(["git:read"])
+    expect(Object.fromEntries(h.seen[1]!.url.searchParams)).toEqual({ limit: "1" })
+    const second = await h.run((client) => client.listBranches("acme/r", { cursor: first.nextCursor, limit: 1 }))
+    expect(second.branches.map((branch) => branch.name)).toEqual(["feature/x"])
+    expect(second.nextCursor).toBeUndefined()
+    await h.run((client) => client.listBranches("acme/r"))
+    expect(h.seen[3]!.url.search).toBe("")
+  })
+
+  test("more pages with no cursor, or a body outside the schema, is invalid_response; a missing repository not_found", async () => {
+    const h = harness()
+    h.faults.push(Response.json({ branches: [], has_more: true }), Response.json({ branches: [{ name: "main" }] }))
+    expect(await h.fail((client) => client.listBranches("r"))).toMatchObject({
+      operation: "listBranches",
+      code: "invalid_response",
+      status: 200
+    })
+    expect((await h.fail((client) => client.listBranches("r"))).code).toBe("invalid_response")
+    expect(await h.fail((client) => client.listBranches("gone"))).toMatchObject({
+      operation: "listBranches",
+      code: "repository_not_found",
+      status: 404
+    })
+  })
+})
+
+describe("listTags", () => {
+  test("maps each tag's commit and pages with the cursor, git:read only", async () => {
+    const h = harness()
+    await h.run((client) => client.createRepo({ name: "r" }))
+    h.repos.get("r")!.tags = [{ name: "v1.0.0", sha: "c".repeat(40) }, { name: "v1.1.0", sha: "d".repeat(40) }]
+    const first = await h.run((client) => client.listTags("r", { limit: 1 }))
+    expect(first).toEqual({
+      tags: [{ name: "v1.0.0", sha: "c".repeat(40) }],
+      nextCursor: "1",
+      bytesRead: expect.any(Number)
+    })
+    expect(h.seen[1]!.url.pathname).toBe("/api/repos/r/tags")
+    expect(h.seen[1]!.claims!.scopes).toEqual(["git:read"])
+    const second = await h.run((client) => client.listTags("r", { cursor: "1" }))
+    expect(second).toEqual({
+      tags: [{ name: "v1.1.0", sha: "d".repeat(40) }],
+      nextCursor: undefined,
+      bytesRead: expect.any(Number)
+    })
+    expect(Object.fromEntries(h.seen[2]!.url.searchParams)).toEqual({ cursor: "1" })
+    await h.run((client) => client.listTags("r"))
+    expect(h.seen[3]!.url.search).toBe("")
+  })
+
+  test("more pages with no cursor is invalid_response; a sync still running is sync_in_progress, which is transient", async () => {
+    const h = harness()
+    h.faults.push(Response.json({ tags: [], has_more: true }))
+    expect(await h.fail((client) => client.listTags("r"))).toMatchObject({
+      operation: "listTags",
+      code: "invalid_response"
+    })
+    await h.run((client) => client.createRepo({ name: "r" }))
+    h.repos.get("r")!.syncing = 1
+    const syncing = await h.fail((client) => client.listTags("r"))
+    expect(syncing.code).toBe("sync_in_progress")
+    expect(CodeStorage.isTransient(syncing)).toBe(true)
   })
 })
 
@@ -516,5 +618,30 @@ describe("layers", () => {
       )
     )
     expect(service.seen[0]!.url.origin).toBe(BASE)
+  })
+})
+
+describe("gitRemote", () => {
+  test("is the repository's git URL with a five-minute git:read token for it as Basic t:<token>", async () => {
+    const h = harness()
+    const upstream = await h.run((client) => client.gitRemote("github/octocat/spoon-knife"))
+    expect(upstream.url).toBe(`https://${ORG}.code.storage/github/octocat/spoon-knife.git`)
+    const header = Redacted.value(upstream.authorization!)
+    expect(header.startsWith("Basic ")).toBe(true)
+    const [user, token] = atob(header.slice("Basic ".length)).split(":")
+    expect(user).toBe("t")
+    const claims = decodeClaims(token!)
+    expect(claims).toMatchObject({ iss: ORG, repo: "github/octocat/spoon-knife", scopes: ["git:read"] })
+    expect(claims.exp - claims.iat).toBe(300)
+    // Signing is local: nothing reaches Code Storage, and the token is in no span or log line.
+    expect(h.seen).toEqual([])
+    expect(h.recorded()).not.toContain(token!)
+    expect(String(upstream.authorization)).not.toContain(token!)
+  })
+
+  test("escapes each path segment of the repository's name", async () => {
+    const h = harness()
+    const upstream = await h.run((client) => client.gitRemote("github/o/a b"))
+    expect(upstream.url).toBe(`https://${ORG}.code.storage/github/o/a%20b.git`)
   })
 })

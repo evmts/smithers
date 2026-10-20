@@ -5,7 +5,12 @@
  * Every collection sends its shape requests through `ShapeSource`. Its
  * default sends them with the `fetch` in Effect's `FetchHttpClient.Fetch`
  * reference, the global one unless a program provides its own, so a program
- * that never mentions `ShapeSource` syncs from Electric as it is.
+ * that never mentions `ShapeSource` syncs from Electric as it is. It sends
+ * each request with `cache: "no-store"`, so the HTTP cache never answers a
+ * shape request or keeps its response: rows read under one session can't
+ * come back from the cache after sign-out, whatever the server's headers say.
+ * In a Cloudflare Worker that needs a compatibility date of 2024-11-11 or
+ * later.
  *
  * `layerFaulty` is the test implementation: the source a program would use,
  * behind switches (`Faults`) that make it down, refuse or stall on command.
@@ -46,7 +51,8 @@ export interface Source {
 }
 
 /**
- * The real source: each request sent with the `fetch` in `FetchHttpClient.Fetch`.
+ * The real source: each request sent with the `fetch` in
+ * `FetchHttpClient.Fetch`, past the HTTP cache (`cache: "no-store"`).
  *
  * @category constructors
  * @since 0.1.0
@@ -56,7 +62,7 @@ export const fetchSource: Source = {
     Effect.gen(function*() {
       const fetch = yield* FetchHttpClient.Fetch
       return yield* Effect.tryPromise({
-        try: (signal) => fetch(url, { ...init, signal }),
+        try: (signal) => fetch(url, { ...init, cache: "no-store", signal }),
         catch: () => new RequestFailed({})
       })
     })

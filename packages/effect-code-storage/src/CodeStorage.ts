@@ -6,7 +6,7 @@
  * commits read through a small HTTP API. This module is a client for the part
  * of that API a host needs to import a public GitHub repository and browse
  * it: create a repository with an upstream, start its sync, list its files,
- * read a file, and list commits.
+ * read a file, list commits, and list its branches and tags.
  *
  * - Every request carries its own ES256 JWT, signed with WebCrypto by the
  *   organization's key: one repository, only the scope the call needs, five
@@ -44,6 +44,7 @@ import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { readAtMost } from "./internal/bounded.ts"
 import * as Token from "./internal/token.ts"
+import type * as GitRemote from "./GitRemote.ts"
 
 /**
  * What a call was doing when it failed. `configure` is building the layer:
@@ -52,7 +53,15 @@ import * as Token from "./internal/token.ts"
  * @category models
  * @since 0.1.0
  */
-export type Operation = "configure" | "createRepo" | "pullUpstream" | "listFiles" | "readFile" | "listCommits"
+export type Operation =
+  | "configure"
+  | "createRepo"
+  | "pullUpstream"
+  | "listFiles"
+  | "readFile"
+  | "listCommits"
+  | "listBranches"
+  | "listTags"
 
 /**
  * A Code Storage call that failed.
@@ -77,7 +86,16 @@ export type Operation = "configure" | "createRepo" | "pullUpstream" | "listFiles
 export class CodeStorageError extends Schema.TaggedError<CodeStorageError>()(
   "@smthrs/effect-code-storage/CodeStorageError",
   {
-    operation: Schema.Literals(["configure", "createRepo", "pullUpstream", "listFiles", "readFile", "listCommits"]),
+    operation: Schema.Literals([
+      "configure",
+      "createRepo",
+      "pullUpstream",
+      "listFiles",
+      "readFile",
+      "listCommits",
+      "listBranches",
+      "listTags"
+    ]),
     code: Schema.String,
     status: Schema.optional(Schema.Number),
     retryAfterMillis: Schema.optional(Schema.Number),
@@ -297,6 +315,69 @@ export interface CommitsPage {
 }
 
 /**
+ * Which page of branches or tags to list: one page of `limit` (Code Storage's
+ * default is 20) from `cursor`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface ListRefsOptions {
+  readonly cursor?: string | undefined
+  readonly limit?: number | undefined
+}
+
+/**
+ * A branch: its short name, its head commit, and when it was created
+ * (ISO 8601).
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Branch {
+  readonly name: string
+  readonly sha: string
+  readonly createdAt: string
+}
+
+/**
+ * One page of branches, the cursor of the next page, and the size of the
+ * answer in bytes.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface BranchesPage {
+  readonly branches: ReadonlyArray<Branch>
+  readonly nextCursor: string | undefined
+  readonly bytesRead: number
+}
+
+/**
+ * A tag: its short name and the commit it names, dereferenced for an
+ * annotated tag.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Tag {
+  readonly name: string
+  readonly sha: string
+}
+
+/**
+ * One page of tags, in lexical order, the cursor of the next page, and the
+ * size of the answer in bytes.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface TagsPage {
+  readonly tags: ReadonlyArray<Tag>
+  readonly nextCursor: string | undefined
+  readonly bytesRead: number
+}
+
+/**
  * The calls, each failing with a {@link CodeStorageError}.
  *
  * - `createRepo`: creates a repository, mirroring `github` when given.
@@ -304,7 +385,8 @@ export interface CommitsPage {
  *   `conflict`.
  * - `pullUpstream`: starts a sync from the upstream. While one runs, calls on
  *   the repository fail with `sync_in_progress`.
- * - `listFiles`, `readFile`, `listCommits`: reads, as their options say.
+ * - `listFiles`, `readFile`, `listCommits`, `listBranches`, `listTags`:
+ *   reads, as their options say.
  *
  * @category services
  * @since 0.1.0
@@ -315,6 +397,17 @@ export interface Client {
   readonly listFiles: (repo: string, options?: ListFilesOptions) => Effect.Effect<FilesPage, CodeStorageError>
   readonly readFile: (repo: string, options: ReadFileOptions) => Effect.Effect<FileContents, CodeStorageError>
   readonly listCommits: (repo: string, options?: ListCommitsOptions) => Effect.Effect<CommitsPage, CodeStorageError>
+  readonly listBranches: (repo: string, options?: ListRefsOptions) => Effect.Effect<BranchesPage, CodeStorageError>
+  readonly listTags: (repo: string, options?: ListRefsOptions) => Effect.Effect<TagsPage, CodeStorageError>
+  /**
+   * The repository's git remote for reading, with a `git:read` token as its
+   * credential: `https://<org>.code.storage/<repo>.git` and Basic `t:<token>`,
+   * five minutes long. Hand it to `GitProxy.uploadPack` or `GitRemote.ref`;
+   * the token never belongs in a URL or a guest.
+   *
+   * @since 0.2.0
+   */
+  readonly gitRemote: (repo: string) => Effect.Effect<GitRemote.Upstream>
 }
 
 /**
@@ -454,6 +547,17 @@ const CommitsJson = Schema.fromJsonString(Schema.Struct({
   next_cursor: Schema.optional(Schema.String)
 }))
 
+const BranchesJson = Schema.fromJsonString(Schema.Struct({
+  branches: Schema.Array(Schema.Struct({ name: Schema.String, head_sha: Schema.String, created_at: Schema.String })),
+  has_more: Schema.Boolean,
+  next_cursor: Schema.optional(Schema.String)
+}))
+const TagsJson = Schema.fromJsonString(Schema.Struct({
+  tags: Schema.Array(Schema.Struct({ name: Schema.String, sha: Schema.String })),
+  has_more: Schema.Boolean,
+  next_cursor: Schema.optional(Schema.String)
+}))
+
 const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError, HttpClient.HttpClient> =>
   Effect.gen(function*() {
     const key = yield* Token.importKey(Redacted.value(credentials.key)).pipe(
@@ -569,7 +673,25 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
         Object.entries(entries).flatMap(([name, value]) => (value === undefined ? [] : [[name, String(value)]]))
       )
 
+    const gitBase = `https://${credentials.org}.code.storage`
+
     return {
+      gitRemote: (repo) =>
+        Effect.gen(function*() {
+          const now = yield* Clock.currentTimeMillis
+          const token = yield* Token.sign(key, {
+            org: credentials.org,
+            repo,
+            scopes: ["git:read"],
+            issuedAt: Math.floor(now / 1000),
+            ttlSeconds: tokenTtlSeconds
+          })
+          return {
+            url: `${gitBase}/${repo.split("/").map(encodeURIComponent).join("/")}.git`,
+            authorization: Redacted.make(`Basic ${btoa(`t:${token}`)}`)
+          }
+        }),
+
       createRepo: (options) =>
         observe(
           "createRepo",
@@ -685,6 +807,46 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
                 date: commit.date
               })),
               nextCursor: yield* nextCursor("listCommits", response.status, page),
+              bytesRead
+            }
+          })
+        ),
+
+      listBranches: (repo, options = {}) =>
+        observe(
+          "listBranches",
+          repo,
+          Effect.gen(function*() {
+            const request = HttpClientRequest.get(url(repo, "/branches")).pipe(
+              HttpClientRequest.setUrlParams(params({ cursor: options.cursor, limit: options.limit }))
+            )
+            const response = yield* send("listBranches", repo, ["git:read"], request)
+            const { body: page, bytesRead } = yield* readJson("listBranches", response, BranchesJson)
+            return {
+              branches: page.branches.map((branch) => ({
+                name: branch.name,
+                sha: branch.head_sha,
+                createdAt: branch.created_at
+              })),
+              nextCursor: yield* nextCursor("listBranches", response.status, page),
+              bytesRead
+            }
+          })
+        ),
+
+      listTags: (repo, options = {}) =>
+        observe(
+          "listTags",
+          repo,
+          Effect.gen(function*() {
+            const request = HttpClientRequest.get(url(repo, "/tags")).pipe(
+              HttpClientRequest.setUrlParams(params({ cursor: options.cursor, limit: options.limit }))
+            )
+            const response = yield* send("listTags", repo, ["git:read"], request)
+            const { body: page, bytesRead } = yield* readJson("listTags", response, TagsJson)
+            return {
+              tags: page.tags.map((tag) => ({ name: tag.name, sha: tag.sha })),
+              nextCursor: yield* nextCursor("listTags", response.status, page),
               bytesRead
             }
           })
