@@ -43,6 +43,122 @@ const apiError = (status: number, message?: string) =>
   )
 
 describe("backend HTTP failures become refusals", () => {
+  it.each([
+    ["text/html", "<title>403</title>403 Forbidden"],
+    ["application/json", "{}"],
+    ["application/json", "not JSON"],
+    ["text/html", "{\"message\":\"edge refusal\",\"code\":\"forbidden\",\"class\":\"permission\"}"]
+  ])("identifies an edge 403 with content type %s and body %s", async (contentType, body) => {
+    const { c } = await fixture()
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(body, {
+          status: 403,
+          headers: { "content-type": contentType }
+        })
+      )
+    )
+    const error = await c.response("POST", "/api/issues", { body: "code snippet" }).catch((error: unknown) => error)
+    expect(error).toBeInstanceOf(APIError)
+    expect(c.failure(error)).toMatchObject({
+      fault: "infra",
+      code: "blocked_at_edge",
+      httpStatus: 403,
+      message:
+        `Smithers Cloud's edge blocked the request before it reached the backend, probably by content filtering (HTTP 403; ${contentType}; body: ${body})`
+    })
+  })
+
+  it("serializes only bounded response metadata without response cookies or the full body", async () => {
+    const { c } = await fixture()
+    const body = `${"x".repeat(512)}body beyond preview${"x".repeat(512)}`
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(body, {
+          status: 403,
+          headers: { "content-type": "text/html", "set-cookie": "session=response-cookie-secret; HttpOnly" }
+        })
+      )
+    )
+    const error = await c.response("POST", "/api/issues").catch((error: unknown) => error)
+    expect(error).toBeInstanceOf(APIError)
+    const serialized = JSON.stringify(error)
+    const fields = JSON.parse(serialized)
+    expect(fields).toMatchObject({ contentType: "text/html", requestId: "", bodyPreview: body.slice(0, 512) })
+    expect(fields).not.toHaveProperty("headers")
+    expect(fields).not.toHaveProperty("body")
+    expect(serialized).not.toMatch(/set-cookie|response-cookie-secret|body beyond preview/)
+    expect(serialized).not.toContain("x".repeat(513))
+  })
+
+  it.each([{ message: "Only maintainers can do this" }, { code: "forbidden" }])(
+    "keeps a backend JSON 403 as forbidden: %j",
+    async (body) => {
+      const { c } = await fixture()
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(body, { status: 403 })))
+      const error = await c.response("POST", "/api/issues").catch((error: unknown) => error)
+      expect(c.failure(error)).toMatchObject({
+        fault: "user",
+        code: "forbidden",
+        httpStatus: 403,
+        message: "message" in body ? body.message : "Your login does not have access to this"
+      })
+    }
+  )
+
+  it.each(["", "<title>403</title>403 Forbidden"])("keeps a 403 with a request id as forbidden: %s", async (body) => {
+    const { c } = await fixture()
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(body, {
+          status: 403,
+          headers: { "content-type": "text/html", "x-request-id": "req-7" }
+        })
+      )
+    )
+    const error = await c.response("POST", "/api/issues").catch((error: unknown) => error)
+    expect(c.failure(error)).toMatchObject({
+      fault: "user",
+      code: "forbidden",
+      httpStatus: 403,
+      message: "Your login does not have access to this"
+    })
+  })
+
+  it("identifies an empty 403 with neither content type nor request id", async () => {
+    const { c } = await fixture()
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 403 })))
+    const error = await c.response("POST", "/api/issues").catch((error: unknown) => error)
+    expect(c.failure(error)).toMatchObject({
+      fault: "infra",
+      code: "blocked_at_edge",
+      message: expect.stringContaining("HTTP 403; unknown content type; body: empty")
+    })
+  })
+
+  it("redacts and bounds the terminal-safe edge diagnostic before displaying it", async () => {
+    const { c } = await fixture()
+    const body = `<title>403</title>session-secret\u001b]0;owned\u0007\n${"x".repeat(400)}`
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(body, {
+          status: 403,
+          headers: { "content-type": "text/html" }
+        })
+      )
+    )
+    const error = await c.response("POST", "/api/issues").catch((error: unknown) => error)
+    const failure = c.failure(error) as Refused
+    expect(failure.code).toBe("blocked_at_edge")
+    expect(failure.message).toContain("<title>403</title>[REDACTED]")
+    expect(failure.message).not.toMatch(/session-secret|owned|[\u0000-\u001f\u007f]/)
+    expect(failure.message.length).toBeLessThan(400)
+  })
+
   it.each(
     [
       [401, "user", "not_signed_in"],
@@ -64,6 +180,32 @@ describe("backend HTTP failures become refusals", () => {
     expect(failure).toMatchObject({ fault, code, message: "Repository owner/repo is archived" })
     // The method, path, status, and request id are detail, never the sentence.
     expect(Failure.operatorSentence(failure)).not.toMatch(/GET|\/api\/repos|-> |req-7/)
+  })
+
+  it.each(
+    [
+      [401, "not_signed_in"],
+      [404, "not_found"],
+      [409, "conflict"],
+      [423, "locked"],
+      [425, "too_early"],
+      [429, "rate_limited"],
+      [503, "backend_unavailable"],
+      [422, "request_refused"]
+    ] as const
+  )("keeps the status mapping for an HTML %i without a request id", async (status, code) => {
+    const { c } = await fixture()
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response("<title>Denied</title>", {
+          status,
+          headers: { "content-type": "text/html" }
+        })
+      )
+    )
+    const error = await c.response("POST", "/api/issues").catch((error: unknown) => error)
+    expect(c.failure(error)).toMatchObject({ code, httpStatus: status })
   })
 
   it.each(["permission", "never", "capacity", "github", "conflict", "infra", "user"] as const)(

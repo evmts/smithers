@@ -152,12 +152,18 @@ export const paginationCursor = (headers: Headers, current: URL): string => {
 export class APIError extends Data.TaggedError("/backend/APIError")<{
   readonly status: number
   readonly detail: Values
+  readonly contentType: string
+  readonly requestId: string
+  readonly bodyPreview: string
   readonly message: string
 }> {
-  constructor(status: number, detail: Values, method: string, path: string, headers: Headers) {
+  constructor(status: number, detail: Values, method: string, path: string, headers: Headers, body = "") {
     super({
       status,
       detail,
+      contentType: headers.get("content-type") || "",
+      requestId: headers.get("x-request-id") || "",
+      bodyPreview: body.slice(0, 512),
       message: `${method} ${path} -> ${status}: ${str(detail.message) || "Request failed"}${
         headers.get("x-request-id") ? ` [request ${headers.get("x-request-id")}]` : ""
       }`
@@ -196,15 +202,37 @@ export const withCause = <E extends Error>(error: E, cause: unknown): E => {
 }
 
 /**
- * The refusal an operator reads for one backend HTTP failure: the fault and
- * code its status names (or the known workspace sizing refusal), and the
- * backend's own sentence, redacted and made inert for a terminal. The method,
- * path, and request id stay on the
- * `APIError`, which rides along as `cause`.
+ * The refusal an operator reads for one HTTP failure: an edge diagnostic or
+ * the backend's own sentence, redacted and made inert for a terminal. The
+ * method, path, and request id stay on the `APIError` as `cause`.
  * @private
  * @since 1.0.0-rc.1
  */
 export const refusalOf = (error: APIError, redact: (value: unknown) => unknown = Redaction.redact): Refused => {
+  const contentType = error.contentType
+  // An edge filter can return 403 without reaching backend authorization.
+  // A request id or a backend JSON error keeps the authorization diagnosis.
+  if (
+    error.status === 403 && !error.requestId &&
+    ((contentType !== "" && !/^application\/(?:[\w.-]+\+)?json(?:\s*;|$)/i.test(contentType)) ||
+      !(str(error.detail.message).trim() || str(error.detail.code).trim()))
+  ) {
+    // Redact before truncating so a secret crossing the preview boundary stays hidden.
+    const preview = (value: string, maximum: number) =>
+      Failure.terminalSafe(str(redact(value))).trim().slice(0, maximum)
+    return withCause(
+      new Refused({
+        fault: "infra",
+        code: "blocked_at_edge",
+        httpStatus: error.status,
+        message:
+          `Smithers Cloud's edge blocked the request before it reached the backend, probably by content filtering (HTTP ${error.status}; ${
+            preview(contentType, 80) || "unknown content type"
+          }; body: ${preview(error.bodyPreview, 160) || "empty"})`
+      }),
+      error
+    )
+  }
   const refusal = statusRefusal(error.status)
   if (error.status === 400 && error.detail.code === "workspace_resources_exceeded") {
     refusal.code = "workspace_resources_exceeded"
@@ -542,10 +570,12 @@ export class Client {
     }
     if (!response.ok) {
       let detail: Values = {}
+      let text = ""
       try {
-        detail = object(JSON.parse(await this.text(response)))
+        text = await this.text(response)
+        detail = object(JSON.parse(text))
       } catch { /* use status */ }
-      throw new APIError(response.status, detail, method, path, response.headers)
+      throw new APIError(response.status, detail, method, path, response.headers, text)
     }
     return response
   }
