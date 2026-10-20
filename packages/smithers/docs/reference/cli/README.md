@@ -163,7 +163,9 @@ transfer.
 
 `--repo OWNER/REPO` (or `-R`) also selects the backend for overlapping `flow` and
 `runs` commands. Without `--repo` or `--cloud`, their existing local/control-plane
-behavior remains. Backend commands detect the repository from git or jj when
+behavior remains for commands with a run ID, even when an install login is saved.
+Run IDs are scoped to their host; use `--cloud` to select an install run.
+Backend commands detect the repository from git or jj when
 `--repo` is omitted. Use `--json` for structured output and `--help` or `--schema`
 for each command's complete arguments.
 

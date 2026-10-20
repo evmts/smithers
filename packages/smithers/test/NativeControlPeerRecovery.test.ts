@@ -1,7 +1,7 @@
 import { NodeServices } from "@effect/platform-node"
-import { NodeRuntime } from "@smthrs/platform-node"
 import { Journal } from "@smthrs/journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { Effect } from "effect"
 import { execFile, spawn } from "node:child_process"
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"

@@ -458,7 +458,8 @@
       "argv": [
         "runs",
         "show",
-        "run-1"
+        "run-1",
+        "--cloud"
       ],
       "method": "GET",
       "path": "/api/runs/run-1"

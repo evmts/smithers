@@ -10,9 +10,9 @@
  * @since 1.0.0
  */
 import { Action, DurableDeferred, Flow, HumanTask, Interpreter, RetryPolicy, Sleep } from "@smthrs/flow"
-import { NodeRuntime } from "@smthrs/platform-node"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import { Node } from "@smthrs/plan"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"

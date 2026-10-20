@@ -16,8 +16,8 @@
  */
 import { Capability, Permission } from "@smthrs/capability"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import { NodeRuntime } from "@smthrs/platform-node"
 import { Node } from "@smthrs/plan"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { ChildProcess } from "effect/process"

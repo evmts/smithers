@@ -8,6 +8,7 @@ import { expect, it } from "vitest"
 import * as Presentation from "../src/cli/Presentation.ts"
 import { catalogCommands, dispatchCatalog, mountCatalog } from "../src/internal/backend/Catalog.ts"
 import { Client } from "../src/internal/backend/Client.ts"
+import { mount } from "../src/internal/backend/Commands.ts"
 import { targetsInstall } from "../src/internal/backend/Destination.ts"
 
 it.each(["missing binding", "ambiguous binding", "invalid payload"])(
@@ -253,4 +254,54 @@ it.each([
 ])("explicit local scope wins with a configured install: %j", (context) => {
   expect(targetsInstall(context, { environment: { SMITHERS_URL: "http://localhost:1", SMITHERS_TOKEN: "test-token" } }))
     .toBe(false)
+})
+
+// Run IDs are sequential within each host; saved login is not a selector.
+it.each(["show", "cancel"])("keeps colliding run IDs on the selected host: %s", async (verb) => {
+  const mutations: string[] = []
+  const server = createServer((request, response) => {
+    mutations.push(`install:${request.url}`)
+    response.writeHead(200, { "Content-Type": "application/json" })
+    response.end(JSON.stringify({ source: "install", id: "1" }))
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  try {
+    const cli = Cli.create("smthrs").command(
+      Cli.create("runs").command(verb, {
+        args: z.object({ run: z.string() }),
+        options: z.object({ root: z.string().optional(), cloud: z.boolean().optional() }),
+        run: ({ args }) => {
+          mutations.push(`local:${args.run}`)
+          return { source: "local", id: args.run }
+        }
+      })
+    )
+    mount(cli, {
+      environment: {
+        SMITHERS_API_ORIGIN: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+        SMITHERS_TOKEN: "test-token"
+      }
+    })
+    for (
+      const [flags, source] of [[[], "local"], [
+        ["--cloud", ...(verb === "cancel" ? ["--repo", "owner/repo"] : [])],
+        "install"
+      ], [["--cloud", "--root", "/local"], "local"]] as const
+    ) {
+      mutations.length = 0
+      let stdout = ""
+      await cli.serve(["runs", verb, "1", ...flags, "--json"], {
+        stdout: (text) => {
+          stdout += text
+        },
+        exit: () => {}
+      })
+      expect(JSON.parse(stdout)).toEqual({ source, id: "1" })
+      expect(mutations).toHaveLength(1)
+      expect(mutations[0]).toMatch(new RegExp(`^${source}:`))
+    }
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
 })

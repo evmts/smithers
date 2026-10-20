@@ -21,6 +21,9 @@ export const targetsInstall = (
   const { args, options } = context
   if (["root", "data", "flow"].some((key) => options[key] !== undefined) || args.path !== undefined) return false
   if (options.repo !== undefined || options.cloud === true) return true
+  // Run IDs belong to a host, not to the saved login. Never redirect a local
+  // run operation merely because an install has been configured.
+  if (args.run !== undefined) return false
   const env = runtime.environment ?? process.env
   return !!(new Session(env).config().api_origin || env.SMITHERS_TOKEN || env.SMITHERS_TOKEN_FILE)
 }

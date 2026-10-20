@@ -8,9 +8,9 @@
  * @since 1.0.0
  */
 import { DurableEngineState } from "@smthrs/engine-store"
-import { NodeRuntime } from "@smthrs/platform-node"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { contentDigest } from "@smthrs/journal/JournalEvent"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as NodeHost from "@smthrs/platform-node/NodeHost"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
