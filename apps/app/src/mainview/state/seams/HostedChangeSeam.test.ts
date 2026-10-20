@@ -464,6 +464,25 @@ test("GitHub's refusal sentence stays on the ready card", async () => {
   })
 })
 
+test("a Smithers-native repository's pull request refusal is one plain sentence on the ready card", async () => {
+  const h = await setup(async () =>
+    json({ code: "github_destination_required", message: "This repository isn't connected to GitHub." }, 409)
+  )
+  await h.store.dispatch({
+    type: "hosted.changes.changed",
+    actor: "system",
+    requests: [{ id: "saved", repo: "maya/tinyhttp", request: "change", sessionId: "session", owner: "maya", phase: "done",
+      accepted: true, session, result, pull: null, files: [], error: null, stages: {} }]
+  }).isPersisted.promise
+  await h.seam.openHostedPull({ repo: "maya/tinyhttp", session: "saved" })
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  expect(h.store.session().hostedChanges![0]).toMatchObject({
+    phase: "done",
+    error: "This repository isn't connected to GitHub, so a pull request can't open here.",
+    pull: null
+  })
+})
+
 test("model disclosures use observed assistant activity only", () => {
   expect(
     codingActivityOf([{ role: "user", parts: [{ type: "text", content: { value: "user request" } }] }])

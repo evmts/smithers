@@ -88,10 +88,15 @@ test("typed landing refusals keep an actionable sentence", () => {
     "session_not_found",
     "head_receipt_mismatch",
     "no_coding_result",
-    "no_turn_head"
+    "no_turn_head",
+    "github_destination_required"
   ])
     expect(landingRefusal(code, "fallback")).not.toBe("fallback")
   expect(landingRefusal(null, "GitHub unavailable.")).toBe("GitHub unavailable.")
+  // A Smithers-native repository has no GitHub to open a pull request on (PM d-ky555a, Platform's typed code).
+  expect(landingRefusal("github_destination_required", "This repository isn't connected to GitHub.")).toBe(
+    "This repository isn't connected to GitHub, so a pull request can't open here."
+  )
 })
 test("runner names, unknown test counts and drift preserve exact copy", () => {
   expect(
