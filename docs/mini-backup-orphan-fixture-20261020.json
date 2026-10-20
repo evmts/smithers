@@ -1,0 +1,18 @@
+{
+  "source": "/Users/williamcory/smithers-lanes/guardian-review/b2-working-path-gb78p1fh",
+  "classification": "orphan security-review fixture with empty .jj, not a usable repository; archive only, never execute its bin/jj",
+  "files": [
+    {
+      "path": "repository-code-ran",
+      "mode": "0o644",
+      "sha256": "c8fc6bf296faa18d058b23f9a467243a6f0a176f8d2c407e9c9ea06165da95f6",
+      "base64": "cmFu"
+    },
+    {
+      "path": "bin/jj",
+      "mode": "0o755",
+      "sha256": "791307fd3900686e32b36bfaa53d5e974172a79629a9bd536b3ef1fd9bb5403d",
+      "base64": "IyEvYmluL3NoCnByaW50ZiByYW4gPiAiL1VzZXJzL3dpbGxpYW1jb3J5L3NtaXRoZXJzLWxhbmVzL2d1YXJkaWFuLXJldmlldy9iMi13b3JraW5nLXBhdGgtZ2I3OHAxZmgvcmVwb3NpdG9yeS1jb2RlLXJhbiIKcHJpbnRmICIxMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExXG4iCg=="
+    }
+  ]
+}
