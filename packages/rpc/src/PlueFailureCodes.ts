@@ -35,7 +35,7 @@ export const PLUE_FAILURE_SCHEMA_VERSION = 1
  * @since 1.0.0
  * @category constants
  */
-export const PLUE_FAILURE_DIGEST = "sha256:9099b27cd19c0a0835fc45e107b78e3b4369cda5467c39dc0a5389e9691bb140"
+export const PLUE_FAILURE_DIGEST = "sha256:aa1152712d1ebbd98af5e2f4f861b9ae1e1efeb059fa65f2f3d44d87fae0033e"
 
 /**
  * Whose problem a failure is — the registry's verdict, and the only question the app
@@ -107,6 +107,7 @@ export const PLUE_FAILURE_CODES = [
   "fork_not_needed",
   "gateway_timeout",
   "generation_required",
+  "github_destination_required",
   "github_import_already_active",
   "github_import_too_large",
   "github_not_installed",
@@ -323,6 +324,8 @@ export const PLUE_FAILURES = {
   "gateway_timeout": { fault: "bug", status: 504, retryAfter: 0 },
   /** The worker request omitted the placement generation that fences it. */
   "generation_required": { fault: "user", status: 400, retryAfter: 0 },
+  /** The repository has no GitHub destination, so nothing can open on or sync with GitHub from it. */
+  "github_destination_required": { fault: "user", status: 409, retryAfter: 0 },
   /** An import for this repository is already running. */
   "github_import_already_active": { fault: "user", status: 409, retryAfter: 0 },
   /** The GitHub repository is larger than plue's import limit. It is refused before the clone, so nothing was written. */

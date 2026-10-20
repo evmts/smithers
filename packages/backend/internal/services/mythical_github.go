@@ -213,7 +213,7 @@ func (g *mythicalGitHubAPI) ResolveIssueWrite(ctx context.Context, repository db
 		// No recorded GitHub destination is the App connection flow; any
 		// other failure here is the store's, and transient.
 		var destination *pkgerrors.APIError
-		if errors.As(err, &destination) && destination.Code == pkgerrors.CodeConflict {
+		if errors.As(err, &destination) && destination.Code == pkgerrors.CodeGitHubDestinationRequired {
 			return mythicalGitHubRepo{}, issueWriteUnavailable("app_not_connected", err)
 		}
 		return mythicalGitHubRepo{}, err
