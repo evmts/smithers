@@ -6,7 +6,7 @@ import * as Redacted from "effect/Redacted"
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
-import { join, resolve } from "node:path"
+import { dirname, join, relative, resolve } from "node:path"
 import test from "node:test"
 import { pathToFileURL } from "node:url"
 import ts from "typescript"
@@ -90,6 +90,88 @@ test("app stacks retain their Worker routing and defer required redacted credent
   }
 })
 
+/**
+ * The hostnames a stack's Workers claim, read from source without running any of it: each `domain` (its name,
+ * aliases and redirects) and each route `pattern` in every file of the stack's relative import graph that imports
+ * `alchemy/Cloudflare`. Running a stack would load its whole app under Node; Vite and Alchemy bundle that code, and
+ * Node's loader rejects its extensionless imports. A claim that isn't a literal fails: an unread claim would pass.
+ */
+const stackHostnames = (stackPath) => {
+  const claims = []
+  const seen = new Set()
+  const pending = [stackPath]
+  while (pending.length > 0) {
+    const path = pending.pop()
+    if (seen.has(path)) continue
+    seen.add(path)
+    const text = readFileSync(path, "utf8")
+    const imports = ts.preProcessFile(text, true, true).importedFiles.map(({ fileName }) => fileName)
+    for (const specifier of imports.filter((name) => name.startsWith("."))) {
+      const base = resolve(dirname(path), specifier)
+      const file = [base, `${base}.ts`, `${base}.tsx`, join(base, "index.ts")]
+        .find((candidate) => /\.tsx?$/.test(candidate) && existsSync(candidate))
+      if (file !== undefined) pending.push(file)
+    }
+    if (!imports.includes("alchemy/Cloudflare")) continue
+    const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    const where = (node) => `${relative(root, path)}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}`
+    const bare = (node) => {
+      while (ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isParenthesizedExpression(node)) node = node.expression
+      return node
+    }
+    const unreadable = (node) => `${where(node)}: declare hostnames as literals, so this test reads them without running the stack`
+    const string = (node) => {
+      assert.ok(ts.isStringLiteralLike(bare(node)), unreadable(node))
+      return bare(node).text
+    }
+    const strings = (node) => {
+      assert.ok(ts.isArrayLiteralExpression(bare(node)), unreadable(node))
+      return bare(node).elements.map(string)
+    }
+    const fields = (node) => {
+      const object = bare(node)
+      assert.ok(ts.isObjectLiteralExpression(object), unreadable(node))
+      return new Map(object.properties.flatMap((property) =>
+        ts.isPropertyAssignment(property) && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))
+          ? [[property.name.text, property.initializer]]
+          : []
+      ))
+    }
+    const visit = (node) => {
+      if (ts.isObjectLiteralExpression(node)) {
+        for (const property of node.properties) {
+          const key = property.name !== undefined && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) ? property.name.text : undefined
+          if ((key === "domain" || key === "routes") && !ts.isPropertyAssignment(property)) assert.fail(unreadable(property))
+        }
+        const props = fields(node)
+        const name = props.get("name")
+        const owner = name !== undefined && ts.isStringLiteralLike(bare(name)) ? bare(name).text : where(node)
+        const domain = props.get("domain")
+        if (domain !== undefined && bare(domain).kind !== ts.SyntaxKind.NullKeyword) {
+          if (ts.isStringLiteralLike(bare(domain))) claims.push({ host: bare(domain).text, owner })
+          else {
+            const declared = fields(domain)
+            assert.ok(bare(domain).properties.every(ts.isPropertyAssignment), unreadable(domain))
+            const hosts = [string(declared.get("name") ?? domain)]
+            for (const list of ["aliases", "redirects"]) if (declared.has(list)) hosts.push(...strings(declared.get(list)))
+            for (const host of hosts) claims.push({ host, owner })
+          }
+        }
+        const routes = props.get("routes")
+        if (routes !== undefined) {
+          assert.ok(ts.isArrayLiteralExpression(bare(routes)), unreadable(routes))
+          for (const route of bare(routes).elements) {
+            claims.push({ host: string(fields(route).get("pattern") ?? route).split("/")[0], owner })
+          }
+        }
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(source)
+  }
+  return claims
+}
+
 test("every hostname has one owning Worker, in this repository or in the canary manifest", async () => {
   // A zone route wins over a custom domain on the same hostname, so a second
   // claim is never a fallback: it is a Worker nobody can reach, deployed and
@@ -106,12 +188,12 @@ test("every hostname has one owning Worker, in this repository or in the canary 
     }
     const stackPath = join(apps, app, "alchemy.run.ts")
     if (existsSync(stackPath)) {
-      const stack = await import(pathToFileURL(stackPath).href)
-      for (const props of Object.values(stack)) {
-        if (typeof props !== "object" || props === null || !("domain" in props)) continue
-        for (const host of [props.domain.name, ...(props.domain.aliases ?? [])]) claim(host, props.name)
-      }
+      for (const { host, owner } of stackHostnames(stackPath)) claim(host, owner)
     }
+  }
+  // An empty static read must not pass for "no conflicts": it sees bug-worker's declared domain.
+  for (const host of ["bug.smithers.sh", "bugs.smithers.sh"]) {
+    assert.deepEqual([...owners.get(host) ?? []], ["smithers-bug-worker-smithers-bug-worker-williamcory"], host)
   }
   // Deployed from another repository and probed by the canary.
   const { BACKING_WORKERS, RETIRED_WORKERS } = await import("../../server/scripts/canary/workers-manifest.ts")

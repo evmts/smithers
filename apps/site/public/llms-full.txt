@@ -1609,7 +1609,7 @@ The encoded form of a completed result.
 - **Type:** `Data.TaggedClass("Complete")<{ readonly exit: Exit.Exit<A, E> }>`
 - **Since:** `0.1.0`
 
-A completed flow execution, carrying its success or failure `Exit`.
+A completed flow execution, carrying its success or failure `Exit`. Its schema keeps an `Interpreter.InterpreterError` defect whole, `code` included; every other defect encodes as `Schema.Defect` encodes it.
 
 ### `Flow.Suspended`
 
@@ -2086,7 +2086,25 @@ Gives an answer the caller's own type. The schema here and the question's own sc
 - **Type:** `Schema.TaggedError` with fields `code`, `flow: string`, `node: string`, and `message: string`
 - **Since:** `0.1.0`
 
-A graph the interpreter refuses to drive. The `code` is one of `incomplete_graph`, `duplicate_node_id`, `unresolved_action`, `implementation_version_mismatch`, `missing_implementation_version`, `unresolved_reference`, `unsupported_call`, `missing_operation`, `node_record_too_large`, or `join_mismatch` (a race, any, or quorum journaled members, or a losing child boundary, its plan can no longer reproduce).
+A graph the interpreter refuses to drive. The `code` is one of `incomplete_graph`, `duplicate_node_id`, `unresolved_action`, `implementation_version_mismatch`, `missing_implementation_version`, `unresolved_reference`, `unsupported_call`, `missing_operation`, `node_record_too_large`, `plan_changed` (a durable resume rebuilt a different plan than the run recorded), or `join_mismatch` (a race, any, or quorum journaled members, or a losing child boundary, its plan can no longer reproduce).
+
+A refused run settles failed with the error as its defect. `Flow.Result` stores the error's fields and decodes them back into this class, so `poll`, a browser engine's `result`, and every other reader of the stored run see the same `code`.
+
+### `Interpreter.refusalCode`
+
+- **Signature:** `refusalCode(cause: Cause.Cause<unknown>): Option.Option<InterpreterError["code"]>`
+- **Since:** `1.0.0`
+
+The code of the interpreter refusal a run ended with, if it ended with one. It reads a live `InterpreterError` defect or failure, and one decoded from a stored result. A result stored before results kept the code answers `plan_changed` when it carries that refusal's message, and nothing for any other refusal.
+
+```ts
+const settle = Effect.gen(function*() {
+  const exit = yield* engine.result(Answer, answerId)
+  if (Exit.isFailure(exit) && Option.contains(Interpreter.refusalCode(exit.cause), "plan_changed")) {
+    // Parked under one build and refused under the next: close what the run was feeding.
+  }
+})
+```
 
 ### `Interpreter.Interpretation`
 
@@ -7589,6 +7607,23 @@ Calls the model once, as one step of the running flow.
 It fails with the last refusal once `retryPolicy` gives up, with a permission
 failure, with the route's `prepare` error, or with an `engine_failed`
 `HarnessError` when the key cannot be derived.
+
+### ModelStep.model
+
+```ts
+const model: (
+  options: Omit<Options, "request" | "onEvent">
+) => Effect.Effect<Model.Model, never, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+```
+
+A `Model` whose every call is one `run` of the running flow, keyed, sealed and
+replayed under `options.name`, for code that takes a `Model` and calls it
+itself, such as `Evaluator.layerFromSeat`. Build it inside a step. Its stream
+emits the recorded events once the step settles, not while the provider
+answers; use `run` with `onEvent` to watch a call live. A refusal the step
+sealed fails the stream after those events. A step failure fails it with the
+same error, and a key that cannot be derived fails it as a `ModelError` whose
+code is `unknown`. See [Judge with sealed calls](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/guides/durable-model-call.md#judge-with-sealed-calls).
 
 ### ModelStep.Options
 
@@ -27273,8 +27308,9 @@ See [Proxy a model](https://github.com/smithersai/smithers/blob/main/packages/sm
 | Export                 | Kind        | Behavior                                                                                                                                                                                                                                                                                                                                                                                          |
 | ---------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `serve(options)`       | server      | `Effect<HttpServerResponse, never, HttpServerRequest \| R>`. Reads a `POST` JSON `ModelRequest` body, runs `options.prepare`, calls the `Model` it chose inside `Model.withGenAiSpan`, and streams NDJSON. Answers `405` to another method, `413` past `maxBodyBytes` (counted while reading), `400` to a body that is not a `ModelRequest`, a `Refusal`'s status, and `500` when `prepare` dies. |
-| `ServeOptions<R>`      | interface   | `prepare: (request) => Effect<Prepared, Refusal, R>`, required; `maxBodyBytes?`, default `defaultMaxBodyBytes`; `attributes?`, labels added to every server-side metric and the log line (the proxy's own names win); `onEnd?: (end: End) => Effect<void, never, R>`, run once after an admitted request's model stream ends; the terminal line waits for it.                                     |
+| `ServeOptions<R>`      | interface   | `prepare: (request, admission) => Effect<Prepared, Refusal, R>`, required; `maxBodyBytes?`, default `defaultMaxBodyBytes`; `attributes?`, labels added to every server-side metric and the log line (the proxy's own names win); `onEnd?: (end: End) => Effect<void, never, R>`, run once after an admitted request's model stream ends; the terminal line waits for it.                          |
 | `Prepared`             | interface   | `{ request, model }`: the `ModelRequest` the model receives and the `Model` that answers it.                                                                                                                                                                                                                                                                                                      |
+| `Admission`            | interface   | `{ requestId, invocationId, requestBytes }`, `prepare`'s second argument: the caller's id, the server's id for this call (the one `End` carries, so a host reserves spend under it in `prepare` and settles it in `onEnd`), and the body's size in bytes, at most `maxBodyBytes`.                                                                                                                 |
 | `End`                  | interface   | `{ requestId, invocationId, outcome, modelId, usage }`; `invocationId` is the server's own id for the call, minted for every admitted request (key metering on it; the caller chooses `requestId` and may repeat it); `outcome` is `success`, `failed` or `interrupted`, and `usage` is the merged `usage` events (a `retry` starts it over). Never passed for a refused request.                 |
 | `Refusal`              | error class | Tag `flows/model/ModelProxyRefusal`. `status` (400 to 599) and `message` reach the client as written; `code?` is the client's `ModelError` code, chosen by the status when omitted. `modelErrorCode` is the code the client gets; its `ModelError.faults` class is the refusal's fault, so a `429` waits and a `401` asks the person.                                                             |
 | `makeClient(options)`  | client      | `Effect<Model, never, HttpClient>`. `stream` posts the encoded request with a fresh request id and trace context and decodes the lines. Interrupting it aborts the request.                                                                                                                                                                                                                       |
@@ -32393,6 +32429,7 @@ const alarm: <E, R, RS, RE = never, RR = never>(
     readonly flows: ReadonlyArray<Flow.Any>
     readonly runtime: (intent: ExecutionObject.Intent) => Layer.Layer<ExecutionObject.Services, E, R>
     readonly router: ExecutionObject.Router<RE, RR>
+    readonly settledRetentionMs?: number | undefined
   }
 ) => Effect.Effect<ExecutionObject.Outcome, never, R | RS | RR>
 ```
@@ -32409,11 +32446,18 @@ once with `EngineStore.drive`, then routes:
 - when the execution settled and is the last round of its lineage, each parent
   due now: `router.wake`.
 
-Then it clears the count and deletes the alarm (settled) or arms it for the
+Then it clears the count and records when the execution settled, arming the
+alarm for the end of its retention window (settled), or arms it for the
 engine's next wake (parked), reading `EngineStore.nextWake` once more after
 arming so a wake that landed during the alarm is kept. Never fails: a failure,
 a router call's included, is `Retrying`. `flows` must list every flow an
 execution may start as a child or hand off to.
+
+An object that recorded its settlement builds no runtime again. Before
+`settledRetentionMs` (default `ExecutionObject.settledRetentionMs`, one day)
+has passed since the settlement, its alarm arms itself for that moment and
+answers `Settled`. After, it deletes the intent, the count and the settlement,
+deletes the alarm and answers `Forgotten`: the object's storage is empty.
 
 ### `ExecutionObject.Router`
 
@@ -32478,12 +32522,14 @@ object wraps its Promise methods in `Effect.promise`.
 ```ts
 type Outcome =
   | { readonly _tag: "Idle" }
-  | { readonly _tag: "Settled" }
+  | { readonly _tag: "Settled"; readonly forgetAtMs: number }
   | { readonly _tag: "Parked"; readonly wakeAtMs: number | null }
   | { readonly _tag: "Retrying"; readonly attempt: number; readonly retryAtMs: number; readonly failure: string }
+  | { readonly _tag: "Forgotten" }
 ```
 
-What one alarm did. `failure` is the tag of what failed, never its message.
+What one alarm did. `forgetAtMs` is when the settled object forgets its
+intent. `failure` is the tag of what failed, never its message.
 
 ### `ExecutionObject.Services`
 
@@ -32506,21 +32552,23 @@ class IntentConflict extends Schema.TaggedError<IntentConflict>()(
 
 ### Constants
 
-| Export                         | Value                                                               | Meaning                                                                  |
-| ------------------------------ | ------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `ExecutionObject.intentKey`    | `"smithers/intent"`                                                 | The storage key the intent lives under.                                  |
-| `ExecutionObject.failuresKey`  | `"smithers/failures"`                                               | The storage key the count of alarms without progress lives under.        |
-| `ExecutionObject.startGraceMs` | `5_000`                                                             | How long after `start` stores an intent its alarm fires if `start` dies. |
-| `ExecutionObject.retryPolicy`  | `RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 300_000 })` | The backoff between alarms without progress. Never gives up.             |
+| Export                               | Value                                                               | Meaning                                                                  |
+| ------------------------------------ | ------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `ExecutionObject.intentKey`          | `"smithers/intent"`                                                 | The storage key the intent lives under.                                  |
+| `ExecutionObject.failuresKey`        | `"smithers/failures"`                                               | The storage key the count of alarms without progress lives under.        |
+| `ExecutionObject.settledKey`         | `"smithers/settled"`                                                | The storage key when the execution settled, in epoch ms, lives under.    |
+| `ExecutionObject.settledRetentionMs` | `86_400_000`                                                        | How long a settled object keeps its intent before it forgets it.         |
+| `ExecutionObject.startGraceMs`       | `5_000`                                                             | How long after `start` stores an intent its alarm fires if `start` dies. |
+| `ExecutionObject.retryPolicy`        | `RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 300_000 })` | The backoff between alarms without progress. Never gives up.             |
 
 ### Metrics
 
-| Export                   | Name                                   | Attributes                                                 |
-| ------------------------ | -------------------------------------- | ---------------------------------------------------------- |
-| `ExecutionObject.starts` | `smithers_cloudflare_execution_starts` | `outcome`: `accepted`, `duplicate`, `conflict` or `failed` |
-| `ExecutionObject.alarms` | `smithers_cloudflare_execution_alarms` | `outcome`: `idle`, `settled`, `parked` or `retrying`       |
-| `ExecutionObject.routed` | `smithers_cloudflare_execution_routed` | `route`: `start` or `wake`, counted per successful call    |
-| `ExecutionObject.wakes`  | `smithers_cloudflare_execution_wakes`  | `outcome`: `armed` or `idle`                               |
+| Export                   | Name                                   | Attributes                                                        |
+| ------------------------ | -------------------------------------- | ----------------------------------------------------------------- |
+| `ExecutionObject.starts` | `smithers_cloudflare_execution_starts` | `outcome`: `accepted`, `duplicate`, `conflict` or `failed`        |
+| `ExecutionObject.alarms` | `smithers_cloudflare_execution_alarms` | `outcome`: `idle`, `settled`, `parked`, `retrying` or `forgotten` |
+| `ExecutionObject.routed` | `smithers_cloudflare_execution_routed` | `route`: `start` or `wake`, counted per successful call           |
+| `ExecutionObject.wakes`  | `smithers_cloudflare_execution_wakes`  | `outcome`: `armed` or `idle`                                      |
 
 Each `alarm` span carries `smithers.execution.started` and
 `smithers.execution.woken`, the counts it routed; each `wake` runs in a
