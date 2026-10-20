@@ -131,3 +131,5 @@ this package is what the same engine uses when the page is the machine.
 - [The durable browser engine](./concepts/durable-browser-engine.md): leader
   election, the wake on load, and the channel between tabs.
 - [API reference](./api.md): every public export.
+
+Host failure diagnostics use `RetryPolicy.failureType` from `@smthrs/flow`: the squashed error’s tag or name, or `unknown`, without its message or stack.

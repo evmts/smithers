@@ -25,7 +25,6 @@ import { canonicalize } from "@smthrs/canonical"
 import { type DurableEngineState, EngineStore } from "@smthrs/engine-store"
 import { type Flow, RetryPolicy } from "@smthrs/flow"
 import type { RunStore } from "@smthrs/run-store"
-import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -285,12 +284,6 @@ const annotateIntent = (value: Intent) =>
   Effect.annotateCurrentSpan({ "smithers.execution.id": value.executionId, "smithers.flow": value.flow })
 
 /**
- * The stable name of what a cause failed with, for a log line or a span
- * attribute: an error's tag, never its message, which may quote a payload.
- */
-const failureType = (cause: Cause.Cause<unknown>): string => RetryPolicy.errorTag(Cause.squash(cause)) ?? "unknown"
-
-/**
  * Builds an intent, encoding the payload with the flow's own JSON codec.
  *
  * @category constructors
@@ -358,7 +351,7 @@ export const start = <A, E, R, RS>(
     yield* Metric.update(Metric.withAttributes(starts, { outcome }), 1)
     yield* (Exit.isFailure(exit)
       ? Effect.logWarning("cloudflare.execution.start").pipe(
-        Effect.annotateLogs({ outcome, "error.type": failureType(exit.cause) })
+        Effect.annotateLogs({ outcome, "error.type": RetryPolicy.failureType(exit.cause) })
       )
       : Effect.logInfo("cloudflare.execution.start").pipe(Effect.annotateLogs({ outcome })))
     return exit
@@ -584,7 +577,7 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
     }
     const retryAtMs = (yield* Clock.currentTimeMillis) + backoff(attempt)
     yield* storage.setAlarm(retryAtMs)
-    return { _tag: "Retrying", attempt, retryAtMs, failure: failureType(outcome.cause) } as const
+    return { _tag: "Retrying", attempt, retryAtMs, failure: RetryPolicy.failureType(outcome.cause) } as const
   }).pipe(
     Effect.tap((outcome) =>
       Effect.gen(function*() {

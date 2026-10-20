@@ -63,15 +63,6 @@ export interface Options {
 /** The statuses of a run that has work left. */
 const unfinished = ["pending", "running", "suspended"] as const
 
-/**
- * The tag of what a cause failed with, never its message.
- *
- * @category telemetry
- * @since 1.0.0
- */
-export const failureType = (cause: Cause.Cause<unknown>): string =>
-  RetryPolicy.errorTag(Cause.squash(cause)) ?? "unknown"
-
 const isRequest = Schema.is(Protocol.Request)
 
 /** A flow this leader was not given. */
@@ -128,7 +119,7 @@ const wake = (flows: ReadonlyMap<string, Flow.Any>) =>
         Effect.exit,
         Effect.flatMap((exit) => {
           const outcome = Exit.isSuccess(exit) ? exit.value._tag.toLowerCase() : "failed"
-          const failure = Exit.isFailure(exit) ? { "error.type": failureType(exit.cause) } : {}
+          const failure = Exit.isFailure(exit) ? { "error.type": RetryPolicy.failureType(exit.cause) } : {}
           return Metric.update(Metric.withAttributes(wakes, { outcome }), 1).pipe(
             Effect.andThen(
               (Exit.isSuccess(exit) ? Effect.logInfo : Effect.logWarning)("browser.runtime.wake").pipe(
@@ -187,7 +178,7 @@ const handle = (flows: ReadonlyMap<string, Flow.Any>, request: Protocol.Request)
     Effect.exit,
     Effect.flatMap((exit) => {
       const outcome = Exit.isSuccess(exit) ? "replied" : "refused"
-      const failure = Exit.isFailure(exit) ? { "error.type": failureType(exit.cause) } : {}
+      const failure = Exit.isFailure(exit) ? { "error.type": RetryPolicy.failureType(exit.cause) } : {}
       const reply: Protocol.Message = Exit.isSuccess(exit)
         ? { _tag: "Replied", client: request.client, id: request.id, result: exit.value }
         : { _tag: "Refused", client: request.client, id: request.id, error: failure["error.type"]! }
@@ -345,7 +336,7 @@ const serveStatements = (name: string, database: Option.Option<Connection>) =>
           Effect.gen(function*() {
             const open = Option.isSome(database) && database.value.isOpen(request.client)
             if (Option.isSome(database)) yield* watch(request.client, open, database.value)
-            const failure = Exit.isFailure(exit) ? failureType(exit.cause) : undefined
+            const failure = Exit.isFailure(exit) ? RetryPolicy.failureType(exit.cause) : undefined
             const outcome = failure === undefined ?
               Exit.isSuccess(exit) && exit.value.committed ? "committed" : "executed"
               : failure === "@smthrs/platform-browser/TransactionLost" ?

@@ -49,3 +49,5 @@ compatibility flags and the database.
 - [Troubleshooting](./troubleshooting.md): every `Retrying` failure and what
   resolves it.
 - [API reference](./api.md): every public export.
+
+Host failure diagnostics use `RetryPolicy.failureType` from `@smthrs/flow`: the squashed error’s tag or name, or `unknown`, without its message or stack.

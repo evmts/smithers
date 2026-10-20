@@ -22,6 +22,7 @@
  * @since 0.1.0
  */
 
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Random from "effect/Random"
@@ -422,6 +423,16 @@ export const errorTag = (error: unknown): string | undefined => {
   }
   return undefined
 }
+
+/**
+ * Classifies a cause for host diagnostics using only its squashed error's
+ * stable tag or name, falling back to `unknown` when neither is available.
+ * Messages, stacks and other payload fields are never included.
+ *
+ * @category attempts
+ * @since 1.0.0
+ */
+export const failureType = (cause: Cause.Cause<unknown>): string => errorTag(Cause.squash(cause)) ?? "unknown"
 
 /**
  * Error tags that are non-retryable by type, under every policy (issue #156).

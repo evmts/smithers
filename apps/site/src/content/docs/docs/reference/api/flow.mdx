@@ -1639,6 +1639,13 @@ Computes the next delay, sampling the `Random` service for jitter. A policy with
 
 Extracts the stable identity tag of an error for non-retryable matching: an own string `_tag` when present, otherwise the first own `name` descriptor found while walking a bounded prototype chain. That first descriptor decides the result, and only a string data value is a tag.
 
+### `RetryPolicy.failureType`
+
+- **Signature:** `failureType(cause: Cause.Cause<unknown>): string`
+- **Root import:** `import { RetryPolicy } from "@smthrs/flow"`
+
+The shared browser and Cloudflare diagnostic classifier. It reads the squashed failure through `errorTag`, returning its stable tag or name, or `unknown`. Messages, stacks and other payload fields are omitted. Interruption and empty causes retain the name of Effect's squashed error.
+
 ### `RetryPolicy.defaultNonRetryable`
 
 - **Type:** `ReadonlyArray<string>`

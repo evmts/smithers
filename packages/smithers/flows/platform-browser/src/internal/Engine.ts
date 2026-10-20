@@ -8,7 +8,7 @@
 
 import { WebCrypto } from "@smthrs/crypto"
 import { OwnerIdentity, RunCatalogRead, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
-import type { Flow, FlowRuntime } from "@smthrs/flow"
+import { type Flow, type FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Runtime } from "@smthrs/flows"
 import * as Jj from "@smthrs/jj"
 import { Ownership } from "@smthrs/run-store"
@@ -129,10 +129,10 @@ export const program = <Registered, RegistrationError, RegistrationRequirements 
   >).pipe(
     Effect.tapCause((cause) =>
       Effect.logError("browser.runtime.stopped").pipe(
-        Effect.annotateLogs({ "error.type": Leader.failureType(cause) }),
+        Effect.annotateLogs({ "error.type": RetryPolicy.failureType(cause) }),
         // A failure only: interrupting the worker's fiber, as its tab closing
         // does, never reaches here.
-        Effect.andThen(tellTab(Leader.failureType(cause)))
+        Effect.andThen(tellTab(RetryPolicy.failureType(cause)))
       )
     )
   )
